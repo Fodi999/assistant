@@ -85,6 +85,7 @@ impl AssistantService {
         }
 
         // Обрабатываем команду CreateDish - создаем блюдо с финансовым анализом
+        let mut dish_financials = None;
         if let AssistantCommand::CreateDish(payload) = &command {
             let recipe_id = RecipeId::from_uuid(payload.recipe_id);
             let dish_name = DishName::new(payload.name.clone())?;
@@ -101,13 +102,11 @@ impl AssistantService {
                 )
                 .await?;
 
-            // Сразу рассчитываем финансы для "вау"-эффекта
+            // Сразу рассчитываем финансы для "момент вау"
             let financials = self.dish_service
                 .calculate_financials(dish.id(), user_id, tenant_id)
                 .await?;
 
-            // TODO: Add financials to response (need to extend AssistantResponse)
-            // For now, just log it
             tracing::info!(
                 "Dish created: {} | Selling: {} PLN | Cost: {} PLN | Profit: {} PLN | Margin: {:.1}%",
                 financials.dish_name,
@@ -116,6 +115,9 @@ impl AssistantService {
                 financials.profit_cents as f64 / 100.0,
                 financials.profit_margin_percent
             );
+
+            // Сохраняем для добавления в response
+            dish_financials = Some(financials);
         }
 
         // Проверяем FinishInventory - должны быть продукты
@@ -138,6 +140,62 @@ impl AssistantService {
 
         // Получаем базовый response
         let mut response = next.to_response(user.language);
+
+        // Добавляем финансовый анализ, если создавали блюдо
+        if let Some(ref financials) = dish_financials {
+            response.dish_financials = Some(financials.clone());
+
+            // Генерируем предупреждения о рентабельности
+            if !financials.is_healthy_margin() {
+                let message = match user.language {
+                    crate::shared::Language::Pl => format!(
+                        "⚠️ Niska marża zysku ({:.1}%)! Rozważ zwiększenie ceny lub obniżenie kosztów.",
+                        financials.profit_margin_percent
+                    ),
+                    crate::shared::Language::En => format!(
+                        "⚠️ Low profit margin ({:.1}%)! Consider increasing the price or reducing costs.",
+                        financials.profit_margin_percent
+                    ),
+                    crate::shared::Language::Uk => format!(
+                        "⚠️ Низька маржа прибутку ({:.1}%)! Розгляньте збільшення ціни або зниження витрат.",
+                        financials.profit_margin_percent
+                    ),
+                    crate::shared::Language::Ru => format!(
+                        "⚠️ Низкая маржа прибыли ({:.1}%)! Рассмотрите увеличение цены или снижение затрат.",
+                        financials.profit_margin_percent
+                    ),
+                };
+                response.warnings.push(crate::domain::assistant::response::AssistantWarning {
+                    level: crate::domain::assistant::response::WarningLevel::Financial,
+                    message,
+                });
+            }
+            
+            if !financials.is_acceptable_food_cost() {
+                let message = match user.language {
+                    crate::shared::Language::Pl => format!(
+                        "⚠️ Wysoki koszt produktów ({:.1}%)! Przepis może być nierentowny.",
+                        financials.food_cost_percent
+                    ),
+                    crate::shared::Language::En => format!(
+                        "⚠️ High food cost ({:.1}%)! Recipe may not be profitable.",
+                        financials.food_cost_percent
+                    ),
+                    crate::shared::Language::Uk => format!(
+                        "⚠️ Висока вартість продуктів ({:.1}%)! Рецепт може бути нерентабельним.",
+                        financials.food_cost_percent
+                    ),
+                    crate::shared::Language::Ru => format!(
+                        "⚠️ Высокая стоимость продуктов ({:.1}%)! Рецепт может быть нерентабельным.",
+                        financials.food_cost_percent
+                    ),
+                };
+                response.warnings.push(crate::domain::assistant::response::AssistantWarning {
+                    level: crate::domain::assistant::response::WarningLevel::Financial,
+                    message,
+                });
+            }
+        }
 
         // Обогащаем response проверкой просрочки (только на экранах с inventory)
         if matches!(next, crate::domain::assistant::step::AssistantStep::InventorySetup | crate::domain::assistant::step::AssistantStep::RecipeSetup) {
