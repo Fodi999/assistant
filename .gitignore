@@ -1,6 +1,6 @@
 # Rust
 /target
-Cargo.lock
+# Cargo.lock  # REMOVED: needed for production Docker builds
 
 # Environment
 .env
