@@ -32,16 +32,22 @@ pub fn create_router(
     allowed_origins: Vec<String>,
 ) -> Router {
     // Configure CORS
-    let cors = CorsLayer::new()
-        .allow_origin(
-            allowed_origins
-                .iter()
-                .filter_map(|origin| origin.parse().ok())
-                .collect::<Vec<_>>(),
-        )
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
-        .allow_credentials(true);
+    let cors = if allowed_origins.iter().any(|o| o == "*") {
+        // Use permissive CORS for wildcard
+        CorsLayer::permissive()
+    } else {
+        // Use specific origins
+        CorsLayer::new()
+            .allow_origin(
+                allowed_origins
+                    .iter()
+                    .filter_map(|origin| origin.parse().ok())
+                    .collect::<Vec<_>>(),
+            )
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+            .allow_credentials(true)
+    };
 
     // Auth routes (public)
     let auth_routes = Router::new()
