@@ -16,11 +16,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "time", "migrate"] }
+sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "postgres", "uuid", "time", "migrate"] }
 
 # Types
 uuid = { version = "1.6", features = ["v4", "serde"] }
-time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "=0.3.36", features = ["serde", "macros", "formatting", "parsing"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Security
