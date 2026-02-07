@@ -45,7 +45,7 @@ COPY --from=builder /app/target/release/restaurant-backend /app/restaurant-backe
 COPY --from=builder /app/migrations /app/migrations
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8000
 
 # Run
 CMD ["/app/restaurant-backend"]
