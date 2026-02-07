@@ -46,6 +46,7 @@ dotenvy = "0.15"
 # Utilities
 async-trait = "0.1"
 rand = "0.8"
+home = "=0.5.9"  # Pin to avoid edition2024
 
 [dev-dependencies]
 http-body-util = "0.1"
