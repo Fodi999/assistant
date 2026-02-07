@@ -28,4 +28,8 @@ COPY --from=builder /app/target/release/restaurant-backend /app/restaurant-backe
 COPY --from=builder /app/migrations /app/migrations
 
 EXPOSE 8000
+
+# Set Rust backtrace for debugging
+ENV RUST_BACKTRACE=1
+
 CMD ["/app/restaurant-backend"]
