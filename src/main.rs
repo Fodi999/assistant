@@ -4,7 +4,7 @@ mod infrastructure;
 mod interfaces;
 mod shared;
 
-use application::{AssistantService, AuthService, CatalogService, DishService, InventoryService, RecipeService, UserService};
+use application::{AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
 use infrastructure::{Config, JwtService, PasswordHasher, Repositories};
 use interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
@@ -82,13 +82,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         recipe_service.clone(),
     );
 
+    // Create MenuEngineeringService
+    let menu_engineering_service = MenuEngineeringService::new(repositories.pool.clone());
+
     // Create AssistantService with all services
     let assistant_service = AssistantService::new(
         repositories.assistant_state.clone(),
         repositories.user.clone(),
         inventory_service,
         recipe_service.clone(),
-        dish_service,
+        dish_service.clone(),
     );
 
     // Clone CORS origins before moving config
@@ -101,6 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         assistant_service,
         catalog_service,
         recipe_service,
+        dish_service,
+        menu_engineering_service,
         jwt_service,
         cors_origins,
     );

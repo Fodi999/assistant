@@ -1,0 +1,53 @@
+# Alternative Dockerfile without .sqlx (online mode)
+FROM rust:1.75-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy manifests first for better layer caching
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy main to build dependencies
+RUN mkdir src && \
+    echo "fn main() {}" > src/main.rs && \
+    cargo build --release && \
+    rm -rf src
+
+# Copy actual source code
+COPY src ./src
+COPY migrations ./migrations
+
+# Copy .sqlx if exists (for offline mode)
+COPY .sqlx ./.sqlx 2>/dev/null || true
+
+# Build application
+# If offline mode fails, remove --offline flag
+RUN cargo build --release
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy binary
+COPY --from=builder /app/target/release/restaurant-backend /app/restaurant-backend
+
+# Copy migrations
+COPY migrations /app/migrations
+
+# Expose port
+EXPOSE 8080
+
+# Run application
+CMD ["/app/restaurant-backend"]

@@ -1,9 +1,11 @@
-use crate::application::{AssistantService, AuthService, CatalogService, RecipeService, UserService};
+use crate::application::{AssistantService, AuthService, CatalogService, DishService, MenuEngineeringService, RecipeService, UserService};
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, search_ingredients, CatalogState},
+    dish::create_dish,
+    menu_engineering::{analyze_menu, record_sale},
     middleware::AuthUser,
     recipe::{create_recipe, get_recipe, list_recipes, delete_recipe, calculate_recipe_cost},
     user::me_handler,
@@ -24,6 +26,8 @@ pub fn create_router(
     assistant_service: AssistantService,
     catalog_service: CatalogService,
     recipe_service: RecipeService,
+    dish_service: DishService,
+    menu_engineering_service: MenuEngineeringService,
     jwt_service: JwtService,
     allowed_origins: Vec<String>,
 ) -> Router {
@@ -78,6 +82,17 @@ pub fn create_router(
                 .route("/recipes/:id", axum::routing::delete(delete_recipe))
                 .route("/recipes/:id/cost", get(calculate_recipe_cost))
                 .with_state(recipe_service)
+        )
+        .merge(
+            Router::new()
+                .route("/dishes", post(create_dish))
+                .with_state(dish_service)
+        )
+        .merge(
+            Router::new()
+                .route("/menu-engineering/analysis", get(analyze_menu))
+                .route("/menu-engineering/sales", post(record_sale))
+                .with_state(menu_engineering_service)
         )
         .layer(jwt_middleware);
 

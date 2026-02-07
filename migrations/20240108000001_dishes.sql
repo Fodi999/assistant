@@ -30,7 +30,7 @@ COMMENT ON COLUMN recipes.instructions IS 'Preparation instructions / technology
 -- STEP 2: Recipe components (рецепт может включать другие рецепты)
 -- ========================================
 -- This is the KEY table for semi-finished products support
-CREATE TABLE recipe_components (
+CREATE TABLE IF NOT EXISTS recipe_components (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Recipe that includes another recipe
@@ -53,8 +53,8 @@ CREATE TABLE recipe_components (
 );
 
 -- Indexes for recursive cost calculation
-CREATE INDEX idx_recipe_components_recipe_id ON recipe_components(recipe_id);
-CREATE INDEX idx_recipe_components_component_id ON recipe_components(component_recipe_id);
+CREATE INDEX IF NOT EXISTS idx_recipe_components_recipe_id ON recipe_components(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_recipe_components_component_id ON recipe_components(component_recipe_id);
 
 COMMENT ON TABLE recipe_components IS 'Recipes can include other recipes (полуфабрикаты)';
 COMMENT ON COLUMN recipe_components.quantity IS 'Fraction of full recipe batch used (1.0 = 100% of recipe yield)';
@@ -63,7 +63,7 @@ COMMENT ON COLUMN recipe_components.quantity IS 'Fraction of full recipe batch u
 -- STEP 3: Dishes table (menu items with selling prices)
 -- ========================================
 -- This is where "владелец ресторана видит деньги" - profit and margins!
-CREATE TABLE dishes (
+CREATE TABLE IF NOT EXISTS dishes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     
@@ -85,15 +85,22 @@ CREATE TABLE dishes (
 );
 
 -- Indexes for queries
-CREATE INDEX idx_dishes_tenant_id ON dishes(tenant_id);
-CREATE INDEX idx_dishes_recipe_id ON dishes(recipe_id);
-CREATE INDEX idx_dishes_active ON dishes(active) WHERE active = true;
+CREATE INDEX IF NOT EXISTS idx_dishes_tenant_id ON dishes(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dishes_recipe_id ON dishes(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_dishes_active ON dishes(active) WHERE active = true;
 
 -- Updated_at trigger
-CREATE TRIGGER set_dishes_updated_at
-    BEFORE UPDATE ON dishes
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'set_dishes_updated_at'
+    ) THEN
+        CREATE TRIGGER set_dishes_updated_at
+            BEFORE UPDATE ON dishes
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
 
 -- Comments for documentation
 COMMENT ON TABLE dishes IS 'Menu dishes with selling prices for profit/margin analysis';

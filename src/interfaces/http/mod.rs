@@ -1,7 +1,9 @@
 pub mod assistant;
 pub mod auth;
 pub mod catalog;
+pub mod dish;
 pub mod error;
+pub mod menu_engineering;
 pub mod middleware;
 pub mod recipe;
 pub mod routes;
