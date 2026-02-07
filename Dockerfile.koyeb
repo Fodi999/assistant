@@ -1,5 +1,5 @@
 # Alternative Dockerfile without .sqlx (online mode)
-FROM rust:1.75-slim as builder
+FROM rust:1.83-slim as builder
 
 WORKDIR /app
 
@@ -24,12 +24,9 @@ RUN mkdir src && \
 # Copy actual source code
 COPY src ./src
 COPY migrations ./migrations
-
-# Copy .sqlx if exists (for offline mode)
-COPY .sqlx ./.sqlx 2>/dev/null || true
+COPY .sqlx ./.sqlx
 
 # Build application
-# If offline mode fails, remove --offline flag
 RUN cargo build --release
 
 # Runtime stage
