@@ -13,17 +13,30 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing
+    // Initialize tracing BEFORE anything else
     tracing_subscriber::fmt()
         .with_target(false)
         .compact()
         .init();
 
     tracing::info!("Starting Restaurant Backend...");
+    tracing::info!("Environment: DATABASE_URL present = {}", std::env::var("DATABASE_URL").is_ok());
+    tracing::info!("Environment: JWT_SECRET present = {}", std::env::var("JWT_SECRET").is_ok());
+    tracing::info!("Environment: PORT = {}", std::env::var("PORT").unwrap_or_else(|_| "not set".to_string()));
 
     // Load configuration
-    let config = Config::from_env()?;
-    tracing::info!("Configuration loaded");
+    let config = match Config::from_env() {
+        Ok(c) => {
+            tracing::info!("Configuration loaded successfully");
+            c
+        }
+        Err(e) => {
+            tracing::error!("Failed to load configuration: {}", e);
+            return Err(e);
+        }
+    };
+
+    tracing::info!("Server will bind to: {}", config.server_address());
 
     // Create database connection pool
     let pool = PgPoolOptions::new()

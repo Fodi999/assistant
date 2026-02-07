@@ -66,7 +66,11 @@ impl Config {
         })
     }
 
-    pub fn server_address(&self) -> String {
-        format!("{}:{}", self.server.host, self.server.port)
+    pub fn server_address(&self) -> std::net::SocketAddr {
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+        let ip: IpAddr = self.server.host
+            .parse()
+            .unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)));
+        SocketAddr::new(ip, self.server.port)
     }
 }
