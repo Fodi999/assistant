@@ -27,6 +27,7 @@ chrono = { version = "0.4", features = ["serde"] }
 argon2 = "0.5"
 jsonwebtoken = "9.2"
 sha2 = "0.10"
+base64ct = "=1.6.0"  # Pin to avoid edition2024
 
 # Validation
 validator = { version = "0.18", features = ["derive"] }
