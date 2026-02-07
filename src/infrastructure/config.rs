@@ -15,7 +15,6 @@ pub struct DatabaseConfig {
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    pub host: String,
     pub port: u16,
 }
 
@@ -41,9 +40,8 @@ impl Config {
                 url: env::var("DATABASE_URL")?,
             },
             server: ServerConfig {
-                host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
                 port: env::var("PORT")
-                    .unwrap_or_else(|_| "8080".to_string())
+                    .unwrap_or_else(|_| "8000".to_string())
                     .parse()?,
             },
             jwt: JwtConfig {
@@ -68,9 +66,7 @@ impl Config {
 
     pub fn server_address(&self) -> std::net::SocketAddr {
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-        let ip: IpAddr = self.server.host
-            .parse()
-            .unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)));
-        SocketAddr::new(ip, self.server.port)
+        // Always bind to 0.0.0.0 for cloud deployments (Koyeb, Fly, Railway, etc.)
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), self.server.port)
     }
 }
