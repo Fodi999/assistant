@@ -23,7 +23,7 @@ COPY migrations ./migrations
 RUN cargo build --release --locked
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:bookworm
 
 WORKDIR /app
 
