@@ -1,10 +1,11 @@
-use crate::application::{AssistantService, AuthService, CatalogService, UserService};
+use crate::application::{AssistantService, AuthService, CatalogService, RecipeService, UserService};
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, search_ingredients, CatalogState},
     middleware::AuthUser,
+    recipe::{create_recipe, get_recipe, list_recipes, delete_recipe, calculate_recipe_cost},
     user::me_handler,
 };
 use axum::{
@@ -22,6 +23,7 @@ pub fn create_router(
     user_service: UserService,
     assistant_service: AssistantService,
     catalog_service: CatalogService,
+    recipe_service: RecipeService,
     jwt_service: JwtService,
     allowed_origins: Vec<String>,
 ) -> Router {
@@ -67,6 +69,15 @@ pub fn create_router(
                     catalog_service,
                     user_service,
                 })
+        )
+        .merge(
+            Router::new()
+                .route("/recipes", post(create_recipe))
+                .route("/recipes", get(list_recipes))
+                .route("/recipes/:id", get(get_recipe))
+                .route("/recipes/:id", axum::routing::delete(delete_recipe))
+                .route("/recipes/:id/cost", get(calculate_recipe_cost))
+                .with_state(recipe_service)
         )
         .layer(jwt_middleware);
 

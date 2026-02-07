@@ -8,6 +8,7 @@ pub trait CatalogCategoryRepositoryTrait: Send + Sync {
     async fn find_by_id(&self, id: CatalogCategoryId) -> AppResult<Option<CatalogCategory>>;
 }
 
+#[derive(Clone)]
 pub struct CatalogCategoryRepository {
     pool: PgPool,
 }

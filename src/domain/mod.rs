@@ -1,6 +1,7 @@
 pub mod assistant;
 pub mod auth;
 pub mod catalog;
+pub mod dish;
 pub mod inventory;
 pub mod recipe;
 pub mod tenant;
@@ -9,6 +10,7 @@ pub mod user;
 pub use assistant::*;
 pub use auth::*;
 pub use catalog::*;
+pub use dish::*;
 pub use inventory::*;
 pub use recipe::*;
 pub use tenant::*;

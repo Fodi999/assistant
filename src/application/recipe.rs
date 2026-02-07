@@ -1,6 +1,6 @@
 use crate::domain::{
     Recipe, RecipeId, RecipeName, RecipeIngredient, RecipeCost, IngredientCost,
-    Servings, CatalogIngredientId, Quantity, Money,
+    RecipeType, Servings, CatalogIngredientId, Quantity, Money,
 };
 use crate::infrastructure::persistence::{
     RecipeRepositoryTrait, InventoryProductRepositoryTrait, CatalogIngredientRepositoryTrait,
@@ -9,6 +9,7 @@ use crate::shared::{AppError, AppResult, UserId, TenantId, Language};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct RecipeService {
     recipe_repo: Arc<dyn RecipeRepositoryTrait>,
     inventory_repo: Arc<dyn InventoryProductRepositoryTrait>,
@@ -56,8 +57,11 @@ impl RecipeService {
             user_id,
             tenant_id,
             name,
+            RecipeType::Final, // Default to final recipe
             servings,
-            ingredients
+            ingredients,
+            vec![], // No components yet
+            None,   // No instructions yet
         )?;
 
         self.recipe_repo.create(&recipe, user_id, tenant_id).await?;

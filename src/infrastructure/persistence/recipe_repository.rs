@@ -1,6 +1,6 @@
 use crate::domain::{
-    Recipe, RecipeId, RecipeName, RecipeIngredient, Servings,
-    CatalogIngredientId, Quantity,
+    Recipe, RecipeId, RecipeName, RecipeIngredient, RecipeComponent, RecipeType,
+    Servings, CatalogIngredientId, Quantity,
 };
 use crate::shared::{AppError, AppResult, UserId, TenantId};
 use async_trait::async_trait;
@@ -35,15 +35,17 @@ impl RecipeRepositoryTrait for RecipeRepository {
         // Insert recipe
         sqlx::query(
             r#"
-            INSERT INTO recipes (id, user_id, tenant_id, name, servings)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO recipes (id, user_id, tenant_id, name, recipe_type, servings, instructions)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#
         )
         .bind(recipe.id().as_uuid())
         .bind(user_id.as_uuid())
         .bind(tenant_id.as_uuid())
         .bind(recipe.name().as_str())
+        .bind(recipe.recipe_type().as_str())
         .bind(recipe.servings().count() as i32)
+        .bind(recipe.instructions())
         .execute(&mut *tx)
         .await
         .map_err(AppError::Database)?;
@@ -64,15 +66,31 @@ impl RecipeRepositoryTrait for RecipeRepository {
             .map_err(AppError::Database)?;
         }
 
+        // Insert components (other recipes used in this recipe)
+        for component in recipe.components() {
+            sqlx::query(
+                r#"
+                INSERT INTO recipe_components (recipe_id, component_recipe_id, quantity)
+                VALUES ($1, $2, $3)
+                "#
+            )
+            .bind(recipe.id().as_uuid())
+            .bind(component.component_recipe_id().as_uuid())
+            .bind(component.quantity())
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+
         tx.commit().await.map_err(AppError::Database)?;
         Ok(())
     }
 
     async fn find_by_id(&self, id: RecipeId, user_id: UserId) -> AppResult<Option<Recipe>> {
         // Fetch recipe
-        let recipe_row = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, i32, time::OffsetDateTime, time::OffsetDateTime)>(
+        let recipe_row = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
             r#"
-            SELECT id, user_id, tenant_id, name, servings, created_at, updated_at
+            SELECT id, user_id, tenant_id, name, recipe_type, servings, instructions, created_at, updated_at
             FROM recipes
             WHERE id = $1 AND user_id = $2
             "#
@@ -83,7 +101,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
         .await
         .map_err(AppError::Database)?;
 
-        let Some((row_id, row_user_id, row_tenant_id, row_name, row_servings, row_created_at, row_updated_at)) = recipe_row else {
+        let Some((row_id, row_user_id, row_tenant_id, row_name, row_recipe_type, row_servings, row_instructions, row_created_at, row_updated_at)) = recipe_row else {
             return Ok(None);
         };
 
@@ -112,13 +130,36 @@ impl RecipeRepositoryTrait for RecipeRepository {
             })
             .collect::<AppResult<Vec<_>>>()?;
 
+        // Fetch components (recipes used in this recipe)
+        let components_rows = sqlx::query_as::<_, (uuid::Uuid, f64)>(
+            r#"
+            SELECT component_recipe_id, quantity
+            FROM recipe_components
+            WHERE recipe_id = $1
+            "#
+        )
+        .bind(id.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        let components: Vec<RecipeComponent> = components_rows
+            .into_iter()
+            .map(|(component_id, qty)| {
+                RecipeComponent::new(RecipeId::from_uuid(component_id), qty)
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+
         let recipe = Recipe::from_parts(
             RecipeId::from_uuid(row_id),
             UserId::from_uuid(row_user_id),
             TenantId::from_uuid(row_tenant_id),
             RecipeName::new(row_name)?,
+            RecipeType::from_str(&row_recipe_type)?,
             Servings::new(row_servings as u32)?,
             ingredients,
+            components,
+            row_instructions,
             row_created_at,
             row_updated_at
         );
@@ -128,13 +169,13 @@ impl RecipeRepositoryTrait for RecipeRepository {
 
     async fn list_by_user(&self, user_id: UserId) -> AppResult<Vec<Recipe>> {
         // TODO: Optimize N+1 query problem - consider using JOIN or WHERE recipe_id = ANY($1)
-        // Current implementation: 1 query for recipes + N queries for ingredients
+        // Current implementation: 1 query for recipes + N queries for ingredients + N queries for components
         // This is acceptable for small datasets but will be a bottleneck with many recipes
         
         // Fetch all recipes for user
-        let recipe_rows = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, i32, time::OffsetDateTime, time::OffsetDateTime)>(
+        let recipe_rows = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
             r#"
-            SELECT id, user_id, tenant_id, name, servings, created_at, updated_at
+            SELECT id, user_id, tenant_id, name, recipe_type, servings, instructions, created_at, updated_at
             FROM recipes
             WHERE user_id = $1
             ORDER BY created_at DESC
@@ -147,7 +188,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
 
         let mut recipes = Vec::new();
 
-        for (row_id, row_user_id, row_tenant_id, row_name, row_servings, row_created_at, row_updated_at) in recipe_rows {
+        for (row_id, row_user_id, row_tenant_id, row_name, row_recipe_type, row_servings, row_instructions, row_created_at, row_updated_at) in recipe_rows {
             let recipe_id = RecipeId::from_uuid(row_id);
 
             // Fetch ingredients for this recipe (N+1 issue)
@@ -175,13 +216,36 @@ impl RecipeRepositoryTrait for RecipeRepository {
                 })
                 .collect::<AppResult<Vec<_>>>()?;
 
+            // Fetch components for this recipe (N+1 issue)
+            let components_rows = sqlx::query_as::<_, (uuid::Uuid, f64)>(
+                r#"
+                SELECT component_recipe_id, quantity
+                FROM recipe_components
+                WHERE recipe_id = $1
+                "#
+            )
+            .bind(row_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            let components: Vec<RecipeComponent> = components_rows
+                .into_iter()
+                .map(|(component_id, qty)| {
+                    RecipeComponent::new(RecipeId::from_uuid(component_id), qty)
+                })
+                .collect::<AppResult<Vec<_>>>()?;
+
             let recipe = Recipe::from_parts(
                 recipe_id,
                 UserId::from_uuid(row_user_id),
                 TenantId::from_uuid(row_tenant_id),
                 RecipeName::new(row_name)?,
+                RecipeType::from_str(&row_recipe_type)?,
                 Servings::new(row_servings as u32)?,
                 ingredients,
+                components,
+                row_instructions,
                 row_created_at,
                 row_updated_at
             );

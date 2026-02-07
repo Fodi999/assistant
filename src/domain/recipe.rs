@@ -7,6 +7,39 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// Recipe type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecipeType {
+    /// Preparation / semi-finished product (полуфабрикат)
+    Preparation,
+    /// Final dish (готовое блюдо)
+    Final,
+}
+
+impl RecipeType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RecipeType::Preparation => "preparation",
+            RecipeType::Final => "final",
+        }
+    }
+
+    pub fn from_str(s: &str) -> AppResult<Self> {
+        match s {
+            "preparation" => Ok(RecipeType::Preparation),
+            "final" => Ok(RecipeType::Final),
+            _ => Err(AppError::validation("Invalid recipe type")),
+        }
+    }
+}
+
+impl Default for RecipeType {
+    fn default() -> Self {
+        RecipeType::Final
+    }
+}
+
 /// Recipe ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RecipeId(Uuid);
@@ -94,6 +127,33 @@ impl RecipeIngredient {
     }
 }
 
+/// Recipe component (другой рецепт как компонент)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecipeComponent {
+    pub component_recipe_id: RecipeId,
+    pub quantity: f64, // Fraction of full recipe batch (1.0 = 100%)
+}
+
+impl RecipeComponent {
+    pub fn new(component_recipe_id: RecipeId, quantity: f64) -> AppResult<Self> {
+        if quantity <= 0.0 {
+            return Err(AppError::validation("Component quantity must be greater than 0"));
+        }
+        Ok(Self {
+            component_recipe_id,
+            quantity,
+        })
+    }
+
+    pub fn component_recipe_id(&self) -> RecipeId {
+        self.component_recipe_id
+    }
+
+    pub fn quantity(&self) -> f64 {
+        self.quantity
+    }
+}
+
 /// Recipe - a formula for preparing a dish
 #[derive(Debug, Clone)]
 pub struct Recipe {
@@ -101,8 +161,11 @@ pub struct Recipe {
     pub user_id: UserId,
     pub tenant_id: TenantId,
     pub name: RecipeName,
+    pub recipe_type: RecipeType,
     pub servings: Servings,
     pub ingredients: Vec<RecipeIngredient>,
+    pub components: Vec<RecipeComponent>,
+    pub instructions: Option<String>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -113,11 +176,14 @@ impl Recipe {
         user_id: UserId,
         tenant_id: TenantId,
         name: RecipeName,
+        recipe_type: RecipeType,
         servings: Servings,
         ingredients: Vec<RecipeIngredient>,
+        components: Vec<RecipeComponent>,
+        instructions: Option<String>,
     ) -> AppResult<Self> {
-        if ingredients.is_empty() {
-            return Err(AppError::validation("Recipe must have at least one ingredient"));
+        if ingredients.is_empty() && components.is_empty() {
+            return Err(AppError::validation("Recipe must have at least one ingredient or component"));
         }
 
         let now = OffsetDateTime::now_utc();
@@ -126,8 +192,11 @@ impl Recipe {
             user_id,
             tenant_id,
             name,
+            recipe_type,
             servings,
             ingredients,
+            components,
+            instructions,
             created_at: now,
             updated_at: now,
         })
@@ -139,8 +208,11 @@ impl Recipe {
         user_id: UserId,
         tenant_id: TenantId,
         name: RecipeName,
+        recipe_type: RecipeType,
         servings: Servings,
         ingredients: Vec<RecipeIngredient>,
+        components: Vec<RecipeComponent>,
+        instructions: Option<String>,
         created_at: OffsetDateTime,
         updated_at: OffsetDateTime,
     ) -> Self {
@@ -149,8 +221,11 @@ impl Recipe {
             user_id,
             tenant_id,
             name,
+            recipe_type,
             servings,
             ingredients,
+            components,
+            instructions,
             created_at,
             updated_at,
         }
@@ -173,12 +248,24 @@ impl Recipe {
         &self.name
     }
 
+    pub fn recipe_type(&self) -> RecipeType {
+        self.recipe_type
+    }
+
     pub fn servings(&self) -> Servings {
         self.servings
     }
 
     pub fn ingredients(&self) -> &[RecipeIngredient] {
         &self.ingredients
+    }
+
+    pub fn components(&self) -> &[RecipeComponent] {
+        &self.components
+    }
+
+    pub fn instructions(&self) -> Option<&str> {
+        self.instructions.as_deref()
     }
 
     pub fn created_at(&self) -> OffsetDateTime {
@@ -229,6 +316,7 @@ pub struct RecipeCost {
     pub recipe_name: String,
     pub total_cost: Money,
     pub cost_per_serving: Money,
+    pub servings: u32,
     pub ingredients_breakdown: Vec<IngredientCost>,
 }
 
@@ -252,6 +340,7 @@ impl RecipeCost {
             recipe_name,
             total_cost,
             cost_per_serving,
+            servings,
             ingredients_breakdown,
         })
     }

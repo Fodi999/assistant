@@ -4,11 +4,12 @@ mod infrastructure;
 mod interfaces;
 mod shared;
 
-use application::{AssistantService, AuthService, CatalogService, InventoryService, UserService};
+use application::{AssistantService, AuthService, CatalogService, InventoryService, RecipeService, UserService};
 use infrastructure::{Config, JwtService, PasswordHasher, Repositories};
 use interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -74,6 +75,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let catalog_service = CatalogService::new(repositories.pool.clone());
 
+    // Create RecipeService with all dependencies
+    let recipe_service = RecipeService::new(
+        Arc::new(repositories.recipe.clone()),
+        Arc::new(repositories.inventory_product.clone()),
+        Arc::new(repositories.catalog_ingredient.clone()),
+    );
+
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
 
@@ -83,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         user_service,
         assistant_service,
         catalog_service,
+        recipe_service,
         jwt_service,
         cors_origins,
     );

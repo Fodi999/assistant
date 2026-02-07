@@ -11,7 +11,7 @@ pub enum AssistantCommand {
     FinishInventory,
     CreateRecipe,
     FinishRecipes,
-    CreateDish,
+    CreateDish(CreateDishPayload),
     FinishDishes,
     ViewReport,
 }
@@ -29,4 +29,18 @@ pub struct AddProductPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub expires_at: Option<OffsetDateTime>,
+}
+
+/// Payload for creating dish
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateDishPayload {
+    /// Recipe ID
+    pub recipe_id: Uuid,
+    /// Dish name
+    pub name: String,
+    /// Selling price in cents
+    pub selling_price_cents: i32,
+    /// Optional description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
