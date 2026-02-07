@@ -35,6 +35,7 @@ impl AssistantStep {
                 }],
                 step: self,
                 progress: self.progress(),
+                dish_financials: None,
             },
             Self::InventorySetup => AssistantResponse {
                 message: translate_message(AssistantMessage::InventorySetup, language).to_string(),
@@ -52,6 +53,7 @@ impl AssistantStep {
                 ],
                 step: self,
                 progress: self.progress(),
+                dish_financials: None,
             },
             Self::RecipeSetup => AssistantResponse {
                 message: translate_message(AssistantMessage::RecipeSetup, language).to_string(),
@@ -69,6 +71,7 @@ impl AssistantStep {
                 ],
                 step: self,
                 progress: self.progress(),
+                dish_financials: None,
             },
             Self::DishSetup => AssistantResponse {
                 message: translate_message(AssistantMessage::DishSetup, language).to_string(),
@@ -86,6 +89,7 @@ impl AssistantStep {
                 ],
                 step: self,
                 progress: self.progress(),
+                dish_financials: None,
             },
             Self::Report => AssistantResponse {
                 message: translate_message(AssistantMessage::Report, language).to_string(),
@@ -103,6 +107,7 @@ impl AssistantStep {
                 ],
                 step: self,
                 progress: self.progress(),
+                dish_financials: None,
             },
             Self::Completed => AssistantResponse {
                 message: translate_message(AssistantMessage::Completed, language).to_string(),
@@ -114,6 +119,7 @@ impl AssistantStep {
                 }],
                 step: self,
                 progress: self.progress(),
+                dish_financials: None,
             },
         }
     }

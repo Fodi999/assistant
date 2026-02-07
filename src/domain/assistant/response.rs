@@ -1,5 +1,6 @@
 use serde::Serialize;
 use super::step::AssistantStep;
+use crate::domain::DishFinancials;
 
 #[derive(Debug, Serialize)]
 pub struct AssistantAction {
@@ -19,6 +20,7 @@ pub enum WarningLevel {
     Critical,  // ❌ Expired products
     Warning,   // ⚠️ Expiring today/soon
     Info,      // ℹ️ General info
+    Financial, // 💰 Financial warnings (low margin, high food cost)
 }
 
 #[derive(Debug, Serialize)]
@@ -30,4 +32,7 @@ pub struct AssistantResponse {
     pub actions: Vec<AssistantAction>,
     pub step: AssistantStep,
     pub progress: u8,
+    /// Financial information for created dish (DishSetup step)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dish_financials: Option<DishFinancials>,
 }
