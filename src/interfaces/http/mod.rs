@@ -3,6 +3,7 @@ pub mod auth;
 pub mod catalog;
 pub mod dish;
 pub mod error;
+pub mod health;
 pub mod menu_engineering;
 pub mod middleware;
 pub mod recipe;

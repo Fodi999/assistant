@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                ds.dish_id,\n                r.name as dish_name,\n                COUNT(*) as sales_count,\n                SUM(ds.quantity) as total_quantity,\n                SUM(ds.selling_price_cents * ds.quantity) as total_revenue_cents,\n                SUM(ds.profit_cents * ds.quantity) as total_profit_cents,\n                AVG(\n                    CAST(ds.profit_cents AS FLOAT) / NULLIF(ds.selling_price_cents, 0) * 100.0\n                ) as avg_profit_margin_percent\n            FROM dish_sales ds\n            JOIN recipes r ON r.id = ds.dish_id AND r.tenant_id = ds.tenant_id\n            WHERE\n                ds.tenant_id = $1\n                AND ds.sold_at >= NOW() - ($2 || ' days')::INTERVAL\n                AND r.recipe_type = 'final'\n            GROUP BY ds.dish_id, r.name\n            ",
+  "query": "\n            SELECT\n                ds.dish_id,\n                d.name as dish_name,\n                COUNT(*) as sales_count,\n                SUM(ds.quantity) as total_quantity,\n                SUM(ds.selling_price_cents * ds.quantity) as total_revenue_cents,\n                SUM(ds.profit_cents * ds.quantity) as total_profit_cents,\n                AVG(\n                    CAST(ds.profit_cents AS FLOAT) / NULLIF(ds.selling_price_cents, 0) * 100.0\n                ) as avg_profit_margin_percent\n            FROM dish_sales ds\n            JOIN dishes d ON d.id = ds.dish_id AND d.tenant_id = ds.tenant_id\n            WHERE\n                ds.tenant_id = $1\n                AND ds.sold_at >= NOW() - ($2 || ' days')::INTERVAL\n            GROUP BY ds.dish_id, d.name\n            ",
   "describe": {
     "columns": [
       {
@@ -55,5 +55,5 @@
       null
     ]
   },
-  "hash": "629309fb15bbb04d530f121bbea8ecd40a8e4117dbf4442902d519a3743258f9"
+  "hash": "a1d3bc0e3b18ddf9235de67a16429a29553b37a2813d1dbe06e566f934aa6b86"
 }
