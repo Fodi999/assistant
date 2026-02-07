@@ -3,14 +3,25 @@
 -- ========================================
 -- Recipe type: 'preparation' (полуфабрикат) or 'final' (готовое блюдо)
 ALTER TABLE recipes
-ADD COLUMN recipe_type TEXT NOT NULL DEFAULT 'final'
-CHECK (recipe_type IN ('preparation', 'final'));
+ADD COLUMN IF NOT EXISTS recipe_type TEXT NOT NULL DEFAULT 'final';
+
+-- Add constraint only if column was just created
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'recipes_recipe_type_check'
+    ) THEN
+        ALTER TABLE recipes
+        ADD CONSTRAINT recipes_recipe_type_check CHECK (recipe_type IN ('preparation', 'final'));
+    END IF;
+END $$;
 
 -- Preparation instructions (technology description)
 ALTER TABLE recipes
-ADD COLUMN instructions TEXT;
+ADD COLUMN IF NOT EXISTS instructions TEXT;
 
-CREATE INDEX idx_recipes_type ON recipes(recipe_type);
+CREATE INDEX IF NOT EXISTS idx_recipes_type ON recipes(recipe_type);
 
 COMMENT ON COLUMN recipes.recipe_type IS 'Type: preparation (полуфабрикат) or final (готовое блюдо)';
 COMMENT ON COLUMN recipes.instructions IS 'Preparation instructions / technology description (steps, notes, HACCP)';
