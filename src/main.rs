@@ -4,7 +4,7 @@ mod infrastructure;
 mod interfaces;
 mod shared;
 
-use application::{AssistantService, AuthService, CatalogService, InventoryService, RecipeService, UserService};
+use application::{AssistantService, AuthService, CatalogService, DishService, InventoryService, RecipeService, UserService};
 use infrastructure::{Config, JwtService, PasswordHasher, Repositories};
 use interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
@@ -67,12 +67,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let inventory_service = InventoryService::new(repositories.pool.clone());
 
-    let assistant_service = AssistantService::new(
-        repositories.assistant_state.clone(),
-        repositories.user.clone(),
-        inventory_service,
-    );
-
     let catalog_service = CatalogService::new(repositories.pool.clone());
 
     // Create RecipeService with all dependencies
@@ -80,6 +74,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(repositories.recipe.clone()),
         Arc::new(repositories.inventory_product.clone()),
         Arc::new(repositories.catalog_ingredient.clone()),
+    );
+
+    // Create DishService
+    let dish_service = DishService::new(
+        Arc::new(repositories.dish.clone()),
+        recipe_service.clone(),
+    );
+
+    // Create AssistantService with all services
+    let assistant_service = AssistantService::new(
+        repositories.assistant_state.clone(),
+        repositories.user.clone(),
+        inventory_service,
+        recipe_service.clone(),
+        dish_service,
     );
 
     // Clone CORS origins before moving config

@@ -1,11 +1,11 @@
-use crate::application::inventory::InventoryService;
+use crate::application::{InventoryService, RecipeService, DishService};
 use crate::domain::assistant::{
-    command::{AssistantCommand, AddProductPayload},
+    command::{AssistantCommand, AddProductPayload, CreateDishPayload},
     response::AssistantResponse,
     rules::next_step,
     step::AssistantStep,
 };
-use crate::domain::catalog::CatalogIngredientId;
+use crate::domain::{CatalogIngredientId, RecipeId, DishName, Money};
 use crate::infrastructure::persistence::{
     AssistantStateRepository, AssistantStateRepositoryTrait, UserRepository,
     UserRepositoryTrait,
@@ -17,6 +17,8 @@ pub struct AssistantService {
     state_repo: AssistantStateRepository,
     user_repo: UserRepository,
     inventory_service: InventoryService,
+    recipe_service: RecipeService,
+    dish_service: DishService,
 }
 
 impl AssistantService {
@@ -24,11 +26,15 @@ impl AssistantService {
         state_repo: AssistantStateRepository,
         user_repo: UserRepository,
         inventory_service: InventoryService,
+        recipe_service: RecipeService,
+        dish_service: DishService,
     ) -> Self {
         Self {
             state_repo,
             user_repo,
             inventory_service,
+            recipe_service,
+            dish_service,
         }
     }
 
@@ -76,6 +82,40 @@ impl AssistantService {
                     payload.expires_at,
                 )
                 .await?;
+        }
+
+        // Обрабатываем команду CreateDish - создаем блюдо с финансовым анализом
+        if let AssistantCommand::CreateDish(payload) = &command {
+            let recipe_id = RecipeId::from_uuid(payload.recipe_id);
+            let dish_name = DishName::new(payload.name.clone())?;
+            let selling_price = Money::from_cents(payload.selling_price_cents as i64)?;
+            
+            // Создаем блюдо
+            let dish = self.dish_service
+                .create_dish(
+                    tenant_id,
+                    recipe_id,
+                    dish_name,
+                    payload.description.clone(),
+                    selling_price,
+                )
+                .await?;
+
+            // Сразу рассчитываем финансы для "вау"-эффекта
+            let financials = self.dish_service
+                .calculate_financials(dish.id(), user_id, tenant_id)
+                .await?;
+
+            // TODO: Add financials to response (need to extend AssistantResponse)
+            // For now, just log it
+            tracing::info!(
+                "Dish created: {} | Selling: {} PLN | Cost: {} PLN | Profit: {} PLN | Margin: {:.1}%",
+                financials.dish_name,
+                financials.selling_price_cents as f64 / 100.0,
+                financials.recipe_cost_cents as f64 / 100.0,
+                financials.profit_cents as f64 / 100.0,
+                financials.profit_margin_percent
+            );
         }
 
         // Проверяем FinishInventory - должны быть продукты
