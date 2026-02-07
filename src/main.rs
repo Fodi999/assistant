@@ -39,11 +39,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Server will bind to: {}", config.server_address());
 
     // Create database connection pool
+    tracing::info!("Connecting to database...");
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(Duration::from_secs(3))
         .connect(&config.database.url)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!("Database connection failed: {}", e);
+            e
+        })?;
     tracing::info!("Database connection pool established");
 
     // Run migrations
