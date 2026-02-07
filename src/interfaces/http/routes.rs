@@ -1,8 +1,9 @@
-use crate::application::{AssistantService, AuthService, UserService};
+use crate::application::{AssistantService, AuthService, CatalogService, UserService};
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
+    catalog::{get_categories, search_ingredients, CatalogState},
     middleware::AuthUser,
     user::me_handler,
 };
@@ -20,6 +21,7 @@ pub fn create_router(
     auth_service: AuthService,
     user_service: UserService,
     assistant_service: AssistantService,
+    catalog_service: CatalogService,
     jwt_service: JwtService,
     allowed_origins: Vec<String>,
 ) -> Router {
@@ -50,12 +52,21 @@ pub fn create_router(
 
     let protected_routes = Router::new()
         .route("/me", get(me_handler))
-        .with_state(user_service)
+        .with_state(user_service.clone())
         .merge(
             Router::new()
                 .route("/assistant/state", get(get_state))
                 .route("/assistant/command", post(send_command))
                 .with_state(assistant_service)
+        )
+        .merge(
+            Router::new()
+                .route("/catalog/categories", get(get_categories))
+                .route("/catalog/ingredients", get(search_ingredients))
+                .with_state(CatalogState {
+                    catalog_service,
+                    user_service,
+                })
         )
         .layer(jwt_middleware);
 

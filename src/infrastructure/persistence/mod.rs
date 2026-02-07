@@ -1,6 +1,8 @@
 pub mod assistant_state_repository;
 pub mod catalog_category_repository;
 pub mod catalog_ingredient_repository;
+pub mod inventory_product_repository;
+pub mod recipe_repository;
 pub mod refresh_token_repository;
 pub mod tenant_repository;
 pub mod user_repository;
@@ -8,6 +10,8 @@ pub mod user_repository;
 pub use assistant_state_repository::*;
 pub use catalog_category_repository::*;
 pub use catalog_ingredient_repository::*;
+pub use inventory_product_repository::*;
+pub use recipe_repository::*;
 pub use refresh_token_repository::*;
 pub use tenant_repository::*;
 pub use user_repository::*;
@@ -16,19 +20,25 @@ use sqlx::PgPool;
 
 #[derive(Clone)]
 pub struct Repositories {
+    pub pool: PgPool,
     pub tenant: TenantRepository,
     pub user: UserRepository,
     pub refresh_token: RefreshTokenRepository,
     pub assistant_state: AssistantStateRepository,
+    pub inventory_product: InventoryProductRepository,
+    pub recipe: RecipeRepository,
 }
 
 impl Repositories {
     pub fn new(pool: PgPool) -> Self {
         Self {
+            pool: pool.clone(),
             tenant: TenantRepository::new(pool.clone()),
             user: UserRepository::new(pool.clone()),
             refresh_token: RefreshTokenRepository::new(pool.clone()),
-            assistant_state: AssistantStateRepository::new(pool),
+            assistant_state: AssistantStateRepository::new(pool.clone()),
+            inventory_product: InventoryProductRepository::new(pool.clone()),
+            recipe: RecipeRepository::new(pool),
         }
     }
 }

@@ -28,6 +28,7 @@ impl AssistantStep {
             Self::Start => AssistantResponse {
                 message: translate_message(AssistantMessage::Welcome, language).to_string(),
                 hint: None,
+                warnings: vec![],
                 actions: vec![AssistantAction {
                     id: "start_inventory".to_string(),
                     label: translate_action(AssistantActionLabel::AddProducts, language).to_string(),
@@ -38,6 +39,7 @@ impl AssistantStep {
             Self::InventorySetup => AssistantResponse {
                 message: translate_message(AssistantMessage::InventorySetup, language).to_string(),
                 hint: Some(translate_hint(AssistantHint::InventoryWhy, language).to_string()),
+                warnings: vec![],
                 actions: vec![
                     AssistantAction {
                         id: "add_products".to_string(),
@@ -54,6 +56,7 @@ impl AssistantStep {
             Self::RecipeSetup => AssistantResponse {
                 message: translate_message(AssistantMessage::RecipeSetup, language).to_string(),
                 hint: Some(translate_hint(AssistantHint::RecipeWhy, language).to_string()),
+                warnings: vec![],
                 actions: vec![
                     AssistantAction {
                         id: "add_recipe".to_string(),
@@ -70,6 +73,7 @@ impl AssistantStep {
             Self::DishSetup => AssistantResponse {
                 message: translate_message(AssistantMessage::DishSetup, language).to_string(),
                 hint: Some(translate_hint(AssistantHint::DishWhy, language).to_string()),
+                warnings: vec![],
                 actions: vec![
                     AssistantAction {
                         id: "add_dish".to_string(),
@@ -86,6 +90,7 @@ impl AssistantStep {
             Self::Report => AssistantResponse {
                 message: translate_message(AssistantMessage::Report, language).to_string(),
                 hint: Some(translate_hint(AssistantHint::ReportWhy, language).to_string()),
+                warnings: vec![],
                 actions: vec![
                     AssistantAction {
                         id: "view_report".to_string(),
@@ -102,6 +107,7 @@ impl AssistantStep {
             Self::Completed => AssistantResponse {
                 message: translate_message(AssistantMessage::Completed, language).to_string(),
                 hint: None,
+                warnings: vec![],
                 actions: vec![AssistantAction {
                     id: "restart".to_string(),
                     label: translate_action(AssistantActionLabel::Restart, language).to_string(),

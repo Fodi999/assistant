@@ -4,7 +4,7 @@ mod infrastructure;
 mod interfaces;
 mod shared;
 
-use application::{AssistantService, AuthService, UserService};
+use application::{AssistantService, AuthService, CatalogService, InventoryService, UserService};
 use infrastructure::{Config, JwtService, PasswordHasher, Repositories};
 use interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
@@ -64,10 +64,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         repositories.tenant.clone(),
     );
 
+    let inventory_service = InventoryService::new(repositories.pool.clone());
+
     let assistant_service = AssistantService::new(
         repositories.assistant_state.clone(),
         repositories.user.clone(),
+        inventory_service,
     );
+
+    let catalog_service = CatalogService::new(repositories.pool.clone());
 
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
@@ -77,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         auth_service,
         user_service,
         assistant_service,
+        catalog_service,
         jwt_service,
         cors_origins,
     );
