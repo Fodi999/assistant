@@ -1,5 +1,5 @@
 use crate::infrastructure::JwtService;
-use crate::shared::{AppError, TenantId, UserId};
+use crate::shared::{AppError, Language, TenantId, UserId};
 use axum::{
     async_trait,
     extract::FromRequestParts,
@@ -10,11 +10,13 @@ use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
+use sqlx::PgPool;
 
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub user_id: UserId,
     pub tenant_id: TenantId,
+    pub language: Language,  // 🎯 ДОБАВЛЕНО: источник языка = backend!
 }
 
 #[async_trait]
@@ -40,10 +42,29 @@ where
 
         // Verify token
         let claims = jwt_service.verify_access_token(bearer.token())?;
+        let user_id = claims.user_id()?;
+        let tenant_id = claims.tenant_id()?;
+
+        // Get user's language from database (source of truth!)
+        let pool = parts
+            .extensions
+            .get::<PgPool>()
+            .ok_or_else(|| AppError::internal("Database pool not configured"))?
+            .clone();
+
+        let language = sqlx::query_scalar::<_, String>(
+            "SELECT language FROM users WHERE id = $1"
+        )
+        .bind(user_id.as_uuid())
+        .fetch_optional(&pool)
+        .await?
+        .and_then(|lang| Language::from_str(&lang).ok())
+        .unwrap_or(Language::En);  // Fallback to English
 
         Ok(AuthUser {
-            user_id: claims.user_id()?,
-            tenant_id: claims.tenant_id()?,
+            user_id,
+            tenant_id,
+            language,  // 🎯 Backend = source of truth!
         })
     }
 }

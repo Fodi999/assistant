@@ -19,6 +19,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 
 pub fn create_router(
@@ -31,6 +32,7 @@ pub fn create_router(
     menu_engineering_service: MenuEngineeringService,
     inventory_service: InventoryService,
     jwt_service: JwtService,
+    pool: PgPool,  // 🎯 ДОБАВЛЕНО: для получения language из БД
     allowed_origins: Vec<String>,
 ) -> Router {
     // Configure CORS
@@ -61,7 +63,8 @@ pub fn create_router(
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
         let jwt_service = jwt_service.clone();
-        async move { inject_jwt_service(req, next, jwt_service).await }
+        let pool = pool.clone();
+        async move { inject_jwt_and_pool(req, next, jwt_service, pool).await }
     });
 
     let protected_routes = Router::new()
@@ -120,12 +123,14 @@ pub fn create_router(
         .layer(cors)
 }
 
-async fn inject_jwt_service(
+async fn inject_jwt_and_pool(
     mut req: Request,
     next: Next,
     jwt_service: JwtService,
+    pool: PgPool,
 ) -> Response {
     req.extensions_mut().insert(jwt_service);
+    req.extensions_mut().insert(pool);  // 🎯 ДОБАВЛЕНО: pool для AuthUser
     
     // Попытка извлечь AuthUser через экстрактор
     // Если успешно - добавляем в extensions

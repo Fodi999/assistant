@@ -126,6 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         menu_engineering_service,
         inventory_service,
         jwt_service,
+        repositories.pool.clone(),  // 🎯 ДОБАВЛЕНО: pool для AuthUser middleware
         cors_origins,
     );
 

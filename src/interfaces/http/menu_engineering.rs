@@ -31,7 +31,7 @@ fn default_period() -> u32 {
 /// Returns Menu Engineering Matrix with all dishes classified
 pub async fn analyze_menu(
     State(service): State<MenuEngineeringService>,
-    AuthUser { user_id, tenant_id }: AuthUser,
+    AuthUser { user_id, tenant_id, language: _ }: AuthUser,  // 🎯 Игнорируем language (используем из query)
     Query(params): Query<AnalysisQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let matrix = service
@@ -54,7 +54,7 @@ pub struct RecordSaleRequest {
 
 pub async fn record_sale(
     State(service): State<MenuEngineeringService>,
-    AuthUser { user_id, tenant_id, .. }: AuthUser,
+    AuthUser { user_id, tenant_id, language: _ }: AuthUser,  // 🎯 Игнорируем language
     Json(payload): Json<RecordSaleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     service

@@ -13,7 +13,7 @@ use crate::domain::{
     inventory::{InventoryProduct, InventoryProductId},
 };
 use crate::interfaces::http::middleware::AuthUser;
-use crate::shared::{AppError, Language};
+use crate::shared::AppError;
 
 // ============================================================================
 // Request/Response Types
@@ -70,16 +70,16 @@ impl From<InventoryProduct> for ProductResponse {
 /// GET /api/inventory/products
 /// List all inventory products with full details (ingredient name, category, unit)
 /// Uses Query DTO pattern - single request returns everything needed for UI
+/// 🎯 ЭТАЛОН B2B SaaS: Language source = user.language from database!
 pub async fn list_products(
     State(service): State<InventoryService>,
     auth: AuthUser,
 ) -> Result<Json<Vec<InventoryView>>, AppError> {
-    // TODO: Get language from user preferences or Accept-Language header
-    // For now, default to English
-    let language = Language::En;
-    
+    // 🎯 Backend = source of truth для языка!
+    // auth.language загружается из БД в middleware
+    // Frontend НЕ передает язык руками - правильный подход для SaaS!
     let products = service
-        .list_products_with_details(auth.user_id, auth.tenant_id, language)
+        .list_products_with_details(auth.user_id, auth.tenant_id, auth.language)
         .await?;
     
     Ok(Json(products))

@@ -24,7 +24,7 @@ pub struct CreateDishRequest {
 
 pub async fn create_dish(
     State(service): State<DishService>,
-    AuthUser { tenant_id, .. }: AuthUser,
+    AuthUser { tenant_id, language: _, user_id: _ }: AuthUser,  // 🎯 Явно игнорируем language и user_id
     Json(payload): Json<CreateDishRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let dish_name = DishName::new(payload.name)?;
