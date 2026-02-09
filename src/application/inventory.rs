@@ -159,36 +159,22 @@ impl InventoryService {
 
     /// Get inventory view with joined catalog ingredient and category data (Query DTO pattern)
     /// Returns rich view with product details for frontend - no additional queries needed
+    /// Uses proper i18n with translations table (BEST PRACTICE)
     pub async fn list_products_with_details(
         &self,
         user_id: UserId,
         tenant_id: TenantId,
         language: Language,
     ) -> AppResult<Vec<InventoryView>> {
-        let lang_column = match language {
-            Language::Pl => "ci.name_pl",
-            Language::En => "ci.name_en",
-            Language::Uk => "ci.name_uk",
-            Language::Ru => "ci.name_ru",
-        };
+        let lang_code = language.code();
 
-        let query = format!(
-            r#"
+        // ЭТАЛОННЫЙ SQL с translations table
+        let query = r#"
             SELECT 
                 ip.id,
                 ip.catalog_ingredient_id,
-                {} as ingredient_name,
-                CASE 
-                    WHEN ci.category_id IS NOT NULL THEN 
-                        CASE $3::TEXT
-                            WHEN 'pl' THEN cc.name_pl
-                            WHEN 'en' THEN cc.name_en
-                            WHEN 'uk' THEN cc.name_uk
-                            WHEN 'ru' THEN cc.name_ru
-                            ELSE cc.name_en
-                        END
-                    ELSE 'Unknown'
-                END as category_name,
+                cit.name as ingredient_name,
+                cct.name as category_name,
                 ci.default_unit::TEXT as base_unit,
                 ip.quantity,
                 ip.price_per_unit_cents,
@@ -196,25 +182,22 @@ impl InventoryService {
                 ip.created_at,
                 ip.updated_at
             FROM inventory_products ip
-            INNER JOIN catalog_ingredients ci ON ip.catalog_ingredient_id = ci.id
-            LEFT JOIN catalog_categories cc ON ci.category_id = cc.id
+            INNER JOIN catalog_ingredients ci 
+                ON ip.catalog_ingredient_id = ci.id
+            INNER JOIN catalog_ingredient_translations cit 
+                ON cit.ingredient_id = ci.id AND cit.language = $3
+            LEFT JOIN catalog_categories cc 
+                ON ci.category_id = cc.id
+            LEFT JOIN catalog_category_translations cct 
+                ON cct.category_id = cc.id AND cct.language = $3
             WHERE ip.user_id = $1 AND ip.tenant_id = $2
             ORDER BY ip.created_at DESC
-            "#,
-            lang_column
-        );
+        "#;
 
-        let lang_str = match language {
-            Language::Pl => "pl",
-            Language::En => "en",
-            Language::Uk => "uk",
-            Language::Ru => "ru",
-        };
-
-        let rows = sqlx::query(&query)
+        let rows = sqlx::query(query)
             .bind(user_id.as_uuid())
             .bind(tenant_id.as_uuid())
-            .bind(lang_str)
+            .bind(lang_code)
             .fetch_all(&self.pool)
             .await?;
 
@@ -225,7 +208,7 @@ impl InventoryService {
                 product: ProductInfo {
                     id: row.get("catalog_ingredient_id"),
                     name: row.get("ingredient_name"),
-                    category: row.get("category_name"),
+                    category: row.get::<Option<String>, _>("category_name").unwrap_or_else(|| "Unknown".to_string()),
                     base_unit: row.get("base_unit"),
                 },
                 quantity: row.get("quantity"),
