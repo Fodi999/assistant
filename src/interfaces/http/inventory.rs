@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::application::InventoryService;
+use crate::application::inventory::{InventoryService, InventoryView};
 use crate::domain::{
     catalog::CatalogIngredientId,
     inventory::{InventoryProduct, InventoryProductId},
 };
 use crate::interfaces::http::middleware::AuthUser;
-use crate::shared::AppError;
+use crate::shared::{AppError, Language};
 
 // ============================================================================
 // Request/Response Types
@@ -34,6 +34,7 @@ pub struct UpdateProductRequest {
     pub quantity: Option<f64>,
 }
 
+/// Legacy response (for backward compatibility if needed)
 #[derive(Debug, Serialize)]
 pub struct ProductResponse {
     pub id: Uuid,
@@ -67,14 +68,21 @@ impl From<InventoryProduct> for ProductResponse {
 // ============================================================================
 
 /// GET /api/inventory/products
-/// List all inventory products for the authenticated user's tenant
+/// List all inventory products with full details (ingredient name, category, unit)
+/// Uses Query DTO pattern - single request returns everything needed for UI
 pub async fn list_products(
     State(service): State<InventoryService>,
     auth: AuthUser,
-) -> Result<Json<Vec<ProductResponse>>, AppError> {
-    let products = service.list_products(auth.user_id, auth.tenant_id).await?;
-    let response = products.into_iter().map(ProductResponse::from).collect();
-    Ok(Json(response))
+) -> Result<Json<Vec<InventoryView>>, AppError> {
+    // TODO: Get language from user preferences or Accept-Language header
+    // For now, default to English
+    let language = Language::En;
+    
+    let products = service
+        .list_products_with_details(auth.user_id, auth.tenant_id, language)
+        .await?;
+    
+    Ok(Json(products))
 }
 
 /// POST /api/inventory/products

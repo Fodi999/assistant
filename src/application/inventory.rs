@@ -3,9 +3,9 @@ use crate::domain::{
     inventory::{ExpirationStatus, InventoryProduct, InventoryProductId, Money, Quantity},
 };
 use crate::infrastructure::persistence::{InventoryProductRepository, InventoryProductRepositoryTrait};
-use crate::shared::{AppResult, TenantId, UserId};
+use crate::shared::{AppResult, Language, TenantId, UserId};
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use time::OffsetDateTime;
 
@@ -32,12 +32,14 @@ impl InventoryStatus {
 #[derive(Clone)]
 pub struct InventoryService {
     inventory_repo: Arc<InventoryProductRepository>,
+    pool: PgPool,
 }
 
 impl InventoryService {
     pub fn new(pool: PgPool) -> Self {
         Self {
-            inventory_repo: Arc::new(InventoryProductRepository::new(pool)),
+            inventory_repo: Arc::new(InventoryProductRepository::new(pool.clone())),
+            pool,
         }
     }
 
@@ -154,4 +156,109 @@ impl InventoryService {
             fresh,
         })
     }
+
+    /// Get inventory view with joined catalog ingredient and category data (Query DTO pattern)
+    /// Returns rich view with product details for frontend - no additional queries needed
+    pub async fn list_products_with_details(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+        language: Language,
+    ) -> AppResult<Vec<InventoryView>> {
+        let lang_column = match language {
+            Language::Pl => "ci.name_pl",
+            Language::En => "ci.name_en",
+            Language::Uk => "ci.name_uk",
+            Language::Ru => "ci.name_ru",
+        };
+
+        let query = format!(
+            r#"
+            SELECT 
+                ip.id,
+                ip.catalog_ingredient_id,
+                {} as ingredient_name,
+                CASE 
+                    WHEN ci.category_id IS NOT NULL THEN 
+                        CASE $3::TEXT
+                            WHEN 'pl' THEN cc.name_pl
+                            WHEN 'en' THEN cc.name_en
+                            WHEN 'uk' THEN cc.name_uk
+                            WHEN 'ru' THEN cc.name_ru
+                            ELSE cc.name_en
+                        END
+                    ELSE 'Unknown'
+                END as category_name,
+                ci.default_unit::TEXT as base_unit,
+                ip.quantity,
+                ip.price_per_unit_cents,
+                ip.expires_at,
+                ip.created_at,
+                ip.updated_at
+            FROM inventory_products ip
+            INNER JOIN catalog_ingredients ci ON ip.catalog_ingredient_id = ci.id
+            LEFT JOIN catalog_categories cc ON ci.category_id = cc.id
+            WHERE ip.user_id = $1 AND ip.tenant_id = $2
+            ORDER BY ip.created_at DESC
+            "#,
+            lang_column
+        );
+
+        let lang_str = match language {
+            Language::Pl => "pl",
+            Language::En => "en",
+            Language::Uk => "uk",
+            Language::Ru => "ru",
+        };
+
+        let rows = sqlx::query(&query)
+            .bind(user_id.as_uuid())
+            .bind(tenant_id.as_uuid())
+            .bind(lang_str)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut views = Vec::new();
+        for row in rows {
+            views.push(InventoryView {
+                id: row.get("id"),
+                product: ProductInfo {
+                    id: row.get("catalog_ingredient_id"),
+                    name: row.get("ingredient_name"),
+                    category: row.get("category_name"),
+                    base_unit: row.get("base_unit"),
+                },
+                quantity: row.get("quantity"),
+                price_per_unit_cents: row.get("price_per_unit_cents"),
+                expires_at: row.get("expires_at"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            });
+        }
+
+        Ok(views)
+    }
+}
+
+/// Rich inventory view DTO (returned from query with JOINs)
+#[derive(Debug, Clone, Serialize)]
+pub struct InventoryView {
+    pub id: uuid::Uuid,
+    pub product: ProductInfo,
+    pub quantity: f64,
+    pub price_per_unit_cents: i64,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub expires_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProductInfo {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub category: String,
+    pub base_unit: String,
 }
