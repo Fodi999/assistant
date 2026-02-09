@@ -77,33 +77,37 @@ impl CatalogIngredientRepository {
 #[async_trait]
 impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
     async fn search(&self, query: &str, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
-        // Search in the user's language column only
-        let name_column = match language {
-            Language::Pl => "name_pl",
-            Language::En => "name_en",
-            Language::Uk => "name_uk",
-            Language::Ru => "name_ru",
-        };
+        // 🎯 ЭТАЛОН B2B SaaS: Use translations table with COALESCE fallback
+        let lang_code = language.code();
+        
+        let sql = r#"
+            SELECT 
+                ci.id, 
+                ci.category_id, 
+                ci.name_pl, 
+                ci.name_en, 
+                ci.name_uk, 
+                ci.name_ru,
+                ci.default_unit::text as default_unit, 
+                ci.default_shelf_life_days,
+                ARRAY(SELECT unnest(ci.allergens)::text) as allergens, 
+                ci.calories_per_100g, 
+                ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
+                ci.image_url,
+                COALESCE(cit_user.name, cit_en.name) as search_name
+            FROM catalog_ingredients ci
+            LEFT JOIN catalog_ingredient_translations cit_user 
+                ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
+            LEFT JOIN catalog_ingredient_translations cit_en 
+                ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
+            WHERE COALESCE(cit_user.name, cit_en.name) ILIKE '%' || $1 || '%'
+            ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
+            LIMIT $3
+        "#;
 
-        let sql = format!(
-            r#"
-            SELECT id, category_id, name_pl, name_en, name_uk, name_ru, 
-                   default_unit::text as default_unit, default_shelf_life_days,
-                   ARRAY(SELECT unnest(allergens)::text) as allergens, 
-                   calories_per_100g, 
-                   ARRAY(SELECT unnest(seasons)::text) as seasons, 
-                   image_url
-            FROM catalog_ingredients
-            WHERE {} ILIKE $1
-            ORDER BY {} ASC
-            LIMIT $2
-            "#,
-            name_column, name_column
-        );
-
-        let search_pattern = format!("{}%", query);
-        let rows = sqlx::query(&sql)
-            .bind(&search_pattern)
+        let rows = sqlx::query(sql)
+            .bind(query)
+            .bind(lang_code)
             .bind(limit)
             .fetch_all(&self.pool)
             .await?;
@@ -114,59 +118,74 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
     }
 
     async fn search_by_category(&self, category_id: CatalogCategoryId, query: Option<&str>, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
-        // Search in the user's language column only
-        let name_column = match language {
-            Language::Pl => "name_pl",
-            Language::En => "name_en",
-            Language::Uk => "name_uk",
-            Language::Ru => "name_ru",
-        };
+        // 🎯 ЭТАЛОН B2B SaaS: Use translations table with COALESCE fallback
+        let lang_code = language.code();
 
-        let sql = if let Some(_q) = query {
-            format!(
-                r#"
-                SELECT id, category_id, name_pl, name_en, name_uk, name_ru, 
-                       default_unit::text as default_unit, default_shelf_life_days,
-                       ARRAY(SELECT unnest(allergens)::text) as allergens, 
-                       calories_per_100g, 
-                       ARRAY(SELECT unnest(seasons)::text) as seasons, 
-                       image_url
-                FROM catalog_ingredients
-                WHERE category_id = $1 AND {} ILIKE $2
-                ORDER BY {} ASC
-                LIMIT $3
-                "#,
-                name_column, name_column
-            )
+        let sql = if query.is_some() {
+            r#"
+                SELECT 
+                    ci.id, 
+                    ci.category_id, 
+                    ci.name_pl, 
+                    ci.name_en, 
+                    ci.name_uk, 
+                    ci.name_ru,
+                    ci.default_unit::text as default_unit, 
+                    ci.default_shelf_life_days,
+                    ARRAY(SELECT unnest(ci.allergens)::text) as allergens, 
+                    ci.calories_per_100g, 
+                    ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
+                    ci.image_url,
+                    COALESCE(cit_user.name, cit_en.name) as search_name
+                FROM catalog_ingredients ci
+                LEFT JOIN catalog_ingredient_translations cit_user 
+                    ON cit_user.ingredient_id = ci.id AND cit_user.language = $3
+                LEFT JOIN catalog_ingredient_translations cit_en 
+                    ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
+                WHERE ci.category_id = $1 
+                  AND COALESCE(cit_user.name, cit_en.name) ILIKE '%' || $2 || '%'
+                ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
+                LIMIT $4
+            "#
         } else {
-            format!(
-                r#"
-                SELECT id, category_id, name_pl, name_en, name_uk, name_ru, 
-                       default_unit::text as default_unit, default_shelf_life_days,
-                       ARRAY(SELECT unnest(allergens)::text) as allergens, 
-                       calories_per_100g, 
-                       ARRAY(SELECT unnest(seasons)::text) as seasons, 
-                       image_url
-                FROM catalog_ingredients
-                WHERE category_id = $1
-                ORDER BY {} ASC
-                LIMIT $2
-                "#,
-                name_column
-            )
+            r#"
+                SELECT 
+                    ci.id, 
+                    ci.category_id, 
+                    ci.name_pl, 
+                    ci.name_en, 
+                    ci.name_uk, 
+                    ci.name_ru,
+                    ci.default_unit::text as default_unit, 
+                    ci.default_shelf_life_days,
+                    ARRAY(SELECT unnest(ci.allergens)::text) as allergens, 
+                    ci.calories_per_100g, 
+                    ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
+                    ci.image_url,
+                    COALESCE(cit_user.name, cit_en.name) as search_name
+                FROM catalog_ingredients ci
+                LEFT JOIN catalog_ingredient_translations cit_user 
+                    ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
+                LEFT JOIN catalog_ingredient_translations cit_en 
+                    ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
+                WHERE ci.category_id = $1
+                ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
+                LIMIT $3
+            "#
         };
 
         let rows = if let Some(q) = query {
-            let search_pattern = format!("{}%", q);
-            sqlx::query(&sql)
+            sqlx::query(sql)
                 .bind(category_id.as_uuid())
-                .bind(&search_pattern)
+                .bind(q)
+                .bind(lang_code)
                 .bind(limit)
                 .fetch_all(&self.pool)
                 .await?
         } else {
-            sqlx::query(&sql)
+            sqlx::query(sql)
                 .bind(category_id.as_uuid())
+                .bind(lang_code)
                 .bind(limit)
                 .fetch_all(&self.pool)
                 .await?
@@ -201,33 +220,38 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
     }
 
     async fn list(&self, language: Language, offset: i64, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
-        // Order by the user's language column
-        let name_column = match language {
-            Language::Pl => "name_pl",
-            Language::En => "name_en",
-            Language::Uk => "name_uk",
-            Language::Ru => "name_ru",
-        };
+        // 🎯 ЭТАЛОН B2B SaaS: Use translations table with COALESCE fallback
+        let lang_code = language.code();
 
-        let sql = format!(
-            r#"
-            SELECT id, category_id, name_pl, name_en, name_uk, name_ru, 
-                   default_unit::text as default_unit, default_shelf_life_days,
-                   ARRAY(SELECT unnest(allergens)::text) as allergens, 
-                   calories_per_100g, 
-                   ARRAY(SELECT unnest(seasons)::text) as seasons, 
-                   image_url
-            FROM catalog_ingredients
-            ORDER BY {} ASC
+        let sql = r#"
+            SELECT 
+                ci.id, 
+                ci.category_id, 
+                ci.name_pl, 
+                ci.name_en, 
+                ci.name_uk, 
+                ci.name_ru,
+                ci.default_unit::text as default_unit, 
+                ci.default_shelf_life_days,
+                ARRAY(SELECT unnest(ci.allergens)::text) as allergens, 
+                ci.calories_per_100g, 
+                ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
+                ci.image_url,
+                COALESCE(cit_user.name, cit_en.name) as search_name
+            FROM catalog_ingredients ci
+            LEFT JOIN catalog_ingredient_translations cit_user 
+                ON cit_user.ingredient_id = ci.id AND cit_user.language = $3
+            LEFT JOIN catalog_ingredient_translations cit_en 
+                ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
+            ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
             OFFSET $1
             LIMIT $2
-            "#,
-            name_column
-        );
+        "#;
 
-        let rows = sqlx::query(&sql)
+        let rows = sqlx::query(sql)
             .bind(offset)
             .bind(limit)
+            .bind(lang_code)
             .fetch_all(&self.pool)
             .await?;
 

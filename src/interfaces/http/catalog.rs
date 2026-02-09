@@ -96,12 +96,11 @@ pub async fn get_categories(
 /// Search ingredients with optional category filter and name query
 pub async fn search_ingredients(
     State(state): State<CatalogState>,
-    auth_user: AuthUser,
+    auth: AuthUser,
     Query(params): Query<SearchIngredientsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Get user to determine language
-    let user_with_tenant = state.user_service.get_user_with_tenant(auth_user.user_id).await?;
-    let language = user_with_tenant.user.language;
+    // 🎯 ЭТАЛОН B2B SaaS: Language from AuthUser (backend source of truth)
+    let language = auth.language;
 
     let ingredients = if let Some(category_id_str) = params.category_id {
         // Parse category UUID
