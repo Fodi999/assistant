@@ -2,7 +2,10 @@ use crate::domain::{
     catalog::CatalogIngredientId,
     inventory::{ExpirationStatus, InventoryProduct, InventoryProductId, Money, Quantity},
 };
-use crate::infrastructure::persistence::{InventoryProductRepository, InventoryProductRepositoryTrait};
+use crate::infrastructure::persistence::{
+    CatalogIngredientRepository, CatalogIngredientRepositoryTrait,
+    InventoryProductRepository, InventoryProductRepositoryTrait,
+};
 use crate::shared::{AppResult, Language, TenantId, UserId};
 use serde::Serialize;
 use sqlx::{PgPool, Row};
@@ -32,6 +35,7 @@ impl InventoryStatus {
 #[derive(Clone)]
 pub struct InventoryService {
     inventory_repo: Arc<InventoryProductRepository>,
+    catalog_repo: Arc<CatalogIngredientRepository>,
     pool: PgPool,
 }
 
@@ -39,6 +43,7 @@ impl InventoryService {
     pub fn new(pool: PgPool) -> Self {
         Self {
             inventory_repo: Arc::new(InventoryProductRepository::new(pool.clone())),
+            catalog_repo: Arc::new(CatalogIngredientRepository::new(pool.clone())),
             pool,
         }
     }
@@ -57,6 +62,22 @@ impl InventoryService {
         let price = Money::from_cents(price_per_unit_cents)?;
         let qty = Quantity::new(quantity)?;
 
+        // 🆕 Auto-calculate expires_at from catalog's default_shelf_life_days
+        let calculated_expires_at = match expires_at {
+            Some(manual_date) => Some(manual_date), // User provided → use it
+            None => {
+                // Try to fetch catalog ingredient
+                if let Ok(Some(ingredient)) = self.catalog_repo.find_by_id(catalog_ingredient_id).await {
+                    // If catalog has shelf life → auto-calculate
+                    ingredient.default_shelf_life_days.map(|days| {
+                        received_at + time::Duration::days(days as i64)
+                    })
+                } else {
+                    None // No catalog data → leave null
+                }
+            }
+        };
+
         let product = InventoryProduct::new(
             user_id,
             tenant_id,
@@ -64,7 +85,7 @@ impl InventoryService {
             price,
             qty,
             received_at,
-            expires_at,
+            calculated_expires_at,
         );
 
         let product_id = product.id;
