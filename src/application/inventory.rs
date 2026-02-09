@@ -182,6 +182,7 @@ impl InventoryService {
                 ci.default_unit::TEXT as base_unit,
                 ip.quantity,
                 ip.price_per_unit_cents,
+                ip.received_at,
                 ip.expires_at,
                 ip.created_at,
                 ip.updated_at
@@ -221,6 +222,7 @@ impl InventoryService {
                 },
                 quantity: row.get("quantity"),
                 price_per_unit_cents: row.get("price_per_unit_cents"),
+                received_at: row.get("received_at"),
                 expires_at: row.get("expires_at"),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
@@ -238,6 +240,8 @@ pub struct InventoryView {
     pub product: ProductInfo,
     pub quantity: f64,
     pub price_per_unit_cents: i64,
+    #[serde(with = "time::serde::rfc3339")]
+    pub received_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub expires_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
