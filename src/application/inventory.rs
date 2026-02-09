@@ -201,6 +201,7 @@ impl InventoryService {
                 COALESCE(cit_user.name, cit_en.name, 'Unknown') as ingredient_name,
                 COALESCE(cct_user.name, cct_en.name, 'Unknown') as category_name,
                 ci.default_unit::TEXT as base_unit,
+                ci.image_url,
                 ip.quantity,
                 ip.price_per_unit_cents,
                 ip.received_at,
@@ -240,6 +241,7 @@ impl InventoryService {
                     name: row.get("ingredient_name"),
                     category: row.get("category_name"),
                     base_unit: row.get("base_unit"),
+                    image_url: row.get("image_url"),
                 },
                 quantity: row.get("quantity"),
                 price_per_unit_cents: row.get("price_per_unit_cents"),
@@ -277,4 +279,5 @@ pub struct ProductInfo {
     pub name: String,
     pub category: String,
     pub base_unit: String,
+    pub image_url: Option<String>,
 }

@@ -98,11 +98,12 @@ pub async fn list_products(
 
 /// POST /api/inventory/products
 /// Add a new product to inventory
+/// Returns enriched InventoryView with product details (name, category, unit, image_url)
 pub async fn add_product(
     State(service): State<InventoryService>,
     auth: AuthUser,
     Json(req): Json<AddProductRequest>,
-) -> Result<(StatusCode, Json<ProductResponse>), AppError> {
+) -> Result<(StatusCode, Json<InventoryView>), AppError> {
     let product_id = service
         .add_product(
             auth.user_id,
@@ -115,14 +116,18 @@ pub async fn add_product(
         )
         .await?;
 
-    // Retrieve the created product to return full details
-    let products = service.list_products(auth.user_id, auth.tenant_id).await?;
-    let product = products
+    // 🎯 Return enriched InventoryView (Query DTO pattern)
+    // Includes: product name, category, unit, image_url, expiration status
+    let products = service
+        .list_products_with_details(auth.user_id, auth.tenant_id, auth.language)
+        .await?;
+    
+    let product_view = products
         .into_iter()
-        .find(|p| p.id == product_id)
+        .find(|p| p.id == product_id.as_uuid())
         .ok_or_else(|| AppError::internal("Failed to retrieve created product"))?;
 
-    Ok((StatusCode::CREATED, Json(ProductResponse::from(product))))
+    Ok((StatusCode::CREATED, Json(product_view)))
 }
 
 /// PUT /api/inventory/products/:id
