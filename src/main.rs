@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assistant_service = AssistantService::new(
         repositories.assistant_state.clone(),
         repositories.user.clone(),
-        inventory_service,
+        inventory_service.clone(),
         recipe_service.clone(),
         dish_service.clone(),
     );
@@ -124,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         recipe_service,
         dish_service,
         menu_engineering_service,
+        inventory_service,
         jwt_service,
         cors_origins,
     );

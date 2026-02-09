@@ -1,10 +1,11 @@
-use crate::application::{AssistantService, AuthService, CatalogService, DishService, MenuEngineeringService, RecipeService, UserService};
+use crate::application::{AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, search_ingredients, CatalogState},
     dish::create_dish,
+    inventory::{add_product, delete_product, get_status, list_products, update_product},
     menu_engineering::{analyze_menu, record_sale},
     middleware::AuthUser,
     recipe::{create_recipe, get_recipe, list_recipes, delete_recipe, calculate_recipe_cost},
@@ -28,6 +29,7 @@ pub fn create_router(
     recipe_service: RecipeService,
     dish_service: DishService,
     menu_engineering_service: MenuEngineeringService,
+    inventory_service: InventoryService,
     jwt_service: JwtService,
     allowed_origins: Vec<String>,
 ) -> Router {
@@ -93,6 +95,15 @@ pub fn create_router(
             Router::new()
                 .route("/dishes", post(create_dish))
                 .with_state(dish_service)
+        )
+        .merge(
+            Router::new()
+                .route("/inventory/products", get(list_products))
+                .route("/inventory/products", post(add_product))
+                .route("/inventory/products/:id", axum::routing::put(update_product))
+                .route("/inventory/products/:id", axum::routing::delete(delete_product))
+                .route("/inventory/status", get(get_status))
+                .with_state(inventory_service)
         )
         .merge(
             Router::new()
