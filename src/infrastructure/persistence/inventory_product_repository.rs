@@ -45,6 +45,7 @@ impl InventoryProductRepository {
         let catalog_ingredient_id: uuid::Uuid = row.try_get("catalog_ingredient_id")?;
         let price_cents: i64 = row.try_get("price_per_unit_cents")?;
         let quantity: f64 = row.try_get("quantity")?;
+        let received_at: OffsetDateTime = row.try_get("received_at")?;
         let expires_at: Option<OffsetDateTime> = row.try_get("expires_at")?;
         let created_at: OffsetDateTime = row.try_get("created_at")?;
         let updated_at: OffsetDateTime = row.try_get("updated_at")?;
@@ -56,6 +57,7 @@ impl InventoryProductRepository {
             CatalogIngredientId::from_uuid(catalog_ingredient_id),
             Money::from_cents(price_cents)?,
             Quantity::new(quantity)?,
+            received_at,
             expires_at,
             created_at,
             updated_at,
@@ -69,8 +71,8 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
         sqlx::query(
             r#"
             INSERT INTO inventory_products 
-                (id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, expires_at, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                (id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, received_at, expires_at, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#
         )
         .bind(product.id.as_uuid())
@@ -79,6 +81,7 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
         .bind(product.catalog_ingredient_id.as_uuid())
         .bind(product.price_per_unit.as_cents())
         .bind(product.quantity.value())
+        .bind(product.received_at)
         .bind(product.expires_at)
         .bind(product.created_at)
         .bind(product.updated_at)
@@ -91,7 +94,7 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
     async fn find_by_id(&self, id: InventoryProductId, user_id: UserId, tenant_id: TenantId) -> AppResult<Option<InventoryProduct>> {
         let row = sqlx::query(
             r#"
-            SELECT id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, expires_at, created_at, updated_at
+            SELECT id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, received_at, expires_at, created_at, updated_at
             FROM inventory_products
             WHERE id = $1 AND user_id = $2 AND tenant_id = $3
             "#
@@ -111,7 +114,7 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
     async fn list_by_user(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<Vec<InventoryProduct>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, expires_at, created_at, updated_at
+            SELECT id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, received_at, expires_at, created_at, updated_at
             FROM inventory_products
             WHERE user_id = $1 AND tenant_id = $2
             ORDER BY created_at DESC

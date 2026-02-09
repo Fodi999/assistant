@@ -122,7 +122,10 @@ pub struct InventoryProduct {
     /// Quantity purchased
     pub quantity: Quantity,
     
-    /// Expiration date (optional)
+    /// Product receipt/purchase date (дата поступления)
+    pub received_at: OffsetDateTime,
+    
+    /// Expiration date (дата просрочки, optional)
     pub expires_at: Option<OffsetDateTime>,
     
     /// Timestamps
@@ -138,6 +141,7 @@ impl InventoryProduct {
         catalog_ingredient_id: CatalogIngredientId,
         price_per_unit: Money,
         quantity: Quantity,
+        received_at: OffsetDateTime,
         expires_at: Option<OffsetDateTime>,
     ) -> Self {
         let now = OffsetDateTime::now_utc();
@@ -148,6 +152,7 @@ impl InventoryProduct {
             catalog_ingredient_id,
             price_per_unit,
             quantity,
+            received_at,
             expires_at,
             created_at: now,
             updated_at: now,
@@ -162,6 +167,7 @@ impl InventoryProduct {
         catalog_ingredient_id: CatalogIngredientId,
         price_per_unit: Money,
         quantity: Quantity,
+        received_at: OffsetDateTime,
         expires_at: Option<OffsetDateTime>,
         created_at: OffsetDateTime,
         updated_at: OffsetDateTime,
@@ -173,6 +179,7 @@ impl InventoryProduct {
             catalog_ingredient_id,
             price_per_unit,
             quantity,
+            received_at,
             expires_at,
             created_at,
             updated_at,
@@ -279,6 +286,7 @@ mod tests {
             CatalogIngredientId::new(),
             Money::from_major(10.0).unwrap(),
             Quantity::new(2.5).unwrap(),
+            OffsetDateTime::now_utc(), // received_at
             None,
         );
         

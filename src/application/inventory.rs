@@ -51,6 +51,7 @@ impl InventoryService {
         catalog_ingredient_id: CatalogIngredientId,
         price_per_unit_cents: i64,
         quantity: f64,
+        received_at: OffsetDateTime,
         expires_at: Option<OffsetDateTime>,
     ) -> AppResult<InventoryProductId> {
         let price = Money::from_cents(price_per_unit_cents)?;
@@ -62,6 +63,7 @@ impl InventoryService {
             catalog_ingredient_id,
             price,
             qty,
+            received_at,
             expires_at,
         );
 

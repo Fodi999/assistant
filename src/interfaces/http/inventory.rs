@@ -24,8 +24,16 @@ pub struct AddProductRequest {
     pub catalog_ingredient_id: Uuid,
     pub price_per_unit_cents: i64,
     pub quantity: f64,
+    /// Product receipt/purchase date (дата поступления)
+    #[serde(default = "default_received_at", with = "time::serde::rfc3339")]
+    pub received_at: OffsetDateTime,
+    /// Expiration date (дата просрочки, optional)
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub expires_at: Option<OffsetDateTime>,
+}
+
+fn default_received_at() -> OffsetDateTime {
+    OffsetDateTime::now_utc()
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,6 +49,8 @@ pub struct ProductResponse {
     pub catalog_ingredient_id: Uuid,
     pub price_per_unit_cents: i64,
     pub quantity: f64,
+    #[serde(with = "time::serde::rfc3339")]
+    pub received_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub expires_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
@@ -56,6 +66,7 @@ impl From<InventoryProduct> for ProductResponse {
             catalog_ingredient_id: product.catalog_ingredient_id.as_uuid(),
             price_per_unit_cents: product.price_per_unit.as_cents(),
             quantity: product.quantity.value(),
+            received_at: product.received_at,
             expires_at: product.expires_at,
             created_at: product.created_at,
             updated_at: product.updated_at,
@@ -99,6 +110,7 @@ pub async fn add_product(
             CatalogIngredientId::from_uuid(req.catalog_ingredient_id),
             req.price_per_unit_cents,
             req.quantity,
+            req.received_at,
             req.expires_at,
         )
         .await?;
