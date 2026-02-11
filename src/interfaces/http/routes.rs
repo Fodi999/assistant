@@ -63,10 +63,17 @@ pub fn create_router(
         .with_state(auth_service);
 
     // Admin auth routes
+    let admin_service_for_middleware = admin_auth_service.clone();
+    let admin_middleware = middleware::from_fn(move |req: Request, next: Next| {
+        let admin_auth_service = admin_service_for_middleware.clone();
+        async move { inject_admin_service(req, next, admin_auth_service).await }
+    });
+
     let admin_routes = Router::new()
         .route("/login", post(admin_auth::login))
         .route("/verify", get(admin_auth::verify))
-        .with_state(admin_auth_service);
+        .with_state(admin_auth_service)
+        .layer(admin_middleware);
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -149,5 +156,14 @@ async fn inject_jwt_and_pool(
     }
     let req = Request::from_parts(parts.0, parts.1);
     
+    next.run(req).await
+}
+
+async fn inject_admin_service(
+    mut req: Request,
+    next: Next,
+    admin_auth_service: AdminAuthService,
+) -> Response {
+    req.extensions_mut().insert(admin_auth_service);
     next.run(req).await
 }
