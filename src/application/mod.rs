@@ -1,3 +1,4 @@
+pub mod admin_auth;
 pub mod assistant_service;
 pub mod auth;
 pub mod catalog;
@@ -7,6 +8,7 @@ pub mod menu_engineering;
 pub mod recipe;
 pub mod user;
 
+pub use admin_auth::*;
 pub use assistant_service::*;
 pub use auth::*;
 pub use catalog::*;

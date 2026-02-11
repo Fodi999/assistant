@@ -6,6 +6,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub jwt: JwtConfig,
     pub cors: CorsConfig,
+    pub admin: AdminConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,14 @@ pub struct JwtConfig {
 #[derive(Debug, Clone)]
 pub struct CorsConfig {
     pub allowed_origins: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminConfig {
+    pub email: String,
+    pub password_hash: String,
+    pub jwt_secret: String,
+    pub token_ttl_hours: usize,
 }
 
 impl Config {
@@ -60,6 +69,15 @@ impl Config {
                     .split(',')
                     .map(|s| s.trim().to_string())
                     .collect(),
+            },
+            admin: AdminConfig {
+                email: env::var("ADMIN_EMAIL")?,
+                password_hash: env::var("ADMIN_PASSWORD_HASH")?,
+                jwt_secret: env::var("ADMIN_JWT_SECRET")
+                    .unwrap_or_else(|_| env::var("JWT_SECRET").unwrap_or_else(|_| "change_me".to_string())),
+                token_ttl_hours: env::var("ADMIN_TOKEN_TTL_HOURS")
+                    .unwrap_or_else(|_| "24".to_string())
+                    .parse()?,
             },
         })
     }

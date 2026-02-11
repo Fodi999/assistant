@@ -1,6 +1,7 @@
-use crate::application::{AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
+use crate::application::{AdminAuthService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
+    admin_auth,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, search_ingredients, CatalogState},
@@ -33,6 +34,7 @@ pub fn create_router(
     inventory_service: InventoryService,
     jwt_service: JwtService,
     pool: PgPool,  // 🎯 ДОБАВЛЕНО: для получения language из БД
+    admin_auth_service: AdminAuthService,  // 🆕 Super Admin auth service
     allowed_origins: Vec<String>,
 ) -> Router {
     // Configure CORS
@@ -59,6 +61,12 @@ pub fn create_router(
         .route("/login", post(login_handler))
         .route("/refresh", post(refresh_handler))
         .with_state(auth_service);
+
+    // Admin auth routes
+    let admin_routes = Router::new()
+        .route("/login", post(admin_auth::login))
+        .route("/verify", get(admin_auth::verify))
+        .with_state(admin_auth_service);
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -119,6 +127,7 @@ pub fn create_router(
     // Combine all routes
     Router::new()
         .nest("/api/auth", auth_routes)
+        .nest("/api/admin/auth", admin_routes)
         .nest("/api", protected_routes)
         .layer(cors)
 }

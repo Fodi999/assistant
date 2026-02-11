@@ -4,7 +4,7 @@ mod infrastructure;
 mod interfaces;
 mod shared;
 
-use application::{AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
+use application::{AdminAuthService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
 use infrastructure::{Config, JwtService, PasswordHasher, Repositories};
 use interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
@@ -112,6 +112,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dish_service.clone(),
     );
 
+    // Create AdminAuthService (Super Admin)
+    let admin_auth_service = AdminAuthService::new(
+        config.admin.email.clone(),
+        config.admin.password_hash.clone(),
+        config.admin.jwt_secret.clone(),
+        config.admin.token_ttl_hours,
+    );
+    tracing::info!("Super Admin configured: {}", config.admin.email);
+
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
 
@@ -126,7 +135,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         menu_engineering_service,
         inventory_service,
         jwt_service,
-        repositories.pool.clone(),  // 🎯 ДОБАВЛЕНО: pool для AuthUser middleware
+        repositories.pool.clone(),  // 🎯 pool для AuthUser middleware
+        admin_auth_service,         // 🆕 Super Admin auth
         cors_origins,
     );
 

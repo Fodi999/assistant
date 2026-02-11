@@ -1,3 +1,5 @@
+use crate::application::AdminAuthService;
+use crate::domain::AdminClaims;
 use crate::infrastructure::JwtService;
 use crate::shared::{AppError, Language, TenantId, UserId};
 use axum::{
@@ -66,5 +68,34 @@ where
             tenant_id,
             language,  // 🎯 Backend = source of truth!
         })
+    }
+}
+
+/// AdminClaims extractor - validates Super Admin JWT token
+#[async_trait]
+impl<S> FromRequestParts<S> for AdminClaims
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // Extract AdminAuthService from extensions
+        let admin_service = parts
+            .extensions
+            .get::<AdminAuthService>()
+            .ok_or_else(|| AppError::internal("Admin auth service not configured"))?
+            .clone();
+
+        // Extract Authorization header
+        let TypedHeader(Authorization(bearer)) = parts
+            .extract::<TypedHeader<Authorization<Bearer>>>()
+            .await
+            .map_err(|_| AppError::authentication("Missing or invalid authorization header"))?;
+
+        // Verify admin token
+        let claims = admin_service.verify_token(bearer.token())?;
+
+        Ok(claims)
     }
 }
