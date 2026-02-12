@@ -17,13 +17,20 @@ pub struct AdminCatalogService {
 #[derive(Debug, Deserialize)]
 pub struct CreateProductRequest {
     pub name_en: String,
-    pub name_pl: Option<String>,
-    pub name_uk: Option<String>,
-    pub name_ru: Option<String>,
+    #[serde(default = "default_empty_string")]
+    pub name_pl: String,
+    #[serde(default = "default_empty_string")]
+    pub name_uk: String,
+    #[serde(default = "default_empty_string")]
+    pub name_ru: String,
     pub category_id: Uuid,
     pub price: Decimal,
     pub unit: UnitType,
     pub description: Option<String>,
+}
+
+fn default_empty_string() -> String {
+    String::new()
 }
 
 /// Update Product Request
