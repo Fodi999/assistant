@@ -22,8 +22,8 @@ COPY migrations ./migrations
 # Deterministic build with locked dependencies
 RUN cargo build --release --locked
 
-# Runtime stage
-FROM debian:bookworm
+# Runtime stage - Ubuntu 24.04 has GLIBC 2.39 (required for Rust 1.91)
+FROM ubuntu:24.04
 
 WORKDIR /app
 
