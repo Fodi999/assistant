@@ -27,7 +27,6 @@ chrono = { version = "0.4", features = ["serde"] }
 # HTTP client for Cloudflare R2 (lightweight alternative to AWS SDK)
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "multipart"] }
 bytes = "1.5"
-hmac = "0.12"
 
 # Security
 argon2 = "0.5"

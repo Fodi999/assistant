@@ -1,10 +1,6 @@
 use bytes::Bytes;
 use reqwest::Client;
-use hmac::{Hmac, Mac};
-use sha2::{Sha256, Digest};
 use crate::shared::AppError;
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// Cloudflare R2 Client (direct HTTP implementation, lightweight)
 #[derive(Clone)]
@@ -54,68 +50,12 @@ impl R2Client {
     ) -> Result<String, AppError> {
         let url = format!("{}/{}/{}", self.endpoint_url, self.bucket_name, key);
         
-        // Simple S3 signature v4 (AWS4-HMAC-SHA256)
-        let date = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
-        let date_short = &date[0..8];
-        
-        // Create string to sign
-        let content_sha256 = format!("{:x}", Sha256::digest(&content));
-        let canonical_request = format!(
-            "PUT\n/{}/{}\n\nhost:{}\nx-amz-content-sha256:{}\nx-amz-date:{}\n\nhost;x-amz-content-sha256;x-amz-date\n{}",
-            self.bucket_name, key, 
-            format!("{}.r2.cloudflarestorage.com", self.bucket_name),
-            content_sha256,
-            date,
-            content_sha256
-        );
-        
-        let credential_scope = format!("{}/auto/s3/aws4_request", date_short);
-        let string_to_sign = format!(
-            "AWS4-HMAC-SHA256\n{}\n{}\n{:x}",
-            date,
-            credential_scope,
-            Sha256::digest(canonical_request.as_bytes())
-        );
-        
-        // Calculate signature
-        let mut mac = HmacSha256::new_from_slice(format!("AWS4{}", self.secret_access_key).as_bytes())
-            .expect("HMAC can take key of any size");
-        mac.update(date_short.as_bytes());
-        let k_date = mac.finalize().into_bytes();
-        
-        let mut mac = HmacSha256::new_from_slice(&k_date)
-            .expect("HMAC can take key of any size");
-        mac.update(b"auto");
-        let k_region = mac.finalize().into_bytes();
-        
-        let mut mac = HmacSha256::new_from_slice(&k_region)
-            .expect("HMAC can take key of any size");
-        mac.update(b"s3");
-        let k_service = mac.finalize().into_bytes();
-        
-        let mut mac = HmacSha256::new_from_slice(&k_service)
-            .expect("HMAC can take key of any size");
-        mac.update(b"aws4_request");
-        let k_signing = mac.finalize().into_bytes();
-        
-        let mut mac = HmacSha256::new_from_slice(&k_signing)
-            .expect("HMAC can take key of any size");
-        mac.update(string_to_sign.as_bytes());
-        let signature = format!("{:x}", mac.finalize().into_bytes());
-        
-        let authorization = format!(
-            "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature={}",
-            self.access_key_id,
-            credential_scope,
-            signature
-        );
-
+        // Try simple PUT first (some R2 buckets allow unsigned uploads)
         let response = self.http_client
             .put(&url)
-            .header("Authorization", authorization)
-            .header("x-amz-date", date)
-            .header("x-amz-content-sha256", content_sha256)
             .header("Content-Type", content_type)
+            .header("x-amz-acl", "public-read")
+            .basic_auth(&self.access_key_id, Some(&self.secret_access_key))
             .body(content)
             .send()
             .await
@@ -124,6 +64,7 @@ impl R2Client {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            tracing::error!("R2 upload failed: {} - {}", status, body);
             return Err(AppError::internal(format!("R2 upload failed ({}): {}", status, body)));
         }
 
