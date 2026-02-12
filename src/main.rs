@@ -121,14 +121,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     tracing::info!("Super Admin configured: {}", config.admin.email);
 
-    // Create R2Client for image storage
+    // Create R2Client for image storage (Cloudflare R2)
+    tracing::info!("Initializing R2 Client with bucket: {}", config.r2.bucket_name);
     let r2_client = R2Client::new(
         config.r2.account_id.clone(),
         config.r2.access_key_id.clone(),
         config.r2.secret_access_key.clone(),
         config.r2.bucket_name.clone(),
     ).await;
-    tracing::info!("R2 Client initialized: bucket = {}", config.r2.bucket_name);
+    tracing::info!("✅ R2 Client initialized successfully");
 
     // Create AdminCatalogService
     let admin_catalog_service = AdminCatalogService::new(
