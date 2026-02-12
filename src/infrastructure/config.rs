@@ -7,6 +7,7 @@ pub struct Config {
     pub jwt: JwtConfig,
     pub cors: CorsConfig,
     pub admin: AdminConfig,
+    pub r2: R2Config,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +39,14 @@ pub struct AdminConfig {
     pub password_hash: String,
     pub jwt_secret: String,
     pub token_ttl_hours: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct R2Config {
+    pub account_id: String,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub bucket_name: String,
 }
 
 impl Config {
@@ -78,6 +87,12 @@ impl Config {
                 token_ttl_hours: env::var("ADMIN_TOKEN_TTL_HOURS")
                     .unwrap_or_else(|_| "24".to_string())
                     .parse()?,
+            },
+            r2: R2Config {
+                account_id: env::var("CLOUDFLARE_ACCOUNT_ID")?,
+                access_key_id: env::var("CLOUDFLARE_R2_ACCESS_KEY_ID")?,
+                secret_access_key: env::var("CLOUDFLARE_R2_SECRET_ACCESS_KEY")?,
+                bucket_name: env::var("CLOUDFLARE_R2_BUCKET_NAME")?,
             },
         })
     }

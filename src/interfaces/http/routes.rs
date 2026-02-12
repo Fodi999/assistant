@@ -1,7 +1,8 @@
-use crate::application::{AdminAuthService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
+use crate::application::{AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     admin_auth,
+    admin_catalog,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, search_ingredients, CatalogState},
@@ -35,6 +36,7 @@ pub fn create_router(
     jwt_service: JwtService,
     pool: PgPool,  // 🎯 ДОБАВЛЕНО: для получения language из БД
     admin_auth_service: AdminAuthService,  // 🆕 Super Admin auth service
+    admin_catalog_service: AdminCatalogService,  // 🆕 Admin Catalog service
     allowed_origins: Vec<String>,
 ) -> Router {
     // Configure CORS
@@ -72,8 +74,33 @@ pub fn create_router(
     let admin_routes = Router::new()
         .route("/login", post(admin_auth::login))
         .route("/verify", get(admin_auth::verify))
-        .with_state(admin_auth_service)
-        .layer(admin_middleware);
+        .with_state(admin_auth_service.clone())
+        .layer(admin_middleware.clone());
+
+    // Admin catalog routes (protected with admin JWT)
+    use crate::interfaces::http::middleware::require_super_admin;
+    
+    // Create middleware to inject AdminAuthService
+    let admin_auth_for_catalog = admin_auth_service.clone();
+    let admin_catalog_middleware = middleware::from_fn(move |mut req: Request, next: Next| {
+        let admin_auth_service = admin_auth_for_catalog.clone();
+        async move {
+            req.extensions_mut().insert(admin_auth_service);
+            next.run(req).await
+        }
+    });
+    
+    let admin_catalog_routes = Router::new()
+        .route("/products", get(admin_catalog::list_products))
+        .route("/products/:id", get(admin_catalog::get_product))
+        .route("/products", post(admin_catalog::create_product))
+        .route("/products/:id", axum::routing::put(admin_catalog::update_product))
+        .route("/products/:id", axum::routing::delete(admin_catalog::delete_product))
+        .route("/products/:id/image", post(admin_catalog::upload_product_image))
+        .route("/products/:id/image", axum::routing::delete(admin_catalog::delete_product_image))
+        .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
+        .layer(admin_catalog_middleware)
+        .with_state(admin_catalog_service);
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -135,6 +162,7 @@ pub fn create_router(
     Router::new()
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
+        .nest("/api/admin", admin_catalog_routes)
         .nest("/api", protected_routes)
         .layer(cors)
 }

@@ -1,4 +1,5 @@
 pub mod admin_auth;
+pub mod admin_catalog;
 pub mod assistant;
 pub mod auth;
 pub mod catalog;

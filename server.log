@@ -1,6 +1,14 @@
-[2m2026-02-07T18:08:42.814289Z[0m [32m INFO[0m Starting Restaurant Backend...
-[2m2026-02-07T18:08:42.814855Z[0m [32m INFO[0m Configuration loaded
-[2m2026-02-07T18:08:42.823347Z[0m [32m INFO[0m Database connection pool established
-[2m2026-02-07T18:08:42.824613Z[0m [32m INFO[0m relation "_sqlx_migrations" already exists, skipping
-[2m2026-02-07T18:08:42.826176Z[0m [32m INFO[0m Database migrations completed
-[2m2026-02-07T18:08:42.827133Z[0m [32m INFO[0m Server listening on 0.0.0.0:8080
+[2m2026-02-11T10:13:14.288718Z[0m [32m INFO[0m Starting Restaurant Backend...
+[2m2026-02-11T10:13:14.289028Z[0m [32m INFO[0m Environment: DATABASE_URL present = false
+[2m2026-02-11T10:13:14.289075Z[0m [32m INFO[0m Environment: JWT_SECRET present = false
+[2m2026-02-11T10:13:14.289104Z[0m [32m INFO[0m Environment: PORT = not set
+[2m2026-02-11T10:13:14.289561Z[0m [32m INFO[0m Configuration loaded successfully
+[2m2026-02-11T10:13:14.289595Z[0m [32m INFO[0m Server will bind to: 0.0.0.0:8000
+[2m2026-02-11T10:13:14.289641Z[0m [32m INFO[0m Connecting to database...
+[2m2026-02-11T10:13:14.298361Z[0m [32m INFO[0m Database connection pool established
+[2m2026-02-11T10:13:14.299892Z[0m [32m INFO[0m relation "_sqlx_migrations" already exists, skipping
+[2m2026-02-11T10:13:14.301610Z[0m [32m INFO[0m Database migrations completed
+[2m2026-02-11T10:13:14.301756Z[0m [32m INFO[0m Super Admin configured: admin@fodi.app
+[2m2026-02-11T10:13:14.421401Z[0m [32m INFO[0m R2 Client initialized: bucket = product-images
+[2m2026-02-11T10:13:14.421422Z[0m [32m INFO[0m Admin Catalog Service initialized
+[2m2026-02-11T10:13:14.421842Z[0m [32m INFO[0m Server listening on 0.0.0.0:8000

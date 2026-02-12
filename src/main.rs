@@ -4,8 +4,8 @@ mod infrastructure;
 mod interfaces;
 mod shared;
 
-use application::{AdminAuthService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
-use infrastructure::{Config, JwtService, PasswordHasher, Repositories};
+use application::{AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
+use infrastructure::{Config, JwtService, PasswordHasher, R2Client, Repositories};
 use interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
@@ -121,6 +121,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     tracing::info!("Super Admin configured: {}", config.admin.email);
 
+    // Create R2Client for image storage
+    let r2_client = R2Client::new(
+        config.r2.account_id.clone(),
+        config.r2.access_key_id.clone(),
+        config.r2.secret_access_key.clone(),
+        config.r2.bucket_name.clone(),
+    ).await;
+    tracing::info!("R2 Client initialized: bucket = {}", config.r2.bucket_name);
+
+    // Create AdminCatalogService
+    let admin_catalog_service = AdminCatalogService::new(
+        repositories.pool.clone(),
+        r2_client,
+    );
+    tracing::info!("Admin Catalog Service initialized");
+
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
 
@@ -137,6 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         jwt_service,
         repositories.pool.clone(),  // 🎯 pool для AuthUser middleware
         admin_auth_service,         // 🆕 Super Admin auth
+        admin_catalog_service,      // 🆕 Admin Catalog service
         cors_origins,
     );
 

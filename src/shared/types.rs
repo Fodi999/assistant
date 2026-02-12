@@ -109,3 +109,36 @@ impl From<Uuid> for RefreshTokenId {
         Self(id)
     }
 }
+
+/// Unit Type - maps to PostgreSQL ENUM unit_type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "unit_type", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+pub enum UnitType {
+    Gram,
+    Kilogram,
+    Liter,
+    Milliliter,
+    Piece,
+    Bunch,
+    Can,
+    Bottle,
+    Package,
+}
+
+impl fmt::Display for UnitType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            UnitType::Gram => "gram",
+            UnitType::Kilogram => "kilogram",
+            UnitType::Liter => "liter",
+            UnitType::Milliliter => "milliliter",
+            UnitType::Piece => "piece",
+            UnitType::Bunch => "bunch",
+            UnitType::Can => "can",
+            UnitType::Bottle => "bottle",
+            UnitType::Package => "package",
+        };
+        write!(f, "{}", s)
+    }
+}

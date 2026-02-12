@@ -4,7 +4,7 @@ use crate::infrastructure::JwtService;
 use crate::shared::{AppError, Language, TenantId, UserId};
 use axum::{
     async_trait,
-    extract::FromRequestParts,
+    extract::{FromRequestParts, State},
     http::request::Parts,
     RequestPartsExt,
 };
@@ -98,4 +98,27 @@ where
 
         Ok(claims)
     }
+}
+
+/// Middleware to require Super Admin authentication
+pub async fn require_super_admin(
+    State(admin_service): State<AdminAuthService>,
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, AppError> {
+    use axum::RequestExt;
+
+    // Extract Authorization header
+    let TypedHeader(Authorization(bearer)) = req
+        .extract_parts::<TypedHeader<Authorization<Bearer>>>()
+        .await
+        .map_err(|_| AppError::authentication("Missing or invalid authorization header"))?;
+
+    // Verify admin token
+    let claims = admin_service.verify_token(bearer.token())?;
+
+    // Insert claims into extensions for handlers to use
+    req.extensions_mut().insert(claims);
+
+    Ok(next.run(req).await)
 }
