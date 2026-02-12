@@ -1,14 +1,11 @@
+use aws_sdk_s3::{Client, primitives::ByteStream};
 use bytes::Bytes;
-use reqwest::Client;
 use crate::shared::AppError;
 
-/// Cloudflare R2 Client (direct HTTP implementation, lightweight)
+/// Cloudflare R2 Client (AWS S3-compatible)
 #[derive(Clone)]
 pub struct R2Client {
-    http_client: Client,
-    endpoint_url: String,
-    access_key_id: String,
-    secret_access_key: String,
+    client: Client,
     bucket_name: String,
     public_url_base: String,
 }
@@ -20,27 +17,38 @@ impl R2Client {
         secret_access_key: String,
         bucket_name: String,
     ) -> Self {
-        let http_client = Client::builder()
-            .build()
-            .expect("Failed to create HTTP client");
+        // Configure S3 client for R2 with proper settings
+        let credentials = aws_sdk_s3::config::Credentials::new(
+            access_key_id,
+            secret_access_key,
+            None,
+            None,
+            "r2-credentials",
+        );
 
         let endpoint_url = format!("https://{}.r2.cloudflarestorage.com", account_id);
         
-        // Public URL base (first 8 chars of account_id)
+        let config = aws_sdk_s3::config::Builder::new()
+            .credentials_provider(credentials)
+            .endpoint_url(&endpoint_url)
+            .region(aws_sdk_s3::config::Region::new("auto"))
+            .force_path_style(true)  // CRITICAL for R2 compatibility
+            .build();
+
+        let client = Client::from_conf(config);
+
+        // Public URL base
         let account_prefix = account_id.chars().take(8).collect::<String>();
         let public_url_base = format!("https://pub-{}.r2.dev", account_prefix);
 
         Self {
-            http_client,
-            endpoint_url,
-            access_key_id,
-            secret_access_key,
+            client,
             bucket_name,
             public_url_base,
         }
     }
 
-    /// Upload image to R2 using S3-compatible PUT
+    /// Upload image to R2
     /// Returns public URL
     pub async fn upload_image(
         &self,
@@ -48,25 +56,21 @@ impl R2Client {
         content: Bytes,
         content_type: &str,
     ) -> Result<String, AppError> {
-        let url = format!("{}/{}/{}", self.endpoint_url, self.bucket_name, key);
-        
-        // Try simple PUT first (some R2 buckets allow unsigned uploads)
-        let response = self.http_client
-            .put(&url)
-            .header("Content-Type", content_type)
-            .header("x-amz-acl", "public-read")
-            .basic_auth(&self.access_key_id, Some(&self.secret_access_key))
-            .body(content)
+        // Use ByteStream to ensure proper SHA256 calculation
+        let byte_stream = ByteStream::from(content);
+
+        self.client
+            .put_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .body(byte_stream)
+            .content_type(content_type)
             .send()
             .await
-            .map_err(|e| AppError::internal(format!("Failed to upload to R2: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            tracing::error!("R2 upload failed: {} - {}", status, body);
-            return Err(AppError::internal(format!("R2 upload failed ({}): {}", status, body)));
-        }
+            .map_err(|e| {
+                tracing::error!("R2 upload failed: {}", e);
+                AppError::internal(format!("Failed to upload to R2: {}", e))
+            })?;
 
         // Return public URL
         let public_url = format!("{}/{}", self.public_url_base, key);
@@ -75,33 +79,29 @@ impl R2Client {
 
     /// Delete image from R2
     pub async fn delete_image(&self, key: &str) -> Result<(), AppError> {
-        let url = format!("{}/{}/{}", self.endpoint_url, self.bucket_name, key);
-        
-        // Simple DELETE request (R2 allows unsigned deletes for existing keys)
-        let response = self.http_client
-            .delete(&url)
+        self.client
+            .delete_object()
+            .bucket(&self.bucket_name)
+            .key(key)
             .send()
             .await
-            .map_err(|e| AppError::internal(format!("Failed to delete from R2: {}", e)))?;
-
-        if !response.status().is_success() && response.status().as_u16() != 404 {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(AppError::internal(format!("R2 delete failed ({}): {}", status, body)));
-        }
+            .map_err(|e| {
+                tracing::error!("R2 delete failed: {}", e);
+                AppError::internal(format!("Failed to delete from R2: {}", e))
+            })?;
 
         Ok(())
     }
 
     /// Check if object exists
+    #[allow(dead_code)]
     pub async fn object_exists(&self, key: &str) -> bool {
-        let url = format!("{}/{}/{}", self.endpoint_url, self.bucket_name, key);
-        
-        self.http_client
-            .head(&url)
+        self.client
+            .head_object()
+            .bucket(&self.bucket_name)
+            .key(key)
             .send()
             .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
+            .is_ok()
     }
 }

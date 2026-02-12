@@ -24,8 +24,9 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 time = { version = "=0.3.36", features = ["serde", "macros", "formatting", "parsing"] }
 chrono = { version = "0.4", features = ["serde"] }
 
-# HTTP client for Cloudflare R2 (lightweight alternative to AWS SDK)
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "multipart"] }
+# AWS SDK for Cloudflare R2 (S3-compatible) - minimal features
+aws-sdk-s3 = "1.15"
+aws-config = { version = "1.1", features = ["behavior-version-latest"] }
 bytes = "1.5"
 
 # Security
