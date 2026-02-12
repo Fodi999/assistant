@@ -1,4 +1,5 @@
 use aws_sdk_s3::{Client, primitives::ByteStream};
+use aws_config::BehaviorVersion;
 use bytes::Bytes;
 use crate::shared::AppError;
 
@@ -29,6 +30,7 @@ impl R2Client {
         let endpoint_url = format!("https://{}.r2.cloudflarestorage.com", account_id);
         
         let config = aws_sdk_s3::config::Builder::new()
+            .behavior_version(BehaviorVersion::latest())
             .credentials_provider(credentials)
             .endpoint_url(&endpoint_url)
             .region(aws_sdk_s3::config::Region::new("auto"))
