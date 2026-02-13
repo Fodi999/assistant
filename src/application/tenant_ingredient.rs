@@ -79,14 +79,38 @@ impl TenantIngredientService {
             return Err(AppError::not_found("Catalog ingredient not found"));
         }
 
-        let ingredient = sqlx::query_as::<_, TenantIngredientResponse>(
+        // Insert tenant ingredient
+        sqlx::query(
             r#"
             INSERT INTO tenant_ingredients (
                 id, tenant_id, catalog_ingredient_id,
                 price, supplier, custom_unit, custom_expiration_days, notes, is_active
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-            RETURNING
+            "#
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(req.catalog_ingredient_id)
+        .bind(req.price)
+        .bind(&req.supplier)
+        .bind(req.custom_unit.as_deref())
+        .bind(req.custom_expiration_days)
+        .bind(&req.notes)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("tenant_ingredient_unique") {
+                AppError::conflict("Ingredient already added to your catalog")
+            } else {
+                AppError::from(e)
+            }
+        })?;
+
+        // Fetch the created ingredient with catalog data
+        let ingredient = sqlx::query_as::<_, TenantIngredientResponse>(
+            r#"
+            SELECT
                 ti.id,
                 ti.catalog_ingredient_id,
                 ci.name_en as catalog_name_en,
@@ -107,22 +131,8 @@ impl TenantIngredientService {
             "#
         )
         .bind(id)
-        .bind(tenant_id)
-        .bind(req.catalog_ingredient_id)
-        .bind(req.price)
-        .bind(&req.supplier)
-        .bind(req.custom_unit.as_deref())
-        .bind(req.custom_expiration_days)
-        .bind(&req.notes)
         .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("tenant_ingredient_unique") {
-                AppError::conflict("Ingredient already added to your catalog")
-            } else {
-                AppError::from(e)
-            }
-        })?;
+        .await?;
 
         Ok(ingredient)
     }
