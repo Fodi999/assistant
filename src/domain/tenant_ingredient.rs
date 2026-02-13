@@ -117,7 +117,7 @@ impl TenantIngredient {
     }
 
     /// Get effective unit (custom or default from catalog)
-    pub fn effective_unit(&self, catalog_unit: &Unit) -> &Unit {
+    pub fn effective_unit<'a>(&'a self, catalog_unit: &'a Unit) -> &'a Unit {
         self.custom_unit.as_ref().unwrap_or(catalog_unit)
     }
 
