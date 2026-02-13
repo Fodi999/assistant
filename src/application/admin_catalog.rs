@@ -70,32 +70,31 @@ impl AdminCatalogService {
     pub async fn create_product(&self, req: CreateProductRequest) -> AppResult<ProductResponse> {
         let id = Uuid::new_v4();
 
-        let product = sqlx::query_as!(
-            ProductResponse,
+        let product = sqlx::query_as::<_, ProductResponse>(
             r#"
             INSERT INTO catalog_ingredients (
                 id, name_en, name_pl, name_uk, name_ru,
-                category_id, price, default_unit, description
+                category_id, price, default_unit, description, is_active
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
             RETURNING
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id, 
-                price as "price!",
-                default_unit as "unit: UnitType",
+                price,
+                default_unit as unit,
                 description,
                 image_url
-            "#,
-            id,
-            req.name_en,
-            req.name_pl,
-            req.name_uk,
-            req.name_ru,
-            req.category_id,
-            req.price,
-            req.unit as UnitType,
-            req.description,
+            "#
         )
+        .bind(id)
+        .bind(&req.name_en)
+        .bind(&req.name_pl)
+        .bind(&req.name_uk)
+        .bind(&req.name_ru)
+        .bind(req.category_id)
+        .bind(req.price)
+        .bind(&req.unit)
+        .bind(&req.description)
         .fetch_one(&self.pool)
         .await?;
 
@@ -156,8 +155,7 @@ impl AdminCatalogService {
         // Check if product exists
         self.get_product_by_id(id).await?;
 
-        let product = sqlx::query_as!(
-            ProductResponse,
+        let product = sqlx::query_as::<_, ProductResponse>(
             r#"
             UPDATE catalog_ingredients
             SET
@@ -169,25 +167,25 @@ impl AdminCatalogService {
                 price = COALESCE($7, price),
                 default_unit = COALESCE($8, default_unit),
                 description = COALESCE($9, description)
-            WHERE id = $1
+            WHERE id = $1 AND COALESCE(is_active, true) = true
             RETURNING
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id,
-                price as "price!",
-                default_unit as "unit: UnitType",
+                price,
+                default_unit as unit,
                 description,
                 image_url
-            "#,
-            id,
-            req.name_en,
-            req.name_pl,
-            req.name_uk,
-            req.name_ru,
-            req.category_id,
-            req.price,
-            req.unit as Option<UnitType>,
-            req.description,
+            "#
         )
+        .bind(id)
+        .bind(&req.name_en)
+        .bind(&req.name_pl)
+        .bind(&req.name_uk)
+        .bind(&req.name_ru)
+        .bind(req.category_id)
+        .bind(req.price)
+        .bind(&req.unit)
+        .bind(&req.description)
         .fetch_one(&self.pool)
         .await?;
 
