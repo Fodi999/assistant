@@ -11,4 +11,5 @@ pub mod menu_engineering;
 pub mod middleware;
 pub mod recipe;
 pub mod routes;
+pub mod tenant_ingredient;
 pub mod user;

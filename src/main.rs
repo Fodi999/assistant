@@ -139,6 +139,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     tracing::info!("Admin Catalog Service initialized");
 
+    // Create TenantIngredientService
+    let tenant_ingredient_service = crate::application::TenantIngredientService::new(
+        repositories.pool.clone()
+    );
+    tracing::info!("Tenant Ingredient Service initialized");
+
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
 
@@ -152,6 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dish_service,
         menu_engineering_service,
         inventory_service,
+        tenant_ingredient_service,  // 🆕 Tenant-specific ingredients
         jwt_service,
         repositories.pool.clone(),  // 🎯 pool для AuthUser middleware
         admin_auth_service,         // 🆕 Super Admin auth

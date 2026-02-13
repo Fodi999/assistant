@@ -1,4 +1,7 @@
-use crate::application::{AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
+use crate::application::{
+    AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, 
+    DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService
+};
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     admin_auth,
@@ -11,6 +14,7 @@ use crate::interfaces::http::{
     menu_engineering::{analyze_menu, record_sale},
     middleware::AuthUser,
     recipe::{create_recipe, get_recipe, list_recipes, delete_recipe, calculate_recipe_cost},
+    tenant_ingredient,
     user::me_handler,
 };
 use axum::{
@@ -33,6 +37,7 @@ pub fn create_router(
     dish_service: DishService,
     menu_engineering_service: MenuEngineeringService,
     inventory_service: InventoryService,
+    tenant_ingredient_service: TenantIngredientService,
     jwt_service: JwtService,
     pool: PgPool,  // 🎯 ДОБАВЛЕНО: для получения language из БД
     admin_auth_service: AdminAuthService,  // 🆕 Super Admin auth service
@@ -155,6 +160,16 @@ pub fn create_router(
                 .route("/menu-engineering/analysis", get(analyze_menu))
                 .route("/menu-engineering/sales", post(record_sale))
                 .with_state(menu_engineering_service)
+        )
+        .merge(
+            Router::new()
+                .route("/tenant/ingredients", post(tenant_ingredient::add_ingredient))
+                .route("/tenant/ingredients", get(tenant_ingredient::list_ingredients))
+                .route("/tenant/ingredients/search", get(tenant_ingredient::search_available_ingredients))
+                .route("/tenant/ingredients/:id", get(tenant_ingredient::get_ingredient))
+                .route("/tenant/ingredients/:id", axum::routing::put(tenant_ingredient::update_ingredient))
+                .route("/tenant/ingredients/:id", axum::routing::delete(tenant_ingredient::remove_ingredient))
+                .with_state(tenant_ingredient_service)
         )
         .layer(jwt_middleware);
 
