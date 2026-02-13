@@ -17,6 +17,7 @@ impl R2Client {
         access_key_id: String,
         secret_access_key: String,
         bucket_name: String,
+        public_url_base: String,
     ) -> Self {
         // Configure S3 client for R2 with proper settings
         let credentials = aws_sdk_s3::config::Credentials::new(
@@ -38,10 +39,6 @@ impl R2Client {
             .build();
 
         let client = Client::from_conf(config);
-
-        // Public URL base
-        let account_prefix = account_id.chars().take(8).collect::<String>();
-        let public_url_base = format!("https://pub-{}.r2.dev", account_prefix);
 
         Self {
             client,

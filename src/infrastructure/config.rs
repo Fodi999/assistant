@@ -47,6 +47,7 @@ pub struct R2Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub bucket_name: String,
+    pub public_url_base: String,
 }
 
 impl Config {
@@ -93,6 +94,7 @@ impl Config {
                 access_key_id: env::var("CLOUDFLARE_R2_ACCESS_KEY_ID")?,
                 secret_access_key: env::var("CLOUDFLARE_R2_SECRET_ACCESS_KEY")?,
                 bucket_name: env::var("CLOUDFLARE_R2_BUCKET_NAME")?,
+                public_url_base: env::var("CLOUDFLARE_R2_PUBLIC_URL")?,
             },
         })
     }

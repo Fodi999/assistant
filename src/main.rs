@@ -128,6 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.r2.access_key_id.clone(),
         config.r2.secret_access_key.clone(),
         config.r2.bucket_name.clone(),
+        config.r2.public_url_base.clone(),
     ).await;
     tracing::info!("✅ R2 Client initialized successfully");
 
