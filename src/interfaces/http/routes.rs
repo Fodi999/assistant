@@ -8,7 +8,7 @@ use crate::interfaces::http::{
     admin_catalog,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
-    catalog::{get_categories, search_ingredients, CatalogState},
+    catalog::{get_categories, get_categories_admin, search_ingredients, CatalogState},
     dish::create_dish,
     inventory::{add_product, delete_product, get_status, list_products, update_product},
     menu_engineering::{analyze_menu, record_sale},
@@ -106,6 +106,12 @@ pub fn create_router(
         .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
         .layer(admin_catalog_middleware)
         .with_state(admin_catalog_service);
+    
+    // Admin categories route (separate because different state)
+    let admin_categories_route: Router = Router::new()
+        .route("/categories", get(get_categories_admin))
+        .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
+        .with_state(catalog_service.clone());
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -183,6 +189,7 @@ pub fn create_router(
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
         .nest("/api/admin", admin_catalog_routes)
+        .nest("/api/admin", admin_categories_route)
         .nest("/api", protected_routes)
         .layer(cors)
 }

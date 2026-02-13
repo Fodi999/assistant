@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::{catalog::CatalogService, user::UserService};
-use crate::domain::catalog::CatalogCategoryId;
+use crate::domain::{catalog::CatalogCategoryId, AdminClaims};
 use crate::interfaces::http::middleware::AuthUser;
-use crate::shared::AppError;
+use crate::shared::{AppError, Language};
 
 /// Shared state for catalog handlers (catalog service + user service for language lookup)
 #[derive(Clone)]
@@ -84,6 +84,27 @@ pub async fn get_categories(
             .map(|cat| CategoryResponse {
                 id: cat.id.to_string(),
                 name: cat.name(language).to_string(),
+                sort_order: cat.sort_order,
+            })
+            .collect(),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+/// GET /api/admin/categories - Admin version (returns English names by default)
+pub async fn get_categories_admin(
+    _claims: AdminClaims,
+    State(catalog_service): State<CatalogService>,
+) -> Result<impl IntoResponse, AppError> {
+    let categories = catalog_service.get_categories(Language::En).await?;
+
+    let response = CategoriesResponse {
+        categories: categories
+            .into_iter()
+            .map(|cat| CategoryResponse {
+                id: cat.id.to_string(),
+                name: cat.name(Language::En).to_string(),
                 sort_order: cat.sort_order,
             })
             .collect(),

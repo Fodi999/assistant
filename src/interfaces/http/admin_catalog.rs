@@ -2,7 +2,7 @@ use crate::application::{
     AdminCatalogService, CreateProductRequest, ProductResponse, UpdateProductRequest,
 };
 use crate::domain::AdminClaims;
-use crate::shared::AppError;
+use crate::shared::{AppError, Language};
 use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,
