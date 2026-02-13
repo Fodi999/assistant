@@ -7,12 +7,14 @@ pub mod dish;
 pub mod inventory;
 pub mod menu_engineering;
 pub mod recipe;
+pub mod tenant_ingredient;
 pub mod user;
 
 pub use admin_auth::*;
 pub use admin_catalog::*;
 pub use assistant_service::*;
 pub use auth::*;
+pub use tenant_ingredient::*;
 pub use catalog::*;
 pub use dish::*;
 pub use inventory::*;
