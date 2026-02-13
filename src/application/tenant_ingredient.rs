@@ -86,7 +86,7 @@ impl TenantIngredientService {
                 id, tenant_id, catalog_ingredient_id,
                 price, supplier, custom_unit, custom_expiration_days, notes, is_active
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+            VALUES ($1, $2, $3, $4, $5, $6::unit_type, $7, $8, true)
             "#
         )
         .bind(id)
