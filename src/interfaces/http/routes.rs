@@ -158,8 +158,13 @@ pub fn create_router(
         )
         .layer(jwt_middleware);
 
+    // Health check endpoint (no auth, no middleware)
+    let health_route = Router::new()
+        .route("/health", get(|| async { "OK" }));
+
     // Combine all routes
     Router::new()
+        .merge(health_route)
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
         .nest("/api/admin", admin_catalog_routes)
