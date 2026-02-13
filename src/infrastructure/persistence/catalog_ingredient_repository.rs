@@ -103,7 +103,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
             LEFT JOIN catalog_ingredient_translations cit_en 
                 ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
-            WHERE ci.is_active = true 
+            WHERE COALESCE(ci.is_active, true) = true 
               AND COALESCE(cit_user.name, cit_en.name) ILIKE '%' || $1 || '%'
             ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
             LIMIT $3
@@ -147,7 +147,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                     ON cit_user.ingredient_id = ci.id AND cit_user.language = $3
                 LEFT JOIN catalog_ingredient_translations cit_en 
                     ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
-                WHERE ci.is_active = true 
+                WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1 
                   AND COALESCE(cit_user.name, cit_en.name) ILIKE '%' || $2 || '%'
                 ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
@@ -175,7 +175,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                     ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
                 LEFT JOIN catalog_ingredient_translations cit_en 
                     ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
-                WHERE ci.is_active = true 
+                WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1
                 ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
                 LIMIT $3
@@ -214,7 +214,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                    ARRAY(SELECT unnest(seasons)::text) as seasons, 
                    image_url, is_active
             FROM catalog_ingredients
-            WHERE id = $1 AND is_active = true
+            WHERE id = $1 AND COALESCE(is_active, true) = true
             "#
         )
         .bind(id.as_uuid())
@@ -252,7 +252,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 ON cit_user.ingredient_id = ci.id AND cit_user.language = $3
             LEFT JOIN catalog_ingredient_translations cit_en 
                 ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
-            WHERE ci.is_active = true
+            WHERE COALESCE(ci.is_active, true) = true
             ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
             OFFSET $1
             LIMIT $2
