@@ -47,7 +47,7 @@ pub struct UpdateProductRequest {
 }
 
 /// Product Response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct ProductResponse {
     pub id: Uuid,
     pub name_en: String,
@@ -104,21 +104,20 @@ impl AdminCatalogService {
 
     /// Get product by ID
     pub async fn get_product_by_id(&self, id: Uuid) -> AppResult<ProductResponse> {
-        let product = sqlx::query_as!(
-            ProductResponse,
+        let product = sqlx::query_as::<_, ProductResponse>(
             r#"
             SELECT
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id,
-                price as "price!",
-                default_unit as "unit: UnitType",
+                price,
+                default_unit as unit,
                 description,
                 image_url
             FROM catalog_ingredients
-            WHERE id = $1
-            "#,
-            id
+            WHERE id = $1 AND COALESCE(is_active, true) = true
+            "#
         )
+        .bind(id)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::not_found("Product not found"))?;
@@ -128,17 +127,17 @@ impl AdminCatalogService {
 
     /// List all products
     pub async fn list_products(&self) -> AppResult<Vec<ProductResponse>> {
-        let products = sqlx::query_as!(
-            ProductResponse,
+        let products = sqlx::query_as::<_, ProductResponse>(
             r#"
             SELECT
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id,
-                price as "price!",
-                default_unit as "unit: UnitType",
+                price,
+                default_unit as unit,
                 description,
                 image_url
             FROM catalog_ingredients
+            WHERE COALESCE(is_active, true) = true
             ORDER BY name_en ASC
             "#
         )
