@@ -74,9 +74,9 @@ impl AdminCatalogService {
             r#"
             INSERT INTO catalog_ingredients (
                 id, name_en, name_pl, name_uk, name_ru,
-                category_id, price, default_unit, description, is_active
+                category_id, price, default_unit, description
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id, 
