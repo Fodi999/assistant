@@ -1,7 +1,6 @@
 use crate::infrastructure::R2Client;
 use crate::shared::{AppError, AppResult, UnitType};
 use bytes::Bytes;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -33,7 +32,6 @@ pub struct CreateProductRequest {
     #[serde(default = "default_empty_string")]
     pub name_ru: String,
     pub category_id: Uuid,
-    pub price: Decimal,
     pub unit: UnitType,
     pub description: Option<String>,
 }
@@ -50,7 +48,6 @@ pub struct UpdateProductRequest {
     pub name_uk: Option<String>,
     pub name_ru: Option<String>,
     pub category_id: Option<Uuid>,
-    pub price: Option<Decimal>,
     pub unit: Option<UnitType>,
     pub description: Option<String>,
 }
@@ -64,7 +61,6 @@ pub struct ProductResponse {
     pub name_uk: Option<String>,
     pub name_ru: Option<String>,
     pub category_id: Uuid,
-    pub price: Decimal,
     pub unit: UnitType,
     pub description: Option<String>,
     pub image_url: Option<String>,
@@ -110,13 +106,12 @@ impl AdminCatalogService {
             r#"
             INSERT INTO catalog_ingredients (
                 id, name_en, name_pl, name_uk, name_ru,
-                category_id, price, default_unit, description
+                category_id, default_unit, description
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id, 
-                price,
                 default_unit as unit,
                 description,
                 image_url
@@ -128,7 +123,6 @@ impl AdminCatalogService {
         .bind(&name_uk)
         .bind(&name_ru)
         .bind(req.category_id)
-        .bind(req.price)
         .bind(&req.unit)
         .bind(&req.description)
         .fetch_one(&self.pool)
@@ -148,7 +142,6 @@ impl AdminCatalogService {
             SELECT
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id,
-                price,
                 default_unit as unit,
                 description,
                 image_url
@@ -171,7 +164,6 @@ impl AdminCatalogService {
             SELECT
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id,
-                price,
                 default_unit as unit,
                 description,
                 image_url
@@ -240,14 +232,12 @@ impl AdminCatalogService {
                 name_uk = COALESCE($4, name_uk),
                 name_ru = COALESCE($5, name_ru),
                 category_id = COALESCE($6, category_id),
-                price = COALESCE($7, price),
-                default_unit = COALESCE($8, default_unit),
-                description = COALESCE($9, description)
+                default_unit = COALESCE($7, default_unit),
+                description = COALESCE($8, description)
             WHERE id = $1 AND COALESCE(is_active, true) = true
             RETURNING
                 id, name_en, name_pl, name_uk, name_ru,
                 category_id,
-                price,
                 default_unit as unit,
                 description,
                 image_url
@@ -259,7 +249,6 @@ impl AdminCatalogService {
         .bind(&name_uk)
         .bind(&name_ru)
         .bind(req.category_id)
-        .bind(req.price)
         .bind(&req.unit)
         .bind(&req.description)
         .fetch_one(&self.pool)
