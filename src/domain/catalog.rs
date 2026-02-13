@@ -297,6 +297,9 @@ pub struct CatalogIngredient {
     
     // UX
     pub image_url: Option<String>,
+    
+    // Soft delete
+    pub is_active: bool,
 }
 
 impl CatalogIngredient {
@@ -338,6 +341,7 @@ impl CatalogIngredient {
             calories_per_100g,
             seasons,
             image_url,
+            is_active: true,  // New products are active by default
         }
     }
 
@@ -356,6 +360,7 @@ impl CatalogIngredient {
         calories_per_100g: Option<i32>,
         seasons: Vec<Season>,
         image_url: Option<String>,
+        is_active: bool,
     ) -> Self {
         Self {
             id,
@@ -370,6 +375,7 @@ impl CatalogIngredient {
             calories_per_100g,
             seasons,
             image_url,
+            is_active,
         }
     }
 }

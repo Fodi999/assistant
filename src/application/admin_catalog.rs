@@ -197,24 +197,17 @@ impl AdminCatalogService {
 
     /// Delete product
     pub async fn delete_product(&self, id: Uuid) -> AppResult<()> {
-        // Get product to check if has image
-        let product = self.get_product_by_id(id).await?;
-
-        // Delete image from R2 if exists
-        if product.image_url.is_some() {
-            let _ = self.delete_product_image(id).await;
-        }
-
-        // Delete from database
-        let result = sqlx::query!(
-            "DELETE FROM catalog_ingredients WHERE id = $1",
-            id
+        // Soft delete - mark as inactive instead of deleting
+        // This preserves relationships with inventory and other tables
+        let result = sqlx::query(
+            "UPDATE catalog_ingredients SET is_active = false WHERE id = $1 AND is_active = true"
         )
+        .bind(id)
         .execute(&self.pool)
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::not_found("Product not found"));
+            return Err(AppError::not_found("Product not found or already deleted"));
         }
 
         Ok(())
