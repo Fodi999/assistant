@@ -23,6 +23,8 @@ pub struct UserInfo {
     pub restaurant_name: String,
     pub language: String,
     pub created_at: String,
+    pub login_count: i32,
+    pub last_login_at: Option<String>,
 }
 
 /// GET /api/admin/users - List all users with their restaurants
@@ -38,10 +40,12 @@ pub async fn list_users(
             u.display_name as name,
             t.name as restaurant_name,
             COALESCE(u.language, 'ru') as language,
-            u.created_at::text
+            u.created_at::text,
+            u.login_count,
+            u.last_login_at::text as last_login_at
         FROM users u
         JOIN tenants t ON u.tenant_id = t.id
-        ORDER BY u.created_at DESC
+        ORDER BY u.login_count DESC, u.last_login_at DESC NULLS LAST
         "#
     )
     .fetch_all(&pool)

@@ -11,6 +11,7 @@ pub trait UserRepositoryTrait: Send + Sync {
     async fn find_by_id(&self, id: UserId) -> AppResult<Option<User>>;
     async fn find_by_email(&self, email: &Email) -> AppResult<Option<User>>;
     async fn exists_by_email(&self, email: &Email) -> AppResult<bool>;
+    async fn update_login_stats(&self, user_id: UserId) -> AppResult<()>;
 }
 
 #[derive(Clone)]
@@ -129,5 +130,16 @@ impl UserRepositoryTrait for UserRepository {
 
         let exists: bool = result.get("exists");
         Ok(exists)
+    }
+
+    async fn update_login_stats(&self, user_id: UserId) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE users SET login_count = login_count + 1, last_login_at = NOW() WHERE id = $1"
+        )
+        .bind(user_id.as_uuid())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }

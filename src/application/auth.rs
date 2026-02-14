@@ -111,6 +111,11 @@ impl AuthService {
             return Err(AppError::authentication("Invalid email or password"));
         }
 
+        // Update login statistics
+        if let Err(e) = self.user_repo.update_login_stats(user.id).await {
+            tracing::warn!("Failed to update login statistics: {}", e);
+        }
+
         // Generate tokens
         let access_token = self.jwt_service.generate_access_token(user.id, user.tenant_id)?;
         let refresh_token_str = self.jwt_service.generate_refresh_token();
