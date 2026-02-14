@@ -23,7 +23,6 @@ pub struct UserInfo {
     pub restaurant_name: String,
     pub language: String,
     pub created_at: String,
-    pub is_active: bool,
 }
 
 /// GET /api/admin/users - List all users with their restaurants
@@ -36,11 +35,10 @@ pub async fn list_users(
         SELECT 
             u.id::text,
             u.email,
-            u.name,
-            t.restaurant_name,
-            u.language,
-            u.created_at::text,
-            u.is_active
+            u.display_name as name,
+            t.name as restaurant_name,
+            COALESCE(u.language, 'ru') as language,
+            u.created_at::text
         FROM users u
         JOIN tenants t ON u.tenant_id = t.id
         ORDER BY u.created_at DESC
@@ -62,7 +60,6 @@ pub async fn list_users(
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct UserStats {
     pub total_users: i64,
-    pub active_users: i64,
     pub total_restaurants: i64,
 }
 
@@ -74,7 +71,6 @@ pub async fn get_stats(
         r#"
         SELECT 
             COUNT(DISTINCT u.id) as total_users,
-            COUNT(DISTINCT CASE WHEN u.is_active THEN u.id END) as active_users,
             COUNT(DISTINCT t.id) as total_restaurants
         FROM users u
         JOIN tenants t ON u.tenant_id = t.id
