@@ -6,6 +6,7 @@ use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     admin_auth,
     admin_catalog,
+    admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, get_categories_admin, search_ingredients, CatalogState},
@@ -113,6 +114,13 @@ pub fn create_router(
         .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
         .with_state(catalog_service.clone());
 
+    // Admin users route (for user management)
+    let admin_users_route: Router = Router::new()
+        .route("/users", get(admin_users::list_users))
+        .route("/stats", get(admin_users::get_stats))
+        .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
+        .with_state(pool.clone());
+
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
         let jwt_service = jwt_service.clone();
@@ -190,6 +198,7 @@ pub fn create_router(
         .nest("/api/admin/auth", admin_routes)
         .nest("/api/admin", admin_catalog_routes)
         .nest("/api/admin", admin_categories_route)
+        .nest("/api/admin", admin_users_route)
         .nest("/api", protected_routes)
         .layer(cors)
 }
