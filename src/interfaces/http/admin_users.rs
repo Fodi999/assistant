@@ -94,7 +94,7 @@ pub async fn delete_user(
 ) -> Result<impl IntoResponse, StatusCode> {
     // First, get the tenant_id for this user
     let tenant_id: Option<String> = sqlx::query_scalar(
-        "SELECT tenant_id::text FROM users WHERE id = $1"
+        "SELECT tenant_id::text FROM users WHERE id = $1::uuid"
     )
     .bind(&user_id)
     .fetch_optional(&pool)
@@ -111,7 +111,7 @@ pub async fn delete_user(
 
     // Delete the tenant (CASCADE will delete user and all related data)
     let result = sqlx::query(
-        "DELETE FROM tenants WHERE id = $1"
+        "DELETE FROM tenants WHERE id = $1::uuid"
     )
     .bind(&tenant_id)
     .execute(&pool)

@@ -2145,3 +2145,390 @@ const sortedUsers = [...filteredUsers].sort((a, b) => {
 
 **Готово! Админ теперь может видеть всех зарегистрированных пользователей! 🎉**
 
+
+---
+
+### 🗑️ Удаление пользователей
+
+#### API Endpoint
+
+```typescript
+DELETE /api/admin/users/:id
+Headers: {
+  'Authorization': 'Bearer <admin_token>'
+}
+
+Response (Success):
+{
+  "message": "User and tenant deleted successfully",
+  "user_id": "uuid",
+  "tenant_id": "uuid"
+}
+
+Response (Not Found):
+404 Not Found
+```
+
+⚠️ **Важно:** Это CASCADE удаление! Удаляется:
+- Пользователь (users)
+- Тенант/ресторан (tenants)
+- Все продукты инвентаря (inventory_products)
+- Все рецепты (recipes)
+- Все блюда (dishes)
+- Все данные ассистента (assistant_states)
+- Refresh токены (refresh_tokens)
+
+---
+
+### 🔴 UsersListTable с кнопкой удаления
+
+```typescript
+// src/components/admin/UsersListTable.tsx
+import React, { useEffect, useState } from 'react';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
+
+interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  restaurant_name: string;
+  language: string;
+  created_at: string;
+}
+
+interface UsersListResponse {
+  total: number;
+  users: User[];
+}
+
+const UsersListTable: React.FC = () => {
+  const [data, setData] = useState<UsersListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(
+        'https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/users',
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch users');
+      }
+
+      const result = await response.json();
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, email: string, restaurantName: string) => {
+    const confirmMessage = `⚠️ ВНИМАНИЕ! Это действие удалит:\n\n` +
+      `✗ Пользователя: ${email}\n` +
+      `✗ Ресторан: ${restaurantName}\n` +
+      `✗ ВСЕ данные ресторана (инвентарь, рецепты, блюда)\n\n` +
+      `Это действие НЕОБРАТИМО!\n\n` +
+      `Введите "DELETE" для подтверждения:`;
+
+    const userInput = prompt(confirmMessage);
+    
+    if (userInput !== 'DELETE') {
+      alert('❌ Удаление отменено');
+      return;
+    }
+
+    try {
+      setDeleting(userId);
+      const token = localStorage.getItem('admin_token');
+      
+      const response = await fetch(
+        `https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/users/${userId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete user');
+      }
+
+      alert(`✅ Пользователь ${email} удален успешно`);
+      
+      // Refresh the list
+      await fetchUsers();
+      
+    } catch (err) {
+      alert(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      return format(new Date(dateString), 'dd MMMM yyyy, HH:mm', { locale: ru });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const getLanguageFlag = (lang: string) => {
+    const flags: Record<string, string> = {
+      'ru': '🇷🇺',
+      'en': '🇬🇧',
+      'pl': '🇵🇱',
+      'uk': '🇺🇦'
+    };
+    return flags[lang] || '🌐';
+  };
+
+  const filteredUsers = data?.users.filter(user => 
+    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.restaurant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (user.name && user.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  ) || [];
+
+  if (loading) return <div className="loading">Загрузка пользователей...</div>;
+  if (error) return <div className="error">Ошибка: {error}</div>;
+  if (!data) return null;
+
+  return (
+    <div className="users-list-container">
+      <div className="users-header">
+        <h2>👥 Зарегистрированные пользователи</h2>
+        <div className="users-count">Всего: {data.total}</div>
+      </div>
+
+      <div className="search-bar">
+        <input
+          type="text"
+          placeholder="🔍 Поиск по email, имени или ресторану..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="search-input"
+        />
+      </div>
+
+      <div className="table-wrapper">
+        <table className="users-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Имя</th>
+              <th>Ресторан</th>
+              <th>Язык</th>
+              <th>Дата регистрации</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="no-results">
+                  Ничего не найдено
+                </td>
+              </tr>
+            ) : (
+              filteredUsers.map((user) => (
+                <tr key={user.id}>
+                  <td className="email-cell">{user.email}</td>
+                  <td>{user.name || <span className="no-data">—</span>}</td>
+                  <td className="restaurant-cell">{user.restaurant_name}</td>
+                  <td className="language-cell">
+                    <span className="language-badge">
+                      {getLanguageFlag(user.language)} {user.language.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="date-cell">{formatDate(user.created_at)}</td>
+                  <td className="actions-cell">
+                    <button
+                      onClick={() => handleDeleteUser(user.id, user.email, user.restaurant_name)}
+                      disabled={deleting === user.id}
+                      className="delete-btn"
+                    >
+                      {deleting === user.id ? '⏳' : '🗑️'} Удалить
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="results-info">
+        Показано: {filteredUsers.length} из {data.total}
+      </div>
+    </div>
+  );
+};
+
+export default UsersListTable;
+```
+
+---
+
+### 🎨 Дополнительные CSS для кнопки удаления
+
+```css
+/* Добавить к существующему UsersListTable.css */
+
+.actions-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.delete-btn {
+  padding: 6px 12px;
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.delete-btn:hover:not(:disabled) {
+  background: #d32f2f;
+  transform: scale(1.05);
+}
+
+.delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.delete-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+```
+
+---
+
+### 🛡️ Безопасность
+
+**Double Confirmation Pattern:**
+
+```typescript
+// Вариант 1: Промпт с вводом текста (рекомендуется)
+const userInput = prompt('Введите "DELETE" для подтверждения:');
+if (userInput !== 'DELETE') {
+  return;
+}
+
+// Вариант 2: Модальное окно с чекбоксом
+const ConfirmDeleteModal = ({ user, onConfirm, onCancel }) => (
+  <div className="modal">
+    <h3>⚠️ Подтверждение удаления</h3>
+    <p>Вы собираетесь удалить:</p>
+    <ul>
+      <li>Email: {user.email}</li>
+      <li>Ресторан: {user.restaurant_name}</li>
+      <li>ВСЕ данные (инвентарь, рецепты, блюда)</li>
+    </ul>
+    <label>
+      <input type="checkbox" required />
+      Я понимаю, что это действие необратимо
+    </label>
+    <div className="modal-actions">
+      <button onClick={onCancel}>Отмена</button>
+      <button onClick={onConfirm} className="danger">Удалить</button>
+    </div>
+  </div>
+);
+```
+
+---
+
+### 📊 Что удаляется (CASCADE)
+
+```
+tenants (restaurants)
+  └─> users (ON DELETE CASCADE)
+       ├─> refresh_tokens
+       ├─> assistant_states
+       └─> (все данные привязанные к user_id)
+  
+  └─> inventory_products (ON DELETE CASCADE)
+  └─> recipes (ON DELETE CASCADE)
+  └─> dishes (ON DELETE CASCADE)
+  └─> dish_sales (ON DELETE CASCADE)
+```
+
+---
+
+### ✅ Чек-лист Delete User Feature
+
+- [ ] Добавить колонку "Действия" в таблицу
+- [ ] Реализовать handleDeleteUser функцию
+- [ ] Добавить double confirmation (prompt с "DELETE")
+- [ ] Показывать loading state во время удаления
+- [ ] Обновлять список после удаления
+- [ ] Добавить стили для кнопки удаления
+- [ ] Протестировать CASCADE удаление
+- [ ] Проверить error handling
+
+---
+
+### 🧪 Тестирование
+
+```bash
+# 1. Получить admin token
+TOKEN=$(curl -s -X POST "https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@fodi.app","password":"Admin123!"}' | jq -r '.token')
+
+# 2. Создать тестового пользователя
+curl -X POST "https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test-delete@example.com",
+    "password": "TestPass123",
+    "restaurant_name": "To Delete Restaurant",
+    "owner_name": "Test User",
+    "language": "ru"
+  }'
+
+# 3. Получить ID пользователя
+USER_ID=$(curl -s "https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/users" \
+  -H "Authorization: Bearer $TOKEN" | \
+  jq -r '.users[] | select(.email=="test-delete@example.com") | .id')
+
+echo "User ID: $USER_ID"
+
+# 4. Удалить пользователя
+curl -X DELETE "https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/users/$USER_ID" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+
+# 5. Проверить, что пользователь удален
+curl -s "https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/users" \
+  -H "Authorization: Bearer $TOKEN" | \
+  jq '.users[] | select(.email=="test-delete@example.com")'
+# Должно быть пусто
+```
+
+---
+
+**Готово! Админ теперь может удалять пользователей (с двойным подтверждением) 🗑️**
