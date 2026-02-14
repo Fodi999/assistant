@@ -1581,3 +1581,567 @@ function ProductImageUpload({ productId, currentImageUrl, onUploadSuccess }: Pro
 
 **Готово! Теперь можно загружать изображения любого размера! 🎉**
 
+
+---
+
+## 10. 👥 User Management - Управление пользователями
+
+### API Endpoints
+
+#### 1. Get Statistics
+```typescript
+GET /api/admin/stats
+Headers: {
+  'Authorization': 'Bearer <admin_token>'
+}
+
+Response:
+{
+  "total_users": 52,
+  "total_restaurants": 52
+}
+```
+
+#### 2. List All Users
+```typescript
+GET /api/admin/users
+Headers: {
+  'Authorization': 'Bearer <admin_token>'
+}
+
+Response:
+{
+  "total": 52,
+  "users": [
+    {
+      "id": "166aa5b8-3a7b-4799-9c38-8226cdc7373d",
+      "email": "test1770977266@test.com",
+      "name": null,
+      "restaurant_name": "Test Restaurant",
+      "language": "en",
+      "created_at": "2026-02-13 10:07:47.203429+00"
+    }
+  ]
+}
+```
+
+---
+
+### 📊 UserStatsDashboard Component
+
+```typescript
+// src/components/admin/UserStatsDashboard.tsx
+import React, { useEffect, useState } from 'react';
+
+interface UserStats {
+  total_users: number;
+  total_restaurants: number;
+}
+
+const UserStatsDashboard: React.FC = () => {
+  const [stats, setStats] = useState<UserStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(
+        'https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/stats',
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch statistics');
+      }
+
+      const data = await response.json();
+      setStats(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="loading">Загрузка статистики...</div>;
+  if (error) return <div className="error">Ошибка: {error}</div>;
+  if (!stats) return null;
+
+  return (
+    <div className="stats-dashboard">
+      <h2>📊 Статистика платформы</h2>
+      
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon">👥</div>
+          <div className="stat-value">{stats.total_users}</div>
+          <div className="stat-label">Всего пользователей</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">🏪</div>
+          <div className="stat-value">{stats.total_restaurants}</div>
+          <div className="stat-label">Ресторанов</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default UserStatsDashboard;
+```
+
+**CSS:**
+```css
+/* src/styles/UserStatsDashboard.css */
+.stats-dashboard {
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+
+.stats-dashboard h2 {
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 25px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+}
+
+.stat-icon {
+  font-size: 40px;
+  margin-bottom: 10px;
+}
+
+.stat-value {
+  font-size: 36px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.stat-label {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.loading, .error {
+  padding: 20px;
+  text-align: center;
+  border-radius: 8px;
+}
+
+.error {
+  background: #fee;
+  color: #c33;
+}
+```
+
+---
+
+### 📋 UsersListTable Component
+
+```typescript
+// src/components/admin/UsersListTable.tsx
+import React, { useEffect, useState } from 'react';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
+
+interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  restaurant_name: string;
+  language: string;
+  created_at: string;
+}
+
+interface UsersListResponse {
+  total: number;
+  users: User[];
+}
+
+const UsersListTable: React.FC = () => {
+  const [data, setData] = useState<UsersListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(
+        'https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/admin/users',
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch users');
+      }
+
+      const result = await response.json();
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      return format(new Date(dateString), 'dd MMMM yyyy, HH:mm', { locale: ru });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const getLanguageFlag = (lang: string) => {
+    const flags: Record<string, string> = {
+      'ru': '🇷🇺',
+      'en': '🇬🇧',
+      'pl': '🇵🇱',
+      'uk': '🇺🇦'
+    };
+    return flags[lang] || '🌐';
+  };
+
+  const filteredUsers = data?.users.filter(user => 
+    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.restaurant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (user.name && user.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  ) || [];
+
+  if (loading) return <div className="loading">Загрузка пользователей...</div>;
+  if (error) return <div className="error">Ошибка: {error}</div>;
+  if (!data) return null;
+
+  return (
+    <div className="users-list-container">
+      <div className="users-header">
+        <h2>👥 Зарегистрированные пользователи</h2>
+        <div className="users-count">Всего: {data.total}</div>
+      </div>
+
+      <div className="search-bar">
+        <input
+          type="text"
+          placeholder="🔍 Поиск по email, имени или ресторану..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="search-input"
+        />
+      </div>
+
+      <div className="table-wrapper">
+        <table className="users-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Имя</th>
+              <th>Ресторан</th>
+              <th>Язык</th>
+              <th>Дата регистрации</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="no-results">
+                  Ничего не найдено
+                </td>
+              </tr>
+            ) : (
+              filteredUsers.map((user) => (
+                <tr key={user.id}>
+                  <td className="email-cell">{user.email}</td>
+                  <td>{user.name || <span className="no-data">—</span>}</td>
+                  <td className="restaurant-cell">{user.restaurant_name}</td>
+                  <td className="language-cell">
+                    <span className="language-badge">
+                      {getLanguageFlag(user.language)} {user.language.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="date-cell">{formatDate(user.created_at)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="results-info">
+        Показано: {filteredUsers.length} из {data.total}
+      </div>
+    </div>
+  );
+};
+
+export default UsersListTable;
+```
+
+**CSS:**
+```css
+/* src/styles/UsersListTable.css */
+.users-list-container {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.users-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.users-header h2 {
+  margin: 0;
+  color: #333;
+}
+
+.users-count {
+  background: #667eea;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: bold;
+}
+
+.search-bar {
+  margin-bottom: 20px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.3s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+
+.users-table thead {
+  background: #f5f5f5;
+}
+
+.users-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 2px solid #ddd;
+}
+
+.users-table td {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.users-table tbody tr:hover {
+  background: #f9f9f9;
+}
+
+.email-cell {
+  color: #667eea;
+  font-weight: 500;
+}
+
+.restaurant-cell {
+  font-weight: 500;
+}
+
+.language-cell {
+  text-align: center;
+}
+
+.language-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  background: #e3f2fd;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #1976d2;
+}
+
+.date-cell {
+  color: #666;
+  font-size: 14px;
+}
+
+.no-data {
+  color: #999;
+  font-style: italic;
+}
+
+.no-results {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+.results-info {
+  margin-top: 15px;
+  text-align: right;
+  color: #666;
+  font-size: 14px;
+}
+```
+
+---
+
+### 🎯 Интеграция в Admin Panel
+
+```typescript
+// src/pages/AdminPanel.tsx
+import React from 'react';
+import UserStatsDashboard from '../components/admin/UserStatsDashboard';
+import UsersListTable from '../components/admin/UsersListTable';
+
+const AdminPanel: React.FC = () => {
+  return (
+    <div className="admin-panel">
+      <h1>🎛️ Admin Panel</h1>
+      
+      {/* Statistics Dashboard */}
+      <UserStatsDashboard />
+      
+      {/* Users List */}
+      <UsersListTable />
+      
+      {/* ... другие секции админки ... */}
+    </div>
+  );
+};
+
+export default AdminPanel;
+```
+
+---
+
+### 📦 Необходимые зависимости
+
+```bash
+npm install date-fns
+# или
+yarn add date-fns
+```
+
+---
+
+### ✅ Чек-лист User Management
+
+- [ ] Установить `date-fns` для форматирования дат
+- [ ] Создать `UserStatsDashboard` компонент
+- [ ] Создать `UsersListTable` компонент
+- [ ] Добавить CSS стили
+- [ ] Интегрировать в главную страницу админки
+- [ ] Протестировать поиск пользователей
+- [ ] Проверить отображение дат на русском
+- [ ] Проверить флаги языков
+
+---
+
+### 🎨 Дополнительные фичи (опционально)
+
+**1. Экспорт в CSV:**
+```typescript
+const exportToCSV = () => {
+  const csv = [
+    ['Email', 'Имя', 'Ресторан', 'Язык', 'Дата регистрации'],
+    ...data.users.map(user => [
+      user.email,
+      user.name || '',
+      user.restaurant_name,
+      user.language,
+      user.created_at
+    ])
+  ].map(row => row.join(',')).join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `users_${new Date().toISOString()}.csv`;
+  a.click();
+};
+```
+
+**2. Пагинация (если пользователей много):**
+```typescript
+const [page, setPage] = useState(1);
+const itemsPerPage = 20;
+const paginatedUsers = filteredUsers.slice(
+  (page - 1) * itemsPerPage,
+  page * itemsPerPage
+);
+```
+
+**3. Сортировка:**
+```typescript
+const [sortBy, setSortBy] = useState<'email' | 'created_at'>('created_at');
+const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+const sortedUsers = [...filteredUsers].sort((a, b) => {
+  const order = sortOrder === 'asc' ? 1 : -1;
+  if (sortBy === 'email') {
+    return order * a.email.localeCompare(b.email);
+  }
+  return order * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+});
+```
+
+**Готово! Админ теперь может видеть всех зарегистрированных пользователей! 🎉**
+

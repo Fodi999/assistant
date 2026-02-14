@@ -23,7 +23,7 @@ use axum::{
     http::{Method, header},
     middleware::{self, Next},
     response::Response,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use sqlx::PgPool;
@@ -117,6 +117,7 @@ pub fn create_router(
     // Admin users route (for user management)
     let admin_users_route: Router = Router::new()
         .route("/users", get(admin_users::list_users))
+        .route("/users/:id", delete(admin_users::delete_user))
         .route("/stats", get(admin_users::get_stats))
         .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
         .with_state(pool.clone());
