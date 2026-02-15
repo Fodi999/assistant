@@ -159,16 +159,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create separate GroqService instance for Recipe V2
     let groq_service_v2 = Arc::new(GroqService::new(config.ai.groq_api_key.clone()));
     
-    let recipe_v2_repo = Arc::new(crate::infrastructure::persistence::RecipeRepositoryV2::new(
+    // 1️⃣ Create concrete implementations
+    let recipe_v2_repo_impl = Arc::new(crate::infrastructure::persistence::RecipeRepositoryV2::new(
         repositories.pool.clone()
     ));
-    let recipe_ingredient_repo = Arc::new(crate::infrastructure::persistence::RecipeIngredientRepository::new(
+    let recipe_ingredient_repo_impl = Arc::new(crate::infrastructure::persistence::RecipeIngredientRepository::new(
         repositories.pool.clone()
     ));
-    let recipe_translation_repo = Arc::new(crate::infrastructure::persistence::RecipeTranslationRepository::new(
+    let recipe_translation_repo_impl = Arc::new(crate::infrastructure::persistence::RecipeTranslationRepository::new(
         repositories.pool.clone()
     ));
+    let catalog_repo_impl = Arc::new(repositories.catalog_ingredient.clone());
     
+    // 2️⃣ Upcast to trait objects with EXPLICIT type annotations
+    let recipe_v2_repo: Arc<dyn crate::infrastructure::persistence::RecipeV2RepositoryTrait> = recipe_v2_repo_impl;
+    let recipe_ingredient_repo: Arc<dyn crate::infrastructure::persistence::RecipeIngredientRepositoryTrait> = recipe_ingredient_repo_impl;
+    let recipe_translation_repo: Arc<dyn crate::infrastructure::persistence::RecipeTranslationRepositoryTrait> = recipe_translation_repo_impl;
+    let catalog_repo: Arc<dyn crate::infrastructure::persistence::CatalogIngredientRepositoryTrait> = catalog_repo_impl;
+    
+    // 3️⃣ Create services with trait objects
     let recipe_translation_service = Arc::new(crate::application::recipe_translation_service::RecipeTranslationService::new(
         recipe_translation_repo,
         recipe_v2_repo.clone(),
@@ -178,7 +187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let recipe_v2_service = Arc::new(crate::application::recipe_v2_service::RecipeV2Service::new(
         recipe_v2_repo,
         recipe_ingredient_repo,
-        Arc::new(repositories.catalog_ingredient.clone()) as Arc<dyn crate::infrastructure::persistence::CatalogIngredientRepositoryTrait>,
+        catalog_repo,
         recipe_translation_service,
     ));
     tracing::info!("✅ Recipe V2 Service initialized (with auto-translations)");
