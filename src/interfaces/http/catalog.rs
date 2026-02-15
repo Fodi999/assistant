@@ -122,6 +122,14 @@ pub async fn search_ingredients(
     // 🎯 ЭТАЛОН B2B SaaS: Language from AuthUser (backend source of truth)
     let language = auth.language;
 
+    // ✅ Validation: minimum query length (performance + UX)
+    if let Some(ref query) = params.q {
+        let trimmed = query.trim();
+        if !trimmed.is_empty() && trimmed.chars().count() < 2 {
+            return Err(AppError::validation("Search query must be at least 2 characters"));
+        }
+    }
+
     let ingredients = if let Some(category_id_str) = params.category_id {
         // Parse category UUID
         let category_uuid = Uuid::parse_str(&category_id_str)
