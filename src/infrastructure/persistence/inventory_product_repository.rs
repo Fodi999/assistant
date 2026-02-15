@@ -92,15 +92,16 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
     }
 
     async fn find_by_id(&self, id: InventoryProductId, user_id: UserId, tenant_id: TenantId) -> AppResult<Option<InventoryProduct>> {
+        // 🎯 TENANT ISOLATION: Filter by tenant_id only (not user_id)
+        // This allows all restaurant staff to see shared inventory
         let row = sqlx::query(
             r#"
             SELECT id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, received_at, expires_at, created_at, updated_at
             FROM inventory_products
-            WHERE id = $1 AND user_id = $2 AND tenant_id = $3
+            WHERE id = $1 AND tenant_id = $2
             "#
         )
         .bind(id.as_uuid())
-        .bind(user_id.as_uuid())
         .bind(tenant_id.as_uuid())
         .fetch_optional(&self.pool)
         .await?;
@@ -112,15 +113,15 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
     }
 
     async fn list_by_user(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<Vec<InventoryProduct>> {
+        // 🎯 TENANT ISOLATION: All staff see shared inventory
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, received_at, expires_at, created_at, updated_at
             FROM inventory_products
-            WHERE user_id = $1 AND tenant_id = $2
+            WHERE tenant_id = $1
             ORDER BY created_at DESC
             "#
         )
-        .bind(user_id.as_uuid())
         .bind(tenant_id.as_uuid())
         .fetch_all(&self.pool)
         .await?;
@@ -131,11 +132,12 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
     }
 
     async fn update(&self, product: &InventoryProduct) -> AppResult<()> {
+        // 🎯 TENANT ISOLATION: Update allowed if belongs to tenant
         sqlx::query(
             r#"
             UPDATE inventory_products
             SET price_per_unit_cents = $1, quantity = $2, expires_at = $3, updated_at = $4
-            WHERE id = $5 AND user_id = $6 AND tenant_id = $7
+            WHERE id = $5 AND tenant_id = $6
             "#
         )
         .bind(product.price_per_unit.as_cents())
@@ -143,7 +145,6 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
         .bind(product.expires_at)
         .bind(product.updated_at)
         .bind(product.id.as_uuid())
-        .bind(product.user_id.as_uuid())
         .bind(product.tenant_id.as_uuid())
         .execute(&self.pool)
         .await?;
@@ -152,14 +153,14 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
     }
 
     async fn delete(&self, id: InventoryProductId, user_id: UserId, tenant_id: TenantId) -> AppResult<()> {
+        // 🎯 TENANT ISOLATION: Delete allowed if belongs to tenant
         sqlx::query(
             r#"
             DELETE FROM inventory_products
-            WHERE id = $1 AND user_id = $2 AND tenant_id = $3
+            WHERE id = $1 AND tenant_id = $2
             "#
         )
         .bind(id.as_uuid())
-        .bind(user_id.as_uuid())
         .bind(tenant_id.as_uuid())
         .execute(&self.pool)
         .await?;
@@ -168,14 +169,14 @@ impl InventoryProductRepositoryTrait for InventoryProductRepository {
     }
 
     async fn count_by_user(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<i64> {
+        // 🎯 TENANT ISOLATION: Count all tenant inventory
         let row = sqlx::query(
             r#"
             SELECT COUNT(*) as count
             FROM inventory_products
-            WHERE user_id = $1 AND tenant_id = $2
+            WHERE tenant_id = $1
             "#
         )
-        .bind(user_id.as_uuid())
         .bind(tenant_id.as_uuid())
         .fetch_one(&self.pool)
         .await?;

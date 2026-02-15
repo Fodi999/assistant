@@ -79,8 +79,8 @@ impl CatalogIngredientRepository {
 #[async_trait]
 impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
     async fn search(&self, query: &str, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
-        // 🎯 ЭТАЛОН B2B SaaS: Use translations table with COALESCE fallback
-        let lang_code = language.code();
+        // 🎯 FIX: Search directly in base columns (name_en, name_ru, name_pl, name_uk)
+        // catalog_ingredient_translations table is NOT used - data is in base table
         
         let sql = r#"
             SELECT 
@@ -96,22 +96,21 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 ci.calories_per_100g, 
                 ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                 ci.image_url,
-                ci.is_active,
-                COALESCE(cit_user.name, cit_en.name) as search_name
+                ci.is_active
             FROM catalog_ingredients ci
-            LEFT JOIN catalog_ingredient_translations cit_user 
-                ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
-            LEFT JOIN catalog_ingredient_translations cit_en 
-                ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
             WHERE COALESCE(ci.is_active, true) = true 
-              AND COALESCE(cit_user.name, cit_en.name) ILIKE '%' || $1 || '%'
-            ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
-            LIMIT $3
+              AND (
+                  ci.name_en ILIKE '%' || $1 || '%' OR
+                  ci.name_ru ILIKE '%' || $1 || '%' OR
+                  ci.name_pl ILIKE '%' || $1 || '%' OR
+                  ci.name_uk ILIKE '%' || $1 || '%'
+              )
+            ORDER BY ci.name_en ASC
+            LIMIT $2
         "#;
 
         let rows = sqlx::query(sql)
             .bind(query)
-            .bind(lang_code)
             .bind(limit)
             .fetch_all(&self.pool)
             .await?;
@@ -122,9 +121,8 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
     }
 
     async fn search_by_category(&self, category_id: CatalogCategoryId, query: Option<&str>, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
-        // 🎯 ЭТАЛОН B2B SaaS: Use translations table with COALESCE fallback
-        let lang_code = language.code();
-
+        // 🎯 FIX: Search directly in base columns
+        
         let sql = if query.is_some() {
             r#"
                 SELECT 
@@ -140,18 +138,18 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                     ci.calories_per_100g, 
                     ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                     ci.image_url,
-                    ci.is_active,
-                    COALESCE(cit_user.name, cit_en.name) as search_name
+                    ci.is_active
                 FROM catalog_ingredients ci
-                LEFT JOIN catalog_ingredient_translations cit_user 
-                    ON cit_user.ingredient_id = ci.id AND cit_user.language = $3
-                LEFT JOIN catalog_ingredient_translations cit_en 
-                    ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
                 WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1 
-                  AND COALESCE(cit_user.name, cit_en.name) ILIKE '%' || $2 || '%'
-                ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
-                LIMIT $4
+                  AND (
+                      ci.name_en ILIKE '%' || $2 || '%' OR
+                      ci.name_ru ILIKE '%' || $2 || '%' OR
+                      ci.name_pl ILIKE '%' || $2 || '%' OR
+                      ci.name_uk ILIKE '%' || $2 || '%'
+                  )
+                ORDER BY ci.name_en ASC
+                LIMIT $3
             "#
         } else {
             r#"
@@ -168,17 +166,12 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                     ci.calories_per_100g, 
                     ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                     ci.image_url,
-                    ci.is_active,
-                    COALESCE(cit_user.name, cit_en.name) as search_name
+                    ci.is_active
                 FROM catalog_ingredients ci
-                LEFT JOIN catalog_ingredient_translations cit_user 
-                    ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
-                LEFT JOIN catalog_ingredient_translations cit_en 
-                    ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
                 WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1
-                ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
-                LIMIT $3
+                ORDER BY ci.name_en ASC
+                LIMIT $2
             "#
         };
 
@@ -186,14 +179,12 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
             sqlx::query(sql)
                 .bind(category_id.as_uuid())
                 .bind(q)
-                .bind(lang_code)
                 .bind(limit)
                 .fetch_all(&self.pool)
                 .await?
         } else {
             sqlx::query(sql)
                 .bind(category_id.as_uuid())
-                .bind(lang_code)
                 .bind(limit)
                 .fetch_all(&self.pool)
                 .await?
@@ -228,9 +219,8 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
     }
 
     async fn list(&self, language: Language, offset: i64, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
-        // 🎯 ЭТАЛОН B2B SaaS: Use translations table with COALESCE fallback
-        let lang_code = language.code();
-
+        // 🎯 FIX: List directly from base columns
+        
         let sql = r#"
             SELECT 
                 ci.id, 
@@ -245,15 +235,10 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 ci.calories_per_100g, 
                 ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                 ci.image_url,
-                ci.is_active,
-                COALESCE(cit_user.name, cit_en.name) as search_name
+                ci.is_active
             FROM catalog_ingredients ci
-            LEFT JOIN catalog_ingredient_translations cit_user 
-                ON cit_user.ingredient_id = ci.id AND cit_user.language = $3
-            LEFT JOIN catalog_ingredient_translations cit_en 
-                ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
             WHERE COALESCE(ci.is_active, true) = true
-            ORDER BY COALESCE(cit_user.name, cit_en.name) ASC
+            ORDER BY ci.name_en ASC
             OFFSET $1
             LIMIT $2
         "#;
@@ -261,7 +246,6 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
         let rows = sqlx::query(sql)
             .bind(offset)
             .bind(limit)
-            .bind(lang_code)
             .fetch_all(&self.pool)
             .await?;
 

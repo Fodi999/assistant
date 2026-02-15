@@ -212,21 +212,20 @@ impl InventoryService {
             INNER JOIN catalog_ingredients ci 
                 ON ip.catalog_ingredient_id = ci.id
             LEFT JOIN catalog_ingredient_translations cit_user 
-                ON cit_user.ingredient_id = ci.id AND cit_user.language = $3
+                ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
             LEFT JOIN catalog_ingredient_translations cit_en 
                 ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
             LEFT JOIN catalog_categories cc 
                 ON ci.category_id = cc.id
             LEFT JOIN catalog_category_translations cct_user 
-                ON cct_user.category_id = cc.id AND cct_user.language = $3
+                ON cct_user.category_id = cc.id AND cct_user.language = $2
             LEFT JOIN catalog_category_translations cct_en 
                 ON cct_en.category_id = cc.id AND cct_en.language = 'en'
-            WHERE ip.user_id = $1 AND ip.tenant_id = $2
+            WHERE ip.tenant_id = $1
             ORDER BY ip.created_at DESC
         "#;
 
         let rows = sqlx::query(query)
-            .bind(user_id.as_uuid())
             .bind(tenant_id.as_uuid())
             .bind(lang_code)  // user.language ('en'|'pl'|'uk'|'ru')
             .fetch_all(&self.pool)
