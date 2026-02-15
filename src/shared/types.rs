@@ -142,3 +142,24 @@ impl fmt::Display for UnitType {
         write!(f, "{}", s)
     }
 }
+
+impl UnitType {
+    /// Конвертировать строку в UnitType
+    /// Используется для AI классификации
+    pub fn from_string(s: &str) -> Result<Self, crate::shared::AppError> {
+        match s.trim().to_lowercase().as_str() {
+            "gram" => Ok(UnitType::Gram),
+            "kilogram" | "kg" => Ok(UnitType::Kilogram),
+            "liter" | "litre" => Ok(UnitType::Liter),
+            "milliliter" | "ml" => Ok(UnitType::Milliliter),
+            "piece" | "штука" => Ok(UnitType::Piece),
+            "bunch" | "пучок" => Ok(UnitType::Bunch),
+            "can" | "банка" => Ok(UnitType::Can),
+            "bottle" | "бутылка" => Ok(UnitType::Bottle),
+            "package" | "упаковка" => Ok(UnitType::Package),
+            _ => Err(crate::shared::AppError::validation(
+                &format!("Unknown unit type: {}", s)
+            )),
+        }
+    }
+}

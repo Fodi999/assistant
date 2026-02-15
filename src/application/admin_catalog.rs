@@ -24,9 +24,18 @@ pub struct AdminCatalogService {
     groq: GroqService,
 }
 
-/// Create Product Request
+/// Create Product Request - NEW ARCHITECTURE
+/// 
+/// Admin can input in ANY language (RU, PL, UK, EN)
+/// Backend normalizes to English (canonical) automatically
 #[derive(Debug, Deserialize)]
 pub struct CreateProductRequest {
+    /// 🧠 Universal input field - can be in ANY language
+    /// Backend will detect language and normalize to English
+    pub name_input: String,
+    
+    /// 🌍 Optional manual overrides (if not provided, will be auto-generated)
+    #[serde(default = "default_empty_string")]
     pub name_en: String,
     #[serde(default = "default_empty_string")]
     pub name_pl: String,
@@ -34,13 +43,21 @@ pub struct CreateProductRequest {
     pub name_uk: String,
     #[serde(default = "default_empty_string")]
     pub name_ru: String,
-    pub category_id: Uuid,
-    pub unit: UnitType,
+    
+    /// 🤖 Category & Unit can be AI-classified (optional override)
+    pub category_id: Option<Uuid>,
+    pub unit: Option<UnitType>,
+    
     pub description: Option<String>,
-    /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
+    
+    /// Если true, бекенд автоматически переведёт на все языки и классифицирует
     /// Использует dictionary cache, затем Groq если нужно
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub auto_translate: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_empty_string() -> String {
@@ -92,75 +109,147 @@ impl AdminCatalogService {
         }
     }
 
-    /// Create new product
+    /// Create new product - NEW ARCHITECTURE
+    /// 
+    /// Pipeline:
+    /// 1. Нормализация входа в английский (определение языка + перевод)
+    /// 2. Проверка дубликатов
+    /// 3. Hybrid перевод (dictionary cache + Groq)
+    /// 4. AI классификация (категория + unit, если не предоставлены)
+    /// 5. Валидация и сохранение
     pub async fn create_product(&self, req: CreateProductRequest) -> AppResult<ProductResponse> {
-        // Validate name_en is not empty
-        let name_en = req.name_en.trim();
-        if name_en.is_empty() {
-            return Err(AppError::validation("name_en cannot be empty"));
+        tracing::info!("🚀 Starting product creation pipeline");
+
+        // ==========================================
+        // 🧠 ШАГ 1: НОРМАЛИЗАЦИЯ В АНГЛИЙСКИЙ
+        // ==========================================
+        let name_input = req.name_input.trim();
+        if name_input.is_empty() {
+            return Err(AppError::validation("name_input cannot be empty"));
         }
 
-        // Check for duplicate name_en (case-insensitive)
+        // Если явно предоставлен name_en, используем его
+        // Иначе, определяем язык и переводим
+        let name_en = if !req.name_en.is_empty() {
+            req.name_en.trim().to_string()
+        } else {
+            tracing::info!("Determining language for input: {}", name_input);
+            self.groq.normalize_to_english(name_input).await?
+        };
+
+        tracing::info!("Canonical English: {}", name_en);
+
+        // ==========================================
+        // 🔍 ШАГ 2: ПРОВЕРКА ДУБЛИКАТОВ
+        // ==========================================
         let exists = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE LOWER(name_en) = LOWER($1) AND COALESCE(is_active, true) = true)"
         )
-        .bind(name_en)
+        .bind(&name_en)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
-            tracing::error!("Database error checking duplicate product '{}': {}", name_en, e);
-            AppError::internal("Failed to check for duplicate product")
+            tracing::error!("Database error checking duplicate: {}", e);
+            AppError::internal("Failed to check for duplicate")
         })?;
 
         if exists {
             return Err(AppError::conflict(&format!("Product '{}' already exists", name_en)));
         }
 
-        // Normalize translations - fallback to English if empty
-        let mut name_pl = normalize_translation(&req.name_pl, name_en);
-        let mut name_uk = normalize_translation(&req.name_uk, name_en);
-        let mut name_ru = normalize_translation(&req.name_ru, name_en);
+        // ==========================================
+        // 🌍 ШАГ 3: HYBRID ПЕРЕВОД
+        // ==========================================
+        let mut name_pl = normalize_translation(&req.name_pl, &name_en);
+        let mut name_uk = normalize_translation(&req.name_uk, &name_en);
+        let mut name_ru = normalize_translation(&req.name_ru, &name_en);
 
-        // 🧠 HYBRID TRANSLATION LOGIC for create_product
-        // Check if auto_translate is enabled and translations are empty
         if req.auto_translate && req.name_pl.trim().is_empty() && req.name_uk.trim().is_empty() && req.name_ru.trim().is_empty() {
-            tracing::info!("Auto-translation enabled for new product: {}", name_en);
+            tracing::info!("Auto-translate enabled, checking dictionary cache");
 
-            // 1️⃣ Check dictionary cache first (0$ cost)
-            if let Some(dict_entry) = self.dictionary.find_by_en(name_en).await? {
-                tracing::info!("Found in dictionary cache: {}", name_en);
+            // 1️⃣ Dictionary cache (0$)
+            if let Some(dict_entry) = self.dictionary.find_by_en(&name_en).await? {
+                tracing::info!("✅ Cache hit: {}", name_en);
                 name_pl = dict_entry.name_pl;
                 name_uk = dict_entry.name_uk;
                 name_ru = dict_entry.name_ru;
             } else {
-                // 2️⃣ Dictionary miss - call Groq (minimal cost)
-                tracing::info!("Dictionary miss for: {}, calling Groq", name_en);
-                
-                match self.groq.translate(name_en).await {
+                // 2️⃣ Groq AI ($0.01)
+                tracing::info!("❌ Cache miss, calling Groq");
+                match self.groq.translate(&name_en).await {
                     Ok(translation) => {
-                        // 3️⃣ Save to dictionary for future use (кеш навсегда)
+                        // Save to dictionary for future
                         if let Err(e) = self.dictionary
-                            .insert(name_en, &translation.pl, &translation.ru, &translation.uk)
+                            .insert(&name_en, &translation.pl, &translation.ru, &translation.uk)
                             .await {
-                            tracing::warn!("Failed to save translation to dictionary: {}", e);
-                            // Don't fail the create if dictionary insert fails
+                            tracing::warn!("Failed to cache translation: {}", e);
                         }
-
                         name_pl = translation.pl;
                         name_uk = translation.uk;
                         name_ru = translation.ru;
                     }
                     Err(e) => {
-                        tracing::warn!("Groq translation failed, falling back to English: {}", e);
-                        // Fallback: use English for all languages
-                        name_pl = name_en.to_string();
-                        name_uk = name_en.to_string();
-                        name_ru = name_en.to_string();
+                        tracing::warn!("Translation failed, fallback to English: {}", e);
+                        // 3️⃣ Fallback
+                        name_pl = name_en.clone();
+                        name_uk = name_en.clone();
+                        name_ru = name_en.clone();
                     }
                 }
             }
         }
 
+        // ==========================================
+        // 🤖 ШАГ 4: AI КЛАССИФИКАЦИЯ (если не предоставлены)
+        // ==========================================
+        let (category_id, unit) = if req.category_id.is_some() && req.unit.is_some() {
+            // Используем предоставленные значения
+            (req.category_id.unwrap(), req.unit.unwrap())
+        } else {
+            tracing::info!("Running AI classification for: {}", name_en);
+            
+            // Graceful degradation: AI не должен ломать CRUD
+            let classification = match self.groq.classify_product(&name_en).await {
+                Ok(c) => {
+                    tracing::info!("✅ AI classification: category={}, unit={}", 
+                        c.category_slug, c.unit);
+                    c
+                }
+                Err(e) => {
+                    tracing::warn!("⚠️ AI classification failed (using defaults): {}", e);
+                    // Graceful fallback: овощи + штука (самые универсальные)
+                    crate::infrastructure::groq_service::AiClassification {
+                        category_slug: "vegetables".to_string(),
+                        unit: "piece".to_string(),
+                    }
+                }
+            };
+            
+            // Конвертируем AI результаты в BD типы
+            let cat_id = match self.find_category_by_slug(&classification.category_slug).await {
+                Ok(id) => id,
+                Err(_) => {
+                    // Если категория не найдена, используем дефолт "Vegetables"
+                    tracing::warn!("Category '{}' not found, using Vegetables fallback", classification.category_slug);
+                    self.find_category_by_slug("vegetables").await?
+                }
+            };
+            
+            let unit = match UnitType::from_string(&classification.unit) {
+                Ok(u) => u,
+                Err(_) => {
+                    // Если unit не парсится, используем piece (самый безопасный)
+                    tracing::warn!("Unit '{}' not recognized, using piece fallback", classification.unit);
+                    UnitType::Piece
+                }
+            };
+            
+            (cat_id, unit)
+        };
+
+        // ==========================================
+        // 💾 ШАГ 5: СОХРАНЕНИЕ В БД
+        // ==========================================
         let id = Uuid::new_v4();
 
         let product = sqlx::query_as::<_, ProductResponse>(
@@ -179,7 +268,7 @@ impl AdminCatalogService {
             "#
         )
         .bind(id)
-        .bind(name_en)
+        .bind(&name_en)
         .bind(&name_pl)
         .bind(&name_uk)
         .bind(&name_ru)
@@ -472,4 +561,42 @@ impl AdminCatalogService {
         tracing::info!("Image deleted for product {}", product_id);
         Ok(())
     }
+
+    /// 🔍 Найти категорию по AI slug
+    /// 
+    /// Маппинг AI классификации на реальные категории базы данных
+    async fn find_category_by_slug(&self, slug: &str) -> AppResult<Uuid> {
+        let category_name_en = match slug.to_lowercase().as_str() {
+            "dairy_and_eggs" => "Dairy & Eggs",
+            "fruits" => "Fruits",
+            "vegetables" => "Vegetables",
+            "meat" | "meat_and_poultry" => "Meat & Poultry",
+            "seafood" | "fish_and_seafood" => "Fish & Seafood",
+            "grains" | "grains_and_pasta" => "Grains & Pasta",
+            "beverages" => "Beverages",
+            _ => {
+                tracing::warn!("Unknown category slug: {}, defaulting to Vegetables", slug);
+                "Vegetables"
+            }
+        };
+
+        let category_id = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM catalog_categories WHERE name_en = $1 LIMIT 1"
+        )
+        .bind(category_name_en)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error finding category: {}", e);
+            AppError::internal("Failed to find category")
+        })?
+        .ok_or_else(|| {
+            tracing::error!("Category not found: {}", category_name_en);
+            AppError::not_found(&format!("Category '{}' not found", category_name_en))
+        })?;
+
+        tracing::info!("Found category {} -> {}", slug, category_id);
+        Ok(category_id)
+    }
 }
+
