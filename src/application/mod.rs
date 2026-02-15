@@ -7,6 +7,8 @@ pub mod dish;
 pub mod inventory;
 pub mod menu_engineering;
 pub mod recipe;
+pub mod recipe_translation_service;  // V2 translation service
+pub mod recipe_v2_service;           // V2 recipe service
 pub mod tenant_ingredient;
 pub mod user;
 
