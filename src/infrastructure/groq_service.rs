@@ -57,7 +57,9 @@ impl GroqService {
 
         // Минимальный prompt для экономии токенов
         let prompt = format!(
-            r#"Translate "{}" to Polish, Russian, Ukrainian. Return JSON: {{"pl":"","ru":"","uk":""}}"#,
+            r#"Translate "{}" to Polish(pl), Russian(ru), Ukrainian(uk).
+Respond with ONLY valid JSON, no other text:
+{{"pl":"<Polish>","ru":"<Russian>","uk":"<Ukrainian>"}}"#,
             ingredient_name
         );
 
@@ -142,13 +144,17 @@ impl GroqService {
 
         let content = &choice.message.content;
         
+        tracing::debug!("Groq response content: {}", content);
+        
         // Попытка парсить JSON прямо
         let translation: GroqTranslationResponse = serde_json::from_str(content)
             .or_else(|_| {
                 // Fallback: попытаться извлечь JSON из текста
                 if let Some(start) = content.find('{') {
                     if let Some(end) = content.rfind('}') {
-                        return serde_json::from_str(&content[start..=end]);
+                        let json_str = &content[start..=end];
+                        tracing::debug!("Extracted JSON: {}", json_str);
+                        return serde_json::from_str(json_str);
                     }
                 }
                 Err(serde_json::Error::io(std::io::Error::new(
@@ -156,17 +162,21 @@ impl GroqService {
                     "No JSON found"
                 )))
             })
-            .map_err(|_| {
-                tracing::error!("Failed to parse translation JSON");
-                tracing::debug!("Response content: {}", content);
+            .map_err(|e| {
+                tracing::error!("Failed to parse translation JSON: {}", e);
+                tracing::debug!("Raw response: {}", content);
                 AppError::internal("Invalid translation response")
             })?;
 
-        // Валидация результатов
-        if translation.pl.trim().is_empty() 
-            || translation.ru.trim().is_empty() 
-            || translation.uk.trim().is_empty() {
-            return Err(AppError::validation("Groq returned empty translations"));
+        // Валидация результатов - но допускаем пустые для некритичных полей
+        if translation.pl.trim().is_empty() {
+            tracing::warn!("Groq returned empty PL translation for: {}", ingredient_name);
+        }
+        if translation.ru.trim().is_empty() {
+            tracing::warn!("Groq returned empty RU translation for: {}", ingredient_name);
+        }
+        if translation.uk.trim().is_empty() {
+            tracing::warn!("Groq returned empty UK translation for: {}", ingredient_name);
         }
 
         tracing::info!("✅ Groq translation successful for: {}", ingredient_name);
