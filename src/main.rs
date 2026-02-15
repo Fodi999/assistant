@@ -5,7 +5,7 @@ mod interfaces;
 mod shared;
 
 use application::{AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService, UserService};
-use infrastructure::{Config, JwtService, PasswordHasher, R2Client, Repositories};
+use infrastructure::{Config, GroqService, JwtService, PasswordHasher, R2Client, Repositories};
 use interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
@@ -132,12 +132,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ).await;
     tracing::info!("✅ R2 Client initialized successfully");
 
-    // Create AdminCatalogService
+    // Create GroqService for AI translations
+    let groq_service = GroqService::new(config.ai.groq_api_key.clone());
+    if config.ai.groq_api_key.is_empty() {
+        tracing::warn!("⚠️ GROQ_API_KEY not set - auto-translation will not work");
+    } else {
+        tracing::info!("✅ Groq Service initialized for auto-translations");
+    }
+
+    // Create AdminCatalogService with Groq + Dictionary support
     let admin_catalog_service = AdminCatalogService::new(
         repositories.pool.clone(),
         r2_client,
+        repositories.dictionary.clone(),
+        groq_service,
     );
-    tracing::info!("Admin Catalog Service initialized");
+    tracing::info!("Admin Catalog Service initialized (with hybrid translation cache)");
 
     // Create TenantIngredientService
     let tenant_ingredient_service = crate::application::TenantIngredientService::new(

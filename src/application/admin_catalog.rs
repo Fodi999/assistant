@@ -1,4 +1,5 @@
 use crate::infrastructure::R2Client;
+use crate::infrastructure::{DictionaryService, GroqService};
 use crate::shared::{AppError, AppResult, UnitType};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,8 @@ fn normalize_translation(value: &str, fallback: &str) -> String {
 pub struct AdminCatalogService {
     pool: PgPool,
     r2_client: R2Client,
+    dictionary: DictionaryService,
+    groq: GroqService,
 }
 
 /// Create Product Request
@@ -50,6 +53,10 @@ pub struct UpdateProductRequest {
     pub category_id: Option<Uuid>,
     pub unit: Option<UnitType>,
     pub description: Option<String>,
+    /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
+    /// Использует dictionary cache, затем Groq если нужно
+    #[serde(default)]
+    pub auto_translate: bool,
 }
 
 /// Product Response
@@ -67,8 +74,18 @@ pub struct ProductResponse {
 }
 
 impl AdminCatalogService {
-    pub fn new(pool: PgPool, r2_client: R2Client) -> Self {
-        Self { pool, r2_client }
+    pub fn new(
+        pool: PgPool,
+        r2_client: R2Client,
+        dictionary: DictionaryService,
+        groq: GroqService,
+    ) -> Self {
+        Self {
+            pool,
+            r2_client,
+            dictionary,
+            groq,
+        }
     }
 
     /// Create new product
@@ -178,7 +195,7 @@ impl AdminCatalogService {
         Ok(products)
     }
 
-    /// Update product
+    /// Update product with optional auto-translation via Groq
     pub async fn update_product(
         &self,
         id: Uuid,
@@ -212,17 +229,59 @@ impl AdminCatalogService {
             }
         }
 
-        // Normalize translations if provided, otherwise keep existing
+        // Determine final English name
         let name_en = req.name_en.as_deref().map(|s| s.trim().to_string());
         let final_name_en = name_en.as_deref().unwrap_or(&existing.name_en);
-        
-        let name_pl = req.name_pl.as_deref()
+
+        // 🧠 HYBRID TRANSLATION LOGIC
+        // Check if we need to auto-translate empty fields
+        let mut name_pl = req.name_pl.as_deref()
             .map(|s| normalize_translation(s, final_name_en));
-        let name_uk = req.name_uk.as_deref()
+        let mut name_uk = req.name_uk.as_deref()
             .map(|s| normalize_translation(s, final_name_en));
-        let name_ru = req.name_ru.as_deref()
+        let mut name_ru = req.name_ru.as_deref()
             .map(|s| normalize_translation(s, final_name_en));
 
+        // If auto_translate is enabled and we have empty translations, use cache/Groq
+        if req.auto_translate && (name_pl.is_none() && name_uk.is_none() && name_ru.is_none()) {
+            tracing::info!("Auto-translation enabled for: {}", final_name_en);
+
+            // 1️⃣ Check dictionary cache first (0$ cost)
+            if let Some(dict_entry) = self.dictionary.find_by_en(final_name_en).await? {
+                tracing::info!("Found in dictionary cache: {}", final_name_en);
+                name_pl = Some(dict_entry.name_pl);
+                name_uk = Some(dict_entry.name_uk);
+                name_ru = Some(dict_entry.name_ru);
+            } else {
+                // 2️⃣ Dictionary miss - call Groq (minimal cost)
+                tracing::info!("Dictionary miss for: {}, calling Groq", final_name_en);
+                
+                match self.groq.translate(final_name_en).await {
+                    Ok(translation) => {
+                        // 3️⃣ Save to dictionary for future use (кеш навсегда)
+                        if let Err(e) = self.dictionary
+                            .insert(final_name_en, &translation.pl, &translation.ru, &translation.uk)
+                            .await {
+                            tracing::warn!("Failed to save translation to dictionary: {}", e);
+                            // Don't fail the update if dictionary insert fails
+                        }
+
+                        name_pl = Some(translation.pl);
+                        name_uk = Some(translation.uk);
+                        name_ru = Some(translation.ru);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Groq translation failed, falling back to English: {}", e);
+                        // Fallback: use English for all languages
+                        name_pl = Some(final_name_en.to_string());
+                        name_uk = Some(final_name_en.to_string());
+                        name_ru = Some(final_name_en.to_string());
+                    }
+                }
+            }
+        }
+
+        // 4️⃣ Update database with translations
         let product = sqlx::query_as::<_, ProductResponse>(
             r#"
             UPDATE catalog_ingredients

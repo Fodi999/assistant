@@ -1,6 +1,7 @@
 pub mod assistant_state_repository;
 pub mod catalog_category_repository;
 pub mod catalog_ingredient_repository;
+pub mod dictionary_service;
 pub mod dish_repository;
 pub mod inventory_product_repository;
 pub mod recipe_repository;
@@ -11,6 +12,7 @@ pub mod user_repository;
 pub use assistant_state_repository::*;
 pub use catalog_category_repository::*;
 pub use catalog_ingredient_repository::*;
+pub use dictionary_service::*;
 pub use dish_repository::*;
 pub use inventory_product_repository::*;
 pub use recipe_repository::*;
@@ -29,6 +31,7 @@ pub struct Repositories {
     pub assistant_state: AssistantStateRepository,
     pub catalog_category: CatalogCategoryRepository,
     pub catalog_ingredient: CatalogIngredientRepository,
+    pub dictionary: DictionaryService,
     pub inventory_product: InventoryProductRepository,
     pub recipe: RecipeRepository,
     pub dish: DishRepository,
@@ -44,6 +47,7 @@ impl Repositories {
             assistant_state: AssistantStateRepository::new(pool.clone()),
             catalog_category: CatalogCategoryRepository::new(pool.clone()),
             catalog_ingredient: CatalogIngredientRepository::new(pool.clone()),
+            dictionary: DictionaryService::new(pool.clone()),
             inventory_product: InventoryProductRepository::new(pool.clone()),
             recipe: RecipeRepository::new(pool.clone()),
             dish: DishRepository::new(pool),

@@ -8,6 +8,7 @@ pub struct Config {
     pub cors: CorsConfig,
     pub admin: AdminConfig,
     pub r2: R2Config,
+    pub ai: AiConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +49,12 @@ pub struct R2Config {
     pub secret_access_key: String,
     pub bucket_name: String,
     pub public_url_base: String,
+}
+
+/// AI Services Configuration (Groq for translations)
+#[derive(Debug, Clone)]
+pub struct AiConfig {
+    pub groq_api_key: String,
 }
 
 impl Config {
@@ -96,12 +103,14 @@ impl Config {
                 bucket_name: env::var("CLOUDFLARE_R2_BUCKET_NAME")?,
                 public_url_base: env::var("CLOUDFLARE_R2_PUBLIC_URL")?,
             },
+            ai: AiConfig {
+                groq_api_key: env::var("GROQ_API_KEY")
+                    .unwrap_or_else(|_| "".to_string()),
+            },
         })
     }
 
-    pub fn server_address(&self) -> std::net::SocketAddr {
-        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-        // Always bind to 0.0.0.0 for cloud deployments (Koyeb, Fly, Railway, etc.)
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), self.server.port)
+    pub fn server_address(&self) -> String {
+        format!("0.0.0.0:{}", self.server.port)
     }
 }
