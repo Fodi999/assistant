@@ -251,17 +251,17 @@ Respond with ONLY valid JSON, no other text:
     /// 
     /// ВАЖНО: Жёсткая очистка ответа от лишнего текста
     pub async fn translate_to_language(&self, text: &str, target_lang: &str) -> Result<String, AppError> {
-        if text.len() > 100 {
+        if text.len() > 5000 {
             return Err(AppError::validation("Text too long for translation"));
         }
 
         let prompt = format!(
-            r#"Translate "{}" to {}.
-You MUST return ONLY the translated word, nothing else.
-Do not add explanations, prefixes, or suffixes.
-Return just the word."#,
-            text,
-            target_lang
+            r#"Translate the following text to {}.
+Return ONLY the translated text, nothing else.
+
+Text: {}"#,
+            target_lang,
+            text
         );
 
         let request_body = serde_json::json!({
@@ -271,7 +271,7 @@ Return just the word."#,
                 "content": prompt
             }],
             "temperature": 0.0,
-            "max_tokens": 50,
+            "max_tokens": 500,
         });
 
         const MAX_RETRIES: u32 = 1;

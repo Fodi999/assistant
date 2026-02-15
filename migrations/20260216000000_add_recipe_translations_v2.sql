@@ -14,6 +14,7 @@ ADD COLUMN IF NOT EXISTS language_default VARCHAR(5) DEFAULT 'en' CHECK (languag
 
 -- Add publishing fields
 ALTER TABLE recipes
+ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
 ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
 

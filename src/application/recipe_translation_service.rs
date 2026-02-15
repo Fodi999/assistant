@@ -103,17 +103,22 @@ impl RecipeTranslationService {
                 
                 // Spawn async task (non-blocking)
                 tokio::spawn(async move {
+                    tracing::info!(
+                        "🌍 Starting translation for recipe {} to {}",
+                        recipe_id.as_uuid(),
+                        target_lang.code()
+                    );
                     match service.translate_recipe(recipe_id, target_lang).await {
                         Ok(_) => {
                             tracing::info!(
-                                "Successfully translated recipe {} to {}",
+                                "✅ Successfully translated recipe {} to {}",
                                 recipe_id.as_uuid(),
                                 target_lang.code()
                             );
                         }
                         Err(e) => {
                             tracing::error!(
-                                "Failed to translate recipe {} to {}: {}",
+                                "❌ Failed to translate recipe {} to {}: {:?}",
                                 recipe_id.as_uuid(),
                                 target_lang.code(),
                                 e
