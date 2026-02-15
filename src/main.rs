@@ -178,7 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let recipe_v2_service = Arc::new(crate::application::recipe_v2_service::RecipeV2Service::new(
         recipe_v2_repo,
         recipe_ingredient_repo,
-        Arc::new(repositories.catalog_ingredient.clone()),
+        Arc::new(repositories.catalog_ingredient.clone()) as Arc<dyn crate::infrastructure::persistence::CatalogIngredientRepositoryTrait>,
         recipe_translation_service,
     ));
     tracing::info!("✅ Recipe V2 Service initialized (with auto-translations)");
