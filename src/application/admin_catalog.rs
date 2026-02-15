@@ -37,6 +37,10 @@ pub struct CreateProductRequest {
     pub category_id: Uuid,
     pub unit: UnitType,
     pub description: Option<String>,
+    /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
+    /// Использует dictionary cache, затем Groq если нужно
+    #[serde(default)]
+    pub auto_translate: bool,
 }
 
 fn default_empty_string() -> String {
@@ -119,7 +123,7 @@ impl AdminCatalogService {
 
         // 🧠 HYBRID TRANSLATION LOGIC for create_product
         // Check if auto_translate is enabled and translations are empty
-        if req.auto_translate && req.name_pl.is_none() && req.name_uk.is_none() && req.name_ru.is_none() {
+        if req.auto_translate && req.name_pl.trim().is_empty() && req.name_uk.trim().is_empty() && req.name_ru.trim().is_empty() {
             tracing::info!("Auto-translation enabled for new product: {}", name_en);
 
             // 1️⃣ Check dictionary cache first (0$ cost)
