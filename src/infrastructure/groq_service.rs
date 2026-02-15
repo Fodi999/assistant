@@ -300,6 +300,50 @@ Text: {}"#,
         }
     }
 
+    /// 🤖 AI анализ рецепта - генерация инсайтов
+    /// 
+    /// Возвращает JSON со структурированными данными:
+    /// - steps: массив шагов приготовления
+    /// - validation: предупреждения и ошибки
+    /// - suggestions: предложения по улучшению
+    /// - feasibility_score: оценка реализуемости (0-100)
+    pub async fn analyze_recipe(&self, prompt: &str) -> Result<String, AppError> {
+        if prompt.len() > 10000 {
+            return Err(AppError::validation("Prompt too long for AI analysis"));
+        }
+
+        let request_body = serde_json::json!({
+            "model": self.model,
+            "messages": [{
+                "role": "user",
+                "content": prompt
+            }],
+            "temperature": 0.3,  // Slightly higher for creative suggestions
+            "max_tokens": 2000,  // Large response for detailed analysis
+        });
+
+        tracing::info!("🤖 Requesting recipe analysis from Groq AI");
+
+        const MAX_RETRIES: u32 = 1;
+        let mut attempt = 0;
+
+        loop {
+            attempt += 1;
+            match self.send_groq_request(&request_body).await {
+                Ok(response) => {
+                    tracing::debug!("🤖 Received AI analysis ({} chars)", response.len());
+                    return Ok(response);
+                }
+                Err(e) if attempt <= MAX_RETRIES => {
+                    tracing::warn!("AI analysis attempt {} failed, retrying...", attempt);
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
     /// 🧹 Извлечение переведённого слова из "болтливого" ответа LLM
     /// 
     /// Ожидаемые варианты "шума":

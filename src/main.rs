@@ -13,6 +13,9 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load .env file BEFORE anything else
+    dotenvy::dotenv().ok();
+
     // Initialize tracing BEFORE anything else
     tracing_subscriber::fmt()
         .with_target(false)
@@ -57,8 +60,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     tracing::info!("Database migrations completed");
 
-    // Initialize repositories
-    let repositories = Repositories::new(pool);
+    // Initialize repositories (clone pool before move)
+    let repositories = Repositories::new(pool.clone());
 
     // Initialize security services
     let password_hasher = PasswordHasher::new();
@@ -181,8 +184,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let recipe_translation_service = Arc::new(crate::application::recipe_translation_service::RecipeTranslationService::new(
         recipe_translation_repo,
         recipe_v2_repo.clone(),
-        groq_service_v2,
+        groq_service_v2.clone(),  // Clone to keep ownership
     ));
+    
+    // Clone recipe_v2_repo before moving it
+    let recipe_v2_repo_for_ai = recipe_v2_repo.clone();
     
     let recipe_v2_service = Arc::new(crate::application::recipe_v2_service::RecipeV2Service::new(
         recipe_v2_repo,
@@ -191,6 +197,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         recipe_translation_service,
     ));
     tracing::info!("✅ Recipe V2 Service initialized (with auto-translations)");
+
+    // 🆕 AI Insights Service
+    let recipe_ai_insights_repo = Arc::new(crate::infrastructure::persistence::RecipeAIInsightsRepository::new(
+        repositories.pool.clone()  // Use pool from repositories
+    ));
+    let recipe_ai_insights_service = Arc::new(crate::application::RecipeAIInsightsService::new(
+        groq_service_v2,  // Move ownership (last use)
+        recipe_ai_insights_repo,
+        recipe_v2_repo_for_ai,  // Use cloned repo
+    ));
+    tracing::info!("✅ Recipe AI Insights Service initialized");
 
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
@@ -203,6 +220,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         catalog_service,
         recipe_service,
         recipe_v2_service,            // 🆕 V2 with auto-translations
+        recipe_ai_insights_service,   // 🆕 AI Insights
         dish_service,
         menu_engineering_service,
         inventory_service,

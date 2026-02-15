@@ -9,6 +9,8 @@ pub mod menu_engineering;
 pub mod recipe;
 pub mod recipe_translation_service;  // V2 translation service
 pub mod recipe_v2_service;           // V2 recipe service
+pub mod recipe_ai_insights_service;  // AI insights service
+pub mod recipe_validator;            // Rule-based validator
 pub mod tenant_ingredient;
 pub mod user;
 
@@ -22,4 +24,6 @@ pub use dish::*;
 pub use inventory::*;
 pub use menu_engineering::*;
 pub use recipe::*;
+pub use recipe_ai_insights_service::*;
+pub use recipe_validator::*;
 pub use user::*;

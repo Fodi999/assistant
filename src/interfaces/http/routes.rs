@@ -2,6 +2,7 @@ use crate::application::{
     AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, 
     DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService,
     recipe_v2_service::RecipeV2Service,  // V2 with translations
+    RecipeAIInsightsService,  // 🆕 AI Insights service
 };
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
@@ -17,6 +18,7 @@ use crate::interfaces::http::{
     middleware::AuthUser,
     recipe::{create_recipe, get_recipe, list_recipes, delete_recipe, calculate_recipe_cost},
     recipe_v2,  // V2 handlers with translations
+    recipe_ai_insights,  // AI insights handlers
     tenant_ingredient,
     user::me_handler,
 };
@@ -38,6 +40,7 @@ pub fn create_router(
     catalog_service: CatalogService,
     recipe_service: RecipeService,
     recipe_v2_service: std::sync::Arc<RecipeV2Service>,  // 🆕 V2 with translations
+    recipe_ai_insights_service: std::sync::Arc<RecipeAIInsightsService>,  // 🆕 AI Insights
     dish_service: DishService,
     menu_engineering_service: MenuEngineeringService,
     inventory_service: InventoryService,
@@ -167,6 +170,14 @@ pub fn create_router(
                 .route("/recipes/v2/:id/publish", post(recipe_v2::publish_recipe))
                 .route("/recipes/v2/:id", axum::routing::delete(recipe_v2::delete_recipe))
                 .with_state(recipe_v2_service)
+        )
+        .merge(
+            Router::new()
+                // AI Insights endpoints
+                .route("/recipes/v2/:id/insights", get(recipe_ai_insights::get_all_insights))
+                .route("/recipes/v2/:id/insights/:language", get(recipe_ai_insights::get_or_generate_insights))
+                .route("/recipes/v2/:id/insights/:language/refresh", post(recipe_ai_insights::refresh_insights))
+                .with_state(recipe_ai_insights_service)
         )
         .merge(
             Router::new()
