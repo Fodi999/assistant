@@ -113,9 +113,49 @@ impl AdminCatalogService {
         }
 
         // Normalize translations - fallback to English if empty
-        let name_pl = normalize_translation(&req.name_pl, name_en);
-        let name_uk = normalize_translation(&req.name_uk, name_en);
-        let name_ru = normalize_translation(&req.name_ru, name_en);
+        let mut name_pl = normalize_translation(&req.name_pl, name_en);
+        let mut name_uk = normalize_translation(&req.name_uk, name_en);
+        let mut name_ru = normalize_translation(&req.name_ru, name_en);
+
+        // 🧠 HYBRID TRANSLATION LOGIC for create_product
+        // Check if auto_translate is enabled and translations are empty
+        if req.auto_translate && req.name_pl.is_none() && req.name_uk.is_none() && req.name_ru.is_none() {
+            tracing::info!("Auto-translation enabled for new product: {}", name_en);
+
+            // 1️⃣ Check dictionary cache first (0$ cost)
+            if let Some(dict_entry) = self.dictionary.find_by_en(name_en).await? {
+                tracing::info!("Found in dictionary cache: {}", name_en);
+                name_pl = dict_entry.name_pl;
+                name_uk = dict_entry.name_uk;
+                name_ru = dict_entry.name_ru;
+            } else {
+                // 2️⃣ Dictionary miss - call Groq (minimal cost)
+                tracing::info!("Dictionary miss for: {}, calling Groq", name_en);
+                
+                match self.groq.translate(name_en).await {
+                    Ok(translation) => {
+                        // 3️⃣ Save to dictionary for future use (кеш навсегда)
+                        if let Err(e) = self.dictionary
+                            .insert(name_en, &translation.pl, &translation.ru, &translation.uk)
+                            .await {
+                            tracing::warn!("Failed to save translation to dictionary: {}", e);
+                            // Don't fail the create if dictionary insert fails
+                        }
+
+                        name_pl = translation.pl;
+                        name_uk = translation.uk;
+                        name_ru = translation.ru;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Groq translation failed, falling back to English: {}", e);
+                        // Fallback: use English for all languages
+                        name_pl = name_en.to_string();
+                        name_uk = name_en.to_string();
+                        name_ru = name_en.to_string();
+                    }
+                }
+            }
+        }
 
         let id = Uuid::new_v4();
 
