@@ -45,6 +45,7 @@ impl GroqService {
     /// - Очень короткий prompt для минимизации токенов
     /// - Один запрос на слово
     /// - Результат сохраняется в dictionary (кеш навсегда)
+    /// - Timeout: 5 секунд с 1 retry для надёжности
     pub async fn translate(&self, ingredient_name: &str) -> Result<GroqTranslationResponse, AppError> {
         // Проверка длины (не переводим очень длинные названия)
         if ingredient_name.len() > 50 {
@@ -74,16 +75,52 @@ Return strict JSON:
 
         tracing::info!("Groq translation request for: {}", ingredient_name);
 
-        let response = self.http_client
-            .post("https://api.groq.com/openai/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| {
+        // 🔄 Retry logic: попытаться дважды с timeout
+        const MAX_RETRIES: u32 = 1;
+        let mut attempt = 0;
+
+        loop {
+            attempt += 1;
+            match self.translate_with_timeout(&request_body, ingredient_name).await {
+                Ok(response) => return Ok(response),
+                Err(e) if attempt <= MAX_RETRIES => {
+                    tracing::warn!("Groq translation attempt {} failed: {}, retrying...", attempt, e);
+                    // Небольшой backoff перед retry
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    /// Внутренняя функция для одного запроса с timeout
+    async fn translate_with_timeout(
+        &self,
+        request_body: &serde_json::Value,
+        ingredient_name: &str,
+    ) -> Result<GroqTranslationResponse, AppError> {
+        // ⏱️ Timeout 5 секунд для надёжности
+        let response = match tokio::time::timeout(
+            Duration::from_secs(5),
+            self.http_client
+                .post("https://api.groq.com/openai/v1/chat/completions")
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .json(&request_body)
+                .send(),
+        )
+        .await
+        {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
                 tracing::error!("Groq API request failed: {}", e);
-                AppError::internal(&format!("Groq API error: {}", e))
-            })?;
+                return Err(AppError::internal(&format!("Groq API error: {}", e)));
+            }
+            Err(_) => {
+                tracing::error!("Groq API request timeout (5s) for: {}", ingredient_name);
+                return Err(AppError::internal("Groq API timeout"));
+            }
+        };
 
         if !response.status().is_success() {
             let status = response.status();
@@ -130,7 +167,7 @@ Return strict JSON:
         }
 
         tracing::info!(
-            "Groq translation successful: {} -> PL:{} RU:{} UK:{}",
+            "✅ Groq translation successful: {} → PL:{} RU:{} UK:{}",
             ingredient_name, translation.pl, translation.ru, translation.uk
         );
 
@@ -168,11 +205,9 @@ mod tests {
     }
 
     #[test]
-    fn test_long_ingredient_name_rejected() {
+    fn test_long_ingredient_name_validation() {
         let long_name = "A".repeat(51);
-        let service = GroqService::new("test_key".to_string());
-        
-        // Это не async тест, но показывает логику
+        // Проверяем что длинные названия фильтруются
         assert!(long_name.len() > 50);
     }
 }

@@ -56,6 +56,10 @@ impl DictionaryService {
     /// * `name_pl` - Польский перевод
     /// * `name_ru` - Русский перевод
     /// * `name_uk` - Украинский перевод
+    /// 
+    /// # Race Condition Safety
+    /// Использует ON CONFLICT (LOWER(name_en)) DO NOTHING
+    /// При конфликте возвращает существующую запись (findal lookup)
     pub async fn insert(
         &self,
         name_en: &str,
@@ -64,32 +68,46 @@ impl DictionaryService {
         name_uk: &str,
     ) -> Result<DictionaryEntry, AppError> {
         let id = Uuid::new_v4();
+        let name_en_trimmed = name_en.trim();
 
-        let entry = sqlx::query_as::<_, DictionaryEntry>(
+        // 🔒 Race condition safe: ON CONFLICT DO NOTHING
+        // Если race condition - другой процесс уже вставил запись
+        // Мы её не обновляем, а просто игнорируем конфликт
+        let result = sqlx::query(
             r#"
             INSERT INTO ingredient_dictionary (id, name_en, name_pl, name_ru, name_uk)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (LOWER(TRIM(name_en))) DO UPDATE SET
-                name_pl = EXCLUDED.name_pl,
-                name_ru = EXCLUDED.name_ru,
-                name_uk = EXCLUDED.name_uk
-            RETURNING id, name_en, name_pl, name_ru, name_uk
+            ON CONFLICT (LOWER(TRIM(name_en))) DO NOTHING
             "#
         )
         .bind(id)
-        .bind(name_en.trim())
+        .bind(name_en_trimmed)
         .bind(name_pl.trim())
         .bind(name_ru.trim())
         .bind(name_uk.trim())
-        .fetch_one(&self.pool)
+        .execute(&self.pool)
         .await
         .map_err(|e| {
             tracing::error!("Dictionary insert failed: {}", e);
             AppError::internal(&format!("Failed to insert into dictionary: {}", e))
         })?;
 
-        tracing::info!("Dictionary entry saved: {} ({} PL, {} RU, {} UK)", 
-            entry.name_en, entry.name_pl, entry.name_ru, entry.name_uk);
+        // 📝 Всегда возвращаем ТЕКУЩУЮ запись из БД (наша или из race condition)
+        // Гарантирует консистентность даже при race conditions
+        let entry = self.find_by_en(name_en_trimmed)
+            .await?
+            .ok_or_else(|| {
+                tracing::error!("Dictionary entry not found after insert: {}", name_en_trimmed);
+                AppError::internal("Failed to retrieve inserted dictionary entry")
+            })?;
+
+        if result.rows_affected() > 0 {
+            tracing::info!("✅ Dictionary entry created: {} (PL: {}, RU: {}, UK: {})", 
+                entry.name_en, entry.name_pl, entry.name_ru, entry.name_uk);
+        } else {
+            tracing::info!("📦 Dictionary entry already exists (race condition): {} (PL: {}, RU: {}, UK: {})", 
+                entry.name_en, entry.name_pl, entry.name_ru, entry.name_uk);
+        }
 
         Ok(entry)
     }
