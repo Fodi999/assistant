@@ -6,6 +6,7 @@ pub mod dish;
 pub mod inventory;
 pub mod menu_engineering;
 pub mod recipe;
+pub mod recipe_v2;  // V2 with translation support
 pub mod tenant;
 pub mod tenant_ingredient;
 pub mod user;

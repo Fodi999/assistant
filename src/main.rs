@@ -132,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ).await;
     tracing::info!("✅ R2 Client initialized successfully");
 
-    // Create GroqService for AI translations
+    // Create GroqService for AI translations (for AdminCatalogService)
     let groq_service = GroqService::new(config.ai.groq_api_key.clone());
     if config.ai.groq_api_key.is_empty() {
         tracing::warn!("⚠️ GROQ_API_KEY not set - auto-translation will not work");
@@ -155,6 +155,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     tracing::info!("Tenant Ingredient Service initialized");
 
+    // Create Recipe V2 Services (with AI translations)
+    // Create separate GroqService instance for Recipe V2
+    let groq_service_v2 = Arc::new(GroqService::new(config.ai.groq_api_key.clone()));
+    
+    let recipe_v2_repo = Arc::new(crate::infrastructure::persistence::RecipeRepositoryV2::new(
+        repositories.pool.clone()
+    ));
+    let recipe_ingredient_repo = Arc::new(crate::infrastructure::persistence::RecipeIngredientRepository::new(
+        repositories.pool.clone()
+    ));
+    let recipe_translation_repo = Arc::new(crate::infrastructure::persistence::RecipeTranslationRepository::new(
+        repositories.pool.clone()
+    ));
+    
+    let recipe_translation_service = Arc::new(crate::application::recipe_translation_service::RecipeTranslationService::new(
+        recipe_translation_repo,
+        recipe_v2_repo.clone(),
+        groq_service_v2,
+    ));
+    
+    let recipe_v2_service = Arc::new(crate::application::recipe_v2_service::RecipeV2Service::new(
+        recipe_v2_repo,
+        recipe_ingredient_repo,
+        Arc::new(repositories.catalog_ingredient.clone()),
+        recipe_translation_service,
+    ));
+    tracing::info!("✅ Recipe V2 Service initialized (with auto-translations)");
+
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
 
@@ -165,6 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         assistant_service,
         catalog_service,
         recipe_service,
+        recipe_v2_service,            // 🆕 V2 with auto-translations
         dish_service,
         menu_engineering_service,
         inventory_service,

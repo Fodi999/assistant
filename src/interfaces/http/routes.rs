@@ -1,6 +1,7 @@
 use crate::application::{
     AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, 
-    DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService
+    DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService,
+    recipe_v2_service::RecipeV2Service,  // V2 with translations
 };
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
@@ -15,6 +16,7 @@ use crate::interfaces::http::{
     menu_engineering::{analyze_menu, record_sale},
     middleware::AuthUser,
     recipe::{create_recipe, get_recipe, list_recipes, delete_recipe, calculate_recipe_cost},
+    recipe_v2,  // V2 handlers with translations
     tenant_ingredient,
     user::me_handler,
 };
@@ -35,6 +37,7 @@ pub fn create_router(
     assistant_service: AssistantService,
     catalog_service: CatalogService,
     recipe_service: RecipeService,
+    recipe_v2_service: std::sync::Arc<RecipeV2Service>,  // 🆕 V2 with translations
     dish_service: DishService,
     menu_engineering_service: MenuEngineeringService,
     inventory_service: InventoryService,
@@ -155,6 +158,15 @@ pub fn create_router(
                 .route("/recipes/:id", axum::routing::delete(delete_recipe))
                 .route("/recipes/:id/cost", get(calculate_recipe_cost))
                 .with_state(recipe_service)
+        )
+        .merge(
+            Router::new()
+                .route("/recipes/v2", post(recipe_v2::create_recipe))
+                .route("/recipes/v2", get(recipe_v2::list_recipes))
+                .route("/recipes/v2/:id", get(recipe_v2::get_recipe))
+                .route("/recipes/v2/:id/publish", post(recipe_v2::publish_recipe))
+                .route("/recipes/v2/:id", axum::routing::delete(recipe_v2::delete_recipe))
+                .with_state(recipe_v2_service)
         )
         .merge(
             Router::new()
