@@ -37,7 +37,7 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
                 id, recipe_id, language,
                 name, instructions,
                 translated_by,
-                created_at
+                translated_at
             ) VALUES (
                 $1, $2, $3,
                 $4, $5,
@@ -72,10 +72,10 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
                 id, recipe_id, language,
                 name, instructions,
                 translated_by,
-                created_at
+                translated_at
             FROM recipe_translations
             WHERE recipe_id = $1
-            ORDER BY created_at ASC
+            ORDER BY translated_at ASC
             "#,
         )
         .bind(recipe_id.0)
@@ -93,7 +93,7 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
                 name: row.get("name"),
                 instructions: row.get("instructions"),
                 translated_by: TranslationSource::from_str(row.get("translated_by"))?,
-                created_at: row.get("created_at"),
+                created_at: row.get("translated_at"),
             });
         }
 
@@ -111,7 +111,7 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
                 id, recipe_id, language,
                 name, instructions,
                 translated_by,
-                created_at
+                translated_at
             FROM recipe_translations
             WHERE recipe_id = $1 AND language = $2
             "#,
@@ -132,7 +132,7 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
                     name: row.get("name"),
                     instructions: row.get("instructions"),
                     translated_by: TranslationSource::from_str(row.get("translated_by"))?,
-                    created_at: row.get("created_at"),
+                    created_at: row.get("translated_at"),
                 };
                 Ok(Some(translation))
             }

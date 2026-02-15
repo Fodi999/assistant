@@ -55,22 +55,32 @@ impl RecipeTranslationService {
         }
 
         // Translate name using Groq
+        tracing::debug!("🔍 Translating recipe name: '{}' to {}", recipe.name_default, target_language.code());
         let translated_name = self.groq_service
             .translate_to_language(
                 &recipe.name_default,
                 target_language.code(),
             )
             .await
-            .map_err(|e| AppError::internal(&format!("Failed to translate name: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!("❌ Groq translation failed for name '{}': {:?}", recipe.name_default, e);
+                AppError::internal(&format!("Failed to translate name: {}", e))
+            })?;
+        tracing::debug!("✅ Name translated: '{}'", translated_name);
 
         // Translate instructions using Groq
+        tracing::debug!("🔍 Translating recipe instructions (len={})", recipe.instructions_default.len());
         let translated_instructions = self.groq_service
             .translate_to_language(
                 &recipe.instructions_default,
                 target_language.code(),
             )
             .await
-            .map_err(|e| AppError::internal(&format!("Failed to translate instructions: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!("❌ Groq translation failed for instructions: {:?}", e);
+                AppError::internal(&format!("Failed to translate instructions: {}", e))
+            })?;
+        tracing::debug!("✅ Instructions translated (len={})", translated_instructions.len());
 
         // Create translation record
         let translation = RecipeTranslation::new(

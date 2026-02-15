@@ -249,7 +249,7 @@ Respond with ONLY valid JSON, no other text:
     /// 
     /// Может переводить из любого языка в любой
     /// 
-    /// ВАЖНО: Жёсткая очистка ответа от лишнего текста
+    /// ВАЖНО: Для recipe instructions не обрезаем текст (может быть длинным)
     pub async fn translate_to_language(&self, text: &str, target_lang: &str) -> Result<String, AppError> {
         if text.len() > 5000 {
             return Err(AppError::validation("Text too long for translation"));
@@ -281,11 +281,14 @@ Text: {}"#,
             attempt += 1;
             match self.send_groq_request(&request_body).await {
                 Ok(response) => {
-                    // ✅ ЖЁСТКАЯ ОЧИСТКА: Извлечь только слово
-                    let cleaned = self.extract_translated_word(&response, target_lang);
-                    tracing::info!("Translated '{}' → '{}' (cleaned from: '{}')", 
-                        text, cleaned, response);
-                    return Ok(cleaned);
+                    // ✅ Для recipe instructions - minimal cleanup (только trim и удаление концевой пунктуации)
+                    let cleaned = response.trim()
+                        .trim_end_matches('.')
+                        .trim_end_matches(',')
+                        .trim();
+                    
+                    tracing::debug!("Translated '{}' → '{}'", text, cleaned);
+                    return Ok(cleaned.to_string());
                 }
                 Err(e) if attempt <= MAX_RETRIES => {
                     tracing::warn!("Translation attempt {} failed, retrying...", attempt);
@@ -650,6 +653,8 @@ Pick the best match. Do not invent values."#,
 
     /// Внутренняя реализация запроса (без timeout wrapper)
     async fn send_groq_request_inner(&self, request_body: &serde_json::Value) -> Result<String, AppError> {
+        tracing::debug!("📤 Sending Groq request: {:?}", request_body);
+        
         let response = self.http_client
             .post("https://api.groq.com/openai/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -657,20 +662,35 @@ Pick the best match. Do not invent values."#,
             .send()
             .await
             .map_err(|e| {
-                tracing::error!("Groq API request failed: {}", e);
-                AppError::internal("Groq API error")
+                tracing::error!("❌ Groq API request failed: {:?}", e);
+                AppError::internal(&format!("Groq API error: {}", e))
             })?;
 
+        let status = response.status();
+        tracing::debug!("📥 Groq response status: {}", status);
+
         if !response.status().is_success() {
-            return Err(AppError::internal("Groq API returned error"));
+            let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
+            tracing::error!("❌ Groq API error (HTTP {}): {}", status, error_body);
+            return Err(AppError::internal(&format!("Groq API returned error: {} - {}", status, error_body)));
         }
 
         let data: GroqResponse = response.json().await
-            .map_err(|_| AppError::internal("Failed to parse Groq response"))?;
+            .map_err(|e| {
+                tracing::error!("❌ Failed to parse Groq JSON response: {:?}", e);
+                AppError::internal(&format!("Failed to parse Groq response: {}", e))
+            })?;
+
+        tracing::debug!("📥 Groq response data: {:?}", data);
 
         let content = data.choices.get(0)
-            .ok_or_else(|| AppError::internal("No response"))?
+            .ok_or_else(|| {
+                tracing::error!("❌ Groq returned empty choices array");
+                AppError::internal("No response from Groq")
+            })?
             .message.content.trim().to_string();
+
+        tracing::debug!("✅ Groq response content: {}", content);
 
         Ok(content)
     }
