@@ -192,13 +192,18 @@ impl InventoryService {
     ) -> AppResult<Vec<InventoryView>> {
         let lang_code = language.code();
 
-        // 🎯 ЭТАЛОННЫЙ SQL с COALESCE fallback (production-level)
-        // Если нет перевода на язык пользователя - берем английский
+        // 🎯 FIX: Use base table columns for translations (name_en, name_ru, name_pl, name_uk)
+        // catalog_ingredient_translations table is NOT used - all translations are in catalog_ingredients
         let query = r#"
             SELECT 
                 ip.id,
                 ip.catalog_ingredient_id,
-                COALESCE(cit_user.name, cit_en.name, 'Unknown') as ingredient_name,
+                CASE 
+                    WHEN $2 = 'ru' THEN COALESCE(ci.name_ru, ci.name_en, 'Unknown')
+                    WHEN $2 = 'pl' THEN COALESCE(ci.name_pl, ci.name_en, 'Unknown')
+                    WHEN $2 = 'uk' THEN COALESCE(ci.name_uk, ci.name_en, 'Unknown')
+                    ELSE COALESCE(ci.name_en, 'Unknown')
+                END as ingredient_name,
                 COALESCE(cct_user.name, cct_en.name, 'Unknown') as category_name,
                 ci.default_unit::TEXT as base_unit,
                 ci.image_url,
@@ -211,10 +216,6 @@ impl InventoryService {
             FROM inventory_products ip
             INNER JOIN catalog_ingredients ci 
                 ON ip.catalog_ingredient_id = ci.id
-            LEFT JOIN catalog_ingredient_translations cit_user 
-                ON cit_user.ingredient_id = ci.id AND cit_user.language = $2
-            LEFT JOIN catalog_ingredient_translations cit_en 
-                ON cit_en.ingredient_id = ci.id AND cit_en.language = 'en'
             LEFT JOIN catalog_categories cc 
                 ON ci.category_id = cc.id
             LEFT JOIN catalog_category_translations cct_user 
