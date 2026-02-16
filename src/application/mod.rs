@@ -5,6 +5,7 @@ pub mod auth;
 pub mod catalog;
 pub mod dish;
 pub mod inventory;
+pub mod inventory_alert;
 pub mod menu_engineering;
 pub mod recipe;
 pub mod recipe_translation_service;  // V2 translation service
@@ -22,6 +23,7 @@ pub use tenant_ingredient::*;
 pub use catalog::*;
 pub use dish::*;
 pub use inventory::*;
+pub use inventory_alert::*;
 pub use menu_engineering::*;
 pub use recipe::*;
 pub use recipe_ai_insights_service::*;

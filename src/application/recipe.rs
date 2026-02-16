@@ -3,7 +3,7 @@ use crate::domain::{
     RecipeType, Servings, CatalogIngredientId, Quantity, Money,
 };
 use crate::infrastructure::persistence::{
-    RecipeRepositoryTrait, InventoryProductRepositoryTrait, CatalogIngredientRepositoryTrait,
+    RecipeRepositoryTrait, InventoryBatchRepositoryTrait, CatalogIngredientRepositoryTrait,
 };
 use crate::shared::{AppError, AppResult, UserId, TenantId, Language};
 use std::collections::HashMap;
@@ -12,14 +12,14 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct RecipeService {
     recipe_repo: Arc<dyn RecipeRepositoryTrait>,
-    inventory_repo: Arc<dyn InventoryProductRepositoryTrait>,
+    inventory_repo: Arc<dyn InventoryBatchRepositoryTrait>,
     catalog_repo: Arc<dyn CatalogIngredientRepositoryTrait>,
 }
 
 impl RecipeService {
     pub fn new(
         recipe_repo: Arc<dyn RecipeRepositoryTrait>,
-        inventory_repo: Arc<dyn InventoryProductRepositoryTrait>,
+        inventory_repo: Arc<dyn InventoryBatchRepositoryTrait>,
         catalog_repo: Arc<dyn CatalogIngredientRepositoryTrait>,
     ) -> Self {
         Self {
@@ -128,15 +128,15 @@ impl RecipeService {
             let ingredient_id = recipe_ingredient.catalog_ingredient_id();
             
             // Get inventory price data
-            let (inventory_qty, inventory_price) = price_map
+            let (_inventory_qty, inventory_price) = price_map
                 .get(&ingredient_id)
                 .ok_or_else(|| AppError::NotFound(format!(
                     "No inventory data for ingredient {}. Cannot calculate cost.",
                     ingredient_id.as_uuid()
                 )))?;
 
-            // Calculate unit price: inventory_price / inventory_quantity
-            let unit_price_cents = (inventory_price.as_cents() as f64) / inventory_qty.value();
+            // Unit price is already stored as per unit in our new Batch model
+            let unit_price_cents = inventory_price.as_cents() as f64;
             let unit_price = Money::from_cents(unit_price_cents.round() as i64)?;
             
             // Calculate ingredient cost: required_quantity * unit_price
@@ -200,8 +200,6 @@ impl RecipeService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_recipe_service_can_be_created() {
         // This test ensures RecipeService compiles with Arc<dyn Trait>

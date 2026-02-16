@@ -123,7 +123,5 @@ impl DishService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // TODO: Add integration tests with mock repositories
 }

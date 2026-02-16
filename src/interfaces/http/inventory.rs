@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::application::inventory::{InventoryService, InventoryView};
+use crate::application::inventory::{InventoryService, InventoryView, InventoryStatus, LossReport};
+use crate::application::inventory_alert::InventoryAlertService;
 use crate::domain::{
     catalog::CatalogIngredientId,
-    inventory::{InventoryProduct, InventoryProductId},
+    inventory::{InventoryBatch, InventoryBatchId, InventoryAlert},
 };
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppError;
@@ -59,8 +60,8 @@ pub struct ProductResponse {
     pub updated_at: OffsetDateTime,
 }
 
-impl From<InventoryProduct> for ProductResponse {
-    fn from(product: InventoryProduct) -> Self {
+impl From<InventoryBatch> for ProductResponse {
+    fn from(product: InventoryBatch) -> Self {
         Self {
             id: product.id.as_uuid(),
             catalog_ingredient_id: product.catalog_ingredient_id.as_uuid(),
@@ -140,7 +141,7 @@ pub async fn update_product(
 ) -> Result<StatusCode, AppError> {
     service
         .update_product(
-            InventoryProductId::from_uuid(id),
+            InventoryBatchId::from_uuid(id),
             auth.user_id,
             auth.tenant_id,
             req.price_per_unit_cents,
@@ -159,18 +160,59 @@ pub async fn delete_product(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     service
-        .delete_product(InventoryProductId::from_uuid(id), auth.user_id, auth.tenant_id)
+        .delete_product(InventoryBatchId::from_uuid(id), auth.user_id, auth.tenant_id)
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// GET /api/inventory/status
-/// Get aggregated inventory status (for assistant)
-pub async fn get_status(
+/// GET /api/inventory/health
+/// Unified inventory health endpoint (for badge and dashboard)
+pub async fn get_health(
+    State(service): State<InventoryAlertService>,
+    auth: AuthUser,
+) -> Result<Json<InventoryStatus>, AppError> {
+    let status = service.get_inventory_status(auth.tenant_id).await?;
+    Ok(Json(status))
+}
+
+/// GET /api/inventory/alerts
+/// Get all active alerts (expiring batches + low stock)
+pub async fn get_alerts(
+    State(service): State<InventoryAlertService>,
+    auth: AuthUser,
+) -> Result<Json<Vec<InventoryAlert>>, AppError> {
+    let alerts = service.get_alerts(auth.tenant_id).await?;
+    Ok(Json(alerts))
+}
+
+/// POST /api/inventory/process-expirations
+/// Automatically exhaust expired batches and log losses
+pub async fn process_expirations(
     State(service): State<InventoryService>,
     auth: AuthUser,
-) -> Result<Json<crate::application::inventory::InventoryStatus>, AppError> {
-    let status = service.get_status(auth.user_id, auth.tenant_id).await?;
-    Ok(Json(status))
+) -> Result<Json<serde_json::Value>, AppError> {
+    let count = service.process_expirations(auth.tenant_id).await?;
+    Ok(Json(serde_json::json!({ "processed_count": count })))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct LossReportQuery {
+    #[serde(default = "default_loss_report_days")]
+    pub days: i32,
+}
+
+fn default_loss_report_days() -> i32 {
+    30
+}
+
+/// GET /api/inventory/reports/loss
+/// Financial loss report (expired quantities/costs)
+pub async fn get_loss_report(
+    State(service): State<InventoryService>,
+    auth: AuthUser,
+    axum::extract::Query(query): axum::extract::Query<LossReportQuery>,
+) -> Result<Json<LossReport>, AppError> {
+    let report = service.get_loss_report(auth.tenant_id, query.days).await?;
+    Ok(Json(report))
 }

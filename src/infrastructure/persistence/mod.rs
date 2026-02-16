@@ -3,7 +3,7 @@ pub mod catalog_category_repository;
 pub mod catalog_ingredient_repository;
 pub mod dictionary_service;
 pub mod dish_repository;
-pub mod inventory_product_repository;
+pub mod inventory_batch_repository;
 pub mod recipe_repository;
 pub mod recipe_v2_repository;  // V2 with translation support
 pub mod recipe_translation_repository;
@@ -18,7 +18,7 @@ pub use catalog_category_repository::*;
 pub use catalog_ingredient_repository::*;
 pub use dictionary_service::*;
 pub use dish_repository::*;
-pub use inventory_product_repository::*;
+pub use inventory_batch_repository::*;
 pub use recipe_repository::*;
 pub use recipe_v2_repository::*;
 pub use recipe_translation_repository::*;

@@ -1,21 +1,22 @@
 use std::collections::HashMap;
 
-use crate::domain::{DishId, DishPerformance, MenuEngineeringMatrix};
+use crate::domain::{DishId, DishPerformance, MenuEngineeringMatrix, inventory::{BatchStatus, MovementType, InventoryMovement, Quantity}};
 use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
 use crate::infrastructure::persistence::{
-    InventoryProductRepositoryTrait, DishRepositoryTrait, RecipeRepositoryTrait
+    InventoryBatchRepositoryTrait, DishRepositoryTrait, RecipeRepositoryTrait
 };
 
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
+use rust_decimal::Decimal;
 
 /// Service for Menu Engineering analysis
 /// Classifies dishes into Star/Plowhorse/Puzzle/Dog categories
 #[derive(Clone)]
 pub struct MenuEngineeringService {
     pool: PgPool,
-    inventory_repo: Arc<dyn InventoryProductRepositoryTrait>,
+    inventory_repo: Arc<dyn InventoryBatchRepositoryTrait>,
     dish_repo: Arc<dyn DishRepositoryTrait>,
     recipe_repo: Arc<dyn RecipeRepositoryTrait>,
 }
@@ -23,7 +24,7 @@ pub struct MenuEngineeringService {
 impl MenuEngineeringService {
     pub fn new(
         pool: PgPool,
-        inventory_repo: Arc<dyn InventoryProductRepositoryTrait>,
+        inventory_repo: Arc<dyn InventoryBatchRepositoryTrait>,
         dish_repo: Arc<dyn DishRepositoryTrait>,
         recipe_repo: Arc<dyn RecipeRepositoryTrait>,
     ) -> Self {
@@ -228,44 +229,69 @@ impl MenuEngineeringService {
 
         tracing::info!("Found recipe {} with {} ingredients", recipe.id().as_uuid(), recipe.ingredients().len());
 
-        // For each ingredient in the recipe, deduct from inventory using FIFO
+        // For each ingredient in the recipe, deduct from inventory using FIFO with locking
         for ingredient in recipe.ingredients() {
             let catalog_id = ingredient.catalog_ingredient_id();
-            let total_to_deduct = ingredient.quantity().value() * (quantity as f64);
+            let quantity_per_dish = ingredient.quantity().value();
+            let total_to_deduct_val = quantity_per_dish * (quantity as f64);
             
-            tracing::info!("Deducting {} units of ingredient {}", total_to_deduct, catalog_id.as_uuid());
+            let target_qty = Quantity::new(total_to_deduct_val)?.decimal();
+            if target_qty <= Decimal::ZERO { continue; }
 
-            // Get all inventory products for this ingredient (sorted by received_at ASC - FIFO)
-            let mut inventory_products = self.inventory_repo.list_by_tenant(tenant_id).await?;
-            
-            tracing::info!("Total inventory items for tenant: {}", inventory_products.len());
+            tracing::info!("Deducting {} units of ingredient {} using FIFO", target_qty, catalog_id.as_uuid());
 
-            // Filter and sort for the specific ingredient (FIFO)
-            inventory_products.retain(|p| p.catalog_ingredient_id == catalog_id);
-            inventory_products.sort_by_key(|p| p.received_at);
+            let mut tx = self.pool.begin().await?;
 
-            tracing::info!("Found {} batches of this ingredient in inventory", inventory_products.len());
+            // 1. Get deliveries for this ingredient with FOR UPDATE lock
+            let batches = self.inventory_repo
+                .list_active_by_ingredient_for_update(&mut tx, tenant_id, catalog_id)
+                .await?;
 
-            let mut remaining_to_deduct = total_to_deduct;
+            let mut remaining_to_deduct = target_qty;
+            for mut batch in batches {
+                if remaining_to_deduct <= Decimal::ZERO { break; }
 
-            for mut product in inventory_products {
-                if remaining_to_deduct <= 0.0 { break; }
-
-                let current_qty = product.quantity.value();
-                if current_qty <= 0.0 { continue; }
-
-                if current_qty >= remaining_to_deduct {
-                    // This batch covers everything needed
-                    product.update_quantity(crate::domain::inventory::Quantity::new(current_qty - remaining_to_deduct)?);
-                    self.inventory_repo.update(&product).await?;
-                    remaining_to_deduct = 0.0;
+                let batch_available = batch.remaining_quantity.decimal();
+                let deduction = if batch_available <= remaining_to_deduct {
+                    batch_available
                 } else {
-                    // Use up this whole batch and continue to next
-                    remaining_to_deduct -= current_qty;
-                    product.update_quantity(crate::domain::inventory::Quantity::new(0.0)?);
-                    self.inventory_repo.update(&product).await?;
+                    remaining_to_deduct
+                };
+
+                // 2. Update batch stock
+                let new_remaining = batch_available - deduction;
+                batch.remaining_quantity = Quantity::from_decimal(new_remaining)?;
+                
+                if new_remaining <= Decimal::ZERO {
+                    batch.status = BatchStatus::Exhausted;
                 }
+
+                self.inventory_repo.update_in_transaction(&mut tx, &batch).await?;
+
+                // 3. Record movement for audit log (OutSale)
+                let mut movement = InventoryMovement::new(
+                    tenant_id,
+                    batch.id,
+                    MovementType::OutSale,
+                    deduction,
+                    batch.price_per_unit.as_cents(),
+                );
+                movement.reference_id = Some(dish_id);
+                movement.reference_type = Some("DISH_SALE".to_string());
+                movement.notes = Some(format!("Sold {} x dish", quantity));
+
+                self.inventory_repo.record_movement(&mut tx, &movement).await?;
+
+                remaining_to_deduct -= deduction;
             }
+
+            if remaining_to_deduct > Decimal::ZERO {
+                tracing::warn!("Insufficient stock for {} during sale. Missing: {}", catalog_id.as_uuid(), remaining_to_deduct);
+                // In some systems you might want to allow negative stock or stop the sale. 
+                // For now, we continue but warn.
+            }
+
+            tx.commit().await?;
         }
 
         Ok(())

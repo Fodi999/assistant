@@ -1,6 +1,6 @@
 use crate::application::{
     AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, 
-    DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService,
+    DishService, InventoryService, InventoryAlertService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService,
     recipe_v2_service::RecipeV2Service,  // V2 with translations
     RecipeAIInsightsService,  // 🆕 AI Insights service
 };
@@ -13,7 +13,7 @@ use crate::interfaces::http::{
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, get_categories_admin, search_ingredients, CatalogState},
     dish::create_dish,
-    inventory::{add_product, delete_product, get_status, list_products, update_product},
+    inventory::{add_product, delete_product, get_health, list_products, update_product, get_alerts, process_expirations, get_loss_report},
     menu_engineering::{analyze_menu, record_sale},
     middleware::AuthUser,
     recipe::{create_recipe, get_recipe, list_recipes, delete_recipe, calculate_recipe_cost},
@@ -44,6 +44,7 @@ pub fn create_router(
     dish_service: DishService,
     menu_engineering_service: MenuEngineeringService,
     inventory_service: InventoryService,
+    inventory_alert_service: InventoryAlertService,
     tenant_ingredient_service: TenantIngredientService,
     jwt_service: JwtService,
     pool: PgPool,  // 🎯 ДОБАВЛЕНО: для получения language из БД
@@ -190,8 +191,15 @@ pub fn create_router(
                 .route("/inventory/products", post(add_product))
                 .route("/inventory/products/:id", axum::routing::put(update_product))
                 .route("/inventory/products/:id", axum::routing::delete(delete_product))
-                .route("/inventory/status", get(get_status))
+                .route("/inventory/process-expirations", post(process_expirations))
+                .route("/inventory/reports/loss", get(get_loss_report))
                 .with_state(inventory_service)
+        )
+        .merge(
+            Router::new()
+                .route("/inventory/alerts", get(get_alerts))
+                .route("/inventory/health", get(get_health))
+                .with_state(inventory_alert_service)
         )
         .merge(
             Router::new()

@@ -1,4 +1,4 @@
-use crate::application::{InventoryService, DishService};
+use crate::application::{InventoryAlertService, InventoryService, DishService};
 use crate::domain::assistant::{
     command::AssistantCommand,
     response::AssistantResponse,
@@ -16,6 +16,7 @@ pub struct AssistantService {
     state_repo: AssistantStateRepository,
     user_repo: UserRepository,
     inventory_service: InventoryService,
+    inventory_alert_service: InventoryAlertService,
     dish_service: DishService,
 }
 
@@ -24,12 +25,14 @@ impl AssistantService {
         state_repo: AssistantStateRepository,
         user_repo: UserRepository,
         inventory_service: InventoryService,
+        inventory_alert_service: InventoryAlertService,
         dish_service: DishService,
     ) -> Self {
         Self {
             state_repo,
             user_repo,
             inventory_service,
+            inventory_alert_service,
             dish_service,
         }
     }
@@ -146,7 +149,7 @@ impl AssistantService {
             if !financials.is_healthy_margin() {
                 let message = match user.language {
                     crate::shared::Language::Pl => format!(
-                        "⚠️ Niska marża zysku ({:.1}%)! Rozważ zwiększenie ceny lub obniżenie kosztów.",
+                        "⚠️ Niska marża zysku ({:.1}%)! Rozważ zwięksenie ceny lub obniżenie kosztów.",
                         financials.profit_margin_percent
                     ),
                     crate::shared::Language::En => format!(
@@ -171,7 +174,7 @@ impl AssistantService {
             if !financials.is_acceptable_food_cost() {
                 let message = match user.language {
                     crate::shared::Language::Pl => format!(
-                        "⚠️ Wysoki koszt produktów ({:.1}%)! Przepis może być nierentowny.",
+                        "⚠️ Wysoki koszt produktów ({:.1}%)! Przepis może бути нерентабельний.",
                         financials.food_cost_percent
                     ),
                     crate::shared::Language::En => format!(
@@ -205,27 +208,23 @@ impl AssistantService {
     /// Enrich response with inventory expiration warnings
     async fn enrich_with_inventory_warnings(
         &self,
-        response: &mut crate::domain::assistant::response::AssistantResponse,
-        user_id: UserId,
+        response: &mut AssistantResponse,
+        _user_id: UserId,
         tenant_id: TenantId,
         language: crate::shared::Language,
     ) -> AppResult<()> {
         use crate::domain::assistant::response::{AssistantWarning, WarningLevel};
         use crate::shared::Language;
 
-        let status = self.inventory_service.get_status(user_id, tenant_id).await?;
+        let status = self.inventory_alert_service.get_inventory_status(tenant_id).await?;
 
         // ❌ Critical: Expired products
         if status.expired > 0 {
             let message = match language {
-                Language::Pl => format!("⚠️ W magazynie {} przeterminowany produkt", if status.expired == 1 { "jest" } else { "są" }),
-                Language::En => format!("⚠️ There {} {} expired product{} in inventory", 
-                    if status.expired == 1 { "is" } else { "are" },
-                    status.expired,
-                    if status.expired == 1 { "" } else { "s" }
-                ),
-                Language::Uk => format!("⚠️ У складі {} прострочений продукт", if status.expired == 1 { "є" } else { "є" }),
-                Language::Ru => format!("⚠️ На складе {} просроченный продукт", if status.expired == 1 { "есть" } else { "есть" }),
+                Language::Pl => format!("⚠️ Masz {} przeterminowanych produktów", status.expired),
+                Language::En => format!("⚠️ There are {} expired products in inventory", status.expired),
+                Language::Uk => format!("⚠️ У вас є {} прострочених продуктів", status.expired),
+                Language::Ru => format!("⚠️ У вас {} просроченных продуктов", status.expired),
             };
             response.warnings.push(AssistantWarning {
                 level: WarningLevel::Critical,
@@ -233,13 +232,13 @@ impl AssistantService {
             });
         }
 
-        // ⚠️ Warning: Expiring today
-        if status.expiring_today > 0 {
+        // ⏰ Warning: Critical (0-1 days)
+        if status.critical > 0 {
             let message = match language {
-                Language::Pl => format!("⏰ {} produkt{} wygasa dziś", status.expiring_today, if status.expiring_today == 1 { "" } else { "y" }),
-                Language::En => format!("⏰ {} product{} expire{} today", status.expiring_today, if status.expiring_today == 1 { "" } else { "s" }, if status.expiring_today == 1 { "s" } else { "" }),
-                Language::Uk => format!("⏰ {} продукт{} закінчується сьогодні", status.expiring_today, if status.expiring_today == 1 { "" } else { "ів" }),
-                Language::Ru => format!("⏰ {} продукт{} истекает сегодня", status.expiring_today, if status.expiring_today == 1 { "" } else { "ов" }),
+                Language::Pl => format!("⏰ {} produktów wymaga pilnej uwagi (0-1 dni)", status.critical),
+                Language::En => format!("⏰ {} products need urgent attention (0-1 days left)", status.critical),
+                Language::Uk => format!("⏰ {} продуктів потребують термінової уваги (0-1 днів)", status.critical),
+                Language::Ru => format!("⏰ {} продуктов требуют срочного внимания (0-1 дней)", status.critical),
             };
             response.warnings.push(AssistantWarning {
                 level: WarningLevel::Warning,
@@ -247,16 +246,16 @@ impl AssistantService {
             });
         }
 
-        // ⚠️ Info: Expiring soon
-        if status.expiring_soon > 0 {
+        // 📦 Warning: Low Stock
+        if status.low_stock > 0 {
             let message = match language {
-                Language::Pl => format!("ℹ️ {} produkt{} wkrótce się przeterminuje (2 dni)", status.expiring_soon, if status.expiring_soon == 1 { "" } else { "y" }),
-                Language::En => format!("ℹ️ {} product{} will expire soon (2 days)", status.expiring_soon, if status.expiring_soon == 1 { "" } else { "s" }),
-                Language::Uk => format!("ℹ️ {} продукт{} скоро закінчиться (2 дні)", status.expiring_soon, if status.expiring_soon == 1 { "" } else { "ів" }),
-                Language::Ru => format!("ℹ️ {} продукт{} скоро истечет (2 дня)", status.expiring_soon, if status.expiring_soon == 1 { "" } else { "ов" }),
+                Language::Pl => format!("📦 {} produktów ma niski stan magazynowy", status.low_stock),
+                Language::En => format!("📦 {} products are low on stock", status.low_stock),
+                Language::Uk => format!("📦 {} продуктів мають низький рівень запасу", status.low_stock),
+                Language::Ru => format!("📦 {} продуктов заканчиваются на складе", status.low_stock),
             };
             response.warnings.push(AssistantWarning {
-                level: WarningLevel::Info,
+                level: WarningLevel::Warning,
                 message,
             });
         }

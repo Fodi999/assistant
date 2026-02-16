@@ -1,4 +1,5 @@
 use crate::shared::{AppError, AppResult, Language};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
@@ -295,6 +296,9 @@ pub struct CatalogIngredient {
     pub calories_per_100g: Option<i32>,
     pub seasons: Vec<Season>,
     
+    // Alerting
+    pub min_stock_threshold: Decimal,
+    
     // UX
     pub image_url: Option<String>,
     
@@ -341,6 +345,7 @@ impl CatalogIngredient {
             calories_per_100g,
             seasons,
             image_url,
+            min_stock_threshold: Decimal::ZERO,
             is_active: true,  // New products are active by default
         }
     }
@@ -361,6 +366,7 @@ impl CatalogIngredient {
         seasons: Vec<Season>,
         image_url: Option<String>,
         is_active: bool,
+        min_stock_threshold: Decimal,
     ) -> Self {
         Self {
             id,
@@ -376,6 +382,7 @@ impl CatalogIngredient {
             seasons,
             image_url,
             is_active,
+            min_stock_threshold,
         }
     }
 }

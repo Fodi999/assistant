@@ -1,6 +1,6 @@
 use restaurant_backend::application::{
     AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, 
-    DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService
+    DishService, InventoryService, InventoryAlertService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService
 };
 use restaurant_backend::infrastructure::{Config, GroqService, JwtService, PasswordHasher, R2Client, Repositories};
 use restaurant_backend::interfaces::http::routes::create_router;
@@ -84,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let inventory_service = InventoryService::new(repositories.pool.clone());
+    let inventory_alert_service = InventoryAlertService::new(repositories.pool.clone());
 
     let catalog_service = CatalogService::new(repositories.pool.clone());
 
@@ -113,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         repositories.assistant_state.clone(),
         repositories.user.clone(),
         inventory_service.clone(),
+        inventory_alert_service.clone(),
         dish_service.clone(),
     );
 
@@ -194,6 +196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dish_service,
         menu_engineering_service,
         inventory_service,
+        inventory_alert_service,
         tenant_ingredient_service,
         jwt_service,
         repositories.pool.clone(),
