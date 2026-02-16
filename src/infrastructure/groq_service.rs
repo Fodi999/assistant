@@ -565,7 +565,7 @@ Pick the best match. Do not invent values."#,
                     
                     break classification;
                 }
-                Err(e) if attempt <= MAX_RETRIES => {
+                Err(_e) if attempt <= MAX_RETRIES => {
                     tracing::warn!("Classification attempt {} failed, retrying...", attempt);
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;

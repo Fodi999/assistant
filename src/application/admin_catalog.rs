@@ -295,7 +295,7 @@ impl AdminCatalogService {
     /// Get product by ID
     pub async fn get_product_by_id(&self, id: Uuid) -> AppResult<ProductResponse> {
         let product = sqlx::query_as::<_, ProductResponse>(
-            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url 
+            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
              FROM catalog_ingredients WHERE id = $1"
         )
         .bind(id)
@@ -309,7 +309,7 @@ impl AdminCatalogService {
     /// List all products in the catalog
     pub async fn list_products(&self) -> AppResult<Vec<ProductResponse>> {
         let products = sqlx::query_as::<_, ProductResponse>(
-            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url 
+            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
              FROM catalog_ingredients ORDER BY name_en ASC"
         )
         .fetch_all(&self.pool)
@@ -324,7 +324,7 @@ impl AdminCatalogService {
 
         // 1. Get existing product
         let product = sqlx::query_as::<_, ProductResponse>(
-            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url 
+            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
              FROM catalog_ingredients WHERE id = $1 FOR UPDATE"
         )
         .bind(id)
@@ -332,7 +332,7 @@ impl AdminCatalogService {
         .await?
         .ok_or_else(|| AppError::not_found("Product not found"))?;
 
-        // 2. Auto-translate if requested
+        // 2. Prepare values
         let name_en = req.name_en.unwrap_or(product.name_en);
         let mut name_pl = req.name_pl.or(product.name_pl);
         let mut name_uk = req.name_uk.or(product.name_uk);
@@ -374,9 +374,9 @@ impl AdminCatalogService {
             r#"
             UPDATE catalog_ingredients 
             SET name_en = $1, name_pl = $2, name_uk = $3, name_ru = $4, 
-                category_id = $5, unit = $6, description = $7
+                category_id = $5, default_unit = $6, description = $7
             WHERE id = $8
-            RETURNING id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url
+            RETURNING id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url
             "#
         )
         .bind(name_en)
@@ -557,10 +557,10 @@ impl AdminCatalogService {
 
     /// Update category
     pub async fn update_category(&self, id: Uuid, req: UpdateCategoryRequest) -> AppResult<CategoryResponse> {
-        let current = sqlx::query!(
-            "SELECT name_pl, name_en, name_uk, name_ru, sort_order FROM catalog_categories WHERE id = $1",
-            id
+        let current = sqlx::query_as::<_, CategoryResponse>(
+            "SELECT id, name_pl, name_en, name_uk, name_ru, sort_order FROM catalog_categories WHERE id = $1"
         )
+        .bind(id)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::not_found("Category not found"))?;
