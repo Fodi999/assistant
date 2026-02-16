@@ -21,33 +21,58 @@ impl InventoryAlertService {
     pub async fn get_inventory_status(&self, tenant_id: TenantId) -> AppResult<InventoryStatus> {
         let alerts = self.get_alerts(tenant_id).await?;
         
-        let mut expired = 0;
-        let mut critical = 0;
-        let mut warning = 0;
-        let mut low_stock = 0;
+        let mut has_expired = false;
+        let mut has_expiring_today = false;
+        let mut has_expiring_soon = false;
+        let mut has_low_stock = false;
+        let mut has_zero_stock = false;
+
+        let mut expired_count = 0;
+        let mut critical_count = 0;
+        let mut warning_count = 0;
+        let mut low_stock_count = 0;
 
         for a in &alerts {
             match a.alert_type {
                 InventoryAlertType::LowStock => {
-                    low_stock += 1;
                     if a.severity == AlertSeverity::Critical {
-                        critical += 1;
+                        has_zero_stock = true;
+                        critical_count += 1; // Zero stock is a critical issue
+                    } else {
+                        has_low_stock = true;
+                        warning_count += 1; // Low stock is a warning issue
+                        low_stock_count += 1; // Count specifically items that are low but not empty
                     }
                 },
                 InventoryAlertType::ExpiringBatch => {
                     match a.severity {
-                        AlertSeverity::Expired => expired += 1,
-                        AlertSeverity::Critical => critical += 1,
-                        AlertSeverity::Warning => warning += 1,
+                        AlertSeverity::Expired => {
+                            has_expired = true;
+                            expired_count += 1;
+                        },
+                        AlertSeverity::Critical => {
+                            has_expiring_today = true;
+                            critical_count += 1;
+                        },
+                        AlertSeverity::Warning => {
+                            has_expiring_soon = true;
+                            warning_count += 1;
+                        },
                         _ => {}
                     }
                 }
             }
         }
 
-        // Calculate health score (basic formula: 100 - penalties)
-        let penalty = (expired * 15) + (critical * 10) + (warning * 5) + (low_stock * 5);
-        let health_score = (100 - penalty as i32).max(0).min(100);
+        // Professional categorical health score formula
+        let mut score = 100;
+        if has_expired        { score -= 40; }
+        if has_expiring_today { score -= 20; }
+        if has_expiring_soon  { score -= 10; }
+        if has_low_stock      { score -= 15; }
+        if has_zero_stock     { score -= 25; }
+        
+        let health_score = score.max(0);
 
         let status = match health_score {
             90..=100 => "Excellent",
@@ -56,16 +81,16 @@ impl InventoryAlertService {
             _ => "Critical",
         }.to_string();
 
-        // Badge count includes only expired and critical issues
-        let badge_count = expired + critical;
+        // Badge count: total products requiring immediate attention (Expired + Critical)
+        let badge_count = expired_count + critical_count;
 
         Ok(InventoryStatus {
             health_score,
             status,
-            critical,
-            warning,
-            expired,
-            low_stock,
+            critical: critical_count,
+            warning: warning_count,
+            expired: expired_count,
+            low_stock: low_stock_count,
             badge_count,
         })
     }
