@@ -72,7 +72,12 @@ async fn test_application_startup_integrity() {
         Arc::new(repositories.dish.clone()),
         recipe_service.clone(),
     );
-    let menu_engineering_service = MenuEngineeringService::new(repositories.pool.clone());
+    let menu_engineering_service = MenuEngineeringService::new(
+        repositories.pool.clone(),
+        Arc::new(repositories.inventory_product.clone()),
+        Arc::new(repositories.dish.clone()),
+        Arc::new(repositories.recipe.clone()),
+    );
     let assistant_service = AssistantService::new(
         repositories.assistant_state.clone(),
         repositories.user.clone(),

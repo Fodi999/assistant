@@ -17,6 +17,9 @@ frontend/
 │   │
 │   ├── services/
 │   │   ├── translationService.ts              # 🔑 Core translation service
+│   │   ├── inventoryService.ts               # NEW: Inventory & Batches
+│   │   ├── recipeService.ts                  # NEW: Recipe V2 Management
+│   │   ├── menuEngineeringService.ts           # NEW: Sales & Optimization
 │   │   ├── productService.ts                  # Product CRUD
 │   │   ├── categoryService.ts                 # Categories API
 │   │   └── api.ts                             # Base HTTP client
@@ -98,68 +101,54 @@ export interface UpdateProductRequest {
   auto_translate?: boolean; // 🔑 NEW
 }
 
-export type ProductUnit = 
-  | 'kilogram'
-  | 'gram'
-  | 'liter'
-  | 'milliliter'
-  | 'piece'
-  | 'bunch'
-  | 'can'
-  | 'package';
+/* --- NEW SECTIONS FOR RECIPE V2 & INVENTORY --- */
 
-// Category types
-export interface Category {
+export interface InventoryProduct {
   id: string;
   name: string;
-  sort_order: number;
-  created_at?: string;
+  quantity: number;
+  unit: string;
+  average_price: number;
+  expiry_date?: string;
+  tenant_id: string;
+  batches: InventoryBatch[];
 }
 
-// Translation types
-export type TranslationSource = 'dictionary' | 'groq' | 'fallback';
-
-export interface TranslationResult {
-  pl: string;
-  ru: string;
-  uk: string;
-  source: TranslationSource;
-  cost: number; // 0 or 0.01
+export interface InventoryBatch {
+  id: string;
+  quantity: number;
+  received_at: string;
 }
 
-export interface TranslationStats {
-  totalRequests: number;
-  cacheHits: number;
-  aiCalls: number;
-  totalCostUSD: number;
-}
-
-// Form state types
-export interface ProductFormData {
+export interface RecipeV2 {
+  id: string;
   name_en: string;
-  name_pl: string;
   name_ru: string;
-  name_uk: string;
+  description_en?: string;
+  description_ru?: string;
+  instructions_en?: string;
+  instructions_ru?: string;
   category_id: string;
-  unit: ProductUnit;
-  description: string;
-  auto_translate: boolean;
+  servings: number;
+  status: 'Draft' | 'Published';
+  cost_per_serving: number;
+  ingredients: RecipeIngredient[];
 }
 
-export interface FormErrors {
-  [key: string]: string | undefined;
+export interface RecipeIngredient {
+  ingredient_id: string; // References InventoryProduct
+  quantity: number;
+  unit: string;
+  cost: number; // Calculated by backend
 }
 
-// Auth types
-export interface AdminCredentials {
-  email: string;
-  password: string;
+export interface SaleRecordRequest {
+  dish_id: string;
+  quantity: number;
+  sold_at: string; // ISO String
 }
 
-export interface AuthResponse {
-  token: string;
-  expires_in: number;
-}
+// ...existing code...
 ```
 
 ### types/errors.ts
@@ -527,6 +516,47 @@ class CategoryService {
 export default new CategoryService();
 ```
 
+### services/menuEngineeringService.ts
+
+```typescript
+import api from './api';
+import { SaleRecordRequest, RecipeV2 } from '../types';
+
+export const menuEngineeringService = {
+  // 💰 Record a sale (Backend will automatically handle FIFO deduction)
+  recordSale: async (sale: SaleRecordRequest) => {
+    const response = await api.post('/api/menu/sales', sale);
+    return response.data;
+  },
+
+  // 📈 Get BCG Matrix and Optimization Insights
+  getInsights: async () => {
+    const response = await api.get('/api/menu/insights');
+    return response.data; // Returns Stars, Cash Cows, Dogs, etc.
+  }
+};
+```
+
+### services/inventoryService.ts
+
+```typescript
+import api from './api';
+import { InventoryProduct } from '../types';
+
+export const inventoryService = {
+  getAll: async () => {
+    const response = await api.get<InventoryProduct[]>('/api/inventory');
+    return response.data;
+  },
+
+  // Backend automatically handles batch splitting and multi-tenancy
+  addInventory: async (data: Partial<InventoryProduct>) => {
+    const response = await api.post('/api/inventory', data);
+    return response.data;
+  }
+};
+```
+
 ---
 
 ## 🪝 Custom Hooks
@@ -809,6 +839,8 @@ REACT_APP_LOG_LEVEL=error
 | `TranslationStats` | Track costs and cache hits | ✅ Ready |
 | `ProductService` | CRUD operations | ✅ Ready |
 | `CategoryService` | Category API | ✅ Ready |
+| `MenuEngineeringService` | Sales & Optimization | ✅ Ready |
+| `InventoryService` | Inventory & Batches | ✅ Ready |
 | Custom Hooks | State management | ✅ Ready |
 | Type Definitions | TypeScript support | ✅ Ready |
 

@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
 use crate::domain::{DishId, DishPerformance, MenuEngineeringMatrix};
-use crate::shared::{AppResult, Language, TenantId, UserId};
+use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
+use crate::infrastructure::persistence::{
+    InventoryProductRepositoryTrait, DishRepositoryTrait, RecipeRepositoryTrait
+};
 
 use sqlx::PgPool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Service for Menu Engineering analysis
@@ -11,11 +15,24 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct MenuEngineeringService {
     pool: PgPool,
+    inventory_repo: Arc<dyn InventoryProductRepositoryTrait>,
+    dish_repo: Arc<dyn DishRepositoryTrait>,
+    recipe_repo: Arc<dyn RecipeRepositoryTrait>,
 }
 
 impl MenuEngineeringService {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(
+        pool: PgPool,
+        inventory_repo: Arc<dyn InventoryProductRepositoryTrait>,
+        dish_repo: Arc<dyn DishRepositoryTrait>,
+        recipe_repo: Arc<dyn RecipeRepositoryTrait>,
+    ) -> Self {
+        Self {
+            pool,
+            inventory_repo,
+            dish_repo,
+            recipe_repo,
+        }
     }
 
     /// Analyze menu performance for a tenant
@@ -158,6 +175,7 @@ impl MenuEngineeringService {
     }
 
     /// Record a dish sale (called after successful order/payment)
+    /// Also automatically deducts ingredients from inventory (FIFO)
     pub async fn record_sale(
         &self,
         tenant_id: TenantId,
@@ -171,6 +189,7 @@ impl MenuEngineeringService {
         let user_uuid = *user_id.as_uuid();
         let profit_cents = (selling_price_cents - recipe_cost_cents) * quantity as i32;
 
+        // 1. Record the sale for analytics
         sqlx::query(
             r#"
             INSERT INTO dish_sales (
@@ -193,6 +212,61 @@ impl MenuEngineeringService {
         .bind(profit_cents)
         .execute(&self.pool)
         .await?;
+
+        // 2. 🚀 AUTOMATIC INVENTORY DEDUCTION (The "Business Flow" Logic)
+        tracing::info!("Starting automatic inventory deduction for dish {}", dish_id);
+
+        // Find the dish to get the recipe
+        let dish = self.dish_repo.find_by_id(DishId::from_uuid(dish_id), tenant_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Dish not found"))?;
+
+        // Find the recipe
+        let recipe = self.recipe_repo.find_by_id(dish.recipe_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Recipe not found"))?;
+
+        tracing::info!("Found recipe {} with {} ingredients", recipe.id().as_uuid(), recipe.ingredients().len());
+
+        // For each ingredient in the recipe, deduct from inventory using FIFO
+        for ingredient in recipe.ingredients() {
+            let catalog_id = ingredient.catalog_ingredient_id();
+            let total_to_deduct = ingredient.quantity().value() * (quantity as f64);
+            
+            tracing::info!("Deducting {} units of ingredient {}", total_to_deduct, catalog_id.as_uuid());
+
+            // Get all inventory products for this ingredient (sorted by received_at ASC - FIFO)
+            let mut inventory_products = self.inventory_repo.list_by_tenant(tenant_id).await?;
+            
+            tracing::info!("Total inventory items for tenant: {}", inventory_products.len());
+
+            // Filter and sort for the specific ingredient (FIFO)
+            inventory_products.retain(|p| p.catalog_ingredient_id == catalog_id);
+            inventory_products.sort_by_key(|p| p.received_at);
+
+            tracing::info!("Found {} batches of this ingredient in inventory", inventory_products.len());
+
+            let mut remaining_to_deduct = total_to_deduct;
+
+            for mut product in inventory_products {
+                if remaining_to_deduct <= 0.0 { break; }
+
+                let current_qty = product.quantity.value();
+                if current_qty <= 0.0 { continue; }
+
+                if current_qty >= remaining_to_deduct {
+                    // This batch covers everything needed
+                    product.update_quantity(crate::domain::inventory::Quantity::new(current_qty - remaining_to_deduct)?);
+                    self.inventory_repo.update(&product).await?;
+                    remaining_to_deduct = 0.0;
+                } else {
+                    // Use up this whole batch and continue to next
+                    remaining_to_deduct -= current_qty;
+                    product.update_quantity(crate::domain::inventory::Quantity::new(0.0)?);
+                    self.inventory_repo.update(&product).await?;
+                }
+            }
+        }
 
         Ok(())
     }

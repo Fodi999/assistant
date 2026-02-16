@@ -341,6 +341,42 @@ For questions, check:
 
 ---
 
+## 🔄 The "Brain" Business Loop (Critical)
+
+Since the Backend is the "Brain" of the restaurant, the Frontend must follow this logical sequence:
+
+### 1. Stock Up (Inventory)
+Before creating recipes, you must have items in the inventory.
+- **Endpoint:** `POST /api/inventory`
+- **Logic:** Each item can have multiple batches (`received_at`).
+- **Frontend Tip:** Show a warning if an inventory item is low or expiring (check `expiry_date`).
+
+### 2. Create the Formula (Recipe V2)
+- **Endpoint:** `POST /api/recipes/v2`
+- **Logic:** Link ingredients to `inventory_product_id`.
+- **Note:** The backend automatically calculates **Cost per Serving** based on the weighted average price of current inventory batches.
+
+### 3. Sell & Automate (Sales)
+When a dish is sold, the inventory must be updated.
+- **Endpoint:** `POST /api/menu/sales`
+- **Logic:** When you send a sale record, the backend uses **FIFO (First-In-First-Out)** to subtract quantities from the oldest batches first.
+- **Frontend Effect:** After a sale, refresh the inventory list to show updated quantities.
+
+### 4. Optimize (Menu Engineering)
+- **Endpoint:** `GET /api/menu/insights`
+- **Logic:** The backend analyzes Food Cost % and categorize dishes into **Stars**, **Cash Cows**, **Question Marks**, or **Dogs**.
+- **Visual:** Use the `ARCHITECTURE_VISUAL.md` guide to render the BCG matrix.
+
+---
+
+## ⚠️ Important Implementation Details
+
+- **Atomic Headers:** Never send `tenant_id` manually. If the token is valid, the "Brain" knows who you are.
+- **Unit Safety:** Use the unified input strings (e.g., "kg", "liter", "pcs"). The backend is strict about unit conversion.
+- **Error Feedback:** If the backend returns `409 Conflict` on a sale, it usually means "Insufficient Stock". Display a clear message to the user: *"Cannot record sale: Not enough Flour in stock (Ordered: 5kg, Available: 2kg)"*.
+
+---
+
 **Time to integrate**: ~5 minutes  
 **Performance gain**: 2.57× faster ⚡  
 **Cost savings**: 66% cheaper 💰  

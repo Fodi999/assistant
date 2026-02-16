@@ -101,7 +101,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Create MenuEngineeringService
-    let menu_engineering_service = MenuEngineeringService::new(repositories.pool.clone());
+    let menu_engineering_service = MenuEngineeringService::new(
+        repositories.pool.clone(),
+        Arc::new(repositories.inventory_product.clone()),
+        Arc::new(repositories.dish.clone()),
+        Arc::new(repositories.recipe.clone()),
+    );
 
     // Create AssistantService with all services
     let assistant_service = AssistantService::new(

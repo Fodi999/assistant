@@ -43,28 +43,39 @@ const data = await response.json();
         "action": "Сварить свеклу",
         "description": "Сварить свеклу в воде 1 час",
         "duration_minutes": 60,
-        "temperature_celsius": null,
-        "critical_control_point": true,
-        "safety_notes": ["Убедитесь в полной готовности"]
+        "temperature": "100°C",        // Строка (может содержать heat level)
+        "technique": "boiling",        // Техника приготовления
+        "ingredients_used": ["uuid-1"] // ID использованных продуктов
       }
     ],
     "validation": {
+      "is_valid": true,
       "errors": [                      // Критические ошибки
         {
+          "severity": "error",
           "code": "RAW_MEAT_DANGER",
-          "message": "⚠️ ОПАСНО: Мясо должно быть термически обработано",
-          "severity": "Critical"
+          "message": "⚠️ ОПАСНО: Мясо должно быть термически обработано"
         }
       ],
       "warnings": [                    // Предупреждения
         {
+          "severity": "warning",
           "code": "SHORT_INSTRUCTIONS",
           "message": "Инструкции слишком короткие"
         }
-      ]
+      ],
+      "missing_ingredients": ["Специи"], // Упомянуто в тексте, но нет в списке
+      "safety_checks": ["Проверено на сальмонеллу"] // Заметки по безопасности
     },
-    "dish_type": "Soup",               // Тип блюда
-    "missing_critical_ingredients": [], // Отсутствующие ингредиенты
+    "suggestions": [                   // AI улучшения
+      {
+        "suggestion_type": "improvement",
+        "title": "Добавьте уксус",
+        "description": "Это сохранит яркий цвет борща",
+        "impact": "taste",
+        "confidence": 0.95
+      }
+    ],
     "model": "llama-3.1-8b-instant"    // AI модель
   },
   "generated_in_ms": 952               // Время генерации
@@ -170,9 +181,9 @@ interface CookingStep {
   action: string;
   description: string;
   duration_minutes: number | null;
-  temperature_celsius: number | null;
-  critical_control_point: boolean;
-  safety_notes: string[];
+  temperature: string | null;
+  technique: string | null;
+  ingredients_used: string[];
 }
 
 const CookingSteps: React.FC<{ steps: CookingStep[] }> = ({ steps }) => {
@@ -182,11 +193,7 @@ const CookingSteps: React.FC<{ steps: CookingStep[] }> = ({ steps }) => {
       <ol className="relative border-l border-gray-300 ml-4">
         {steps.map((step) => (
           <li key={step.step_number} className="mb-6 ml-6">
-            <div className={`absolute flex items-center justify-center w-8 h-8 rounded-full -left-4 ${
-              step.critical_control_point 
-                ? 'bg-red-500 ring-4 ring-red-100' 
-                : 'bg-blue-500 ring-4 ring-blue-100'
-            }`}>
+            <div className="absolute flex items-center justify-center w-8 h-8 rounded-full -left-4 bg-blue-500 ring-4 ring-blue-100">
               <span className="text-white font-bold">{step.step_number}</span>
             </div>
             
@@ -198,26 +205,13 @@ const CookingSteps: React.FC<{ steps: CookingStep[] }> = ({ steps }) => {
                 {step.duration_minutes && (
                   <span>⏱️ {step.duration_minutes} мин</span>
                 )}
-                {step.temperature_celsius && (
-                  <span>🌡️ {step.temperature_celsius}°C</span>
+                {step.temperature && (
+                  <span>🌡️ {step.temperature}</span>
                 )}
-                {step.critical_control_point && (
-                  <span className="text-red-600 font-semibold">🛡️ CCP</span>
+                {step.technique && (
+                  <span>� {step.technique}</span>
                 )}
               </div>
-
-              {step.safety_notes.length > 0 && (
-                <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 p-2">
-                  <p className="text-sm font-semibold text-yellow-800">
-                    ⚠️ Важно для безопасности:
-                  </p>
-                  <ul className="text-sm text-yellow-700 list-disc list-inside">
-                    {step.safety_notes.map((note, idx) => (
-                      <li key={idx}>{note}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
           </li>
         ))}
@@ -255,8 +249,7 @@ const AIInsightsView: React.FC<AIInsightsProps> = ({ recipeId, language }) => {
         `${process.env.NEXT_PUBLIC_API_URL}/api/recipes/v2/${recipeId}/insights/${language}`,
         {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'X-Tenant-Id': localStorage.getItem('tenantId')!
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           }
         }
       );
@@ -280,8 +273,7 @@ const AIInsightsView: React.FC<AIInsightsProps> = ({ recipeId, language }) => {
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'X-Tenant-Id': localStorage.getItem('tenantId')!
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           }
         }
       );
@@ -397,7 +389,6 @@ export default AIInsightsView;
 
 **Headers**:
 - `Authorization`: `Bearer {token}`
-- `X-Tenant-Id`: `{tenant_id}`
 
 **Response**: `200 OK`
 ```json
@@ -414,7 +405,8 @@ export default AIInsightsView;
 
 **Path Parameters**: См. выше
 
-**Headers**: См. выше
+**Headers**:
+- `Authorization`: `Bearer {token}`
 
 **Response**: `200 OK`
 ```json

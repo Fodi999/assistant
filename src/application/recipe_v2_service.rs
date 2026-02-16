@@ -30,7 +30,7 @@ pub struct CreateRecipeIngredientDto {
     pub unit: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct RecipeResponseDto {
     pub id: Uuid,
     pub name: String,
@@ -47,7 +47,7 @@ pub struct RecipeResponseDto {
     pub ingredients: Vec<RecipeIngredientResponseDto>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct RecipeIngredientResponseDto {
     pub id: Uuid,
     pub catalog_ingredient_id: Uuid,

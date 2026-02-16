@@ -96,7 +96,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
             SELECT id, user_id, tenant_id, name_default, instructions_default, language_default, 
                    servings, total_cost_cents, cost_per_serving_cents, status, is_public, 
                    published_at, created_at, updated_at
-            FROM recipes_v2
+            FROM recipes
             WHERE id = $1 AND tenant_id = $2
             "#
         )
@@ -117,7 +117,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
             SELECT id, user_id, tenant_id, name_default, instructions_default, language_default, 
                    servings, total_cost_cents, cost_per_serving_cents, status, is_public, 
                    published_at, created_at, updated_at
-            FROM recipes_v2
+            FROM recipes
             WHERE user_id = $1 AND tenant_id = $2
             ORDER BY created_at DESC
             "#
@@ -139,7 +139,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
         // 🎯 TENANT ISOLATION: Explicitly filter by tenant_id in WHERE clause
         sqlx::query(
             r#"
-            UPDATE recipes_v2
+            UPDATE recipes
             SET name_default = $1, instructions_default = $2, language_default = $3, 
                 servings = $4, total_cost_cents = $5, cost_per_serving_cents = $6, 
                 status = $7, is_public = $8, published_at = $9, updated_at = $10
@@ -165,7 +165,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
     }
 
     async fn delete(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<()> {
-        sqlx::query("DELETE FROM recipes_v2 WHERE id = $1 AND tenant_id = $2")
+        sqlx::query("DELETE FROM recipes WHERE id = $1 AND tenant_id = $2")
             .bind(id.as_uuid())
             .bind(tenant_id.as_uuid())
             .execute(&self.pool)

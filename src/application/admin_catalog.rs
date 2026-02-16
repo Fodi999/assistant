@@ -500,17 +500,15 @@ impl AdminCatalogService {
             })?;
 
         // Update database
-        sqlx::query!(
-            "UPDATE catalog_ingredients SET image_url = $1 WHERE id = $2",
-            image_url,
-            product_id
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error updating image_url for product {}: {}", product_id, e);
-            AppError::internal("Failed to update image URL")
-        })?;
+        sqlx::query("UPDATE catalog_ingredients SET image_url = $1 WHERE id = $2")
+            .bind(&image_url)
+            .bind(product_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Database error updating image_url for product {}: {}", product_id, e);
+                AppError::internal("Failed to update image URL")
+            })?;
 
         tracing::info!("Image uploaded for product {}: {}", product_id, image_url);
         Ok(image_url)
@@ -534,16 +532,14 @@ impl AdminCatalogService {
         }
 
         // Update database
-        sqlx::query!(
-            "UPDATE catalog_ingredients SET image_url = NULL WHERE id = $1",
-            product_id
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error clearing image_url for product {}: {}", product_id, e);
-            AppError::internal("Failed to clear image URL")
-        })?;
+        sqlx::query("UPDATE catalog_ingredients SET image_url = NULL WHERE id = $1")
+            .bind(product_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Database error clearing image_url for product {}: {}", product_id, e);
+                AppError::internal("Failed to clear image URL")
+            })?;
 
         tracing::info!("Image deleted for product {}", product_id);
         Ok(())

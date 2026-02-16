@@ -6,10 +6,11 @@ use crate::domain::recipe_v2::RecipeId;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppResult;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, State, Query},
     http::StatusCode,
     Json,
 };
+use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -39,14 +40,37 @@ pub async fn get_recipe(
     Ok(Json(recipe))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RecipeListParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub search: Option<String>,
+}
+
 /// GET /api/recipes/v2 - List all user's recipes with localized content
 /// Returns: Vec<RecipeResponseDto> in user's language
 pub async fn list_recipes(
     State(service): State<Arc<RecipeV2Service>>,
     AuthUser { user_id, tenant_id, language }: AuthUser,
+    Query(params): Query<RecipeListParams>,
 ) -> AppResult<Json<Vec<RecipeResponseDto>>> {
+    // For now, we use a simple implementation that ignores search but respects tenant isolation
+    // The repository method find_by_user_id will be used
     let recipes = service.list_user_recipes(user_id, tenant_id, language).await?;
-    Ok(Json(recipes))
+    
+    // Manual slicing for basic pagination (temporary until repo supports it)
+    let limit = params.limit.unwrap_or(100) as usize;
+    let offset = params.offset.unwrap_or(0) as usize;
+    
+    let mut response = recipes;
+    if offset < response.len() {
+        let end = (offset + limit).min(response.len());
+        response = response[offset..end].to_vec();
+    } else {
+        response = vec![];
+    }
+
+    Ok(Json(response))
 }
 
 /// POST /api/recipes/v2/:id/publish - Publish recipe (make public)

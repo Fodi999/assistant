@@ -49,16 +49,16 @@ export default function AdminProductsPage() {
 **File**: `.env.local`
 
 ```bash
-NEXT_PUBLIC_API_URL=https://api.fodi.app
+NEXT_PUBLIC_API_URL=https://ministerial-yetta-fodi999-c58d8823.koyeb.app
 # or for local development:
-# NEXT_PUBLIC_API_URL=http://localhost:3000
+# NEXT_PUBLIC_API_URL=http://localhost:8080
 ```
 
-### 5. Ensure You Have Admin Token
+### 5. Ensure You Have Access Token
 
 **In localStorage** (set during login):
 ```typescript
-localStorage.setItem('adminToken', 'your-jwt-token-here');
+localStorage.setItem('access_token', 'your-jwt-token-here');
 ```
 
 ---
@@ -147,9 +147,9 @@ If you're not using Tailwind, convert to your CSS framework:
 
 The component handles 3 error types:
 
-### 1. No Admin Token
+### 1. No Access Token
 ```
-Error: No admin token found. Please login first.
+Error: No access token found. Please login first.
 ```
 **Fix**: Ensure login endpoint sets token in localStorage
 
@@ -188,8 +188,8 @@ npm run dev
 ### Production Testing
 
 ```bash
-# Get admin token
-curl -X POST https://api.fodi.app/api/auth/login \
+# Get access token
+curl -X POST https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@fodi.app","password":"YOUR_PASSWORD"}' \
   | jq '.data.access_token'
@@ -330,16 +330,16 @@ export interface ProductResponse extends UnifiedResult {
 
 ## Troubleshooting
 
-### Issue: "No admin token found"
+### Issue: "No access token found"
 
 **Solution**:
 1. Go to login page
 2. Enter credentials
-3. Check localStorage has `adminToken`
+3. Check localStorage has `access_token`
 
 ```javascript
 // Browser console
-localStorage.getItem('adminToken')
+localStorage.getItem('access_token')
 // Should return: "eyJhbGc..."
 ```
 
@@ -347,7 +347,7 @@ localStorage.getItem('adminToken')
 
 **Solution**:
 1. Check backend logs: `docker logs -f api`
-2. Verify Groq API key is set
+2. Verify GROQ_API_KEY is set
 3. Check network connectivity
 
 ### Issue: Component shows "Can't find module 'react'"

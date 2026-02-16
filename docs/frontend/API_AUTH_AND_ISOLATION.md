@@ -8,9 +8,9 @@ The application implements a strict **Multi-tenant SaaS** model. Every request m
 
 All protected API endpoints require a Bearer Token.
 
-```http
-Authorization: Bearer <your_jwt_token>
-```
+### API Base URLs
+- **Development:** `http://localhost:8080`
+- **Production (Koyeb):** `https://ministerial-yetta-fodi999-c58d8823.koyeb.app`
 
 ### Obtaining a Token
 
