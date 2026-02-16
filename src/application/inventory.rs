@@ -6,7 +6,6 @@ use crate::domain::{
     },
 };
 use crate::infrastructure::persistence::{
-    CatalogIngredientRepository, CatalogIngredientRepositoryTrait,
     InventoryBatchRepository, InventoryBatchRepositoryTrait,
 };
 use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
@@ -56,7 +55,6 @@ pub struct StockSummary {
 #[derive(Clone)]
 pub struct InventoryService {
     inventory_repo: Arc<InventoryBatchRepository>,
-    catalog_repo: Arc<CatalogIngredientRepository>,
     pool: PgPool,
 }
 
@@ -64,7 +62,6 @@ impl InventoryService {
     pub fn new(pool: PgPool) -> Self {
         Self {
             inventory_repo: Arc::new(InventoryBatchRepository::new(pool.clone())),
-            catalog_repo: Arc::new(CatalogIngredientRepository::new(pool.clone())),
             pool,
         }
     }
@@ -80,24 +77,10 @@ impl InventoryService {
         supplier: Option<String>,
         invoice_number: Option<String>,
         received_at: OffsetDateTime,
-        expires_at: Option<OffsetDateTime>,
+        expires_at: OffsetDateTime,
     ) -> AppResult<InventoryBatchId> {
         let price = Money::from_cents(price_per_unit_cents)?;
         let qty = Quantity::new(quantity)?;
-
-        // Auto-calculate expires_at from catalog's default_shelf_life_days if not provided
-        let calculated_expires_at = match expires_at {
-            Some(manual_date) => Some(manual_date),
-            None => {
-                if let Ok(Some(ingredient)) = self.catalog_repo.find_by_id(catalog_ingredient_id).await {
-                    ingredient.default_shelf_life_days.map(|days| {
-                        received_at + time::Duration::days(days as i64)
-                    })
-                } else {
-                    None
-                }
-            }
-        };
 
         let mut batch = InventoryBatch::new(
             user_id,
@@ -106,7 +89,7 @@ impl InventoryService {
             price,
             qty,
             received_at,
-            calculated_expires_at,
+            expires_at,
         );
         
         batch.supplier = supplier;
@@ -147,7 +130,7 @@ impl InventoryService {
         price_per_unit_cents: i64,
         quantity: f64,
         received_at: OffsetDateTime,
-        expires_at: Option<OffsetDateTime>,
+        expires_at: OffsetDateTime,
     ) -> AppResult<InventoryBatchId> {
         self.add_batch(user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, None, None, received_at, expires_at).await
     }
@@ -282,11 +265,7 @@ impl InventoryService {
         Ok(batches
             .into_iter()
             .filter(|b| {
-                if let Some(expiry) = b.expires_at {
-                    expiry <= limit && b.status == BatchStatus::Active
-                } else {
-                    false
-                }
+                b.expires_at <= limit && b.status == BatchStatus::Active
             })
             .collect())
     }
@@ -346,8 +325,8 @@ impl InventoryService {
         let now = OffsetDateTime::now_utc();
         
         for row in rows {
-            let expires_at: Option<OffsetDateTime> = row.try_get("expires_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
-            let status = calculate_expiration_status(expires_at, now);
+            let expires_at: OffsetDateTime = row.try_get("expires_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let status = calculate_expiration_status(Some(expires_at), now);
 
             views.push(InventoryView {
                 id: row.try_get("id").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
@@ -587,8 +566,8 @@ pub struct InventoryView {
     pub severity: ExpirationSeverity,
     #[serde(with = "time::serde::rfc3339")]
     pub received_at: OffsetDateTime,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub expires_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]

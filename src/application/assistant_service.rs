@@ -78,7 +78,7 @@ impl AssistantService {
                     catalog_id,
                     payload.price_per_unit_cents,
                     payload.quantity,
-                    payload.received_at.unwrap_or_else(|| time::OffsetDateTime::now_utc()),
+                    payload.received_at,
                     payload.expires_at,
                 )
                 .await?;

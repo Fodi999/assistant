@@ -74,16 +74,20 @@ async fn test_inventory_fifo_full_suite() {
 
     // --- TEST A: Batch Creation ---
     println!("✅ Running Test A: Batch Creation...");
+    let now = OffsetDateTime::now_utc();
+    let expiry1 = now + time::Duration::days(30);
+    let expiry2 = now + time::Duration::days(60);
+
     let batch1_id = inventory_service.add_batch(
         user_id, tenant_id, catalog_id, 1000, 10.0, 
         Some("Supplier A".to_string()), Some("INV-001".to_string()),
-        OffsetDateTime::now_utc(), None
+        now - time::Duration::days(1), expiry1
     ).await.expect("Failed to add batch 1");
 
     let batch2_id = inventory_service.add_batch(
         user_id, tenant_id, catalog_id, 1500, 5.0, 
         Some("Supplier B".to_string()), Some("INV-002".to_string()),
-        OffsetDateTime::now_utc(), None
+        now, expiry2
     ).await.expect("Failed to add batch 2");
 
     let batches = inventory_service.list_products(user_id, tenant_id).await.expect("Failed to list");
@@ -132,12 +136,12 @@ async fn test_inventory_fifo_full_suite() {
     println!("✅ Running Test 6: Decimal Accuracy...");
     let batch3_id = inventory_service.add_batch(
         user_id, tenant_id, catalog_id, 1000, 1.333, 
-        None, None, OffsetDateTime::now_utc(), None
+        None, None, OffsetDateTime::now_utc(), OffsetDateTime::now_utc() + time::Duration::days(365)
     ).await.expect("Failed to add batch 3");
     
     let batch4_id = inventory_service.add_batch(
         user_id, tenant_id, catalog_id, 1000, 0.667, 
-        None, None, OffsetDateTime::now_utc(), None
+        None, None, OffsetDateTime::now_utc(), OffsetDateTime::now_utc() + time::Duration::days(365)
     ).await.expect("Failed to add batch 4");
     
     // Total is exactly 2.0
@@ -154,7 +158,7 @@ async fn test_inventory_fifo_full_suite() {
     println!("✅ Running Test 2: Concurrency...");
     let batch5_id = inventory_service.add_batch(
         user_id, tenant_id, catalog_id, 1000, 10.0, 
-        None, None, OffsetDateTime::now_utc(), None
+        None, None, OffsetDateTime::now_utc(), OffsetDateTime::now_utc() + time::Duration::days(365)
     ).await.expect("Failed to add batch 5");
     
     let service = Arc::new(inventory_service.clone());
@@ -196,7 +200,7 @@ async fn test_inventory_fifo_full_suite() {
         
     let batch_b_id = inventory_service.add_batch(
         user_id, tenant_b_id, catalog_id, 1000, 20.0, 
-        None, None, OffsetDateTime::now_utc(), None
+        None, None, OffsetDateTime::now_utc(), OffsetDateTime::now_utc() + time::Duration::days(365)
     ).await.expect("Failed to add batch for Tenant B");
     
     // Attempt to deduct from Tenant A (which has 4kg left of B5)

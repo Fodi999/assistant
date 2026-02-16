@@ -83,6 +83,7 @@ async fn test_application_startup_integrity() {
         repositories.assistant_state.clone(),
         repositories.user.clone(),
         inventory_service.clone(),
+        inventory_alert_service.clone(),
         dish_service.clone(),
     );
     let admin_auth_service = AdminAuthService::new(

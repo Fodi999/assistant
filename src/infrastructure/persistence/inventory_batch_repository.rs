@@ -63,7 +63,7 @@ impl InventoryBatchRepository {
         let invoice: Option<String> = row.try_get("invoice_number").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
         let status_str: String = row.try_get("status").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
         let received_at: OffsetDateTime = row.try_get("received_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let expires_at: Option<OffsetDateTime> = row.try_get("expires_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let expires_at: OffsetDateTime = row.try_get("expires_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
         let created_at: OffsetDateTime = row.try_get("created_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
         let updated_at: OffsetDateTime = row.try_get("updated_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
 

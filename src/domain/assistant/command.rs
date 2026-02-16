@@ -25,14 +25,12 @@ pub struct AddProductPayload {
     pub price_per_unit_cents: i64,
     /// Quantity
     pub quantity: f64,
-    /// Product receipt/purchase date (дата поступления, optional, defaults to now)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default, with = "time::serde::rfc3339::option")]
-    pub received_at: Option<OffsetDateTime>,
-    /// Expiration date (дата просрочки, optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default, with = "time::serde::rfc3339::option")]
-    pub expires_at: Option<OffsetDateTime>,
+    /// Product receipt/purchase date (дата поступления)
+    #[serde(with = "time::serde::rfc3339")]
+    pub received_at: OffsetDateTime,
+    /// Expiration date (дата просрочки)
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
 }
 
 /// Payload for creating dish

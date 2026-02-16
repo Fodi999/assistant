@@ -26,15 +26,11 @@ pub struct AddProductRequest {
     pub price_per_unit_cents: i64,
     pub quantity: f64,
     /// Product receipt/purchase date (дата поступления)
-    #[serde(default = "default_received_at", with = "time::serde::rfc3339")]
+    #[serde(with = "time::serde::rfc3339")]
     pub received_at: OffsetDateTime,
-    /// Expiration date (дата просрочки, optional)
-    #[serde(default, with = "time::serde::rfc3339::option")]
-    pub expires_at: Option<OffsetDateTime>,
-}
-
-fn default_received_at() -> OffsetDateTime {
-    OffsetDateTime::now_utc()
+    /// Expiration date (дата просрочки)
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,8 +48,8 @@ pub struct ProductResponse {
     pub quantity: f64,
     #[serde(with = "time::serde::rfc3339")]
     pub received_at: OffsetDateTime,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub expires_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]

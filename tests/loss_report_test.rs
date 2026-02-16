@@ -68,13 +68,13 @@ async fn test_loss_report_flow() {
     // 10 kg * 10.0 PLN = 100.0 PLN (10000 cents)
     let _b1_id = inventory_service.add_batch(
         user_id, tenant_id, CatalogIngredientId::from_uuid(ing_id), 1000, 10.0, 
-        None, None, now - time::Duration::days(5), Some(now - time::Duration::days(1))
+        None, None, now - time::Duration::days(5), now - time::Duration::days(1)
     ).await.unwrap();
 
     // Batch 2: NOT EXPIRED (Expires tomorrow)
     inventory_service.add_batch(
         user_id, tenant_id, CatalogIngredientId::from_uuid(ing_id), 1000, 5.0, 
-        None, None, now, Some(now + time::Duration::days(1))
+        None, None, now, now + time::Duration::days(1)
     ).await.unwrap();
 
     println!("✅ Running process_expirations...");

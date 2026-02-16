@@ -188,8 +188,8 @@ pub struct InventoryBatch {
     /// Product receipt/purchase date (дата поступления)
     pub received_at: OffsetDateTime,
     
-    /// Expiration date (дата просрочки, optional)
-    pub expires_at: Option<OffsetDateTime>,
+    /// Expiration date (дата просрочки)
+    pub expires_at: OffsetDateTime,
     
     /// Timestamps
     pub created_at: OffsetDateTime,
@@ -208,7 +208,7 @@ impl InventoryBatch {
         price_per_unit: Money,
         quantity: Quantity,
         received_at: OffsetDateTime,
-        expires_at: Option<OffsetDateTime>,
+        expires_at: OffsetDateTime,
     ) -> Self {
         let now = OffsetDateTime::now_utc();
         Self {
@@ -242,7 +242,7 @@ impl InventoryBatch {
         invoice_number: Option<String>,
         status: BatchStatus,
         received_at: OffsetDateTime,
-        expires_at: Option<OffsetDateTime>,
+        expires_at: OffsetDateTime,
         created_at: OffsetDateTime,
         updated_at: OffsetDateTime,
     ) -> Self {
@@ -281,7 +281,7 @@ impl InventoryBatch {
 
     /// Update expiration status calculation to match new severity rules
     pub fn expiration_status(&self) -> ExpirationSeverity {
-        calculate_expiration_status(self.expires_at, OffsetDateTime::now_utc())
+        calculate_expiration_status(Some(self.expires_at), OffsetDateTime::now_utc())
     }
 
     /// Update quantity
@@ -466,14 +466,15 @@ mod tests {
 
     #[test]
     fn test_total_cost() {
+        let now = OffsetDateTime::now_utc();
         let product = InventoryProduct::new(
             UserId::new(),
             TenantId::new(),
             CatalogIngredientId::new(),
             Money::from_major(10.0).unwrap(),
             Quantity::new(2.5).unwrap(),
-            OffsetDateTime::now_utc(), // received_at
-            None,
+            now, // received_at
+            now + time::Duration::days(30), // expires_at
         );
         
         let total = product.total_cost().unwrap();

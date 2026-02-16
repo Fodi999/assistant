@@ -78,13 +78,13 @@ async fn test_inventory_alerts_suite() {
     // Batch 1: Expiring in < 1 day (Critical)
     inventory_service.add_batch(
         user_id, tenant_id, CatalogIngredientId::from_uuid(ing_exp_id), 1000, 10.0, 
-        None, None, now, Some(now + time::Duration::hours(12))
+        None, None, now, now + time::Duration::hours(12)
     ).await.unwrap();
 
     // Batch 2: Expiring in 2 days (Warning)
     inventory_service.add_batch(
         user_id, tenant_id, CatalogIngredientId::from_uuid(ing_exp_id), 1000, 5.0, 
-        None, None, now, Some(now + time::Duration::days(2))
+        None, None, now, now + time::Duration::days(2)
     ).await.unwrap();
 
     let alerts = alert_service.get_alerts(tenant_id).await.unwrap();
@@ -127,7 +127,7 @@ async fn test_inventory_alerts_suite() {
     // 2. Add some stock, but below threshold (Warning)
     inventory_service.add_batch(
         user_id, tenant_id, CatalogIngredientId::from_uuid(ing_low_id), 500, 3.0, 
-        None, None, now, None
+        None, None, now, now + time::Duration::days(365)
     ).await.unwrap();
 
     let alerts_after = alert_service.get_alerts(tenant_id).await.unwrap();
@@ -139,7 +139,7 @@ async fn test_inventory_alerts_suite() {
     // 3. Add more stock to exceed threshold (No alert)
     inventory_service.add_batch(
         user_id, tenant_id, CatalogIngredientId::from_uuid(ing_low_id), 500, 10.0, 
-        None, None, now, None
+        None, None, now, now + time::Duration::days(365)
     ).await.unwrap();
 
     let alerts_final = alert_service.get_alerts(tenant_id).await.unwrap();
