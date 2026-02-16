@@ -1,19 +1,21 @@
 use crate::domain::{Tenant, User};
-use crate::infrastructure::{TenantRepository, TenantRepositoryTrait, UserRepository, UserRepositoryTrait};
-use crate::shared::{AppError, AppResult, UserId};
-use serde::Serialize;
+use crate::infrastructure::{TenantRepository, TenantRepositoryTrait, UserRepository, UserRepositoryTrait, R2Client};
+use crate::shared::{AppError, AppResult, UserId, TenantId};
+use serde::{Serialize, Deserialize};
 
 #[derive(Clone)]
 pub struct UserService {
     user_repo: UserRepository,
     tenant_repo: TenantRepository,
+    r2_client: Option<R2Client>,
 }
 
 impl UserService {
-    pub fn new(user_repo: UserRepository, tenant_repo: TenantRepository) -> Self {
+    pub fn new(user_repo: UserRepository, tenant_repo: TenantRepository, r2_client: Option<R2Client>) -> Self {
         Self {
             user_repo,
             tenant_repo,
+            r2_client,
         }
     }
 
@@ -32,6 +34,30 @@ impl UserService {
 
         Ok(UserWithTenant { user, tenant })
     }
+
+    pub async fn get_avatar_upload_url(&self, tenant_id: TenantId, user_id: UserId) -> AppResult<AvatarUploadResponse> {
+        let r2 = self.r2_client.as_ref().ok_or_else(|| AppError::internal("R2 client not configured"))?;
+        
+        let key = format!("avatars/{}/{}.webp", tenant_id.as_uuid(), user_id.as_uuid());
+        
+        let upload_url = r2.generate_presigned_upload_url(&key, "image/webp").await?;
+        let public_url = r2.get_public_url(&key);
+
+        Ok(AvatarUploadResponse {
+            upload_url,
+            public_url,
+        })
+    }
+
+    pub async fn update_avatar_url(&self, user_id: UserId, avatar_url: String) -> AppResult<()> {
+        self.user_repo.update_avatar_url(user_id, &avatar_url).await
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AvatarUploadResponse {
+    pub upload_url: String,
+    pub public_url: String,
 }
 
 #[derive(Debug, Serialize)]

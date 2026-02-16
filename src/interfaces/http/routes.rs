@@ -20,7 +20,7 @@ use crate::interfaces::http::{
     recipe_v2,  // V2 handlers with translations
     recipe_ai_insights,  // AI insights handlers
     tenant_ingredient,
-    user::me_handler,
+    user::{me_handler, get_avatar_upload_url, update_avatar_url},
 };
 use axum::{
     extract::{FromRequestParts, Request},
@@ -137,6 +137,8 @@ pub fn create_router(
 
     let protected_routes = Router::new()
         .route("/me", get(me_handler))
+        .route("/profile/avatar/upload-url", post(get_avatar_upload_url))
+        .route("/profile/avatar", axum::routing::put(update_avatar_url))
         .with_state(user_service.clone())
         .merge(
             Router::new()

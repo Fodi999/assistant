@@ -1,7 +1,9 @@
 use aws_sdk_s3::{Client, primitives::ByteStream};
+use aws_sdk_s3::presigning::PresigningConfig;
 use aws_config::BehaviorVersion;
 use bytes::Bytes;
 use crate::shared::AppError;
+use std::time::Duration;
 
 /// Cloudflare R2 Client (AWS S3-compatible)
 #[derive(Clone)]
@@ -45,6 +47,34 @@ impl R2Client {
             bucket_name,
             public_url_base,
         }
+    }
+
+    /// Generate a presigned URL for uploading an avatar
+    pub async fn generate_presigned_upload_url(
+        &self,
+        key: &str,
+        content_type: &str,
+    ) -> Result<String, AppError> {
+        let presigned = self.client
+            .put_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .content_type(content_type)
+            .presigned(
+                PresigningConfig::expires_in(Duration::from_secs(300)).map_err(|e| {
+                    AppError::internal(format!("Failed to create presigning config: {}", e))
+                })?
+            )
+            .await
+            .map_err(|e| {
+                AppError::internal(format!("Failed to generate presigned URL: {}", e))
+            })?;
+
+        Ok(presigned.uri().to_string())
+    }
+
+    pub fn get_public_url(&self, key: &str) -> String {
+        format!("{}/{}", self.public_url_base, key)
     }
 
     /// Upload image to R2

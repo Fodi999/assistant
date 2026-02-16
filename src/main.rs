@@ -78,11 +78,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         jwt_service.clone(),
     );
 
-    let user_service = UserService::new(
-        repositories.user.clone(),
-        repositories.tenant.clone(),
-    );
-
     let inventory_service = InventoryService::new(repositories.pool.clone());
 
     let catalog_service = CatalogService::new(repositories.pool.clone());
@@ -135,6 +130,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.r2.public_url_base.clone(),
     ).await;
     tracing::info!("✅ R2 Client initialized successfully");
+
+    let user_service = UserService::new(
+        repositories.user.clone(),
+        repositories.tenant.clone(),
+        Some(r2_client.clone()),
+    );
 
     // Create GroqService for AI features (centralized)
     let groq_service = Arc::new(GroqService::new(config.ai.groq_api_key.clone()));

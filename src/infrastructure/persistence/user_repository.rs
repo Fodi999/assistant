@@ -12,6 +12,7 @@ pub trait UserRepositoryTrait: Send + Sync {
     async fn find_by_email(&self, email: &Email) -> AppResult<Option<User>>;
     async fn exists_by_email(&self, email: &Email) -> AppResult<bool>;
     async fn update_login_stats(&self, user_id: UserId) -> AppResult<()>;
+    async fn update_avatar_url(&self, user_id: UserId, avatar_url: &str) -> AppResult<()>;
 }
 
 #[derive(Clone)]
@@ -30,8 +31,8 @@ impl UserRepositoryTrait for UserRepository {
     async fn create(&self, user: &User) -> AppResult<()> {
         sqlx::query(
             r#"
-            INSERT INTO users (id, tenant_id, email, password_hash, display_name, role, language, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO users (id, tenant_id, email, password_hash, display_name, avatar_url, role, language, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#
         )
         .bind(user.id.as_uuid())
@@ -39,6 +40,7 @@ impl UserRepositoryTrait for UserRepository {
         .bind(user.email.as_str())
         .bind(&user.password_hash)
         .bind(user.display_name.as_ref().map(|n| n.as_str()))
+        .bind(user.avatar_url.as_deref())
         .bind(user.role.as_str())
         .bind(user.language.code())
         .bind(user.created_at)
@@ -51,7 +53,7 @@ impl UserRepositoryTrait for UserRepository {
     async fn find_by_id(&self, id: UserId) -> AppResult<Option<User>> {
         let result = sqlx::query(
             r#"
-            SELECT id, tenant_id, email, password_hash, display_name, role, language, created_at
+            SELECT id, tenant_id, email, password_hash, display_name, avatar_url, role, language, created_at
             FROM users
             WHERE id = $1
             "#
@@ -66,6 +68,7 @@ impl UserRepositoryTrait for UserRepository {
             let email: String = row.get("email");
             let password_hash: String = row.get("password_hash");
             let display_name: Option<String> = row.get("display_name");
+            let avatar_url: Option<String> = row.get("avatar_url");
             let role: String = row.get("role");
             let language: String = row.get("language");
             let created_at: OffsetDateTime = row.get("created_at");
@@ -76,6 +79,7 @@ impl UserRepositoryTrait for UserRepository {
                 Email::new(email).ok()?,
                 password_hash,
                 display_name.and_then(|n| DisplayName::new(n).ok()),
+                avatar_url,
                 UserRole::from_str(&role).ok()?,
                 Language::from_str(&language).ok()?,
                 created_at,
@@ -86,7 +90,7 @@ impl UserRepositoryTrait for UserRepository {
     async fn find_by_email(&self, email: &Email) -> AppResult<Option<User>> {
         let result = sqlx::query(
             r#"
-            SELECT id, tenant_id, email, password_hash, display_name, role, language, created_at
+            SELECT id, tenant_id, email, password_hash, display_name, avatar_url, role, language, created_at
             FROM users
             WHERE email = $1
             "#
@@ -101,6 +105,7 @@ impl UserRepositoryTrait for UserRepository {
             let email: String = row.get("email");
             let password_hash: String = row.get("password_hash");
             let display_name: Option<String> = row.get("display_name");
+            let avatar_url: Option<String> = row.get("avatar_url");
             let role: String = row.get("role");
             let language: String = row.get("language");
             let created_at: OffsetDateTime = row.get("created_at");
@@ -111,6 +116,7 @@ impl UserRepositoryTrait for UserRepository {
                 Email::new(email).ok()?,
                 password_hash,
                 display_name.and_then(|n| DisplayName::new(n).ok()),
+                avatar_url,
                 UserRole::from_str(&role).ok()?,
                 Language::from_str(&language).ok()?,
                 created_at,
@@ -136,6 +142,18 @@ impl UserRepositoryTrait for UserRepository {
         sqlx::query(
             "UPDATE users SET login_count = login_count + 1, last_login_at = NOW() WHERE id = $1"
         )
+        .bind(user_id.as_uuid())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_avatar_url(&self, user_id: UserId, avatar_url: &str) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE users SET avatar_url = $1 WHERE id = $2"
+        )
+        .bind(avatar_url)
         .bind(user_id.as_uuid())
         .execute(&self.pool)
         .await?;
