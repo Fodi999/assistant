@@ -1,14 +1,14 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    Json,
+    routing::{delete, get, post, put},
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::application::inventory::{InventoryService, InventoryView, InventoryStatus, LossReport};
-use crate::application::inventory_alert::InventoryAlertService;
 use crate::domain::{
     catalog::CatalogIngredientId,
     inventory::{InventoryBatch, InventoryBatchId, InventoryAlert},
@@ -162,20 +162,30 @@ pub async fn delete_product(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// GET /api/inventory/dashboard
+/// Comprehensive dashboard for the owner
+pub async fn get_dashboard(
+    State(service): State<InventoryService>,
+    auth: AuthUser,
+) -> Result<Json<crate::application::inventory::InventoryDashboard>, AppError> {
+    let dashboard = service.get_dashboard(auth.tenant_id).await?;
+    Ok(Json(dashboard))
+}
+
 /// GET /api/inventory/health
 /// Unified inventory health endpoint (for badge and dashboard)
 pub async fn get_health(
-    State(service): State<InventoryAlertService>,
+    State(service): State<InventoryService>,
     auth: AuthUser,
 ) -> Result<Json<InventoryStatus>, AppError> {
-    let status = service.get_inventory_status(auth.tenant_id).await?;
+    let status = service.get_status(auth.tenant_id).await?;
     Ok(Json(status))
 }
 
 /// GET /api/inventory/alerts
 /// Get all active alerts (expiring batches + low stock)
 pub async fn get_alerts(
-    State(service): State<InventoryAlertService>,
+    State(service): State<InventoryService>,
     auth: AuthUser,
 ) -> Result<Json<Vec<InventoryAlert>>, AppError> {
     let alerts = service.get_alerts(auth.tenant_id).await?;
@@ -211,4 +221,18 @@ pub async fn get_loss_report(
 ) -> Result<Json<LossReport>, AppError> {
     let report = service.get_loss_report(auth.tenant_id, query.days).await?;
     Ok(Json(report))
+}
+
+pub fn router(service: InventoryService) -> Router {
+    Router::new()
+        .route("/products", get(list_products))
+        .route("/products", post(add_product))
+        .route("/products/:id", put(update_product))
+        .route("/products/:id", delete(delete_product))
+        .route("/health", get(get_health))
+        .route("/alerts", get(get_alerts))
+        .route("/dashboard", get(get_dashboard)) // New ownership dashboard
+        .route("/reports/loss", get(get_loss_report))
+        .route("/process-expirations", post(process_expirations))
+        .with_state(service)
 }

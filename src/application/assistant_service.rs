@@ -1,4 +1,4 @@
-use crate::application::{InventoryAlertService, InventoryService, DishService};
+use crate::application::{InventoryService, DishService};
 use crate::domain::assistant::{
     command::AssistantCommand,
     response::AssistantResponse,
@@ -16,7 +16,6 @@ pub struct AssistantService {
     state_repo: AssistantStateRepository,
     user_repo: UserRepository,
     inventory_service: InventoryService,
-    inventory_alert_service: InventoryAlertService,
     dish_service: DishService,
 }
 
@@ -25,14 +24,12 @@ impl AssistantService {
         state_repo: AssistantStateRepository,
         user_repo: UserRepository,
         inventory_service: InventoryService,
-        inventory_alert_service: InventoryAlertService,
         dish_service: DishService,
     ) -> Self {
         Self {
             state_repo,
             user_repo,
             inventory_service,
-            inventory_alert_service,
             dish_service,
         }
     }
@@ -216,7 +213,7 @@ impl AssistantService {
         use crate::domain::assistant::response::{AssistantWarning, WarningLevel};
         use crate::shared::Language;
 
-        let status = self.inventory_alert_service.get_inventory_status(tenant_id).await?;
+        let status = self.inventory_service.get_status(tenant_id).await?;
 
         // ❌ Critical: Expired products
         if status.expired > 0 {

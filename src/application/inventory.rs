@@ -29,6 +29,34 @@ pub struct InventoryStatus {
     pub badge_count: usize,
 }
 
+#[derive(Debug, Serialize)]
+pub struct InventoryDashboard {
+    pub total_stock_value_cents: i64,
+    pub waste_30d_cents: i64,
+    pub waste_percentage: f64,
+    pub health_score: i32,
+    pub stockout_risks: Vec<StockoutPrediction>,
+    pub expired_risks: Vec<RiskProduct>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StockoutPrediction {
+    pub ingredient_id: uuid::Uuid,
+    pub name: String,
+    pub current_quantity: f64,
+    pub avg_daily_consumption: f64,
+    pub days_until_stockout: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RiskProduct {
+    pub ingredient_id: uuid::Uuid,
+    pub name: String,
+    pub status: String,
+    pub batch_id: uuid::Uuid,
+    pub remaining_quantity: f64,
+}
+
 impl Default for InventoryStatus {
     fn default() -> Self {
         Self {
@@ -56,14 +84,154 @@ pub struct StockSummary {
 pub struct InventoryService {
     inventory_repo: Arc<InventoryBatchRepository>,
     pool: PgPool,
+    alert_service: crate::application::InventoryAlertService,
 }
 
 impl InventoryService {
     pub fn new(pool: PgPool) -> Self {
         Self {
             inventory_repo: Arc::new(InventoryBatchRepository::new(pool.clone())),
+            alert_service: crate::application::InventoryAlertService::new(pool.clone()),
             pool,
         }
+    }
+
+    /// Comprehensive Dashboard for the Owner
+    pub async fn get_dashboard(&self, tenant_id: TenantId) -> AppResult<InventoryDashboard> {
+        // 1. Get current stock value (cents)
+        let total_stock_value_cents: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(remaining_quantity * price_per_unit_cents), 0)::BIGINT 
+             FROM inventory_batches 
+             WHERE tenant_id = $1 AND status = 'active'"
+        )
+        .bind(tenant_id.as_uuid())
+        .fetch_one(&self.pool)
+        .await?;
+
+        // 2. Get Health Score
+        let health = self.alert_service.get_inventory_status(tenant_id).await?;
+
+        // 3. Get Waste Info (30 days)
+        let loss_report = self.get_loss_report(tenant_id, 30).await?;
+
+        // 4. Calculate Stockout Predictions
+        let stockout_risks = self.calculate_stockout_predictions(tenant_id).await?;
+
+        // 5. Identify Risk Products
+        let expired_risks = self.identify_risk_products(tenant_id).await?;
+
+        Ok(InventoryDashboard {
+            total_stock_value_cents,
+            waste_30d_cents: loss_report.total_loss_cents,
+            waste_percentage: loss_report.waste_percentage,
+            health_score: health.health_score,
+            stockout_risks,
+            expired_risks,
+        })
+    }
+
+    async fn calculate_stockout_predictions(&self, tenant_id: TenantId) -> AppResult<Vec<StockoutPrediction>> {
+        let query = r#"
+            WITH consumption AS (
+                SELECT 
+                    ib.catalog_ingredient_id,
+                    SUM(im.quantity) as total_consumed
+                FROM inventory_movements im
+                JOIN inventory_batches ib ON im.inventory_batch_id = ib.id
+                WHERE ib.tenant_id = $1 
+                  AND im.movement_type = 'OutSale'
+                  AND im.created_at > NOW() - INTERVAL '14 days'
+                GROUP BY ib.catalog_ingredient_id
+            ),
+            current_stock AS (
+                SELECT 
+                    ib.catalog_ingredient_id,
+                    ci.name_en as ingredient_name,
+                    SUM(ib.remaining_quantity) as total_qty
+                FROM inventory_batches ib
+                JOIN catalog_ingredients ci ON ib.catalog_ingredient_id = ci.id
+                WHERE ib.tenant_id = $1 AND ib.status = 'active'
+                GROUP BY ib.catalog_ingredient_id, ci.name_en
+            )
+            SELECT 
+                cs.catalog_ingredient_id,
+                cs.ingredient_name,
+                cs.total_qty,
+                COALESCE(c.total_consumed / 14.0, 0) as avg_daily
+            FROM current_stock cs
+            LEFT JOIN consumption c ON cs.catalog_ingredient_id = c.catalog_ingredient_id
+            WHERE cs.total_qty > 0
+            ORDER BY (cs.total_qty / NULLIF(COALESCE(c.total_consumed / 14.0, 0), 0)) ASC
+            LIMIT 5
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(tenant_id.as_uuid())
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let total_qty: Decimal = row.get("total_qty");
+            let avg_daily: Decimal = row.get("avg_daily");
+            
+            let days_until = if avg_daily > Decimal::ZERO {
+                (total_qty / avg_daily).to_f64().unwrap_or(f64::INFINITY)
+            } else {
+                f64::INFINITY
+            };
+
+            results.push(StockoutPrediction {
+                ingredient_id: row.get("catalog_ingredient_id"),
+                name: row.get("ingredient_name"),
+                current_quantity: total_qty.to_f64().unwrap_or(0.0),
+                avg_daily_consumption: avg_daily.to_f64().unwrap_or(0.0),
+                days_until_stockout: days_until,
+            });
+        }
+
+        Ok(results)
+    }
+
+    async fn identify_risk_products(&self, tenant_id: TenantId) -> AppResult<Vec<RiskProduct>> {
+        let query = r#"
+            SELECT 
+                ib.id as batch_id,
+                ib.catalog_ingredient_id,
+                ci.name_en as ingredient_name,
+                ib.remaining_quantity,
+                CASE 
+                    WHEN ib.expires_at < NOW() THEN 'Expired'
+                    WHEN ib.expires_at < NOW() + INTERVAL '1 day' THEN 'Critical'
+                    ELSE 'Warning'
+                END as risk_status
+            FROM inventory_batches ib
+            JOIN catalog_ingredients ci ON ib.catalog_ingredient_id = ci.id
+            WHERE ib.tenant_id = $1 
+              AND ib.status = 'active'
+              AND ib.expires_at < NOW() + INTERVAL '3 days'
+              AND ib.remaining_quantity > 0
+            ORDER BY ib.expires_at ASC
+            LIMIT 10
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(tenant_id.as_uuid())
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(RiskProduct {
+                ingredient_id: row.get("catalog_ingredient_id"),
+                name: row.get("ingredient_name"),
+                status: row.get("risk_status"),
+                batch_id: row.get("batch_id"),
+                remaining_quantity: row.get::<Decimal, _>("remaining_quantity").to_f64().unwrap_or(0.0),
+            });
+        }
+
+        Ok(results)
     }
 
     /// Add batch to inventory (пополнение склада)
@@ -551,6 +719,16 @@ impl InventoryService {
             waste_percentage,
             period_days: days,
         })
+    }
+
+    /// Get status summary (health score, etc.)
+    pub async fn get_status(&self, tenant_id: TenantId) -> AppResult<InventoryStatus> {
+        self.alert_service.get_inventory_status(tenant_id).await
+    }
+
+    /// Get all active alerts (delegated to alert service)
+    pub async fn get_alerts(&self, tenant_id: TenantId) -> AppResult<Vec<crate::domain::inventory::InventoryAlert>> {
+        self.alert_service.get_alerts(tenant_id).await
     }
 }
 
