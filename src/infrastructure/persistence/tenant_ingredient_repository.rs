@@ -1,5 +1,5 @@
 use crate::domain::catalog::{CatalogIngredientId, Unit};
-use crate::shared::{AppResult, TenantId};
+use crate::shared::{AppError, AppResult, TenantId};
 use crate::domain::tenant_ingredient::{TenantIngredient, TenantIngredientId};
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
@@ -23,24 +23,24 @@ impl TenantIngredientRepository {
     }
 
     fn row_to_tenant_ingredient(row: &sqlx::postgres::PgRow) -> AppResult<TenantIngredient> {
-        let custom_unit_str: Option<String> = row.get("custom_unit");
+        let custom_unit_str: Option<String> = row.try_get("custom_unit").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
         let custom_unit = match custom_unit_str {
             Some(s) => Some(Unit::from_str(&s)?),
             None => None,
         };
 
         Ok(TenantIngredient::from_parts(
-            TenantIngredientId::from_uuid(row.get("id")),
-            TenantId::from_uuid(row.get("tenant_id")),
-            CatalogIngredientId::from_uuid(row.get("catalog_ingredient_id")),
-            row.get("price"),
-            row.get("supplier"),
+            TenantIngredientId::from_uuid(row.try_get("id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
+            TenantId::from_uuid(row.try_get("tenant_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
+            CatalogIngredientId::from_uuid(row.try_get("catalog_ingredient_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
+            row.try_get("price").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("supplier").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
             custom_unit,
-            row.get("custom_expiration_days"),
-            row.get("notes"),
-            row.get("is_active"),
-            row.get("created_at"),
-            row.get("updated_at"),
+            row.try_get("custom_expiration_days").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("notes").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("is_active").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("created_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("updated_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
         ))
     }
 }

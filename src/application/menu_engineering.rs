@@ -152,12 +152,12 @@ impl MenuEngineeringService {
 
         for row in rows {
             use sqlx::Row;
-            let dish_id: Uuid = row.get("dish_id");
-            let dish_name: String = row.get("dish_name");
-            let total_quantity: i64 = row.get("total_quantity");
-            let total_revenue_cents: i64 = row.get("total_revenue_cents");
-            let total_profit_cents: i64 = row.get("total_profit_cents");
-            let avg_profit_margin_percent: f64 = row.get("avg_profit_margin_percent");
+            let dish_id: Uuid = row.try_get("dish_id").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let dish_name: String = row.try_get("dish_name").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let total_quantity: i64 = row.try_get("total_quantity").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let total_revenue_cents: i64 = row.try_get("total_revenue_cents").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let total_profit_cents: i64 = row.try_get("total_profit_cents").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let avg_profit_margin_percent: f64 = row.try_get("avg_profit_margin_percent").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
 
             map.insert(
                 DishId::from_uuid(dish_id),

@@ -27,22 +27,40 @@ impl RecipeRepositoryV2 {
     }
 
     fn row_to_recipe(row: &sqlx::postgres::PgRow) -> AppResult<Recipe> {
-        let language_str: String = row.get("language_default");
+        let language_str: String = row.try_get("language_default")
+            .map_err(|e| AppError::internal(&format!("Failed to get language_default: {}", e)))?;
+            
         Ok(Recipe {
-            id: RecipeId(row.get("id")),
-            user_id: UserId::from_uuid(row.get("user_id")),
-            tenant_id: TenantId::from_uuid(row.get("tenant_id")),
-            name_default: row.get("name_default"),
-            instructions_default: row.get("instructions_default"),
+            id: RecipeId(row.try_get("id")
+                .map_err(|e| AppError::internal(&format!("Failed to get id: {}", e)))?),
+            user_id: UserId::from_uuid(row.try_get("user_id")
+                .map_err(|e| AppError::internal(&format!("Failed to get user_id: {}", e)))?),
+            tenant_id: TenantId::from_uuid(row.try_get("tenant_id")
+                .map_err(|e| AppError::internal(&format!("Failed to get tenant_id: {}", e)))?),
+            name_default: row.try_get("name_default")
+                .map_err(|e| AppError::internal(&format!("Failed to get name_default: {}", e)))?,
+            instructions_default: row.try_get("instructions_default")
+                .map_err(|e| AppError::internal(&format!("Failed to get instructions_default: {}", e)))?,
             language_default: Language::from_code(&language_str).unwrap_or(Language::En),
-            servings: row.get("servings"),
-            total_cost_cents: row.get("total_cost_cents"),
-            cost_per_serving_cents: row.get("cost_per_serving_cents"),
-            status: row.get::<String, _>("status").parse().unwrap_or_default(),
-            is_public: row.get("is_public"),
-            published_at: row.get("published_at"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
+            servings: row.try_get("servings")
+                .map_err(|e| AppError::internal(&format!("Failed to get servings: {}", e)))?,
+            total_cost_cents: row.try_get::<Option<i64>, _>("total_cost_cents")
+                .map_err(|e| AppError::internal(&format!("Failed to get total_cost_cents: {}", e)))?
+                .map(|v| v as i32),
+            cost_per_serving_cents: row.try_get::<Option<i64>, _>("cost_per_serving_cents")
+                .map_err(|e| AppError::internal(&format!("Failed to get cost_per_serving_cents: {}", e)))?
+                .map(|v| v as i32),
+            status: row.try_get::<String, _>("status")
+                .map_err(|e| AppError::internal(&format!("Failed to get status: {}", e)))?
+                .parse().unwrap_or_default(),
+            is_public: row.try_get("is_public")
+                .map_err(|e| AppError::internal(&format!("Failed to get is_public: {}", e)))?,
+            published_at: row.try_get("published_at")
+                .map_err(|e| AppError::internal(&format!("Failed to get published_at: {}", e)))?,
+            created_at: row.try_get("created_at")
+                .map_err(|e| AppError::internal(&format!("Failed to get created_at: {}", e)))?,
+            updated_at: row.try_get("updated_at")
+                .map_err(|e| AppError::internal(&format!("Failed to get updated_at: {}", e)))?,
         })
     }
 }
@@ -251,14 +269,23 @@ impl RecipeIngredientRepositoryTrait for RecipeIngredientRepository {
         let mut ingredients = Vec::new();
         for row in rows {
             ingredients.push(RecipeIngredient {
-                id: RecipeIngredientId(row.get("id")),
-                recipe_id: RecipeId(row.get("recipe_id")),
-                catalog_ingredient_id: row.get("catalog_ingredient_id"),
-                quantity: row.get("quantity"),
-                unit: row.get("unit"),
-                cost_at_use_cents: row.get::<Option<i64>, _>("cost_at_use_cents").map(|v| v as i32),
-                catalog_ingredient_name_snapshot: row.get("catalog_ingredient_name_snapshot"),
-                created_at: row.get("created_at"),
+                id: RecipeIngredientId(row.try_get("id")
+                    .map_err(|e| AppError::internal(&format!("Failed to get id: {}", e)))?),
+                recipe_id: RecipeId(row.try_get("recipe_id")
+                    .map_err(|e| AppError::internal(&format!("Failed to get recipe_id: {}", e)))?),
+                catalog_ingredient_id: row.try_get("catalog_ingredient_id")
+                    .map_err(|e| AppError::internal(&format!("Failed to get catalog_ingredient_id: {}", e)))?,
+                quantity: row.try_get("quantity")
+                    .map_err(|e| AppError::internal(&format!("Failed to decode quantity: {}. This often happens if the database column type (e.g. FLOAT8) does not match the Rust field type (Decimal).", e)))?,
+                unit: row.try_get("unit")
+                    .map_err(|e| AppError::internal(&format!("Failed to get unit: {}", e)))?,
+                cost_at_use_cents: row.try_get::<Option<i64>, _>("cost_at_use_cents")
+                    .map_err(|e| AppError::internal(&format!("Failed to get cost_at_use_cents: {}", e)))?
+                    .map(|v| v as i32),
+                catalog_ingredient_name_snapshot: row.try_get("catalog_ingredient_name_snapshot")
+                    .map_err(|e| AppError::internal(&format!("Failed to get catalog_ingredient_name_snapshot: {}", e)))?,
+                created_at: row.try_get("created_at")
+                    .map_err(|e| AppError::internal(&format!("Failed to get created_at: {}", e)))?,
             });
         }
 

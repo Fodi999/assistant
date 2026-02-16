@@ -6,7 +6,7 @@ use crate::infrastructure::persistence::{
     CatalogIngredientRepository, CatalogIngredientRepositoryTrait,
     InventoryProductRepository, InventoryProductRepositoryTrait,
 };
-use crate::shared::{AppResult, Language, TenantId, UserId};
+use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
 use serde::Serialize;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
@@ -236,20 +236,20 @@ impl InventoryService {
         let mut views = Vec::new();
         for row in rows {
             views.push(InventoryView {
-                id: row.get("id"),
+                id: row.try_get("id").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
                 product: ProductInfo {
-                    id: row.get("catalog_ingredient_id"),
-                    name: row.get("ingredient_name"),
-                    category: row.get("category_name"),
-                    base_unit: row.get("base_unit"),
-                    image_url: row.get("image_url"),
+                    id: row.try_get("catalog_ingredient_id").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    name: row.try_get("ingredient_name").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    category: row.try_get("category_name").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    base_unit: row.try_get("base_unit").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    image_url: row.try_get("image_url").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
                 },
-                quantity: row.get("quantity"),
-                price_per_unit_cents: row.get("price_per_unit_cents"),
-                received_at: row.get("received_at"),
-                expires_at: row.get("expires_at"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
+                quantity: row.try_get("quantity").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                price_per_unit_cents: row.try_get("price_per_unit_cents").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                received_at: row.try_get("received_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                expires_at: row.try_get("expires_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                created_at: row.try_get("created_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                updated_at: row.try_get("updated_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
             });
         }
 
