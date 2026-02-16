@@ -10,10 +10,6 @@ RUN apt-get update && apt-get install -y \
 
 # Copy dependency files first for caching
 COPY Cargo.toml Cargo.lock ./
-COPY .sqlx ./.sqlx
-
-# Enable SQLx offline mode (no DB access during build)
-ENV SQLX_OFFLINE=true
 
 # Copy source code and migrations
 COPY src ./src
