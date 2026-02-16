@@ -6,7 +6,7 @@ use sqlx::{PgPool, Row};
 #[async_trait]
 pub trait AssistantStateRepositoryTrait: Send + Sync {
     async fn get_or_create(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<AssistantState>;
-    async fn update_step(&self, user_id: UserId, step: AssistantStep) -> AppResult<()>;
+    async fn update_step(&self, user_id: UserId, tenant_id: TenantId, step: AssistantStep) -> AppResult<()>;
 }
 
 #[derive(Clone)]
@@ -27,9 +27,10 @@ impl AssistantStateRepositoryTrait for AssistantStateRepository {
         let row = sqlx::query(
             "SELECT user_id, tenant_id, current_step, updated_at 
              FROM assistant_states 
-             WHERE user_id = $1"
+             WHERE user_id = $1 AND tenant_id = $2"
         )
         .bind(user_id.0)
+        .bind(tenant_id.0)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -60,16 +61,17 @@ impl AssistantStateRepositoryTrait for AssistantStateRepository {
         }
     }
 
-    async fn update_step(&self, user_id: UserId, step: AssistantStep) -> AppResult<()> {
+    async fn update_step(&self, user_id: UserId, tenant_id: TenantId, step: AssistantStep) -> AppResult<()> {
         let step_str = format!("{:?}", step);
         
         sqlx::query(
             "UPDATE assistant_states 
              SET current_step = $1 
-             WHERE user_id = $2"
+             WHERE user_id = $2 AND tenant_id = $3"
         )
         .bind(step_str)
         .bind(user_id.0)
+        .bind(tenant_id.0)
         .execute(&self.pool)
         .await?;
 

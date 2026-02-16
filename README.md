@@ -23,21 +23,17 @@ This is a production-grade monolithic backend built with Rust, featuring:
 ## 📁 Project Structure
 
 ```
-src/
-├── domain/                    # Core business logic
-│   ├── assistant/            # State machine (6 steps)
-│   ├── catalog.rs            # Product catalog entities
-│   ├── user.rs, auth.rs      # User & auth domain
-│   └── tenant.rs             # Multi-tenancy
-├── application/               # Use cases
-│   ├── assistant_service.rs  # Assistant logic
-│   └── auth.rs, user.rs      # Services
-├── infrastructure/            # External dependencies
-│   ├── persistence/          # Repositories
-│   ├── security/             # JWT, passwords
-│   └── config.rs
-└── interfaces/                # HTTP layer
-    └── http/                 # REST API
+.
+├── docs/                      # Documentation
+│   ├── backend/               # Backend-specific architecture & guides
+│   └── frontend/              # Frontend-specific integration & UI guides
+├── src/                       # Backend Source Code (Rust)
+│   ├── domain/                # Core business logic
+│   ├── application/           # Use cases & services
+│   ├── infrastructure/        # Repositories & external services
+│   └── interfaces/            # HTTP API
+├── migrations/                # SQL migrations
+└── tests/                     # Integration tests
 ```
 
 ## 🔧 Getting Started

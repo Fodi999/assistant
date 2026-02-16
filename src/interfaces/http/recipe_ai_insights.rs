@@ -17,11 +17,11 @@ use uuid::Uuid;
 /// Returns: RecipeAIInsightsResponse (with generation time if newly created)
 pub async fn get_or_generate_insights(
     State(ai_service): State<Arc<RecipeAIInsightsService>>,
-    AuthUser { user_id: _, tenant_id: _, language: _ }: AuthUser,
+    AuthUser { user_id: _, tenant_id, language: _ }: AuthUser,
     Path((recipe_id, target_language)): Path<(Uuid, String)>,
 ) -> AppResult<Json<RecipeAIInsightsResponse>> {
     let response = ai_service
-        .get_or_generate_insights_by_id(RecipeId(recipe_id), &target_language)
+        .get_or_generate_insights_by_id(RecipeId(recipe_id), tenant_id, &target_language)
         .await?;
     
     Ok(Json(response))
@@ -32,11 +32,11 @@ pub async fn get_or_generate_insights(
 /// Returns: RecipeAIInsightsResponse with generation_time_ms
 pub async fn refresh_insights(
     State(ai_service): State<Arc<RecipeAIInsightsService>>,
-    AuthUser { user_id: _, tenant_id: _, language: _ }: AuthUser,
+    AuthUser { user_id: _, tenant_id, language: _ }: AuthUser,
     Path((recipe_id, target_language)): Path<(Uuid, String)>,
 ) -> AppResult<(StatusCode, Json<RecipeAIInsightsResponse>)> {
     let response = ai_service
-        .refresh_insights_by_id(RecipeId(recipe_id), &target_language)
+        .refresh_insights_by_id(RecipeId(recipe_id), tenant_id, &target_language)
         .await?;
     
     Ok((StatusCode::OK, Json(response)))

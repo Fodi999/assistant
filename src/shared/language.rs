@@ -21,6 +21,16 @@ impl Language {
         }
     }
 
+    pub fn from_code(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "en" => Some(Language::En),
+            "pl" => Some(Language::Pl),
+            "uk" => Some(Language::Uk),
+            "ru" => Some(Language::Ru),
+            _ => None,
+        }
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Language::En => "en",
@@ -37,6 +47,10 @@ impl Language {
             Language::Uk => "Українська",
             Language::Ru => "Русский",
         }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![Language::En, Language::Pl, Language::Uk, Language::Ru]
     }
 }
 

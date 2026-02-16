@@ -30,11 +30,12 @@ impl RecipeTranslationService {
     pub async fn translate_recipe(
         &self,
         recipe_id: RecipeId,
+        tenant_id: crate::shared::TenantId,
         target_language: Language,
     ) -> AppResult<RecipeTranslation> {
-        // Load recipe
+        // Load recipe with tenant isolation
         let recipe = self.recipe_repo
-            .find_by_id(recipe_id)
+            .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
 
@@ -103,42 +104,22 @@ impl RecipeTranslationService {
     pub async fn translate_to_all_languages(
         &self,
         recipe_id: RecipeId,
-        default_language: Language,
+        tenant_id: crate::shared::TenantId,
+        source_language: Language,
     ) -> AppResult<()> {
-        let languages = [Language::Ru, Language::En, Language::Pl, Language::Uk];
+        let targets = Language::all();
         
-        for target_lang in languages {
-            if target_lang != default_language {
-                let service = self.clone();
-                
-                // Spawn async task (non-blocking)
-                tokio::spawn(async move {
-                    tracing::info!(
-                        "🌍 Starting translation for recipe {} to {}",
-                        recipe_id.as_uuid(),
-                        target_lang.code()
-                    );
-                    match service.translate_recipe(recipe_id, target_lang).await {
-                        Ok(_) => {
-                            tracing::info!(
-                                "✅ Successfully translated recipe {} to {}",
-                                recipe_id.as_uuid(),
-                                target_lang.code()
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "❌ Failed to translate recipe {} to {}: {:?}",
-                                recipe_id.as_uuid(),
-                                target_lang.code(),
-                                e
-                            );
-                        }
-                    }
-                });
+        for target in targets {
+            if target == source_language {
+                continue;
+            }
+            
+            // Note: In production we might want to use a job queue
+            if let Err(e) = self.translate_recipe(recipe_id, tenant_id, target).await {
+                tracing::error!("Translation failed for {}: {}", target.code(), e);
             }
         }
-
+        
         Ok(())
     }
 
@@ -147,11 +128,12 @@ impl RecipeTranslationService {
     pub async fn get_localized_content(
         &self,
         recipe_id: RecipeId,
+        tenant_id: crate::shared::TenantId,
         language: Language,
     ) -> AppResult<(String, String)> {
-        // Load recipe to get default language
+        // Load recipe to get default language with tenant isolation
         let recipe = self.recipe_repo
-            .find_by_id(recipe_id)
+            .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
 

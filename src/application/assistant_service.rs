@@ -1,9 +1,8 @@
-use crate::application::{InventoryService, RecipeService, DishService};
+use crate::application::{InventoryService, DishService};
 use crate::domain::assistant::{
-    command::{AssistantCommand, AddProductPayload, CreateDishPayload},
+    command::AssistantCommand,
     response::AssistantResponse,
     rules::next_step,
-    step::AssistantStep,
 };
 use crate::domain::{CatalogIngredientId, RecipeId, DishName, Money};
 use crate::infrastructure::persistence::{
@@ -17,7 +16,6 @@ pub struct AssistantService {
     state_repo: AssistantStateRepository,
     user_repo: UserRepository,
     inventory_service: InventoryService,
-    recipe_service: RecipeService,
     dish_service: DishService,
 }
 
@@ -26,14 +24,12 @@ impl AssistantService {
         state_repo: AssistantStateRepository,
         user_repo: UserRepository,
         inventory_service: InventoryService,
-        recipe_service: RecipeService,
         dish_service: DishService,
     ) -> Self {
         Self {
             state_repo,
             user_repo,
             inventory_service,
-            recipe_service,
             dish_service,
         }
     }
@@ -136,7 +132,7 @@ impl AssistantService {
 
         // Сохраняем новый step (только если изменился)
         if next != state.current_step {
-            self.state_repo.update_step(user_id, next).await?;
+            self.state_repo.update_step(user_id, tenant_id, next).await?;
         }
 
         // Получаем базовый response

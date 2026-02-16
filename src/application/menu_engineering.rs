@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::domain::{DishId, DishPerformance, MenuCategory, MenuEngineeringMatrix};
+use crate::domain::{DishId, DishPerformance, MenuEngineeringMatrix};
 use crate::shared::{AppResult, Language, TenantId, UserId};
 
 use sqlx::PgPool;
@@ -23,7 +23,7 @@ impl MenuEngineeringService {
     /// Returns MenuEngineeringMatrix with all dishes classified by profitability and popularity
     pub async fn analyze_menu(
         &self,
-        user_id: UserId,
+        _user_id: UserId,
         tenant_id: TenantId,
         language: Language,
         period_days: u32,
@@ -105,7 +105,8 @@ impl MenuEngineeringService {
         let tenant_uuid = *tenant_id.as_uuid();
         let period_days_str = period_days.to_string();
 
-        let rows = sqlx::query!(
+        // 🎯 FIX: Use manual query instead of query! macro to avoid DB-at-build-time issues
+        let rows = sqlx::query(
             r#"
             SELECT
                 ds.dish_id,
@@ -124,24 +125,31 @@ impl MenuEngineeringService {
                 AND ds.sold_at >= NOW() - ($2 || ' days')::INTERVAL
             GROUP BY ds.dish_id, d.name
             "#,
-            tenant_uuid,
-            period_days_str
         )
+        .bind(tenant_uuid)
+        .bind(period_days_str)
         .fetch_all(&self.pool)
         .await?;
 
         let mut map = HashMap::new();
 
         for row in rows {
-            let dish_id = DishId::from_uuid(row.dish_id);
+            use sqlx::Row;
+            let dish_id: Uuid = row.get("dish_id");
+            let dish_name: String = row.get("dish_name");
+            let total_quantity: i64 = row.get("total_quantity");
+            let total_revenue_cents: i64 = row.get("total_revenue_cents");
+            let total_profit_cents: i64 = row.get("total_profit_cents");
+            let avg_profit_margin_percent: f64 = row.get("avg_profit_margin_percent");
+
             map.insert(
-                dish_id,
+                DishId::from_uuid(dish_id),
                 AggregatedDishData {
-                    dish_name: row.dish_name,
-                    sales_volume: row.total_quantity.unwrap_or(0) as u32,
-                    total_revenue_cents: row.total_revenue_cents.unwrap_or(0),
-                    total_profit_cents: row.total_profit_cents.unwrap_or(0),
-                    avg_profit_margin_percent: row.avg_profit_margin_percent.unwrap_or(0.0),
+                    dish_name,
+                    sales_volume: total_quantity as u32,
+                    total_revenue_cents,
+                    total_profit_cents,
+                    avg_profit_margin_percent,
                 },
             );
         }
@@ -163,7 +171,7 @@ impl MenuEngineeringService {
         let user_uuid = *user_id.as_uuid();
         let profit_cents = (selling_price_cents - recipe_cost_cents) * quantity as i32;
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO dish_sales (
                 tenant_id,
@@ -175,14 +183,14 @@ impl MenuEngineeringService {
                 profit_cents
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
-            tenant_uuid,
-            dish_id,
-            user_uuid,
-            quantity as i32,
-            selling_price_cents,
-            recipe_cost_cents,
-            profit_cents
         )
+        .bind(tenant_uuid)
+        .bind(dish_id)
+        .bind(user_uuid)
+        .bind(quantity as i32)
+        .bind(selling_price_cents)
+        .bind(recipe_cost_cents)
+        .bind(profit_cents)
         .execute(&self.pool)
         .await?;
 

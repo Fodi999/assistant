@@ -18,7 +18,7 @@ use uuid::Uuid;
 /// Returns: RecipeResponseDto with status 201
 pub async fn create_recipe(
     State(service): State<Arc<RecipeV2Service>>,
-    AuthUser { user_id, tenant_id, language }: AuthUser,
+    AuthUser { user_id, tenant_id, language: _ }: AuthUser,
     Json(dto): Json<CreateRecipeDto>,
 ) -> AppResult<(StatusCode, Json<RecipeResponseDto>)> {
     let recipe = service.create_recipe(dto, user_id, tenant_id).await?;
@@ -30,11 +30,11 @@ pub async fn create_recipe(
 /// Returns: RecipeResponseDto in user's language
 pub async fn get_recipe(
     State(service): State<Arc<RecipeV2Service>>,
-    AuthUser { user_id: _, tenant_id: _, language }: AuthUser,
+    AuthUser { user_id: _, tenant_id, language }: AuthUser,
     Path(recipe_id): Path<Uuid>,
 ) -> AppResult<Json<RecipeResponseDto>> {
     let recipe = service
-        .get_recipe(RecipeId(recipe_id), language)
+        .get_recipe(RecipeId(recipe_id), tenant_id, language)
         .await?;
     Ok(Json(recipe))
 }
@@ -43,9 +43,9 @@ pub async fn get_recipe(
 /// Returns: Vec<RecipeResponseDto> in user's language
 pub async fn list_recipes(
     State(service): State<Arc<RecipeV2Service>>,
-    AuthUser { user_id, tenant_id: _, language }: AuthUser,
+    AuthUser { user_id, tenant_id, language }: AuthUser,
 ) -> AppResult<Json<Vec<RecipeResponseDto>>> {
-    let recipes = service.list_user_recipes(user_id, language).await?;
+    let recipes = service.list_user_recipes(user_id, tenant_id, language).await?;
     Ok(Json(recipes))
 }
 
@@ -54,11 +54,11 @@ pub async fn list_recipes(
 /// Returns: 204 No Content
 pub async fn publish_recipe(
     State(service): State<Arc<RecipeV2Service>>,
-    AuthUser { user_id: _, tenant_id: _, language: _ }: AuthUser,
+    AuthUser { user_id: _, tenant_id, language: _ }: AuthUser,
     Path(recipe_id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    service.publish_recipe(RecipeId(recipe_id)).await?;
-    Ok(StatusCode::NO_CONTENT)
+    service.publish_recipe(RecipeId(recipe_id), tenant_id).await?;
+    Ok(StatusCode::OK)
 }
 
 /// DELETE /api/recipes/v2/:id - Delete recipe and all related data
@@ -66,9 +66,9 @@ pub async fn publish_recipe(
 /// Returns: 204 No Content
 pub async fn delete_recipe(
     State(service): State<Arc<RecipeV2Service>>,
-    AuthUser { user_id: _, tenant_id: _, language: _ }: AuthUser,
+    AuthUser { user_id: _, tenant_id, language: _ }: AuthUser,
     Path(recipe_id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    service.delete_recipe(RecipeId(recipe_id)).await?;
+    service.delete_recipe(RecipeId(recipe_id), tenant_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

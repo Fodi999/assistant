@@ -94,27 +94,28 @@ impl InventoryService {
         Ok(product_id)
     }
 
-    /// Get user's inventory list
+    /// Get tenant's inventory list
     pub async fn list_products(
         &self,
-        user_id: UserId,
+        _user_id: UserId,
         tenant_id: TenantId,
     ) -> AppResult<Vec<InventoryProduct>> {
-        self.inventory_repo.list_by_user(user_id, tenant_id).await
+        // 🎯 TENANT ISOLATION: Return all products for the tenant
+        self.inventory_repo.list_by_tenant(tenant_id).await
     }
 
     /// Update product quantity and price
     pub async fn update_product(
         &self,
         product_id: InventoryProductId,
-        user_id: UserId,
+        _user_id: UserId,
         tenant_id: TenantId,
         price_per_unit_cents: Option<i64>,
         quantity: Option<f64>,
     ) -> AppResult<()> {
         let mut product = self
             .inventory_repo
-            .find_by_id(product_id, user_id, tenant_id)
+            .find_by_id(product_id, tenant_id)
             .await?
             .ok_or_else(|| crate::shared::AppError::not_found("Product not found"))?;
 
@@ -136,26 +137,26 @@ impl InventoryService {
     pub async fn delete_product(
         &self,
         product_id: InventoryProductId,
-        user_id: UserId,
+        _user_id: UserId,
         tenant_id: TenantId,
     ) -> AppResult<()> {
-        self.inventory_repo.delete(product_id, user_id, tenant_id).await
+        self.inventory_repo.delete(product_id, tenant_id).await
     }
 
-    /// Check if user has any products in inventory
-    pub async fn has_products(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<bool> {
-        let count = self.inventory_repo.count_by_user(user_id, tenant_id).await?;
+    /// Check if tenant has any products in inventory
+    pub async fn has_products(&self, _user_id: UserId, tenant_id: TenantId) -> AppResult<bool> {
+        let count = self.inventory_repo.count_by_tenant(tenant_id).await?;
         Ok(count > 0)
     }
 
     /// Count products in inventory
-    pub async fn count_products(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<i64> {
-        self.inventory_repo.count_by_user(user_id, tenant_id).await
+    pub async fn count_products(&self, _user_id: UserId, tenant_id: TenantId) -> AppResult<i64> {
+        self.inventory_repo.count_by_tenant(tenant_id).await
     }
 
     /// Get aggregated inventory status for assistant
-    pub async fn get_status(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<InventoryStatus> {
-        let products = self.inventory_repo.list_by_user(user_id, tenant_id).await?;
+    pub async fn get_status(&self, _user_id: UserId, tenant_id: TenantId) -> AppResult<InventoryStatus> {
+        let products = self.inventory_repo.list_by_tenant(tenant_id).await?;
         
         let mut expired = 0;
         let mut expiring_today = 0;
@@ -186,7 +187,7 @@ impl InventoryService {
     /// 🎯 ЭТАЛОН для B2B SaaS: язык из user.language, fallback на 'en'
     pub async fn list_products_with_details(
         &self,
-        user_id: UserId,
+        _user_id: UserId,
         tenant_id: TenantId,
         language: Language,
     ) -> AppResult<Vec<InventoryView>> {

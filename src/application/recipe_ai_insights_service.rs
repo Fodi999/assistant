@@ -2,7 +2,7 @@ use crate::domain::recipe_ai_insights::*;
 use crate::domain::recipe_v2::{Recipe, RecipeId};
 use crate::infrastructure::GroqService;
 use crate::infrastructure::persistence::{RecipeAIInsightsRepository, RecipeV2RepositoryTrait};
-use crate::application::recipe_validator::{RecipeValidator, ValidationResult};
+use crate::application::recipe_validator::RecipeValidator;
 use crate::shared::AppError;
 use std::sync::Arc;
 use std::time::Instant;
@@ -33,10 +33,11 @@ impl RecipeAIInsightsService {
     pub async fn generate_insights_by_id(
         &self,
         recipe_id: RecipeId,
+        tenant_id: crate::shared::TenantId,
         target_language: &str,
     ) -> Result<RecipeAIInsightsResponse, AppError> {
         let recipe = self.recipe_repo
-            .find_by_id(recipe_id)
+            .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
         
@@ -92,34 +93,35 @@ impl RecipeAIInsightsService {
         })
     }
 
-    /// Get existing insights or generate new ones (by ID)
+    /// Get or generate AI insights for a recipe in specific language (by ID)
     pub async fn get_or_generate_insights_by_id(
         &self,
         recipe_id: RecipeId,
-        language: &str,
+        tenant_id: crate::shared::TenantId,
+        target_language: &str,
     ) -> Result<RecipeAIInsightsResponse, AppError> {
-        // Try to get existing insights
-        if let Some(insights) = self.repository.get_by_recipe_and_language(recipe_id.0, language).await? {
-            tracing::debug!("📦 Using cached AI insights for recipe {:?}", recipe_id);
-            return Ok(RecipeAIInsightsResponse {
-                insights,
-                generated_in_ms: 0,  // Cached
-            });
+        // Check if exists first
+        if let Some(existing) = self.repository.get_by_recipe_and_language(recipe_id.as_uuid(), target_language).await? {
+            return Ok(existing.into());
         }
 
-        // Generate new insights
-        tracing::debug!("🔄 Generating new AI insights for recipe {:?}", recipe_id);
-        self.generate_insights_by_id(recipe_id, language).await
+        // Generate if not exists
+        self.generate_insights_by_id(recipe_id, tenant_id, target_language).await
     }
 
-    /// Refresh insights (force regeneration) by ID
+    /// Refresh (force regenerate) insights
     pub async fn refresh_insights_by_id(
         &self,
         recipe_id: RecipeId,
-        language: &str,
+        tenant_id: crate::shared::TenantId,
+        target_language: &str,
     ) -> Result<RecipeAIInsightsResponse, AppError> {
-        tracing::info!("🔄 Refreshing AI insights for recipe {:?} (language: {})", recipe_id, language);
-        self.generate_insights_by_id(recipe_id, language).await
+        let recipe = self.recipe_repo
+            .find_by_id(recipe_id, tenant_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Recipe"))?;
+        
+        self.generate_insights_for_recipe(&recipe, target_language).await
     }
 
     /// Get insights for all languages
@@ -131,7 +133,7 @@ impl RecipeAIInsightsService {
     }
 
     /// Build prompt for AI analysis
-    fn build_analysis_prompt(&self, recipe: &Recipe, language: &str, validation: &crate::application::recipe_validator::ValidationResult) -> String {
+    fn build_analysis_prompt(&self, recipe: &Recipe, _language: &str, validation: &crate::application::recipe_validator::ValidationResult) -> String {
         // Build validation context for AI
         let validation_context = if !validation.errors.is_empty() || !validation.warnings.is_empty() {
             let mut context = String::from("\n\n🔍 ПРЕДВАРИТЕЛЬНАЯ ВАЛИДАЦИЯ:\n");

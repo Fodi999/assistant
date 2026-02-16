@@ -107,3 +107,12 @@ pub struct RecipeAIInsightsResponse {
     pub insights: RecipeAIInsights,
     pub generated_in_ms: u64,              // Time taken to generate
 }
+
+impl From<RecipeAIInsights> for RecipeAIInsightsResponse {
+    fn from(insights: RecipeAIInsights) -> Self {
+        Self {
+            insights,
+            generated_in_ms: 0,
+        }
+    }
+}

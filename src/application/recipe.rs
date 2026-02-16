@@ -105,8 +105,8 @@ impl RecipeService {
             .await?
             .ok_or_else(|| AppError::NotFound("Recipe not found".to_string()))?;
 
-        // Load all inventory products for this user to build price map
-        let inventory_products = self.inventory_repo.list_by_user(user_id, recipe.tenant_id()).await?;
+        // Load all inventory products for this tenant to build price map
+        let inventory_products = self.inventory_repo.list_by_tenant(recipe.tenant_id()).await?;
 
         // Build map: catalog_ingredient_id -> (quantity, price)
         // Use the latest added product for each ingredient

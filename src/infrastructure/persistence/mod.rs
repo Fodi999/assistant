@@ -10,6 +10,7 @@ pub mod recipe_translation_repository;
 pub mod recipe_ai_insights_repository;  // AI insights repository
 pub mod refresh_token_repository;
 pub mod tenant_repository;
+pub mod tenant_ingredient_repository;
 pub mod user_repository;
 
 pub use assistant_state_repository::*;
@@ -24,6 +25,7 @@ pub use recipe_translation_repository::*;
 pub use recipe_ai_insights_repository::*;
 pub use refresh_token_repository::*;
 pub use tenant_repository::*;
+pub use tenant_ingredient_repository::*;
 pub use user_repository::*;
 
 use sqlx::PgPool;
@@ -41,6 +43,11 @@ pub struct Repositories {
     pub inventory_product: InventoryProductRepository,
     pub recipe: RecipeRepository,
     pub dish: DishRepository,
+    pub recipe_v2: RecipeRepositoryV2,
+    pub recipe_ingredient: RecipeIngredientRepository,
+    pub recipe_translation: RecipeTranslationRepository,
+    pub recipe_ai_insights: RecipeAIInsightsRepository,
+    pub tenant_ingredient: TenantIngredientRepository,
 }
 
 impl Repositories {
@@ -56,7 +63,12 @@ impl Repositories {
             dictionary: DictionaryService::new(pool.clone()),
             inventory_product: InventoryProductRepository::new(pool.clone()),
             recipe: RecipeRepository::new(pool.clone()),
-            dish: DishRepository::new(pool),
+            dish: DishRepository::new(pool.clone()),
+            recipe_v2: RecipeRepositoryV2::new(pool.clone()),
+            recipe_ingredient: RecipeIngredientRepository::new(pool.clone()),
+            recipe_translation: RecipeTranslationRepository::new(pool.clone()),
+            recipe_ai_insights: RecipeAIInsightsRepository::new(pool.clone()),
+            tenant_ingredient: TenantIngredientRepository::new(pool),
         }
     }
 }

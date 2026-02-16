@@ -1,32 +1,8 @@
 use crate::domain::catalog::{CatalogIngredientId, Unit};
-use crate::shared::AppResult;
+use crate::shared::TenantId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-/// Tenant ID (from JWT claims)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TenantId(Uuid);
-
-impl TenantId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    pub fn as_uuid(&self) -> Uuid {
-        self.0
-    }
-}
-
-impl Default for TenantId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Tenant Ingredient ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -68,6 +44,8 @@ pub struct TenantIngredient {
     pub notes: Option<String>,
     
     pub is_active: bool,
+    pub created_at: time::OffsetDateTime,
+    pub updated_at: time::OffsetDateTime,
 }
 
 impl TenantIngredient {
@@ -78,6 +56,7 @@ impl TenantIngredient {
         price: Option<Decimal>,
         supplier: Option<String>,
     ) -> Self {
+        let now = time::OffsetDateTime::now_utc();
         Self {
             id: TenantIngredientId::new(),
             tenant_id,
@@ -88,6 +67,8 @@ impl TenantIngredient {
             custom_expiration_days: None,
             notes: None,
             is_active: true,
+            created_at: now,
+            updated_at: now,
         }
     }
 
@@ -102,6 +83,8 @@ impl TenantIngredient {
         custom_expiration_days: Option<i32>,
         notes: Option<String>,
         is_active: bool,
+        created_at: time::OffsetDateTime,
+        updated_at: time::OffsetDateTime,
     ) -> Self {
         Self {
             id,
@@ -113,6 +96,8 @@ impl TenantIngredient {
             custom_expiration_days,
             notes,
             is_active,
+            created_at,
+            updated_at,
         }
     }
 

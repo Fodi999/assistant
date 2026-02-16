@@ -51,21 +51,31 @@ pub enum RecipeStatus {
     Archived,
 }
 
+impl Default for RecipeStatus {
+    fn default() -> Self {
+        Self::Draft
+    }
+}
+
+impl std::str::FromStr for RecipeStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "draft" => Ok(RecipeStatus::Draft),
+            "published" => Ok(RecipeStatus::Published),
+            "archived" => Ok(RecipeStatus::Archived),
+            _ => Err(format!("Unknown recipe status: {}", s)),
+        }
+    }
+}
+
 impl RecipeStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
             RecipeStatus::Draft => "draft",
             RecipeStatus::Published => "published",
             RecipeStatus::Archived => "archived",
-        }
-    }
-
-    pub fn from_str(s: &str) -> AppResult<Self> {
-        match s {
-            "draft" => Ok(RecipeStatus::Draft),
-            "published" => Ok(RecipeStatus::Published),
-            "archived" => Ok(RecipeStatus::Archived),
-            _ => Err(AppError::validation("Invalid recipe status")),
         }
     }
 }

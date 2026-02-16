@@ -70,12 +70,8 @@ pub struct IngredientsResponse {
 /// Returns all categories in user's language
 pub async fn get_categories(
     State(state): State<CatalogState>,
-    auth_user: AuthUser,
+    AuthUser { language, .. }: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
-    // Get user to determine language
-    let user_with_tenant = state.user_service.get_user_with_tenant(auth_user.user_id).await?;
-    let language = user_with_tenant.user.language;
-
     let categories = state.catalog_service.get_categories(language).await?;
 
     let response = CategoriesResponse {

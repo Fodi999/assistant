@@ -1,6 +1,5 @@
 use crate::domain::recipe_v2::Recipe;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Rule-based validator that runs BEFORE AI
 /// Проверяет логику, совместимость, безопасность
@@ -338,16 +337,23 @@ impl Default for RecipeValidator {
 mod tests {
     use super::*;
     use uuid::Uuid;
+    use crate::shared::{TenantId, UserId, Language};
+    use crate::domain::recipe_v2::RecipeStatus;
 
     fn create_test_recipe(name: &str, instructions: &str) -> Recipe {
         Recipe {
             id: crate::domain::recipe_v2::RecipeId(Uuid::new_v4()),
-            tenant_id: crate::domain::TenantId(Uuid::new_v4()),
+            user_id: UserId(Uuid::new_v4()),
+            tenant_id: TenantId(Uuid::new_v4()),
             name_default: name.to_string(),
             instructions_default: instructions.to_string(),
+            language_default: Language::Ru,
             servings: 4,
-            language_default: "ru".to_string(),
-            created_by: crate::domain::UserId(Uuid::new_v4()),
+            total_cost_cents: None,
+            cost_per_serving_cents: None,
+            status: RecipeStatus::Draft,
+            is_public: false,
+            published_at: None,
             created_at: time::OffsetDateTime::now_utc(),
             updated_at: time::OffsetDateTime::now_utc(),
         }

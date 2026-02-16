@@ -3,7 +3,6 @@ use crate::domain::recipe_v2::{RecipeId, RecipeTranslation, TranslationSource};
 use crate::shared::{AppError, AppResult, Language};
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
-use uuid::Uuid;
 
 #[async_trait]
 pub trait RecipeTranslationRepositoryTrait: Send + Sync {

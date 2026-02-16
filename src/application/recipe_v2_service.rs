@@ -170,8 +170,9 @@ impl RecipeV2Service {
         // Trigger automatic translation to all other languages (async, non-blocking)
         let translation_service = self.translation_service.clone();
         let default_language = dto.language;
+        let t_id = tenant_id;
         tokio::spawn(async move {
-            if let Err(e) = translation_service.translate_to_all_languages(recipe_id, default_language).await {
+            if let Err(e) = translation_service.translate_to_all_languages(recipe_id, t_id, default_language).await {
                 tracing::error!("Failed to trigger translations for recipe {}: {}", recipe_id.as_uuid(), e);
             }
         });
@@ -198,22 +199,79 @@ impl RecipeV2Service {
     pub async fn get_recipe(
         &self,
         recipe_id: RecipeId,
+        tenant_id: TenantId,
         language: Language,
     ) -> AppResult<RecipeResponseDto> {
-        // Load recipe
         let recipe = self.recipe_repo
-            .find_by_id(recipe_id)
+            .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
 
+        self.to_response_dto(&recipe, language).await
+    }
+
+    /// List all user's recipes
+    pub async fn list_user_recipes(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+        language: Language,
+    ) -> AppResult<Vec<RecipeResponseDto>> {
+        let recipes = self.recipe_repo.find_by_user_id(user_id, tenant_id).await?;
+        
+        let mut response = Vec::with_capacity(recipes.len());
+        for recipe in recipes {
+            response.push(self.to_response_dto(&recipe, language).await?);
+        }
+        
+        Ok(response)
+    }
+
+    /// Publish recipe (make it public or active)
+    pub async fn publish_recipe(&self, recipe_id: RecipeId, tenant_id: TenantId) -> AppResult<()> {
+        let mut recipe = self.recipe_repo
+            .find_by_id(recipe_id, tenant_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Recipe"))?;
+        
+        recipe.status = RecipeStatus::Published;
+        recipe.is_public = true;
+        recipe.published_at = Some(OffsetDateTime::now_utc());
+        recipe.updated_at = OffsetDateTime::now_utc();
+        
+        self.recipe_repo.update(&recipe).await?;
+        Ok(())
+    }
+
+    /// Delete recipe
+    pub async fn delete_recipe(&self, recipe_id: RecipeId, tenant_id: TenantId) -> AppResult<()> {
+        // Enforce tenant isolation by checking if it exists for this tenant
+        let exists = self.recipe_repo
+            .find_by_id(recipe_id, tenant_id)
+            .await?
+            .is_some();
+            
+        if !exists {
+            return Err(AppError::not_found("Recipe"));
+        }
+
+        self.recipe_repo.delete(recipe_id, tenant_id).await
+    }
+
+    /// Convert recipe to response DTO
+    async fn to_response_dto(
+        &self,
+        recipe: &Recipe,
+        language: Language,
+    ) -> AppResult<RecipeResponseDto> {
         // Get localized content
         let (name, instructions) = self.translation_service
-            .get_localized_content(recipe_id, language)
+            .get_localized_content(recipe.id, recipe.tenant_id, language)
             .await?;
 
         // Load ingredients
         let ingredients = self.ingredient_repo
-            .find_by_recipe_id(recipe_id)
+            .find_by_recipe_id(recipe.id)
             .await?;
 
         let response_ingredients = ingredients
@@ -243,89 +301,5 @@ impl RecipeV2Service {
             updated_at: recipe.updated_at,
             ingredients: response_ingredients,
         })
-    }
-
-    /// List all recipes for user
-    pub async fn list_user_recipes(
-        &self,
-        user_id: UserId,
-        language: Language,
-    ) -> AppResult<Vec<RecipeResponseDto>> {
-        let recipes = self.recipe_repo.find_by_user_id(user_id).await?;
-
-        let mut response = Vec::new();
-        for recipe in recipes {
-            let (name, instructions) = self.translation_service
-                .get_localized_content(recipe.id, language)
-                .await
-                .unwrap_or((recipe.name_default.clone(), recipe.instructions_default.clone()));
-
-            let ingredients = self.ingredient_repo
-                .find_by_recipe_id(recipe.id)
-                .await?;
-
-            let response_ingredients = ingredients
-                .into_iter()
-                .map(|i| RecipeIngredientResponseDto {
-                    id: i.id.as_uuid(),
-                    catalog_ingredient_id: i.catalog_ingredient_id,
-                    catalog_ingredient_name: i.catalog_ingredient_name_snapshot,
-                    quantity: i.quantity,
-                    unit: i.unit,
-                    cost_at_use_cents: i.cost_at_use_cents,
-                })
-                .collect();
-
-            response.push(RecipeResponseDto {
-                id: recipe.id.as_uuid(),
-                name,
-                instructions,
-                language,
-                servings: recipe.servings,
-                total_cost_cents: recipe.total_cost_cents,
-                cost_per_serving_cents: recipe.cost_per_serving_cents,
-                status: recipe.status.as_str().to_string(),
-                is_public: recipe.is_public,
-                published_at: recipe.published_at,
-                created_at: recipe.created_at,
-                updated_at: recipe.updated_at,
-                ingredients: response_ingredients,
-            });
-        }
-
-        Ok(response)
-    }
-
-    /// Publish recipe (make it public)
-    pub async fn publish_recipe(&self, recipe_id: RecipeId) -> AppResult<()> {
-        let mut recipe = self.recipe_repo
-            .find_by_id(recipe_id)
-            .await?
-            .ok_or_else(|| AppError::not_found("Recipe"))?;
-
-        recipe.status = RecipeStatus::Published;
-        recipe.is_public = true;
-        recipe.published_at = Some(OffsetDateTime::now_utc());
-        recipe.updated_at = OffsetDateTime::now_utc();
-
-        self.recipe_repo.update(&recipe).await?;
-        Ok(())
-    }
-
-    /// Delete recipe and all related data
-    pub async fn delete_recipe(&self, recipe_id: RecipeId) -> AppResult<()> {
-        // Delete ingredients first (foreign key constraint)
-        self.ingredient_repo.delete_by_recipe_id(recipe_id).await?;
-        
-        // Delete translations
-        self.translation_service
-            .translation_repo
-            .delete_by_recipe_id(recipe_id)
-            .await?;
-        
-        // Delete recipe
-        self.recipe_repo.delete(recipe_id).await?;
-        
-        Ok(())
     }
 }

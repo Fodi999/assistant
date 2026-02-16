@@ -78,7 +78,7 @@ impl CatalogIngredientRepository {
 
 #[async_trait]
 impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
-    async fn search(&self, query: &str, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
+    async fn search(&self, query: &str, _language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
         // 🎯 FIX: Search directly in base columns (name_en, name_ru, name_pl, name_uk)
         // catalog_ingredient_translations table is NOT used - data is in base table
         
@@ -120,7 +120,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
             .collect()
     }
 
-    async fn search_by_category(&self, category_id: CatalogCategoryId, query: Option<&str>, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
+    async fn search_by_category(&self, category_id: CatalogCategoryId, query: Option<&str>, _language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
         // 🎯 FIX: Search directly in base columns
         
         let sql = if query.is_some() {
@@ -218,7 +218,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
         }
     }
 
-    async fn list(&self, language: Language, offset: i64, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
+    async fn list(&self, _language: Language, offset: i64, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
         // 🎯 FIX: List directly from base columns
         
         let sql = r#"

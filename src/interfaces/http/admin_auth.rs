@@ -1,5 +1,5 @@
 use crate::application::AdminAuthService;
-use crate::domain::{AdminLoginRequest, AdminLoginResponse};
+use crate::domain::AdminLoginRequest;
 use crate::shared::AppError;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 
