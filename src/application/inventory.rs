@@ -137,9 +137,9 @@ impl InventoryService {
                     ib.catalog_ingredient_id,
                     SUM(im.quantity) as total_consumed
                 FROM inventory_movements im
-                JOIN inventory_batches ib ON im.inventory_batch_id = ib.id
+                JOIN inventory_batches ib ON im.batch_id = ib.id
                 WHERE ib.tenant_id = $1 
-                  AND im.movement_type = 'OutSale'
+                  AND im.type = 'OUT_SALE'
                   AND im.created_at > NOW() - INTERVAL '14 days'
                 GROUP BY ib.catalog_ingredient_id
             ),
