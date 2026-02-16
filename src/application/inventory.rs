@@ -97,7 +97,9 @@ impl InventoryService {
     }
 
     /// Comprehensive Dashboard for the Owner
-    pub async fn get_dashboard(&self, tenant_id: TenantId) -> AppResult<InventoryDashboard> {
+    pub async fn get_dashboard(&self, tenant_id: TenantId, language: Language) -> AppResult<InventoryDashboard> {
+        let lang_code = language.code();
+
         // 1. Get current stock value (cents)
         let total_stock_value_cents: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(remaining_quantity * price_per_unit_cents), 0)::BIGINT 
@@ -112,13 +114,13 @@ impl InventoryService {
         let health = self.alert_service.get_inventory_status(tenant_id).await?;
 
         // 3. Get Waste Info (30 days)
-        let loss_report = self.get_loss_report(tenant_id, 30).await?;
+        let loss_report = self.get_loss_report(tenant_id, 30, lang_code).await?;
 
         // 4. Calculate Stockout Predictions
-        let stockout_risks = self.calculate_stockout_predictions(tenant_id).await?;
+        let stockout_risks = self.calculate_stockout_predictions(tenant_id, lang_code).await?;
 
         // 5. Identify Risk Products
-        let expired_risks = self.identify_risk_products(tenant_id).await?;
+        let expired_risks = self.identify_risk_products(tenant_id, lang_code).await?;
 
         Ok(InventoryDashboard {
             total_stock_value_cents,
@@ -130,7 +132,7 @@ impl InventoryService {
         })
     }
 
-    async fn calculate_stockout_predictions(&self, tenant_id: TenantId) -> AppResult<Vec<StockoutPrediction>> {
+    async fn calculate_stockout_predictions(&self, tenant_id: TenantId, lang_code: &str) -> AppResult<Vec<StockoutPrediction>> {
         let query = r#"
             WITH consumption AS (
                 SELECT 
@@ -146,12 +148,17 @@ impl InventoryService {
             current_stock AS (
                 SELECT 
                     ib.catalog_ingredient_id,
-                    ci.name_en as ingredient_name,
+                    CASE 
+                        WHEN $2 = 'ru' THEN COALESCE(ci.name_ru, ci.name_en)
+                        WHEN $2 = 'pl' THEN COALESCE(ci.name_pl, ci.name_en)
+                        WHEN $2 = 'uk' THEN COALESCE(ci.name_uk, ci.name_en)
+                        ELSE ci.name_en
+                    END as ingredient_name,
                     SUM(ib.remaining_quantity) as total_qty
                 FROM inventory_batches ib
                 JOIN catalog_ingredients ci ON ib.catalog_ingredient_id = ci.id
                 WHERE ib.tenant_id = $1 AND ib.status = 'active'
-                GROUP BY ib.catalog_ingredient_id, ci.name_en
+                GROUP BY ib.catalog_ingredient_id, ingredient_name
             )
             SELECT 
                 cs.catalog_ingredient_id,
@@ -167,6 +174,7 @@ impl InventoryService {
 
         let rows = sqlx::query(query)
             .bind(tenant_id.as_uuid())
+            .bind(lang_code)
             .fetch_all(&self.pool)
             .await?;
 
@@ -193,12 +201,17 @@ impl InventoryService {
         Ok(results)
     }
 
-    async fn identify_risk_products(&self, tenant_id: TenantId) -> AppResult<Vec<RiskProduct>> {
+    async fn identify_risk_products(&self, tenant_id: TenantId, lang_code: &str) -> AppResult<Vec<RiskProduct>> {
         let query = r#"
             SELECT 
                 ib.id as batch_id,
                 ib.catalog_ingredient_id,
-                ci.name_en as ingredient_name,
+                CASE 
+                    WHEN $2 = 'ru' THEN COALESCE(ci.name_ru, ci.name_en)
+                    WHEN $2 = 'pl' THEN COALESCE(ci.name_pl, ci.name_en)
+                    WHEN $2 = 'uk' THEN COALESCE(ci.name_uk, ci.name_en)
+                    ELSE ci.name_en
+                END as ingredient_name,
                 ib.remaining_quantity,
                 CASE 
                     WHEN ib.expires_at < NOW() THEN 'Expired'
@@ -217,6 +230,7 @@ impl InventoryService {
 
         let rows = sqlx::query(query)
             .bind(tenant_id.as_uuid())
+            .bind(lang_code)
             .fetch_all(&self.pool)
             .await?;
 
@@ -652,12 +666,17 @@ impl InventoryService {
     }
 
     /// Get loss report (expired products) for the last N days
-    pub async fn get_loss_report(&self, tenant_id: TenantId, days: i32) -> AppResult<LossReport> {
+    pub async fn get_loss_report(&self, tenant_id: TenantId, days: i32, lang_code: &str) -> AppResult<LossReport> {
         // 1. Get losses (OUT_EXPIRE)
         let loss_query = r#"
             SELECT 
                 ci.id as ingredient_id,
-                ci.name_en as ingredient_name,
+                CASE 
+                    WHEN $3 = 'ru' THEN COALESCE(ci.name_ru, ci.name_en)
+                    WHEN $3 = 'pl' THEN COALESCE(ci.name_pl, ci.name_en)
+                    WHEN $3 = 'uk' THEN COALESCE(ci.name_uk, ci.name_en)
+                    ELSE ci.name_en
+                END as ingredient_name,
                 SUM(im.quantity) as lost_quantity,
                 SUM(im.total_cost_cents)::BIGINT as total_loss_cents
             FROM inventory_movements im
@@ -666,13 +685,14 @@ impl InventoryService {
             WHERE im.tenant_id = $1 
               AND im.type = 'OUT_EXPIRE'
               AND im.created_at >= NOW() - ($2 * INTERVAL '1 day')
-            GROUP BY ci.id, ci.name_en
+            GROUP BY ci.id, ingredient_name
             ORDER BY total_loss_cents DESC
         "#;
 
         let loss_rows = sqlx::query(loss_query)
             .bind(tenant_id.as_uuid())
             .bind(days)
+            .bind(lang_code)
             .fetch_all(&self.pool)
             .await?;
 

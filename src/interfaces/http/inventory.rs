@@ -168,7 +168,7 @@ pub async fn get_dashboard(
     State(service): State<InventoryService>,
     auth: AuthUser,
 ) -> Result<Json<crate::application::inventory::InventoryDashboard>, AppError> {
-    let dashboard = service.get_dashboard(auth.tenant_id).await?;
+    let dashboard = service.get_dashboard(auth.tenant_id, auth.language).await?;
     Ok(Json(dashboard))
 }
 
@@ -219,7 +219,7 @@ pub async fn get_loss_report(
     auth: AuthUser,
     axum::extract::Query(query): axum::extract::Query<LossReportQuery>,
 ) -> Result<Json<LossReport>, AppError> {
-    let report = service.get_loss_report(auth.tenant_id, query.days).await?;
+    let report = service.get_loss_report(auth.tenant_id, query.days, auth.language.code()).await?;
     Ok(Json(report))
 }
 
