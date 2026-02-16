@@ -1,16 +1,17 @@
 # Frontend Integration Guide: Pro Inventory Management (V3)
 
-Этот гайд описывает, как интегрировать новые возможности инвентаризации (FIFO, Health Score, Waste KPI) во фронтенд на базе Next.js.
+Этот гайд описывает, как интегрировать новые возможности инвентаризации (Dashboard, Предиктивная аналитика, Waste KPI) во фронтенд.
 
 ## 1. Новые API Эндпоинты
 
 | Метод | Эндпоинт | Описание |
 | :--- | :--- | :--- |
 | **GET** | `/api/inventory/dashboard` | 🔥 **Главный экран владельца** (KPI, ценность склада, риски) |
-| **GET** | `/api/inventory/health` | Статус "здоровья" склада для Dashboard |
+| **GET** | `/api/inventory/products` | Список всех остатков с деталями (инфо об ингредиенте) |
+| **GET** | `/api/inventory/health` | Статус "здоровья" склада для виджетов |
 | **GET** | `/api/inventory/alerts` | Список алертов (просрочка, нехватка) |
 | **GET** | `/api/inventory/reports/loss?days=30` | Финансовый отчет по убыткам и Waste KPI |
-| **POST** | `/api/inventory/process-expirations` | Команда на списание просроченных партий |
+| **POST** | `/api/inventory/process-expirations` | Команда на списание всей просрочки |
 
 ---
 
@@ -21,12 +22,12 @@
 ```typescript
 // Главный Dashboard Владельца
 export interface InventoryDashboard {
-  total_stock_value_cents: number; // Общая сумма остатков на складе
+  total_stock_value_cents: number; // Общая сумма остатков на складе (PLN = cents/100)
   waste_30d_cents: number;        // Потери за 30 дней в валюте
   waste_percentage: number;       // % потерь (Waste KPI)
-  health_score: number;           // 0-100
-  stockout_risks: StockoutPrediction[]; // Прогноз: когда закончится товар
-  expired_risks: RiskProduct[];         // Риски: что скоро просрочится
+  health_score: number;           // 0-100 (Категориальный счет)
+  stockout_risks: StockoutPrediction[]; // Прогноз: когда закончится товар (на базе 14 дней продаж)
+  expired_risks: RiskProduct[];         // Риски: что скоро просрочится (ближайшие 3 дня)
 }
 
 export interface StockoutPrediction {
@@ -34,7 +35,7 @@ export interface StockoutPrediction {
   name: string;
   current_quantity: number;
   avg_daily_consumption: number;
-  days_until_stockout: number; // f64::INFINITY если нет расхода
+  days_until_stockout: number; // number.POSITIVE_INFINITY если нет расхода
 }
 
 export interface RiskProduct {
