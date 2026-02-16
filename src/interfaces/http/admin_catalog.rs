@@ -1,5 +1,6 @@
 use crate::application::{
     AdminCatalogService, CreateProductRequest, ProductResponse, UpdateProductRequest,
+    CreateCategoryRequest, CategoryResponse, UpdateCategoryRequest,
 };
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
@@ -101,10 +102,38 @@ pub async fn upload_product_image(
     let content_type = content_type.ok_or_else(|| AppError::validation("No content-type provided"))?;
 
     let image_url = service
-        .upload_product_image(id, file_data, &content_type)
+        .upload_image(id, file_data, &content_type)
         .await?;
 
     Ok(Json(ImageUrlResponse { image_url }))
+}
+
+/// GET /api/admin/products/:id/image-url
+/// Get presigned URL for direct R2 upload
+pub async fn get_image_upload_url(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<crate::application::user::AvatarUploadResponse>, AppError> {
+    let response = service.get_image_upload_url(id).await?;
+    Ok(Json(response))
+}
+
+/// PUT /api/admin/products/:id/image
+/// Save image URL after frontend upload
+#[derive(Debug, serde::Deserialize)]
+pub struct SaveImageUrlRequest {
+    pub image_url: String,
+}
+
+pub async fn save_image_url(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<SaveImageUrlRequest>,
+) -> Result<StatusCode, AppError> {
+    service.save_image_url(id, req.image_url).await?;
+    Ok(StatusCode::OK)
 }
 
 /// Delete product image
@@ -114,5 +143,49 @@ pub async fn delete_product_image(
     State(service): State<AdminCatalogService>,
 ) -> Result<StatusCode, AppError> {
     service.delete_product_image(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ==========================================
+// 📂 CATEGORY HANDLERS
+// ==========================================
+
+/// GET /api/admin/categories
+pub async fn list_categories(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<Vec<CategoryResponse>>, AppError> {
+    let categories = service.list_categories().await?;
+    Ok(Json(categories))
+}
+
+/// POST /api/admin/categories
+pub async fn create_category(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<CreateCategoryRequest>,
+) -> Result<(StatusCode, Json<CategoryResponse>), AppError> {
+    let category = service.create_category(req).await?;
+    Ok((StatusCode::CREATED, Json(category)))
+}
+
+/// PUT /api/admin/categories/:id
+pub async fn update_category(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<UpdateCategoryRequest>,
+) -> Result<Json<CategoryResponse>, AppError> {
+    let category = service.update_category(id, req).await?;
+    Ok(Json(category))
+}
+
+/// DELETE /api/admin/categories/:id
+pub async fn delete_category(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<StatusCode, AppError> {
+    service.delete_category(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

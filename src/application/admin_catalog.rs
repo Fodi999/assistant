@@ -6,15 +6,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Helper function to normalize translations - fallback to English if empty
-fn normalize_translation(value: &str, fallback: &str) -> String {
-    if value.trim().is_empty() {
-        fallback.to_string()
-    } else {
-        value.trim().to_string()
-    }
-}
-
 /// Admin Catalog Service - manage products with image upload to R2
 #[derive(Clone)]
 pub struct AdminCatalogService {
@@ -92,6 +83,35 @@ pub struct ProductResponse {
     pub unit: UnitType,
     pub description: Option<String>,
     pub image_url: Option<String>,
+}
+
+/// Admin Category Requests
+#[derive(Debug, Deserialize)]
+pub struct CreateCategoryRequest {
+    pub name_pl: String,
+    pub name_en: String,
+    pub name_uk: String,
+    pub name_ru: String,
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCategoryRequest {
+    pub name_pl: Option<String>,
+    pub name_en: Option<String>,
+    pub name_uk: Option<String>,
+    pub name_ru: Option<String>,
+    pub sort_order: Option<i32>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct CategoryResponse {
+    pub id: Uuid,
+    pub name_pl: String,
+    pub name_en: String,
+    pub name_uk: String,
+    pub name_ru: String,
+    pub sort_order: i32,
 }
 
 impl AdminCatalogService {
@@ -275,16 +295,8 @@ impl AdminCatalogService {
     /// Get product by ID
     pub async fn get_product_by_id(&self, id: Uuid) -> AppResult<ProductResponse> {
         let product = sqlx::query_as::<_, ProductResponse>(
-            r#"
-            SELECT
-                id, name_en, name_pl, name_uk, name_ru,
-                category_id,
-                default_unit as unit,
-                description,
-                image_url
-            FROM catalog_ingredients
-            WHERE id = $1 AND COALESCE(is_active, true) = true
-            "#
+            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url 
+             FROM catalog_ingredients WHERE id = $1"
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -294,20 +306,11 @@ impl AdminCatalogService {
         Ok(product)
     }
 
-    /// List all products
+    /// List all products in the catalog
     pub async fn list_products(&self) -> AppResult<Vec<ProductResponse>> {
         let products = sqlx::query_as::<_, ProductResponse>(
-            r#"
-            SELECT
-                id, name_en, name_pl, name_uk, name_ru,
-                category_id,
-                default_unit as unit,
-                description,
-                image_url
-            FROM catalog_ingredients
-            WHERE COALESCE(is_active, true) = true
-            ORDER BY name_en ASC
-            "#
+            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url 
+             FROM catalog_ingredients ORDER BY name_en ASC"
         )
         .fetch_all(&self.pool)
         .await?;
@@ -315,129 +318,184 @@ impl AdminCatalogService {
         Ok(products)
     }
 
-    /// Update product with optional auto-translation via Groq
-    pub async fn update_product(
-        &self,
-        id: Uuid,
-        req: UpdateProductRequest,
-    ) -> AppResult<ProductResponse> {
-        // Check if product exists
-        let existing = self.get_product_by_id(id).await?;
+    /// Update product in the catalog
+    pub async fn update_product(&self, id: Uuid, req: UpdateProductRequest) -> AppResult<ProductResponse> {
+        let mut tx = self.pool.begin().await?;
 
-        // If name_en is being updated, validate it
-        if let Some(ref new_name_en) = req.name_en {
-            let name_en = new_name_en.trim();
-            if name_en.is_empty() {
-                return Err(AppError::validation("name_en cannot be empty"));
-            }
-
-            // Check for duplicate (excluding current product)
-            let exists = sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE LOWER(name_en) = LOWER($1) AND id != $2 AND COALESCE(is_active, true) = true)"
-            )
-            .bind(name_en)
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Database error checking duplicate product '{}': {}", name_en, e);
-                AppError::internal("Failed to check for duplicate product")
-            })?;
-
-            if exists {
-                return Err(AppError::conflict(&format!("Product '{}' already exists", name_en)));
-            }
-        }
-
-        // Determine final English name
-        let name_en = req.name_en.as_deref().map(|s| s.trim().to_string());
-        let final_name_en = name_en.as_deref().unwrap_or(&existing.name_en);
-
-        // 🧠 HYBRID TRANSLATION LOGIC
-        // Check if we need to auto-translate empty fields
-        let mut name_pl = req.name_pl.as_deref()
-            .map(|s| normalize_translation(s, final_name_en));
-        let mut name_uk = req.name_uk.as_deref()
-            .map(|s| normalize_translation(s, final_name_en));
-        let mut name_ru = req.name_ru.as_deref()
-            .map(|s| normalize_translation(s, final_name_en));
-
-        // If auto_translate is enabled and we have empty translations, use cache/Groq
-        if req.auto_translate && (name_pl.is_none() && name_uk.is_none() && name_ru.is_none()) {
-            tracing::info!("Auto-translation enabled for: {}", final_name_en);
-
-            // 1️⃣ Check dictionary cache first (0$ cost)
-            if let Some(dict_entry) = self.dictionary.find_by_en(final_name_en).await? {
-                tracing::info!("Found in dictionary cache: {}", final_name_en);
-                name_pl = Some(dict_entry.name_pl);
-                name_uk = Some(dict_entry.name_uk);
-                name_ru = Some(dict_entry.name_ru);
-            } else {
-                // 2️⃣ Dictionary miss - call Groq (minimal cost)
-                tracing::info!("Dictionary miss for: {}, calling Groq", final_name_en);
-                
-                match self.groq.translate(final_name_en).await {
-                    Ok(translation) => {
-                        // 3️⃣ Save to dictionary for future use (кеш навсегда)
-                        if let Err(e) = self.dictionary
-                            .insert(final_name_en, &translation.pl, &translation.ru, &translation.uk)
-                            .await {
-                            tracing::warn!("Failed to save translation to dictionary: {}", e);
-                            // Don't fail the update if dictionary insert fails
-                        }
-
-                        name_pl = Some(translation.pl);
-                        name_uk = Some(translation.uk);
-                        name_ru = Some(translation.ru);
-                    }
-                    Err(e) => {
-                        tracing::warn!("Groq translation failed, falling back to English: {}", e);
-                        // Fallback: use English for all languages
-                        name_pl = Some(final_name_en.to_string());
-                        name_uk = Some(final_name_en.to_string());
-                        name_ru = Some(final_name_en.to_string());
-                    }
-                }
-            }
-        }
-
-        // 4️⃣ Update database with translations
+        // 1. Get existing product
         let product = sqlx::query_as::<_, ProductResponse>(
-            r#"
-            UPDATE catalog_ingredients
-            SET
-                name_en = COALESCE($2, name_en),
-                name_pl = COALESCE($3, name_pl),
-                name_uk = COALESCE($4, name_uk),
-                name_ru = COALESCE($5, name_ru),
-                category_id = COALESCE($6, category_id),
-                default_unit = COALESCE($7, default_unit),
-                description = COALESCE($8, description)
-            WHERE id = $1 AND COALESCE(is_active, true) = true
-            RETURNING
-                id, name_en, name_pl, name_uk, name_ru,
-                category_id,
-                default_unit as unit,
-                description,
-                image_url
-            "#
+            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url 
+             FROM catalog_ingredients WHERE id = $1 FOR UPDATE"
         )
         .bind(id)
-        .bind(&name_en)
-        .bind(&name_pl)
-        .bind(&name_uk)
-        .bind(&name_ru)
-        .bind(req.category_id)
-        .bind(&req.unit)
-        .bind(&req.description)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error updating product {}: {}", id, e);
-            AppError::internal("Failed to update product")
-        })?;
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::not_found("Product not found"))?;
 
-        Ok(product)
+        // 2. Auto-translate if requested
+        let name_en = req.name_en.unwrap_or(product.name_en);
+        let mut name_pl = req.name_pl.or(product.name_pl);
+        let mut name_uk = req.name_uk.or(product.name_uk);
+        let mut name_ru = req.name_ru.or(product.name_ru);
+
+        if req.auto_translate {
+            // First check dictionary cache
+            let cached = self.dictionary.find_by_en(&name_en).await.unwrap_or(None);
+            
+            let translations = if let Some(entry) = cached {
+                crate::infrastructure::groq_service::GroqTranslationResponse {
+                    pl: entry.name_pl,
+                    ru: entry.name_ru,
+                    uk: entry.name_uk,
+                }
+            } else {
+                // If not in cache, call Groq
+                match self.groq.translate(&name_en).await {
+                    Ok(t) => {
+                        // Cache it for future
+                        let _ = self.dictionary.insert(&name_en, &t.pl, &t.ru, &t.uk).await;
+                        t
+                    },
+                    Err(_) => crate::infrastructure::groq_service::GroqTranslationResponse {
+                        pl: "".to_string(),
+                        ru: "".to_string(),
+                        uk: "".to_string(),
+                    }
+                }
+            };
+
+            if name_pl.is_none() || name_pl.as_deref() == Some("") { name_pl = Some(translations.pl); }
+            if name_uk.is_none() || name_uk.as_deref() == Some("") { name_uk = Some(translations.uk); }
+            if name_ru.is_none() || name_ru.as_deref() == Some("") { name_ru = Some(translations.ru); }
+        }
+
+        // 3. Update record
+        let updated_product = sqlx::query_as::<_, ProductResponse>(
+            r#"
+            UPDATE catalog_ingredients 
+            SET name_en = $1, name_pl = $2, name_uk = $3, name_ru = $4, 
+                category_id = $5, unit = $6, description = $7
+            WHERE id = $8
+            RETURNING id, name_en, name_pl, name_uk, name_ru, category_id, unit, description, image_url
+            "#
+        )
+        .bind(name_en)
+        .bind(name_pl)
+        .bind(name_uk)
+        .bind(name_ru)
+        .bind(req.category_id.unwrap_or(product.category_id))
+        .bind(req.unit.unwrap_or(product.unit))
+        .bind(req.description.or(product.description))
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(updated_product)
+    }
+
+    /// Generate presigned URL for catalog image upload
+    /// 🎯 SaaS 2026: Frontend uploads directly to R2
+    pub async fn get_image_upload_url(&self, product_id: Uuid) -> AppResult<crate::application::user::AvatarUploadResponse> {
+        // 1. Verify product exists
+        let _ = self.get_product_by_id(product_id).await?;
+
+        // 2. Generate key: assets/catalog/{product_id}.webp
+        let key = format!("assets/catalog/{}.webp", product_id);
+        
+        // 3. Generate presigned URL (valid for 5 mins)
+        let upload_url = self.r2_client.generate_presigned_upload_url(&key, "image/webp").await?;
+        let public_url = self.r2_client.get_public_url(&key);
+
+        Ok(crate::application::user::AvatarUploadResponse {
+            upload_url,
+            public_url,
+        })
+    }
+
+    /// Save image URL after frontend uploaded to R2
+    pub async fn save_image_url(&self, product_id: Uuid, image_url: String) -> AppResult<()> {
+        sqlx::query("UPDATE catalog_ingredients SET image_url = $1 WHERE id = $2")
+            .bind(image_url)
+            .bind(product_id)
+            .execute(&self.pool)
+            .await?;
+        
+        Ok(())
+    }
+
+    /// Delete product image
+    pub async fn delete_product_image(&self, id: Uuid) -> AppResult<()> {
+        // 1. Get product to find image key
+        let product = self.get_product_by_id(id).await?;
+        
+        if let Some(image_url) = product.image_url {
+            // Extract key from URL (assuming format: base_url/key)
+            // usually key is assets/catalog/{id}.webp or products/{id}.{ext}
+            
+            // Delete from R2 (optional, as we at least null it in DB)
+            if let Some(key_part) = image_url.split("/").last() {
+                // Determine folder based on URL content or use a default
+                let folder = if image_url.contains("catalog") { "assets/catalog" } else { "products" };
+                let _ = self.r2_client.delete_image(&format!("{}/{}", folder, key_part)).await;
+            }
+        }
+
+        sqlx::query("UPDATE catalog_ingredients SET image_url = NULL WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Upload image to R2 (DEPRECATED - used for direct backend upload)
+    pub async fn upload_image(
+        &self,
+        id: Uuid,
+        file_data: Bytes,
+        content_type: &str,
+    ) -> AppResult<String> {
+        // Check if product exists
+        self.get_product_by_id(id).await?;
+
+        // Validate content type
+        let extension = match content_type {
+            "image/jpeg" | "image/jpg" => "jpg",
+            "image/png" => "png",
+            "image/webp" => "webp",
+            _ => return Err(AppError::validation("Invalid image type. Allowed: jpg, png, webp")),
+        };
+
+        // Validate file size (max 5MB)
+        const MAX_SIZE: usize = 5 * 1024 * 1024; // 5MB
+        if file_data.len() > MAX_SIZE {
+            return Err(AppError::validation("File too large. Max size: 5MB"));
+        }
+
+        // Generate consistent key: products/{uuid}.{ext}
+        let key = format!("products/{}.{}", id, extension);
+
+        // Upload to R2
+        let image_url = self.r2_client.upload_image(&key, file_data, content_type).await
+            .map_err(|e| {
+                tracing::error!("R2 upload error for product {}: {}", id, e);
+                AppError::internal("Failed to upload image")
+            })?;
+
+        // Update database
+        sqlx::query("UPDATE catalog_ingredients SET image_url = $1 WHERE id = $2")
+            .bind(&image_url)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Database error updating image_url for product {}: {}", id, e);
+                AppError::internal("Failed to update image URL")
+            })?;
+
+        tracing::info!("Image uploaded for product {}: {}", id, image_url);
+        Ok(image_url)
     }
 
     /// Delete product
@@ -464,84 +522,84 @@ impl AdminCatalogService {
         Ok(())
     }
 
-    /// Upload/replace product image
-    /// Key format: products/{product_id}.{ext}
-    pub async fn upload_product_image(
-        &self,
-        product_id: Uuid,
-        file_data: Bytes,
-        content_type: &str,
-    ) -> AppResult<String> {
-        // Check if product exists
-        self.get_product_by_id(product_id).await?;
+    // ==========================================
+    // 📂 CATEGORY MANAGEMENT
+    // ==========================================
 
-        // Validate content type
-        let extension = match content_type {
-            "image/jpeg" | "image/jpg" => "jpg",
-            "image/png" => "png",
-            "image/webp" => "webp",
-            _ => return Err(AppError::validation("Invalid image type. Allowed: jpg, png, webp")),
-        };
-
-        // Validate file size (max 5MB)
-        const MAX_SIZE: usize = 5 * 1024 * 1024; // 5MB
-        if file_data.len() > MAX_SIZE {
-            return Err(AppError::validation("File too large. Max size: 5MB"));
-        }
-
-        // Generate consistent key: products/{uuid}.{ext}
-        let key = format!("products/{}.{}", product_id, extension);
-
-        // Upload to R2
-        let image_url = self.r2_client.upload_image(&key, file_data, content_type).await
-            .map_err(|e| {
-                tracing::error!("R2 upload error for product {}: {}", product_id, e);
-                AppError::internal("Failed to upload image")
-            })?;
-
-        // Update database
-        sqlx::query("UPDATE catalog_ingredients SET image_url = $1 WHERE id = $2")
-            .bind(&image_url)
-            .bind(product_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Database error updating image_url for product {}: {}", product_id, e);
-                AppError::internal("Failed to update image URL")
-            })?;
-
-        tracing::info!("Image uploaded for product {}: {}", product_id, image_url);
-        Ok(image_url)
+    /// List all categories
+    pub async fn list_categories(&self) -> AppResult<Vec<CategoryResponse>> {
+        let categories = sqlx::query_as::<_, CategoryResponse>(
+            "SELECT id, name_pl, name_en, name_uk, name_ru, sort_order FROM catalog_categories ORDER BY sort_order ASC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(categories)
     }
 
-    /// Delete product image
-    pub async fn delete_product_image(&self, product_id: Uuid) -> AppResult<()> {
-        // Get product
-        let product = self.get_product_by_id(product_id).await?;
+    /// Create new category
+    pub async fn create_category(&self, req: CreateCategoryRequest) -> AppResult<CategoryResponse> {
+        let category = sqlx::query_as::<_, CategoryResponse>(
+            r#"
+            INSERT INTO catalog_categories (name_pl, name_en, name_uk, name_ru, sort_order)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, name_pl, name_en, name_uk, name_ru, sort_order
+            "#
+        )
+        .bind(req.name_pl)
+        .bind(req.name_en)
+        .bind(req.name_uk)
+        .bind(req.name_ru)
+        .bind(req.sort_order)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(category)
+    }
 
-        if product.image_url.is_none() {
-            return Err(AppError::not_found("Product has no image"));
+    /// Update category
+    pub async fn update_category(&self, id: Uuid, req: UpdateCategoryRequest) -> AppResult<CategoryResponse> {
+        let current = sqlx::query!(
+            "SELECT name_pl, name_en, name_uk, name_ru, sort_order FROM catalog_categories WHERE id = $1",
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Category not found"))?;
+
+        let category = sqlx::query_as::<_, CategoryResponse>(
+            r#"
+            UPDATE catalog_categories 
+            SET name_pl = $1, name_en = $2, name_uk = $3, name_ru = $4, sort_order = $5
+            WHERE id = $6
+            RETURNING id, name_pl, name_en, name_uk, name_ru, sort_order
+            "#
+        )
+        .bind(req.name_pl.unwrap_or(current.name_pl))
+        .bind(req.name_en.unwrap_or(current.name_en))
+        .bind(req.name_uk.unwrap_or(current.name_uk))
+        .bind(req.name_ru.unwrap_or(current.name_ru))
+        .bind(req.sort_order.unwrap_or(current.sort_order))
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(category)
+    }
+
+    /// Delete category (fails if used by products)
+    pub async fn delete_category(&self, id: Uuid) -> AppResult<()> {
+        // Check if referenced
+        let in_use: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE category_id = $1)")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        if in_use {
+            return Err(AppError::conflict("Cannot delete category: it is used by products"));
         }
 
-        // Try to delete all possible extensions (in case of inconsistency)
-        for ext in ["jpg", "png", "webp"] {
-            let key = format!("products/{}.{}", product_id, ext);
-            if let Err(e) = self.r2_client.delete_image(&key).await {
-                tracing::warn!("Failed to delete image {} from R2: {}", key, e);
-            }
-        }
-
-        // Update database
-        sqlx::query("UPDATE catalog_ingredients SET image_url = NULL WHERE id = $1")
-            .bind(product_id)
+        sqlx::query("DELETE FROM catalog_categories WHERE id = $1")
+            .bind(id)
             .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Database error clearing image_url for product {}: {}", product_id, e);
-                AppError::internal("Failed to clear image URL")
-            })?;
-
-        tracing::info!("Image deleted for product {}", product_id);
+            .await?;
         Ok(())
     }
 

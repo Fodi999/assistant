@@ -11,7 +11,7 @@ use crate::interfaces::http::{
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
-    catalog::{get_categories, get_categories_admin, search_ingredients, CatalogState},
+    catalog::{get_categories, search_ingredients, CatalogState},
     dish::create_dish,
     inventory::{add_product, delete_product, get_health, list_products, update_product, get_alerts, process_expirations, get_loss_report, get_dashboard},
     menu_engineering::{analyze_menu, record_sale},
@@ -103,23 +103,25 @@ pub fn create_router(
     });
     
     let admin_catalog_routes = Router::new()
+        // Products
         .route("/products", get(admin_catalog::list_products))
         .route("/products/:id", get(admin_catalog::get_product))
         .route("/products", post(admin_catalog::create_product))
         .route("/products/:id", axum::routing::put(admin_catalog::update_product))
         .route("/products/:id", axum::routing::delete(admin_catalog::delete_product))
         .route("/products/:id/image", post(admin_catalog::upload_product_image))
+        .route("/products/:id/image-url", get(admin_catalog::get_image_upload_url))
+        .route("/products/:id/image", axum::routing::put(admin_catalog::save_image_url))
         .route("/products/:id/image", axum::routing::delete(admin_catalog::delete_product_image))
+        // Categories
+        .route("/categories", get(admin_catalog::list_categories))
+        .route("/categories", post(admin_catalog::create_category))
+        .route("/categories/:id", axum::routing::put(admin_catalog::update_category))
+        .route("/categories/:id", axum::routing::delete(admin_catalog::delete_category))
         .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
         .layer(admin_catalog_middleware)
         .with_state(admin_catalog_service);
     
-    // Admin categories route (separate because different state)
-    let admin_categories_route: Router = Router::new()
-        .route("/categories", get(get_categories_admin))
-        .layer(middleware::from_fn_with_state(admin_auth_service.clone(), require_super_admin))
-        .with_state(catalog_service.clone());
-
     // Admin users route (for user management)
     let admin_users_route: Router = Router::new()
         .route("/users", get(admin_users::list_users))
@@ -227,8 +229,7 @@ pub fn create_router(
         .merge(health_route)
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
-        .nest("/api/admin", admin_catalog_routes)
-        .nest("/api/admin", admin_categories_route)
+        .nest("/api/admin/catalog", admin_catalog_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", protected_routes)
         .layer(cors)
