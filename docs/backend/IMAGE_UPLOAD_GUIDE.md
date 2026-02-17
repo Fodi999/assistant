@@ -448,6 +448,70 @@ const styles = `
 
 ---
 
+## 🚀 Вариант 3: Прямая загрузка в Cloudflare R2 (SaaS 2026 Flow)
+
+Этот метод разгружает сервер: фронтенд получает временную (presigned) ссылку и загружает файл напрямую в S3-хранилище.
+
+### ⚠️ Исправление ошибки "Failed to fetch" (CORS)
+
+Если вы видите `Failed to fetch` при `PUT` запросе к R2, это означает, что **CORS политика бакета настроена неверно**.
+
+**Решение:**
+1. Зайдите в Cloudflare Dashboard -> R2 -> Bucket -> **Settings**.
+2. Найдите **CORS Policy** и нажмите **Edit**.
+3. Добавьте следующий JSON (или обновите текущий):
+
+```json
+[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "PUT", "OPTIONS"],
+    "AllowedHeaders": ["Content-Type", "x-amz-content-sha256"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+*(В продакшене замените `*` на ваш домен ожидания)*.
+
+### 📝 Исправленный код на фронтенде (lib/api.ts)
+
+Важно: `Content-Type` в `fetch` **должен точно совпадать** с тем, который был передан бэкенду при создании ссылки.
+
+```typescript
+export async function uploadProductImage(productId: string, file: File) {
+  // 1. Получаем presigned URL. 
+  // Мы передаем content_type, чтобы бэкенд подписал URL именно для этого типа файла.
+  const query = new URLSearchParams({ content_type: file.type });
+  const res = await fetch(`/api/admin/products/${productId}/image-url?${query}`);
+  const { upload_url, public_url } = await res.json();
+
+  // 2. Загружаем файл напрямую в R2
+  const uploadRes = await fetch(upload_url, {
+    method: "PUT",
+    body: file,
+    headers: {
+      "Content-Type": file.type, // КРИТИЧЕСКИ ВАЖНО: соответствие подписи!
+    },
+  });
+
+  if (!uploadRes.ok) {
+    throw new Error("R2 Upload failed");
+  }
+
+  // 3. Сообщаем бэкенду новый URL изображения
+  await fetch(`/api/admin/products/${productId}/image`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image_url: public_url }),
+  });
+
+  return public_url;
+}
+```
+
+---
+
 ## 📚 Дополнительные ресурсы
 
 - [browser-image-compression docs](https://github.com/Donaldcwl/browser-image-compression)

@@ -110,12 +110,19 @@ pub async fn upload_product_image(
 
 /// GET /api/admin/products/:id/image-url
 /// Get presigned URL for direct R2 upload
+#[derive(Debug, serde::Deserialize)]
+pub struct GetUploadUrlQuery {
+    pub content_type: Option<String>,
+}
+
 pub async fn get_image_upload_url(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
     State(service): State<AdminCatalogService>,
+    axum::extract::Query(query): axum::extract::Query<GetUploadUrlQuery>,
 ) -> Result<Json<crate::application::user::AvatarUploadResponse>, AppError> {
-    let response = service.get_image_upload_url(id).await?;
+    let content_type = query.content_type.unwrap_or_else(|| "image/webp".to_string());
+    let response = service.get_image_upload_url(id, &content_type).await?;
     Ok(Json(response))
 }
 

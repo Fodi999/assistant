@@ -35,12 +35,18 @@ impl UserService {
         Ok(UserWithTenant { user, tenant })
     }
 
-    pub async fn get_avatar_upload_url(&self, tenant_id: TenantId, user_id: UserId) -> AppResult<AvatarUploadResponse> {
+    pub async fn get_avatar_upload_url(&self, tenant_id: TenantId, user_id: UserId, content_type: &str) -> AppResult<AvatarUploadResponse> {
         let r2 = self.r2_client.as_ref().ok_or_else(|| AppError::internal("R2 client not configured"))?;
         
-        let key = format!("avatars/{}/{}.webp", tenant_id.as_uuid(), user_id.as_uuid());
+        let ext = match content_type {
+            "image/jpeg" | "image/jpg" => "jpg",
+            "image/png" => "png",
+            _ => "webp",
+        };
         
-        let upload_url = r2.generate_presigned_upload_url(&key, "image/webp").await?;
+        let key = format!("avatars/{}/{}.{}", tenant_id.as_uuid(), user_id.as_uuid(), ext);
+        
+        let upload_url = r2.generate_presigned_upload_url(&key, content_type).await?;
         let public_url = r2.get_public_url(&key);
 
         Ok(AvatarUploadResponse {

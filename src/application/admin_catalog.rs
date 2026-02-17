@@ -400,15 +400,26 @@ impl AdminCatalogService {
 
     /// Generate presigned URL for catalog image upload
     /// 🎯 SaaS 2026: Frontend uploads directly to R2
-    pub async fn get_image_upload_url(&self, product_id: Uuid) -> AppResult<crate::application::user::AvatarUploadResponse> {
+    pub async fn get_image_upload_url(
+        &self,
+        product_id: Uuid,
+        content_type: &str,
+    ) -> AppResult<crate::application::user::AvatarUploadResponse> {
         // 1. Verify product exists
         let _ = self.get_product_by_id(product_id).await?;
 
-        // 2. Generate key: assets/catalog/{product_id}.webp
-        let key = format!("assets/catalog/{}.webp", product_id);
+        // 2. Determine file extension from content_type
+        let ext = match content_type {
+            "image/jpeg" | "image/jpg" => "jpg",
+            "image/png" => "png",
+            _ => "webp",
+        };
+
+        // 3. Generate key: assets/catalog/{product_id}.{ext}
+        let key = format!("assets/catalog/{}.{}", product_id, ext);
         
-        // 3. Generate presigned URL (valid for 5 mins)
-        let upload_url = self.r2_client.generate_presigned_upload_url(&key, "image/webp").await?;
+        // 4. Generate presigned URL (valid for 5 mins)
+        let upload_url = self.r2_client.generate_presigned_upload_url(&key, content_type).await?;
         let public_url = self.r2_client.get_public_url(&key);
 
         Ok(crate::application::user::AvatarUploadResponse {
