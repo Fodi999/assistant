@@ -65,6 +65,7 @@ pub struct UpdateProductRequest {
     pub category_id: Option<Uuid>,
     pub unit: Option<UnitType>,
     pub description: Option<String>,
+    pub image_url: Option<String>,
     /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default)]
@@ -378,8 +379,9 @@ impl AdminCatalogService {
             r#"
             UPDATE catalog_ingredients 
             SET name_en = $1, name_pl = $2, name_uk = $3, name_ru = $4, 
-                category_id = $5, default_unit = $6, description = $7
-            WHERE id = $8
+                category_id = $5, default_unit = $6, description = $7,
+                image_url = COALESCE($8, image_url)
+            WHERE id = $9
             RETURNING id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url
             "#
         )
@@ -390,6 +392,7 @@ impl AdminCatalogService {
         .bind(req.category_id.unwrap_or(product.category_id))
         .bind(req.unit.unwrap_or(product.unit))
         .bind(req.description.or(product.description))
+        .bind(req.image_url)
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
@@ -409,10 +412,12 @@ impl AdminCatalogService {
         let _ = self.get_product_by_id(product_id).await?;
 
         // 2. Determine file extension from content_type
-        let ext = match content_type {
-            "image/jpeg" | "image/jpg" => "jpg",
-            "image/png" => "png",
-            _ => "webp",
+        let ext = if content_type.contains("jpeg") || content_type.contains("jpg") {
+            "jpg"
+        } else if content_type.contains("png") {
+            "png"
+        } else {
+            "webp"
         };
 
         // 3. Generate key: assets/catalog/{product_id}.{ext}

@@ -38,10 +38,12 @@ impl UserService {
     pub async fn get_avatar_upload_url(&self, tenant_id: TenantId, user_id: UserId, content_type: &str) -> AppResult<AvatarUploadResponse> {
         let r2 = self.r2_client.as_ref().ok_or_else(|| AppError::internal("R2 client not configured"))?;
         
-        let ext = match content_type {
-            "image/jpeg" | "image/jpg" => "jpg",
-            "image/png" => "png",
-            _ => "webp",
+        let ext = if content_type.contains("jpeg") || content_type.contains("jpg") {
+            "jpg"
+        } else if content_type.contains("png") {
+            "png"
+        } else {
+            "webp"
         };
         
         let key = format!("avatars/{}/{}.{}", tenant_id.as_uuid(), user_id.as_uuid(), ext);

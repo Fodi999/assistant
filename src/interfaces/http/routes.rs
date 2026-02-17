@@ -107,7 +107,7 @@ pub fn create_router(
         .route("/products", get(admin_catalog::list_products))
         .route("/products/:id", get(admin_catalog::get_product))
         .route("/products", post(admin_catalog::create_product))
-        .route("/products/:id", axum::routing::put(admin_catalog::update_product))
+        .route("/products/:id", axum::routing::put(admin_catalog::update_product).patch(admin_catalog::update_product))
         .route("/products/:id", axum::routing::delete(admin_catalog::delete_product))
         .route("/products/:id/image", post(admin_catalog::upload_product_image))
         .route("/products/:id/image-url", get(admin_catalog::get_image_upload_url))
