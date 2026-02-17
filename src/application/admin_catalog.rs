@@ -296,12 +296,13 @@ impl AdminCatalogService {
     pub async fn get_product_by_id(&self, id: Uuid) -> AppResult<ProductResponse> {
         let product = sqlx::query_as::<_, ProductResponse>(
             "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
-             FROM catalog_ingredients WHERE id = $1"
+             FROM catalog_ingredients 
+             WHERE id = $1 AND is_active = true"
         )
         .bind(id)
         .fetch_optional(&self.pool)
         .await?
-        .ok_or_else(|| AppError::not_found("Product not found"))?;
+        .ok_or_else(|| AppError::not_found("Product not found OR deleted"))?;
 
         Ok(product)
     }
@@ -310,7 +311,9 @@ impl AdminCatalogService {
     pub async fn list_products(&self) -> AppResult<Vec<ProductResponse>> {
         let products = sqlx::query_as::<_, ProductResponse>(
             "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
-             FROM catalog_ingredients ORDER BY name_en ASC"
+             FROM catalog_ingredients 
+             WHERE is_active = true 
+             ORDER BY name_en ASC"
         )
         .fetch_all(&self.pool)
         .await?;
@@ -325,7 +328,8 @@ impl AdminCatalogService {
         // 1. Get existing product
         let product = sqlx::query_as::<_, ProductResponse>(
             "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
-             FROM catalog_ingredients WHERE id = $1 FOR UPDATE"
+             FROM catalog_ingredients 
+             WHERE id = $1 AND is_active = true FOR UPDATE"
         )
         .bind(id)
         .fetch_optional(&mut *tx)
