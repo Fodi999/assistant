@@ -1,10 +1,12 @@
--- Migration: Cleanup garbage categories from global catalog
+-- Migration: Cleanup garbage categories and ingredients correctly (Safe Version)
 -- Targets: 'Test', 'Alert Cat', 'Test Cat'
 
--- 1. Delete catalog ingredients that reference garbage categories
--- We already soft-deleted garbage ingredients, but here we can hard-delete 
--- those that specifically link to trash categories to satisfy foreign keys.
-DELETE FROM catalog_ingredients 
+-- 1. We CANNOT delete catalog_ingredients if they are referenced by inventory_batches.
+-- Instead, move them to a safe category and mark them as inactive (Soft Delete).
+UPDATE catalog_ingredients 
+SET 
+  is_active = false,
+  category_id = (SELECT id FROM catalog_categories WHERE name_en = 'Dairy & Eggs' LIMIT 1)
 WHERE category_id IN (
     SELECT id FROM catalog_categories 
     WHERE name_en ILIKE 'Test%' 
@@ -13,14 +15,15 @@ WHERE category_id IN (
        OR name_ru ILIKE 'Alert%'
 );
 
--- 2. Delete the garbage categories
+-- 2. Now no ingredients (active or inactive) point to the garbage categories.
+-- We can safely delete the garbage categories.
 DELETE FROM catalog_categories 
 WHERE name_en ILIKE 'Test%' 
    OR name_en ILIKE 'Alert%'
    OR name_ru ILIKE 'Test%'
    OR name_ru ILIKE 'Alert%';
 
--- 3. Optional: Fix any typos in real categories if seen
+-- 3. Fix minor typo in real category
 UPDATE catalog_categories 
 SET name_ru = 'Молочные продукты и яйца' 
 WHERE name_en = 'Dairy & Eggs' AND name_ru = 'Молочные продукты и яйця';
