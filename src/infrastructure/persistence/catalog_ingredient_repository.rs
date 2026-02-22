@@ -32,10 +32,10 @@ impl CatalogIngredientRepository {
     fn row_to_ingredient(row: &sqlx::postgres::PgRow) -> AppResult<CatalogIngredient> {
         let id: uuid::Uuid = row.try_get("id")?;
         let category_id: uuid::Uuid = row.try_get("category_id")?;
-        let name_pl: String = row.try_get("name_pl")?;
-        let name_en: String = row.try_get("name_en")?;
-        let name_uk: String = row.try_get("name_uk")?;
-        let name_ru: String = row.try_get("name_ru")?;
+        let name_pl: String = row.try_get("name_pl").unwrap_or_default();
+        let name_en: String = row.try_get("name_en").unwrap_or_default();
+        let name_uk: String = row.try_get("name_uk").unwrap_or_default();
+        let name_ru: String = row.try_get("name_ru").unwrap_or_default();
         
         // CAST ENUM to TEXT in SQL query instead of trying to parse here
         let unit_str: String = row.try_get("default_unit")?;
@@ -104,10 +104,10 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
             FROM catalog_ingredients ci
             WHERE COALESCE(ci.is_active, true) = true 
               AND (
-                  ci.name_en ILIKE '%' || $1 || '%' OR
-                  ci.name_ru ILIKE '%' || $1 || '%' OR
-                  ci.name_pl ILIKE '%' || $1 || '%' OR
-                  ci.name_uk ILIKE '%' || $1 || '%'
+                  COALESCE(ci.name_en, '') ILIKE '%' || $1 || '%' OR
+                  COALESCE(ci.name_ru, '') ILIKE '%' || $1 || '%' OR
+                  COALESCE(ci.name_pl, '') ILIKE '%' || $1 || '%' OR
+                  COALESCE(ci.name_uk, '') ILIKE '%' || $1 || '%'
               )
             ORDER BY ci.name_en ASC
             LIMIT $2
@@ -148,10 +148,10 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1 
                   AND (
-                      ci.name_en ILIKE '%' || $2 || '%' OR
-                      ci.name_ru ILIKE '%' || $2 || '%' OR
-                      ci.name_pl ILIKE '%' || $2 || '%' OR
-                      ci.name_uk ILIKE '%' || $2 || '%'
+                      COALESCE(ci.name_en, '') ILIKE '%' || $2 || '%' OR
+                      COALESCE(ci.name_ru, '') ILIKE '%' || $2 || '%' OR
+                      COALESCE(ci.name_pl, '') ILIKE '%' || $2 || '%' OR
+                      COALESCE(ci.name_uk, '') ILIKE '%' || $2 || '%'
                   )
                 ORDER BY ci.name_en ASC
                 LIMIT $3
