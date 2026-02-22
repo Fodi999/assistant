@@ -104,10 +104,10 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
             FROM catalog_ingredients ci
             WHERE COALESCE(ci.is_active, true) = true 
               AND (
-                  COALESCE(ci.name_en, '') ILIKE '%' || $1 || '%' OR
-                  COALESCE(ci.name_ru, '') ILIKE '%' || $1 || '%' OR
-                  COALESCE(ci.name_pl, '') ILIKE '%' || $1 || '%' OR
-                  COALESCE(ci.name_uk, '') ILIKE '%' || $1 || '%'
+                  LOWER(COALESCE(ci.name_en, '')) LIKE LOWER('%' || $1 || '%') OR
+                  LOWER(COALESCE(ci.name_ru, '')) LIKE LOWER('%' || $1 || '%') OR
+                  LOWER(COALESCE(ci.name_pl, '')) LIKE LOWER('%' || $1 || '%') OR
+                  LOWER(COALESCE(ci.name_uk, '')) LIKE LOWER('%' || $1 || '%')
               )
             ORDER BY ci.name_en ASC
             LIMIT $2
@@ -148,10 +148,10 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1 
                   AND (
-                      COALESCE(ci.name_en, '') ILIKE '%' || $2 || '%' OR
-                      COALESCE(ci.name_ru, '') ILIKE '%' || $2 || '%' OR
-                      COALESCE(ci.name_pl, '') ILIKE '%' || $2 || '%' OR
-                      COALESCE(ci.name_uk, '') ILIKE '%' || $2 || '%'
+                      LOWER(COALESCE(ci.name_en, '')) LIKE LOWER('%' || $2 || '%') OR
+                      LOWER(COALESCE(ci.name_ru, '')) LIKE LOWER('%' || $2 || '%') OR
+                      LOWER(COALESCE(ci.name_pl, '')) LIKE LOWER('%' || $2 || '%') OR
+                      LOWER(COALESCE(ci.name_uk, '')) LIKE LOWER('%' || $2 || '%')
                   )
                 ORDER BY ci.name_en ASC
                 LIMIT $3
