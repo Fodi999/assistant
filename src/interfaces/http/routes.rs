@@ -353,7 +353,14 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
                     .parse::<axum::http::HeaderValue>()
                     .unwrap(),
             )
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
             .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
             .allow_credentials(true)
     } else {
@@ -365,7 +372,14 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
                     .filter_map(|origin| origin.parse().ok())
                     .collect::<Vec<_>>(),
             )
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
             .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
             .allow_credentials(true)
     }
