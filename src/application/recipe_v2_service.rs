@@ -30,6 +30,15 @@ pub struct CreateRecipeIngredientDto {
     pub unit: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateRecipeDto {
+    pub name: String,
+    pub instructions: String,
+    pub language: Language,
+    pub servings: i32,
+    pub ingredients: Vec<CreateRecipeIngredientDto>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct RecipeResponseDto {
     pub id: Uuid,
@@ -266,6 +275,103 @@ impl RecipeV2Service {
         }
 
         self.recipe_repo.delete(recipe_id, tenant_id).await
+    }
+
+    /// Update an existing recipe
+    pub async fn update_recipe(
+        &self,
+        recipe_id: RecipeId,
+        dto: UpdateRecipeDto,
+        tenant_id: TenantId,
+    ) -> AppResult<RecipeResponseDto> {
+        let mut recipe = self
+            .recipe_repo
+            .find_by_id(recipe_id, tenant_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Recipe"))?;
+
+        // Update fields
+        recipe.name_default = dto.name;
+        recipe.instructions_default = dto.instructions;
+        recipe.language_default = dto.language;
+        recipe.servings = dto.servings;
+        recipe.updated_at = OffsetDateTime::now_utc();
+
+        // Save updated recipe
+        self.recipe_repo.update(&recipe).await?;
+
+        // Update ingredients (easiest way: delete all and re-insert)
+        self.ingredient_repo.delete_by_recipe_id(recipe_id).await?;
+
+        let mut response_ingredients = Vec::new();
+        let now = OffsetDateTime::now_utc();
+
+        for ingredient_dto in &dto.ingredients {
+            let ingredient_id =
+                CatalogIngredientId::from_uuid(ingredient_dto.catalog_ingredient_id);
+            let catalog_ingredient = self
+                .catalog_repo
+                .find_by_id(ingredient_id)
+                .await?
+                .ok_or_else(|| AppError::not_found("Catalog ingredient"))?;
+
+            let ingredient_name = catalog_ingredient.name(recipe.language_default).to_string();
+
+            let ingredient = RecipeIngredient {
+                id: crate::domain::recipe_v2::RecipeIngredientId::new(),
+                recipe_id,
+                catalog_ingredient_id: ingredient_dto.catalog_ingredient_id,
+                quantity: ingredient_dto.quantity,
+                unit: ingredient_dto.unit.clone(),
+                cost_at_use_cents: None,
+                catalog_ingredient_name_snapshot: Some(ingredient_name.clone()),
+                created_at: now,
+            };
+
+            self.ingredient_repo.save(&ingredient).await?;
+
+            response_ingredients.push(RecipeIngredientResponseDto {
+                id: ingredient.id.as_uuid(),
+                catalog_ingredient_id: ingredient.catalog_ingredient_id,
+                catalog_ingredient_name: Some(ingredient_name),
+                quantity: ingredient.quantity,
+                unit: ingredient.unit.clone(),
+                cost_at_use_cents: None,
+            });
+        }
+
+        // Trigger automatic re-translation
+        let translation_service = self.translation_service.clone();
+        let default_language = dto.language;
+        let t_id = tenant_id;
+        tokio::spawn(async move {
+            if let Err(e) = translation_service
+                .translate_to_all_languages(recipe_id, t_id, default_language)
+                .await
+            {
+                tracing::error!(
+                    "Failed to trigger re-translations for recipe {}: {}",
+                    recipe_id.as_uuid(),
+                    e
+                );
+            }
+        });
+
+        Ok(RecipeResponseDto {
+            id: recipe.id.as_uuid(),
+            name: recipe.name_default,
+            instructions: recipe.instructions_default,
+            language: recipe.language_default,
+            servings: recipe.servings,
+            total_cost_cents: recipe.total_cost_cents,
+            cost_per_serving_cents: recipe.cost_per_serving_cents,
+            status: recipe.status.as_str().to_string(),
+            is_public: recipe.is_public,
+            published_at: recipe.published_at,
+            created_at: recipe.created_at,
+            updated_at: recipe.updated_at,
+            ingredients: response_ingredients,
+        })
     }
 
     /// Convert recipe to response DTO

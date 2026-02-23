@@ -226,6 +226,10 @@ pub fn create_router(
                 .route("/recipes/v2", post(recipe_v2::create_recipe))
                 .route("/recipes/v2", get(recipe_v2::list_recipes))
                 .route("/recipes/v2/:id", get(recipe_v2::get_recipe))
+                .route(
+                    "/recipes/v2/:id",
+                    axum::routing::put(recipe_v2::update_recipe).patch(recipe_v2::update_recipe),
+                )
                 .route("/recipes/v2/:id/publish", post(recipe_v2::publish_recipe))
                 .route(
                     "/recipes/v2/:id",

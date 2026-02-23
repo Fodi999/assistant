@@ -1,5 +1,5 @@
 // Recipe V2 HTTP Handlers - REST API with automatic translations
-use crate::application::recipe_v2_service::{CreateRecipeDto, RecipeResponseDto, RecipeV2Service};
+use crate::application::recipe_v2_service::{CreateRecipeDto, RecipeResponseDto, RecipeV2Service, UpdateRecipeDto};
 use crate::domain::recipe_v2::RecipeId;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppResult;
@@ -83,6 +83,26 @@ pub async fn list_recipes(
     }
 
     Ok(Json(response))
+}
+
+/// PUT /api/recipes/v2/:id - Update recipe with localization trigger
+/// Path param: recipe_id (UUID)
+/// Body: UpdateRecipeDto
+/// Returns: RecipeResponseDto
+pub async fn update_recipe(
+    State(service): State<Arc<RecipeV2Service>>,
+    AuthUser {
+        user_id: _,
+        tenant_id,
+        language: _,
+    }: AuthUser,
+    Path(recipe_id): Path<Uuid>,
+    Json(dto): Json<UpdateRecipeDto>,
+) -> AppResult<Json<RecipeResponseDto>> {
+    let recipe = service
+        .update_recipe(RecipeId(recipe_id), dto, tenant_id)
+        .await?;
+    Ok(Json(recipe))
 }
 
 /// POST /api/recipes/v2/:id/publish - Publish recipe (make public)
