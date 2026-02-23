@@ -1,19 +1,29 @@
 use crate::domain::{
-    Recipe, RecipeId, RecipeName, RecipeIngredient, RecipeComponent, RecipeType,
-    Servings, CatalogIngredientId, Quantity,
+    CatalogIngredientId, Quantity, Recipe, RecipeComponent, RecipeId, RecipeIngredient, RecipeName,
+    RecipeType, Servings,
 };
-use crate::shared::{AppError, AppResult, UserId, TenantId};
+use crate::shared::{AppError, AppResult, PaginatedResponse, PaginationParams, TenantId, UserId};
 use async_trait::async_trait;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use uuid;
 
 #[async_trait]
 pub trait RecipeRepositoryTrait: Send + Sync {
     async fn create(&self, recipe: &Recipe, user_id: UserId, tenant_id: TenantId) -> AppResult<()>;
-    async fn find_by_id(&self, id: RecipeId, user_id: UserId) -> AppResult<Option<Recipe>>;
-    async fn list_by_user(&self, user_id: UserId) -> AppResult<Vec<Recipe>>;
-    async fn delete(&self, id: RecipeId, user_id: UserId) -> AppResult<bool>;
-    async fn update_ingredients(&self, recipe_id: RecipeId, ingredients: Vec<RecipeIngredient>, user_id: UserId) -> AppResult<()>;
+    async fn find_by_id(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<Option<Recipe>>;
+    async fn list_by_tenant(
+        &self,
+        tenant_id: TenantId,
+        pagination: &PaginationParams,
+    ) -> AppResult<PaginatedResponse<Recipe>>;
+    async fn delete(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<bool>;
+    async fn update_ingredients(
+        &self,
+        recipe_id: RecipeId,
+        ingredients: Vec<RecipeIngredient>,
+        tenant_id: TenantId,
+    ) -> AppResult<()>;
 }
 
 #[derive(Clone)]
@@ -37,7 +47,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
             r#"
             INSERT INTO recipes (id, user_id, tenant_id, name, recipe_type, servings, instructions)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
-            "#
+            "#,
         )
         .bind(recipe.id().as_uuid())
         .bind(user_id.as_uuid())
@@ -56,7 +66,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
                 r#"
                 INSERT INTO recipe_ingredients (recipe_id, catalog_ingredient_id, quantity)
                 VALUES ($1, $2, $3)
-                "#
+                "#,
             )
             .bind(recipe.id().as_uuid())
             .bind(ingredient.catalog_ingredient_id().as_uuid())
@@ -72,7 +82,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
                 r#"
                 INSERT INTO recipe_components (recipe_id, component_recipe_id, quantity)
                 VALUES ($1, $2, $3)
-                "#
+                "#,
             )
             .bind(recipe.id().as_uuid())
             .bind(component.component_recipe_id().as_uuid())
@@ -86,22 +96,34 @@ impl RecipeRepositoryTrait for RecipeRepository {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: RecipeId, user_id: UserId) -> AppResult<Option<Recipe>> {
-        // Fetch recipe
+    /// 🔒 TENANT ISOLATION: find_by_id filters by tenant_id (not user_id)
+    async fn find_by_id(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<Option<Recipe>> {
+        // Fetch recipe — filtered by tenant_id
         let recipe_row = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
             r#"
             SELECT id, user_id, tenant_id, name, recipe_type, servings, instructions, created_at, updated_at
             FROM recipes
-            WHERE id = $1 AND user_id = $2
+            WHERE id = $1 AND tenant_id = $2
             "#
         )
         .bind(id.as_uuid())
-        .bind(user_id.as_uuid())
+        .bind(tenant_id.as_uuid())
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::Database)?;
 
-        let Some((row_id, row_user_id, row_tenant_id, row_name, row_recipe_type, row_servings, row_instructions, row_created_at, row_updated_at)) = recipe_row else {
+        let Some((
+            row_id,
+            row_user_id,
+            row_tenant_id,
+            row_name,
+            row_recipe_type,
+            row_servings,
+            row_instructions,
+            row_created_at,
+            row_updated_at,
+        )) = recipe_row
+        else {
             return Ok(None);
         };
 
@@ -111,7 +133,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
             SELECT catalog_ingredient_id, quantity
             FROM recipe_ingredients
             WHERE recipe_id = $1
-            "#
+            "#,
         )
         .bind(id.as_uuid())
         .fetch_all(&self.pool)
@@ -121,22 +143,23 @@ impl RecipeRepositoryTrait for RecipeRepository {
         let ingredients: Vec<RecipeIngredient> = ingredients_rows
             .into_iter()
             .map(|(catalog_id, qty)| {
-                let quantity = Quantity::new(qty)
-                    .map_err(|_| AppError::Internal("Corrupted quantity data in database".to_string()))?;
+                let quantity = Quantity::new(qty).map_err(|_| {
+                    AppError::Internal("Corrupted quantity data in database".to_string())
+                })?;
                 Ok(RecipeIngredient::new(
                     CatalogIngredientId::from_uuid(catalog_id),
-                    quantity
+                    quantity,
                 ))
             })
             .collect::<AppResult<Vec<_>>>()?;
 
-        // Fetch components (recipes used in this recipe)
+        // Fetch components
         let components_rows = sqlx::query_as::<_, (uuid::Uuid, f64)>(
             r#"
             SELECT component_recipe_id, quantity
             FROM recipe_components
             WHERE recipe_id = $1
-            "#
+            "#,
         )
         .bind(id.as_uuid())
         .fetch_all(&self.pool)
@@ -145,9 +168,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
 
         let components: Vec<RecipeComponent> = components_rows
             .into_iter()
-            .map(|(component_id, qty)| {
-                RecipeComponent::new(RecipeId::from_uuid(component_id), qty)
-            })
+            .map(|(component_id, qty)| RecipeComponent::new(RecipeId::from_uuid(component_id), qty))
             .collect::<AppResult<Vec<_>>>()?;
 
         let recipe = Recipe::from_parts(
@@ -161,83 +182,121 @@ impl RecipeRepositoryTrait for RecipeRepository {
             components,
             row_instructions,
             row_created_at,
-            row_updated_at
+            row_updated_at,
         );
 
         Ok(Some(recipe))
     }
 
-    async fn list_by_user(&self, user_id: UserId) -> AppResult<Vec<Recipe>> {
-        // TODO: Optimize N+1 query problem - consider using JOIN or WHERE recipe_id = ANY($1)
-        // Current implementation: 1 query for recipes + N queries for ingredients + N queries for components
-        // This is acceptable for small datasets but will be a bottleneck with many recipes
-        
-        // Fetch all recipes for user
+    /// 🔒 TENANT ISOLATION + Pagination + Batch loading (no N+1)
+    async fn list_by_tenant(
+        &self,
+        tenant_id: TenantId,
+        pagination: &PaginationParams,
+    ) -> AppResult<PaginatedResponse<Recipe>> {
+        // 1. Count total recipes for this tenant
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM recipes WHERE tenant_id = $1",
+        )
+        .bind(tenant_id.as_uuid())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        // 2. Fetch paginated recipes
         let recipe_rows = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
             r#"
             SELECT id, user_id, tenant_id, name, recipe_type, servings, instructions, created_at, updated_at
             FROM recipes
-            WHERE user_id = $1
+            WHERE tenant_id = $1
             ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
             "#
         )
-        .bind(user_id.as_uuid())
+        .bind(tenant_id.as_uuid())
+        .bind(pagination.limit())
+        .bind(pagination.offset())
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::Database)?;
 
-        let mut recipes = Vec::new();
+        if recipe_rows.is_empty() {
+            return Ok(PaginatedResponse::new(vec![], total, pagination));
+        }
 
-        for (row_id, row_user_id, row_tenant_id, row_name, row_recipe_type, row_servings, row_instructions, row_created_at, row_updated_at) in recipe_rows {
-            let recipe_id = RecipeId::from_uuid(row_id);
+        // 3. Collect recipe IDs for batch loading
+        let recipe_ids: Vec<uuid::Uuid> = recipe_rows.iter().map(|r| r.0).collect();
 
-            // Fetch ingredients for this recipe (N+1 issue)
-            let ingredients_rows = sqlx::query_as::<_, (uuid::Uuid, f64)>(
-                r#"
-                SELECT catalog_ingredient_id, quantity
-                FROM recipe_ingredients
-                WHERE recipe_id = $1
-                "#
-            )
-            .bind(row_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(AppError::Database)?;
+        // 4. Batch load ALL ingredients for all recipes in one query (fixes N+1)
+        let all_ingredients = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, f64)>(
+            r#"
+            SELECT recipe_id, catalog_ingredient_id, quantity
+            FROM recipe_ingredients
+            WHERE recipe_id = ANY($1)
+            "#,
+        )
+        .bind(&recipe_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
 
-            let ingredients: Vec<RecipeIngredient> = ingredients_rows
-                .into_iter()
-                .map(|(catalog_id, qty)| {
-                    let quantity = Quantity::new(qty)
-                        .map_err(|_| AppError::Internal("Corrupted quantity data in database".to_string()))?;
-                    Ok(RecipeIngredient::new(
-                        CatalogIngredientId::from_uuid(catalog_id),
-                        quantity
-                    ))
-                })
-                .collect::<AppResult<Vec<_>>>()?;
+        // Group ingredients by recipe_id
+        let mut ingredients_map: HashMap<uuid::Uuid, Vec<RecipeIngredient>> = HashMap::new();
+        for (recipe_id, catalog_id, qty) in all_ingredients {
+            let quantity = Quantity::new(qty).map_err(|_| {
+                AppError::Internal("Corrupted quantity data in database".to_string())
+            })?;
+            ingredients_map
+                .entry(recipe_id)
+                .or_default()
+                .push(RecipeIngredient::new(
+                    CatalogIngredientId::from_uuid(catalog_id),
+                    quantity,
+                ));
+        }
 
-            // Fetch components for this recipe (N+1 issue)
-            let components_rows = sqlx::query_as::<_, (uuid::Uuid, f64)>(
-                r#"
-                SELECT component_recipe_id, quantity
-                FROM recipe_components
-                WHERE recipe_id = $1
-                "#
-            )
-            .bind(row_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(AppError::Database)?;
+        // 5. Batch load ALL components for all recipes in one query (fixes N+1)
+        let all_components = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, f64)>(
+            r#"
+            SELECT recipe_id, component_recipe_id, quantity
+            FROM recipe_components
+            WHERE recipe_id = ANY($1)
+            "#,
+        )
+        .bind(&recipe_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
 
-            let components: Vec<RecipeComponent> = components_rows
-                .into_iter()
-                .map(|(component_id, qty)| {
-                    RecipeComponent::new(RecipeId::from_uuid(component_id), qty)
-                })
-                .collect::<AppResult<Vec<_>>>()?;
+        // Group components by recipe_id
+        let mut components_map: HashMap<uuid::Uuid, Vec<RecipeComponent>> = HashMap::new();
+        for (recipe_id, component_id, qty) in all_components {
+            let component = RecipeComponent::new(RecipeId::from_uuid(component_id), qty)?;
+            components_map
+                .entry(recipe_id)
+                .or_default()
+                .push(component);
+        }
+
+        // 6. Assemble Recipe objects
+        let mut recipes = Vec::with_capacity(recipe_rows.len());
+        for (
+            row_id,
+            row_user_id,
+            row_tenant_id,
+            row_name,
+            row_recipe_type,
+            row_servings,
+            row_instructions,
+            row_created_at,
+            row_updated_at,
+        ) in recipe_rows
+        {
+            let ingredients = ingredients_map.remove(&row_id).unwrap_or_default();
+            let components = components_map.remove(&row_id).unwrap_or_default();
 
             let recipe = Recipe::from_parts(
-                recipe_id,
+                RecipeId::from_uuid(row_id),
                 UserId::from_uuid(row_user_id),
                 TenantId::from_uuid(row_tenant_id),
                 RecipeName::new(row_name)?,
@@ -247,24 +306,25 @@ impl RecipeRepositoryTrait for RecipeRepository {
                 components,
                 row_instructions,
                 row_created_at,
-                row_updated_at
+                row_updated_at,
             );
 
             recipes.push(recipe);
         }
 
-        Ok(recipes)
+        Ok(PaginatedResponse::new(recipes, total, pagination))
     }
 
-    async fn delete(&self, id: RecipeId, user_id: UserId) -> AppResult<bool> {
+    /// 🔒 TENANT ISOLATION: delete filters by tenant_id
+    async fn delete(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<bool> {
         let result = sqlx::query(
             r#"
             DELETE FROM recipes
-            WHERE id = $1 AND user_id = $2
-            "#
+            WHERE id = $1 AND tenant_id = $2
+            "#,
         )
         .bind(id.as_uuid())
-        .bind(user_id.as_uuid())
+        .bind(tenant_id.as_uuid())
         .execute(&self.pool)
         .await
         .map_err(AppError::Database)?;
@@ -272,22 +332,23 @@ impl RecipeRepositoryTrait for RecipeRepository {
         Ok(result.rows_affected() > 0)
     }
 
+    /// 🔒 TENANT ISOLATION: update_ingredients verifies by tenant_id
     async fn update_ingredients(
         &self,
         recipe_id: RecipeId,
         ingredients: Vec<RecipeIngredient>,
-        user_id: UserId
+        tenant_id: TenantId,
     ) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
 
-        // Verify recipe belongs to user
+        // Verify recipe belongs to tenant
         let exists_row = sqlx::query_as::<_, (bool,)>(
             r#"
-            SELECT EXISTS(SELECT 1 FROM recipes WHERE id = $1 AND user_id = $2)
-            "#
+            SELECT EXISTS(SELECT 1 FROM recipes WHERE id = $1 AND tenant_id = $2)
+            "#,
         )
         .bind(recipe_id.as_uuid())
-        .bind(user_id.as_uuid())
+        .bind(tenant_id.as_uuid())
         .fetch_one(&mut *tx)
         .await
         .map_err(AppError::Database)?;
@@ -301,7 +362,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
             r#"
             DELETE FROM recipe_ingredients
             WHERE recipe_id = $1
-            "#
+            "#,
         )
         .bind(recipe_id.as_uuid())
         .execute(&mut *tx)
@@ -314,7 +375,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
                 r#"
                 INSERT INTO recipe_ingredients (recipe_id, catalog_ingredient_id, quantity)
                 VALUES ($1, $2, $3)
-                "#
+                "#,
             )
             .bind(recipe_id.as_uuid())
             .bind(ingredient.catalog_ingredient_id().as_uuid())
@@ -335,8 +396,6 @@ mod tests {
 
     #[test]
     fn test_recipe_repository_trait_is_object_safe() {
-        // This test ensures RecipeRepositoryTrait is object-safe
-        // (can be used as Arc<dyn RecipeRepositoryTrait>)
         let _: Option<Box<dyn RecipeRepositoryTrait>> = None;
     }
 }

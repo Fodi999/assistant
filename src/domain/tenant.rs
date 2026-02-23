@@ -33,15 +33,17 @@ pub struct TenantName(String);
 impl TenantName {
     pub fn new(name: String) -> AppResult<Self> {
         let trimmed = name.trim().to_string();
-        
+
         if trimmed.is_empty() {
             return Err(AppError::validation("Tenant name cannot be empty"));
         }
-        
+
         if trimmed.len() > 255 {
-            return Err(AppError::validation("Tenant name cannot exceed 255 characters"));
+            return Err(AppError::validation(
+                "Tenant name cannot exceed 255 characters",
+            ));
         }
-        
+
         Ok(Self(trimmed))
     }
 

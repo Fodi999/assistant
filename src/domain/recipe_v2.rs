@@ -112,22 +112,22 @@ pub struct Recipe {
     pub id: RecipeId,
     pub user_id: UserId,
     pub tenant_id: TenantId,
-    
+
     // Default language content
     pub name_default: String,
     pub instructions_default: String,
     pub language_default: Language,
-    
+
     // Recipe details
     pub servings: i32,
     pub total_cost_cents: Option<i32>,
     pub cost_per_serving_cents: Option<i32>,
-    
+
     // Publishing
     pub status: RecipeStatus,
     pub is_public: bool,
     pub published_at: Option<OffsetDateTime>,
-    
+
     // Timestamps
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
@@ -141,13 +141,13 @@ pub struct RecipeIngredient {
     pub catalog_ingredient_id: Uuid,
     pub quantity: Decimal,
     pub unit: String,
-    
+
     // Cost snapshot (captures cost at time of recipe creation)
     pub cost_at_use_cents: Option<i32>,
-    
+
     // Name snapshot (for historical reference if ingredient deleted)
     pub catalog_ingredient_name_snapshot: Option<String>,
-    
+
     pub created_at: OffsetDateTime,
 }
 

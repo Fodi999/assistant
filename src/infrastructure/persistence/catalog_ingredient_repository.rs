@@ -7,16 +7,32 @@ use sqlx::{PgPool, Row};
 #[async_trait]
 pub trait CatalogIngredientRepositoryTrait: Send + Sync {
     /// Search ingredients by name in the user's language
-    async fn search(&self, query: &str, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>>;
-    
+    async fn search(
+        &self,
+        query: &str,
+        language: Language,
+        limit: i64,
+    ) -> AppResult<Vec<CatalogIngredient>>;
+
     /// Search ingredients by category and optional name filter
-    async fn search_by_category(&self, category_id: CatalogCategoryId, query: Option<&str>, language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>>;
-    
+    async fn search_by_category(
+        &self,
+        category_id: CatalogCategoryId,
+        query: Option<&str>,
+        language: Language,
+        limit: i64,
+    ) -> AppResult<Vec<CatalogIngredient>>;
+
     /// Get ingredient by ID
     async fn find_by_id(&self, id: CatalogIngredientId) -> AppResult<Option<CatalogIngredient>>;
-    
+
     /// Get all ingredients (paginated)
-    async fn list(&self, language: Language, offset: i64, limit: i64) -> AppResult<Vec<CatalogIngredient>>;
+    async fn list(
+        &self,
+        language: Language,
+        offset: i64,
+        limit: i64,
+    ) -> AppResult<Vec<CatalogIngredient>>;
 }
 
 #[derive(Clone)]
@@ -36,29 +52,30 @@ impl CatalogIngredientRepository {
         let name_en: String = row.try_get("name_en").unwrap_or_default();
         let name_uk: String = row.try_get("name_uk").unwrap_or_default();
         let name_ru: String = row.try_get("name_ru").unwrap_or_default();
-        
+
         // CAST ENUM to TEXT in SQL query instead of trying to parse here
         let unit_str: String = row.try_get("default_unit")?;
         let default_unit = Unit::from_str(&unit_str)?;
         let default_shelf_life_days: Option<i32> = row.try_get("default_shelf_life_days")?;
-        
+
         let allergens_str: Vec<String> = row.try_get("allergens")?;
         let allergens: Vec<Allergen> = allergens_str
             .iter()
             .filter_map(|s| Allergen::from_str(s).ok())
             .collect();
-        
+
         let calories_per_100g: Option<i32> = row.try_get("calories_per_100g")?;
-        
+
         let seasons_str: Vec<String> = row.try_get("seasons")?;
         let seasons: Vec<Season> = seasons_str
             .iter()
             .filter_map(|s| Season::from_str(s).ok())
             .collect();
-        
+
         let image_url: Option<String> = row.try_get("image_url")?;
         let is_active: bool = row.try_get("is_active").unwrap_or(true);
-        let min_stock_threshold: Decimal = row.try_get("min_stock_threshold").unwrap_or(Decimal::ZERO);
+        let min_stock_threshold: Decimal =
+            row.try_get("min_stock_threshold").unwrap_or(Decimal::ZERO);
 
         Ok(CatalogIngredient::from_parts(
             CatalogIngredientId::from_uuid(id),
@@ -81,10 +98,15 @@ impl CatalogIngredientRepository {
 
 #[async_trait]
 impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
-    async fn search(&self, query: &str, _language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
+    async fn search(
+        &self,
+        query: &str,
+        _language: Language,
+        limit: i64,
+    ) -> AppResult<Vec<CatalogIngredient>> {
         // 🎯 FIX: Search directly in base columns (name_en, name_ru, name_pl, name_uk)
         // catalog_ingredient_translations table is NOT used - data is in base table
-        
+
         let sql = r#"
             SELECT 
                 ci.id, 
@@ -119,14 +141,18 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
             .fetch_all(&self.pool)
             .await?;
 
-        rows.iter()
-            .map(Self::row_to_ingredient)
-            .collect()
+        rows.iter().map(Self::row_to_ingredient).collect()
     }
 
-    async fn search_by_category(&self, category_id: CatalogCategoryId, query: Option<&str>, _language: Language, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
+    async fn search_by_category(
+        &self,
+        category_id: CatalogCategoryId,
+        query: Option<&str>,
+        _language: Language,
+        limit: i64,
+    ) -> AppResult<Vec<CatalogIngredient>> {
         // 🎯 FIX: Search directly in base columns
-        
+
         let sql = if query.is_some() {
             r#"
                 SELECT 
@@ -196,9 +222,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 .await?
         };
 
-        rows.iter()
-            .map(Self::row_to_ingredient)
-            .collect()
+        rows.iter().map(Self::row_to_ingredient).collect()
     }
 
     async fn find_by_id(&self, id: CatalogIngredientId) -> AppResult<Option<CatalogIngredient>> {
@@ -212,7 +236,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                    image_url, is_active, min_stock_threshold
             FROM catalog_ingredients
             WHERE id = $1 AND COALESCE(is_active, true) = true
-            "#
+            "#,
         )
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
@@ -224,9 +248,14 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
         }
     }
 
-    async fn list(&self, _language: Language, offset: i64, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
+    async fn list(
+        &self,
+        _language: Language,
+        offset: i64,
+        limit: i64,
+    ) -> AppResult<Vec<CatalogIngredient>> {
         // 🎯 FIX: List directly from base columns
-        
+
         let sql = r#"
             SELECT 
                 ci.id, 
@@ -256,8 +285,6 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
             .fetch_all(&self.pool)
             .await?;
 
-        rows.iter()
-            .map(Self::row_to_ingredient)
-            .collect()
+        rows.iter().map(Self::row_to_ingredient).collect()
     }
 }

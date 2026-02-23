@@ -1,11 +1,13 @@
-use crate::domain::{DisplayName, Email, Password, RefreshToken, Tenant, TenantName, User, UserRole};
+use crate::domain::{
+    DisplayName, Email, Password, RefreshToken, Tenant, TenantName, User, UserRole,
+};
 use crate::infrastructure::{
     JwtService, PasswordHasher, RefreshTokenRepository, RefreshTokenRepositoryTrait,
     TenantRepository, TenantRepositoryTrait, UserRepository, UserRepositoryTrait,
 };
 use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 #[derive(Clone)]
@@ -39,10 +41,7 @@ impl AuthService {
         let email = Email::new(command.email)?;
         let password = Password::new(command.password)?;
         let restaurant_name = TenantName::new(command.restaurant_name)?;
-        let owner_name = command
-            .owner_name
-            .map(DisplayName::new)
-            .transpose()?;
+        let owner_name = command.owner_name.map(DisplayName::new).transpose()?;
         let language = command.language.unwrap_or_default();
 
         // Check if user already exists
@@ -69,16 +68,18 @@ impl AuthService {
         self.user_repo.create(&user).await?;
 
         // Generate tokens
-        let access_token = self.jwt_service.generate_access_token(user.id, user.tenant_id)?;
+        let access_token = self
+            .jwt_service
+            .generate_access_token(user.id, user.tenant_id)?;
         let refresh_token_str = self.jwt_service.generate_refresh_token();
-        
+
         // Hash refresh token for storage using SHA256
         let mut hasher = Sha256::new();
         hasher.update(refresh_token_str.as_bytes());
         let refresh_token_hash = format!("{:x}", hasher.finalize());
-        
+
         let expires_at = OffsetDateTime::now_utc() + self.jwt_service.get_refresh_token_ttl();
-        
+
         let refresh_token = RefreshToken::new(user.id, refresh_token_hash, expires_at);
         self.refresh_token_repo.create(&refresh_token).await?;
 
@@ -117,17 +118,19 @@ impl AuthService {
         }
 
         // Generate tokens
-        let access_token = self.jwt_service.generate_access_token(user.id, user.tenant_id)?;
+        let access_token = self
+            .jwt_service
+            .generate_access_token(user.id, user.tenant_id)?;
         let refresh_token_str = self.jwt_service.generate_refresh_token();
-        
+
         // Hash refresh token for storage using SHA256
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(refresh_token_str.as_bytes());
         let refresh_token_hash = format!("{:x}", hasher.finalize());
-        
+
         let expires_at = OffsetDateTime::now_utc() + self.jwt_service.get_refresh_token_ttl();
-        
+
         let refresh_token = RefreshToken::new(user.id, refresh_token_hash, expires_at);
         self.refresh_token_repo.create(&refresh_token).await?;
 
@@ -141,7 +144,7 @@ impl AuthService {
 
     pub async fn refresh(&self, command: RefreshCommand) -> AppResult<AuthResponse> {
         // Hash the provided refresh token using SHA256 to match against stored hash
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(command.refresh_token.as_bytes());
         let token_hash = format!("{:x}", hasher.finalize());
@@ -165,7 +168,9 @@ impl AuthService {
             .ok_or_else(|| AppError::authentication("User not found"))?;
 
         // Generate new access token
-        let access_token = self.jwt_service.generate_access_token(user.id, user.tenant_id)?;
+        let access_token = self
+            .jwt_service
+            .generate_access_token(user.id, user.tenant_id)?;
 
         Ok(AuthResponse {
             access_token,

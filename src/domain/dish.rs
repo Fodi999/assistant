@@ -33,7 +33,9 @@ impl DishName {
             return Err(AppError::validation("Dish name cannot be empty"));
         }
         if name.len() > 255 {
-            return Err(AppError::validation("Dish name is too long (max 255 characters)"));
+            return Err(AppError::validation(
+                "Dish name is too long (max 255 characters)",
+            ));
         }
         Ok(Self(name))
     }
@@ -43,7 +45,7 @@ impl DishName {
     }
 }
 
-/// Dish - menu item with selling price
+/// Dish - menu item with selling price and materialized cost
 #[derive(Debug, Clone)]
 pub struct Dish {
     pub id: DishId,
@@ -53,6 +55,11 @@ pub struct Dish {
     pub description: Option<String>,
     pub selling_price: Money,
     pub active: bool,
+    // Materialized cost fields (Phase 3)
+    pub recipe_cost_cents: Option<i64>,
+    pub food_cost_percent: Option<f64>,
+    pub profit_margin_percent: Option<f64>,
+    pub cost_calculated_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -79,6 +86,10 @@ impl Dish {
             description,
             selling_price,
             active: true,
+            recipe_cost_cents: None,
+            food_cost_percent: None,
+            profit_margin_percent: None,
+            cost_calculated_at: None,
             created_at: now,
             updated_at: now,
         })
@@ -93,6 +104,10 @@ impl Dish {
         description: Option<String>,
         selling_price: Money,
         active: bool,
+        recipe_cost_cents: Option<i64>,
+        food_cost_percent: Option<f64>,
+        profit_margin_percent: Option<f64>,
+        cost_calculated_at: Option<OffsetDateTime>,
         created_at: OffsetDateTime,
         updated_at: OffsetDateTime,
     ) -> Self {
@@ -104,6 +119,10 @@ impl Dish {
             description,
             selling_price,
             active,
+            recipe_cost_cents,
+            food_cost_percent,
+            profit_margin_percent,
+            cost_calculated_at,
             created_at,
             updated_at,
         }
@@ -175,6 +194,45 @@ impl Dish {
         self.active = false;
         self.updated_at = OffsetDateTime::now_utc();
     }
+
+    // Cost materialization getters
+    pub fn recipe_cost_cents(&self) -> Option<i64> {
+        self.recipe_cost_cents
+    }
+
+    pub fn food_cost_percent(&self) -> Option<f64> {
+        self.food_cost_percent
+    }
+
+    pub fn profit_margin_percent(&self) -> Option<f64> {
+        self.profit_margin_percent
+    }
+
+    pub fn cost_calculated_at(&self) -> Option<OffsetDateTime> {
+        self.cost_calculated_at
+    }
+
+    /// Pure function: recalculate materialized cost fields from recipe cost.
+    /// No side-effects — just updates the struct fields.
+    pub fn recalculate_cost(&mut self, recipe_cost: Money) {
+        let cost_cents = recipe_cost.as_cents();
+        let sell_cents = self.selling_price.as_cents();
+        let now = OffsetDateTime::now_utc();
+
+        self.recipe_cost_cents = Some(cost_cents);
+
+        if sell_cents > 0 {
+            self.food_cost_percent = Some((cost_cents as f64 / sell_cents as f64) * 100.0);
+            self.profit_margin_percent =
+                Some(((sell_cents - cost_cents) as f64 / sell_cents as f64) * 100.0);
+        } else {
+            self.food_cost_percent = Some(0.0);
+            self.profit_margin_percent = Some(0.0);
+        }
+
+        self.cost_calculated_at = Some(now);
+        self.updated_at = now;
+    }
 }
 
 /// Financial analysis of a dish
@@ -200,7 +258,7 @@ impl DishFinancials {
         let selling_price_cents = selling_price.as_cents() as i32;
         let recipe_cost_cents = recipe_cost.as_cents() as i32;
         let profit_cents = selling_price_cents - recipe_cost_cents;
-        
+
         let profit_margin_percent = if selling_price_cents > 0 {
             (profit_cents as f64 / selling_price_cents as f64) * 100.0
         } else {
@@ -243,7 +301,7 @@ mod tests {
     fn test_dish_financials_calculation() {
         let dish_id = DishId::new();
         let selling_price = Money::from_cents(1500).unwrap(); // 15.00 PLN
-        let recipe_cost = Money::from_cents(311).unwrap();    // 3.11 PLN (from recipe test)
+        let recipe_cost = Money::from_cents(311).unwrap(); // 3.11 PLN (from recipe test)
 
         let financials = DishFinancials::calculate(
             dish_id,

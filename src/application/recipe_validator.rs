@@ -30,9 +30,9 @@ pub struct ValidationWarning {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ErrorSeverity {
-    Critical,  // Блокирует публикацию
-    High,      // Требует исправления
-    Medium,    // Рекомендация
+    Critical, // Блокирует публикацию
+    High,     // Требует исправления
+    Medium,   // Рекомендация
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -137,21 +137,34 @@ impl RecipeValidator {
         if name_lower.contains("торт") || name_lower.contains("cake") {
             return Some(DishType::Cake);
         }
-        if name_lower.contains("пирог") || name_lower.contains("pie") || name_lower.contains("пирожное") {
+        if name_lower.contains("пирог")
+            || name_lower.contains("pie")
+            || name_lower.contains("пирожное")
+        {
             return Some(DishType::Pie);
         }
-        if name_lower.contains("хлеб") || name_lower.contains("булка") || name_lower.contains("bread") {
+        if name_lower.contains("хлеб")
+            || name_lower.contains("булка")
+            || name_lower.contains("bread")
+        {
             return Some(DishType::Bread);
         }
 
         // Десерты
-        if name_lower.contains("десерт") || name_lower.contains("мороженое") || name_lower.contains("желе") {
+        if name_lower.contains("десерт")
+            || name_lower.contains("мороженое")
+            || name_lower.contains("желе")
+        {
             return Some(DishType::Dessert);
         }
 
         // Супы
-        if name_lower.contains("суп") || name_lower.contains("борщ") || name_lower.contains("щи") 
-            || name_lower.contains("рассольник") || name_lower.contains("soup") {
+        if name_lower.contains("суп")
+            || name_lower.contains("борщ")
+            || name_lower.contains("щи")
+            || name_lower.contains("рассольник")
+            || name_lower.contains("soup")
+        {
             return Some(DishType::Soup);
         }
 
@@ -161,8 +174,12 @@ impl RecipeValidator {
         }
 
         // Напитки
-        if name_lower.contains("напиток") || name_lower.contains("сок") || name_lower.contains("компот") 
-            || name_lower.contains("коктейль") || name_lower.contains("смузи") {
+        if name_lower.contains("напиток")
+            || name_lower.contains("сок")
+            || name_lower.contains("компот")
+            || name_lower.contains("коктейль")
+            || name_lower.contains("смузи")
+        {
             return Some(DishType::Beverage);
         }
 
@@ -171,17 +188,29 @@ impl RecipeValidator {
     }
 
     /// Проверка безопасности продуктов
-    fn check_food_safety(&self, instructions: &str, errors: &mut Vec<ValidationError>, warnings: &mut Vec<ValidationWarning>) {
+    fn check_food_safety(
+        &self,
+        instructions: &str,
+        errors: &mut Vec<ValidationError>,
+        warnings: &mut Vec<ValidationWarning>,
+    ) {
         let instructions_lower = instructions.to_lowercase();
 
         // Опасные паттерны
-        if instructions_lower.contains("сыр") && (instructions_lower.contains("подать") || instructions_lower.contains("не готовить")) {
+        if instructions_lower.contains("сыр")
+            && (instructions_lower.contains("подать") || instructions_lower.contains("не готовить"))
+        {
             // Это нормально для сырых салатов
             // Но проверим на мясо
         }
 
-        if (instructions_lower.contains("мясо") || instructions_lower.contains("курица") || instructions_lower.contains("свинина"))
-            && (instructions_lower.contains("сыр") || instructions_lower.contains("не готовить") || instructions_lower.contains("подать свеж")) {
+        if (instructions_lower.contains("мясо")
+            || instructions_lower.contains("курица")
+            || instructions_lower.contains("свинина"))
+            && (instructions_lower.contains("сыр")
+                || instructions_lower.contains("не готовить")
+                || instructions_lower.contains("подать свеж"))
+        {
             errors.push(ValidationError {
                 code: "RAW_MEAT_DANGER".to_string(),
                 message: "⚠️ ОПАСНО: Мясо должно быть термически обработано".to_string(),
@@ -189,15 +218,23 @@ impl RecipeValidator {
             });
         }
 
-        if instructions_lower.contains("яйц") && instructions_lower.contains("сыр") && !instructions_lower.contains("вар") && !instructions_lower.contains("жар") {
+        if instructions_lower.contains("яйц")
+            && instructions_lower.contains("сыр")
+            && !instructions_lower.contains("вар")
+            && !instructions_lower.contains("жар")
+        {
             warnings.push(ValidationWarning {
                 code: "RAW_EGG_WARNING".to_string(),
-                message: "Сырые яйца могут содержать сальмонеллу. Рекомендуется термическая обработка".to_string(),
+                message:
+                    "Сырые яйца могут содержать сальмонеллу. Рекомендуется термическая обработка"
+                        .to_string(),
             });
         }
 
         // Проверка на нереалистичное время
-        if instructions_lower.contains("1 минут") && (instructions_lower.contains("мясо") || instructions_lower.contains("картофель")) {
+        if instructions_lower.contains("1 минут")
+            && (instructions_lower.contains("мясо") || instructions_lower.contains("картофель"))
+        {
             warnings.push(ValidationWarning {
                 code: "UNREALISTIC_COOKING_TIME".to_string(),
                 message: "Время приготовления кажется слишком коротким".to_string(),
@@ -205,13 +242,21 @@ impl RecipeValidator {
         }
 
         // Проверка на отсутствие термообработки для блюд, которые её требуют
-        if !instructions_lower.contains("вар") && !instructions_lower.contains("жар") && !instructions_lower.contains("печь") 
-            && !instructions_lower.contains("туш") && !instructions_lower.contains("готов") {
-            
-            if instructions_lower.contains("мясо") || instructions_lower.contains("рыба") || instructions_lower.contains("курица") {
+        if !instructions_lower.contains("вар")
+            && !instructions_lower.contains("жар")
+            && !instructions_lower.contains("печь")
+            && !instructions_lower.contains("туш")
+            && !instructions_lower.contains("готов")
+        {
+            if instructions_lower.contains("мясо")
+                || instructions_lower.contains("рыба")
+                || instructions_lower.contains("курица")
+            {
                 errors.push(ValidationError {
                     code: "NO_THERMAL_PROCESSING".to_string(),
-                    message: "Не указана термическая обработка для продуктов животного происхождения".to_string(),
+                    message:
+                        "Не указана термическая обработка для продуктов животного происхождения"
+                            .to_string(),
                     severity: ErrorSeverity::Critical,
                 });
             }
@@ -219,15 +264,23 @@ impl RecipeValidator {
     }
 
     /// Проверка совместимости ингредиентов с типом блюда
-    fn check_ingredient_compatibility(&self, recipe: &Recipe, dish_type: &DishType, errors: &mut Vec<ValidationError>, warnings: &mut Vec<ValidationWarning>) {
+    fn check_ingredient_compatibility(
+        &self,
+        recipe: &Recipe,
+        dish_type: &DishType,
+        errors: &mut Vec<ValidationError>,
+        warnings: &mut Vec<ValidationWarning>,
+    ) {
         let instructions_lower = recipe.instructions_default.to_lowercase();
         let name_lower = recipe.name_default.to_lowercase();
 
         match dish_type {
             DishType::Cake | DishType::Pie | DishType::Bread => {
                 // Для выпечки нужна мука (или альтернатива)
-                if !instructions_lower.contains("мук") && !instructions_lower.contains("миндальн") 
-                    && !instructions_lower.contains("крахмал") {
+                if !instructions_lower.contains("мук")
+                    && !instructions_lower.contains("миндальн")
+                    && !instructions_lower.contains("крахмал")
+                {
                     errors.push(ValidationError {
                         code: "MISSING_FLOUR_IN_BAKING".to_string(),
                         message: format!("{:?} обычно требует муку или её альтернативу", dish_type),
@@ -236,7 +289,8 @@ impl RecipeValidator {
                 }
 
                 // Проверка на несовместимые ингредиенты
-                if instructions_lower.contains("мясо") || instructions_lower.contains("рыба") {
+                if instructions_lower.contains("мясо") || instructions_lower.contains("рыба")
+                {
                     warnings.push(ValidationWarning {
                         code: "UNUSUAL_INGREDIENT_FOR_DESSERT".to_string(),
                         message: "Необычно использовать мясо/рыбу в выпечке/десерте".to_string(),
@@ -246,8 +300,11 @@ impl RecipeValidator {
 
             DishType::Soup => {
                 // Суп должен содержать жидкость
-                if !instructions_lower.contains("вод") && !instructions_lower.contains("бульон") 
-                    && !instructions_lower.contains("молоко") && !instructions_lower.contains("сливк") {
+                if !instructions_lower.contains("вод")
+                    && !instructions_lower.contains("бульон")
+                    && !instructions_lower.contains("молоко")
+                    && !instructions_lower.contains("сливк")
+                {
                     warnings.push(ValidationWarning {
                         code: "SOUP_WITHOUT_LIQUID".to_string(),
                         message: "В супе обычно используется вода, бульон или молоко".to_string(),
@@ -265,10 +322,13 @@ impl RecipeValidator {
 
             DishType::Salad => {
                 // Салат обычно не варится
-                if instructions_lower.contains("варить 2 часа") || instructions_lower.contains("печь") {
+                if instructions_lower.contains("варить 2 часа")
+                    || instructions_lower.contains("печь")
+                {
                     warnings.push(ValidationWarning {
                         code: "SALAD_WITH_LONG_COOKING".to_string(),
-                        message: "Салаты обычно не требуют длительной термической обработки".to_string(),
+                        message: "Салаты обычно не требуют длительной термической обработки"
+                            .to_string(),
                     });
                 }
             }
@@ -277,45 +337,63 @@ impl RecipeValidator {
         }
 
         // Проверка логики: торт из овощей
-        if name_lower.contains("торт") && (instructions_lower.contains("свекла") || instructions_lower.contains("капуста")) 
-            && !instructions_lower.contains("морков") {  // Морковный торт - это нормально
+        if name_lower.contains("торт")
+            && (instructions_lower.contains("свекла") || instructions_lower.contains("капуста"))
+            && !instructions_lower.contains("морков")
+        {
+            // Морковный торт - это нормально
             errors.push(ValidationError {
                 code: "ILLOGICAL_INGREDIENT_COMBINATION".to_string(),
-                message: "Невозможно приготовить торт из указанных овощей (свекла, капуста)".to_string(),
+                message: "Невозможно приготовить торт из указанных овощей (свекла, капуста)"
+                    .to_string(),
                 severity: ErrorSeverity::High,
             });
         }
     }
 
     /// Определение отсутствующих критических ингредиентов
-    fn detect_missing_critical_ingredients(&self, recipe: &Recipe, dish_type: &DishType) -> Vec<String> {
+    fn detect_missing_critical_ingredients(
+        &self,
+        recipe: &Recipe,
+        dish_type: &DishType,
+    ) -> Vec<String> {
         let instructions_lower = recipe.instructions_default.to_lowercase();
         let mut missing = Vec::new();
 
         match dish_type {
             DishType::Cake | DishType::Pie => {
-                if !instructions_lower.contains("мук") && !instructions_lower.contains("миндальн") {
+                if !instructions_lower.contains("мук") && !instructions_lower.contains("миндальн")
+                {
                     missing.push("мука или миндальная мука".to_string());
                 }
-                if !instructions_lower.contains("сахар") && !instructions_lower.contains("мёд") && !instructions_lower.contains("подсластител") {
+                if !instructions_lower.contains("сахар")
+                    && !instructions_lower.contains("мёд")
+                    && !instructions_lower.contains("подсластител")
+                {
                     missing.push("сахар или подсластитель".to_string());
                 }
-                if !instructions_lower.contains("яйц") && !instructions_lower.contains("яйцо") {
+                if !instructions_lower.contains("яйц") && !instructions_lower.contains("яйцо")
+                {
                     missing.push("яйца".to_string());
                 }
-                if !instructions_lower.contains("масло") && !instructions_lower.contains("сливк") && !instructions_lower.contains("молоко") {
+                if !instructions_lower.contains("масло")
+                    && !instructions_lower.contains("сливк")
+                    && !instructions_lower.contains("молоко")
+                {
                     missing.push("жир (масло, сливки или молоко)".to_string());
                 }
             }
 
             DishType::Bread => {
-                if !instructions_lower.contains("дрожж") && !instructions_lower.contains("закваск") {
+                if !instructions_lower.contains("дрожж") && !instructions_lower.contains("закваск")
+                {
                     missing.push("дрожжи или закваска".to_string());
                 }
             }
 
             DishType::Soup => {
-                if !instructions_lower.contains("вод") && !instructions_lower.contains("бульон") {
+                if !instructions_lower.contains("вод") && !instructions_lower.contains("бульон")
+                {
                     missing.push("вода или бульон".to_string());
                 }
             }
@@ -336,9 +414,9 @@ impl Default for RecipeValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
-    use crate::shared::{TenantId, UserId, Language};
     use crate::domain::recipe_v2::RecipeStatus;
+    use crate::shared::{Language, TenantId, UserId};
+    use uuid::Uuid;
 
     fn create_test_recipe(name: &str, instructions: &str) -> Recipe {
         Recipe {
@@ -376,13 +454,10 @@ mod tests {
     #[test]
     fn test_raw_meat_danger() {
         let validator = RecipeValidator::new();
-        let recipe = create_test_recipe(
-            "Опасное блюдо",
-            "Нарезать мясо и подать сырым"
-        );
-        
+        let recipe = create_test_recipe("Опасное блюдо", "Нарезать мясо и подать сырым");
+
         let result = validator.validate(&recipe);
-        
+
         assert!(!result.is_valid);
         assert!(result.errors.iter().any(|e| e.code == "RAW_MEAT_DANGER"));
     }
@@ -392,13 +467,17 @@ mod tests {
         let validator = RecipeValidator::new();
         let recipe = create_test_recipe(
             "Невозможный торт",
-            "Смешать свеклу и капусту. Запечь 30 минут."
+            "Смешать свеклу и капусту. Запечь 30 минут.",
         );
-        
+
         let result = validator.validate(&recipe);
-        
+
         // Должна быть ошибка про муку И про логику
-        assert!(result.errors.iter().any(|e| e.code == "MISSING_FLOUR_IN_BAKING" || e.code == "ILLOGICAL_INGREDIENT_COMBINATION"));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.code == "MISSING_FLOUR_IN_BAKING"
+                || e.code == "ILLOGICAL_INGREDIENT_COMBINATION"));
     }
 
     #[test]
@@ -406,11 +485,11 @@ mod tests {
         let validator = RecipeValidator::new();
         let recipe = create_test_recipe(
             "Борщ классический",
-            "Сварить свеклу в воде. Добавить капусту. Варить 2 часа."
+            "Сварить свеклу в воде. Добавить капусту. Варить 2 часа.",
         );
-        
+
         let result = validator.validate(&recipe);
-        
+
         assert!(result.is_valid);
         assert_eq!(result.dish_type, Some(DishType::Soup));
     }
@@ -418,14 +497,14 @@ mod tests {
     #[test]
     fn test_missing_critical_ingredients_for_cake() {
         let validator = RecipeValidator::new();
-        let recipe = create_test_recipe(
-            "Торт без ингредиентов",
-            "Смешать всё и запечь"
-        );
-        
+        let recipe = create_test_recipe("Торт без ингредиентов", "Смешать всё и запечь");
+
         let result = validator.validate(&recipe);
-        
+
         assert!(!result.missing_critical_ingredients.is_empty());
-        assert!(result.missing_critical_ingredients.iter().any(|m| m.contains("мука")));
+        assert!(result
+            .missing_critical_ingredients
+            .iter()
+            .any(|m| m.contains("мука")));
     }
 }

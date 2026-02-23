@@ -5,7 +5,7 @@ use crate::domain::{
 use crate::infrastructure::persistence::{
     RecipeRepositoryTrait, InventoryBatchRepositoryTrait, CatalogIngredientRepositoryTrait,
 };
-use crate::shared::{AppError, AppResult, UserId, TenantId, Language};
+use crate::shared::{AppError, AppResult, UserId, TenantId, Language, PaginatedResponse, PaginationParams};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -44,7 +44,7 @@ impl RecipeService {
                 .find_by_id(ingredient.catalog_ingredient_id())
                 .await?
                 .is_some();
-            
+
             if !exists {
                 return Err(AppError::NotFound(format!(
                     "Catalog ingredient {} not found",
@@ -57,51 +57,45 @@ impl RecipeService {
             user_id,
             tenant_id,
             name,
-            RecipeType::Final, // Default to final recipe
+            RecipeType::Final,
             servings,
             ingredients,
-            vec![], // No components yet
-            None,   // No instructions yet
+            vec![],
+            None,
         )?;
 
         self.recipe_repo.create(&recipe, user_id, tenant_id).await?;
         Ok(recipe)
     }
 
-    /// Get recipe by ID
-    pub async fn get_recipe(&self, id: RecipeId, user_id: UserId) -> AppResult<Option<Recipe>> {
-        self.recipe_repo.find_by_id(id, user_id).await
+    /// 🔒 TENANT ISOLATION: Get recipe by ID within tenant
+    pub async fn get_recipe(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<Option<Recipe>> {
+        self.recipe_repo.find_by_id(id, tenant_id).await
     }
 
-    /// List all recipes for user
-    pub async fn list_recipes(&self, user_id: UserId) -> AppResult<Vec<Recipe>> {
-        self.recipe_repo.list_by_user(user_id).await
+    /// 🔒 TENANT ISOLATION: List all recipes for tenant (paginated)
+    pub async fn list_recipes(
+        &self,
+        tenant_id: TenantId,
+        pagination: &PaginationParams,
+    ) -> AppResult<PaginatedResponse<Recipe>> {
+        self.recipe_repo.list_by_tenant(tenant_id, pagination).await
     }
 
-    /// Delete recipe
-    pub async fn delete_recipe(&self, id: RecipeId, user_id: UserId) -> AppResult<bool> {
-        self.recipe_repo.delete(id, user_id).await
+    /// 🔒 TENANT ISOLATION: Delete recipe within tenant
+    pub async fn delete_recipe(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<bool> {
+        self.recipe_repo.delete(id, tenant_id).await
     }
 
-    /// Calculate recipe cost based on current inventory prices
-    /// 
-    /// This method:
-    /// 1. Loads the recipe with all ingredients
-    /// 2. For each ingredient, finds the latest inventory product with that catalog_ingredient_id
-    /// 3. Calculates ingredient cost = required_quantity * (inventory_unit_price / inventory_quantity)
-    /// 4. Aggregates all costs into RecipeCost with breakdown
-    /// 
-    /// Returns AppError::NotFound if:
-    /// - Recipe doesn't exist
-    /// - Any ingredient has no inventory (no price data available)
+    /// 🔒 TENANT ISOLATION: Calculate recipe cost within tenant
     pub async fn calculate_cost(
         &self,
         recipe_id: RecipeId,
-        user_id: UserId,
+        tenant_id: TenantId,
     ) -> AppResult<RecipeCost> {
         // Load recipe
         let recipe = self.recipe_repo
-            .find_by_id(recipe_id, user_id)
+            .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Recipe not found".to_string()))?;
 
@@ -109,12 +103,10 @@ impl RecipeService {
         let inventory_products = self.inventory_repo.list_by_tenant(recipe.tenant_id()).await?;
 
         // Build map: catalog_ingredient_id -> (quantity, price)
-        // Use the latest added product for each ingredient
         let mut price_map: HashMap<CatalogIngredientId, (Quantity, Money)> = HashMap::new();
-        
+
         for product in inventory_products {
             let key = product.catalog_ingredient_id;
-            // Always update (last wins, assuming list_by_user returns newest first)
             price_map.insert(
                 key,
                 (product.quantity, product.price_per_unit)
@@ -126,7 +118,7 @@ impl RecipeService {
 
         for recipe_ingredient in recipe.ingredients() {
             let ingredient_id = recipe_ingredient.catalog_ingredient_id();
-            
+
             // Get inventory price data
             let (_inventory_qty, inventory_price) = price_map
                 .get(&ingredient_id)
@@ -135,15 +127,13 @@ impl RecipeService {
                     ingredient_id.as_uuid()
                 )))?;
 
-            // Unit price is already stored as per unit in our new Batch model
             let unit_price_cents = inventory_price.as_cents() as f64;
             let unit_price = Money::from_cents(unit_price_cents.round() as i64)?;
-            
-            // Calculate ingredient cost: required_quantity * unit_price
+
             let ingredient_cost_cents = recipe_ingredient.quantity().value() * unit_price_cents;
             let ingredient_cost = Money::from_cents(ingredient_cost_cents.round() as i64)?;
 
-            // Load ingredient name from catalog for breakdown
+            // Load ingredient name from catalog
             let catalog_ingredient = self.catalog_repo
                 .find_by_id(ingredient_id)
                 .await?
@@ -172,12 +162,12 @@ impl RecipeService {
         Ok(recipe_cost)
     }
 
-    /// Update recipe ingredients
+    /// 🔒 TENANT ISOLATION: Update recipe ingredients within tenant
     pub async fn update_ingredients(
         &self,
         recipe_id: RecipeId,
         ingredients: Vec<RecipeIngredient>,
-        user_id: UserId,
+        tenant_id: TenantId,
     ) -> AppResult<()> {
         // Validate that all ingredients exist in catalog
         for ingredient in &ingredients {
@@ -185,7 +175,7 @@ impl RecipeService {
                 .find_by_id(ingredient.catalog_ingredient_id())
                 .await?
                 .is_some();
-            
+
             if !exists {
                 return Err(AppError::NotFound(format!(
                     "Catalog ingredient {} not found",
@@ -194,7 +184,7 @@ impl RecipeService {
             }
         }
 
-        self.recipe_repo.update_ingredients(recipe_id, ingredients, user_id).await
+        self.recipe_repo.update_ingredients(recipe_id, ingredients, tenant_id).await
     }
 }
 
@@ -202,7 +192,6 @@ impl RecipeService {
 mod tests {
     #[test]
     fn test_recipe_service_can_be_created() {
-        // This test ensures RecipeService compiles with Arc<dyn Trait>
-        // Actual functionality requires database, so tested via integration tests
+        // Ensures RecipeService compiles with Arc<dyn Trait>
     }
 }

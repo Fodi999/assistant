@@ -1,20 +1,18 @@
 use crate::domain::{
     catalog::CatalogIngredientId,
     inventory::{
-        BatchStatus, ExpirationSeverity, InventoryBatch, InventoryBatchId, InventoryMovement,
-        Money, MovementType, Quantity, calculate_expiration_status,
+        calculate_expiration_status, BatchStatus, ExpirationSeverity, InventoryBatch,
+        InventoryBatchId, InventoryMovement, Money, MovementType, Quantity,
     },
 };
-use crate::infrastructure::persistence::{
-    InventoryBatchRepository, InventoryBatchRepositoryTrait,
-};
+use crate::infrastructure::persistence::{InventoryBatchRepository, InventoryBatchRepositoryTrait};
 use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use time::OffsetDateTime;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 
 /// Aggregated inventory status for dashboard
 #[derive(Debug, Clone, Serialize)]
@@ -97,14 +95,18 @@ impl InventoryService {
     }
 
     /// Comprehensive Dashboard for the Owner
-    pub async fn get_dashboard(&self, tenant_id: TenantId, language: Language) -> AppResult<InventoryDashboard> {
+    pub async fn get_dashboard(
+        &self,
+        tenant_id: TenantId,
+        language: Language,
+    ) -> AppResult<InventoryDashboard> {
         let lang_code = language.code();
 
         // 1. Get current stock value (cents)
         let total_stock_value_cents: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(remaining_quantity * price_per_unit_cents), 0)::BIGINT 
              FROM inventory_batches 
-             WHERE tenant_id = $1 AND status = 'active'"
+             WHERE tenant_id = $1 AND status = 'active'",
         )
         .bind(tenant_id.as_uuid())
         .fetch_one(&self.pool)
@@ -117,7 +119,9 @@ impl InventoryService {
         let loss_report = self.get_loss_report(tenant_id, 30, lang_code).await?;
 
         // 4. Calculate Stockout Predictions
-        let stockout_risks = self.calculate_stockout_predictions(tenant_id, lang_code).await?;
+        let stockout_risks = self
+            .calculate_stockout_predictions(tenant_id, lang_code)
+            .await?;
 
         // 5. Identify Risk Products
         let expired_risks = self.identify_risk_products(tenant_id, lang_code).await?;
@@ -132,7 +136,11 @@ impl InventoryService {
         })
     }
 
-    async fn calculate_stockout_predictions(&self, tenant_id: TenantId, lang_code: &str) -> AppResult<Vec<StockoutPrediction>> {
+    async fn calculate_stockout_predictions(
+        &self,
+        tenant_id: TenantId,
+        lang_code: &str,
+    ) -> AppResult<Vec<StockoutPrediction>> {
         let query = r#"
             WITH consumption AS (
                 SELECT 
@@ -182,7 +190,7 @@ impl InventoryService {
         for row in rows {
             let total_qty: Decimal = row.get("total_qty");
             let avg_daily: Decimal = row.get("avg_daily");
-            
+
             let days_until = if avg_daily > Decimal::ZERO {
                 (total_qty / avg_daily).to_f64().unwrap_or(f64::INFINITY)
             } else {
@@ -201,7 +209,11 @@ impl InventoryService {
         Ok(results)
     }
 
-    async fn identify_risk_products(&self, tenant_id: TenantId, lang_code: &str) -> AppResult<Vec<RiskProduct>> {
+    async fn identify_risk_products(
+        &self,
+        tenant_id: TenantId,
+        lang_code: &str,
+    ) -> AppResult<Vec<RiskProduct>> {
         let query = r#"
             SELECT 
                 ib.id as batch_id,
@@ -241,7 +253,10 @@ impl InventoryService {
                 name: row.get("ingredient_name"),
                 status: row.get("risk_status"),
                 batch_id: row.get("batch_id"),
-                remaining_quantity: row.get::<Decimal, _>("remaining_quantity").to_f64().unwrap_or(0.0),
+                remaining_quantity: row
+                    .get::<Decimal, _>("remaining_quantity")
+                    .to_f64()
+                    .unwrap_or(0.0),
             });
         }
 
@@ -273,7 +288,7 @@ impl InventoryService {
             received_at,
             expires_at,
         );
-        
+
         batch.supplier = supplier;
         batch.invoice_number = invoice_number;
 
@@ -281,8 +296,10 @@ impl InventoryService {
 
         // Use transaction to ensure both batch and movement are created
         let mut tx = self.pool.begin().await?;
-        
-        self.inventory_repo.create_in_transaction(&mut tx, &batch).await?;
+
+        self.inventory_repo
+            .create_in_transaction(&mut tx, &batch)
+            .await?;
 
         // 🎯 Record IN movement for audit
         let mut movement = InventoryMovement::new(
@@ -296,7 +313,9 @@ impl InventoryService {
         movement.reason = Some("Purchase/Inbound shipment".to_string());
         movement.reference_type = Some("purchase".to_string());
 
-        self.inventory_repo.record_movement(&mut tx, &movement).await?;
+        self.inventory_repo
+            .record_movement(&mut tx, &movement)
+            .await?;
 
         tx.commit().await?;
 
@@ -314,7 +333,18 @@ impl InventoryService {
         received_at: OffsetDateTime,
         expires_at: OffsetDateTime,
     ) -> AppResult<InventoryBatchId> {
-        self.add_batch(user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, quantity, None, None, received_at, expires_at).await
+        self.add_batch(
+            user_id,
+            tenant_id,
+            catalog_ingredient_id,
+            price_per_unit_cents,
+            quantity,
+            None,
+            None,
+            received_at,
+            expires_at,
+        )
+        .await
     }
 
     /// Get stock summary (runtime calculation from batches)
@@ -344,10 +374,22 @@ impl InventoryService {
         let mut summaries = Vec::new();
         for row in rows {
             summaries.push(StockSummary {
-                ingredient_id: row.try_get("catalog_ingredient_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                name: row.try_get("ingredient_name").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                total_quantity: row.try_get::<Decimal, _>("total_quantity").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?.to_f64().unwrap_or(0.0),
-                avg_price_cents: row.try_get::<Decimal, _>("avg_price_cents").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?.to_i64().unwrap_or(0),
+                ingredient_id: row
+                    .try_get("catalog_ingredient_id")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                name: row
+                    .try_get("ingredient_name")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                total_quantity: row
+                    .try_get::<Decimal, _>("total_quantity")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?
+                    .to_f64()
+                    .unwrap_or(0.0),
+                avg_price_cents: row
+                    .try_get::<Decimal, _>("avg_price_cents")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?
+                    .to_i64()
+                    .unwrap_or(0),
             });
         }
 
@@ -446,9 +488,7 @@ impl InventoryService {
 
         Ok(batches
             .into_iter()
-            .filter(|b| {
-                b.expires_at <= limit && b.status == BatchStatus::Active
-            })
+            .filter(|b| b.expires_at <= limit && b.status == BatchStatus::Active)
             .collect())
     }
 
@@ -499,38 +539,69 @@ impl InventoryService {
 
         let rows = sqlx::query(query)
             .bind(tenant_id.as_uuid())
-            .bind(lang_code)  // user.language ('en'|'pl'|'uk'|'ru')
+            .bind(lang_code) // user.language ('en'|'pl'|'uk'|'ru')
             .fetch_all(&self.pool)
             .await?;
 
         let mut views = Vec::new();
         let now = OffsetDateTime::now_utc();
-        
+
         for row in rows {
-            let expires_at: OffsetDateTime = row.try_get("expires_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let expires_at: OffsetDateTime = row
+                .try_get("expires_at")
+                .map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
             let status = calculate_expiration_status(Some(expires_at), now);
 
             views.push(InventoryView {
-                id: row.try_get("id").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                id: row
+                    .try_get("id")
+                    .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
                 product: ProductInfo {
-                    id: row.try_get("catalog_ingredient_id").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
-                    name: row.try_get("ingredient_name").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
-                    category: row.try_get("category_name").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
-                    base_unit: row.try_get("base_unit").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
-                    image_url: row.try_get("image_url").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
-                    min_stock_threshold: row.try_get::<Decimal, _>("min_stock_threshold")
+                    id: row
+                        .try_get("catalog_ingredient_id")
+                        .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    name: row
+                        .try_get("ingredient_name")
+                        .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    category: row
+                        .try_get("category_name")
+                        .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    base_unit: row
+                        .try_get("base_unit")
+                        .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    image_url: row
+                        .try_get("image_url")
+                        .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                    min_stock_threshold: row
+                        .try_get::<Decimal, _>("min_stock_threshold")
                         .map_err(|e| AppError::internal(&format!("DB: {}", e)))?
                         .to_f64()
                         .unwrap_or(0.0),
                 },
-                quantity: row.try_get::<Decimal, _>("quantity").map_err(|e| AppError::internal(&format!("DB Qty Error: {}", e)))?.to_f64().unwrap_or(0.0),
-                remaining_quantity: row.try_get::<Decimal, _>("remaining_quantity").map_err(|e| AppError::internal(&format!("DB Rem Error: {}", e)))?.to_f64().unwrap_or(0.0),
-                price_per_unit_cents: row.try_get("price_per_unit_cents").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                quantity: row
+                    .try_get::<Decimal, _>("quantity")
+                    .map_err(|e| AppError::internal(&format!("DB Qty Error: {}", e)))?
+                    .to_f64()
+                    .unwrap_or(0.0),
+                remaining_quantity: row
+                    .try_get::<Decimal, _>("remaining_quantity")
+                    .map_err(|e| AppError::internal(&format!("DB Rem Error: {}", e)))?
+                    .to_f64()
+                    .unwrap_or(0.0),
+                price_per_unit_cents: row
+                    .try_get("price_per_unit_cents")
+                    .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
                 severity: status,
-                received_at: row.try_get("received_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                received_at: row
+                    .try_get("received_at")
+                    .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
                 expires_at,
-                created_at: row.try_get("created_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
-                updated_at: row.try_get("updated_at").map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                created_at: row
+                    .try_get("created_at")
+                    .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
+                updated_at: row
+                    .try_get("updated_at")
+                    .map_err(|e| AppError::internal(&format!("DB: {}", e)))?,
             });
         }
 
@@ -556,7 +627,8 @@ impl InventoryService {
         let mut tx = self.pool.begin().await?;
 
         // 1. Get active batches with FOR UPDATE lock
-        let batches = self.inventory_repo
+        let batches = self
+            .inventory_repo
             .list_active_by_ingredient_for_update(&mut tx, tenant_id, catalog_ingredient_id)
             .await?;
 
@@ -577,12 +649,14 @@ impl InventoryService {
             // 2. Update batch
             let new_remaining = batch_available - deduction;
             batch.remaining_quantity = Quantity::from_decimal(new_remaining)?;
-            
+
             if new_remaining <= Decimal::ZERO {
                 batch.status = BatchStatus::Exhausted;
             }
 
-            self.inventory_repo.update_in_transaction(&mut tx, &batch).await?;
+            self.inventory_repo
+                .update_in_transaction(&mut tx, &batch)
+                .await?;
 
             // 3. Record movement (OutSale)
             let mut movement = InventoryMovement::new(
@@ -596,7 +670,9 @@ impl InventoryService {
             movement.reference_type = reference_type.clone();
             movement.notes = notes.clone();
 
-            self.inventory_repo.record_movement(&mut tx, &movement).await?;
+            self.inventory_repo
+                .record_movement(&mut tx, &movement)
+                .await?;
 
             remaining_to_deduct -= deduction;
         }
@@ -656,8 +732,10 @@ impl InventoryService {
             );
             movement.reason = Some("Auto-exhaustion due to expiration".to_string());
             movement.reference_type = Some("expiration".to_string());
-            
-            self.inventory_repo.record_movement(&mut tx, &movement).await?;
+
+            self.inventory_repo
+                .record_movement(&mut tx, &movement)
+                .await?;
             processed_count += 1;
         }
 
@@ -666,7 +744,12 @@ impl InventoryService {
     }
 
     /// Get loss report (expired products) for the last N days
-    pub async fn get_loss_report(&self, tenant_id: TenantId, days: i32, lang_code: &str) -> AppResult<LossReport> {
+    pub async fn get_loss_report(
+        &self,
+        tenant_id: TenantId,
+        days: i32,
+        lang_code: &str,
+    ) -> AppResult<LossReport> {
         // 1. Get losses (OUT_EXPIRE)
         let loss_query = r#"
             SELECT 
@@ -702,11 +785,14 @@ impl InventoryService {
         for row in loss_rows {
             let cents: i64 = row.try_get("total_loss_cents")?;
             total_loss_cents += cents;
-            
+
             items.push(LossReportItem {
                 ingredient_id: row.try_get("ingredient_id")?,
                 ingredient_name: row.try_get("ingredient_name")?,
-                lost_quantity: row.try_get::<Decimal, _>("lost_quantity")?.to_f64().unwrap_or(0.0),
+                lost_quantity: row
+                    .try_get::<Decimal, _>("lost_quantity")?
+                    .to_f64()
+                    .unwrap_or(0.0),
                 loss_value_cents: cents,
             });
         }
@@ -747,7 +833,10 @@ impl InventoryService {
     }
 
     /// Get all active alerts (delegated to alert service)
-    pub async fn get_alerts(&self, tenant_id: TenantId) -> AppResult<Vec<crate::domain::inventory::InventoryAlert>> {
+    pub async fn get_alerts(
+        &self,
+        tenant_id: TenantId,
+    ) -> AppResult<Vec<crate::domain::inventory::InventoryAlert>> {
         self.alert_service.get_alerts(tenant_id).await
     }
 }

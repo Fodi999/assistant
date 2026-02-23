@@ -28,9 +28,7 @@ pub struct UserInfo {
 }
 
 /// GET /api/admin/users - List all users with their restaurants
-pub async fn list_users(
-    State(pool): State<PgPool>,
-) -> Result<impl IntoResponse, StatusCode> {
+pub async fn list_users(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
     // Query to get users with their tenants
     let users = sqlx::query_as::<_, UserInfo>(
         r#"
@@ -46,7 +44,7 @@ pub async fn list_users(
         FROM users u
         JOIN tenants t ON u.tenant_id = t.id
         ORDER BY u.login_count DESC, u.last_login_at DESC NULLS LAST
-        "#
+        "#,
     )
     .fetch_all(&pool)
     .await
@@ -68,9 +66,7 @@ pub struct UserStats {
 }
 
 /// GET /api/admin/stats - Get user statistics
-pub async fn get_stats(
-    State(pool): State<PgPool>,
-) -> Result<impl IntoResponse, StatusCode> {
+pub async fn get_stats(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
     let stats = sqlx::query_as::<_, UserStats>(
         r#"
         SELECT 
@@ -78,7 +74,7 @@ pub async fn get_stats(
             COUNT(DISTINCT t.id) as total_restaurants
         FROM users u
         JOIN tenants t ON u.tenant_id = t.id
-        "#
+        "#,
     )
     .fetch_one(&pool)
     .await
@@ -97,16 +93,15 @@ pub async fn delete_user(
     Path(user_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // First, get the tenant_id for this user
-    let tenant_id: Option<String> = sqlx::query_scalar(
-        "SELECT tenant_id::text FROM users WHERE id = $1::uuid"
-    )
-    .bind(&user_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error fetching tenant_id: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let tenant_id: Option<String> =
+        sqlx::query_scalar("SELECT tenant_id::text FROM users WHERE id = $1::uuid")
+            .bind(&user_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Database error fetching tenant_id: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     let Some(tenant_id) = tenant_id else {
         tracing::warn!("User {} not found", user_id);
@@ -114,16 +109,14 @@ pub async fn delete_user(
     };
 
     // Delete the tenant (CASCADE will delete user and all related data)
-    let result = sqlx::query(
-        "DELETE FROM tenants WHERE id = $1::uuid"
-    )
-    .bind(&tenant_id)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error deleting tenant: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let result = sqlx::query("DELETE FROM tenants WHERE id = $1::uuid")
+        .bind(&tenant_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error deleting tenant: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if result.rows_affected() == 0 {
         tracing::warn!("Tenant {} not found", tenant_id);

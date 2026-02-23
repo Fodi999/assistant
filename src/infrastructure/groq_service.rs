@@ -13,23 +13,23 @@ pub struct GroqTranslationResponse {
 /// AI Classification Response - для автоматического определения категории и unit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiClassification {
-    pub category_slug: String,  // Например: "dairy_and_eggs", "vegetables", "fruits"
-    pub unit: String,           // Например: "kilogram", "piece", "liter"
+    pub category_slug: String, // Например: "dairy_and_eggs", "vegetables", "fruits"
+    pub unit: String,          // Например: "kilogram", "piece", "liter"
 }
 
 /// 🚀 UNIFIED RESPONSE - Single AI call returns everything!
-/// 
+///
 /// Вместо 3 раздельных вызовов (normalize + classify + translate)
 /// One unified request returns all at once
 /// Performance: ×3 faster, 1/3 cost
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnifiedProductResponse {
-    pub name_en: String,           // Нормализованное имя на английском
-    pub name_pl: String,           // Перевод на польский
-    pub name_ru: String,           // Перевод на русский
-    pub name_uk: String,           // Перевод на украинский
-    pub category_slug: String,     // Категория (dairy_and_eggs, fruits, vegetables, meat, seafood, grains, beverages)
-    pub unit: String,              // Unit (piece, kilogram, gram, liter, milliliter)
+    pub name_en: String,       // Нормализованное имя на английском
+    pub name_pl: String,       // Перевод на польский
+    pub name_ru: String,       // Перевод на русский
+    pub name_uk: String,       // Перевод на украинский
+    pub category_slug: String, // Категория (dairy_and_eggs, fruits, vegetables, meat, seafood, grains, beverages)
+    pub unit: String,          // Unit (piece, kilogram, gram, liter, milliliter)
 }
 
 /// Сервис для вызова Groq API с минимальными затратами
@@ -56,63 +56,71 @@ impl GroqService {
     }
 
     /// 🌐 Оптимизированная проверка ASCII
-    /// 
+    ///
     /// ВАЖНО: Проверяем только алфавитные символы + цифры + пробелы
     /// Не доверяем другим ASCII символам (могут быть спецсимволы)
-    /// 
+    ///
     /// Это исключает ложные срабатывания на ASCII спецсимволы
     fn is_likely_english(text: &str) -> bool {
         // Пустой или только пробелы = не английский
         if text.trim().is_empty() {
             return false;
         }
-        
+
         // Проверяем ТОЛЬКО буквы (a-z, A-Z), цифры, пробелы, базовую пунктуацию
         // Всё остальное = вероятно не английский
-        text.chars().all(|c| {
-            c.is_ascii_alphanumeric() || c.is_whitespace() || c == '-' || c == '\''
-        })
+        text.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c.is_whitespace() || c == '-' || c == '\'')
     }
 
     /// 🌐 Нормализация входного текста в английский язык
-    /// 
+    ///
     /// Оптимизация: если текст содержит только [a-zA-Z0-9\s'-], это вероятно английский
     /// Если есть other symbols → AI перевод
-    /// 
+    ///
     /// Это экономит 1 AI вызов для англоязычного ввода (вместо detect + translate)
     pub async fn normalize_to_english(&self, input: &str) -> Result<String, AppError> {
         let trimmed = input.trim();
-        
+
         // 🔍 Оптимизация: только буквы + цифры + пробелы = скорее всего английский
         if Self::is_likely_english(trimmed) {
-            tracing::debug!("Input detected as likely English (allowed chars only): {}", trimmed);
+            tracing::debug!(
+                "Input detected as likely English (allowed chars only): {}",
+                trimmed
+            );
             return Ok(trimmed.to_string());
         }
-        
+
         // Содержит non-ASCII или спецсимволы = переводим в английский
-        tracing::debug!("Non-English input detected, translating to English: {}", trimmed);
+        tracing::debug!(
+            "Non-English input detected, translating to English: {}",
+            trimmed
+        );
         self.translate_to_language(trimmed, "English").await
     }
 
     /// Минимальный запрос на перевод (одна модель, температура 0, короткий prompt)
-    /// 
+    ///
     /// # Аргументы
     /// * `ingredient_name` - Английское название ингредиента (например "Apple")
-    /// 
+    ///
     /// # Возвращает
     /// * `GroqTranslationResponse` с переводами на PL, RU, UK
-    /// 
+    ///
     /// # Примечания
     /// - Используем temperature=0 для детерминированных результатов
     /// - Очень короткий prompt для минимизации токенов
     /// - Один запрос на слово
     /// - Результат сохраняется в dictionary (кеш навсегда)
     /// - Timeout: 5 секунд (встроенный в reqwest client)
-    pub async fn translate(&self, ingredient_name: &str) -> Result<GroqTranslationResponse, AppError> {
+    pub async fn translate(
+        &self,
+        ingredient_name: &str,
+    ) -> Result<GroqTranslationResponse, AppError> {
         // Проверка длины (не переводим очень длинные названия)
         if ingredient_name.len() > 50 {
             return Err(AppError::validation(
-                "Ingredient name too long for automatic translation"
+                "Ingredient name too long for automatic translation",
             ));
         }
 
@@ -144,7 +152,10 @@ Respond with ONLY valid JSON, no other text:
 
         loop {
             attempt += 1;
-            match self.translate_with_timeout(&request_body, ingredient_name).await {
+            match self
+                .translate_with_timeout(&request_body, ingredient_name)
+                .await
+            {
                 Ok(response) => return Ok(response),
                 Err(e) if attempt <= MAX_RETRIES => {
                     tracing::warn!("Groq translation attempt {} failed, retrying...", attempt);
@@ -163,7 +174,8 @@ Respond with ONLY valid JSON, no other text:
         request_body: &serde_json::Value,
         ingredient_name: &str,
     ) -> Result<GroqTranslationResponse, AppError> {
-        let response = self.http_client
+        let response = self
+            .http_client
             .post("https://api.groq.com/openai/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&request_body)
@@ -197,16 +209,15 @@ Respond with ONLY valid JSON, no other text:
         })?;
 
         // ✅ Критическая проверка: choices не может быть пусто
-        let choice = data.choices.get(0)
-            .ok_or_else(|| {
-                tracing::error!("Groq returned empty choices array");
-                AppError::internal("No translation response")
-            })?;
+        let choice = data.choices.get(0).ok_or_else(|| {
+            tracing::error!("Groq returned empty choices array");
+            AppError::internal("No translation response")
+        })?;
 
         let content = &choice.message.content;
-        
+
         tracing::debug!("Groq response content: {}", content);
-        
+
         // Попытка парсить JSON прямо
         let translation: GroqTranslationResponse = serde_json::from_str(content)
             .or_else(|_| {
@@ -220,7 +231,7 @@ Respond with ONLY valid JSON, no other text:
                 }
                 Err(serde_json::Error::io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "No JSON found"
+                    "No JSON found",
                 )))
             })
             .map_err(|e| {
@@ -231,13 +242,22 @@ Respond with ONLY valid JSON, no other text:
 
         // Валидация результатов - но допускаем пустые для некритичных полей
         if translation.pl.trim().is_empty() {
-            tracing::warn!("Groq returned empty PL translation for: {}", ingredient_name);
+            tracing::warn!(
+                "Groq returned empty PL translation for: {}",
+                ingredient_name
+            );
         }
         if translation.ru.trim().is_empty() {
-            tracing::warn!("Groq returned empty RU translation for: {}", ingredient_name);
+            tracing::warn!(
+                "Groq returned empty RU translation for: {}",
+                ingredient_name
+            );
         }
         if translation.uk.trim().is_empty() {
-            tracing::warn!("Groq returned empty UK translation for: {}", ingredient_name);
+            tracing::warn!(
+                "Groq returned empty UK translation for: {}",
+                ingredient_name
+            );
         }
 
         tracing::info!("✅ Groq translation successful for: {}", ingredient_name);
@@ -246,11 +266,15 @@ Respond with ONLY valid JSON, no other text:
     }
 
     /// 🔄 Универсальный перевод в целевой язык
-    /// 
+    ///
     /// Может переводить из любого языка в любой
-    /// 
+    ///
     /// ВАЖНО: Для recipe instructions не обрезаем текст (может быть длинным)
-    pub async fn translate_to_language(&self, text: &str, target_lang: &str) -> Result<String, AppError> {
+    pub async fn translate_to_language(
+        &self,
+        text: &str,
+        target_lang: &str,
+    ) -> Result<String, AppError> {
         if text.len() > 5000 {
             return Err(AppError::validation("Text too long for translation"));
         }
@@ -260,8 +284,7 @@ Respond with ONLY valid JSON, no other text:
 Return ONLY the translated text, nothing else.
 
 Text: {}"#,
-            target_lang,
-            text
+            target_lang, text
         );
 
         let request_body = serde_json::json!({
@@ -282,11 +305,12 @@ Text: {}"#,
             match self.send_groq_request(&request_body).await {
                 Ok(response) => {
                     // ✅ Для recipe instructions - minimal cleanup (только trim и удаление концевой пунктуации)
-                    let cleaned = response.trim()
+                    let cleaned = response
+                        .trim()
                         .trim_end_matches('.')
                         .trim_end_matches(',')
                         .trim();
-                    
+
                     tracing::debug!("Translated '{}' → '{}'", text, cleaned);
                     return Ok(cleaned.to_string());
                 }
@@ -301,7 +325,7 @@ Text: {}"#,
     }
 
     /// 🤖 AI анализ рецепта - генерация инсайтов
-    /// 
+    ///
     /// Возвращает JSON со структурированными данными:
     /// - steps: массив шагов приготовления
     /// - validation: предупреждения и ошибки
@@ -345,23 +369,26 @@ Text: {}"#,
     }
 
     /// 🧹 Извлечение переведённого слова из "болтливого" ответа LLM
-    /// 
+    ///
     /// Ожидаемые варианты "шума":
     /// 🚀 UNIFIED PROCESSING - Single AI call, returns everything!
-    /// 
+    ///
     /// Instead of:
     /// 1. normalize_to_english() → 1 AI call
     /// 2. classify_product() → 1 AI call
     /// 3. translate() → 1 AI call
-    /// 
+    ///
     /// We do: ONE call that returns all fields
-    /// 
+    ///
     /// Performance: 3x faster, 1/3 cost
     /// - Before: ~1800ms (normalize 500ms + classify 600ms + translate 700ms)
     /// - After: ~700ms (single unified call)
-    pub async fn process_unified(&self, name_input: &str) -> Result<UnifiedProductResponse, AppError> {
+    pub async fn process_unified(
+        &self,
+        name_input: &str,
+    ) -> Result<UnifiedProductResponse, AppError> {
         let trimmed = name_input.trim();
-        
+
         if trimmed.is_empty() {
             return Err(AppError::validation("Input cannot be empty"));
         }
@@ -435,7 +462,7 @@ Rules:
                 }
                 Err(serde_json::Error::io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "No JSON found in response"
+                    "No JSON found in response",
                 )))
             })
             .map_err(|e| {
@@ -447,8 +474,13 @@ Rules:
         // ✅ Validate extracted values
         self.validate_unified_response(&result)?;
 
-        tracing::info!("✅ Unified processing successful for: {}. Result: en={}, category={}, unit={}", 
-            trimmed, result.name_en, result.category_slug, result.unit);
+        tracing::info!(
+            "✅ Unified processing successful for: {}. Result: en={}, category={}, unit={}",
+            trimmed,
+            result.name_en,
+            result.category_slug,
+            result.unit
+        );
 
         Ok(result)
     }
@@ -462,24 +494,30 @@ Rules:
 
         // Validate category
         let allowed_categories = vec![
-            "dairy_and_eggs", "fruits", "vegetables", "meat", "seafood", "grains", "beverages"
+            "dairy_and_eggs",
+            "fruits",
+            "vegetables",
+            "meat",
+            "seafood",
+            "grains",
+            "beverages",
         ];
         if !allowed_categories.contains(&result.category_slug.as_str()) {
             tracing::error!("Invalid category from AI: {}", result.category_slug);
-            return Err(AppError::validation(
-                &format!("Invalid category: {}", result.category_slug)
-            ));
+            return Err(AppError::validation(&format!(
+                "Invalid category: {}",
+                result.category_slug
+            )));
         }
 
         // Validate unit
-        let allowed_units = vec![
-            "piece", "kilogram", "gram", "liter", "milliliter"
-        ];
+        let allowed_units = vec!["piece", "kilogram", "gram", "liter", "milliliter"];
         if !allowed_units.contains(&result.unit.as_str()) {
             tracing::error!("Invalid unit from AI: {}", result.unit);
-            return Err(AppError::validation(
-                &format!("Invalid unit: {}", result.unit)
-            ));
+            return Err(AppError::validation(&format!(
+                "Invalid unit: {}",
+                result.unit
+            )));
         }
 
         // Warn if translations are missing or fallback to English
@@ -497,16 +535,18 @@ Rules:
     }
 
     /// 🤖 AI классификация продукта (категория + unit) - LEGACY
-    /// 
+    ///
     /// На основе английского названия определяет:
     /// - category_slug: один из допустимых (dairy_and_eggs, fruits, vegetables, meat, seafood, grains, beverages)
     /// - unit: один из допустимых (piece, kilogram, gram, liter, milliliter)
-    /// 
+    ///
     /// ⚠️ Deprecated in favor of process_unified() but kept for backward compatibility
     /// ВАЖНО: Использует send_groq_request для унификации + retry логики
     pub async fn classify_product(&self, name_en: &str) -> Result<AiClassification, AppError> {
         if name_en.len() > 50 {
-            return Err(AppError::validation("Product name too long for classification"));
+            return Err(AppError::validation(
+                "Product name too long for classification",
+            ));
         }
 
         let prompt = format!(
@@ -555,14 +595,14 @@ Pick the best match. Do not invent values."#,
                             }
                             Err(serde_json::Error::io(std::io::Error::new(
                                 std::io::ErrorKind::InvalidData,
-                                "No JSON found"
+                                "No JSON found",
                             )))
                         })
                         .map_err(|e| {
                             tracing::error!("Failed to parse classification JSON: {}", e);
                             AppError::internal("Invalid classification response")
                         })?;
-                    
+
                     break classification;
                 }
                 Err(_e) if attempt <= MAX_RETRIES => {
@@ -576,43 +616,56 @@ Pick the best match. Do not invent values."#,
 
         // ✅ Валидация результатов
         let allowed_categories = vec![
-            "dairy_and_eggs", "fruits", "vegetables", "meat", "seafood", "grains", "beverages"
+            "dairy_and_eggs",
+            "fruits",
+            "vegetables",
+            "meat",
+            "seafood",
+            "grains",
+            "beverages",
         ];
-        let allowed_units = vec![
-            "piece", "kilogram", "gram", "liter", "milliliter"
-        ];
+        let allowed_units = vec!["piece", "kilogram", "gram", "liter", "milliliter"];
 
         if !allowed_categories.contains(&classification.category_slug.as_str()) {
             tracing::error!("Invalid category from AI: {}", classification.category_slug);
-            return Err(AppError::validation(
-                &format!("Invalid category from AI: {}", classification.category_slug)
-            ));
+            return Err(AppError::validation(&format!(
+                "Invalid category from AI: {}",
+                classification.category_slug
+            )));
         }
 
         if !allowed_units.contains(&classification.unit.as_str()) {
             tracing::error!("Invalid unit from AI: {}", classification.unit);
-            return Err(AppError::validation(
-                &format!("Invalid unit from AI: {}", classification.unit)
-            ));
+            return Err(AppError::validation(&format!(
+                "Invalid unit from AI: {}",
+                classification.unit
+            )));
         }
 
-        tracing::info!("✅ AI classification: category={}, unit={}", 
-            classification.category_slug, classification.unit);
+        tracing::info!(
+            "✅ AI classification: category={}, unit={}",
+            classification.category_slug,
+            classification.unit
+        );
 
         Ok(classification)
     }
 
     /// Внутренняя функция для отправки запроса к Groq и получения текста
-    /// 
+    ///
     /// ВАЖНО: Двойная страховка от hangs:
     /// 1. reqwest::Client::timeout(5s) — на уровне TCP
     /// 2. tokio::timeout(6s) — на уровне async операции
-    async fn send_groq_request(&self, request_body: &serde_json::Value) -> Result<String, AppError> {
+    async fn send_groq_request(
+        &self,
+        request_body: &serde_json::Value,
+    ) -> Result<String, AppError> {
         // Обертка в tokio::timeout (6 сек = 5 сек client timeout + 1 сек buffer)
         let result = tokio::time::timeout(
             Duration::from_secs(6),
-            self.send_groq_request_inner(request_body)
-        ).await;
+            self.send_groq_request_inner(request_body),
+        )
+        .await;
 
         match result {
             Ok(Ok(content)) => Ok(content),
@@ -625,10 +678,14 @@ Pick the best match. Do not invent values."#,
     }
 
     /// Внутренняя реализация запроса (без timeout wrapper)
-    async fn send_groq_request_inner(&self, request_body: &serde_json::Value) -> Result<String, AppError> {
+    async fn send_groq_request_inner(
+        &self,
+        request_body: &serde_json::Value,
+    ) -> Result<String, AppError> {
         tracing::debug!("📤 Sending Groq request: {:?}", request_body);
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .post("https://api.groq.com/openai/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&request_body)
@@ -643,25 +700,35 @@ Pick the best match. Do not invent values."#,
         tracing::debug!("📥 Groq response status: {}", status);
 
         if !response.status().is_success() {
-            let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unable to read error body".to_string());
             tracing::error!("❌ Groq API error (HTTP {}): {}", status, error_body);
-            return Err(AppError::internal(&format!("Groq API returned error: {} - {}", status, error_body)));
+            return Err(AppError::internal(&format!(
+                "Groq API returned error: {} - {}",
+                status, error_body
+            )));
         }
 
-        let data: GroqResponse = response.json().await
-            .map_err(|e| {
-                tracing::error!("❌ Failed to parse Groq JSON response: {:?}", e);
-                AppError::internal(&format!("Failed to parse Groq response: {}", e))
-            })?;
+        let data: GroqResponse = response.json().await.map_err(|e| {
+            tracing::error!("❌ Failed to parse Groq JSON response: {:?}", e);
+            AppError::internal(&format!("Failed to parse Groq response: {}", e))
+        })?;
 
         tracing::debug!("📥 Groq response data: {:?}", data);
 
-        let content = data.choices.get(0)
+        let content = data
+            .choices
+            .get(0)
             .ok_or_else(|| {
                 tracing::error!("❌ Groq returned empty choices array");
                 AppError::internal("No response from Groq")
             })?
-            .message.content.trim().to_string();
+            .message
+            .content
+            .trim()
+            .to_string();
 
         tracing::debug!("✅ Groq response content: {}", content);
 
@@ -692,7 +759,7 @@ mod tests {
     fn test_translation_response_parse() {
         let json = r#"{"pl":"Jabłko","ru":"Яблоко","uk":"Яблуко"}"#;
         let result: GroqTranslationResponse = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(result.pl, "Jabłko");
         assert_eq!(result.ru, "Яблоко");
         assert_eq!(result.uk, "Яблуко");

@@ -1,5 +1,5 @@
-use crate::shared::types::{UserId, TenantId};
 use super::step::AssistantStep;
+use crate::shared::types::{TenantId, UserId};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]

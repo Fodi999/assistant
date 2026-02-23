@@ -1,6 +1,9 @@
-use serde::{Serialize, Deserialize};
-use crate::shared::{Language, AssistantMessage, AssistantActionLabel, AssistantHint, translate_message, translate_action, translate_hint};
 use super::response::{AssistantAction, AssistantResponse};
+use crate::shared::{
+    translate_action, translate_hint, translate_message, AssistantActionLabel, AssistantHint,
+    AssistantMessage, Language,
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AssistantStep {
@@ -22,7 +25,7 @@ impl AssistantStep {
             Self::Report | Self::Completed => 100,
         }
     }
-    
+
     pub fn to_response(self, language: Language) -> AssistantResponse {
         match self {
             Self::Start => AssistantResponse {
@@ -31,7 +34,8 @@ impl AssistantStep {
                 warnings: vec![],
                 actions: vec![AssistantAction {
                     id: "start_inventory".to_string(),
-                    label: translate_action(AssistantActionLabel::AddProducts, language).to_string(),
+                    label: translate_action(AssistantActionLabel::AddProducts, language)
+                        .to_string(),
                 }],
                 step: self,
                 progress: self.progress(),
@@ -44,11 +48,13 @@ impl AssistantStep {
                 actions: vec![
                     AssistantAction {
                         id: "add_products".to_string(),
-                        label: translate_action(AssistantActionLabel::AddMoreProducts, language).to_string(),
+                        label: translate_action(AssistantActionLabel::AddMoreProducts, language)
+                            .to_string(),
                     },
                     AssistantAction {
                         id: "proceed_to_recipes".to_string(),
-                        label: translate_action(AssistantActionLabel::ProceedToRecipes, language).to_string(),
+                        label: translate_action(AssistantActionLabel::ProceedToRecipes, language)
+                            .to_string(),
                     },
                 ],
                 step: self,
@@ -62,11 +68,13 @@ impl AssistantStep {
                 actions: vec![
                     AssistantAction {
                         id: "add_recipe".to_string(),
-                        label: translate_action(AssistantActionLabel::AddRecipe, language).to_string(),
+                        label: translate_action(AssistantActionLabel::AddRecipe, language)
+                            .to_string(),
                     },
                     AssistantAction {
                         id: "proceed_to_dishes".to_string(),
-                        label: translate_action(AssistantActionLabel::ProceedToDishes, language).to_string(),
+                        label: translate_action(AssistantActionLabel::ProceedToDishes, language)
+                            .to_string(),
                     },
                 ],
                 step: self,
@@ -80,11 +88,13 @@ impl AssistantStep {
                 actions: vec![
                     AssistantAction {
                         id: "add_dish".to_string(),
-                        label: translate_action(AssistantActionLabel::AddDish, language).to_string(),
+                        label: translate_action(AssistantActionLabel::AddDish, language)
+                            .to_string(),
                     },
                     AssistantAction {
                         id: "generate_report".to_string(),
-                        label: translate_action(AssistantActionLabel::GenerateReport, language).to_string(),
+                        label: translate_action(AssistantActionLabel::GenerateReport, language)
+                            .to_string(),
                     },
                 ],
                 step: self,
@@ -98,7 +108,8 @@ impl AssistantStep {
                 actions: vec![
                     AssistantAction {
                         id: "view_report".to_string(),
-                        label: translate_action(AssistantActionLabel::ViewReport, language).to_string(),
+                        label: translate_action(AssistantActionLabel::ViewReport, language)
+                            .to_string(),
                     },
                     AssistantAction {
                         id: "finish".to_string(),
@@ -124,4 +135,3 @@ impl AssistantStep {
         }
     }
 }
-

@@ -103,10 +103,18 @@ fn translate_action_en(key: AssistantActionLabel) -> &'static str {
 
 fn translate_hint_en(key: AssistantHint) -> &'static str {
     match key {
-        AssistantHint::InventoryWhy => "Having a complete inventory helps track costs and prevent shortages.",
-        AssistantHint::RecipeWhy => "Recipes standardize preparation and calculate exact ingredient costs.",
-        AssistantHint::DishWhy => "Menu dishes combine recipes with pricing to calculate profit margins.",
-        AssistantHint::ReportWhy => "The report shows your business metrics and identifies opportunities.",
+        AssistantHint::InventoryWhy => {
+            "Having a complete inventory helps track costs and prevent shortages."
+        }
+        AssistantHint::RecipeWhy => {
+            "Recipes standardize preparation and calculate exact ingredient costs."
+        }
+        AssistantHint::DishWhy => {
+            "Menu dishes combine recipes with pricing to calculate profit margins."
+        }
+        AssistantHint::ReportWhy => {
+            "The report shows your business metrics and identifies opportunities."
+        }
     }
 }
 
@@ -142,8 +150,12 @@ fn translate_action_pl(key: AssistantActionLabel) -> &'static str {
 
 fn translate_hint_pl(key: AssistantHint) -> &'static str {
     match key {
-        AssistantHint::InventoryWhy => "Kompletny magazyn pomaga śledzić koszty i zapobiegać brakom.",
-        AssistantHint::RecipeWhy => "Przepisy standaryzują przygotowanie i obliczają dokładne koszty składników.",
+        AssistantHint::InventoryWhy => {
+            "Kompletny magazyn pomaga śledzić koszty i zapobiegać brakom."
+        }
+        AssistantHint::RecipeWhy => {
+            "Przepisy standaryzują przygotowanie i obliczają dokładne koszty składników."
+        }
         AssistantHint::DishWhy => "Dania menu łączą przepisy z cenami, obliczając marże zysku.",
         AssistantHint::ReportWhy => "Raport pokazuje metryki biznesowe i identyfikuje możliwości.",
     }
@@ -181,9 +193,15 @@ fn translate_action_uk(key: AssistantActionLabel) -> &'static str {
 
 fn translate_hint_uk(key: AssistantHint) -> &'static str {
     match key {
-        AssistantHint::InventoryWhy => "Повний склад допомагає відстежувати витрати та запобігати дефіциту.",
-        AssistantHint::RecipeWhy => "Рецепти стандартизують приготування та розраховують точну вартість інгредієнтів.",
-        AssistantHint::DishWhy => "Страви меню поєднують рецепти з цінами для розрахунку маржі прибутку.",
+        AssistantHint::InventoryWhy => {
+            "Повний склад допомагає відстежувати витрати та запобігати дефіциту."
+        }
+        AssistantHint::RecipeWhy => {
+            "Рецепти стандартизують приготування та розраховують точну вартість інгредієнтів."
+        }
+        AssistantHint::DishWhy => {
+            "Страви меню поєднують рецепти з цінами для розрахунку маржі прибутку."
+        }
         AssistantHint::ReportWhy => "Звіт показує бізнес-метрики та виявляє можливості.",
     }
 }
@@ -220,9 +238,15 @@ fn translate_action_ru(key: AssistantActionLabel) -> &'static str {
 
 fn translate_hint_ru(key: AssistantHint) -> &'static str {
     match key {
-        AssistantHint::InventoryWhy => "Полный склад помогает отслеживать затраты и предотвращать дефицит.",
-        AssistantHint::RecipeWhy => "Рецепты стандартизируют приготовление и рассчитывают точную стоимость ингредиентов.",
-        AssistantHint::DishWhy => "Блюда меню объединяют рецепты с ценами для расчёта маржи прибыли.",
+        AssistantHint::InventoryWhy => {
+            "Полный склад помогает отслеживать затраты и предотвращать дефицит."
+        }
+        AssistantHint::RecipeWhy => {
+            "Рецепты стандартизируют приготовление и рассчитывают точную стоимость ингредиентов."
+        }
+        AssistantHint::DishWhy => {
+            "Блюда меню объединяют рецепты с ценами для расчёта маржи прибыли."
+        }
         AssistantHint::ReportWhy => "Отчёт показывает бизнес-метрики и выявляет возможности.",
     }
 }
@@ -264,10 +288,7 @@ mod tests {
 
     #[test]
     fn test_translate_hints_all_languages() {
-        let keys = [
-            AssistantHint::InventoryWhy,
-            AssistantHint::RecipeWhy,
-        ];
+        let keys = [AssistantHint::InventoryWhy, AssistantHint::RecipeWhy];
 
         for key in keys {
             assert!(!translate_hint(key, Language::En).is_empty());

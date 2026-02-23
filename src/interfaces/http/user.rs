@@ -69,8 +69,12 @@ pub async fn get_avatar_upload_url(
     State(user_service): State<UserService>,
     axum::extract::Query(query): axum::extract::Query<GetAvatarUploadUrlQuery>,
 ) -> Result<Json<crate::application::AvatarUploadResponse>, crate::shared::AppError> {
-    let content_type = query.content_type.unwrap_or_else(|| "image/webp".to_string());
-    let response = user_service.get_avatar_upload_url(auth_user.tenant_id, auth_user.user_id, &content_type).await?;
+    let content_type = query
+        .content_type
+        .unwrap_or_else(|| "image/webp".to_string());
+    let response = user_service
+        .get_avatar_upload_url(auth_user.tenant_id, auth_user.user_id, &content_type)
+        .await?;
     Ok(Json(response))
 }
 
@@ -80,6 +84,8 @@ pub async fn update_avatar_url(
     State(user_service): State<UserService>,
     Json(req): Json<UpdateAvatarRequest>,
 ) -> Result<axum::http::StatusCode, crate::shared::AppError> {
-    user_service.update_avatar_url(auth_user.user_id, req.avatar_url).await?;
+    user_service
+        .update_avatar_url(auth_user.user_id, req.avatar_url)
+        .await?;
     Ok(axum::http::StatusCode::OK)
 }

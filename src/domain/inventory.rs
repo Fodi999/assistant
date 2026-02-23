@@ -1,10 +1,10 @@
 use crate::domain::catalog::CatalogIngredientId;
 use crate::shared::{AppError, AppResult, TenantId, UserId};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 
 /// Inventory batch ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -82,18 +82,20 @@ impl Money {
         if quantity < Decimal::ZERO {
             return Err(AppError::validation("Quantity cannot be negative"));
         }
-        
+
         // Convert money to decimal for precise calculation
         let money_dec = Decimal::from(self.0);
         let result_dec = money_dec * quantity;
-        
+
         // Round to nearest integer (cents)
-        let result = result_dec.round().to_i64()
+        let result = result_dec
+            .round()
+            .to_i64()
             .ok_or_else(|| AppError::validation("Money calculation overflow"))?;
-            
+
         Ok(Money(result))
     }
-    
+
     /// Legacy multiply for f64 (internal use or migration)
     pub fn multiply_f64(&self, quantity: f64) -> AppResult<Money> {
         if quantity < 0.0 {
@@ -115,13 +117,13 @@ impl Quantity {
         }
         let mut dec = Decimal::from_f64_retain(value)
             .ok_or_else(|| AppError::validation("Invalid quantity value"))?;
-        
+
         // Round to 12 decimal places to eliminate f64 conversion noise
         dec = dec.round_dp(12);
-        
+
         Ok(Self(dec))
     }
-    
+
     pub fn from_decimal(value: Decimal) -> AppResult<Self> {
         if value < Decimal::ZERO {
             return Err(AppError::validation("Quantity cannot be negative"));
@@ -132,7 +134,7 @@ impl Quantity {
     pub fn value(&self) -> f64 {
         self.0.to_f64().unwrap_or(0.0)
     }
-    
+
     pub fn decimal(&self) -> Decimal {
         self.0
     }
@@ -163,34 +165,34 @@ pub struct InventoryBatch {
     pub id: InventoryBatchId,
     pub user_id: UserId,
     pub tenant_id: TenantId,
-    
+
     /// Reference to catalog ingredient
     pub catalog_ingredient_id: CatalogIngredientId,
-    
+
     /// Purchase price per unit (in smallest currency unit)
     pub price_per_unit: Money,
-    
+
     /// Original quantity purchased
     pub quantity: Quantity,
-    
+
     /// Current remaining quantity
     pub remaining_quantity: Quantity,
-    
+
     /// Supplier information
     pub supplier: Option<String>,
-    
+
     /// Invoice/Document reference
     pub invoice_number: Option<String>,
-    
+
     /// Batch status
     pub status: BatchStatus,
-    
+
     /// Product receipt/purchase date (дата поступления)
     pub received_at: OffsetDateTime,
-    
+
     /// Expiration date (дата просрочки)
     pub expires_at: OffsetDateTime,
-    
+
     /// Timestamps
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
@@ -268,10 +270,11 @@ impl InventoryBatch {
     pub fn total_cost(&self) -> AppResult<Money> {
         self.price_per_unit.multiply(self.quantity.decimal())
     }
-    
+
     /// Calculate current value of remaining stock in this batch
     pub fn current_value(&self) -> AppResult<Money> {
-        self.price_per_unit.multiply(self.remaining_quantity.decimal())
+        self.price_per_unit
+            .multiply(self.remaining_quantity.decimal())
     }
 
     /// Check if product is expired
@@ -374,8 +377,11 @@ impl InventoryMovement {
         quantity: Decimal,
         unit_cost_cents: i64,
     ) -> Self {
-        let total_cost = (quantity * Decimal::from(unit_cost_cents)).round().to_i64().unwrap_or(0);
-        
+        let total_cost = (quantity * Decimal::from(unit_cost_cents))
+            .round()
+            .to_i64()
+            .unwrap_or(0);
+
         Self {
             id: Uuid::new_v4(),
             tenant_id,
@@ -398,8 +404,8 @@ impl InventoryMovement {
 #[serde(rename_all = "lowercase")]
 pub enum ExpirationSeverity {
     Expired,
-    Critical,   // 0-1 days
-    Warning,    // 2-3 days
+    Critical, // 0-1 days
+    Warning,  // 2-3 days
     Ok,
     NoExpiration,
 }
@@ -429,8 +435,6 @@ pub fn calculate_expiration_status(
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -473,10 +477,10 @@ mod tests {
             CatalogIngredientId::new(),
             Money::from_major(10.0).unwrap(),
             Quantity::new(2.5).unwrap(),
-            now, // received_at
+            now,                            // received_at
             now + time::Duration::days(30), // expires_at
         );
-        
+
         let total = product.total_cost().unwrap();
         assert_eq!(total.as_major(), 25.0);
     }

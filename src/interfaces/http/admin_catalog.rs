@@ -1,6 +1,6 @@
 use crate::application::{
-    AdminCatalogService, CreateProductRequest, ProductResponse, UpdateProductRequest,
-    CreateCategoryRequest, CategoryResponse, UpdateCategoryRequest,
+    AdminCatalogService, CategoryResponse, CreateCategoryRequest, CreateProductRequest,
+    ProductResponse, UpdateCategoryRequest, UpdateProductRequest,
 };
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
@@ -98,12 +98,13 @@ pub async fn upload_product_image(
         }
     }
 
-    let file_data = file_data.ok_or_else(|| AppError::validation("No file provided. Field name should be 'file' or 'image'"))?;
-    let content_type = content_type.ok_or_else(|| AppError::validation("No content-type provided"))?;
+    let file_data = file_data.ok_or_else(|| {
+        AppError::validation("No file provided. Field name should be 'file' or 'image'")
+    })?;
+    let content_type =
+        content_type.ok_or_else(|| AppError::validation("No content-type provided"))?;
 
-    let image_url = service
-        .upload_image(id, file_data, &content_type)
-        .await?;
+    let image_url = service.upload_image(id, file_data, &content_type).await?;
 
     Ok(Json(ImageUrlResponse { image_url }))
 }
@@ -121,7 +122,9 @@ pub async fn get_image_upload_url(
     State(service): State<AdminCatalogService>,
     axum::extract::Query(query): axum::extract::Query<GetUploadUrlQuery>,
 ) -> Result<Json<crate::application::user::AvatarUploadResponse>, AppError> {
-    let content_type = query.content_type.unwrap_or_else(|| "image/webp".to_string());
+    let content_type = query
+        .content_type
+        .unwrap_or_else(|| "image/webp".to_string());
     let response = service.get_image_upload_url(id, &content_type).await?;
     Ok(Json(response))
 }

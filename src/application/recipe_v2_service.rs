@@ -3,7 +3,7 @@ use crate::application::recipe_translation_service::RecipeTranslationService;
 use crate::domain::recipe_v2::{Recipe, RecipeId, RecipeIngredient, RecipeStatus};
 use crate::domain::CatalogIngredientId;
 use crate::infrastructure::persistence::{
-    RecipeV2RepositoryTrait, RecipeIngredientRepositoryTrait, CatalogIngredientRepositoryTrait,
+    CatalogIngredientRepositoryTrait, RecipeIngredientRepositoryTrait, RecipeV2RepositoryTrait,
 };
 use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
 use rust_decimal::Decimal;
@@ -97,12 +97,10 @@ impl RecipeV2Service {
 
         // Validate ingredients exist in catalog
         for ingredient_dto in &dto.ingredients {
-            let ingredient_id = CatalogIngredientId::from_uuid(ingredient_dto.catalog_ingredient_id);
-            let exists = self.catalog_repo
-                .find_by_id(ingredient_id)
-                .await?
-                .is_some();
-            
+            let ingredient_id =
+                CatalogIngredientId::from_uuid(ingredient_dto.catalog_ingredient_id);
+            let exists = self.catalog_repo.find_by_id(ingredient_id).await?.is_some();
+
             if !exists {
                 return Err(AppError::not_found("Catalog ingredient"));
             }
@@ -111,7 +109,7 @@ impl RecipeV2Service {
         // Create recipe (cost calculation will be done separately via inventory)
         let recipe_id = RecipeId::new();
         let now = OffsetDateTime::now_utc();
-        
+
         let recipe = Recipe {
             id: recipe_id,
             user_id,
@@ -120,7 +118,7 @@ impl RecipeV2Service {
             instructions_default: dto.instructions,
             language_default: dto.language,
             servings: dto.servings,
-            total_cost_cents: None,  // Will be calculated from inventory later
+            total_cost_cents: None, // Will be calculated from inventory later
             cost_per_serving_cents: None,
             status: RecipeStatus::Draft,
             is_public: false,
@@ -134,23 +132,25 @@ impl RecipeV2Service {
 
         // Save ingredients
         let mut response_ingredients = Vec::new();
-        
+
         for ingredient_dto in &dto.ingredients {
-            let ingredient_id = CatalogIngredientId::from_uuid(ingredient_dto.catalog_ingredient_id);
-            let catalog_ingredient = self.catalog_repo
+            let ingredient_id =
+                CatalogIngredientId::from_uuid(ingredient_dto.catalog_ingredient_id);
+            let catalog_ingredient = self
+                .catalog_repo
                 .find_by_id(ingredient_id)
                 .await?
                 .ok_or_else(|| AppError::not_found("Catalog ingredient"))?;
-            
+
             let ingredient_name = catalog_ingredient.name(recipe.language_default).to_string();
-            
+
             let ingredient = RecipeIngredient {
                 id: crate::domain::recipe_v2::RecipeIngredientId::new(),
                 recipe_id,
                 catalog_ingredient_id: ingredient_dto.catalog_ingredient_id,
                 quantity: ingredient_dto.quantity,
                 unit: ingredient_dto.unit.clone(),
-                cost_at_use_cents: None,  // Will be calculated from inventory later
+                cost_at_use_cents: None, // Will be calculated from inventory later
                 catalog_ingredient_name_snapshot: Some(ingredient_name.clone()),
                 created_at: now,
             };
@@ -172,8 +172,15 @@ impl RecipeV2Service {
         let default_language = dto.language;
         let t_id = tenant_id;
         tokio::spawn(async move {
-            if let Err(e) = translation_service.translate_to_all_languages(recipe_id, t_id, default_language).await {
-                tracing::error!("Failed to trigger translations for recipe {}: {}", recipe_id.as_uuid(), e);
+            if let Err(e) = translation_service
+                .translate_to_all_languages(recipe_id, t_id, default_language)
+                .await
+            {
+                tracing::error!(
+                    "Failed to trigger translations for recipe {}: {}",
+                    recipe_id.as_uuid(),
+                    e
+                );
             }
         });
 
@@ -202,7 +209,8 @@ impl RecipeV2Service {
         tenant_id: TenantId,
         language: Language,
     ) -> AppResult<RecipeResponseDto> {
-        let recipe = self.recipe_repo
+        let recipe = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
@@ -218,27 +226,28 @@ impl RecipeV2Service {
         language: Language,
     ) -> AppResult<Vec<RecipeResponseDto>> {
         let recipes = self.recipe_repo.find_by_user_id(user_id, tenant_id).await?;
-        
+
         let mut response = Vec::with_capacity(recipes.len());
         for recipe in recipes {
             response.push(self.to_response_dto(&recipe, language).await?);
         }
-        
+
         Ok(response)
     }
 
     /// Publish recipe (make it public or active)
     pub async fn publish_recipe(&self, recipe_id: RecipeId, tenant_id: TenantId) -> AppResult<()> {
-        let mut recipe = self.recipe_repo
+        let mut recipe = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
-        
+
         recipe.status = RecipeStatus::Published;
         recipe.is_public = true;
         recipe.published_at = Some(OffsetDateTime::now_utc());
         recipe.updated_at = OffsetDateTime::now_utc();
-        
+
         self.recipe_repo.update(&recipe).await?;
         Ok(())
     }
@@ -246,11 +255,12 @@ impl RecipeV2Service {
     /// Delete recipe
     pub async fn delete_recipe(&self, recipe_id: RecipeId, tenant_id: TenantId) -> AppResult<()> {
         // Enforce tenant isolation by checking if it exists for this tenant
-        let exists = self.recipe_repo
+        let exists = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .is_some();
-            
+
         if !exists {
             return Err(AppError::not_found("Recipe"));
         }
@@ -265,14 +275,13 @@ impl RecipeV2Service {
         language: Language,
     ) -> AppResult<RecipeResponseDto> {
         // Get localized content
-        let (name, instructions) = self.translation_service
+        let (name, instructions) = self
+            .translation_service
             .get_localized_content(recipe.id, recipe.tenant_id, language)
             .await?;
 
         // Load ingredients
-        let ingredients = self.ingredient_repo
-            .find_by_recipe_id(recipe.id)
-            .await?;
+        let ingredients = self.ingredient_repo.find_by_recipe_id(recipe.id).await?;
 
         let response_ingredients = ingredients
             .into_iter()

@@ -1,6 +1,6 @@
 // Recipe V2 Repository - CRUD for recipes and ingredients
 use crate::domain::recipe_v2::{Recipe, RecipeId, RecipeIngredient, RecipeIngredientId};
-use crate::shared::{AppError, AppResult, TenantId, UserId, Language};
+use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
 use time::OffsetDateTime;
@@ -11,7 +11,8 @@ use time::OffsetDateTime;
 pub trait RecipeV2RepositoryTrait: Send + Sync {
     async fn save(&self, recipe: &Recipe) -> AppResult<()>;
     async fn find_by_id(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<Option<Recipe>>;
-    async fn find_by_user_id(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<Vec<Recipe>>;
+    async fn find_by_user_id(&self, user_id: UserId, tenant_id: TenantId)
+        -> AppResult<Vec<Recipe>>;
     async fn update(&self, recipe: &Recipe) -> AppResult<()>;
     async fn delete(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<()>;
 }
@@ -27,39 +28,59 @@ impl RecipeRepositoryV2 {
     }
 
     fn row_to_recipe(row: &sqlx::postgres::PgRow) -> AppResult<Recipe> {
-        let language_str: String = row.try_get("language_default")
+        let language_str: String = row
+            .try_get("language_default")
             .map_err(|e| AppError::internal(&format!("Failed to get language_default: {}", e)))?;
-            
+
         Ok(Recipe {
-            id: RecipeId(row.try_get("id")
-                .map_err(|e| AppError::internal(&format!("Failed to get id: {}", e)))?),
-            user_id: UserId::from_uuid(row.try_get("user_id")
-                .map_err(|e| AppError::internal(&format!("Failed to get user_id: {}", e)))?),
-            tenant_id: TenantId::from_uuid(row.try_get("tenant_id")
-                .map_err(|e| AppError::internal(&format!("Failed to get tenant_id: {}", e)))?),
-            name_default: row.try_get("name_default")
+            id: RecipeId(
+                row.try_get("id")
+                    .map_err(|e| AppError::internal(&format!("Failed to get id: {}", e)))?,
+            ),
+            user_id: UserId::from_uuid(
+                row.try_get("user_id")
+                    .map_err(|e| AppError::internal(&format!("Failed to get user_id: {}", e)))?,
+            ),
+            tenant_id: TenantId::from_uuid(
+                row.try_get("tenant_id")
+                    .map_err(|e| AppError::internal(&format!("Failed to get tenant_id: {}", e)))?,
+            ),
+            name_default: row
+                .try_get("name_default")
                 .map_err(|e| AppError::internal(&format!("Failed to get name_default: {}", e)))?,
-            instructions_default: row.try_get("instructions_default")
-                .map_err(|e| AppError::internal(&format!("Failed to get instructions_default: {}", e)))?,
+            instructions_default: row.try_get("instructions_default").map_err(|e| {
+                AppError::internal(&format!("Failed to get instructions_default: {}", e))
+            })?,
             language_default: Language::from_code(&language_str).unwrap_or(Language::En),
-            servings: row.try_get("servings")
+            servings: row
+                .try_get("servings")
                 .map_err(|e| AppError::internal(&format!("Failed to get servings: {}", e)))?,
-            total_cost_cents: row.try_get::<Option<i64>, _>("total_cost_cents")
+            total_cost_cents: row
+                .try_get::<Option<i64>, _>("total_cost_cents")
                 .map_err(|e| AppError::internal(&format!("Failed to get total_cost_cents: {}", e)))?
                 .map(|v| v as i32),
-            cost_per_serving_cents: row.try_get::<Option<i64>, _>("cost_per_serving_cents")
-                .map_err(|e| AppError::internal(&format!("Failed to get cost_per_serving_cents: {}", e)))?
+            cost_per_serving_cents: row
+                .try_get::<Option<i64>, _>("cost_per_serving_cents")
+                .map_err(|e| {
+                    AppError::internal(&format!("Failed to get cost_per_serving_cents: {}", e))
+                })?
                 .map(|v| v as i32),
-            status: row.try_get::<String, _>("status")
+            status: row
+                .try_get::<String, _>("status")
                 .map_err(|e| AppError::internal(&format!("Failed to get status: {}", e)))?
-                .parse().unwrap_or_default(),
-            is_public: row.try_get("is_public")
+                .parse()
+                .unwrap_or_default(),
+            is_public: row
+                .try_get("is_public")
                 .map_err(|e| AppError::internal(&format!("Failed to get is_public: {}", e)))?,
-            published_at: row.try_get("published_at")
+            published_at: row
+                .try_get("published_at")
                 .map_err(|e| AppError::internal(&format!("Failed to get published_at: {}", e)))?,
-            created_at: row.try_get("created_at")
+            created_at: row
+                .try_get("created_at")
                 .map_err(|e| AppError::internal(&format!("Failed to get created_at: {}", e)))?,
-            updated_at: row.try_get("updated_at")
+            updated_at: row
+                .try_get("updated_at")
                 .map_err(|e| AppError::internal(&format!("Failed to get updated_at: {}", e)))?,
         })
     }
@@ -104,7 +125,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
         .execute(&self.pool)
         .await
         .map_err(|e| AppError::internal(&format!("Failed to save recipe: {}", e)))?;
-        
+
         Ok(())
     }
 
@@ -116,7 +137,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
                    published_at, created_at, updated_at
             FROM recipes
             WHERE id = $1 AND tenant_id = $2
-            "#
+            "#,
         )
         .bind(id.as_uuid())
         .bind(tenant_id.as_uuid())
@@ -129,7 +150,11 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
         }
     }
 
-    async fn find_by_user_id(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<Vec<Recipe>> {
+    async fn find_by_user_id(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+    ) -> AppResult<Vec<Recipe>> {
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, tenant_id, name_default, instructions_default, language_default, 
@@ -138,7 +163,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
             FROM recipes
             WHERE user_id = $1 AND tenant_id = $2
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(user_id.as_uuid())
         .bind(tenant_id.as_uuid())
@@ -162,7 +187,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
                 servings = $4, total_cost_cents = $5, cost_per_serving_cents = $6, 
                 status = $7, is_public = $8, published_at = $9, updated_at = $10
             WHERE id = $11 AND tenant_id = $12
-            "#
+            "#,
         )
         .bind(&recipe.name_default)
         .bind(&recipe.instructions_default)
@@ -297,7 +322,9 @@ impl RecipeIngredientRepositoryTrait for RecipeIngredientRepository {
             .bind(recipe_id.0)
             .execute(&self.pool)
             .await
-            .map_err(|e| AppError::internal(&format!("Failed to delete recipe ingredients: {}", e)))?;
+            .map_err(|e| {
+                AppError::internal(&format!("Failed to delete recipe ingredients: {}", e))
+            })?;
 
         Ok(())
     }

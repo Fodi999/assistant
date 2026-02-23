@@ -1,6 +1,6 @@
 use crate::domain::recipe_ai_insights::*;
 use crate::shared::AppError;
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -40,7 +40,7 @@ impl RecipeAIInsightsRepository {
                 model = EXCLUDED.model,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *
-            "#
+            "#,
         )
         .bind(recipe_id)
         .bind(language)
@@ -56,7 +56,11 @@ impl RecipeAIInsightsRepository {
             AppError::internal("Failed to save AI insights")
         })?;
 
-        tracing::info!("✅ Upserted AI insights for recipe {} (language: {})", recipe_id, language);
+        tracing::info!(
+            "✅ Upserted AI insights for recipe {} (language: {})",
+            recipe_id,
+            language
+        );
         Ok(row.into())
     }
 
@@ -70,7 +74,7 @@ impl RecipeAIInsightsRepository {
             r#"
             SELECT * FROM recipe_ai_insights
             WHERE recipe_id = $1 AND language = $2
-            "#
+            "#,
         )
         .bind(recipe_id)
         .bind(language)
@@ -94,7 +98,7 @@ impl RecipeAIInsightsRepository {
             SELECT * FROM recipe_ai_insights
             WHERE recipe_id = $1
             ORDER BY language
-            "#
+            "#,
         )
         .bind(recipe_id)
         .fetch_all(&self.pool)
@@ -138,7 +142,11 @@ impl RecipeAIInsightsRepository {
                 AppError::internal("Failed to delete AI insights")
             })?;
 
-        tracing::info!("🗑️ Deleted AI insights for recipe {} (language: {})", recipe_id, language);
+        tracing::info!(
+            "🗑️ Deleted AI insights for recipe {} (language: {})",
+            recipe_id,
+            language
+        );
         Ok(())
     }
 
@@ -155,7 +163,7 @@ impl RecipeAIInsightsRepository {
             WHERE feasibility_score >= $1
             ORDER BY feasibility_score DESC
             LIMIT $2
-            "#
+            "#,
         )
         .bind(min_score)
         .bind(limit)

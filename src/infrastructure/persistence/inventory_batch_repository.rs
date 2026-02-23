@@ -1,12 +1,15 @@
 use crate::domain::{
     catalog::CatalogIngredientId,
-    inventory::{InventoryBatch, InventoryBatchId, Money, Quantity, BatchStatus, MovementType, InventoryMovement},
+    inventory::{
+        BatchStatus, InventoryBatch, InventoryBatchId, InventoryMovement, Money, MovementType,
+        Quantity,
+    },
 };
 use crate::shared::{AppError, AppResult, TenantId, UserId};
 use async_trait::async_trait;
-use sqlx::{PgPool, Row, Postgres, Transaction};
-use time::OffsetDateTime;
 use rust_decimal::Decimal;
+use sqlx::{PgPool, Postgres, Row, Transaction};
+use time::OffsetDateTime;
 
 #[async_trait]
 pub trait InventoryBatchRepositoryTrait: Send + Sync {
@@ -14,31 +17,52 @@ pub trait InventoryBatchRepositoryTrait: Send + Sync {
     async fn create(&self, batch: &InventoryBatch) -> AppResult<()>;
 
     /// Add new batch within a transaction
-    async fn create_in_transaction(&self, tx: &mut Transaction<'static, Postgres>, batch: &InventoryBatch) -> AppResult<()>;
-    
+    async fn create_in_transaction(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        batch: &InventoryBatch,
+    ) -> AppResult<()>;
+
     /// Find batch by ID
-    async fn find_by_id(&self, id: InventoryBatchId, tenant_id: TenantId) -> AppResult<Option<InventoryBatch>>;
-    
+    async fn find_by_id(
+        &self,
+        id: InventoryBatchId,
+        tenant_id: TenantId,
+    ) -> AppResult<Option<InventoryBatch>>;
+
     /// List all batches for tenant
     async fn list_by_tenant(&self, tenant_id: TenantId) -> AppResult<Vec<InventoryBatch>>;
-    
+
     /// Count batches for tenant
     async fn count_by_tenant(&self, tenant_id: TenantId) -> AppResult<i64>;
 
     /// List active batches for specific ingredient with LOCK (FIFO order)
-    async fn list_active_by_ingredient_for_update(&self, tx: &mut Transaction<'static, Postgres>, tenant_id: TenantId, catalog_id: CatalogIngredientId) -> AppResult<Vec<InventoryBatch>>;
+    async fn list_active_by_ingredient_for_update(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        tenant_id: TenantId,
+        catalog_id: CatalogIngredientId,
+    ) -> AppResult<Vec<InventoryBatch>>;
 
     /// Update batch quantity and status (simple)
     async fn update(&self, batch: &InventoryBatch) -> AppResult<()>;
 
     /// Update batch quantity and status within a transaction
-    async fn update_in_transaction(&self, tx: &mut Transaction<'static, Postgres>, batch: &InventoryBatch) -> AppResult<()>;
-    
+    async fn update_in_transaction(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        batch: &InventoryBatch,
+    ) -> AppResult<()>;
+
     /// Delete batch from inventory
     async fn delete(&self, id: InventoryBatchId, tenant_id: TenantId) -> AppResult<()>;
 
     /// Record a movement (audit log)
-    async fn record_movement(&self, tx: &mut Transaction<'static, Postgres>, movement: &InventoryMovement) -> AppResult<()>;
+    async fn record_movement(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        movement: &InventoryMovement,
+    ) -> AppResult<()>;
 }
 
 #[derive(Clone)]
@@ -52,20 +76,48 @@ impl InventoryBatchRepository {
     }
 
     fn row_to_batch(row: &sqlx::postgres::PgRow) -> AppResult<InventoryBatch> {
-        let id: uuid::Uuid = row.try_get("id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let user_id: uuid::Uuid = row.try_get("user_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let tenant_id: uuid::Uuid = row.try_get("tenant_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let catalog_ingredient_id: uuid::Uuid = row.try_get("catalog_ingredient_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let price_cents: i64 = row.try_get("price_per_unit_cents").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let quantity: Decimal = row.try_get("quantity").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let remaining_quantity: Decimal = row.try_get("remaining_quantity").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let supplier: Option<String> = row.try_get("supplier").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let invoice: Option<String> = row.try_get("invoice_number").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let status_str: String = row.try_get("status").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let received_at: OffsetDateTime = row.try_get("received_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let expires_at: OffsetDateTime = row.try_get("expires_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let created_at: OffsetDateTime = row.try_get("created_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
-        let updated_at: OffsetDateTime = row.try_get("updated_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let id: uuid::Uuid = row
+            .try_get("id")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let user_id: uuid::Uuid = row
+            .try_get("user_id")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let tenant_id: uuid::Uuid = row
+            .try_get("tenant_id")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let catalog_ingredient_id: uuid::Uuid = row
+            .try_get("catalog_ingredient_id")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let price_cents: i64 = row
+            .try_get("price_per_unit_cents")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let quantity: Decimal = row
+            .try_get("quantity")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let remaining_quantity: Decimal = row
+            .try_get("remaining_quantity")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let supplier: Option<String> = row
+            .try_get("supplier")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let invoice: Option<String> = row
+            .try_get("invoice_number")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let status_str: String = row
+            .try_get("status")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let received_at: OffsetDateTime = row
+            .try_get("received_at")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let expires_at: OffsetDateTime = row
+            .try_get("expires_at")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let created_at: OffsetDateTime = row
+            .try_get("created_at")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let updated_at: OffsetDateTime = row
+            .try_get("updated_at")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
 
         let status = match status_str.as_str() {
             "active" => BatchStatus::Active,
@@ -106,7 +158,7 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
                  quantity, remaining_quantity, supplier, invoice_number, status,
                  received_at, expires_at, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            "#
+            "#,
         )
         .bind(batch.id.as_uuid())
         .bind(batch.user_id.as_uuid())
@@ -132,7 +184,11 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: InventoryBatchId, tenant_id: TenantId) -> AppResult<Option<InventoryBatch>> {
+    async fn find_by_id(
+        &self,
+        id: InventoryBatchId,
+        tenant_id: TenantId,
+    ) -> AppResult<Option<InventoryBatch>> {
         let row = sqlx::query(
             r#"
             SELECT id, user_id, tenant_id, catalog_ingredient_id, price_per_unit_cents, 
@@ -140,7 +196,7 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
                    received_at, expires_at, created_at, updated_at
             FROM inventory_batches
             WHERE id = $1 AND tenant_id = $2
-            "#
+            "#,
         )
         .bind(id.as_uuid())
         .bind(tenant_id.as_uuid())
@@ -162,7 +218,7 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
             FROM inventory_batches
             WHERE tenant_id = $1
             ORDER BY received_at DESC
-            "#
+            "#,
         )
         .bind(tenant_id.as_uuid())
         .fetch_all(&self.pool)
@@ -177,10 +233,11 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
     }
 
     async fn count_by_tenant(&self, tenant_id: TenantId) -> AppResult<i64> {
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory_batches WHERE tenant_id = $1")
-            .bind(tenant_id.as_uuid())
-            .fetch_one(&self.pool)
-            .await?;
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM inventory_batches WHERE tenant_id = $1")
+                .bind(tenant_id.as_uuid())
+                .fetch_one(&self.pool)
+                .await?;
         Ok(count)
     }
 
@@ -221,7 +278,7 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
             SET price_per_unit_cents = $1, quantity = $2, remaining_quantity = $3, 
                 status = $4, expires_at = $5, updated_at = $6
             WHERE id = $7 AND tenant_id = $8
-            "#
+            "#,
         )
         .bind(batch.price_per_unit.as_cents())
         .bind(batch.quantity.decimal())
@@ -241,14 +298,18 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
         Ok(())
     }
 
-    async fn update_in_transaction(&self, tx: &mut Transaction<'static, Postgres>, batch: &InventoryBatch) -> AppResult<()> {
+    async fn update_in_transaction(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        batch: &InventoryBatch,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE inventory_batches 
             SET price_per_unit_cents = $1, quantity = $2, remaining_quantity = $3, 
                 status = $4, expires_at = $5, updated_at = $6
             WHERE id = $7 AND tenant_id = $8
-            "#
+            "#,
         )
         .bind(batch.price_per_unit.as_cents())
         .bind(batch.quantity.decimal())
@@ -278,14 +339,18 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
         Ok(())
     }
 
-    async fn record_movement(&self, tx: &mut Transaction<'static, Postgres>, movement: &InventoryMovement) -> AppResult<()> {
+    async fn record_movement(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        movement: &InventoryMovement,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             INSERT INTO inventory_movements 
                 (id, tenant_id, batch_id, type, quantity, unit_cost_cents, total_cost_cents, 
                  reference_id, reference_type, reason, notes, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            "#
+            "#,
         )
         .bind(movement.id)
         .bind(movement.tenant_id.as_uuid())
@@ -310,7 +375,11 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
         Ok(())
     }
 
-    async fn create_in_transaction(&self, tx: &mut Transaction<'static, Postgres>, batch: &InventoryBatch) -> AppResult<()> {
+    async fn create_in_transaction(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        batch: &InventoryBatch,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             INSERT INTO inventory_batches 
@@ -318,7 +387,7 @@ impl InventoryBatchRepositoryTrait for InventoryBatchRepository {
                  quantity, remaining_quantity, supplier, invoice_number, status,
                  received_at, expires_at, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            "#
+            "#,
         )
         .bind(batch.id.as_uuid())
         .bind(batch.user_id.as_uuid())

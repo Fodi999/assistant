@@ -16,8 +16,11 @@ pub async fn login(
 pub async fn verify(
     _claims: crate::domain::AdminClaims, // Middleware adds this
 ) -> Result<impl IntoResponse, AppError> {
-    Ok((StatusCode::OK, Json(serde_json::json!({
-        "message": "Token is valid",
-        "role": "super_admin"
-    }))))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "message": "Token is valid",
+            "role": "super_admin"
+        })),
+    ))
 }

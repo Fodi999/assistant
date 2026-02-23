@@ -29,7 +29,7 @@ impl TenantRepositoryTrait for TenantRepository {
             r#"
             INSERT INTO tenants (id, name, created_at)
             VALUES ($1, $2, $3)
-            "#
+            "#,
         )
         .bind(tenant.id.as_uuid())
         .bind(tenant.name.as_str())
@@ -46,7 +46,7 @@ impl TenantRepositoryTrait for TenantRepository {
             SELECT id, name, created_at
             FROM tenants
             WHERE id = $1
-            "#
+            "#,
         )
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)

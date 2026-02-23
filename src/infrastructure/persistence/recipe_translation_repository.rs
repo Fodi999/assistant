@@ -85,14 +85,31 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
         let mut translations = Vec::new();
         for row in rows {
             translations.push(RecipeTranslation {
-                id: row.try_get("id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                recipe_id: RecipeId(row.try_get("recipe_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
-                language: Language::from_str(row.try_get("language").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?)
-                    .map_err(|e| AppError::internal(&format!("Invalid language: {}", e)))?,
-                name: row.try_get("name").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                instructions: row.try_get("instructions").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                translated_by: TranslationSource::from_str(row.try_get("translated_by").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?)?,
-                created_at: row.try_get("translated_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                id: row
+                    .try_get("id")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                recipe_id: RecipeId(
+                    row.try_get("recipe_id")
+                        .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                ),
+                language: Language::from_str(
+                    row.try_get("language")
+                        .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                )
+                .map_err(|e| AppError::internal(&format!("Invalid language: {}", e)))?,
+                name: row
+                    .try_get("name")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                instructions: row
+                    .try_get("instructions")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                translated_by: TranslationSource::from_str(
+                    row.try_get("translated_by")
+                        .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                )?,
+                created_at: row
+                    .try_get("translated_at")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
             });
         }
 
@@ -124,14 +141,31 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
         match row {
             Some(row) => {
                 let translation = RecipeTranslation {
-                    id: row.try_get("id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                    recipe_id: RecipeId(row.try_get("recipe_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
-                    language: Language::from_str(row.try_get("language").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?)
-                        .map_err(|e| AppError::internal(&format!("Invalid language: {}", e)))?,
-                    name: row.try_get("name").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                    instructions: row.try_get("instructions").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-                    translated_by: TranslationSource::from_str(row.try_get("translated_by").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?)?,
-                    created_at: row.try_get("translated_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                    id: row
+                        .try_get("id")
+                        .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                    recipe_id: RecipeId(
+                        row.try_get("recipe_id")
+                            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                    ),
+                    language: Language::from_str(
+                        row.try_get("language")
+                            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                    )
+                    .map_err(|e| AppError::internal(&format!("Invalid language: {}", e)))?,
+                    name: row
+                        .try_get("name")
+                        .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                    instructions: row
+                        .try_get("instructions")
+                        .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                    translated_by: TranslationSource::from_str(
+                        row.try_get("translated_by")
+                            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+                    )?,
+                    created_at: row
+                        .try_get("translated_at")
+                        .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
                 };
                 Ok(Some(translation))
             }
@@ -144,7 +178,9 @@ impl RecipeTranslationRepositoryTrait for RecipeTranslationRepository {
             .bind(recipe_id.0)
             .execute(&self.pool)
             .await
-            .map_err(|e| AppError::internal(&format!("Failed to delete recipe translations: {}", e)))?;
+            .map_err(|e| {
+                AppError::internal(&format!("Failed to delete recipe translations: {}", e))
+            })?;
 
         Ok(())
     }

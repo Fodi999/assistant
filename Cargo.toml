@@ -52,6 +52,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Environment
 dotenvy = "0.15"
 
+# Rate limiting
+governor = "0.6"
+
 # Utilities
 async-trait = "0.1"
 rand = "0.8"

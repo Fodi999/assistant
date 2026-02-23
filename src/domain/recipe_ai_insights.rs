@@ -6,21 +6,21 @@ use time::OffsetDateTime;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CookingStep {
     pub step_number: i32,
-    pub action: String,                    // "Нарезать", "Варить", "Жарить"
-    pub description: String,               // Full step description
-    pub duration_minutes: Option<i32>,     // Estimated time
-    pub temperature: Option<String>,       // "180°C", "medium heat"
-    pub technique: Option<String>,         // "dice", "julienne", "blanch"
-    pub ingredients_used: Vec<String>,     // Ingredient IDs used in this step
+    pub action: String,                // "Нарезать", "Варить", "Жарить"
+    pub description: String,           // Full step description
+    pub duration_minutes: Option<i32>, // Estimated time
+    pub temperature: Option<String>,   // "180°C", "medium heat"
+    pub technique: Option<String>,     // "dice", "julienne", "blanch"
+    pub ingredients_used: Vec<String>, // Ingredient IDs used in this step
 }
 
 /// Validation issue (warning or error)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationIssue {
-    pub severity: String,                  // "warning" | "error"
-    pub code: String,                      // "MISSING_INGREDIENT", "UNSAFE_TEMP"
-    pub message: String,                   // Human-readable message
-    pub field: Option<String>,             // Field that caused the issue
+    pub severity: String,      // "warning" | "error"
+    pub code: String,          // "MISSING_INGREDIENT", "UNSAFE_TEMP"
+    pub message: String,       // Human-readable message
+    pub field: Option<String>, // Field that caused the issue
 }
 
 /// Validation results for a recipe
@@ -36,11 +36,11 @@ pub struct RecipeValidation {
 /// AI suggestion for recipe improvement
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecipeSuggestion {
-    pub suggestion_type: String,           // "improvement" | "substitution" | "technique"
-    pub title: String,                     // "Use fresh herbs instead of dried"
-    pub description: String,               // Detailed explanation
-    pub impact: String,                    // "taste" | "texture" | "nutrition" | "cost"
-    pub confidence: f32,                   // 0.0 - 1.0
+    pub suggestion_type: String, // "improvement" | "substitution" | "technique"
+    pub title: String,           // "Use fresh herbs instead of dried"
+    pub description: String,     // Detailed explanation
+    pub impact: String,          // "taste" | "texture" | "nutrition" | "cost"
+    pub confidence: f32,         // 0.0 - 1.0
 }
 
 /// Complete AI insights for a recipe in specific language
@@ -48,16 +48,16 @@ pub struct RecipeSuggestion {
 pub struct RecipeAIInsights {
     pub id: Uuid,
     pub recipe_id: Uuid,
-    pub language: String,                  // ru/en/pl/uk
-    
+    pub language: String, // ru/en/pl/uk
+
     // AI-generated data
     pub steps: Vec<CookingStep>,
     pub validation: RecipeValidation,
     pub suggestions: Vec<RecipeSuggestion>,
-    pub feasibility_score: i32,            // 0-100
-    
+    pub feasibility_score: i32, // 0-100
+
     // Metadata
-    pub model: String,                     // "llama-3.1-8b-instant"
+    pub model: String, // "llama-3.1-8b-instant"
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -105,7 +105,7 @@ pub struct CreateRecipeAIInsightsRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct RecipeAIInsightsResponse {
     pub insights: RecipeAIInsights,
-    pub generated_in_ms: u64,              // Time taken to generate
+    pub generated_in_ms: u64, // Time taken to generate
 }
 
 impl From<RecipeAIInsights> for RecipeAIInsightsResponse {

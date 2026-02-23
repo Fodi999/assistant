@@ -1,12 +1,15 @@
 use restaurant_backend::application::{
-    AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService, 
-    DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService, UserService
+    AdminAuthService, AdminCatalogService, AssistantService, AuthService, CatalogService,
+    DishService, InventoryService, MenuEngineeringService, RecipeService, TenantIngredientService,
+    UserService,
 };
-use restaurant_backend::infrastructure::{Config, GroqService, JwtService, PasswordHasher, R2Client, Repositories};
+use restaurant_backend::infrastructure::{
+    Config, GroqService, JwtService, PasswordHasher, R2Client, Repositories,
+};
 use restaurant_backend::interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,9 +23,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     tracing::info!("Starting Restaurant Backend...");
-    tracing::info!("Environment: DATABASE_URL present = {}", std::env::var("DATABASE_URL").is_ok());
-    tracing::info!("Environment: JWT_SECRET present = {}", std::env::var("JWT_SECRET").is_ok());
-    tracing::info!("Environment: PORT = {}", std::env::var("PORT").unwrap_or_else(|_| "not set".to_string()));
+    tracing::info!(
+        "Environment: DATABASE_URL present = {}",
+        std::env::var("DATABASE_URL").is_ok()
+    );
+    tracing::info!(
+        "Environment: JWT_SECRET present = {}",
+        std::env::var("JWT_SECRET").is_ok()
+    );
+    tracing::info!(
+        "Environment: PORT = {}",
+        std::env::var("PORT").unwrap_or_else(|_| "not set".to_string())
+    );
 
     // Load configuration
     let config = match Config::from_env() {
@@ -39,9 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Server will bind to: {}", config.server_address());
 
     // Create database connection pool
-    tracing::info!("Connecting to database...");
+    let max_conn = config.database.max_connections;
+    tracing::info!("Connecting to database (max_connections={})...", max_conn);
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(max_conn)
         .acquire_timeout(Duration::from_secs(3))
         .connect(&config.database.url)
         .await
@@ -49,12 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::error!("Database connection failed: {}", e);
             e
         })?;
-    tracing::info!("Database connection pool established");
+    tracing::info!("Database connection pool established (max={})", max_conn);
 
     // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Database migrations completed");
 
     // Initialize repositories (clone pool before move)
@@ -90,10 +101,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Create DishService
-    let dish_service = DishService::new(
-        Arc::new(repositories.dish.clone()),
-        recipe_service.clone(),
-    );
+    let dish_service =
+        DishService::new(Arc::new(repositories.dish.clone()), recipe_service.clone());
 
     // Create MenuEngineeringService
     let menu_engineering_service = MenuEngineeringService::new(
@@ -121,14 +130,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Super Admin configured: {}", config.admin.email);
 
     // Create R2Client for image storage (Cloudflare R2)
-    tracing::info!("Initializing R2 Client with bucket: {}", config.r2.bucket_name);
+    tracing::info!(
+        "Initializing R2 Client with bucket: {}",
+        config.r2.bucket_name
+    );
     let r2_client = R2Client::new(
         config.r2.account_id.clone(),
         config.r2.access_key_id.clone(),
         config.r2.secret_access_key.clone(),
         config.r2.bucket_name.clone(),
         config.r2.public_url_base.clone(),
-    ).await;
+    )
+    .await;
     tracing::info!("✅ R2 Client initialized successfully");
 
     let user_service = UserService::new(
@@ -154,34 +167,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Create TenantIngredientService
-    let tenant_ingredient_service = TenantIngredientService::new(
-        Arc::new(repositories.tenant_ingredient.clone())
-    );
+    let tenant_ingredient_service =
+        TenantIngredientService::new(Arc::new(repositories.tenant_ingredient.clone()));
 
     // Create Recipe V2 & AI Insights Services
-    let recipe_translation_service = Arc::new(restaurant_backend::application::recipe_translation_service::RecipeTranslationService::new(
-        Arc::new(repositories.recipe_translation.clone()),
-        Arc::new(repositories.recipe_v2.clone()),
-        groq_service.clone(),
-    ));
+    let recipe_translation_service = Arc::new(
+        restaurant_backend::application::recipe_translation_service::RecipeTranslationService::new(
+            Arc::new(repositories.recipe_translation.clone()),
+            Arc::new(repositories.recipe_v2.clone()),
+            groq_service.clone(),
+        ),
+    );
 
-    let recipe_v2_service = Arc::new(restaurant_backend::application::recipe_v2_service::RecipeV2Service::new(
-        Arc::new(repositories.recipe_v2.clone()),
-        Arc::new(repositories.recipe_ingredient.clone()),
-        Arc::new(repositories.catalog_ingredient.clone()),
-        recipe_translation_service,
-    ));
+    let recipe_v2_service = Arc::new(
+        restaurant_backend::application::recipe_v2_service::RecipeV2Service::new(
+            Arc::new(repositories.recipe_v2.clone()),
+            Arc::new(repositories.recipe_ingredient.clone()),
+            Arc::new(repositories.catalog_ingredient.clone()),
+            recipe_translation_service,
+        ),
+    );
 
-    let recipe_ai_insights_service = Arc::new(restaurant_backend::application::RecipeAIInsightsService::new(
-        groq_service,
-        Arc::new(repositories.recipe_ai_insights.clone()),
-        Arc::new(repositories.recipe_v2.clone()),
-    ));
+    let recipe_ai_insights_service = Arc::new(
+        restaurant_backend::application::RecipeAIInsightsService::new(
+            groq_service,
+            Arc::new(repositories.recipe_ai_insights.clone()),
+            Arc::new(repositories.recipe_v2.clone()),
+        ),
+    );
 
     tracing::info!("✅ Recipe V2 & AI Insights services initialized");
 
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
+    let rate_limit_per_second = config.server.rate_limit_per_second;
 
     // Create router
     let app = create_router(
@@ -201,6 +220,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_auth_service,
         admin_catalog_service,
         cors_origins,
+        rate_limit_per_second,
     );
 
     // Start server
@@ -208,9 +228,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    
-    axum::serve(listener, app)
-        .await?;
+
+    axum::serve(listener, app).await?;
 
     Ok(())
 }

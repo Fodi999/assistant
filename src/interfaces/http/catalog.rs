@@ -122,7 +122,9 @@ pub async fn search_ingredients(
     if let Some(ref query) = params.q {
         let trimmed = query.trim();
         if !trimmed.is_empty() && trimmed.chars().count() < 2 {
-            return Err(AppError::validation("Search query must be at least 2 characters"));
+            return Err(AppError::validation(
+                "Search query must be at least 2 characters",
+            ));
         }
     }
 
@@ -165,7 +167,11 @@ pub async fn search_ingredients(
                 name: ing.name(language).to_string(),
                 default_unit: ing.default_unit.as_str().to_string(),
                 default_shelf_life_days: ing.default_shelf_life_days,
-                allergens: ing.allergens.iter().map(|a| a.as_str().to_string()).collect(),
+                allergens: ing
+                    .allergens
+                    .iter()
+                    .map(|a| a.as_str().to_string())
+                    .collect(),
                 calories_per_100g: ing.calories_per_100g,
                 seasons: ing.seasons.iter().map(|s| s.as_str().to_string()).collect(),
                 image_url: ing.image_url.clone(),

@@ -16,7 +16,7 @@ pub struct AdminCatalogService {
 }
 
 /// Create Product Request - NEW ARCHITECTURE
-/// 
+///
 /// Admin can input in ANY language (RU, PL, UK, EN)
 /// Backend normalizes to English (canonical) automatically
 #[derive(Debug, Deserialize)]
@@ -24,7 +24,7 @@ pub struct CreateProductRequest {
     /// 🧠 Universal input field - can be in ANY language
     /// Backend will detect language and normalize to English
     pub name_input: String,
-    
+
     /// 🌍 Optional manual overrides (if not provided, will be auto-generated)
     #[serde(default = "default_empty_string")]
     pub name_en: String,
@@ -34,13 +34,13 @@ pub struct CreateProductRequest {
     pub name_uk: String,
     #[serde(default = "default_empty_string")]
     pub name_ru: String,
-    
+
     /// 🤖 Category & Unit can be AI-classified (optional override)
     pub category_id: Option<Uuid>,
     pub unit: Option<UnitType>,
-    
+
     pub description: Option<String>,
-    
+
     /// Если true, бекенд автоматически переведёт на все языки и классифицирует
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default = "default_true")]
@@ -131,13 +131,13 @@ impl AdminCatalogService {
     }
 
     /// Create new product - OPTIMIZED UNIFIED ARCHITECTURE
-    /// 
+    ///
     /// Pipeline (OPTIMIZED - one AI call instead of 3):
     /// 1️⃣ Unified AI processing (normalize + translate + classify in ONE call)
     /// 2️⃣ Check for duplicates (case-insensitive on name_en)
     /// 3️⃣ Cache translations to dictionary for future use
     /// 4️⃣ Save to database with all translations
-    /// 
+    ///
     /// Performance: 3x faster (~700ms instead of ~1800ms)
     /// Cost: 1/3 of the original ($0.001 instead of $0.003)
     pub async fn create_product(&self, req: CreateProductRequest) -> AppResult<ProductResponse> {
@@ -153,45 +153,57 @@ impl AdminCatalogService {
         // ==========================================
         // If user provided explicit values, use them (don't call AI)
         // Otherwise, call unified processing which returns EVERYTHING at once
-        let (name_en, name_pl, name_uk, name_ru, category_slug, unit_str) = 
-            if !req.name_en.is_empty() && !req.name_pl.is_empty() && !req.name_ru.is_empty() && !req.name_uk.is_empty() {
-                // All fields provided explicitly - no AI needed
-                tracing::info!("All translations provided explicitly, skipping AI");
-                (
-                    req.name_en.trim().to_string(),
-                    req.name_pl.trim().to_string(),
-                    req.name_uk.trim().to_string(),
-                    req.name_ru.trim().to_string(),
-                    "vegetables".to_string(), // Will be overridden below if provided
-                    "piece".to_string(),       // Will be overridden below if provided
-                )
-            } else {
-                // Use unified processing: ONE call returns everything
-                tracing::info!("Running unified AI processing for: {}", name_input);
-                
-                match self.groq.process_unified(name_input).await {
-                    Ok(unified) => {
-                        tracing::info!("✅ Unified processing successful: en={}, category={}, unit={}", 
-                            unified.name_en, unified.category_slug, unified.unit);
-                        (
-                            unified.name_en,
-                            unified.name_pl,
-                            unified.name_uk,
-                            unified.name_ru,
-                            unified.category_slug,
-                            unified.unit,
-                        )
-                    }
-                    Err(e) => {
-                        // ⚠️ IMPORTANT: Don't create garbage data on AI failure
-                        // Instead, ask admin to classify manually
-                        tracing::error!("❌ Unified processing failed - cannot create product: {}", e);
-                        return Err(AppError::internal(
+        let (name_en, name_pl, name_uk, name_ru, category_slug, unit_str) = if !req
+            .name_en
+            .is_empty()
+            && !req.name_pl.is_empty()
+            && !req.name_ru.is_empty()
+            && !req.name_uk.is_empty()
+        {
+            // All fields provided explicitly - no AI needed
+            tracing::info!("All translations provided explicitly, skipping AI");
+            (
+                req.name_en.trim().to_string(),
+                req.name_pl.trim().to_string(),
+                req.name_uk.trim().to_string(),
+                req.name_ru.trim().to_string(),
+                "vegetables".to_string(), // Will be overridden below if provided
+                "piece".to_string(),      // Will be overridden below if provided
+            )
+        } else {
+            // Use unified processing: ONE call returns everything
+            tracing::info!("Running unified AI processing for: {}", name_input);
+
+            match self.groq.process_unified(name_input).await {
+                Ok(unified) => {
+                    tracing::info!(
+                        "✅ Unified processing successful: en={}, category={}, unit={}",
+                        unified.name_en,
+                        unified.category_slug,
+                        unified.unit
+                    );
+                    (
+                        unified.name_en,
+                        unified.name_pl,
+                        unified.name_uk,
+                        unified.name_ru,
+                        unified.category_slug,
+                        unified.unit,
+                    )
+                }
+                Err(e) => {
+                    // ⚠️ IMPORTANT: Don't create garbage data on AI failure
+                    // Instead, ask admin to classify manually
+                    tracing::error!(
+                        "❌ Unified processing failed - cannot create product: {}",
+                        e
+                    );
+                    return Err(AppError::internal(
                             "AI processing failed - please provide explicit translations and classification"
                         ));
-                    }
                 }
-            };
+            }
+        };
 
         tracing::info!("Canonical English: {}", name_en);
 
@@ -210,16 +222,21 @@ impl AdminCatalogService {
         })?;
 
         if exists {
-            return Err(AppError::conflict(&format!("Product '{}' already exists", name_en)));
+            return Err(AppError::conflict(&format!(
+                "Product '{}' already exists",
+                name_en
+            )));
         }
 
         // ==========================================
         // 💾 ШАГ 3: CACHE translations to dictionary for future use
         // ==========================================
         // Save to dictionary so next time we need these translations, they're free
-        if let Err(e) = self.dictionary
+        if let Err(e) = self
+            .dictionary
             .insert(&name_en, &name_pl, &name_ru, &name_uk)
-            .await {
+            .await
+        {
             tracing::warn!("Failed to cache translations to dictionary: {}", e);
             // Not critical - continue anyway
         }
@@ -235,23 +252,31 @@ impl AdminCatalogService {
             let cat_id = match self.find_category_by_slug(&category_slug).await {
                 Ok(id) => id,
                 Err(_) => {
-                    tracing::warn!("Category '{}' not found, rejecting product creation", category_slug);
-                    return Err(AppError::validation(
-                        &format!("Invalid category from AI: {}. Please provide explicit category_id", category_slug)
-                    ));
+                    tracing::warn!(
+                        "Category '{}' not found, rejecting product creation",
+                        category_slug
+                    );
+                    return Err(AppError::validation(&format!(
+                        "Invalid category from AI: {}. Please provide explicit category_id",
+                        category_slug
+                    )));
                 }
             };
-            
+
             let unit_resolved = match UnitType::from_string(&unit_str) {
                 Ok(u) => u,
                 Err(_) => {
-                    tracing::warn!("Unit '{}' not recognized, rejecting product creation", unit_str);
-                    return Err(AppError::validation(
-                        &format!("Invalid unit from AI: {}. Please provide explicit unit", unit_str)
-                    ));
+                    tracing::warn!(
+                        "Unit '{}' not recognized, rejecting product creation",
+                        unit_str
+                    );
+                    return Err(AppError::validation(&format!(
+                        "Invalid unit from AI: {}. Please provide explicit unit",
+                        unit_str
+                    )));
                 }
             };
-            
+
             (cat_id, unit_resolved)
         };
 
@@ -273,7 +298,7 @@ impl AdminCatalogService {
                 default_unit as unit,
                 description,
                 image_url
-            "#
+            "#,
         )
         .bind(id)
         .bind(&name_en)
@@ -323,7 +348,11 @@ impl AdminCatalogService {
     }
 
     /// Update product in the catalog
-    pub async fn update_product(&self, id: Uuid, req: UpdateProductRequest) -> AppResult<ProductResponse> {
+    pub async fn update_product(
+        &self,
+        id: Uuid,
+        req: UpdateProductRequest,
+    ) -> AppResult<ProductResponse> {
         let mut tx = self.pool.begin().await?;
 
         // 1. Get existing product
@@ -346,7 +375,7 @@ impl AdminCatalogService {
         if req.auto_translate {
             // First check dictionary cache
             let cached = self.dictionary.find_by_en(&name_en).await.unwrap_or(None);
-            
+
             let translations = if let Some(entry) = cached {
                 crate::infrastructure::groq_service::GroqTranslationResponse {
                     pl: entry.name_pl,
@@ -360,18 +389,24 @@ impl AdminCatalogService {
                         // Cache it for future
                         let _ = self.dictionary.insert(&name_en, &t.pl, &t.ru, &t.uk).await;
                         t
-                    },
+                    }
                     Err(_) => crate::infrastructure::groq_service::GroqTranslationResponse {
                         pl: "".to_string(),
                         ru: "".to_string(),
                         uk: "".to_string(),
-                    }
+                    },
                 }
             };
 
-            if name_pl.is_none() || name_pl.as_deref() == Some("") { name_pl = Some(translations.pl); }
-            if name_uk.is_none() || name_uk.as_deref() == Some("") { name_uk = Some(translations.uk); }
-            if name_ru.is_none() || name_ru.as_deref() == Some("") { name_ru = Some(translations.ru); }
+            if name_pl.is_none() || name_pl.as_deref() == Some("") {
+                name_pl = Some(translations.pl);
+            }
+            if name_uk.is_none() || name_uk.as_deref() == Some("") {
+                name_uk = Some(translations.uk);
+            }
+            if name_ru.is_none() || name_ru.as_deref() == Some("") {
+                name_ru = Some(translations.ru);
+            }
         }
 
         // 3. Update record
@@ -422,9 +457,12 @@ impl AdminCatalogService {
 
         // 3. Generate key: assets/catalog/{product_id}.{ext}
         let key = format!("assets/catalog/{}.{}", product_id, ext);
-        
+
         // 4. Generate presigned URL (valid for 5 mins)
-        let upload_url = self.r2_client.generate_presigned_upload_url(&key, content_type).await?;
+        let upload_url = self
+            .r2_client
+            .generate_presigned_upload_url(&key, content_type)
+            .await?;
         let public_url = self.r2_client.get_public_url(&key);
 
         Ok(crate::application::user::AvatarUploadResponse {
@@ -440,7 +478,7 @@ impl AdminCatalogService {
             .bind(product_id)
             .execute(&self.pool)
             .await?;
-        
+
         Ok(())
     }
 
@@ -448,16 +486,23 @@ impl AdminCatalogService {
     pub async fn delete_product_image(&self, id: Uuid) -> AppResult<()> {
         // 1. Get product to find image key
         let product = self.get_product_by_id(id).await?;
-        
+
         if let Some(image_url) = product.image_url {
             // Extract key from URL (assuming format: base_url/key)
             // usually key is assets/catalog/{id}.webp or products/{id}.{ext}
-            
+
             // Delete from R2 (optional, as we at least null it in DB)
             if let Some(key_part) = image_url.split("/").last() {
                 // Determine folder based on URL content or use a default
-                let folder = if image_url.contains("catalog") { "assets/catalog" } else { "products" };
-                let _ = self.r2_client.delete_image(&format!("{}/{}", folder, key_part)).await;
+                let folder = if image_url.contains("catalog") {
+                    "assets/catalog"
+                } else {
+                    "products"
+                };
+                let _ = self
+                    .r2_client
+                    .delete_image(&format!("{}/{}", folder, key_part))
+                    .await;
             }
         }
 
@@ -484,7 +529,11 @@ impl AdminCatalogService {
             "image/jpeg" | "image/jpg" => "jpg",
             "image/png" => "png",
             "image/webp" => "webp",
-            _ => return Err(AppError::validation("Invalid image type. Allowed: jpg, png, webp")),
+            _ => {
+                return Err(AppError::validation(
+                    "Invalid image type. Allowed: jpg, png, webp",
+                ))
+            }
         };
 
         // Validate file size (max 5MB)
@@ -497,7 +546,10 @@ impl AdminCatalogService {
         let key = format!("products/{}.{}", id, extension);
 
         // Upload to R2
-        let image_url = self.r2_client.upload_image(&key, file_data, content_type).await
+        let image_url = self
+            .r2_client
+            .upload_image(&key, file_data, content_type)
+            .await
             .map_err(|e| {
                 tracing::error!("R2 upload error for product {}: {}", id, e);
                 AppError::internal("Failed to upload image")
@@ -510,7 +562,11 @@ impl AdminCatalogService {
             .execute(&self.pool)
             .await
             .map_err(|e| {
-                tracing::error!("Database error updating image_url for product {}: {}", id, e);
+                tracing::error!(
+                    "Database error updating image_url for product {}: {}",
+                    id,
+                    e
+                );
                 AppError::internal("Failed to update image URL")
             })?;
 
@@ -523,7 +579,7 @@ impl AdminCatalogService {
         // Soft delete - mark as inactive instead of deleting
         // This preserves relationships with inventory and other tables
         let result = sqlx::query(
-            "UPDATE catalog_ingredients SET is_active = false WHERE id = $1 AND is_active = true"
+            "UPDATE catalog_ingredients SET is_active = false WHERE id = $1 AND is_active = true",
         )
         .bind(id)
         .execute(&self.pool)
@@ -563,7 +619,7 @@ impl AdminCatalogService {
             INSERT INTO catalog_categories (name_pl, name_en, name_uk, name_ru, sort_order)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING id, name_pl, name_en, name_uk, name_ru, sort_order
-            "#
+            "#,
         )
         .bind(req.name_pl)
         .bind(req.name_en)
@@ -576,7 +632,11 @@ impl AdminCatalogService {
     }
 
     /// Update category
-    pub async fn update_category(&self, id: Uuid, req: UpdateCategoryRequest) -> AppResult<CategoryResponse> {
+    pub async fn update_category(
+        &self,
+        id: Uuid,
+        req: UpdateCategoryRequest,
+    ) -> AppResult<CategoryResponse> {
         let current = sqlx::query_as::<_, CategoryResponse>(
             "SELECT id, name_pl, name_en, name_uk, name_ru, sort_order FROM catalog_categories WHERE id = $1"
         )
@@ -591,7 +651,7 @@ impl AdminCatalogService {
             SET name_pl = $1, name_en = $2, name_uk = $3, name_ru = $4, sort_order = $5
             WHERE id = $6
             RETURNING id, name_pl, name_en, name_uk, name_ru, sort_order
-            "#
+            "#,
         )
         .bind(req.name_pl.unwrap_or(current.name_pl))
         .bind(req.name_en.unwrap_or(current.name_en))
@@ -607,13 +667,17 @@ impl AdminCatalogService {
     /// Delete category (fails if used by products)
     pub async fn delete_category(&self, id: Uuid) -> AppResult<()> {
         // Check if referenced
-        let in_use: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE category_id = $1)")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await?;
+        let in_use: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE category_id = $1)",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await?;
 
         if in_use {
-            return Err(AppError::conflict("Cannot delete category: it is used by products"));
+            return Err(AppError::conflict(
+                "Cannot delete category: it is used by products",
+            ));
         }
 
         sqlx::query("DELETE FROM catalog_categories WHERE id = $1")
@@ -624,7 +688,7 @@ impl AdminCatalogService {
     }
 
     /// 🔍 Найти категорию по AI slug
-    /// 
+    ///
     /// Маппинг AI классификации на реальные категории базы данных
     async fn find_category_by_slug(&self, slug: &str) -> AppResult<Uuid> {
         let category_name_en = match slug.to_lowercase().as_str() {
@@ -642,7 +706,7 @@ impl AdminCatalogService {
         };
 
         let category_id = sqlx::query_scalar::<_, Uuid>(
-            "SELECT id FROM catalog_categories WHERE name_en = $1 LIMIT 1"
+            "SELECT id FROM catalog_categories WHERE name_en = $1 LIMIT 1",
         )
         .bind(category_name_en)
         .fetch_optional(&self.pool)
@@ -660,4 +724,3 @@ impl AdminCatalogService {
         Ok(category_id)
     }
 }
-

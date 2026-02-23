@@ -1,8 +1,8 @@
 use crate::application::inventory::InventoryStatus;
 use crate::domain::inventory::{AlertSeverity, InventoryAlert, InventoryAlertType};
 use crate::shared::{AppResult, TenantId};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use time::OffsetDateTime;
 
@@ -20,7 +20,7 @@ impl InventoryAlertService {
     /// Returns counts and health score
     pub async fn get_inventory_status(&self, tenant_id: TenantId) -> AppResult<InventoryStatus> {
         let alerts = self.get_alerts(tenant_id).await?;
-        
+
         let mut has_expired = false;
         let mut has_expiring_today = false;
         let mut has_expiring_soon = false;
@@ -43,35 +43,43 @@ impl InventoryAlertService {
                         warning_count += 1; // Low stock is a warning issue
                         low_stock_count += 1; // Count specifically items that are low but not empty
                     }
-                },
-                InventoryAlertType::ExpiringBatch => {
-                    match a.severity {
-                        AlertSeverity::Expired => {
-                            has_expired = true;
-                            expired_count += 1;
-                        },
-                        AlertSeverity::Critical => {
-                            has_expiring_today = true;
-                            critical_count += 1;
-                        },
-                        AlertSeverity::Warning => {
-                            has_expiring_soon = true;
-                            warning_count += 1;
-                        },
-                        _ => {}
-                    }
                 }
+                InventoryAlertType::ExpiringBatch => match a.severity {
+                    AlertSeverity::Expired => {
+                        has_expired = true;
+                        expired_count += 1;
+                    }
+                    AlertSeverity::Critical => {
+                        has_expiring_today = true;
+                        critical_count += 1;
+                    }
+                    AlertSeverity::Warning => {
+                        has_expiring_soon = true;
+                        warning_count += 1;
+                    }
+                    _ => {}
+                },
             }
         }
 
         // Professional categorical health score formula
         let mut score = 100;
-        if has_expired        { score -= 40; }
-        if has_expiring_today { score -= 20; }
-        if has_expiring_soon  { score -= 10; }
-        if has_low_stock      { score -= 15; }
-        if has_zero_stock     { score -= 25; }
-        
+        if has_expired {
+            score -= 40;
+        }
+        if has_expiring_today {
+            score -= 20;
+        }
+        if has_expiring_soon {
+            score -= 10;
+        }
+        if has_low_stock {
+            score -= 15;
+        }
+        if has_zero_stock {
+            score -= 25;
+        }
+
         let health_score = score.max(0);
 
         let status = match health_score {
@@ -79,7 +87,8 @@ impl InventoryAlertService {
             70..=89 => "Good",
             40..=69 => "Warning",
             _ => "Critical",
-        }.to_string();
+        }
+        .to_string();
 
         // Badge count: total products requiring immediate attention (Expired + Critical)
         let badge_count = expired_count + critical_count;
@@ -127,7 +136,7 @@ impl InventoryAlertService {
     /// Else if at least 1 warning -> Warning
     async fn get_expiration_alerts(&self, tenant_id: TenantId) -> AppResult<Vec<InventoryAlert>> {
         let now = OffsetDateTime::now_utc();
-        
+
         let query = r#"
             WITH batch_statuses AS (
                 SELECT 
@@ -182,8 +191,12 @@ impl InventoryAlertService {
             let ingredient_name: String = row.try_get("ingredient_name")?;
             let message = match severity {
                 AlertSeverity::Expired => format!("{} has EXPIRED batches!", ingredient_name),
-                AlertSeverity::Critical => format!("{} has batches expiring SOON!", ingredient_name),
-                AlertSeverity::Warning => format!("{} has batches approaching expiry", ingredient_name),
+                AlertSeverity::Critical => {
+                    format!("{} has batches expiring SOON!", ingredient_name)
+                }
+                AlertSeverity::Warning => {
+                    format!("{} has batches approaching expiry", ingredient_name)
+                }
                 _ => format!("{} has expiration issues", ingredient_name),
             };
 
@@ -194,7 +207,10 @@ impl InventoryAlertService {
                 ingredient_name,
                 batch_id: None, // Aggregated alert doesn't point to a single batch
                 message,
-                current_value: row.try_get::<Decimal, _>("total_qty")?.to_f64().unwrap_or(0.0),
+                current_value: row
+                    .try_get::<Decimal, _>("total_qty")?
+                    .to_f64()
+                    .unwrap_or(0.0),
                 threshold_value: None,
             });
         }
@@ -229,7 +245,7 @@ impl InventoryAlertService {
         for row in rows {
             let total_remaining = row.try_get::<Decimal, _>("total_remaining")?;
             let threshold = row.try_get::<Decimal, _>("min_stock_threshold")?;
-            
+
             // Only alert if threshold is set or if totally empty and we want to track it
             // If threshold is 0, we only alert if it's 0 (Out of stock)
             if threshold == Decimal::ZERO && total_remaining > Decimal::ZERO {
@@ -246,9 +262,10 @@ impl InventoryAlertService {
             let message = if total_remaining == Decimal::ZERO {
                 format!("{} is OUT OF STOCK!", ingredient_name)
             } else {
-                format!("{} is low on stock: {} remaining (threshold: {})", 
-                    ingredient_name, 
-                    total_remaining.round_dp(2), 
+                format!(
+                    "{} is low on stock: {} remaining (threshold: {})",
+                    ingredient_name,
+                    total_remaining.round_dp(2),
                     threshold.round_dp(2)
                 )
             };

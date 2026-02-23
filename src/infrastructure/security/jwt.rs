@@ -29,11 +29,7 @@ impl JwtService {
         }
     }
 
-    pub fn generate_access_token(
-        &self,
-        user_id: UserId,
-        tenant_id: TenantId,
-    ) -> AppResult<String> {
+    pub fn generate_access_token(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<String> {
         let now = OffsetDateTime::now_utc();
         let expires_at = now + self.access_token_ttl;
 
@@ -70,11 +66,11 @@ impl JwtService {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccessTokenClaims {
-    pub sub: String,          // user_id
-    pub tenant_id: String,    // tenant_id
-    pub iss: String,          // issuer
-    pub iat: i64,             // issued at
-    pub exp: i64,             // expiration
+    pub sub: String,       // user_id
+    pub tenant_id: String, // tenant_id
+    pub iss: String,       // issuer
+    pub iat: i64,          // issued at
+    pub exp: i64,          // expiration
 }
 
 impl AccessTokenClaims {
@@ -97,12 +93,8 @@ mod tests {
 
     #[test]
     fn test_jwt_generation_and_verification() {
-        let jwt_service = JwtService::new(
-            "test-secret".to_string(),
-            "test-issuer".to_string(),
-            15,
-            30,
-        );
+        let jwt_service =
+            JwtService::new("test-secret".to_string(), "test-issuer".to_string(), 15, 30);
 
         let user_id = UserId::new();
         let tenant_id = TenantId::new();
@@ -120,12 +112,8 @@ mod tests {
 
     #[test]
     fn test_invalid_token() {
-        let jwt_service = JwtService::new(
-            "test-secret".to_string(),
-            "test-issuer".to_string(),
-            15,
-            30,
-        );
+        let jwt_service =
+            JwtService::new("test-secret".to_string(), "test-issuer".to_string(), 15, 30);
 
         let result = jwt_service.verify_access_token("invalid-token");
         assert!(result.is_err());

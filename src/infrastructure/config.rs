@@ -1,5 +1,15 @@
 use std::env;
 
+/// Insecure secrets that must never be used in production
+const INSECURE_SECRETS: &[&str] = &[
+    "change_me",
+    "secret",
+    "password",
+    "jwt_secret",
+    "your-super-secret-jwt-key",
+    "test_secret_for_local_development_only_12345",
+];
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database: DatabaseConfig,
@@ -14,11 +24,13 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub struct DatabaseConfig {
     pub url: String,
+    pub max_connections: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub port: u16,
+    pub rate_limit_per_second: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -57,21 +69,54 @@ pub struct AiConfig {
     pub groq_api_key: String,
 }
 
+/// Check if a secret value is insecure
+fn is_insecure_secret(secret: &str) -> bool {
+    let lower = secret.to_lowercase();
+    INSECURE_SECRETS.iter().any(|s| lower == *s) || secret.len() < 16
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         dotenvy::dotenv().ok();
 
+        let jwt_secret = env::var("JWT_SECRET")?;
+
+        // Resolve admin JWT secret with safe fallback
+        let admin_jwt_secret = env::var("ADMIN_JWT_SECRET").unwrap_or_else(|_| jwt_secret.clone());
+
+        // Security validation: panic on insecure secrets in non-test environments
+        let is_test = env::var("RUST_TEST").is_ok() || cfg!(test);
+        if !is_test {
+            if is_insecure_secret(&jwt_secret) {
+                panic!(
+                    "FATAL: JWT_SECRET is insecure ('{}'). Generate a strong secret: openssl rand -base64 64",
+                    &jwt_secret[..jwt_secret.len().min(10)]
+                );
+            }
+            if is_insecure_secret(&admin_jwt_secret) {
+                panic!(
+                    "FATAL: ADMIN_JWT_SECRET is insecure. Set ADMIN_JWT_SECRET or ensure JWT_SECRET is strong."
+                );
+            }
+        }
+
         Ok(Self {
             database: DatabaseConfig {
                 url: env::var("DATABASE_URL")?,
+                max_connections: env::var("MAX_DB_CONNECTIONS")
+                    .unwrap_or_else(|_| "25".to_string())
+                    .parse()?,
             },
             server: ServerConfig {
                 port: env::var("PORT")
                     .unwrap_or_else(|_| "8000".to_string())
                     .parse()?,
+                rate_limit_per_second: env::var("RATE_LIMIT_PER_SECOND")
+                    .unwrap_or_else(|_| "10".to_string())
+                    .parse()?,
             },
             jwt: JwtConfig {
-                secret: env::var("JWT_SECRET")?,
+                secret: jwt_secret,
                 issuer: env::var("JWT_ISSUER").unwrap_or_else(|_| "restaurant-backend".to_string()),
                 access_token_ttl_minutes: env::var("ACCESS_TOKEN_TTL_MINUTES")
                     .unwrap_or_else(|_| "15".to_string())
@@ -90,8 +135,7 @@ impl Config {
             admin: AdminConfig {
                 email: env::var("ADMIN_EMAIL")?,
                 password_hash: env::var("ADMIN_PASSWORD_HASH")?,
-                jwt_secret: env::var("ADMIN_JWT_SECRET")
-                    .unwrap_or_else(|_| env::var("JWT_SECRET").unwrap_or_else(|_| "change_me".to_string())),
+                jwt_secret: admin_jwt_secret,
                 token_ttl_hours: env::var("ADMIN_TOKEN_TTL_HOURS")
                     .unwrap_or_else(|_| "24".to_string())
                     .parse()?,
@@ -104,8 +148,7 @@ impl Config {
                 public_url_base: env::var("CLOUDFLARE_R2_PUBLIC_URL")?,
             },
             ai: AiConfig {
-                groq_api_key: env::var("GROQ_API_KEY")
-                    .unwrap_or_else(|_| "".to_string()),
+                groq_api_key: env::var("GROQ_API_KEY").unwrap_or_else(|_| "".to_string()),
             },
         })
     }

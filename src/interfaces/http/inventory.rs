@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{delete, get, post, put},
     Json, Router,
@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::application::inventory::{InventoryService, InventoryView, InventoryStatus, LossReport};
+use crate::application::inventory::{InventoryService, InventoryStatus, InventoryView, LossReport};
 use crate::domain::{
     catalog::CatalogIngredientId,
-    inventory::{InventoryBatch, InventoryBatchId, InventoryAlert},
+    inventory::{InventoryAlert, InventoryBatch, InventoryBatchId},
 };
 use crate::interfaces::http::middleware::AuthUser;
-use crate::shared::AppError;
+use crate::shared::{AppError, PaginationParams};
 
 // ============================================================================
 // Request/Response Types
@@ -75,22 +75,44 @@ impl From<InventoryBatch> for ProductResponse {
 // Handlers
 // ============================================================================
 
-/// GET /api/inventory/products
-/// List all inventory products with full details (ingredient name, category, unit)
-/// Uses Query DTO pattern - single request returns everything needed for UI
+/// GET /api/inventory/products?page=1&per_page=50
+/// List all inventory products with full details (paginated)
 /// 🎯 ЭТАЛОН B2B SaaS: Language source = user.language from database!
 pub async fn list_products(
     State(service): State<InventoryService>,
     auth: AuthUser,
-) -> Result<Json<Vec<InventoryView>>, AppError> {
+    Query(pagination): Query<PaginationParams>,
+) -> Result<Json<serde_json::Value>, AppError> {
     // 🎯 Backend = source of truth для языка!
-    // auth.language загружается из БД в middleware
-    // Frontend НЕ передает язык руками - правильный подход для SaaS!
     let products = service
         .list_products_with_details(auth.user_id, auth.tenant_id, auth.language)
         .await?;
-    
-    Ok(Json(products))
+
+    // Apply pagination in-memory (the query already JOINs with catalogs,
+    // adding SQL pagination would require significant refactoring of the complex JOIN).
+    let total = products.len() as i64;
+    let start = pagination.offset() as usize;
+    let end = (start + pagination.per_page() as usize).min(products.len());
+    let items: Vec<InventoryView> = if start < products.len() {
+        products[start..end].to_vec()
+    } else {
+        vec![]
+    };
+
+    let per_page = pagination.per_page();
+    let total_pages = if total > 0 {
+        ((total as u32) + per_page - 1) / per_page
+    } else {
+        0
+    };
+
+    Ok(Json(serde_json::json!({
+        "items": items,
+        "total": total,
+        "page": pagination.page(),
+        "per_page": per_page,
+        "total_pages": total_pages,
+    })))
 }
 
 /// POST /api/inventory/products
@@ -118,7 +140,7 @@ pub async fn add_product(
     let products = service
         .list_products_with_details(auth.user_id, auth.tenant_id, auth.language)
         .await?;
-    
+
     let product_view = products
         .into_iter()
         .find(|p| p.id == product_id.as_uuid())
@@ -156,7 +178,11 @@ pub async fn delete_product(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     service
-        .delete_product(InventoryBatchId::from_uuid(id), auth.user_id, auth.tenant_id)
+        .delete_product(
+            InventoryBatchId::from_uuid(id),
+            auth.user_id,
+            auth.tenant_id,
+        )
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -219,7 +245,9 @@ pub async fn get_loss_report(
     auth: AuthUser,
     axum::extract::Query(query): axum::extract::Query<LossReportQuery>,
 ) -> Result<Json<LossReport>, AppError> {
-    let report = service.get_loss_report(auth.tenant_id, query.days, auth.language.code()).await?;
+    let report = service
+        .get_loss_report(auth.tenant_id, query.days, auth.language.code())
+        .await?;
     Ok(Json(report))
 }
 

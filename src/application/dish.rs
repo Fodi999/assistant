@@ -1,7 +1,7 @@
-use crate::domain::{Dish, DishId, DishName, DishFinancials, RecipeId, Money};
-use crate::infrastructure::persistence::DishRepositoryTrait;
 use crate::application::RecipeService;
-use crate::shared::{AppError, AppResult, TenantId, UserId};
+use crate::domain::{Dish, DishFinancials, DishId, DishName, Money, RecipeId};
+use crate::infrastructure::persistence::DishRepositoryTrait;
+use crate::shared::{AppError, AppResult, PaginationParams, TenantId};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -11,18 +11,14 @@ pub struct DishService {
 }
 
 impl DishService {
-    pub fn new(
-        dish_repo: Arc<dyn DishRepositoryTrait>,
-        recipe_service: RecipeService,
-    ) -> Self {
+    pub fn new(dish_repo: Arc<dyn DishRepositoryTrait>, recipe_service: RecipeService) -> Self {
         Self {
             dish_repo,
             recipe_service,
         }
     }
 
-    /// Create new dish
-    /// Only 'final' recipes can be dishes (DDD validation)
+    /// Create new dish — materializes cost immediately if recipe cost is available
     pub async fn create_dish(
         &self,
         tenant_id: TenantId,
@@ -31,11 +27,30 @@ impl DishService {
         description: Option<String>,
         selling_price: Money,
     ) -> AppResult<Dish> {
-        // TODO: Validate that recipe exists and is 'final' type
-        // This requires RecipeService API to accept tenant_id or return recipe type
-        // For now, we trust the caller to provide valid recipe_id
-        
-        let dish = Dish::new(tenant_id, recipe_id, name, description, selling_price)?;
+        let mut dish = Dish::new(tenant_id, recipe_id, name, description, selling_price)?;
+
+        // Try to materialize cost at creation time
+        match self.recipe_service.calculate_cost(recipe_id, tenant_id).await {
+            Ok(recipe_cost) => {
+                let cost = Money::from_cents(recipe_cost.total_cost.as_cents())?;
+                dish.recalculate_cost(cost);
+                tracing::info!(
+                    "💰 Dish '{}' cost materialized: recipe={} food_cost={:.1}% margin={:.1}%",
+                    dish.name().as_str(),
+                    recipe_cost.total_cost.as_cents(),
+                    dish.food_cost_percent().unwrap_or(0.0),
+                    dish.profit_margin_percent().unwrap_or(0.0),
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "⚠️ Could not materialize cost for dish '{}': {}. Will be calculated later.",
+                    dish.name().as_str(),
+                    e
+                );
+            }
+        }
+
         self.dish_repo.create(&dish).await?;
         Ok(dish)
     }
@@ -45,30 +60,35 @@ impl DishService {
         self.dish_repo.find_by_id(id, tenant_id).await
     }
 
-    /// List dishes for tenant
-    pub async fn list_dishes(&self, tenant_id: TenantId, active_only: bool) -> AppResult<Vec<Dish>> {
-        self.dish_repo.list_by_tenant(tenant_id, active_only).await
+    /// List dishes for tenant (paginated)
+    pub async fn list_dishes(
+        &self,
+        tenant_id: TenantId,
+        active_only: bool,
+        pagination: &PaginationParams,
+    ) -> AppResult<(Vec<Dish>, i64)> {
+        self.dish_repo
+            .list_by_tenant(tenant_id, active_only, pagination)
+            .await
     }
 
-    /// Calculate dish financials
-    /// This is where "владелец ресторана видит деньги"!
+    /// Calculate dish financials (on-the-fly, does NOT persist)
+    /// 🔒 TENANT ISOLATION: uses tenant_id for recipe cost lookup
     pub async fn calculate_financials(
         &self,
         dish_id: DishId,
-        user_id: UserId,
         tenant_id: TenantId,
     ) -> AppResult<DishFinancials> {
-        // Get dish
-        let dish = self.get_dish(dish_id, tenant_id)
+        let dish = self
+            .get_dish(dish_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Dish not found".to_string()))?;
 
-        // Calculate recipe cost (recursive, handles components)
-        let recipe_cost = self.recipe_service
-            .calculate_cost(dish.recipe_id(), user_id)
+        let recipe_cost = self
+            .recipe_service
+            .calculate_cost(dish.recipe_id(), tenant_id)
             .await?;
 
-        // Calculate financials
         let financials = DishFinancials::calculate(
             dish.id(),
             dish.name().as_str().to_string(),
@@ -77,6 +97,78 @@ impl DishService {
         );
 
         Ok(financials)
+    }
+
+    /// Recalculate materialized costs for ALL dishes of a tenant.
+    /// Called when ingredient prices change or manually by owner.
+    /// Returns (updated_count, error_count).
+    pub async fn recalculate_all_costs(
+        &self,
+        tenant_id: TenantId,
+    ) -> AppResult<RecalculateResult> {
+        // Load all dishes (no pagination — we need all of them)
+        let all_pagination = PaginationParams {
+            page: Some(1),
+            per_page: Some(100),
+        };
+
+        let mut updated = 0u32;
+        let mut errors = 0u32;
+        let mut page = 1u32;
+
+        loop {
+            let pagination = PaginationParams {
+                page: Some(page),
+                per_page: Some(all_pagination.per_page()),
+            };
+
+            let (dishes, total) = self
+                .dish_repo
+                .list_by_tenant(tenant_id, false, &pagination)
+                .await?;
+
+            if dishes.is_empty() {
+                break;
+            }
+
+            for dish in dishes {
+                match self
+                    .recipe_service
+                    .calculate_cost(dish.recipe_id(), tenant_id)
+                    .await
+                {
+                    Ok(recipe_cost) => {
+                        let cost = Money::from_cents(recipe_cost.total_cost.as_cents())?;
+                        let mut dish = dish;
+                        dish.recalculate_cost(cost);
+                        self.dish_repo.update(&dish).await?;
+                        updated += 1;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "⚠️ Failed to recalculate cost for dish '{}' ({}): {}",
+                            dish.name().as_str(),
+                            dish.id().as_uuid(),
+                            e
+                        );
+                        errors += 1;
+                    }
+                }
+            }
+
+            if (page as i64 * all_pagination.per_page() as i64) >= total {
+                break;
+            }
+            page += 1;
+        }
+
+        tracing::info!(
+            "✅ Cost recalculation complete: {} updated, {} errors",
+            updated,
+            errors
+        );
+
+        Ok(RecalculateResult { updated, errors })
     }
 
     /// Update dish
@@ -89,7 +181,8 @@ impl DishService {
         selling_price: Option<Money>,
         active: Option<bool>,
     ) -> AppResult<Dish> {
-        let mut dish = self.get_dish(id, tenant_id)
+        let mut dish = self
+            .get_dish(id, tenant_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Dish not found".to_string()))?;
 
@@ -101,6 +194,7 @@ impl DishService {
             dish.update_description(new_description);
         }
 
+        let price_changed = selling_price.is_some();
         if let Some(new_price) = selling_price {
             dish.update_selling_price(new_price)?;
         }
@@ -111,6 +205,18 @@ impl DishService {
             dish.deactivate();
         }
 
+        // Re-materialize cost if selling price changed
+        if price_changed {
+            if let Ok(recipe_cost) = self
+                .recipe_service
+                .calculate_cost(dish.recipe_id(), tenant_id)
+                .await
+            {
+                let cost = Money::from_cents(recipe_cost.total_cost.as_cents())?;
+                dish.recalculate_cost(cost);
+            }
+        }
+
         self.dish_repo.update(&dish).await?;
         Ok(dish)
     }
@@ -119,6 +225,13 @@ impl DishService {
     pub async fn delete_dish(&self, id: DishId, tenant_id: TenantId) -> AppResult<bool> {
         self.dish_repo.delete(id, tenant_id).await
     }
+}
+
+/// Result of batch recalculation
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RecalculateResult {
+    pub updated: u32,
+    pub errors: u32,
 }
 
 #[cfg(test)]

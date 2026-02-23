@@ -1,6 +1,9 @@
 use crate::shared::{AppError, AppResult};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher as Argon2PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{
+        rand_core::OsRng, PasswordHash, PasswordHasher as Argon2PasswordHasher, PasswordVerifier,
+        SaltString,
+    },
     Argon2,
 };
 
@@ -18,9 +21,10 @@ impl PasswordHasher {
 
     pub fn hash_password(&self, password: &str) -> AppResult<String> {
         let salt = SaltString::generate(&mut OsRng);
-        
-        let password_hash = Argon2PasswordHasher::hash_password(&self.argon2, password.as_bytes(), &salt)
-            .map_err(|e| AppError::internal(format!("Failed to hash password: {}", e)))?;
+
+        let password_hash =
+            Argon2PasswordHasher::hash_password(&self.argon2, password.as_bytes(), &salt)
+                .map_err(|e| AppError::internal(format!("Failed to hash password: {}", e)))?;
 
         Ok(password_hash.to_string())
     }
@@ -29,8 +33,10 @@ impl PasswordHasher {
         let parsed_hash = PasswordHash::new(password_hash)
             .map_err(|e| AppError::internal(format!("Failed to parse password hash: {}", e)))?;
 
-        Ok(PasswordVerifier::verify_password(&self.argon2, password.as_bytes(), &parsed_hash)
-            .is_ok())
+        Ok(
+            PasswordVerifier::verify_password(&self.argon2, password.as_bytes(), &parsed_hash)
+                .is_ok(),
+        )
     }
 }
 

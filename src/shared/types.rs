@@ -157,9 +157,10 @@ impl UnitType {
             "can" | "банка" => Ok(UnitType::Can),
             "bottle" | "бутылка" => Ok(UnitType::Bottle),
             "package" | "упаковка" => Ok(UnitType::Package),
-            _ => Err(crate::shared::AppError::validation(
-                &format!("Unknown unit type: {}", s)
-            )),
+            _ => Err(crate::shared::AppError::validation(&format!(
+                "Unknown unit type: {}",
+                s
+            ))),
         }
     }
 }

@@ -1,8 +1,8 @@
-use aws_sdk_s3::{Client, primitives::ByteStream};
-use aws_sdk_s3::presigning::PresigningConfig;
-use aws_config::BehaviorVersion;
-use bytes::Bytes;
 use crate::shared::AppError;
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::presigning::PresigningConfig;
+use aws_sdk_s3::{primitives::ByteStream, Client};
+use bytes::Bytes;
 use std::time::Duration;
 
 /// Cloudflare R2 Client (AWS S3-compatible)
@@ -31,13 +31,13 @@ impl R2Client {
         );
 
         let endpoint_url = format!("https://{}.r2.cloudflarestorage.com", account_id);
-        
+
         let config = aws_sdk_s3::config::Builder::new()
             .behavior_version(BehaviorVersion::latest())
             .credentials_provider(credentials)
             .endpoint_url(&endpoint_url)
             .region(aws_sdk_s3::config::Region::new("auto"))
-            .force_path_style(true)  // CRITICAL for R2 compatibility
+            .force_path_style(true) // CRITICAL for R2 compatibility
             .build();
 
         let client = Client::from_conf(config);
@@ -55,7 +55,8 @@ impl R2Client {
         key: &str,
         content_type: &str,
     ) -> Result<String, AppError> {
-        let presigned = self.client
+        let presigned = self
+            .client
             .put_object()
             .bucket(&self.bucket_name)
             .key(key)
@@ -63,12 +64,10 @@ impl R2Client {
             .presigned(
                 PresigningConfig::expires_in(Duration::from_secs(300)).map_err(|e| {
                     AppError::internal(format!("Failed to create presigning config: {}", e))
-                })?
+                })?,
             )
             .await
-            .map_err(|e| {
-                AppError::internal(format!("Failed to generate presigned URL: {}", e))
-            })?;
+            .map_err(|e| AppError::internal(format!("Failed to generate presigned URL: {}", e)))?;
 
         Ok(presigned.uri().to_string())
     }

@@ -1,6 +1,6 @@
-use sqlx::{PgPool, Row};
 use crate::domain::catalog::{CatalogCategory, CatalogCategoryId};
 use crate::shared::{result::AppResult, Language};
+use sqlx::{PgPool, Row};
 
 #[async_trait::async_trait]
 pub trait CatalogCategoryRepositoryTrait: Send + Sync {
@@ -27,12 +27,7 @@ impl CatalogCategoryRepository {
         let sort_order: i32 = row.try_get("sort_order")?;
 
         Ok(CatalogCategory::from_parts(
-            id,
-            name_pl,
-            name_en,
-            name_uk,
-            name_ru,
-            sort_order,
+            id, name_pl, name_en, name_uk, name_ru, sort_order,
         ))
     }
 }
@@ -46,13 +41,9 @@ impl CatalogCategoryRepositoryTrait for CatalogCategoryRepository {
             ORDER BY sort_order ASC
         "#;
 
-        let rows = sqlx::query(sql)
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
 
-        rows.iter()
-            .map(Self::row_to_category)
-            .collect()
+        rows.iter().map(Self::row_to_category).collect()
     }
 
     async fn find_by_id(&self, id: CatalogCategoryId) -> AppResult<Option<CatalogCategory>> {
@@ -67,8 +58,6 @@ impl CatalogCategoryRepositoryTrait for CatalogCategoryRepository {
             .fetch_optional(&self.pool)
             .await?;
 
-        row.as_ref()
-            .map(Self::row_to_category)
-            .transpose()
+        row.as_ref().map(Self::row_to_category).transpose()
     }
 }

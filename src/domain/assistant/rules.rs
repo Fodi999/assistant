@@ -1,24 +1,18 @@
-use super::{step::AssistantStep, command::AssistantCommand};
+use super::{command::AssistantCommand, step::AssistantStep};
 
-pub fn next_step(
-    current: AssistantStep,
-    command: &AssistantCommand,
-) -> AssistantStep {
+pub fn next_step(current: AssistantStep, command: &AssistantCommand) -> AssistantStep {
     match (current, command) {
-        (AssistantStep::Start, AssistantCommand::StartInventory)
-            => AssistantStep::InventorySetup,
+        (AssistantStep::Start, AssistantCommand::StartInventory) => AssistantStep::InventorySetup,
 
-        (AssistantStep::InventorySetup, AssistantCommand::FinishInventory)
-            => AssistantStep::RecipeSetup,
+        (AssistantStep::InventorySetup, AssistantCommand::FinishInventory) => {
+            AssistantStep::RecipeSetup
+        }
 
-        (AssistantStep::RecipeSetup, AssistantCommand::FinishRecipes)
-            => AssistantStep::DishSetup,
+        (AssistantStep::RecipeSetup, AssistantCommand::FinishRecipes) => AssistantStep::DishSetup,
 
-        (AssistantStep::DishSetup, AssistantCommand::FinishDishes)
-            => AssistantStep::Report,
+        (AssistantStep::DishSetup, AssistantCommand::FinishDishes) => AssistantStep::Report,
 
-        (AssistantStep::Report, AssistantCommand::ViewReport)
-            => AssistantStep::Completed,
+        (AssistantStep::Report, AssistantCommand::ViewReport) => AssistantStep::Completed,
 
         // Невозможные переходы просто игнорируются
         _ => current,

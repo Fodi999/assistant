@@ -38,13 +38,13 @@ impl fmt::Display for CatalogCategoryId {
 #[derive(Debug, Clone)]
 pub struct CatalogCategory {
     pub id: CatalogCategoryId,
-    
+
     // Multilingual names
     pub name_pl: String,
     pub name_en: String,
     pub name_uk: String,
     pub name_ru: String,
-    
+
     // Display order
     pub sort_order: i32,
 }
@@ -277,31 +277,31 @@ impl Season {
 #[derive(Debug, Clone)]
 pub struct CatalogIngredient {
     pub id: CatalogIngredientId,
-    
+
     // Category reference
     pub category_id: CatalogCategoryId,
-    
+
     // Multilingual names
     pub name_pl: String,
     pub name_en: String,
     pub name_uk: String,
     pub name_ru: String,
-    
+
     // Core properties
     pub default_unit: Unit,
     pub default_shelf_life_days: Option<i32>,
-    
+
     // Nutritional and metadata
     pub allergens: Vec<Allergen>,
     pub calories_per_100g: Option<i32>,
     pub seasons: Vec<Season>,
-    
+
     // Alerting
     pub min_stock_threshold: Decimal,
-    
+
     // UX
     pub image_url: Option<String>,
-    
+
     // Soft delete
     pub is_active: bool,
 }
@@ -346,7 +346,7 @@ impl CatalogIngredient {
             seasons,
             image_url,
             min_stock_threshold: Decimal::ZERO,
-            is_active: true,  // New products are active by default
+            is_active: true, // New products are active by default
         }
     }
 

@@ -1,8 +1,8 @@
+use crate::application::recipe_validator::RecipeValidator;
 use crate::domain::recipe_ai_insights::*;
 use crate::domain::recipe_v2::{Recipe, RecipeId};
-use crate::infrastructure::GroqService;
 use crate::infrastructure::persistence::{RecipeAIInsightsRepository, RecipeV2RepositoryTrait};
-use crate::application::recipe_validator::RecipeValidator;
+use crate::infrastructure::GroqService;
 use crate::shared::AppError;
 use std::sync::Arc;
 use std::time::Instant;
@@ -36,12 +36,14 @@ impl RecipeAIInsightsService {
         tenant_id: crate::shared::TenantId,
         target_language: &str,
     ) -> Result<RecipeAIInsightsResponse, AppError> {
-        let recipe = self.recipe_repo
+        let recipe = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
-        
-        self.generate_insights_for_recipe(&recipe, target_language).await
+
+        self.generate_insights_for_recipe(&recipe, target_language)
+            .await
     }
 
     /// Generate AI insights for a recipe in specific language
@@ -53,12 +55,17 @@ impl RecipeAIInsightsService {
     ) -> Result<RecipeAIInsightsResponse, AppError> {
         let start_time = Instant::now();
 
-        tracing::info!("🤖 Generating AI insights for recipe {:?} (language: {})", recipe.id, target_language);
+        tracing::info!(
+            "🤖 Generating AI insights for recipe {:?} (language: {})",
+            recipe.id,
+            target_language
+        );
 
         // 🔍 STEP 1: Run rule-based validation BEFORE AI
         let validation_result = self.validator.validate(recipe);
-        
-        tracing::debug!("📋 Validation: is_valid={}, errors={}, warnings={}", 
+
+        tracing::debug!(
+            "📋 Validation: is_valid={}, errors={}, warnings={}",
             validation_result.is_valid,
             validation_result.errors.len(),
             validation_result.warnings.len()
@@ -71,18 +78,22 @@ impl RecipeAIInsightsService {
         let ai_response = self.groq_service.analyze_recipe(&prompt).await?;
 
         // Parse AI response
-        let (steps, validation, suggestions, feasibility_score) = self.parse_ai_response(&ai_response)?;
+        let (steps, validation, suggestions, feasibility_score) =
+            self.parse_ai_response(&ai_response)?;
 
         // Save to database (extract UUID from RecipeId)
-        let insights = self.repository.upsert(
-            recipe.id.0,  // Extract UUID
-            target_language,
-            steps,
-            validation,
-            suggestions,
-            feasibility_score,
-            "llama-3.1-8b-instant",
-        ).await?;
+        let insights = self
+            .repository
+            .upsert(
+                recipe.id.0, // Extract UUID
+                target_language,
+                steps,
+                validation,
+                suggestions,
+                feasibility_score,
+                "llama-3.1-8b-instant",
+            )
+            .await?;
 
         let elapsed = start_time.elapsed().as_millis() as u64;
         tracing::info!("✅ Generated AI insights in {}ms", elapsed);
@@ -101,12 +112,17 @@ impl RecipeAIInsightsService {
         target_language: &str,
     ) -> Result<RecipeAIInsightsResponse, AppError> {
         // Check if exists first
-        if let Some(existing) = self.repository.get_by_recipe_and_language(recipe_id.as_uuid(), target_language).await? {
+        if let Some(existing) = self
+            .repository
+            .get_by_recipe_and_language(recipe_id.as_uuid(), target_language)
+            .await?
+        {
             return Ok(existing.into());
         }
 
         // Generate if not exists
-        self.generate_insights_by_id(recipe_id, tenant_id, target_language).await
+        self.generate_insights_by_id(recipe_id, tenant_id, target_language)
+            .await
     }
 
     /// Refresh (force regenerate) insights
@@ -116,12 +132,14 @@ impl RecipeAIInsightsService {
         tenant_id: crate::shared::TenantId,
         target_language: &str,
     ) -> Result<RecipeAIInsightsResponse, AppError> {
-        let recipe = self.recipe_repo
+        let recipe = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
-        
-        self.generate_insights_for_recipe(&recipe, target_language).await
+
+        self.generate_insights_for_recipe(&recipe, target_language)
+            .await
     }
 
     /// Get insights for all languages
@@ -133,36 +151,42 @@ impl RecipeAIInsightsService {
     }
 
     /// Build prompt for AI analysis
-    fn build_analysis_prompt(&self, recipe: &Recipe, _language: &str, validation: &crate::application::recipe_validator::ValidationResult) -> String {
+    fn build_analysis_prompt(
+        &self,
+        recipe: &Recipe,
+        _language: &str,
+        validation: &crate::application::recipe_validator::ValidationResult,
+    ) -> String {
         // Build validation context for AI
-        let validation_context = if !validation.errors.is_empty() || !validation.warnings.is_empty() {
+        let validation_context = if !validation.errors.is_empty() || !validation.warnings.is_empty()
+        {
             let mut context = String::from("\n\n🔍 ПРЕДВАРИТЕЛЬНАЯ ВАЛИДАЦИЯ:\n");
-            
+
             if !validation.errors.is_empty() {
                 context.push_str("⚠️ КРИТИЧЕСКИЕ ОШИБКИ:\n");
                 for error in &validation.errors {
                     context.push_str(&format!("  - [{}] {}\n", error.code, error.message));
                 }
             }
-            
+
             if !validation.warnings.is_empty() {
                 context.push_str("⚡ ПРЕДУПРЕЖДЕНИЯ:\n");
                 for warning in &validation.warnings {
                     context.push_str(&format!("  - [{}] {}\n", warning.code, warning.message));
                 }
             }
-            
+
             if !validation.missing_critical_ingredients.is_empty() {
                 context.push_str("❌ ОТСУТСТВУЮТ КРИТИЧЕСКИЕ ИНГРЕДИЕНТЫ:\n");
                 for missing in &validation.missing_critical_ingredients {
                     context.push_str(&format!("  - {}\n", missing));
                 }
             }
-            
+
             if let Some(ref dish_type) = validation.dish_type {
                 context.push_str(&format!("📋 ТИП БЛЮДА: {:?}\n", dish_type));
             }
-            
+
             context
         } else {
             String::new()
@@ -234,10 +258,7 @@ impl RecipeAIInsightsService {
 ВАЖНО: Если рецепт логически невозможен (например "торт из свеклы и капусты"), установи feasibility_score=10-20 и добавь ошибку.
 
 Ответь ТОЛЬКО JSON, без пояснений."#,
-            validation_context,
-            recipe.name_default,
-            recipe.instructions_default,
-            recipe.servings
+            validation_context, recipe.name_default, recipe.instructions_default, recipe.servings
         )
     }
 
@@ -245,7 +266,15 @@ impl RecipeAIInsightsService {
     fn parse_ai_response(
         &self,
         response: &str,
-    ) -> Result<(Vec<CookingStep>, RecipeValidation, Vec<RecipeSuggestion>, i32), AppError> {
+    ) -> Result<
+        (
+            Vec<CookingStep>,
+            RecipeValidation,
+            Vec<RecipeSuggestion>,
+            i32,
+        ),
+        AppError,
+    > {
         #[derive(serde::Deserialize)]
         struct AIResponse {
             steps: Vec<CookingStep>,
@@ -266,7 +295,7 @@ impl RecipeAIInsightsService {
                 }
                 Err(serde_json::Error::io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "No valid JSON found in AI response"
+                    "No valid JSON found in AI response",
                 )))
             })
             .map_err(|e| {
@@ -277,7 +306,9 @@ impl RecipeAIInsightsService {
 
         // Validate feasibility score
         if parsed.feasibility_score < 0 || parsed.feasibility_score > 100 {
-            return Err(AppError::validation("Feasibility score must be between 0 and 100"));
+            return Err(AppError::validation(
+                "Feasibility score must be between 0 and 100",
+            ));
         }
 
         Ok((

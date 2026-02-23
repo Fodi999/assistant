@@ -18,7 +18,7 @@ use sqlx::PgPool;
 pub struct AuthUser {
     pub user_id: UserId,
     pub tenant_id: TenantId,
-    pub language: Language,  // 🎯 ДОБАВЛЕНО: источник языка = backend!
+    pub language: Language, // 🎯 ДОБАВЛЕНО: источник языка = backend!
 }
 
 #[async_trait]
@@ -54,19 +54,17 @@ where
             .ok_or_else(|| AppError::internal("Database pool not configured"))?
             .clone();
 
-        let language = sqlx::query_scalar::<_, String>(
-            "SELECT language FROM users WHERE id = $1"
-        )
-        .bind(user_id.as_uuid())
-        .fetch_optional(&pool)
-        .await?
-        .and_then(|lang| Language::from_str(&lang).ok())
-        .unwrap_or(Language::En);  // Fallback to English
+        let language = sqlx::query_scalar::<_, String>("SELECT language FROM users WHERE id = $1")
+            .bind(user_id.as_uuid())
+            .fetch_optional(&pool)
+            .await?
+            .and_then(|lang| Language::from_str(&lang).ok())
+            .unwrap_or(Language::En); // Fallback to English
 
         Ok(AuthUser {
             user_id,
             tenant_id,
-            language,  // 🎯 Backend = source of truth!
+            language, // 🎯 Backend = source of truth!
         })
     }
 }

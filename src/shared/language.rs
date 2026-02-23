@@ -4,10 +4,10 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
-    En,  // English
-    Pl,  // Polish
-    Uk,  // Ukrainian
-    Ru,  // Russian
+    En, // English
+    Pl, // Polish
+    Uk, // Ukrainian
+    Ru, // Russian
 }
 
 impl Language {

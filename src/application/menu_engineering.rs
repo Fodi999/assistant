@@ -1,15 +1,18 @@
 use std::collections::HashMap;
 
-use crate::domain::{DishId, DishPerformance, MenuEngineeringMatrix, inventory::{BatchStatus, MovementType, InventoryMovement, Quantity}};
-use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
-use crate::infrastructure::persistence::{
-    InventoryBatchRepositoryTrait, DishRepositoryTrait, RecipeRepositoryTrait
+use crate::domain::{
+    inventory::{BatchStatus, InventoryMovement, MovementType, Quantity},
+    DishId, DishPerformance, MenuEngineeringMatrix,
 };
+use crate::infrastructure::persistence::{
+    DishRepositoryTrait, InventoryBatchRepositoryTrait, RecipeRepositoryTrait,
+};
+use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
 
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
-use rust_decimal::Decimal;
 
 /// Service for Menu Engineering analysis
 /// Classifies dishes into Star/Plowhorse/Puzzle/Dog categories
@@ -37,7 +40,7 @@ impl MenuEngineeringService {
     }
 
     /// Analyze menu performance for a tenant
-    /// 
+    ///
     /// Returns MenuEngineeringMatrix with all dishes classified by profitability and popularity
     pub async fn analyze_menu(
         &self,
@@ -85,14 +88,12 @@ impl MenuEngineeringService {
             .collect();
 
         // 4. Sort by revenue descending (for ABC analysis)
-        performances.sort_by(|a, b| {
-            b.total_revenue_cents.cmp(&a.total_revenue_cents)
-        });
+        performances.sort_by(|a, b| b.total_revenue_cents.cmp(&a.total_revenue_cents));
 
         // 5. Calculate cumulative revenue share for ABC classification
         let total_revenue: i64 = performances.iter().map(|p| p.total_revenue_cents).sum();
         let mut cumulative_revenue: i64 = 0;
-        
+
         for perf in &mut performances {
             cumulative_revenue += perf.total_revenue_cents;
             perf.cumulative_revenue_share = if total_revenue > 0 {
@@ -153,12 +154,24 @@ impl MenuEngineeringService {
 
         for row in rows {
             use sqlx::Row;
-            let dish_id: Uuid = row.try_get("dish_id").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
-            let dish_name: String = row.try_get("dish_name").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
-            let total_quantity: i64 = row.try_get("total_quantity").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
-            let total_revenue_cents: i64 = row.try_get("total_revenue_cents").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
-            let total_profit_cents: i64 = row.try_get("total_profit_cents").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
-            let avg_profit_margin_percent: f64 = row.try_get("avg_profit_margin_percent").map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let dish_id: Uuid = row
+                .try_get("dish_id")
+                .map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let dish_name: String = row
+                .try_get("dish_name")
+                .map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let total_quantity: i64 = row
+                .try_get("total_quantity")
+                .map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let total_revenue_cents: i64 = row
+                .try_get("total_revenue_cents")
+                .map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let total_profit_cents: i64 = row
+                .try_get("total_profit_cents")
+                .map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
+            let avg_profit_margin_percent: f64 = row
+                .try_get("avg_profit_margin_percent")
+                .map_err(|e| AppError::internal(&format!("DB: {}", e)))?;
 
             map.insert(
                 DishId::from_uuid(dish_id),
@@ -215,41 +228,61 @@ impl MenuEngineeringService {
         .await?;
 
         // 2. 🚀 AUTOMATIC INVENTORY DEDUCTION (The "Business Flow" Logic)
-        tracing::info!("Starting automatic inventory deduction for dish {}", dish_id);
+        tracing::info!(
+            "Starting automatic inventory deduction for dish {}",
+            dish_id
+        );
 
         // Find the dish to get the recipe
-        let dish = self.dish_repo.find_by_id(DishId::from_uuid(dish_id), tenant_id)
+        let dish = self
+            .dish_repo
+            .find_by_id(DishId::from_uuid(dish_id), tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Dish not found"))?;
 
-        // Find the recipe
-        let recipe = self.recipe_repo.find_by_id(dish.recipe_id, user_id)
+        // Find the recipe (🔒 TENANT ISOLATION: use tenant_id)
+        let recipe = self
+            .recipe_repo
+            .find_by_id(dish.recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe not found"))?;
 
-        tracing::info!("Found recipe {} with {} ingredients", recipe.id().as_uuid(), recipe.ingredients().len());
+        tracing::info!(
+            "Found recipe {} with {} ingredients",
+            recipe.id().as_uuid(),
+            recipe.ingredients().len()
+        );
 
         // For each ingredient in the recipe, deduct from inventory using FIFO with locking
         for ingredient in recipe.ingredients() {
             let catalog_id = ingredient.catalog_ingredient_id();
             let quantity_per_dish = ingredient.quantity().value();
             let total_to_deduct_val = quantity_per_dish * (quantity as f64);
-            
-            let target_qty = Quantity::new(total_to_deduct_val)?.decimal();
-            if target_qty <= Decimal::ZERO { continue; }
 
-            tracing::info!("Deducting {} units of ingredient {} using FIFO", target_qty, catalog_id.as_uuid());
+            let target_qty = Quantity::new(total_to_deduct_val)?.decimal();
+            if target_qty <= Decimal::ZERO {
+                continue;
+            }
+
+            tracing::info!(
+                "Deducting {} units of ingredient {} using FIFO",
+                target_qty,
+                catalog_id.as_uuid()
+            );
 
             let mut tx = self.pool.begin().await?;
 
             // 1. Get deliveries for this ingredient with FOR UPDATE lock
-            let batches = self.inventory_repo
+            let batches = self
+                .inventory_repo
                 .list_active_by_ingredient_for_update(&mut tx, tenant_id, catalog_id)
                 .await?;
 
             let mut remaining_to_deduct = target_qty;
             for mut batch in batches {
-                if remaining_to_deduct <= Decimal::ZERO { break; }
+                if remaining_to_deduct <= Decimal::ZERO {
+                    break;
+                }
 
                 let batch_available = batch.remaining_quantity.decimal();
                 let deduction = if batch_available <= remaining_to_deduct {
@@ -261,12 +294,14 @@ impl MenuEngineeringService {
                 // 2. Update batch stock
                 let new_remaining = batch_available - deduction;
                 batch.remaining_quantity = Quantity::from_decimal(new_remaining)?;
-                
+
                 if new_remaining <= Decimal::ZERO {
                     batch.status = BatchStatus::Exhausted;
                 }
 
-                self.inventory_repo.update_in_transaction(&mut tx, &batch).await?;
+                self.inventory_repo
+                    .update_in_transaction(&mut tx, &batch)
+                    .await?;
 
                 // 3. Record movement for audit log (OutSale)
                 let mut movement = InventoryMovement::new(
@@ -280,14 +315,20 @@ impl MenuEngineeringService {
                 movement.reference_type = Some("DISH_SALE".to_string());
                 movement.notes = Some(format!("Sold {} x dish", quantity));
 
-                self.inventory_repo.record_movement(&mut tx, &movement).await?;
+                self.inventory_repo
+                    .record_movement(&mut tx, &movement)
+                    .await?;
 
                 remaining_to_deduct -= deduction;
             }
 
             if remaining_to_deduct > Decimal::ZERO {
-                tracing::warn!("Insufficient stock for {} during sale. Missing: {}", catalog_id.as_uuid(), remaining_to_deduct);
-                // In some systems you might want to allow negative stock or stop the sale. 
+                tracing::warn!(
+                    "Insufficient stock for {} during sale. Missing: {}",
+                    catalog_id.as_uuid(),
+                    remaining_to_deduct
+                );
+                // In some systems you might want to allow negative stock or stop the sale.
                 // For now, we continue but warn.
             }
 

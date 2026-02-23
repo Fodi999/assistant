@@ -1,7 +1,9 @@
 // Recipe Translation Service - AI-powered translations via Groq
 use crate::domain::recipe_v2::{RecipeId, RecipeTranslation, TranslationSource};
 use crate::infrastructure::groq_service::GroqService;
-use crate::infrastructure::persistence::{RecipeTranslationRepositoryTrait, RecipeV2RepositoryTrait};
+use crate::infrastructure::persistence::{
+    RecipeTranslationRepositoryTrait, RecipeV2RepositoryTrait,
+};
 use crate::shared::{AppError, AppResult, Language};
 use std::sync::Arc;
 
@@ -34,7 +36,8 @@ impl RecipeTranslationService {
         target_language: Language,
     ) -> AppResult<RecipeTranslation> {
         // Load recipe with tenant isolation
-        let recipe = self.recipe_repo
+        let recipe = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
@@ -48,7 +51,8 @@ impl RecipeTranslationService {
         }
 
         // Check if translation already exists
-        if let Some(existing) = self.translation_repo
+        if let Some(existing) = self
+            .translation_repo
             .find_by_recipe_and_language(recipe_id, target_language)
             .await?
         {
@@ -56,32 +60,42 @@ impl RecipeTranslationService {
         }
 
         // Translate name using Groq
-        tracing::debug!("🔍 Translating recipe name: '{}' to {}", recipe.name_default, target_language.code());
-        let translated_name = self.groq_service
-            .translate_to_language(
-                &recipe.name_default,
-                target_language.code(),
-            )
+        tracing::debug!(
+            "🔍 Translating recipe name: '{}' to {}",
+            recipe.name_default,
+            target_language.code()
+        );
+        let translated_name = self
+            .groq_service
+            .translate_to_language(&recipe.name_default, target_language.code())
             .await
             .map_err(|e| {
-                tracing::error!("❌ Groq translation failed for name '{}': {:?}", recipe.name_default, e);
+                tracing::error!(
+                    "❌ Groq translation failed for name '{}': {:?}",
+                    recipe.name_default,
+                    e
+                );
                 AppError::internal(&format!("Failed to translate name: {}", e))
             })?;
         tracing::debug!("✅ Name translated: '{}'", translated_name);
 
         // Translate instructions using Groq
-        tracing::debug!("🔍 Translating recipe instructions (len={})", recipe.instructions_default.len());
-        let translated_instructions = self.groq_service
-            .translate_to_language(
-                &recipe.instructions_default,
-                target_language.code(),
-            )
+        tracing::debug!(
+            "🔍 Translating recipe instructions (len={})",
+            recipe.instructions_default.len()
+        );
+        let translated_instructions = self
+            .groq_service
+            .translate_to_language(&recipe.instructions_default, target_language.code())
             .await
             .map_err(|e| {
                 tracing::error!("❌ Groq translation failed for instructions: {:?}", e);
                 AppError::internal(&format!("Failed to translate instructions: {}", e))
             })?;
-        tracing::debug!("✅ Instructions translated (len={})", translated_instructions.len());
+        tracing::debug!(
+            "✅ Instructions translated (len={})",
+            translated_instructions.len()
+        );
 
         // Create translation record
         let translation = RecipeTranslation::new(
@@ -108,18 +122,18 @@ impl RecipeTranslationService {
         source_language: Language,
     ) -> AppResult<()> {
         let targets = Language::all();
-        
+
         for target in targets {
             if target == source_language {
                 continue;
             }
-            
+
             // Note: In production we might want to use a job queue
             if let Err(e) = self.translate_recipe(recipe_id, tenant_id, target).await {
                 tracing::error!("Translation failed for {}: {}", target.code(), e);
             }
         }
-        
+
         Ok(())
     }
 
@@ -132,7 +146,8 @@ impl RecipeTranslationService {
         language: Language,
     ) -> AppResult<(String, String)> {
         // Load recipe to get default language with tenant isolation
-        let recipe = self.recipe_repo
+        let recipe = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
@@ -143,7 +158,8 @@ impl RecipeTranslationService {
         }
 
         // Try to find translation
-        match self.translation_repo
+        match self
+            .translation_repo
             .find_by_recipe_and_language(recipe_id, language)
             .await?
         {

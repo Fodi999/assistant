@@ -1,13 +1,17 @@
 use crate::domain::catalog::{CatalogIngredientId, Unit};
-use crate::shared::{AppError, AppResult, TenantId};
 use crate::domain::tenant_ingredient::{TenantIngredient, TenantIngredientId};
+use crate::shared::{AppError, AppResult, TenantId};
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
 
 #[async_trait]
 pub trait TenantIngredientRepositoryTrait: Send + Sync {
     async fn save(&self, ingredient: &TenantIngredient) -> AppResult<()>;
-    async fn find_by_catalog_id(&self, tenant_id: TenantId, catalog_id: CatalogIngredientId) -> AppResult<Option<TenantIngredient>>;
+    async fn find_by_catalog_id(
+        &self,
+        tenant_id: TenantId,
+        catalog_id: CatalogIngredientId,
+    ) -> AppResult<Option<TenantIngredient>>;
     async fn list_by_tenant(&self, tenant_id: TenantId) -> AppResult<Vec<TenantIngredient>>;
     async fn delete(&self, id: TenantIngredientId, tenant_id: TenantId) -> AppResult<()>;
 }
@@ -23,24 +27,42 @@ impl TenantIngredientRepository {
     }
 
     fn row_to_tenant_ingredient(row: &sqlx::postgres::PgRow) -> AppResult<TenantIngredient> {
-        let custom_unit_str: Option<String> = row.try_get("custom_unit").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
+        let custom_unit_str: Option<String> = row
+            .try_get("custom_unit")
+            .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?;
         let custom_unit = match custom_unit_str {
             Some(s) => Some(Unit::from_str(&s)?),
             None => None,
         };
 
         Ok(TenantIngredient::from_parts(
-            TenantIngredientId::from_uuid(row.try_get("id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
-            TenantId::from_uuid(row.try_get("tenant_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
-            CatalogIngredientId::from_uuid(row.try_get("catalog_ingredient_id").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?),
-            row.try_get("price").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-            row.try_get("supplier").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            TenantIngredientId::from_uuid(
+                row.try_get("id")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            ),
+            TenantId::from_uuid(
+                row.try_get("tenant_id")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            ),
+            CatalogIngredientId::from_uuid(
+                row.try_get("catalog_ingredient_id")
+                    .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            ),
+            row.try_get("price")
+                .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("supplier")
+                .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
             custom_unit,
-            row.try_get("custom_expiration_days").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-            row.try_get("notes").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-            row.try_get("is_active").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-            row.try_get("created_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
-            row.try_get("updated_at").map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("custom_expiration_days")
+                .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("notes")
+                .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("is_active")
+                .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("created_at")
+                .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
+            row.try_get("updated_at")
+                .map_err(|e| AppError::internal(&format!("DB Error: {}", e)))?,
         ))
     }
 }
@@ -55,8 +77,8 @@ impl TenantIngredientRepositoryTrait for TenantIngredientRepository {
                 supplier, custom_unit, custom_expiration_days, notes, is_active,
                 created_at, updated_at
             )
-            VALUES (, , , , , ::unit_type, , , , , )
-            ON CONFLICT (tenant_id, catalog_ingredient_id) 
+            VALUES ($1, $2, $3, $4, $5, $6::unit_type, $7, $8, $9, $10, $11)
+            ON CONFLICT (tenant_id, catalog_ingredient_id) WHERE is_active = true
             DO UPDATE SET
                 price = EXCLUDED.price,
                 supplier = EXCLUDED.supplier,
@@ -65,7 +87,7 @@ impl TenantIngredientRepositoryTrait for TenantIngredientRepository {
                 notes = EXCLUDED.notes,
                 is_active = EXCLUDED.is_active,
                 updated_at = EXCLUDED.updated_at
-            "#
+            "#,
         )
         .bind(ingredient.id.as_uuid())
         .bind(ingredient.tenant_id.as_uuid())
@@ -84,9 +106,13 @@ impl TenantIngredientRepositoryTrait for TenantIngredientRepository {
         Ok(())
     }
 
-    async fn find_by_catalog_id(&self, tenant_id: TenantId, catalog_id: CatalogIngredientId) -> AppResult<Option<TenantIngredient>> {
+    async fn find_by_catalog_id(
+        &self,
+        tenant_id: TenantId,
+        catalog_id: CatalogIngredientId,
+    ) -> AppResult<Option<TenantIngredient>> {
         let row = sqlx::query(
-            "SELECT * FROM tenant_ingredients WHERE tenant_id =  AND catalog_ingredient_id = "
+            "SELECT * FROM tenant_ingredients WHERE tenant_id = $1 AND catalog_ingredient_id = $2",
         )
         .bind(tenant_id.as_uuid())
         .bind(catalog_id.as_uuid())
@@ -100,12 +126,10 @@ impl TenantIngredientRepositoryTrait for TenantIngredientRepository {
     }
 
     async fn list_by_tenant(&self, tenant_id: TenantId) -> AppResult<Vec<TenantIngredient>> {
-        let rows = sqlx::query(
-            "SELECT * FROM tenant_ingredients WHERE tenant_id = "
-        )
-        .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = sqlx::query("SELECT * FROM tenant_ingredients WHERE tenant_id = $1")
+            .bind(tenant_id.as_uuid())
+            .fetch_all(&self.pool)
+            .await?;
 
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {
@@ -115,7 +139,7 @@ impl TenantIngredientRepositoryTrait for TenantIngredientRepository {
     }
 
     async fn delete(&self, id: TenantIngredientId, tenant_id: TenantId) -> AppResult<()> {
-        sqlx::query("DELETE FROM tenant_ingredients WHERE id =  AND tenant_id = ")
+        sqlx::query("DELETE FROM tenant_ingredients WHERE id = $1 AND tenant_id = $2")
             .bind(id.as_uuid())
             .bind(tenant_id.as_uuid())
             .execute(&self.pool)

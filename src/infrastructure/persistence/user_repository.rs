@@ -128,7 +128,7 @@ impl UserRepositoryTrait for UserRepository {
         let result = sqlx::query(
             r#"
             SELECT EXISTS(SELECT 1 FROM users WHERE email = $1) as exists
-            "#
+            "#,
         )
         .bind(email.as_str())
         .fetch_one(&self.pool)
@@ -140,7 +140,7 @@ impl UserRepositoryTrait for UserRepository {
 
     async fn update_login_stats(&self, user_id: UserId) -> AppResult<()> {
         sqlx::query(
-            "UPDATE users SET login_count = login_count + 1, last_login_at = NOW() WHERE id = $1"
+            "UPDATE users SET login_count = login_count + 1, last_login_at = NOW() WHERE id = $1",
         )
         .bind(user_id.as_uuid())
         .execute(&self.pool)
@@ -150,13 +150,11 @@ impl UserRepositoryTrait for UserRepository {
     }
 
     async fn update_avatar_url(&self, user_id: UserId, avatar_url: &str) -> AppResult<()> {
-        sqlx::query(
-            "UPDATE users SET avatar_url = $1 WHERE id = $2"
-        )
-        .bind(avatar_url)
-        .bind(user_id.as_uuid())
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2")
+            .bind(avatar_url)
+            .bind(user_id.as_uuid())
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }

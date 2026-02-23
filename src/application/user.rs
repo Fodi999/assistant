@@ -1,7 +1,9 @@
 use crate::domain::{Tenant, User};
-use crate::infrastructure::{TenantRepository, TenantRepositoryTrait, UserRepository, UserRepositoryTrait, R2Client};
-use crate::shared::{AppError, AppResult, UserId, TenantId};
-use serde::{Serialize, Deserialize};
+use crate::infrastructure::{
+    R2Client, TenantRepository, TenantRepositoryTrait, UserRepository, UserRepositoryTrait,
+};
+use crate::shared::{AppError, AppResult, TenantId, UserId};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct UserService {
@@ -11,7 +13,11 @@ pub struct UserService {
 }
 
 impl UserService {
-    pub fn new(user_repo: UserRepository, tenant_repo: TenantRepository, r2_client: Option<R2Client>) -> Self {
+    pub fn new(
+        user_repo: UserRepository,
+        tenant_repo: TenantRepository,
+        r2_client: Option<R2Client>,
+    ) -> Self {
         Self {
             user_repo,
             tenant_repo,
@@ -35,9 +41,17 @@ impl UserService {
         Ok(UserWithTenant { user, tenant })
     }
 
-    pub async fn get_avatar_upload_url(&self, tenant_id: TenantId, user_id: UserId, content_type: &str) -> AppResult<AvatarUploadResponse> {
-        let r2 = self.r2_client.as_ref().ok_or_else(|| AppError::internal("R2 client not configured"))?;
-        
+    pub async fn get_avatar_upload_url(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        content_type: &str,
+    ) -> AppResult<AvatarUploadResponse> {
+        let r2 = self
+            .r2_client
+            .as_ref()
+            .ok_or_else(|| AppError::internal("R2 client not configured"))?;
+
         let ext = if content_type.contains("jpeg") || content_type.contains("jpg") {
             "jpg"
         } else if content_type.contains("png") {
@@ -45,9 +59,14 @@ impl UserService {
         } else {
             "webp"
         };
-        
-        let key = format!("avatars/{}/{}.{}", tenant_id.as_uuid(), user_id.as_uuid(), ext);
-        
+
+        let key = format!(
+            "avatars/{}/{}.{}",
+            tenant_id.as_uuid(),
+            user_id.as_uuid(),
+            ext
+        );
+
         let upload_url = r2.generate_presigned_upload_url(&key, content_type).await?;
         let public_url = r2.get_public_url(&key);
 

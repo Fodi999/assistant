@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::DishId;
 
 /// ABC Classification (Pareto Principle - 80/20 rule)
-/// 
+///
 /// Classification based on revenue contribution:
 /// - A: Top 80% of revenue (critical items)
 /// - B: Next 15% of revenue (important items)
@@ -14,11 +14,11 @@ pub enum AbcClass {
     /// Top performers: 80% of revenue
     /// Critical items that drive business
     A,
-    
+
     /// Middle performers: 15% of revenue
     /// Important but not critical
     B,
-    
+
     /// Low performers: 5% of revenue
     /// Consider removing or redesigning
     C,
@@ -35,7 +35,7 @@ impl AbcClass {
             AbcClass::C
         }
     }
-    
+
     /// Get emoji representation
     pub fn emoji(&self) -> &'static str {
         match self {
@@ -47,7 +47,7 @@ impl AbcClass {
 }
 
 /// Menu Engineering Category (Boston Consulting Group Matrix)
-/// 
+///
 /// Classification based on:
 /// - Profitability (profit margin %)
 /// - Popularity (sales volume/frequency)
@@ -57,15 +57,15 @@ pub enum MenuCategory {
     /// High margin + High sales
     /// Strategy: Keep, promote, maintain quality
     Star,
-    
+
     /// Low margin + High sales
     /// Strategy: Increase price or reduce costs
     Plowhorse,
-    
+
     /// High margin + Low sales
     /// Strategy: Marketing push, repositioning, bundle deals
     Puzzle,
-    
+
     /// Low margin + Low sales
     /// Strategy: Remove from menu or redesign completely
     Dog,
@@ -75,12 +75,12 @@ impl MenuCategory {
     /// Classify dish based on profitability and popularity
     pub fn classify(profit_margin_percent: f64, popularity_score: f64) -> Self {
         // Thresholds (industry standard)
-        const HIGH_MARGIN_THRESHOLD: f64 = 60.0;  // 60%+
+        const HIGH_MARGIN_THRESHOLD: f64 = 60.0; // 60%+
         const HIGH_POPULARITY_THRESHOLD: f64 = 0.7; // 70th percentile
-        
+
         let is_profitable = profit_margin_percent >= HIGH_MARGIN_THRESHOLD;
         let is_popular = popularity_score >= HIGH_POPULARITY_THRESHOLD;
-        
+
         match (is_profitable, is_popular) {
             (true, true) => MenuCategory::Star,
             (false, true) => MenuCategory::Plowhorse,
@@ -88,7 +88,7 @@ impl MenuCategory {
             (false, false) => MenuCategory::Dog,
         }
     }
-    
+
     /// Get emoji representation
     pub fn emoji(&self) -> &'static str {
         match self {
@@ -98,11 +98,11 @@ impl MenuCategory {
             MenuCategory::Dog => "🐶",
         }
     }
-    
+
     /// Get strategic recommendation
     pub fn recommendation(&self, language: crate::shared::Language) -> String {
         use crate::shared::Language;
-        
+
         match (self, language) {
             (MenuCategory::Star, Language::En) => 
                 "Excellent! Keep this dish, promote it, and maintain quality.".to_string(),
@@ -141,7 +141,7 @@ impl MenuCategory {
                 "Низкая прибыль и низкие продажи. Рассмотрите удаление из меню или полный редизайн.".to_string(),
         }
     }
-    
+
     /// Get combined strategic recommendation (BCG × ABC)
     /// Provides actionable insights based on both profitability/popularity AND revenue contribution
     pub fn combined_strategy(
@@ -150,7 +150,7 @@ impl MenuCategory {
         language: crate::shared::Language,
     ) -> String {
         use crate::shared::Language;
-        
+
         match (bcg_category, abc_class, language) {
             // ⭐🥇 Star + A: Protect at all costs
             (MenuCategory::Star, AbcClass::A, Language::En) => 
@@ -235,40 +235,40 @@ impl MenuCategory {
 pub struct DishPerformance {
     /// Dish identifier
     pub dish_id: DishId,
-    
+
     /// Dish name
     pub dish_name: String,
-    
+
     /// Menu Engineering category (BCG Matrix)
     pub category: MenuCategory,
-    
+
     /// ABC classification (revenue contribution)
     pub abc_class: AbcClass,
-    
+
     /// Profit margin percentage
     pub profit_margin_percent: f64,
-    
+
     /// Popularity score (0.0 to 1.0, normalized against all dishes)
     pub popularity_score: f64,
-    
+
     /// Total sales volume (number of orders)
     pub sales_volume: u32,
-    
+
     /// Total revenue generated (in cents)
     pub total_revenue_cents: i64,
-    
+
     /// Total profit generated (in cents)
     pub total_profit_cents: i64,
-    
+
     /// Contribution margin (profit × volume)
     pub contribution_margin_cents: i64,
-    
+
     /// Cumulative revenue share (for ABC analysis)
     pub cumulative_revenue_share: f64,
-    
+
     /// Strategic recommendation (BCG only)
     pub recommendation: String,
-    
+
     /// Combined strategy (BCG × ABC)
     pub strategy: String,
 }
@@ -290,7 +290,7 @@ impl DishPerformance {
         let contribution_margin_cents = total_profit_cents;
         let recommendation = category.recommendation(language);
         let strategy = MenuCategory::combined_strategy(category, abc_class, language);
-        
+
         Self {
             dish_id,
             dish_name,
@@ -307,12 +307,12 @@ impl DishPerformance {
             strategy,
         }
     }
-    
+
     /// Check if dish is a Star
     pub fn is_star(&self) -> bool {
         matches!(self.category, MenuCategory::Star)
     }
-    
+
     /// Check if dish needs attention (Puzzle or Dog)
     pub fn needs_attention(&self) -> bool {
         matches!(self.category, MenuCategory::Puzzle | MenuCategory::Dog)
@@ -324,16 +324,16 @@ impl DishPerformance {
 pub struct MenuEngineeringMatrix {
     /// Total number of dishes analyzed
     pub total_dishes: usize,
-    
+
     /// Count by category
     pub stars: usize,
     pub plowhorses: usize,
     pub puzzles: usize,
     pub dogs: usize,
-    
+
     /// Performance by dish
     pub dishes: Vec<DishPerformance>,
-    
+
     /// Summary statistics
     pub avg_profit_margin: f64,
     pub total_revenue_cents: i64,
@@ -343,21 +343,33 @@ pub struct MenuEngineeringMatrix {
 impl MenuEngineeringMatrix {
     pub fn analyze(dishes: Vec<DishPerformance>) -> Self {
         let total_dishes = dishes.len();
-        
-        let stars = dishes.iter().filter(|d| d.category == MenuCategory::Star).count();
-        let plowhorses = dishes.iter().filter(|d| d.category == MenuCategory::Plowhorse).count();
-        let puzzles = dishes.iter().filter(|d| d.category == MenuCategory::Puzzle).count();
-        let dogs = dishes.iter().filter(|d| d.category == MenuCategory::Dog).count();
-        
+
+        let stars = dishes
+            .iter()
+            .filter(|d| d.category == MenuCategory::Star)
+            .count();
+        let plowhorses = dishes
+            .iter()
+            .filter(|d| d.category == MenuCategory::Plowhorse)
+            .count();
+        let puzzles = dishes
+            .iter()
+            .filter(|d| d.category == MenuCategory::Puzzle)
+            .count();
+        let dogs = dishes
+            .iter()
+            .filter(|d| d.category == MenuCategory::Dog)
+            .count();
+
         let avg_profit_margin = if total_dishes > 0 {
             dishes.iter().map(|d| d.profit_margin_percent).sum::<f64>() / total_dishes as f64
         } else {
             0.0
         };
-        
+
         let total_revenue_cents = dishes.iter().map(|d| d.total_revenue_cents).sum();
         let total_profit_cents = dishes.iter().map(|d| d.total_profit_cents).sum();
-        
+
         Self {
             total_dishes,
             stars,
@@ -375,48 +387,36 @@ impl MenuEngineeringMatrix {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_menu_category_classification() {
         // Star: high margin + high popularity
-        assert_eq!(
-            MenuCategory::classify(70.0, 0.8),
-            MenuCategory::Star
-        );
-        
+        assert_eq!(MenuCategory::classify(70.0, 0.8), MenuCategory::Star);
+
         // Plowhorse: low margin + high popularity
-        assert_eq!(
-            MenuCategory::classify(40.0, 0.8),
-            MenuCategory::Plowhorse
-        );
-        
+        assert_eq!(MenuCategory::classify(40.0, 0.8), MenuCategory::Plowhorse);
+
         // Puzzle: high margin + low popularity
-        assert_eq!(
-            MenuCategory::classify(70.0, 0.3),
-            MenuCategory::Puzzle
-        );
-        
+        assert_eq!(MenuCategory::classify(70.0, 0.3), MenuCategory::Puzzle);
+
         // Dog: low margin + low popularity
-        assert_eq!(
-            MenuCategory::classify(40.0, 0.3),
-            MenuCategory::Dog
-        );
+        assert_eq!(MenuCategory::classify(40.0, 0.3), MenuCategory::Dog);
     }
-    
+
     #[test]
     fn test_dish_performance_creation() {
         let perf = DishPerformance::new(
             DishId::from_uuid(uuid::Uuid::new_v4()),
             "Test Dish".to_string(),
-            75.0,   // high margin
-            0.85,   // high popularity
-            100,    // sales
-            10000,  // revenue
-            7500,   // profit
-            0.5,    // cumulative share (ABC class B)
+            75.0,  // high margin
+            0.85,  // high popularity
+            100,   // sales
+            10000, // revenue
+            7500,  // profit
+            0.5,   // cumulative share (ABC class B)
             crate::shared::Language::En,
         );
-        
+
         assert!(perf.is_star());
         assert!(!perf.needs_attention());
         assert_eq!(perf.category, MenuCategory::Star);

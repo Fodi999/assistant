@@ -1,4 +1,4 @@
-use axum::{Extension, Json, extract::State};
+use axum::{extract::State, Extension, Json};
 use serde::Deserialize;
 
 use crate::application::assistant_service::AssistantService;
@@ -26,6 +26,8 @@ pub async fn send_command(
     State(service): State<AssistantService>,
     Json(req): Json<CommandRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let resp = service.handle_command(auth.user_id, auth.tenant_id, req.command).await?;
+    let resp = service
+        .handle_command(auth.user_id, auth.tenant_id, req.command)
+        .await?;
     Ok(Json(serde_json::to_value(resp).unwrap()))
 }

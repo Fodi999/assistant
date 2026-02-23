@@ -1,6 +1,6 @@
-use serde::Serialize;
 use super::step::AssistantStep;
 use crate::domain::DishFinancials;
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct AssistantAction {

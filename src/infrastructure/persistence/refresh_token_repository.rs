@@ -31,7 +31,7 @@ impl RefreshTokenRepositoryTrait for RefreshTokenRepository {
             r#"
             INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked_at, created_at)
             VALUES ($1, $2, $3, $4, $5, $6)
-            "#
+            "#,
         )
         .bind(token.id.as_uuid())
         .bind(token.user_id.as_uuid())
@@ -51,7 +51,7 @@ impl RefreshTokenRepositoryTrait for RefreshTokenRepository {
             SELECT id, user_id, token_hash, expires_at, revoked_at, created_at
             FROM refresh_tokens
             WHERE token_hash = $1
-            "#
+            "#,
         )
         .bind(token_hash)
         .fetch_optional(&self.pool)
@@ -82,7 +82,7 @@ impl RefreshTokenRepositoryTrait for RefreshTokenRepository {
             UPDATE refresh_tokens
             SET revoked_at = $1
             WHERE id = $2
-            "#
+            "#,
         )
         .bind(OffsetDateTime::now_utc())
         .bind(id.as_uuid())
@@ -98,7 +98,7 @@ impl RefreshTokenRepositoryTrait for RefreshTokenRepository {
             UPDATE refresh_tokens
             SET revoked_at = $1
             WHERE user_id = $2 AND revoked_at IS NULL
-            "#
+            "#,
         )
         .bind(OffsetDateTime::now_utc())
         .bind(user_id.as_uuid())

@@ -1,5 +1,10 @@
-use crate::domain::catalog::{CatalogCategory, CatalogCategoryId, CatalogIngredient, CatalogIngredientId};
-use crate::infrastructure::persistence::{CatalogCategoryRepository, CatalogCategoryRepositoryTrait, CatalogIngredientRepository, CatalogIngredientRepositoryTrait};
+use crate::domain::catalog::{
+    CatalogCategory, CatalogCategoryId, CatalogIngredient, CatalogIngredientId,
+};
+use crate::infrastructure::persistence::{
+    CatalogCategoryRepository, CatalogCategoryRepositoryTrait, CatalogIngredientRepository,
+    CatalogIngredientRepositoryTrait,
+};
 use crate::shared::{result::AppResult, Language};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -24,7 +29,10 @@ impl CatalogService {
     }
 
     /// Get category by ID
-    pub async fn get_category_by_id(&self, id: CatalogCategoryId) -> AppResult<Option<CatalogCategory>> {
+    pub async fn get_category_by_id(
+        &self,
+        id: CatalogCategoryId,
+    ) -> AppResult<Option<CatalogCategory>> {
         self.category_repo.find_by_id(id).await
     }
 
@@ -46,16 +54,26 @@ impl CatalogService {
         language: Language,
         limit: i64,
     ) -> AppResult<Vec<CatalogIngredient>> {
-        self.ingredient_repo.search_by_category(category_id, query, language, limit).await
+        self.ingredient_repo
+            .search_by_category(category_id, query, language, limit)
+            .await
     }
 
     /// Get ingredient by ID
-    pub async fn get_ingredient_by_id(&self, id: CatalogIngredientId) -> AppResult<Option<CatalogIngredient>> {
+    pub async fn get_ingredient_by_id(
+        &self,
+        id: CatalogIngredientId,
+    ) -> AppResult<Option<CatalogIngredient>> {
         self.ingredient_repo.find_by_id(id).await
     }
 
     /// List all ingredients (paginated)
-    pub async fn list_ingredients(&self, language: Language, offset: i64, limit: i64) -> AppResult<Vec<CatalogIngredient>> {
+    pub async fn list_ingredients(
+        &self,
+        language: Language,
+        offset: i64,
+        limit: i64,
+    ) -> AppResult<Vec<CatalogIngredient>> {
         self.ingredient_repo.list(language, offset, limit).await
     }
 }

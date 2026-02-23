@@ -35,14 +35,14 @@ pub struct TenantIngredient {
     pub id: TenantIngredientId,
     pub tenant_id: TenantId,
     pub catalog_ingredient_id: CatalogIngredientId,
-    
+
     // Tenant-specific fields
     pub price: Option<Decimal>,
     pub supplier: Option<String>,
     pub custom_unit: Option<Unit>,
     pub custom_expiration_days: Option<i32>,
     pub notes: Option<String>,
-    
+
     pub is_active: bool,
     pub created_at: time::OffsetDateTime,
     pub updated_at: time::OffsetDateTime,

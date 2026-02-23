@@ -105,16 +105,16 @@ pub struct Email(String);
 impl Email {
     pub fn new(email: String) -> AppResult<Self> {
         let normalized = email.trim().to_lowercase();
-        
+
         if normalized.is_empty() {
             return Err(AppError::validation("Email cannot be empty"));
         }
-        
+
         // Simple email validation
         if !normalized.contains('@') || !normalized.contains('.') {
             return Err(AppError::validation("Invalid email format"));
         }
-        
+
         Ok(Self(normalized))
     }
 
@@ -145,15 +145,17 @@ pub struct DisplayName(String);
 impl DisplayName {
     pub fn new(name: String) -> AppResult<Self> {
         let trimmed = name.trim().to_string();
-        
+
         if trimmed.is_empty() {
             return Err(AppError::validation("Display name cannot be empty"));
         }
-        
+
         if trimmed.len() > 255 {
-            return Err(AppError::validation("Display name cannot exceed 255 characters"));
+            return Err(AppError::validation(
+                "Display name cannot exceed 255 characters",
+            ));
         }
-        
+
         Ok(Self(trimmed))
     }
 
@@ -184,23 +186,27 @@ pub struct Password(String);
 impl Password {
     pub fn new(password: String) -> AppResult<Self> {
         if password.len() < 8 {
-            return Err(AppError::validation("Password must be at least 8 characters long"));
+            return Err(AppError::validation(
+                "Password must be at least 8 characters long",
+            ));
         }
-        
+
         if password.len() > 128 {
-            return Err(AppError::validation("Password cannot exceed 128 characters"));
+            return Err(AppError::validation(
+                "Password cannot exceed 128 characters",
+            ));
         }
-        
+
         // Check for at least one letter and one number
         let has_letter = password.chars().any(|c| c.is_alphabetic());
         let has_digit = password.chars().any(|c| c.is_numeric());
-        
+
         if !has_letter || !has_digit {
             return Err(AppError::validation(
-                "Password must contain at least one letter and one number"
+                "Password must contain at least one letter and one number",
             ));
         }
-        
+
         Ok(Self(password))
     }
 

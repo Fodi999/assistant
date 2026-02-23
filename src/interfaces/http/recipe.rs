@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -8,9 +8,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::RecipeService;
-use crate::domain::{RecipeId, RecipeName, Servings, RecipeIngredient, CatalogIngredientId, Quantity};
+use crate::domain::{
+    CatalogIngredientId, Quantity, RecipeId, RecipeIngredient, RecipeName, Servings,
+};
 use crate::interfaces::http::middleware::AuthUser;
-use crate::shared::AppError;
+use crate::shared::{AppError, PaginationParams};
 
 /// Request to create a new recipe
 #[derive(Debug, Deserialize)]
@@ -73,14 +75,15 @@ pub async fn create_recipe(
     // Parse and validate
     let name = RecipeName::new(payload.name)?;
     let servings = Servings::new(payload.servings)?;
-    
-    let ingredients: Vec<RecipeIngredient> = payload.ingredients
+
+    let ingredients: Vec<RecipeIngredient> = payload
+        .ingredients
         .into_iter()
         .map(|ing| {
             let quantity = Quantity::new(ing.quantity)?;
             Ok(RecipeIngredient::new(
                 CatalogIngredientId::from_uuid(ing.catalog_ingredient_id),
-                quantity
+                quantity,
             ))
         })
         .collect::<Result<Vec<_>, AppError>>()?;
@@ -95,7 +98,8 @@ pub async fn create_recipe(
         id: recipe.id().as_uuid(),
         name: recipe.name().as_str().to_string(),
         servings: recipe.servings().count(),
-        ingredients: recipe.ingredients()
+        ingredients: recipe
+            .ingredients()
             .iter()
             .map(|ing| RecipeIngredientResponse {
                 catalog_ingredient_id: ing.catalog_ingredient_id().as_uuid(),
@@ -108,16 +112,17 @@ pub async fn create_recipe(
 }
 
 /// GET /api/recipes/:id - Get recipe by ID
+/// 🔒 TENANT ISOLATION: uses tenant_id from JWT
 pub async fn get_recipe(
     auth_user: AuthUser,
     State(recipe_service): State<RecipeService>,
     Path(recipe_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user_id = auth_user.user_id;
+    let tenant_id = auth_user.tenant_id;
     let recipe_id = RecipeId::from_uuid(recipe_id);
 
     let recipe = recipe_service
-        .get_recipe(recipe_id, user_id)
+        .get_recipe(recipe_id, tenant_id)
         .await?
         .ok_or(AppError::NotFound("Recipe not found".to_string()))?;
 
@@ -125,7 +130,8 @@ pub async fn get_recipe(
         id: recipe.id().as_uuid(),
         name: recipe.name().as_str().to_string(),
         servings: recipe.servings().count(),
-        ingredients: recipe.ingredients()
+        ingredients: recipe
+            .ingredients()
             .iter()
             .map(|ing| RecipeIngredientResponse {
                 catalog_ingredient_id: ing.catalog_ingredient_id().as_uuid(),
@@ -137,22 +143,27 @@ pub async fn get_recipe(
     Ok(Json(response))
 }
 
-/// GET /api/recipes - List all recipes for user
+/// GET /api/recipes?page=1&per_page=50 - List all recipes for tenant (paginated)
+/// 🔒 TENANT ISOLATION: uses tenant_id from JWT
 pub async fn list_recipes(
     auth_user: AuthUser,
     State(recipe_service): State<RecipeService>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user_id = auth_user.user_id;
+    let tenant_id = auth_user.tenant_id;
 
-    let recipes = recipe_service.list_recipes(user_id).await?;
+    let paginated = recipe_service.list_recipes(tenant_id, &pagination).await?;
 
-    let response: Vec<RecipeResponse> = recipes
+    // Convert Recipe items to RecipeResponse
+    let items: Vec<RecipeResponse> = paginated
+        .items
         .into_iter()
         .map(|recipe| RecipeResponse {
             id: recipe.id().as_uuid(),
             name: recipe.name().as_str().to_string(),
             servings: recipe.servings().count(),
-            ingredients: recipe.ingredients()
+            ingredients: recipe
+                .ingredients()
                 .iter()
                 .map(|ing| RecipeIngredientResponse {
                     catalog_ingredient_id: ing.catalog_ingredient_id().as_uuid(),
@@ -162,19 +173,26 @@ pub async fn list_recipes(
         })
         .collect();
 
-    Ok(Json(response))
+    Ok(Json(serde_json::json!({
+        "items": items,
+        "total": paginated.total,
+        "page": paginated.page,
+        "per_page": paginated.per_page,
+        "total_pages": paginated.total_pages,
+    })))
 }
 
 /// DELETE /api/recipes/:id - Delete recipe
+/// 🔒 TENANT ISOLATION: uses tenant_id from JWT
 pub async fn delete_recipe(
     auth_user: AuthUser,
     State(recipe_service): State<RecipeService>,
     Path(recipe_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user_id = auth_user.user_id;
+    let tenant_id = auth_user.tenant_id;
     let recipe_id = RecipeId::from_uuid(recipe_id);
 
-    let deleted = recipe_service.delete_recipe(recipe_id, user_id).await?;
+    let deleted = recipe_service.delete_recipe(recipe_id, tenant_id).await?;
 
     if deleted {
         Ok(StatusCode::NO_CONTENT)
@@ -184,34 +202,24 @@ pub async fn delete_recipe(
 }
 
 /// GET /api/recipes/:id/cost - Calculate recipe cost
-/// 
-/// This is the KEY endpoint for cost analysis.
-/// Returns detailed breakdown of recipe cost based on current inventory prices.
-/// 
-/// Response includes:
-/// - total_cost_cents: Full cost of recipe
-/// - cost_per_serving_cents: Cost per single serving
-/// - ingredients breakdown with individual costs
-/// 
-/// Use case: Owner wants to know "How much does this dish cost me?"
+/// 🔒 TENANT ISOLATION: uses tenant_id from JWT
 pub async fn calculate_recipe_cost(
     auth_user: AuthUser,
     State(recipe_service): State<RecipeService>,
     Path(recipe_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user_id = auth_user.user_id;
+    let tenant_id = auth_user.tenant_id;
     let recipe_id = RecipeId::from_uuid(recipe_id);
 
     // Calculate cost using RecipeService
-    let recipe_cost = recipe_service
-        .calculate_cost(recipe_id, user_id)
-        .await?;
+    let recipe_cost = recipe_service.calculate_cost(recipe_id, tenant_id).await?;
 
     // Build response
     let response = RecipeCostResponse {
         recipe_id: recipe_cost.recipe_id.as_uuid(),
         recipe_name: recipe_cost.recipe_name.clone(),
-        ingredients: recipe_cost.ingredients_breakdown
+        ingredients: recipe_cost
+            .ingredients_breakdown
             .iter()
             .map(|ing| IngredientCostResponse {
                 ingredient_id: ing.ingredient_id.as_uuid(),
@@ -245,7 +253,7 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let request: CreateRecipeRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.name, "Tomato Soup");
         assert_eq!(request.servings, 4);
@@ -257,15 +265,13 @@ mod tests {
         let response = RecipeCostResponse {
             recipe_id: Uuid::new_v4(),
             recipe_name: "Test Recipe".to_string(),
-            ingredients: vec![
-                IngredientCostResponse {
-                    ingredient_id: Uuid::new_v4(),
-                    ingredient_name: "Tomatoes".to_string(),
-                    quantity: 0.5,
-                    unit_price_cents: 500,
-                    total_cost_cents: 250,
-                }
-            ],
+            ingredients: vec![IngredientCostResponse {
+                ingredient_id: Uuid::new_v4(),
+                ingredient_name: "Tomatoes".to_string(),
+                quantity: 0.5,
+                unit_price_cents: 500,
+                total_cost_cents: 250,
+            }],
             total_cost_cents: 310,
             cost_per_serving_cents: 78,
             servings: 4,

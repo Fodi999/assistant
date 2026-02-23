@@ -69,7 +69,9 @@ impl RecipeName {
             return Err(AppError::validation("Recipe name cannot be empty"));
         }
         if name.len() > 255 {
-            return Err(AppError::validation("Recipe name is too long (max 255 characters)"));
+            return Err(AppError::validation(
+                "Recipe name is too long (max 255 characters)",
+            ));
         }
         Ok(Self(name))
     }
@@ -93,7 +95,9 @@ impl Servings {
             return Err(AppError::validation("Servings must be greater than 0"));
         }
         if count > 1000 {
-            return Err(AppError::validation("Servings count is too large (max 1000)"));
+            return Err(AppError::validation(
+                "Servings count is too large (max 1000)",
+            ));
         }
         Ok(Self(count))
     }
@@ -137,7 +141,9 @@ pub struct RecipeComponent {
 impl RecipeComponent {
     pub fn new(component_recipe_id: RecipeId, quantity: f64) -> AppResult<Self> {
         if quantity <= 0.0 {
-            return Err(AppError::validation("Component quantity must be greater than 0"));
+            return Err(AppError::validation(
+                "Component quantity must be greater than 0",
+            ));
         }
         Ok(Self {
             component_recipe_id,
@@ -183,7 +189,9 @@ impl Recipe {
         instructions: Option<String>,
     ) -> AppResult<Self> {
         if ingredients.is_empty() && components.is_empty() {
-            return Err(AppError::validation("Recipe must have at least one ingredient or component"));
+            return Err(AppError::validation(
+                "Recipe must have at least one ingredient or component",
+            ));
         }
 
         let now = OffsetDateTime::now_utc();
@@ -291,7 +299,9 @@ impl Recipe {
     /// Update ingredients
     pub fn update_ingredients(&mut self, new_ingredients: Vec<RecipeIngredient>) -> AppResult<()> {
         if new_ingredients.is_empty() {
-            return Err(AppError::validation("Recipe must have at least one ingredient"));
+            return Err(AppError::validation(
+                "Recipe must have at least one ingredient",
+            ));
         }
         self.ingredients = new_ingredients;
         self.updated_at = OffsetDateTime::now_utc();
@@ -363,7 +373,7 @@ mod tests {
         assert!(RecipeName::new("").is_err());
         assert!(RecipeName::new("   ").is_err());
         assert!(RecipeName::new("Valid Name").is_ok());
-        
+
         let long_name = "a".repeat(256);
         assert!(RecipeName::new(long_name).is_err());
     }
@@ -399,7 +409,8 @@ mod tests {
             "Pancakes".to_string(),
             vec![ingredient1, ingredient2],
             4, // 4 servings
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(recipe_cost.total_cost.as_cents(), 600); // 450 + 150
         assert_eq!(recipe_cost.cost_per_serving.as_cents(), 150); // 600 / 4
@@ -418,7 +429,8 @@ mod tests {
                 total_cost: Money::from_cents(300).unwrap(),
             }],
             1,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Cost: 3.00 PLN, Selling: 10.00 PLN => 30% food cost
         let selling_price = Money::from_cents(1000).unwrap();

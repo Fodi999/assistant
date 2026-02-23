@@ -67,12 +67,7 @@ impl IntoResponse for AppError {
             }
             AppError::Jwt(e) => {
                 tracing::error!("JWT error: {}", e);
-                (
-                    StatusCode::UNAUTHORIZED,
-                    "JWT_ERROR",
-                    "Invalid token",
-                    None,
-                )
+                (StatusCode::UNAUTHORIZED, "JWT_ERROR", "Invalid token", None)
             }
         };
 
