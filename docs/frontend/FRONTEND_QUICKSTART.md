@@ -7,9 +7,10 @@
 
 ## 📡 Essential Guides
 
-1.  **[API Auth & Isolation](./API_AUTH_AND_ISOLATION.md)** - **READ THIS FIRST**. Explains how to handle JWTs and multi-tenancy.
-2.  **[Recipe Management](./RECIPE_V2_FRONTEND_GUIDE.md)** - How to work with the updated Recipe V2 API.
-3.  **[AI Insights Integration](./FRONTEND_AI_INSIGHTS_INTEGRATION.md)** - Adding AI power to your dashboard.
+1.  **[Production Integration Guide (R2, Reports, Auth)](./PRODUCTION_INTEGRATION_GUIDE.md)** - **START HERE**. Updated with dashboard and R2 URLs.
+2.  **[API Auth & Isolation](./API_AUTH_AND_ISOLATION.md)** - Explains how to handle JWTs and multi-tenancy.
+3.  **[Recipe Management](./RECIPE_V2_FRONTEND_GUIDE.md)** - How to work with the updated Recipe V2 API.
+4.  **[AI Insights Integration](./FRONTEND_AI_INSIGHTS_INTEGRATION.md)** - Adding AI power to your dashboard.
 
 ## 🏗️ Project Setup (Unified)
 

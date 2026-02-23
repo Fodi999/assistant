@@ -101,7 +101,13 @@ impl RecipeRepositoryTrait for RecipeRepository {
         // Fetch recipe — filtered by tenant_id
         let recipe_row = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
             r#"
-            SELECT id, user_id, tenant_id, name, recipe_type, servings, instructions, created_at, updated_at
+            SELECT 
+                id, user_id, tenant_id, 
+                COALESCE(name, name_default, 'Unknown Recipe'), 
+                COALESCE(recipe_type, 'final'), 
+                servings, 
+                COALESCE(instructions, instructions_default, ''), 
+                created_at, updated_at
             FROM recipes
             WHERE id = $1 AND tenant_id = $2
             "#
@@ -206,7 +212,13 @@ impl RecipeRepositoryTrait for RecipeRepository {
         // 2. Fetch paginated recipes
         let recipe_rows = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
             r#"
-            SELECT id, user_id, tenant_id, name, recipe_type, servings, instructions, created_at, updated_at
+            SELECT 
+                id, user_id, tenant_id, 
+                COALESCE(name, name_default, 'Unknown Recipe'), 
+                COALESCE(recipe_type, 'final'), 
+                servings, 
+                COALESCE(instructions, instructions_default, ''), 
+                created_at, updated_at
             FROM recipes
             WHERE tenant_id = $1
             ORDER BY created_at DESC

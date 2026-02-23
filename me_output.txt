@@ -1,0 +1,70 @@
+Note: Unnecessary use of -X or --request, GET is already inferred.
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Host ministerial-yetta-fodi999-c58d8823.koyeb.app:443 was resolved.
+* IPv6: 2606:4700:10::6814:1f1b, 2606:4700:10::ac42:acae
+* IPv4: 104.20.31.27, 172.66.172.174
+*   Trying [2606:4700:10::6814:1f1b]:443...
+* Connected to ministerial-yetta-fodi999-c58d8823.koyeb.app (2606:4700:10::6814:1f1b) port 443
+* ALPN: curl offers h2,http/1.1
+* (304) (OUT), TLS handshake, Client hello (1):
+} [349 bytes data]
+*  CAfile: /etc/ssl/cert.pem
+*  CApath: none
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* (304) (IN), TLS handshake, Server hello (2):
+{ [122 bytes data]
+* (304) (IN), TLS handshake, Unknown (8):
+{ [19 bytes data]
+* (304) (IN), TLS handshake, Certificate (11):
+{ [2043 bytes data]
+* (304) (IN), TLS handshake, CERT verify (15):
+{ [79 bytes data]
+* (304) (IN), TLS handshake, Finished (20):
+{ [36 bytes data]
+* (304) (OUT), TLS handshake, Finished (20):
+} [36 bytes data]
+* SSL connection using TLSv1.3 / AEAD-CHACHA20-POLY1305-SHA256 / [blank] / UNDEF
+* ALPN: server accepted h2
+* Server certificate:
+*  subject: CN=koyeb.app
+*  start date: Feb 16 10:41:51 2026 GMT
+*  expire date: May 17 10:41:50 2026 GMT
+*  subjectAltName: host "ministerial-yetta-fodi999-c58d8823.koyeb.app" matched cert's "*.koyeb.app"
+*  issuer: C=US; O=Let's Encrypt; CN=E8
+*  SSL certificate verify ok.
+* using HTTP/2
+* [HTTP/2] [1] OPENED stream for https://ministerial-yetta-fodi999-c58d8823.koyeb.app/api/me
+* [HTTP/2] [1] [:method: GET]
+* [HTTP/2] [1] [:scheme: https]
+* [HTTP/2] [1] [:authority: ministerial-yetta-fodi999-c58d8823.koyeb.app]
+* [HTTP/2] [1] [:path: /api/me]
+* [HTTP/2] [1] [user-agent: curl/8.7.1]
+* [HTTP/2] [1] [accept: */*]
+* [HTTP/2] [1] [authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmNjMyOTQ0Yy02ZjExLTQ1MjctYjNmNS1mNTliMzZlYTAwMGMiLCJ0ZW5hbnRfaWQiOiJmYTZhMzAzYy03ZmI2LTQyMTMtOTNiZC1kNzYyOTk2M2IwZGYiLCJpc3MiOiJyZXN0YXVyYW50LWJhY2tlbmQiLCJpYXQiOjE3NzE4NjU3NTAsImV4cCI6MTc3MTg2NjY1MH0.lEOnnVxq4w2i5QEw8GDZNtBWK5RXSntpbXDu9eXDa4w]
+> GET /api/me HTTP/2
+> Host: ministerial-yetta-fodi999-c58d8823.koyeb.app
+> User-Agent: curl/8.7.1
+> Accept: */*
+> Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmNjMyOTQ0Yy02ZjExLTQ1MjctYjNmNS1mNTliMzZlYTAwMGMiLCJ0ZW5hbnRfaWQiOiJmYTZhMzAzYy03ZmI2LTQyMTMtOTNiZC1kNzYyOTk2M2IwZGYiLCJpc3MiOiJyZXN0YXVyYW50LWJhY2tlbmQiLCJpYXQiOjE3NzE4NjU3NTAsImV4cCI6MTc3MTg2NjY1MH0.lEOnnVxq4w2i5QEw8GDZNtBWK5RXSntpbXDu9eXDa4w
+> 
+* Request completely sent off
+< HTTP/2 200 
+< date: Mon, 23 Feb 2026 16:56:13 GMT
+< content-type: application/json
+< content-length: 399
+< vary: origin, access-control-request-method, access-control-request-headers
+< access-control-allow-origin: http://localhost:3000
+< access-control-allow-credentials: true
+< x-envoy-upstream-service-time: 145
+< x-koyeb-backend: fra
+< server: cloudflare
+< x-koyeb-brand: koyeb_default
+< x-koyeb-glb: fra
+< cf-cache-status: DYNAMIC
+< cf-ray: 9d28415d8c45eeb2-WAW
+< alt-svc: h3=":443"; ma=86400
+< 
+{ [399 bytes data]
+100   399  100   399    0     0    850      0 --:--:-- --:--:-- --:--:--   848
+* Connection #0 to host ministerial-yetta-fodi999-c58d8823.koyeb.app left intact
+{"user":{"id":"f632944c-6f11-4527-b3f5-f59b36ea000c","tenant_id":"fa6a303c-7fb6-4213-93bd-d7629963b0df","email":"fodi85999333@gmail.com","display_name":"Dmytro Fomin","avatar_url":null,"role":"owner","language":"ru","created_at":"2026-02-14 8:22:44.214882 +00:00:00"},"tenant":{"id":"fa6a303c-7fb6-4213-93bd-d7629963b0df","name":"House Fish Luop","created_at":"2026-02-14 8:22:43.994928 +00:00:00"}}

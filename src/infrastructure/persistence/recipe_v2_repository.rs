@@ -93,14 +93,18 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
             r#"
             INSERT INTO recipes (
                 id, user_id, tenant_id,
-                name_default, instructions_default, language_default,
+                name, name_default, 
+                instructions, instructions_default,
+                language_default,
                 servings,
                 total_cost_cents, cost_per_serving_cents,
                 status, is_public, published_at,
                 created_at, updated_at
             ) VALUES (
                 $1, $2, $3,
-                $4, $5, $6,
+                $4, $4, 
+                $5, $5, 
+                $6,
                 $7,
                 $8, $9,
                 $10, $11, $12,
@@ -183,7 +187,9 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
         sqlx::query(
             r#"
             UPDATE recipes
-            SET name_default = $1, instructions_default = $2, language_default = $3, 
+            SET name = $1, name_default = $1, 
+                instructions = $2, instructions_default = $2, 
+                language_default = $3, 
                 servings = $4, total_cost_cents = $5, cost_per_serving_cents = $6, 
                 status = $7, is_public = $8, published_at = $9, updated_at = $10
             WHERE id = $11 AND tenant_id = $12
