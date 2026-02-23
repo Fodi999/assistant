@@ -34,6 +34,7 @@ impl RecipeTranslationService {
         recipe_id: RecipeId,
         tenant_id: crate::shared::TenantId,
         target_language: Language,
+        force: bool,
     ) -> AppResult<RecipeTranslation> {
         // Load recipe with tenant isolation
         let recipe = self
@@ -50,13 +51,15 @@ impl RecipeTranslationService {
             )));
         }
 
-        // Check if translation already exists
-        if let Some(existing) = self
-            .translation_repo
-            .find_by_recipe_and_language(recipe_id, target_language)
-            .await?
-        {
-            return Ok(existing);
+        // Check if translation already exists and not forcing
+        if !force {
+            if let Some(existing) = self
+                .translation_repo
+                .find_by_recipe_and_language(recipe_id, target_language)
+                .await?
+            {
+                return Ok(existing);
+            }
         }
 
         // Translate name using Groq
@@ -120,6 +123,7 @@ impl RecipeTranslationService {
         recipe_id: RecipeId,
         tenant_id: crate::shared::TenantId,
         source_language: Language,
+        force: bool,
     ) -> AppResult<()> {
         let targets = Language::all();
 
@@ -129,7 +133,7 @@ impl RecipeTranslationService {
             }
 
             // Note: In production we might want to use a job queue
-            if let Err(e) = self.translate_recipe(recipe_id, tenant_id, target).await {
+            if let Err(e) = self.translate_recipe(recipe_id, tenant_id, target, force).await {
                 tracing::error!("Translation failed for {}: {}", target.code(), e);
             }
         }

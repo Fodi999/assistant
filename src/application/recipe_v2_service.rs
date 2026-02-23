@@ -182,7 +182,7 @@ impl RecipeV2Service {
         let t_id = tenant_id;
         tokio::spawn(async move {
             if let Err(e) = translation_service
-                .translate_to_all_languages(recipe_id, t_id, default_language)
+                .translate_to_all_languages(recipe_id, t_id, default_language, false)
                 .await
             {
                 tracing::error!(
@@ -346,7 +346,7 @@ impl RecipeV2Service {
         let t_id = tenant_id;
         tokio::spawn(async move {
             if let Err(e) = translation_service
-                .translate_to_all_languages(recipe_id, t_id, default_language)
+                .translate_to_all_languages(recipe_id, t_id, default_language, true)
                 .await
             {
                 tracing::error!(
