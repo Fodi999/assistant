@@ -135,12 +135,12 @@ impl RecipeIngredient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecipeComponent {
     pub component_recipe_id: RecipeId,
-    pub quantity: f64, // Fraction of full recipe batch (1.0 = 100%)
+    pub quantity: rust_decimal::Decimal, // Fraction of full recipe batch (1.0 = 100%)
 }
 
 impl RecipeComponent {
-    pub fn new(component_recipe_id: RecipeId, quantity: f64) -> AppResult<Self> {
-        if quantity <= 0.0 {
+    pub fn new(component_recipe_id: RecipeId, quantity: rust_decimal::Decimal) -> AppResult<Self> {
+        if quantity <= rust_decimal::Decimal::ZERO {
             return Err(AppError::validation(
                 "Component quantity must be greater than 0",
             ));
@@ -155,7 +155,7 @@ impl RecipeComponent {
         self.component_recipe_id
     }
 
-    pub fn quantity(&self) -> f64 {
+    pub fn quantity(&self) -> rust_decimal::Decimal {
         self.quantity
     }
 }

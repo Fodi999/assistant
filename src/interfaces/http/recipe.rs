@@ -20,11 +20,19 @@ pub struct CreateRecipeRequest {
     pub name: String,
     pub servings: u32,
     pub ingredients: Vec<RecipeIngredientRequest>,
+    #[serde(default)]
+    pub components: Vec<RecipeComponentRequest>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RecipeIngredientRequest {
     pub catalog_ingredient_id: Uuid,
+    pub quantity: f64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecipeComponentRequest {
+    pub component_recipe_id: Uuid,
     pub quantity: f64,
 }
 
@@ -35,11 +43,18 @@ pub struct RecipeResponse {
     pub name: String,
     pub servings: u32,
     pub ingredients: Vec<RecipeIngredientResponse>,
+    pub components: Vec<RecipeComponentResponse>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct RecipeIngredientResponse {
     pub catalog_ingredient_id: Uuid,
+    pub quantity: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecipeComponentResponse {
+    pub component_recipe_id: Uuid,
     pub quantity: f64,
 }
 
@@ -88,9 +103,21 @@ pub async fn create_recipe(
         })
         .collect::<Result<Vec<_>, AppError>>()?;
 
+    let components: Vec<crate::domain::RecipeComponent> = payload
+        .components
+        .into_iter()
+        .map(|comp| {
+            let quantity = Quantity::new(comp.quantity)?;
+            crate::domain::RecipeComponent::new(
+                RecipeId::from_uuid(comp.component_recipe_id),
+                quantity.decimal(),
+            )
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
+
     // Create recipe
     let recipe = recipe_service
-        .create_recipe(name, servings, ingredients, user_id, tenant_id)
+        .create_recipe(name, servings, ingredients, components, user_id, tenant_id)
         .await?;
 
     // Build response
@@ -104,6 +131,14 @@ pub async fn create_recipe(
             .map(|ing| RecipeIngredientResponse {
                 catalog_ingredient_id: ing.catalog_ingredient_id().as_uuid(),
                 quantity: ing.quantity().value(),
+            })
+            .collect(),
+        components: recipe
+            .components()
+            .iter()
+            .map(|comp| RecipeComponentResponse {
+                component_recipe_id: comp.component_recipe_id().as_uuid(),
+                quantity: Quantity::from_decimal(comp.quantity()).unwrap().value(),
             })
             .collect(),
     };
@@ -138,6 +173,14 @@ pub async fn get_recipe(
                 quantity: ing.quantity().value(),
             })
             .collect(),
+        components: recipe
+            .components()
+            .iter()
+            .map(|comp| RecipeComponentResponse {
+                component_recipe_id: comp.component_recipe_id().as_uuid(),
+                quantity: Quantity::from_decimal(comp.quantity()).unwrap().value(),
+            })
+            .collect(),
     };
 
     Ok(Json(response))
@@ -168,6 +211,14 @@ pub async fn list_recipes(
                 .map(|ing| RecipeIngredientResponse {
                     catalog_ingredient_id: ing.catalog_ingredient_id().as_uuid(),
                     quantity: ing.quantity().value(),
+                })
+                .collect(),
+            components: recipe
+                .components()
+                .iter()
+                .map(|comp| RecipeComponentResponse {
+                    component_recipe_id: comp.component_recipe_id().as_uuid(),
+                    quantity: Quantity::from_decimal(comp.quantity()).unwrap().value(),
                 })
                 .collect(),
         })

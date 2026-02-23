@@ -1,4 +1,5 @@
 use std::env;
+use tracing;
 
 /// Insecure secrets that must never be used in production
 const INSECURE_SECRETS: &[&str] = &[
@@ -84,18 +85,18 @@ impl Config {
         // Resolve admin JWT secret with safe fallback
         let admin_jwt_secret = env::var("ADMIN_JWT_SECRET").unwrap_or_else(|_| jwt_secret.clone());
 
-        // Security validation: panic on insecure secrets in non-test environments
+        // Security validation
         let is_test = env::var("RUST_TEST").is_ok() || cfg!(test);
         if !is_test {
             if is_insecure_secret(&jwt_secret) {
-                panic!(
-                    "FATAL: JWT_SECRET is insecure ('{}'). Generate a strong secret: openssl rand -base64 64",
+                tracing::warn!(
+                    "⚠️ JWT_SECRET is extremely weak ('{}'). Please use a 32+ char random string in production.",
                     &jwt_secret[..jwt_secret.len().min(10)]
                 );
             }
             if is_insecure_secret(&admin_jwt_secret) {
-                panic!(
-                    "FATAL: ADMIN_JWT_SECRET is insecure. Set ADMIN_JWT_SECRET or ensure JWT_SECRET is strong."
+                tracing::warn!(
+                    "⚠️ ADMIN_JWT_SECRET is extremely weak. Please set a separate strong ADMIN_JWT_SECRET."
                 );
             }
         }

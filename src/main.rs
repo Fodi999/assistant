@@ -110,6 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(repositories.inventory_product.clone()),
         Arc::new(repositories.dish.clone()),
         Arc::new(repositories.recipe.clone()),
+        recipe_service.clone(),
     );
 
     // Create AssistantService with all services

@@ -8,6 +8,7 @@ use crate::infrastructure::persistence::{
 use crate::shared::{AppError, AppResult, UserId, TenantId, Language, PaginatedResponse, PaginationParams};
 use std::collections::HashMap;
 use std::sync::Arc;
+use rust_decimal::prelude::ToPrimitive;
 
 #[derive(Clone)]
 pub struct RecipeService {
@@ -35,6 +36,7 @@ impl RecipeService {
         name: RecipeName,
         servings: Servings,
         ingredients: Vec<RecipeIngredient>,
+        components: Vec<crate::domain::RecipeComponent>,
         user_id: UserId,
         tenant_id: TenantId,
     ) -> AppResult<Recipe> {
@@ -60,7 +62,7 @@ impl RecipeService {
             RecipeType::Final,
             servings,
             ingredients,
-            vec![],
+            components,
             None,
         )?;
 
@@ -85,6 +87,51 @@ impl RecipeService {
     /// 🔒 TENANT ISOLATION: Delete recipe within tenant
     pub async fn delete_recipe(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<bool> {
         self.recipe_repo.delete(id, tenant_id).await
+    }
+
+    /// Recursively flattens a recipe into its base ingredients.
+    /// Returns a map of CatalogIngredientId -> total quantity needed.
+    pub async fn flatten_recipe(
+        &self,
+        recipe_id: RecipeId,
+        tenant_id: TenantId,
+        multiplier: rust_decimal::Decimal,
+        depth: u32,
+    ) -> AppResult<HashMap<CatalogIngredientId, rust_decimal::Decimal>> {
+        if depth > 10 {
+            return Err(AppError::validation("Max recipe depth exceeded (possible circular dependency)"));
+        }
+
+        let recipe = self.recipe_repo
+            .find_by_id(recipe_id, tenant_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Recipe {} not found", recipe_id.as_uuid())))?;
+
+        let mut flattened = HashMap::new();
+
+        // Add direct ingredients
+        for ingredient in recipe.ingredients() {
+            let qty = ingredient.quantity().decimal() * multiplier;
+            *flattened.entry(ingredient.catalog_ingredient_id()).or_insert(rust_decimal::Decimal::ZERO) += qty;
+        }
+
+        // Add component ingredients recursively
+        for component in recipe.components() {
+            // Need Box::pin for recursive call in async
+            let component_flattened = Box::pin(self.flatten_recipe(
+                component.component_recipe_id(),
+                tenant_id,
+                multiplier * component.quantity(),
+                depth + 1,
+            ))
+            .await?;
+
+            for (id, qty) in component_flattened {
+                *flattened.entry(id).or_insert(rust_decimal::Decimal::ZERO) += qty;
+            }
+        }
+
+        Ok(flattened)
     }
 
     /// 🔒 TENANT ISOLATION: Calculate recipe cost within tenant
@@ -113,12 +160,13 @@ impl RecipeService {
             );
         }
 
-        // Calculate cost for each ingredient
+        // Flatten recipe to include all base ingredients from components
+        let flattened_ingredients = self.flatten_recipe(recipe_id, tenant_id, rust_decimal::Decimal::ONE, 0).await?;
+
+        // Calculate cost for each baseline ingredient
         let mut ingredients_breakdown = Vec::new();
 
-        for recipe_ingredient in recipe.ingredients() {
-            let ingredient_id = recipe_ingredient.catalog_ingredient_id();
-
+        for (ingredient_id, total_qty_dec) in flattened_ingredients {
             // Get inventory price data
             let (_inventory_qty, inventory_price) = price_map
                 .get(&ingredient_id)
@@ -127,11 +175,15 @@ impl RecipeService {
                     ingredient_id.as_uuid()
                 )))?;
 
-            let unit_price_cents = inventory_price.as_cents() as f64;
-            let unit_price = Money::from_cents(unit_price_cents.round() as i64)?;
+            let unit_price_cents = inventory_price.as_cents();
+            let unit_price = Money::from_cents(unit_price_cents)?;
 
-            let ingredient_cost_cents = recipe_ingredient.quantity().value() * unit_price_cents;
-            let ingredient_cost = Money::from_cents(ingredient_cost_cents.round() as i64)?;
+            // Use rust_decimal for precise total cost calculation
+            let item_total_cents = (total_qty_dec * rust_decimal::Decimal::from(unit_price_cents))
+                .round()
+                .to_i64()
+                .unwrap_or(0);
+            let ingredient_cost = Money::from_cents(item_total_cents)?;
 
             // Load ingredient name from catalog
             let catalog_ingredient = self.catalog_repo
@@ -145,7 +197,7 @@ impl RecipeService {
             ingredients_breakdown.push(IngredientCost {
                 ingredient_id,
                 ingredient_name: catalog_ingredient.name(Language::En).to_string(),
-                quantity: recipe_ingredient.quantity(),
+                quantity: Quantity::from_decimal(total_qty_dec)?,
                 unit_price,
                 total_cost: ingredient_cost,
             });

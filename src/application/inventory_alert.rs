@@ -226,11 +226,12 @@ impl InventoryAlertService {
                 ci.name_en as ingredient_name,
                 ci.min_stock_threshold,
                 COALESCE(SUM(ib.remaining_quantity), 0) as total_remaining
-            FROM catalog_ingredients ci
+            FROM tenant_ingredients ti
+            JOIN catalog_ingredients ci ON ti.catalog_ingredient_id = ci.id
             LEFT JOIN inventory_batches ib ON ci.id = ib.catalog_ingredient_id 
                 AND ib.tenant_id = $1 
                 AND ib.status = 'active'
-            WHERE ci.is_active = true
+            WHERE ti.tenant_id = $1 AND ti.is_active = true
             GROUP BY ci.id, ci.name_en, ci.min_stock_threshold
             HAVING COALESCE(SUM(ib.remaining_quantity), 0) <= ci.min_stock_threshold
                OR COALESCE(SUM(ib.remaining_quantity), 0) = 0

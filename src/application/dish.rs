@@ -32,12 +32,12 @@ impl DishService {
         // Try to materialize cost at creation time
         match self.recipe_service.calculate_cost(recipe_id, tenant_id).await {
             Ok(recipe_cost) => {
-                let cost = Money::from_cents(recipe_cost.total_cost.as_cents())?;
+                let cost = Money::from_cents(recipe_cost.cost_per_serving.as_cents())?;
                 dish.recalculate_cost(cost);
                 tracing::info!(
                     "💰 Dish '{}' cost materialized: recipe={} food_cost={:.1}% margin={:.1}%",
                     dish.name().as_str(),
-                    recipe_cost.total_cost.as_cents(),
+                    recipe_cost.cost_per_serving.as_cents(),
                     dish.food_cost_percent().unwrap_or(0.0),
                     dish.profit_margin_percent().unwrap_or(0.0),
                 );
@@ -93,7 +93,7 @@ impl DishService {
             dish.id(),
             dish.name().as_str().to_string(),
             dish.selling_price(),
-            Money::from_cents(recipe_cost.total_cost.as_cents())?,
+            Money::from_cents(recipe_cost.cost_per_serving.as_cents())?,
         );
 
         Ok(financials)
@@ -138,7 +138,7 @@ impl DishService {
                     .await
                 {
                     Ok(recipe_cost) => {
-                        let cost = Money::from_cents(recipe_cost.total_cost.as_cents())?;
+                        let cost = Money::from_cents(recipe_cost.cost_per_serving.as_cents())?;
                         let mut dish = dish;
                         dish.recalculate_cost(cost);
                         self.dish_repo.update(&dish).await?;
@@ -212,7 +212,7 @@ impl DishService {
                 .calculate_cost(dish.recipe_id(), tenant_id)
                 .await
             {
-                let cost = Money::from_cents(recipe_cost.total_cost.as_cents())?;
+                let cost = Money::from_cents(recipe_cost.cost_per_serving.as_cents())?;
                 dish.recalculate_cost(cost);
             }
         }

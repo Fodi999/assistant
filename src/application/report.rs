@@ -71,9 +71,9 @@ impl ReportService {
         let row = sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>)>(
             r#"
             SELECT
-                COALESCE(SUM(selling_price_cents::BIGINT * quantity), 0),
-                COALESCE(SUM(profit_cents::BIGINT * quantity), 0),
-                COALESCE(SUM(quantity), 0)
+                COALESCE(SUM(selling_price_cents::BIGINT * quantity), 0)::BIGINT,
+                COALESCE(SUM(profit_cents::BIGINT), 0)::BIGINT,
+                COALESCE(SUM(quantity::BIGINT), 0)::BIGINT
             FROM dish_sales
             WHERE tenant_id = $1
               AND sold_at >= NOW() - ($2 * INTERVAL '1 day')

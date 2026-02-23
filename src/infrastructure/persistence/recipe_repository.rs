@@ -70,7 +70,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
             )
             .bind(recipe.id().as_uuid())
             .bind(ingredient.catalog_ingredient_id().as_uuid())
-            .bind(ingredient.quantity().value())
+            .bind(ingredient.quantity().decimal())
             .execute(&mut *tx)
             .await
             .map_err(AppError::Database)?;
@@ -128,7 +128,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
         };
 
         // Fetch ingredients
-        let ingredients_rows = sqlx::query_as::<_, (uuid::Uuid, f64)>(
+        let ingredients_rows = sqlx::query_as::<_, (uuid::Uuid, rust_decimal::Decimal)>(
             r#"
             SELECT catalog_ingredient_id, quantity
             FROM recipe_ingredients
@@ -143,7 +143,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
         let ingredients: Vec<RecipeIngredient> = ingredients_rows
             .into_iter()
             .map(|(catalog_id, qty)| {
-                let quantity = Quantity::new(qty).map_err(|_| {
+                let quantity = Quantity::from_decimal(qty).map_err(|_| {
                     AppError::Internal("Corrupted quantity data in database".to_string())
                 })?;
                 Ok(RecipeIngredient::new(
@@ -154,7 +154,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
             .collect::<AppResult<Vec<_>>>()?;
 
         // Fetch components
-        let components_rows = sqlx::query_as::<_, (uuid::Uuid, f64)>(
+        let components_rows = sqlx::query_as::<_, (uuid::Uuid, rust_decimal::Decimal)>(
             r#"
             SELECT component_recipe_id, quantity
             FROM recipe_components
@@ -228,7 +228,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
         let recipe_ids: Vec<uuid::Uuid> = recipe_rows.iter().map(|r| r.0).collect();
 
         // 4. Batch load ALL ingredients for all recipes in one query (fixes N+1)
-        let all_ingredients = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, f64)>(
+        let all_ingredients = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, rust_decimal::Decimal)>(
             r#"
             SELECT recipe_id, catalog_ingredient_id, quantity
             FROM recipe_ingredients
@@ -243,7 +243,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
         // Group ingredients by recipe_id
         let mut ingredients_map: HashMap<uuid::Uuid, Vec<RecipeIngredient>> = HashMap::new();
         for (recipe_id, catalog_id, qty) in all_ingredients {
-            let quantity = Quantity::new(qty).map_err(|_| {
+            let quantity = Quantity::from_decimal(qty).map_err(|_| {
                 AppError::Internal("Corrupted quantity data in database".to_string())
             })?;
             ingredients_map
@@ -256,7 +256,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
         }
 
         // 5. Batch load ALL components for all recipes in one query (fixes N+1)
-        let all_components = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, f64)>(
+        let all_components = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, rust_decimal::Decimal)>(
             r#"
             SELECT recipe_id, component_recipe_id, quantity
             FROM recipe_components
@@ -379,7 +379,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
             )
             .bind(recipe_id.as_uuid())
             .bind(ingredient.catalog_ingredient_id().as_uuid())
-            .bind(ingredient.quantity().value())
+            .bind(ingredient.quantity().decimal())
             .execute(&mut *tx)
             .await
             .map_err(AppError::Database)?;
