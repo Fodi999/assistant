@@ -413,15 +413,19 @@ fn build_rate_limiter(per_second: u32) -> Arc<IpRateLimiter> {
 async fn rate_limit_middleware(req: Request, next: Next, limiter: Arc<IpRateLimiter>) -> Response {
     // Extract client IP from connection info or forwarded headers
     let ip = extract_client_ip(&req);
+    
+    // 🎯 ДОБАВЛЕНО: Лог для отладки IP
+    // tracing::debug!("Rate limit check for IP: {}", ip);
 
     match limiter.check_key(&ip) {
         Ok(_) => next.run(req).await,
         Err(_) => {
-            tracing::warn!("🚦 Rate limit exceeded for IP: {}", ip);
+            tracing::warn!("🚦 Rate limit exceeded for IP: {} (limit reached)", ip);
             (
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(serde_json::json!({
                     "error": "Too many requests. Please try again later.",
+                    "ip_detected": ip,
                     "retry_after_seconds": 1
                 })),
             )

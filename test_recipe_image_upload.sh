@@ -19,13 +19,20 @@ while [ $COUNT -lt $MAX_RETRIES ]; do
     -d "{
       \"email\": \"$EMAIL\",
       \"password\": \"$PASSWORD\"
-    }")
+    }" || echo -e "\n000")
   
-  HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
-  LOGIN_RESPONSE=$(echo "$RESPONSE" | sed '$d')
+  HTTP_CODE=$(echo -e "$RESPONSE" | tail -n 1)
+  LOGIN_RESPONSE=$(echo -e "$RESPONSE" | sed '$d')
+
+  if [ "$HTTP_CODE" -eq 000 ]; then
+    echo "❌ Server is not running on $API_URL. Wait and retry ($COUNT/$MAX_RETRIES)..."
+    sleep 3
+    continue
+  fi
 
   if [ "$HTTP_CODE" -eq 429 ]; then
     echo "Wait for login rate limiter ($COUNT/$MAX_RETRIES)..."
+    echo "Response: $LOGIN_RESPONSE"
     sleep 2
     continue
   fi
@@ -40,14 +47,18 @@ while [ $COUNT -lt $MAX_RETRIES ]; do
         \"email\": \"$EMAIL\",
         \"password\": \"$PASSWORD\",
         \"tenant_name\": \"Fodi Kitchen\"
-      }")
+      }" || echo -e "\n000")
     
-    REG_HTTP_CODE=$(echo "$REGISTER_RESP_FULL" | tail -n 1)
-    REGISTER_RESPONSE=$(echo "$REGISTER_RESP_FULL" | sed '$d')
+    REG_HTTP_CODE=$(echo -e "$REGISTER_RESP_FULL" | tail -n 1)
+    REGISTER_RESPONSE=$(echo -e "$REGISTER_RESP_FULL" | sed '$d')
 
     if [ "$REG_HTTP_CODE" -eq 429 ]; then
         echo "Wait for registration rate limiter ($COUNT/$MAX_RETRIES)..."
         sleep 2
+        continue
+    elif [ "$REG_HTTP_CODE" -eq 000 ]; then
+        echo "❌ Server unreachable during registration. Wait and retry..."
+        sleep 3
         continue
     else
         echo "Registration Response (HTTP $REG_HTTP_CODE): $REGISTER_RESPONSE"
@@ -56,7 +67,7 @@ while [ $COUNT -lt $MAX_RETRIES ]; do
     fi
   else
     TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r .access_token)
-    if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ]; then
+    if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ] && [ "$TOKEN" != "" ]; then
       echo "Login success!"
       break
     else
