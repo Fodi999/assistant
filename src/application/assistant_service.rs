@@ -109,6 +109,7 @@ impl AssistantService {
                     dish_name,
                     payload.description.clone(),
                     selling_price,
+                    None,
                 )
                 .await?;
 

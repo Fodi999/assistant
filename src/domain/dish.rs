@@ -60,6 +60,7 @@ pub struct Dish {
     pub food_cost_percent: Option<f64>,
     pub profit_margin_percent: Option<f64>,
     pub cost_calculated_at: Option<OffsetDateTime>,
+    pub image_url: Option<String>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -90,6 +91,7 @@ impl Dish {
             food_cost_percent: None,
             profit_margin_percent: None,
             cost_calculated_at: None,
+            image_url: None, // Default to no image
             created_at: now,
             updated_at: now,
         })
@@ -108,6 +110,7 @@ impl Dish {
         food_cost_percent: Option<f64>,
         profit_margin_percent: Option<f64>,
         cost_calculated_at: Option<OffsetDateTime>,
+        image_url: Option<String>,
         created_at: OffsetDateTime,
         updated_at: OffsetDateTime,
     ) -> Self {
@@ -123,6 +126,7 @@ impl Dish {
             food_cost_percent,
             profit_margin_percent,
             cost_calculated_at,
+            image_url,
             created_at,
             updated_at,
         }
@@ -182,6 +186,15 @@ impl Dish {
 
     pub fn update_description(&mut self, new_description: Option<String>) {
         self.description = new_description;
+        self.updated_at = OffsetDateTime::now_utc();
+    }
+
+    pub fn image_url(&self) -> Option<&str> {
+        self.image_url.as_deref()
+    }
+
+    pub fn update_image_url(&mut self, new_url: Option<String>) {
+        self.image_url = new_url;
         self.updated_at = OffsetDateTime::now_utc();
     }
 

@@ -19,6 +19,7 @@ pub struct CreateDishRequest {
     pub name: String,
     pub description: Option<String>,
     pub selling_price_cents: i32,
+    pub image_url: Option<String>,
 }
 
 /// Helper: build dish JSON with cost fields
@@ -29,6 +30,7 @@ fn dish_to_json(dish: &crate::domain::Dish) -> serde_json::Value {
         "recipe_id": dish.recipe_id().as_uuid(),
         "selling_price_cents": dish.selling_price().as_cents(),
         "active": dish.is_active(),
+        "image_url": dish.image_url(),
         "recipe_cost_cents": dish.recipe_cost_cents(),
         "food_cost_percent": dish.food_cost_percent(),
         "profit_margin_percent": dish.profit_margin_percent(),
@@ -50,7 +52,14 @@ pub async fn create_dish(
     let recipe_id = RecipeId::from_uuid(payload.recipe_id);
 
     let dish = service
-        .create_dish(tenant_id, recipe_id, dish_name, payload.description, selling_price)
+        .create_dish(
+            tenant_id,
+            recipe_id,
+            dish_name,
+            payload.description,
+            selling_price,
+            payload.image_url,
+        )
         .await?;
 
     Ok((StatusCode::CREATED, Json(dish_to_json(&dish))))

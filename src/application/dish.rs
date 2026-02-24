@@ -26,8 +26,10 @@ impl DishService {
         name: DishName,
         description: Option<String>,
         selling_price: Money,
+        image_url: Option<String>,
     ) -> AppResult<Dish> {
         let mut dish = Dish::new(tenant_id, recipe_id, name, description, selling_price)?;
+        dish.update_image_url(image_url);
 
         // Try to materialize cost at creation time
         match self.recipe_service.calculate_cost(recipe_id, tenant_id).await {
@@ -179,6 +181,7 @@ impl DishService {
         name: Option<DishName>,
         description: Option<Option<String>>,
         selling_price: Option<Money>,
+        image_url: Option<Option<String>>,
         active: Option<bool>,
     ) -> AppResult<Dish> {
         let mut dish = self
@@ -192,6 +195,10 @@ impl DishService {
 
         if let Some(new_description) = description {
             dish.update_description(new_description);
+        }
+
+        if let Some(new_image_url) = image_url {
+            dish.update_image_url(new_image_url);
         }
 
         let price_changed = selling_price.is_some();

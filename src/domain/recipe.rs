@@ -319,6 +319,16 @@ pub struct IngredientCost {
     pub total_cost: Money,
 }
 
+/// Cost breakdown for a single component (semi-finished product) in recipe
+#[derive(Debug, Clone, Serialize)]
+pub struct ComponentCost {
+    pub component_id: RecipeId,
+    pub component_name: String,
+    pub recipe_cost_per_serving: Money,
+    pub quantity: rust_decimal::Decimal, // portions
+    pub total_cost: Money,
+}
+
 /// Total recipe cost calculation
 #[derive(Debug, Clone, Serialize)]
 pub struct RecipeCost {
@@ -328,6 +338,7 @@ pub struct RecipeCost {
     pub cost_per_serving: Money,
     pub servings: u32,
     pub ingredients_breakdown: Vec<IngredientCost>,
+    pub components_breakdown: Vec<ComponentCost>,
 }
 
 impl RecipeCost {
@@ -335,11 +346,15 @@ impl RecipeCost {
         recipe_id: RecipeId,
         recipe_name: String,
         ingredients_breakdown: Vec<IngredientCost>,
+        components_breakdown: Vec<ComponentCost>,
         servings: u32,
     ) -> AppResult<Self> {
         let mut total_cents = 0i64;
         for ingredient in &ingredients_breakdown {
             total_cents += ingredient.total_cost.as_cents();
+        }
+        for component in &components_breakdown {
+            total_cents += component.total_cost.as_cents();
         }
 
         let total_cost = Money::from_cents(total_cents)?;
@@ -352,6 +367,7 @@ impl RecipeCost {
             cost_per_serving,
             servings,
             ingredients_breakdown,
+            components_breakdown,
         })
     }
 
@@ -408,7 +424,8 @@ mod tests {
             RecipeId::new(),
             "Pancakes".to_string(),
             vec![ingredient1, ingredient2],
-            4, // 4 servings
+            vec![], // No components
+            4,      // 4 servings
         )
         .unwrap();
 
@@ -428,6 +445,7 @@ mod tests {
                 unit_price: Money::from_cents(300).unwrap(),
                 total_cost: Money::from_cents(300).unwrap(),
             }],
+            vec![], // No components
             1,
         )
         .unwrap();

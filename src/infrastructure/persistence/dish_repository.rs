@@ -33,7 +33,7 @@ impl DishRepository {
 const DISH_COLUMNS: &str = r#"
     id, tenant_id, recipe_id, name, description, selling_price_cents, active,
     recipe_cost_cents, food_cost_percent, profit_margin_percent, cost_calculated_at,
-    created_at, updated_at
+    image_url, created_at, updated_at
 "#;
 
 // Row type: 13 columns
@@ -49,6 +49,7 @@ type DishRow = (
     Option<f64>,                        // food_cost_percent
     Option<f64>,                        // profit_margin_percent
     Option<time::OffsetDateTime>,       // cost_calculated_at
+    Option<String>,                     // image_url
     time::OffsetDateTime,               // created_at
     time::OffsetDateTime,               // updated_at
 );
@@ -68,6 +69,7 @@ fn row_to_dish(row: DishRow) -> AppResult<Dish> {
         row.10,
         row.11,
         row.12,
+        row.13,
     ))
 }
 
@@ -77,7 +79,7 @@ impl DishRepositoryTrait for DishRepository {
         sqlx::query(&format!(
             r#"
             INSERT INTO dishes ({})
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             "#,
             DISH_COLUMNS.trim()
         ))
@@ -92,6 +94,7 @@ impl DishRepositoryTrait for DishRepository {
         .bind(dish.food_cost_percent())
         .bind(dish.profit_margin_percent())
         .bind(dish.cost_calculated_at())
+        .bind(dish.image_url())
         .bind(dish.created_at())
         .bind(dish.updated_at())
         .execute(&self.pool)
@@ -174,8 +177,8 @@ impl DishRepositoryTrait for DishRepository {
             SET name = $1, description = $2, selling_price_cents = $3, active = $4,
                 recipe_cost_cents = $5, food_cost_percent = $6,
                 profit_margin_percent = $7, cost_calculated_at = $8,
-                updated_at = $9
-            WHERE id = $10 AND tenant_id = $11
+                image_url = $9, updated_at = $10
+            WHERE id = $11 AND tenant_id = $12
             "#,
         )
         .bind(dish.name().as_str())
@@ -186,6 +189,7 @@ impl DishRepositoryTrait for DishRepository {
         .bind(dish.food_cost_percent())
         .bind(dish.profit_margin_percent())
         .bind(dish.cost_calculated_at())
+        .bind(dish.image_url())
         .bind(dish.updated_at())
         .bind(dish.id().as_uuid())
         .bind(dish.tenant_id().as_uuid())

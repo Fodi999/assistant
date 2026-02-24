@@ -77,7 +77,7 @@ pub fn create_router(
     let cors = build_strict_cors(allowed_origins);
 
     // ── Rate Limiter for auth endpoints ──
-    let auth_rate_limiter = build_rate_limiter(rate_limit_per_second);
+    let _auth_rate_limiter = build_rate_limiter(rate_limit_per_second);
 
     // Build ReportService (needs clones before services are consumed by routers)
     let report_service = ReportService::new(
