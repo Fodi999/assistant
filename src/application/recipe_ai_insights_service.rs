@@ -2,13 +2,13 @@ use crate::application::recipe_validator::RecipeValidator;
 use crate::domain::recipe_ai_insights::*;
 use crate::domain::recipe_v2::{Recipe, RecipeId};
 use crate::infrastructure::persistence::{RecipeAIInsightsRepository, RecipeV2RepositoryTrait};
-use crate::infrastructure::GroqService;
+use crate::infrastructure::LlmAdapter;
 use crate::shared::AppError;
 use std::sync::Arc;
 use std::time::Instant;
 
 pub struct RecipeAIInsightsService {
-    groq_service: Arc<GroqService>,
+    llm_adapter: Arc<LlmAdapter>,
     repository: Arc<RecipeAIInsightsRepository>,
     recipe_repo: Arc<dyn RecipeV2RepositoryTrait>,
     validator: RecipeValidator,
@@ -16,12 +16,12 @@ pub struct RecipeAIInsightsService {
 
 impl RecipeAIInsightsService {
     pub fn new(
-        groq_service: Arc<GroqService>,
+        llm_adapter: Arc<LlmAdapter>,
         repository: Arc<RecipeAIInsightsRepository>,
         recipe_repo: Arc<dyn RecipeV2RepositoryTrait>,
     ) -> Self {
         Self {
-            groq_service,
+            llm_adapter,
             repository,
             recipe_repo,
             validator: RecipeValidator::new(),
@@ -74,12 +74,19 @@ impl RecipeAIInsightsService {
         // Build prompt for AI (with validation context)
         let prompt = self.build_analysis_prompt(recipe, target_language, &validation_result);
 
-        // Call Groq AI
-        let ai_response = self.groq_service.analyze_recipe(&prompt).await?;
+        // Call AI via Adapter (handles cache)
+        let ai_response = self.llm_adapter.analyze_recipe(&prompt, &recipe.id.0.to_string()).await?;
 
         // Parse AI response
-        let (steps, validation, suggestions, feasibility_score) =
+        let (steps, ai_validation, suggestions, _ai_feasibility_score) =
             self.parse_ai_response(&ai_response)?;
+
+        // 🧠 RUST LOGIC: Calculate feasibility and final validation status in Rust (not AI)
+        // AI can help with textual validation, but final status depends on our rule engine
+        let final_is_valid = validation_result.is_valid && ai_validation.errors.is_empty();
+        
+        // Feasibility score: 100 - (errors * 30) - (warnings * 10)
+        let feasibility_score = (100 - (validation_result.errors.len() as i32 * 30) - (validation_result.warnings.len() as i32 * 10)).max(0);
 
         // Save to database (extract UUID from RecipeId)
         let insights = self
@@ -88,7 +95,7 @@ impl RecipeAIInsightsService {
                 recipe.id.0, // Extract UUID
                 target_language,
                 steps,
-                validation,
+                ai_validation,
                 suggestions,
                 feasibility_score,
                 "llama-3.1-8b-instant",
@@ -244,20 +251,12 @@ impl RecipeAIInsightsService {
       "impact": "вкус/текстура/аромат/безопасность",
       "confidence": 0.85
     }}
-  ],
-  "feasibility_score": 85
+  ]
 }}
 
-ОЦЕНКА FEASIBILITY_SCORE:
-- 90-100: Отличный рецепт, реалистичен, безопасен
-- 70-89: Хороший рецепт, minor improvements needed
-- 50-69: Требует улучшений
-- 30-49: Серьезные проблемы с логикой/безопасностью
-- 0-29: Невозможно приготовить / опасно
-
-ВАЖНО: Если рецепт логически невозможен (например "торт из свеклы и капусты"), установи feasibility_score=10-20 и добавь ошибку.
-
-Ответь ТОЛЬКО JSON, без пояснений."#,
+(Note: Do NOT calculate feasibility score or numerical food cost. Just JSON text.)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"#,
             validation_context, recipe.name_default, recipe.instructions_default, recipe.servings
         )
     }
@@ -280,6 +279,7 @@ impl RecipeAIInsightsService {
             steps: Vec<CookingStep>,
             validation: RecipeValidation,
             suggestions: Vec<RecipeSuggestion>,
+            #[serde(default)] // Allow missing feasibility score from AI
             feasibility_score: i32,
         }
 

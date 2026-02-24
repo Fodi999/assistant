@@ -1,6 +1,6 @@
 // Recipe Translation Service - AI-powered translations via Groq
 use crate::domain::recipe_v2::{RecipeId, RecipeTranslation, TranslationSource};
-use crate::infrastructure::groq_service::GroqService;
+use crate::infrastructure::LlmAdapter;
 use crate::infrastructure::persistence::{
     RecipeTranslationRepositoryTrait, RecipeV2RepositoryTrait,
 };
@@ -11,19 +11,19 @@ use std::sync::Arc;
 pub struct RecipeTranslationService {
     pub translation_repo: Arc<dyn RecipeTranslationRepositoryTrait>,
     recipe_repo: Arc<dyn RecipeV2RepositoryTrait>,
-    groq_service: Arc<GroqService>,
+    llm_adapter: Arc<LlmAdapter>,
 }
 
 impl RecipeTranslationService {
     pub fn new(
         translation_repo: Arc<dyn RecipeTranslationRepositoryTrait>,
         recipe_repo: Arc<dyn RecipeV2RepositoryTrait>,
-        groq_service: Arc<GroqService>,
+        llm_adapter: Arc<LlmAdapter>,
     ) -> Self {
         Self {
             translation_repo,
             recipe_repo,
-            groq_service,
+            llm_adapter,
         }
     }
 
@@ -62,19 +62,19 @@ impl RecipeTranslationService {
             }
         }
 
-        // Translate name using Groq
+        // Translate name using Adapter (handles cache)
         tracing::debug!(
             "🔍 Translating recipe name: '{}' to {}",
             recipe.name_default,
             target_language.code()
         );
         let translated_name = self
-            .groq_service
+            .llm_adapter
             .translate_to_language(&recipe.name_default, target_language.code())
             .await
             .map_err(|e| {
                 tracing::error!(
-                    "❌ Groq translation failed for name '{}': {:?}",
+                    "❌ AI translation failed for name '{}': {:?}",
                     recipe.name_default,
                     e
                 );
@@ -82,17 +82,17 @@ impl RecipeTranslationService {
             })?;
         tracing::debug!("✅ Name translated: '{}'", translated_name);
 
-        // Translate instructions using Groq
+        // Translate instructions using Adapter (handles cache)
         tracing::debug!(
             "🔍 Translating recipe instructions (len={})",
             recipe.instructions_default.len()
         );
         let translated_instructions = self
-            .groq_service
+            .llm_adapter
             .translate_to_language(&recipe.instructions_default, target_language.code())
             .await
             .map_err(|e| {
-                tracing::error!("❌ Groq translation failed for instructions: {:?}", e);
+                tracing::error!("❌ AI translation failed for instructions: {:?}", e);
                 AppError::internal(&format!("Failed to translate instructions: {}", e))
             })?;
         tracing::debug!(

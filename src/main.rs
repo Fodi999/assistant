@@ -4,7 +4,7 @@ use restaurant_backend::application::{
     UserService,
 };
 use restaurant_backend::infrastructure::{
-    Config, GroqService, JwtService, PasswordHasher, R2Client, Repositories,
+    Config, GroqService, LlmAdapter, JwtService, PasswordHasher, R2Client, Repositories,
 };
 use restaurant_backend::interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
@@ -153,10 +153,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create GroqService for AI features (centralized)
     let groq_service = Arc::new(GroqService::new(config.ai.groq_api_key.clone()));
+    
+    // Create LLM Adapter (Rule Engine -> Cache -> LLM)
+    let llm_adapter = Arc::new(LlmAdapter::new(
+        groq_service.clone(),
+        Arc::new(repositories.ai_cache.clone()),
+        Arc::new(repositories.ai_usage_stats.clone()),
+    ));
+    
     if config.ai.groq_api_key.is_empty() {
         tracing::warn!("⚠️ GROQ_API_KEY not set - AI-dependent features will not work");
     } else {
-        tracing::info!("✅ AI Services (Groq) initialized");
+        tracing::info!("✅ AI Services (LlmAdapter + Groq) initialized");
     }
 
     // Create AdminCatalogService
@@ -164,7 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         repositories.pool.clone(),
         r2_client.clone(),
         repositories.dictionary.clone(),
-        (*groq_service).clone(),
+        llm_adapter.clone(),
     );
 
     // Create TenantIngredientService
@@ -176,7 +184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         restaurant_backend::application::recipe_translation_service::RecipeTranslationService::new(
             Arc::new(repositories.recipe_translation.clone()),
             Arc::new(repositories.recipe_v2.clone()),
-            groq_service.clone(),
+            llm_adapter.clone(),
         ),
     );
 
@@ -193,7 +201,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let recipe_ai_insights_service = Arc::new(
         restaurant_backend::application::RecipeAIInsightsService::new(
-            groq_service,
+            llm_adapter,
             Arc::new(repositories.recipe_ai_insights.clone()),
             Arc::new(repositories.recipe_v2.clone()),
         ),

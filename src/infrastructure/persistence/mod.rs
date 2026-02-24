@@ -1,3 +1,5 @@
+pub mod ai_cache_repository;
+pub mod ai_usage_stats_repository; // 🆕 Added usage stats
 pub mod assistant_state_repository;
 pub mod catalog_category_repository;
 pub mod catalog_ingredient_repository;
@@ -13,7 +15,9 @@ pub mod tenant_ingredient_repository;
 pub mod tenant_repository;
 pub mod user_repository;
 
-pub use assistant_state_repository::*;
+pub use ai_cache_repository::AiCacheRepository;
+pub use ai_usage_stats_repository::AiUsageStatsRepository; // 🆕 Added usage stats
+pub use assistant_state_repository::{AssistantStateRepository, AssistantStateRepositoryTrait};
 pub use catalog_category_repository::*;
 pub use catalog_ingredient_repository::*;
 pub use dictionary_service::*;
@@ -46,8 +50,10 @@ pub struct Repositories {
     pub recipe_v2: RecipeRepositoryV2,
     pub recipe_ingredient: RecipeIngredientRepository,
     pub recipe_translation: RecipeTranslationRepository,
+    pub tenant_ingredient: TenantIngredientRepository, // 🆕 Re-adding tenant_ingredient
+    pub ai_cache: AiCacheRepository, // 🆕 AI cache repository
+    pub ai_usage_stats: AiUsageStatsRepository, // 🆕 AI usage stats
     pub recipe_ai_insights: RecipeAIInsightsRepository,
-    pub tenant_ingredient: TenantIngredientRepository,
 }
 
 impl Repositories {
@@ -67,8 +73,10 @@ impl Repositories {
             recipe_v2: RecipeRepositoryV2::new(pool.clone()),
             recipe_ingredient: RecipeIngredientRepository::new(pool.clone()),
             recipe_translation: RecipeTranslationRepository::new(pool.clone()),
+            tenant_ingredient: TenantIngredientRepository::new(pool.clone()), // 🆕 Initialize tenant_ingredient
+            ai_cache: AiCacheRepository::new(pool.clone()), // 🆕 Initialize AI cache repository
+            ai_usage_stats: AiUsageStatsRepository::new(pool.clone()), // 🆕 Initialize AI usage stats
             recipe_ai_insights: RecipeAIInsightsRepository::new(pool.clone()),
-            tenant_ingredient: TenantIngredientRepository::new(pool),
         }
     }
 }

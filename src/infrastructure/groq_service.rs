@@ -30,6 +30,12 @@ pub struct UnifiedProductResponse {
     pub name_uk: String,       // Перевод на украинский
     pub category_slug: String, // Категория (dairy_and_eggs, fruits, vegetables, meat, seafood, grains, beverages)
     pub unit: String,          // Unit (piece, kilogram, gram, liter, milliliter)
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,       // Уверенность AI (0.0 - 1.0)
+}
+
+fn default_confidence() -> f64 {
+    1.0
 }
 
 /// Сервис для вызова Groq API с минимальными затратами
@@ -406,7 +412,8 @@ Extract and classify the product. Return ONLY valid JSON, no other text:
   "name_ru": "<Russian translation>",
   "name_uk": "<Ukrainian translation>",
   "category_slug": "<category>",
-  "unit": "<unit>"
+  "unit": "<unit>",
+  "confidence": 0.95
 }}
 
 Categories: dairy_and_eggs, fruits, vegetables, meat, seafood, grains, beverages
@@ -417,7 +424,8 @@ Rules:
 2. All translations must be single words when possible, but allow 2-3 word compounds
 3. category_slug must be one of the allowed values
 4. unit must be one of the allowed values
-5. Do not add explanations, just JSON"#,
+5. confidence must be a float between 0.0 and 1.0 indicating how sure you are about the classification
+6. Do not add explanations, just JSON"#,
             trimmed
         );
 

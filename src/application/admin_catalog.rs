@@ -1,9 +1,13 @@
 use crate::infrastructure::R2Client;
-use crate::infrastructure::{DictionaryService, GroqService};
+use crate::infrastructure::{DictionaryService, LlmAdapter, UnifiedProductResponse};
+use crate::infrastructure::persistence::{
+    CatalogCategoryRepository, CatalogIngredientRepository,
+};
 use crate::shared::{AppError, AppResult, UnitType};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Admin Catalog Service - manage products with image upload to R2
@@ -12,7 +16,9 @@ pub struct AdminCatalogService {
     pool: PgPool,
     r2_client: R2Client,
     dictionary: DictionaryService,
-    groq: GroqService,
+    llm_adapter: Arc<LlmAdapter>,
+    category_repo: CatalogCategoryRepository,
+    ingredient_repo: CatalogIngredientRepository,
 }
 
 /// Create Product Request - NEW ARCHITECTURE
@@ -120,13 +126,15 @@ impl AdminCatalogService {
         pool: PgPool,
         r2_client: R2Client,
         dictionary: DictionaryService,
-        groq: GroqService,
+        llm_adapter: Arc<LlmAdapter>,
     ) -> Self {
         Self {
-            pool,
+            pool: pool.clone(),
             r2_client,
             dictionary,
-            groq,
+            llm_adapter,
+            category_repo: CatalogCategoryRepository::new(pool.clone()),
+            ingredient_repo: CatalogIngredientRepository::new(pool),
         }
     }
 
@@ -153,7 +161,7 @@ impl AdminCatalogService {
         // ==========================================
         // If user provided explicit values, use them (don't call AI)
         // Otherwise, call unified processing which returns EVERYTHING at once
-        let (name_en, name_pl, name_uk, name_ru, category_slug, unit_str) = if !req
+        let (name_en, name_pl, name_uk, name_ru, category_slug, unit_str, confidence) = if !req
             .name_en
             .is_empty()
             && !req.name_pl.is_empty()
@@ -169,43 +177,33 @@ impl AdminCatalogService {
                 req.name_ru.trim().to_string(),
                 "vegetables".to_string(), // Will be overridden below if provided
                 "piece".to_string(),      // Will be overridden below if provided
+                1.0,                      // 100% confident since user provided it
             )
         } else {
             // Use unified processing: ONE call returns everything
             tracing::info!("Running unified AI processing for: {}", name_input);
 
-            match self.groq.process_unified(name_input).await {
-                Ok(unified) => {
-                    tracing::info!(
-                        "✅ Unified processing successful: en={}, category={}, unit={}",
-                        unified.name_en,
-                        unified.category_slug,
-                        unified.unit
-                    );
-                    (
-                        unified.name_en,
-                        unified.name_pl,
-                        unified.name_uk,
-                        unified.name_ru,
-                        unified.category_slug,
-                        unified.unit,
-                    )
-                }
-                Err(e) => {
-                    // ⚠️ IMPORTANT: Don't create garbage data on AI failure
-                    // Instead, ask admin to classify manually
-                    tracing::error!(
-                        "❌ Unified processing failed - cannot create product: {}",
-                        e
-                    );
-                    return Err(AppError::internal(
-                            "AI processing failed - please provide explicit translations and classification"
-                        ));
-                }
-            }
+            // 1️⃣ Unified AI processing (Rule Engine -> Cache -> LLM)
+            let ai_result = self.llm_adapter.process_unified(name_input).await?;
+
+            (
+                ai_result.name_en,
+                ai_result.name_pl,
+                ai_result.name_uk,
+                ai_result.name_ru,
+                ai_result.category_slug,
+                ai_result.unit,
+                ai_result.confidence,
+            )
         };
 
-        tracing::info!("Canonical English: {}", name_en);
+        tracing::info!("Canonical English: {} (Confidence: {:.2})", name_en, confidence);
+        
+        if confidence < 0.8 {
+            tracing::warn!("⚠️ Low AI confidence ({:.2}) for product '{}'. Consider manual review.", confidence, name_en);
+            // In a real app, we might return a specific status code or flag to the frontend
+            // to show a confirmation dialog. For now, we just log it.
+        }
 
         // ==========================================
         // 🔍 ШАГ 2: ПРОВЕРКА ДУБЛИКАТОВ (case-insensitive on canonical name)
@@ -383,8 +381,8 @@ impl AdminCatalogService {
                     uk: entry.name_uk,
                 }
             } else {
-                // If not in cache, call Groq
-                match self.groq.translate(&name_en).await {
+                // If not in cache, call AI via Adapter (Cache)
+                match self.llm_adapter.translate(&name_en).await {
                     Ok(t) => {
                         // Cache it for future
                         let _ = self.dictionary.insert(&name_en, &t.pl, &t.ru, &t.uk).await;
