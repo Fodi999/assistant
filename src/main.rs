@@ -110,7 +110,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(repositories.inventory_product.clone()),
         Arc::new(repositories.dish.clone()),
         Arc::new(repositories.recipe.clone()),
-        recipe_service.clone(),
     );
 
     // Create AssistantService with all services
@@ -148,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user_service = UserService::new(
         repositories.user.clone(),
         repositories.tenant.clone(),
-        Some(r2_client.clone()),
+        Some(r2_client.clone()), // Use clone here to keep the original for later use
     );
 
     // Create GroqService for AI features (centralized)
@@ -162,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create AdminCatalogService
     let admin_catalog_service = AdminCatalogService::new(
         repositories.pool.clone(),
-        r2_client,
+        r2_client.clone(),
         repositories.dictionary.clone(),
         (*groq_service).clone(),
     );
@@ -186,6 +185,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(repositories.recipe_ingredient.clone()),
             Arc::new(repositories.catalog_ingredient.clone()),
             recipe_translation_service,
+            r2_client.clone(),
+            repositories.pool.clone(),
         ),
     );
 

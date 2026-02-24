@@ -426,6 +426,7 @@ mod tests {
             name_default: name.to_string(),
             instructions_default: instructions.to_string(),
             language_default: Language::Ru,
+            image_url: None,
             servings: 4,
             total_cost_cents: None,
             cost_per_serving_cents: None,

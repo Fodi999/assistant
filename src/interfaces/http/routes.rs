@@ -235,6 +235,18 @@ pub fn create_router(
                     "/recipes/v2/:id",
                     axum::routing::delete(recipe_v2::delete_recipe),
                 )
+                .route(
+                    "/recipes/v2/:id/image",
+                    post(recipe_v2::upload_recipe_image),
+                )
+                .route(
+                    "/recipes/v2/:id/image",
+                    axum::routing::put(recipe_v2::save_recipe_image_url),
+                )
+                .route(
+                    "/recipes/v2/:id/image-url",
+                    get(recipe_v2::get_recipe_image_upload_url),
+                )
                 .with_state(recipe_v2_service),
         )
         .merge(

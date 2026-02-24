@@ -117,6 +117,7 @@ pub struct Recipe {
     pub name_default: String,
     pub instructions_default: String,
     pub language_default: Language,
+    pub image_url: Option<String>,
 
     // Recipe details
     pub servings: i32,

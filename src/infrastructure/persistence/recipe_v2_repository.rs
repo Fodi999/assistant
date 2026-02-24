@@ -52,6 +52,9 @@ impl RecipeRepositoryV2 {
                 AppError::internal(&format!("Failed to get instructions_default: {}", e))
             })?,
             language_default: Language::from_code(&language_str).unwrap_or(Language::En),
+            image_url: row
+                .try_get("image_url")
+                .map_err(|e| AppError::internal(&format!("Failed to get image_url: {}", e)))?,
             servings: row
                 .try_get("servings")
                 .map_err(|e| AppError::internal(&format!("Failed to get servings: {}", e)))?,
@@ -95,7 +98,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
                 id, user_id, tenant_id,
                 name, name_default, 
                 instructions, instructions_default,
-                language_default,
+                language_default, image_url,
                 servings,
                 total_cost_cents, cost_per_serving_cents,
                 status, is_public, published_at,
@@ -104,11 +107,11 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
                 $1, $2, $3,
                 $4, $4, 
                 $5, $5, 
-                $6,
-                $7,
-                $8, $9,
-                $10, $11, $12,
-                $13, $14
+                $6, $7,
+                $8,
+                $9, $10,
+                $11, $12, $13,
+                $14, $15
             )
             "#,
         )
@@ -118,6 +121,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
         .bind(&recipe.name_default)
         .bind(&recipe.instructions_default)
         .bind(recipe.language_default.code())
+        .bind(&recipe.image_url)
         .bind(recipe.servings)
         .bind(recipe.total_cost_cents.map(|c| c as i64))
         .bind(recipe.cost_per_serving_cents.map(|c| c as i64))
@@ -189,18 +193,19 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
             UPDATE recipes
             SET name = $1, name_default = $1, 
                 instructions = $2, instructions_default = $2, 
-                language_default = $3, 
-                servings = $4, total_cost_cents = $5, cost_per_serving_cents = $6, 
-                status = $7, is_public = $8, published_at = $9, updated_at = $10
-            WHERE id = $11 AND tenant_id = $12
+                language_default = $3, image_url = $4,
+                servings = $5, total_cost_cents = $6, cost_per_serving_cents = $7, 
+                status = $8, is_public = $9, published_at = $10, updated_at = $11
+            WHERE id = $12 AND tenant_id = $13
             "#,
         )
         .bind(&recipe.name_default)
         .bind(&recipe.instructions_default)
         .bind(recipe.language_default.code())
+        .bind(&recipe.image_url)
         .bind(recipe.servings)
-        .bind(recipe.total_cost_cents)
-        .bind(recipe.cost_per_serving_cents)
+        .bind(recipe.total_cost_cents.map(|c| c as i64))
+        .bind(recipe.cost_per_serving_cents.map(|c| c as i64))
         .bind(recipe.status.as_str())
         .bind(recipe.is_public)
         .bind(recipe.published_at)

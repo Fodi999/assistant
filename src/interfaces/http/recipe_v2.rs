@@ -4,7 +4,7 @@ use crate::domain::recipe_v2::RecipeId;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppResult;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -139,4 +139,93 @@ pub async fn delete_recipe(
         .delete_recipe(RecipeId(recipe_id), tenant_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /api/recipes/v2/:id/image
+/// Body: Multipart file
+pub async fn upload_recipe_image(
+    State(service): State<Arc<RecipeV2Service>>,
+    AuthUser {
+        user_id: _,
+        tenant_id,
+        language: _,
+    }: AuthUser,
+    Path(recipe_id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> AppResult<Json<crate::interfaces::http::admin_catalog::ImageUrlResponse>> {
+    let mut file_data = None;
+    let mut content_type = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| crate::shared::AppError::validation(&format!("Invalid multipart: {}", e)))?
+    {
+        let name = field.name().unwrap_or("");
+        if name == "file" || name == "image" {
+            content_type = field.content_type().map(|ct| ct.to_string());
+            file_data = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|e| crate::shared::AppError::validation(&format!("Failed to read image: {}", e)))?,
+            );
+            break;
+        }
+    }
+
+    let file_data = file_data.ok_or_else(|| crate::shared::AppError::validation("No file provided"))?;
+    let content_type = content_type.ok_or_else(|| crate::shared::AppError::validation("No content-type"))?;
+
+    let image_url = service
+        .upload_image(RecipeId(recipe_id), tenant_id, file_data.to_vec(), &content_type)
+        .await?;
+
+    Ok(Json(crate::interfaces::http::admin_catalog::ImageUrlResponse { image_url }))
+}
+
+/// GET /api/recipes/v2/:id/image-url
+/// Returns presigned URL for direct upload
+pub async fn get_recipe_image_upload_url(
+    State(service): State<Arc<RecipeV2Service>>,
+    AuthUser {
+        user_id: _,
+        tenant_id,
+        language: _,
+    }: AuthUser,
+    Path(recipe_id): Path<Uuid>,
+    Query(query): Query<crate::interfaces::http::admin_catalog::GetUploadUrlQuery>,
+) -> AppResult<Json<crate::application::user::AvatarUploadResponse>> {
+    let content_type = query
+        .content_type
+        .unwrap_or_else(|| "image/webp".to_string());
+
+    let response = service
+        .get_image_upload_url(RecipeId(recipe_id), tenant_id, &content_type)
+        .await?;
+
+    Ok(Json(response))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SaveImageUrlRequest {
+    pub image_url: String,
+}
+
+/// PUT /api/recipes/v2/:id/image
+/// Body: { "image_url": "..." }
+pub async fn save_recipe_image_url(
+    State(service): State<Arc<RecipeV2Service>>,
+    AuthUser {
+        user_id: _,
+        tenant_id,
+        language: _,
+    }: AuthUser,
+    Path(recipe_id): Path<Uuid>,
+    Json(req): Json<SaveImageUrlRequest>,
+) -> AppResult<StatusCode> {
+    service
+        .save_image_url(RecipeId(recipe_id), tenant_id, req.image_url)
+        .await?;
+    Ok(StatusCode::OK)
 }

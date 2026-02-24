@@ -14,8 +14,6 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::application::RecipeService;
-
 /// Service for Menu Engineering analysis
 /// Classifies dishes into Star/Plowhorse/Puzzle/Dog categories
 #[derive(Clone)]
@@ -24,7 +22,6 @@ pub struct MenuEngineeringService {
     inventory_repo: Arc<dyn InventoryBatchRepositoryTrait>,
     dish_repo: Arc<dyn DishRepositoryTrait>,
     recipe_repo: Arc<dyn RecipeRepositoryTrait>,
-    recipe_service: RecipeService,
 }
 
 impl MenuEngineeringService {
@@ -33,14 +30,12 @@ impl MenuEngineeringService {
         inventory_repo: Arc<dyn InventoryBatchRepositoryTrait>,
         dish_repo: Arc<dyn DishRepositoryTrait>,
         recipe_repo: Arc<dyn RecipeRepositoryTrait>,
-        recipe_service: RecipeService,
     ) -> Self {
         Self {
             pool,
             inventory_repo,
             dish_repo,
             recipe_repo,
-            recipe_service,
         }
     }
 
@@ -136,11 +131,11 @@ impl MenuEngineeringService {
                 ds.dish_id,
                 d.name as dish_name,
                 COUNT(*) as sales_count,
-                SUM(ds.quantity)::BIGINT as total_quantity,
-                SUM(ds.selling_price_cents * ds.quantity)::BIGINT as total_revenue_cents,
-                SUM(ds.profit_cents)::BIGINT as total_profit_cents,
+                SUM(ds.quantity) as total_quantity,
+                SUM(ds.selling_price_cents * ds.quantity) as total_revenue_cents,
+                SUM(ds.profit_cents * ds.quantity) as total_profit_cents,
                 AVG(
-                    CAST(ds.profit_cents AS FLOAT) / (NULLIF(ds.selling_price_cents, 0) * ds.quantity) * 100.0
+                    CAST(ds.profit_cents AS FLOAT) / NULLIF(ds.selling_price_cents, 0) * 100.0
                 ) as avg_profit_margin_percent
             FROM dish_sales ds
             JOIN dishes d ON d.id = ds.dish_id AND d.tenant_id = ds.tenant_id
@@ -232,9 +227,9 @@ impl MenuEngineeringService {
         .execute(&self.pool)
         .await?;
 
-        // 2. 🚀 AUTOMATIC RECURSIVE INVENTORY DEDUCTION
+        // 2. 🚀 AUTOMATIC INVENTORY DEDUCTION (The "Business Flow" Logic)
         tracing::info!(
-            "Starting recursive inventory deduction for dish {}",
+            "Starting automatic inventory deduction for dish {}",
             dish_id
         );
 
@@ -245,19 +240,26 @@ impl MenuEngineeringService {
             .await?
             .ok_or_else(|| AppError::not_found("Dish not found"))?;
 
-        // Flatten the recipe recursively to get all base ingredients
-        let flattened_ingredients = self.recipe_service
-            .flatten_recipe(dish.recipe_id, tenant_id, Decimal::ONE, 0)
-            .await?;
+        // Find the recipe (🔒 TENANT ISOLATION: use tenant_id)
+        let recipe = self
+            .recipe_repo
+            .find_by_id(dish.recipe_id, tenant_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Recipe not found"))?;
 
         tracing::info!(
-            "Recipe flattened into {} unique base ingredients",
-            flattened_ingredients.len()
+            "Found recipe {} with {} ingredients",
+            recipe.id().as_uuid(),
+            recipe.ingredients().len()
         );
 
-        // For each base ingredient, deduct from inventory using FIFO with locking
-        for (catalog_id, total_qty_dec) in flattened_ingredients {
-            let target_qty = total_qty_dec * Decimal::from(quantity);
+        // For each ingredient in the recipe, deduct from inventory using FIFO with locking
+        for ingredient in recipe.ingredients() {
+            let catalog_id = ingredient.catalog_ingredient_id();
+            let quantity_per_dish = ingredient.quantity().value();
+            let total_to_deduct_val = quantity_per_dish * (quantity as f64);
+
+            let target_qty = Quantity::new(total_to_deduct_val)?.decimal();
             if target_qty <= Decimal::ZERO {
                 continue;
             }

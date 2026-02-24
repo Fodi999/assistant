@@ -5,9 +5,11 @@ use crate::domain::CatalogIngredientId;
 use crate::infrastructure::persistence::{
     CatalogIngredientRepositoryTrait, RecipeIngredientRepositoryTrait, RecipeV2RepositoryTrait,
 };
+use crate::infrastructure::R2Client;
 use crate::shared::{AppError, AppResult, Language, TenantId, UserId};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -20,6 +22,7 @@ pub struct CreateRecipeDto {
     pub instructions: String,
     pub language: Language,
     pub servings: i32,
+    pub image_url: Option<String>,
     pub ingredients: Vec<CreateRecipeIngredientDto>,
 }
 
@@ -36,6 +39,7 @@ pub struct UpdateRecipeDto {
     pub instructions: String,
     pub language: Language,
     pub servings: i32,
+    pub image_url: Option<String>,
     pub ingredients: Vec<CreateRecipeIngredientDto>,
 }
 
@@ -46,6 +50,7 @@ pub struct RecipeResponseDto {
     pub instructions: String,
     pub language: Language,
     pub servings: i32,
+    pub image_url: Option<String>,
     pub total_cost_cents: Option<i32>,
     pub cost_per_serving_cents: Option<i32>,
     pub status: String,
@@ -74,6 +79,8 @@ pub struct RecipeV2Service {
     ingredient_repo: Arc<dyn RecipeIngredientRepositoryTrait>,
     catalog_repo: Arc<dyn CatalogIngredientRepositoryTrait>,
     translation_service: Arc<RecipeTranslationService>,
+    r2_client: R2Client,
+    pool: PgPool,
 }
 
 impl RecipeV2Service {
@@ -82,13 +89,86 @@ impl RecipeV2Service {
         ingredient_repo: Arc<dyn RecipeIngredientRepositoryTrait>,
         catalog_repo: Arc<dyn CatalogIngredientRepositoryTrait>,
         translation_service: Arc<RecipeTranslationService>,
+        r2_client: R2Client,
+        pool: PgPool,
     ) -> Self {
         Self {
             recipe_repo,
             ingredient_repo,
             catalog_repo,
             translation_service,
+            r2_client,
+            pool,
         }
+    }
+
+    /// Upload image to R2 for a specific recipe
+    pub async fn upload_image(
+        &self,
+        recipe_id: RecipeId,
+        tenant_id: TenantId,
+        file_data: Vec<u8>,
+        content_type: &str,
+    ) -> AppResult<String> {
+        // Verify recipe belongs to tenant
+        let exists = self.recipe_repo.find_by_id(recipe_id, tenant_id).await?.is_some();
+        if !exists {
+            return Err(AppError::not_found("Recipe"));
+        }
+
+        let key = format!("recipes/{}/{}.webp", tenant_id.as_uuid(), recipe_id.as_uuid());
+        
+        // Use Bytes to avoid unnecessary copies (R2Client uses bytes::Bytes)
+        let bytes = bytes::Bytes::from(file_data);
+        
+        let image_url = self
+            .r2_client
+            .upload_image(&key, bytes, content_type)
+            .await?;
+
+        // Update database
+        sqlx::query("UPDATE recipes SET image_url = $1 WHERE id = $2 AND tenant_id = $3")
+            .bind(&image_url)
+            .bind(recipe_id.as_uuid())
+            .bind(tenant_id.as_uuid())
+            .execute(&self.pool)
+            .await?;
+
+        Ok(image_url)
+    }
+
+    /// Update recipe image URL (for direct uploads)
+    pub async fn save_image_url(
+        &self,
+        recipe_id: RecipeId,
+        tenant_id: TenantId,
+        image_url: String,
+    ) -> AppResult<()> {
+        sqlx::query("UPDATE recipes SET image_url = $1 WHERE id = $2 AND tenant_id = $3")
+            .bind(image_url)
+            .bind(recipe_id.as_uuid())
+            .bind(tenant_id.as_uuid())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Get presigned URL for direct recipe image upload
+    pub async fn get_image_upload_url(
+        &self,
+        recipe_id: RecipeId,
+        tenant_id: TenantId,
+        content_type: &str,
+    ) -> AppResult<crate::application::user::AvatarUploadResponse> {
+        let key = format!("recipes/{}/{}.webp", tenant_id.as_uuid(), recipe_id.as_uuid());
+        
+        let upload_url = self.r2_client.generate_presigned_upload_url(&key, content_type).await?;
+        let public_url = self.r2_client.get_public_url(&key);
+
+        Ok(crate::application::user::AvatarUploadResponse {
+            upload_url,
+            public_url,
+        })
     }
 
     /// Create a new recipe with automatic translation to all languages
@@ -126,6 +206,7 @@ impl RecipeV2Service {
             name_default: dto.name,
             instructions_default: dto.instructions,
             language_default: dto.language,
+            image_url: dto.image_url,
             servings: dto.servings,
             total_cost_cents: None, // Will be calculated from inventory later
             cost_per_serving_cents: None,
@@ -200,6 +281,7 @@ impl RecipeV2Service {
             instructions: recipe.instructions_default,
             language: recipe.language_default,
             servings: recipe.servings,
+            image_url: recipe.image_url,
             total_cost_cents: recipe.total_cost_cents,
             cost_per_serving_cents: recipe.cost_per_serving_cents,
             status: recipe.status.as_str().to_string(),
@@ -214,17 +296,55 @@ impl RecipeV2Service {
     /// Get recipe by ID with localized content
     pub async fn get_recipe(
         &self,
-        recipe_id: RecipeId,
+        id: RecipeId,
         tenant_id: TenantId,
         language: Language,
     ) -> AppResult<RecipeResponseDto> {
         let recipe = self
             .recipe_repo
-            .find_by_id(recipe_id, tenant_id)
+            .find_by_id(id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
 
-        self.to_response_dto(&recipe, language).await
+        let (name, instructions) = if language == recipe.language_default {
+            (recipe.name_default.clone(), recipe.instructions_default.clone())
+        } else {
+            // Find translation
+            let translation = sqlx::query(
+                "SELECT name, instructions FROM recipe_translations WHERE recipe_id = $1 AND language = $2",
+            )
+            .bind(recipe.id.as_uuid())
+            .bind(language.code())
+            .fetch_optional(&self.pool)
+            .await?;
+
+            match translation {
+                Some(row) => (
+                    row.try_get("name")?,
+                    row.try_get("instructions")?,
+                ),
+                None => (recipe.name_default.clone(), recipe.instructions_default.clone()),
+            }
+        };
+
+        let response_ingredients = self.get_response_ingredients(recipe.id, language).await?;
+
+        Ok(RecipeResponseDto {
+            id: recipe.id.as_uuid(),
+            name,
+            instructions,
+            language,
+            servings: recipe.servings,
+            image_url: recipe.image_url,
+            total_cost_cents: recipe.total_cost_cents,
+            cost_per_serving_cents: recipe.cost_per_serving_cents,
+            status: recipe.status.as_str().to_string(),
+            is_public: recipe.is_public,
+            published_at: recipe.published_at,
+            created_at: recipe.created_at,
+            updated_at: recipe.updated_at,
+            ingredients: response_ingredients,
+        })
     }
 
     /// List all user's recipes
@@ -236,12 +356,50 @@ impl RecipeV2Service {
     ) -> AppResult<Vec<RecipeResponseDto>> {
         let recipes = self.recipe_repo.find_by_user_id(user_id, tenant_id).await?;
 
-        let mut response = Vec::with_capacity(recipes.len());
+        let mut results = Vec::new();
         for recipe in recipes {
-            response.push(self.to_response_dto(&recipe, language).await?);
+            let (name, instructions) = if language == recipe.language_default {
+                (recipe.name_default.clone(), recipe.instructions_default.clone())
+            } else {
+                // Find translation (cached/pre-calculated if possible, but keep it simple for now)
+                let translation = sqlx::query(
+                    "SELECT name, instructions FROM recipe_translations WHERE recipe_id = $1 AND language = $2",
+                )
+                .bind(recipe.id.as_uuid())
+                .bind(language.code())
+                .fetch_optional(&self.pool)
+                .await?;
+
+                match translation {
+                    Some(row) => (
+                        row.try_get("name")?,
+                        row.try_get("instructions")?,
+                    ),
+                    None => (recipe.name_default.clone(), recipe.instructions_default.clone()),
+                }
+            };
+
+            let response_ingredients = self.get_response_ingredients(recipe.id, language).await?;
+
+            results.push(RecipeResponseDto {
+                id: recipe.id.as_uuid(),
+                name,
+                instructions,
+                language,
+                servings: recipe.servings,
+                image_url: recipe.image_url,
+                total_cost_cents: recipe.total_cost_cents,
+                cost_per_serving_cents: recipe.cost_per_serving_cents,
+                status: recipe.status.as_str().to_string(),
+                is_public: recipe.is_public,
+                published_at: recipe.published_at,
+                created_at: recipe.created_at,
+                updated_at: recipe.updated_at,
+                ingredients: response_ingredients,
+            });
         }
 
-        Ok(response)
+        Ok(results)
     }
 
     /// Publish recipe (make it public or active)
@@ -280,28 +438,29 @@ impl RecipeV2Service {
     /// Update an existing recipe
     pub async fn update_recipe(
         &self,
-        recipe_id: RecipeId,
+        id: RecipeId, // Use id here
         dto: UpdateRecipeDto,
         tenant_id: TenantId,
     ) -> AppResult<RecipeResponseDto> {
         let mut recipe = self
             .recipe_repo
-            .find_by_id(recipe_id, tenant_id)
+            .find_by_id(id, tenant_id)
             .await?
             .ok_or_else(|| AppError::not_found("Recipe"))?;
 
-        // Update fields
+        // Update basic fields
         recipe.name_default = dto.name;
         recipe.instructions_default = dto.instructions;
         recipe.language_default = dto.language;
         recipe.servings = dto.servings;
+        recipe.image_url = dto.image_url;
         recipe.updated_at = OffsetDateTime::now_utc();
 
         // Save updated recipe
         self.recipe_repo.update(&recipe).await?;
 
         // Update ingredients (easiest way: delete all and re-insert)
-        self.ingredient_repo.delete_by_recipe_id(recipe_id).await?;
+        self.ingredient_repo.delete_by_recipe_id(id).await?;
 
         let mut response_ingredients = Vec::new();
         let now = OffsetDateTime::now_utc();
@@ -319,7 +478,7 @@ impl RecipeV2Service {
 
             let ingredient = RecipeIngredient {
                 id: crate::domain::recipe_v2::RecipeIngredientId::new(),
-                recipe_id,
+                recipe_id: id,
                 catalog_ingredient_id: ingredient_dto.catalog_ingredient_id,
                 quantity: ingredient_dto.quantity,
                 unit: ingredient_dto.unit.clone(),
@@ -344,14 +503,15 @@ impl RecipeV2Service {
         let translation_service = self.translation_service.clone();
         let default_language = dto.language;
         let t_id = tenant_id;
+        let r_id = id;
         tokio::spawn(async move {
             if let Err(e) = translation_service
-                .translate_to_all_languages(recipe_id, t_id, default_language, true)
+                .translate_to_all_languages(r_id, t_id, default_language, true)
                 .await
             {
                 tracing::error!(
                     "Failed to trigger re-translations for recipe {}: {}",
-                    recipe_id.as_uuid(),
+                    r_id.as_uuid(),
                     e
                 );
             }
@@ -363,6 +523,7 @@ impl RecipeV2Service {
             instructions: recipe.instructions_default,
             language: recipe.language_default,
             servings: recipe.servings,
+            image_url: recipe.image_url,
             total_cost_cents: recipe.total_cost_cents,
             cost_per_serving_cents: recipe.cost_per_serving_cents,
             status: recipe.status.as_str().to_string(),
@@ -374,22 +535,15 @@ impl RecipeV2Service {
         })
     }
 
-    /// Convert recipe to response DTO
-    async fn to_response_dto(
+    /// Internal helper to get ingredients for response
+    async fn get_response_ingredients(
         &self,
-        recipe: &Recipe,
-        language: Language,
-    ) -> AppResult<RecipeResponseDto> {
-        // Get localized content
-        let (name, instructions) = self
-            .translation_service
-            .get_localized_content(recipe.id, recipe.tenant_id, language)
-            .await?;
-
-        // Load ingredients
-        let ingredients = self.ingredient_repo.find_by_recipe_id(recipe.id).await?;
-
-        let response_ingredients = ingredients
+        recipe_id: RecipeId,
+        _language: Language,
+    ) -> AppResult<Vec<RecipeIngredientResponseDto>> {
+        let ingredients = self.ingredient_repo.find_by_recipe_id(recipe_id).await?;
+        
+        Ok(ingredients
             .into_iter()
             .map(|i| RecipeIngredientResponseDto {
                 id: i.id.as_uuid(),
@@ -399,22 +553,6 @@ impl RecipeV2Service {
                 unit: i.unit,
                 cost_at_use_cents: i.cost_at_use_cents,
             })
-            .collect();
-
-        Ok(RecipeResponseDto {
-            id: recipe.id.as_uuid(),
-            name,
-            instructions,
-            language,
-            servings: recipe.servings,
-            total_cost_cents: recipe.total_cost_cents,
-            cost_per_serving_cents: recipe.cost_per_serving_cents,
-            status: recipe.status.as_str().to_string(),
-            is_public: recipe.is_public,
-            published_at: recipe.published_at,
-            created_at: recipe.created_at,
-            updated_at: recipe.updated_at,
-            ingredients: response_ingredients,
-        })
+            .collect())
     }
 }
