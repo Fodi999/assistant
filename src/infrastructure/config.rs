@@ -113,7 +113,7 @@ impl Config {
                     .unwrap_or_else(|_| "8000".to_string())
                     .parse()?,
                 rate_limit_per_second: env::var("RATE_LIMIT_PER_SECOND")
-                    .unwrap_or_else(|_| "10".to_string())
+                    .unwrap_or_else(|_| "50".to_string())
                     .parse()?,
             },
             jwt: JwtConfig {
