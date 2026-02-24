@@ -141,7 +141,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
         let row = sqlx::query(
             r#"
             SELECT id, user_id, tenant_id, name_default, instructions_default, language_default, 
-                   servings, total_cost_cents, cost_per_serving_cents, status, is_public, 
+                   image_url, servings, total_cost_cents, cost_per_serving_cents, status, is_public, 
                    published_at, created_at, updated_at
             FROM recipes
             WHERE id = $1 AND tenant_id = $2
@@ -166,7 +166,7 @@ impl RecipeV2RepositoryTrait for RecipeRepositoryV2 {
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, tenant_id, name_default, instructions_default, language_default, 
-                   servings, total_cost_cents, cost_per_serving_cents, status, is_public, 
+                   image_url, servings, total_cost_cents, cost_per_serving_cents, status, is_public, 
                    published_at, created_at, updated_at
             FROM recipes
             WHERE user_id = $1 AND tenant_id = $2
