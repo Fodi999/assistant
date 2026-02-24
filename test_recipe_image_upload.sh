@@ -7,8 +7,11 @@ EMAIL="fodi85999333@gmail.com"
 PASSWORD="fodi210185"
 
 echo "1. Checking credentials (logging in)..."
+MAX_RETRIES=10
+COUNT=0
 # Try login until success or definitive failure
-while true; do
+while [ $COUNT -lt $MAX_RETRIES ]; do
+  COUNT=$((COUNT+1))
   LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
     -H "Content-Type: application/json" \
     -d "{
@@ -17,7 +20,7 @@ while true; do
     }")
   
   if echo "$LOGIN_RESPONSE" | grep -q "Too many requests"; then
-    echo "Wait for login rate limiter..."
+    echo "Wait for login rate limiter ($COUNT/$MAX_RETRIES)..."
     sleep 2
   elif echo "$LOGIN_RESPONSE" | grep -q "Invalid email or password"; then
     echo "User not found, attempting registration..."
@@ -32,7 +35,7 @@ while true; do
       }")
     
     if echo "$REGISTER_RESPONSE" | grep -q "Too many requests"; then
-        echo "Wait for registration rate limiter..."
+        echo "Wait for registration rate limiter ($COUNT/$MAX_RETRIES)..."
         sleep 2
     else
         echo "Registration Response: $REGISTER_RESPONSE"
@@ -45,8 +48,13 @@ while true; do
       break
     else
       echo "Login error or unexpected response: $LOGIN_RESPONSE"
-      exit 1
+      sleep 1
     fi
+  fi
+
+  if [ $COUNT -eq $MAX_RETRIES ]; then
+    echo "❌ Error: Maximum retries reached for authentication."
+    exit 1
   fi
 done
 
@@ -70,7 +78,7 @@ if [ -z "$INGREDIENT_ID" ]; then
   # (In a real environment, catalog should have seed data).
 fi
 
-echo "4. Creating a V2 recipe..."
+echo "3. Creating a V2 recipe..."
 RECIPE_RESPONSE=$(curl -s -X POST "$API_URL/recipes/v2" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
