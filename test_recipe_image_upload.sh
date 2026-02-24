@@ -12,21 +12,29 @@ COUNT=0
 # Try login until success or definitive failure
 while [ $COUNT -lt $MAX_RETRIES ]; do
   COUNT=$((COUNT+1))
-  LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
+  
+  # Get response body and HTTP status code
+  RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/auth/login" \
     -H "Content-Type: application/json" \
     -d "{
       \"email\": \"$EMAIL\",
       \"password\": \"$PASSWORD\"
     }")
   
-  if echo "$LOGIN_RESPONSE" | grep -q "Too many requests"; then
+  HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+  LOGIN_RESPONSE=$(echo "$RESPONSE" | sed '$d')
+
+  if [ "$HTTP_CODE" -eq 429 ]; then
     echo "Wait for login rate limiter ($COUNT/$MAX_RETRIES)..."
     sleep 2
-  elif echo "$LOGIN_RESPONSE" | grep -q "Invalid email or password"; then
-    echo "User not found, attempting registration..."
+    continue
+  fi
+
+  if [ "$HTTP_CODE" -eq 401 ] || echo "$LOGIN_RESPONSE" | grep -q "Invalid email or password"; then
+    echo "User not found or invalid credentials, attempting registration..."
     
     # Try registration
-    REGISTER_RESPONSE=$(curl -s -X POST "$API_URL/auth/register" \
+    REGISTER_RESP_FULL=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/auth/register" \
       -H "Content-Type: application/json" \
       -d "{
         \"email\": \"$EMAIL\",
@@ -34,20 +42,25 @@ while [ $COUNT -lt $MAX_RETRIES ]; do
         \"tenant_name\": \"Fodi Kitchen\"
       }")
     
-    if echo "$REGISTER_RESPONSE" | grep -q "Too many requests"; then
+    REG_HTTP_CODE=$(echo "$REGISTER_RESP_FULL" | tail -n 1)
+    REGISTER_RESPONSE=$(echo "$REGISTER_RESP_FULL" | sed '$d')
+
+    if [ "$REG_HTTP_CODE" -eq 429 ]; then
         echo "Wait for registration rate limiter ($COUNT/$MAX_RETRIES)..."
         sleep 2
+        continue
     else
-        echo "Registration Response: $REGISTER_RESPONSE"
-        # Continue to next iteration to login
+        echo "Registration Response (HTTP $REG_HTTP_CODE): $REGISTER_RESPONSE"
+        # If registration was successful (likely 200 or 201), the next loop will log in.
+        # If it failed for other reasons, the count will increment and we try again.
     fi
   else
-    TOKEN=$(echo $LOGIN_RESPONSE | jq -r .access_token)
+    TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r .access_token)
     if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ]; then
       echo "Login success!"
       break
     else
-      echo "Login error or unexpected response: $LOGIN_RESPONSE"
+      echo "Unexpected error (HTTP $HTTP_CODE): $LOGIN_RESPONSE"
       sleep 1
     fi
   fi
