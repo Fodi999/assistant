@@ -37,7 +37,7 @@ use crate::interfaces::http::{
     user::{get_avatar_upload_url, me_handler, update_avatar_url},
 };
 use axum::{
-    extract::{ConnectInfo, FromRequestParts, Request},
+    extract::{ConnectInfo, DefaultBodyLimit, FromRequestParts, Request},
     http::{header, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -248,6 +248,7 @@ pub fn create_router(
                     "/recipes/v2/:id/image-url",
                     get(recipe_v2::get_recipe_image_upload_url),
                 )
+                .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10 MB limit for recipes (images/large JSON)
                 .with_state(recipe_v2_service),
         )
         .merge(
