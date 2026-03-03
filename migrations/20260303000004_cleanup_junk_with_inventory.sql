@@ -1,3 +1,8 @@
+-- Fix: remove failed _000003 migration record from _sqlx_migrations
+-- Then clean up junk categories with full FK chain
+
+DELETE FROM _sqlx_migrations WHERE version = 20260303000003;
+
 -- Cleanup junk Test/Alert categories
 -- Must delete inventory_batches and inventory_products first (FK chain)
 
