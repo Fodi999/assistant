@@ -37,12 +37,13 @@ BEGIN
     DELETE FROM catalog_categories WHERE id = ANY(junk_cat_ids);
 
     -- Step 5: Clean up remaining junk by name
+    -- Note: soft-delete column is "is_active" (false = deleted), NOT "deleted"
     DELETE FROM inventory_batches WHERE catalog_ingredient_id IN (
         SELECT id FROM catalog_ingredients
-        WHERE deleted = true OR name_en LIKE 'Test %'
+        WHERE is_active = false OR name_en LIKE 'Test %'
            OR name_en LIKE 'Expiring Fish%' OR name_en LIKE 'Low Milk%'
     );
     DELETE FROM catalog_ingredients
-    WHERE deleted = true OR name_en LIKE 'Test %'
+    WHERE is_active = false OR name_en LIKE 'Test %'
        OR name_en LIKE 'Expiring Fish%' OR name_en LIKE 'Low Milk%';
 END $$;
