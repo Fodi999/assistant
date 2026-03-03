@@ -49,7 +49,7 @@ use sqlx::PgPool;
 use std::net::SocketAddr;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowHeaders, CorsLayer};
 
 /// IP-based rate limiter type
 type IpRateLimiter = RateLimiter<String, DashMapStateStore<String>, DefaultClock>;
@@ -375,7 +375,12 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
                 Method::DELETE,
                 Method::OPTIONS,
             ])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+            .allow_headers(AllowHeaders::list([
+                header::CONTENT_TYPE,
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                header::HeaderName::from_static("x-request-id"),
+            ]))
             .allow_credentials(true)
     } else {
         tracing::info!("🔒 CORS: Allowed origins: {:?}", safe_origins);
@@ -394,7 +399,12 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
                 Method::DELETE,
                 Method::OPTIONS,
             ])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+            .allow_headers(AllowHeaders::list([
+                header::CONTENT_TYPE,
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                header::HeaderName::from_static("x-request-id"),
+            ]))
             .allow_credentials(true)
     }
 }
