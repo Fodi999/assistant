@@ -128,7 +128,9 @@ impl Config {
             },
             cors: CorsConfig {
                 allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
-                    .unwrap_or_else(|_| "http://localhost:3000".to_string())
+                    .unwrap_or_else(|_| {
+                        "http://localhost:3000,http://localhost:3001,https://b2b-saas-tau.vercel.app".to_string()
+                    })
                     .split(',')
                     .map(|s| s.trim().to_string())
                     .collect(),
