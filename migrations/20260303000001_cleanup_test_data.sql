@@ -1,5 +1,5 @@
 -- Cleanup test/junk data from catalog
--- Must clean FK chain: inventory_batches → inventory_products → catalog_ingredients → catalog_categories
+-- FK chain: inventory_batches (was inventory_products) → catalog_ingredients → catalog_categories
 
 DO $$
 DECLARE
@@ -24,10 +24,10 @@ BEGIN
         SELECT id FROM catalog_ingredients WHERE category_id = ANY(junk_cat_ids)
     ) INTO ingredient_ids;
 
-    -- Step 2: Clean FK chain (deepest first)
+    -- Step 2: Delete from inventory_batches (the only FK referencing catalog_ingredients)
+    -- Note: inventory_products was RENAMED to inventory_batches in migration 20260216000003
     IF ingredient_ids IS NOT NULL AND array_length(ingredient_ids, 1) > 0 THEN
         DELETE FROM inventory_batches WHERE catalog_ingredient_id = ANY(ingredient_ids);
-        DELETE FROM inventory_products WHERE catalog_ingredient_id = ANY(ingredient_ids);
     END IF;
 
     -- Step 3: Delete ingredients in junk categories
@@ -36,13 +36,8 @@ BEGIN
     -- Step 4: Delete junk categories
     DELETE FROM catalog_categories WHERE id = ANY(junk_cat_ids);
 
-    -- Step 5: Clean up remaining junk by name (with FK chain)
+    -- Step 5: Clean up remaining junk by name
     DELETE FROM inventory_batches WHERE catalog_ingredient_id IN (
-        SELECT id FROM catalog_ingredients
-        WHERE deleted = true OR name_en LIKE 'Test %'
-           OR name_en LIKE 'Expiring Fish%' OR name_en LIKE 'Low Milk%'
-    );
-    DELETE FROM inventory_products WHERE catalog_ingredient_id IN (
         SELECT id FROM catalog_ingredients
         WHERE deleted = true OR name_en LIKE 'Test %'
            OR name_en LIKE 'Expiring Fish%' OR name_en LIKE 'Low Milk%'
