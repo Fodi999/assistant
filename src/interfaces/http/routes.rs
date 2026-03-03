@@ -359,14 +359,17 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
     if safe_origins.is_empty() {
         tracing::warn!(
             "⚠️ CORS: No valid origins configured (wildcard '*' is rejected). \
-             Defaulting to http://localhost:3000. Set CORS_ALLOWED_ORIGINS in production."
+             Defaulting to localhost:3000 and localhost:3001. Set CORS_ALLOWED_ORIGINS in production."
         );
+        let default_origins: Vec<axum::http::HeaderValue> = [
+            "http://localhost:3000",
+            "http://localhost:3001",
+        ]
+        .iter()
+        .filter_map(|o| o.parse().ok())
+        .collect();
         CorsLayer::new()
-            .allow_origin(
-                "http://localhost:3000"
-                    .parse::<axum::http::HeaderValue>()
-                    .unwrap(),
-            )
+            .allow_origin(default_origins)
             .allow_methods([
                 Method::GET,
                 Method::POST,
