@@ -664,9 +664,9 @@ impl AdminCatalogService {
 
     /// Delete category (fails if used by products)
     pub async fn delete_category(&self, id: Uuid) -> AppResult<()> {
-        // Check if referenced
+        // Check if referenced by non-deleted products only
         let in_use: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE category_id = $1)",
+            "SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE category_id = $1 AND deleted = false)",
         )
         .bind(id)
         .fetch_one(&self.pool)
@@ -677,6 +677,12 @@ impl AdminCatalogService {
                 "Cannot delete category: it is used by products",
             ));
         }
+
+        // Hard-delete any soft-deleted products in this category first
+        sqlx::query("DELETE FROM catalog_ingredients WHERE category_id = $1 AND deleted = true")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
 
         sqlx::query("DELETE FROM catalog_categories WHERE id = $1")
             .bind(id)
