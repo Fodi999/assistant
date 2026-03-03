@@ -83,7 +83,7 @@ impl RecipeAIInsightsService {
 
         // 🧠 RUST LOGIC: Calculate feasibility and final validation status in Rust (not AI)
         // AI can help with textual validation, but final status depends on our rule engine
-        let _final_is_valid = validation_result.is_valid && ai_validation.errors.is_empty();
+        let final_is_valid = validation_result.is_valid && ai_validation.errors.is_empty();
         
         // Feasibility score: 100 - (errors * 30) - (warnings * 10)
         let feasibility_score = (100 - (validation_result.errors.len() as i32 * 30) - (validation_result.warnings.len() as i32 * 10)).max(0);

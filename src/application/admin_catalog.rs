@@ -1,5 +1,5 @@
 use crate::infrastructure::R2Client;
-use crate::infrastructure::{DictionaryService, LlmAdapter};
+use crate::infrastructure::{DictionaryService, LlmAdapter, UnifiedProductResponse};
 use crate::infrastructure::persistence::{
     CatalogCategoryRepository, CatalogIngredientRepository,
 };

@@ -6,7 +6,7 @@ use crate::infrastructure::persistence::{
     RecipeRepositoryTrait, InventoryBatchRepositoryTrait, CatalogIngredientRepositoryTrait,
 };
 use crate::shared::{AppError, AppResult, UserId, TenantId, Language, PaginatedResponse, PaginationParams};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -111,8 +111,14 @@ impl RecipeService {
         recipe_id: RecipeId,
         tenant_id: TenantId,
     ) -> AppResult<RecipeCost> {
+        // Load recipe
+        let recipe = self.recipe_repo
+            .find_by_id(recipe_id, tenant_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Recipe not found".to_string()))?;
+
         // Load all inventory products for this tenant to build price map
-        let inventory_products = self.inventory_repo.list_by_tenant(tenant_id).await?;
+        let inventory_products = self.inventory_repo.list_by_tenant(recipe.tenant_id()).await?;
 
         // Build map: catalog_ingredient_id -> (quantity, price)
         let mut price_map: HashMap<CatalogIngredientId, (Quantity, Money)> = HashMap::new();
@@ -124,46 +130,6 @@ impl RecipeService {
                 (product.quantity, product.price_per_unit)
             );
         }
-
-        let mut visited = HashSet::new();
-        let mut memo = HashMap::new();
-
-        self.calculate_cost_recursive(recipe_id, tenant_id, &price_map, 1, &mut visited, &mut memo).await
-    }
-
-    /// Helper for recursive cost calculation with memoization and cycle detection
-    fn calculate_cost_recursive<'a>(
-        &'a self,
-        recipe_id: RecipeId,
-        tenant_id: TenantId,
-        price_map: &'a HashMap<CatalogIngredientId, (Quantity, Money)>,
-        depth: usize,
-        visited: &'a mut HashSet<RecipeId>,
-        memo: &'a mut HashMap<RecipeId, RecipeCost>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<RecipeCost>> + Send + 'a>> {
-        Box::pin(async move {
-        if depth > 10 {
-            return Err(AppError::validation("Maximum recipe depth exceeded. Check for deep nesting."));
-        }
-
-        if visited.contains(&recipe_id) {
-            return Err(AppError::validation(format!(
-                "Circular dependency detected in recipe components: {}",
-                recipe_id.as_uuid()
-            )));
-        }
-
-        if let Some(cached_cost) = memo.get(&recipe_id) {
-            return Ok(cached_cost.clone());
-        }
-
-        visited.insert(recipe_id);
-
-        // Load recipe
-        let recipe = self.recipe_repo
-            .find_by_id(recipe_id, tenant_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("Recipe not found: {}", recipe_id.as_uuid())))?;
 
         // Calculate cost for each ingredient
         let mut ingredients_breakdown = Vec::new();
@@ -203,53 +169,16 @@ impl RecipeService {
             });
         }
 
-        // Calculate cost for each component
-        let mut components_breakdown = Vec::new();
-
-        for component in recipe.components() {
-            let component_id = component.component_recipe_id();
-            let quantity = component.quantity();
-
-            let component_cost = self.calculate_cost_recursive(
-                component_id,
-                tenant_id,
-                price_map,
-                depth + 1,
-                visited,
-                memo,
-            ).await?;
-
-            let cost_per_serving_cents = component_cost.cost_per_serving.as_cents() as f64;
-            let portion_quantity = quantity.to_string().parse::<f64>().unwrap_or(0.0);
-            let total_component_cost_cents = cost_per_serving_cents * portion_quantity;
-
-            let total_cost = Money::from_cents(total_component_cost_cents.round() as i64)?;
-
-            use crate::domain::ComponentCost;
-
-            components_breakdown.push(ComponentCost {
-                component_id,
-                component_name: component_cost.recipe_name.clone(),
-                recipe_cost_per_serving: component_cost.cost_per_serving,
-                quantity,
-                total_cost,
-            });
-        }
-
         // Build RecipeCost
         let recipe_cost = RecipeCost::new(
             recipe.id(),
             recipe.name().as_str().to_string(),
             ingredients_breakdown,
-            components_breakdown,
+            vec![], // components_breakdown: component recipes not supported in V1
             recipe.servings().count()
         )?;
 
-        visited.remove(&recipe_id);
-        memo.insert(recipe_id, recipe_cost.clone());
-
         Ok(recipe_cost)
-        })
     }
 
     /// 🔒 TENANT ISOLATION: Update recipe ingredients within tenant

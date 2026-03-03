@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use serde_json::Value;
 use crate::shared::AppError;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AiCacheRepository {

@@ -109,7 +109,7 @@ impl AssistantService {
                     dish_name,
                     payload.description.clone(),
                     selling_price,
-                    None,
+                    None, // image_url: не передаётся через бота
                 )
                 .await?;
 

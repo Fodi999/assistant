@@ -73,6 +73,7 @@ impl Dish {
         name: DishName,
         description: Option<String>,
         selling_price: Money,
+        image_url: Option<String>,
     ) -> AppResult<Self> {
         if selling_price.as_cents() <= 0 {
             return Err(AppError::validation("Selling price must be greater than 0"));
@@ -91,7 +92,7 @@ impl Dish {
             food_cost_percent: None,
             profit_margin_percent: None,
             cost_calculated_at: None,
-            image_url: None, // Default to no image
+            image_url,
             created_at: now,
             updated_at: now,
         })
@@ -348,6 +349,7 @@ mod tests {
             DishName::new("Test").unwrap(),
             None,
             Money::from_cents(0).unwrap(),
+            None,
         );
         assert!(result.is_err());
     }
