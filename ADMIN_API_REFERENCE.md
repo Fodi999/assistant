@@ -671,22 +671,22 @@ GET    /api/admin/users               → AdminUsersResponse  [🔒 admin]
 DELETE /api/admin/users/:id           → 200 OK             [🔒 admin]
 GET    /api/admin/stats               → AdminStats         [🔒 admin]
 
-GET    /api/admin/products            → ProductResponse[]  [🔒 admin]
-GET    /api/admin/products/:id        → ProductResponse    [🔒 admin]
-POST   /api/admin/products            → 201 ProductResponse[🔒 admin]
-PUT    /api/admin/products/:id        → ProductResponse    [🔒 admin]
-PATCH  /api/admin/products/:id        → ProductResponse    [🔒 admin]
-DELETE /api/admin/products/:id        → 204               [🔒 admin]
+GET    /api/admin/catalog/products            → ProductResponse[]   [🔒 admin]
+GET    /api/admin/catalog/products/:id        → ProductResponse     [🔒 admin]
+POST   /api/admin/catalog/products            → 201 ProductResponse [🔒 admin]
+PUT    /api/admin/catalog/products/:id        → ProductResponse     [🔒 admin]
+PATCH  /api/admin/catalog/products/:id        → ProductResponse     [🔒 admin]
+DELETE /api/admin/catalog/products/:id        → 204                 [🔒 admin]
 
-POST   /api/admin/products/:id/image     → { image_url }  [🔒 admin] (multipart)
-GET    /api/admin/products/:id/image-url → { upload_url, public_url } [🔒 admin]
-PUT    /api/admin/products/:id/image     → 200 OK         [🔒 admin]
-DELETE /api/admin/products/:id/image     → 204            [🔒 admin]
+POST   /api/admin/catalog/products/:id/image     → { image_url }           [🔒 admin] (multipart)
+GET    /api/admin/catalog/products/:id/image-url → { upload_url, public_url } [🔒 admin]
+PUT    /api/admin/catalog/products/:id/image     → 200 OK                  [🔒 admin]
+DELETE /api/admin/catalog/products/:id/image     → 204                     [🔒 admin]
 
-GET    /api/admin/categories          → CategoryResponse[] [🔒 admin]
-POST   /api/admin/categories          → 201 CategoryResponse [🔒 admin]
-PUT    /api/admin/categories/:id      → CategoryResponse   [🔒 admin]
-DELETE /api/admin/categories/:id      → 204               [🔒 admin]
+GET    /api/admin/catalog/categories          → CategoryResponse[]    [🔒 admin]
+POST   /api/admin/catalog/categories          → 201 CategoryResponse  [🔒 admin]
+PUT    /api/admin/catalog/categories/:id      → CategoryResponse      [🔒 admin]
+DELETE /api/admin/catalog/categories/:id      → 204                   [🔒 admin]
 ```
 
 ---
