@@ -1,5 +1,14 @@
 -- Cleanup test/junk data from catalog
--- FK chain: inventory_batches (was inventory_products) → catalog_ingredients → catalog_categories
+-- FK tables referencing catalog_ingredients (all ON DELETE RESTRICT):
+--   1. inventory_batches.catalog_ingredient_id
+--   2. tenant_ingredients.catalog_ingredient_id
+--   3. recipe_ingredients.catalog_ingredient_id
+--   4. catalog_translations.ingredient_id (ON DELETE CASCADE — auto-cleaned)
+--
+-- Strategy: 
+--   - For junk categories: delete all FK refs, then hard-delete ingredients, then categories
+--   - For remaining junk by name: soft-delete (is_active=false) to preserve FK integrity
+--   - Only hard-delete ingredients that have ZERO FK references
 
 DO $$
 DECLARE
@@ -24,26 +33,32 @@ BEGIN
         SELECT id FROM catalog_ingredients WHERE category_id = ANY(junk_cat_ids)
     ) INTO ingredient_ids;
 
-    -- Step 2: Delete from inventory_batches (the only FK referencing catalog_ingredients)
-    -- Note: inventory_products was RENAMED to inventory_batches in migration 20260216000003
+    -- Step 2: Clean ALL FK references to these ingredients
     IF ingredient_ids IS NOT NULL AND array_length(ingredient_ids, 1) > 0 THEN
         DELETE FROM inventory_batches WHERE catalog_ingredient_id = ANY(ingredient_ids);
+        DELETE FROM tenant_ingredients WHERE catalog_ingredient_id = ANY(ingredient_ids);
+        DELETE FROM recipe_ingredients WHERE catalog_ingredient_id = ANY(ingredient_ids);
+        -- catalog_translations has ON DELETE CASCADE, auto-cleaned
     END IF;
 
-    -- Step 3: Delete ingredients in junk categories
+    -- Step 3: Hard-delete ingredients in junk categories (FKs already cleared)
     DELETE FROM catalog_ingredients WHERE category_id = ANY(junk_cat_ids);
 
-    -- Step 4: Delete junk categories
+    -- Step 4: Hard-delete junk categories
     DELETE FROM catalog_categories WHERE id = ANY(junk_cat_ids);
 
-    -- Step 5: Clean up remaining junk by name
-    -- Note: soft-delete column is "is_active" (false = deleted), NOT "deleted"
-    DELETE FROM inventory_batches WHERE catalog_ingredient_id IN (
-        SELECT id FROM catalog_ingredients
-        WHERE is_active = false OR name_en LIKE 'Test %'
-           OR name_en LIKE 'Expiring Fish%' OR name_en LIKE 'Low Milk%'
-    );
-    DELETE FROM catalog_ingredients
-    WHERE is_active = false OR name_en LIKE 'Test %'
-       OR name_en LIKE 'Expiring Fish%' OR name_en LIKE 'Low Milk%';
+    -- Step 5: Soft-delete remaining junk by name (safe, no FK violations)
+    UPDATE catalog_ingredients
+    SET is_active = false
+    WHERE is_active = true
+      AND (name_en LIKE 'Test %'
+           OR name_en LIKE 'Expiring Fish%'
+           OR name_en LIKE 'Low Milk%');
+
+    -- Step 6: Hard-delete soft-deleted ingredients that have ZERO FK references
+    DELETE FROM catalog_ingredients ci
+    WHERE ci.is_active = false
+      AND NOT EXISTS (SELECT 1 FROM inventory_batches ib WHERE ib.catalog_ingredient_id = ci.id)
+      AND NOT EXISTS (SELECT 1 FROM tenant_ingredients ti WHERE ti.catalog_ingredient_id = ci.id)
+      AND NOT EXISTS (SELECT 1 FROM recipe_ingredients ri WHERE ri.catalog_ingredient_id = ci.id);
 END $$;
