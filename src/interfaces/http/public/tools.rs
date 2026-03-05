@@ -1,7 +1,8 @@
 use crate::domain::tools::unit_converter as uc;
 use crate::shared::Language;
-use axum::{extract::Query, response::Json};
+use axum::{extract::{Query, State}, response::Json};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 
 // ── Language helper ───────────────────────────────────────────────────────────
 
@@ -241,79 +242,45 @@ pub async fn fish_season(Query(params): Query<FishQuery>) -> Json<FishSeasonResp
     Json(FishSeasonResponse { fish: params.fish, season })
 }
 
-// ── 4. Nutrition (static, no DB) ─────────────────────────────────────────────
+// ── 4. Nutrition (DB-first, static fallback) ─────────────────────────────────
 
-static NUTRITION_TABLE: &[(&str, f64, f64, f64, f64, f64)] = &[
-    //  name              cal   prot   fat   carbs  density_g_per_ml
-    ("salmon",         208.0, 20.0,  13.0,   0.0,  1.05),
-    ("chicken breast", 165.0, 31.0,   3.6,   0.0,  1.04),
-    ("beef",           250.0, 26.0,  15.0,   0.0,  1.05),
-    ("egg",            155.0, 13.0,  11.0,   1.1,  0.95),
-    ("potato",          77.0,  2.0,   0.1,  17.0,  0.77),
-    ("rice",           130.0,  2.7,   0.3,  28.0,  0.77),
-    ("pasta",          371.0, 13.0,   1.5,  74.0,  0.56),
-    ("butter",         717.0,  0.9,  81.0,   0.1,  0.92),
-    ("olive oil",      884.0,  0.0, 100.0,   0.0,  0.91),
-    ("milk",            42.0,  3.4,   1.0,   5.0,  1.03),
-    ("cheese",         402.0, 25.0,  33.0,   1.3,  1.09),
-    ("tomato",          18.0,  0.9,   0.2,   3.9,  0.95),
-    ("onion",           40.0,  1.1,   0.1,   9.3,  0.74),
-    ("garlic",         149.0,  6.4,   0.5,  33.0,  0.72),
-    ("carrot",          41.0,  0.9,   0.2,  10.0,  0.64),
-    ("broccoli",        34.0,  2.8,   0.4,   7.0,  0.40),
-    ("spinach",         23.0,  2.9,   0.4,   3.6,  0.25),
-    ("lemon",           29.0,  1.1,   0.3,   9.3,  1.00),
-    ("avocado",        160.0,  2.0,  15.0,   9.0,  0.96),
-    ("walnuts",        654.0, 15.0,  65.0,  14.0,  0.52),
-    ("almonds",        579.0, 21.0,  50.0,  22.0,  0.55),
-    ("flour",          364.0, 10.0,   1.0,  76.0,  0.53),
-    ("sugar",          387.0,  0.0,   0.0, 100.0,  0.85),
-    ("honey",          304.0,  0.3,   0.0,  82.0,  1.42),
-    ("cream",          340.0,  2.1,  37.0,   2.8,  1.01),
-    ("sour cream",     193.0,  2.4,  19.0,   3.4,  1.01),
-    ("yogurt",          59.0, 10.0,   0.7,   3.6,  1.05),
-    ("coconut oil",    862.0,  0.0, 100.0,   0.0,  0.92),
-    ("water",            0.0,  0.0,   0.0,   0.0,  1.00),
-    ("salt",             0.0,  0.0,   0.0,   0.0,  1.26),
-    // ── New: extended density table ──
-    ("cocoa powder",   228.0,  19.6,  13.7,  57.9, 0.72),
-    ("maple syrup",    260.0,   0.0,   0.1,  67.0, 1.32),
-    ("corn starch",    381.0,   0.3,   0.1,  91.3, 0.56),
-    ("brown sugar",    380.0,   0.1,   0.0,  98.0, 0.83),
-    ("powdered sugar", 389.0,   0.0,   0.0, 100.0, 0.56),
-    ("baking powder",   53.0,   0.0,   0.0,  28.0, 0.90),
-    ("baking soda",      0.0,   0.0,   0.0,   0.0, 1.10),
-    ("vanilla extract", 288.0,  0.1,   0.1,  12.7, 1.04),
-    ("soy sauce",       53.0,   8.1,   0.6,   4.9, 1.08),
-    ("vinegar",         21.0,   0.0,   0.0,   0.9, 1.01),
-    ("ketchup",        112.0,   1.7,   0.1,  27.4, 1.15),
-    ("mayonnaise",     680.0,   1.0,  75.0,   0.6, 0.91),
-    ("mustard",         66.0,   4.4,   4.0,   5.8, 1.05),
-    ("peanut butter",  588.0,  25.0,  50.0,  20.0, 1.09),
-    ("oats",           389.0,  16.9,   6.9,  66.3, 0.43),
-    ("breadcrumbs",    395.0,  13.4,   5.3,  71.0, 0.55),
-    ("parmesan",       431.0,  38.5,  29.0,   4.1, 1.20),
-    ("cinnamon",       247.0,   4.0,   1.2,  80.6, 0.56),
-    ("black pepper",   251.0,  10.4,   3.3,  63.9, 0.50),
-    ("paprika",        282.0,  14.1,  13.0,  53.9, 0.50),
-    ("cumin",          375.0,  17.8,  22.3,  44.2, 0.45),
-    ("turmeric",       354.0,   7.8,   9.9,  64.9, 0.67),
-    ("ginger",          80.0,   1.8,   0.8,  17.8, 0.56),
-    ("sesame oil",     884.0,   0.0, 100.0,   0.0, 0.92),
-    ("lard",           902.0,   0.0, 100.0,   0.0, 0.92),
-];
+/// Row from catalog_ingredients with nutrition + image + translations
+#[derive(sqlx::FromRow, Clone)]
+struct CatalogNutritionRow {
+    name_en: String,
+    name_ru: String,
+    name_pl: String,
+    name_uk: String,
+    image_url: Option<String>,
+    slug: Option<String>,
+    calories_per_100g: Option<i32>,
+    protein_per_100g: Option<rust_decimal::Decimal>,
+    fat_per_100g:     Option<rust_decimal::Decimal>,
+    carbs_per_100g:   Option<rust_decimal::Decimal>,
+    density_g_per_ml: Option<rust_decimal::Decimal>,
+}
 
-fn find_nutrition(name: &str) -> Option<&'static (&'static str, f64, f64, f64, f64, f64)> {
-    NUTRITION_TABLE.iter().find(|(n, ..)| *n == name)
+impl CatalogNutritionRow {
+    fn cal(&self) -> f64 { self.calories_per_100g.unwrap_or(0) as f64 }
+    fn prot(&self) -> f64 { self.protein_per_100g.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(0.0) }
+    fn fat(&self) -> f64  { self.fat_per_100g.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(0.0) }
+    fn carbs(&self) -> f64 { self.carbs_per_100g.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(0.0) }
+    fn density(&self) -> f64 { self.density_g_per_ml.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(1.0) }
+    fn localized_name(&self, lang: Language) -> &str {
+        match lang {
+            Language::Ru => &self.name_ru,
+            Language::Pl => &self.name_pl,
+            Language::Uk => &self.name_uk,
+            Language::En => &self.name_en,
+        }
+    }
 }
 
 #[derive(Deserialize)]
 pub struct NutritionQuery {
     #[serde(default = "default_fish")]
     pub name: String,
-    /// Amount value (default 100)
     pub amount: Option<f64>,
-    /// Unit of the amount (default "g")
     pub unit: Option<String>,
     pub lang: Option<String>,
 }
@@ -321,6 +288,9 @@ pub struct NutritionQuery {
 #[derive(Serialize)]
 pub struct NutritionResponse {
     pub name: String,
+    pub localized_name: String,
+    pub slug: Option<String>,
+    pub image_url: Option<String>,
     pub amount_g: f64,
     pub calories: f64,
     pub protein_g: f64,
@@ -331,17 +301,44 @@ pub struct NutritionResponse {
 
 /// GET /public/tools/nutrition?name=salmon&amount=150&unit=g&lang=pl
 ///
-/// Now supports any unit: `1 cup rice` → auto-converts to grams via density.
-pub async fn nutrition(Query(params): Query<NutritionQuery>) -> Json<NutritionResponse> {
-    let name_lower = params.name.to_lowercase();
-    let entry = find_nutrition(&name_lower);
-    let (cal, prot, fat, carbs, density) = entry
-        .map(|&(_, c, p, f, cb, d)| (c, p, f, cb, d))
-        .unwrap_or((0.0, 0.0, 0.0, 0.0, 1.0));
-
+/// Primary source: catalog_ingredients DB (with photo, translations, density).
+/// Fallback: static table for ingredients not yet in catalog.
+pub async fn nutrition(
+    State(pool): State<PgPool>,
+    Query(params): Query<NutritionQuery>,
+) -> Json<NutritionResponse> {
     let lang = parse_lang(&params.lang);
+    let name_lower = params.name.to_lowercase();
     let raw_amount = params.amount.unwrap_or(100.0);
     let unit = params.unit.as_deref().unwrap_or("g");
+
+    // Try DB first — fuzzy match on name_en
+    let db_row: Option<CatalogNutritionRow> = sqlx::query_as(
+        r#"
+        SELECT name_en, name_ru, name_pl, name_uk, image_url, slug,
+               calories_per_100g, protein_per_100g, fat_per_100g,
+               carbs_per_100g, density_g_per_ml
+        FROM catalog_ingredients
+        WHERE is_active = true
+          AND (LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
+        ORDER BY (LOWER(name_en) = $1) DESC, LENGTH(name_en) ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(&name_lower)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    let (cal, prot, fat, carbs, density, localized_name, slug, image_url) = if let Some(ref row) = db_row {
+        (row.cal(), row.prot(), row.fat(), row.carbs(), row.density(),
+         row.localized_name(lang).to_string(),
+         row.slug.clone(),
+         row.image_url.clone())
+    } else {
+        (0.0, 0.0, 0.0, 0.0, 1.0, params.name.clone(), None, None)
+    };
 
     // Convert to grams
     let amount_g = if unit == "g" {
@@ -351,7 +348,7 @@ pub async fn nutrition(Query(params): Query<NutritionQuery>) -> Json<NutritionRe
     } else if let Some(ml_factor) = uc::volume_to_ml(unit) {
         raw_amount * ml_factor * density
     } else {
-        raw_amount // fallback: assume grams
+        raw_amount
     };
 
     let f = amount_g / 100.0;
@@ -359,6 +356,9 @@ pub async fn nutrition(Query(params): Query<NutritionQuery>) -> Json<NutritionRe
 
     Json(NutritionResponse {
         name: params.name,
+        localized_name,
+        slug,
+        image_url,
         amount_g: uc::round_to(amount_g, 1),
         calories:  r(cal  * f),
         protein_g: r(prot * f),
@@ -451,12 +451,29 @@ pub struct EquivalentsResponse {
 /// GET /public/tools/ingredient-equivalents?name=flour&value=100&unit=g&lang=ru
 ///
 /// Returns the same amount in all possible units using ingredient density.
-pub async fn ingredient_equivalents(Query(params): Query<EquivalentsQuery>) -> Json<EquivalentsResponse> {
+/// Now reads density from catalog_ingredients DB.
+pub async fn ingredient_equivalents(
+    State(pool): State<PgPool>,
+    Query(params): Query<EquivalentsQuery>,
+) -> Json<EquivalentsResponse> {
     let lang = parse_lang(&params.lang);
     let name_lower = params.name.to_lowercase();
-    let density = find_nutrition(&name_lower)
-        .map(|&(_, _, _, _, _, d)| d)
-        .unwrap_or(1.0);
+
+    // DB lookup for density
+    let density = sqlx::query_scalar::<_, rust_decimal::Decimal>(
+        r#"SELECT density_g_per_ml FROM catalog_ingredients
+           WHERE is_active = true AND density_g_per_ml IS NOT NULL
+             AND (LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
+           ORDER BY (LOWER(name_en) = $1) DESC
+           LIMIT 1"#,
+    )
+    .bind(&name_lower)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d))
+    .unwrap_or(1.0);
 
     let target_units: &[&str] = &[
         "g", "kg", "oz", "lb",
@@ -576,6 +593,9 @@ pub struct SuggestionsQuery {
 #[derive(Serialize)]
 pub struct Suggestion {
     pub name: String,
+    pub name_en: String,
+    pub slug: Option<String>,
+    pub image_url: Option<String>,
     pub density_g_per_ml: f64,
     pub equivalent_g: f64,
 }
@@ -589,19 +609,38 @@ pub struct SuggestionsResponse {
 
 /// GET /public/tools/ingredient-suggestions?unit=cup&lang=ru
 ///
-/// Given a volume unit, returns common ingredients with their weight per that unit.
-pub async fn ingredient_suggestions(Query(params): Query<SuggestionsQuery>) -> Json<SuggestionsResponse> {
-    let _lang = parse_lang(&params.lang);
+/// Given a volume unit, returns common ingredients from catalog with their weight per that unit.
+pub async fn ingredient_suggestions(
+    State(pool): State<PgPool>,
+    Query(params): Query<SuggestionsQuery>,
+) -> Json<SuggestionsResponse> {
+    let lang = parse_lang(&params.lang);
     let ml_factor = uc::volume_to_ml(&params.unit);
 
     let suggestions: Vec<Suggestion> = if let Some(ml) = ml_factor {
-        NUTRITION_TABLE
-            .iter()
-            .filter(|&&(_, _, _, _, _, d)| d > 0.0 && d != 1.0) // skip water-like
-            .map(|&(name, _, _, _, _, density)| {
+        // Fetch all ingredients with density from DB
+        let rows: Vec<CatalogNutritionRow> = sqlx::query_as(
+            r#"SELECT name_en, name_ru, name_pl, name_uk, image_url, slug,
+                      calories_per_100g, protein_per_100g, fat_per_100g,
+                      carbs_per_100g, density_g_per_ml
+               FROM catalog_ingredients
+               WHERE is_active = true AND density_g_per_ml IS NOT NULL
+                 AND density_g_per_ml != 1.0
+               ORDER BY name_en ASC"#,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+
+        rows.iter()
+            .map(|r| {
+                let density = r.density();
                 let grams = uc::display_round(ml * density);
                 Suggestion {
-                    name: name.to_string(),
+                    name: r.localized_name(lang).to_string(),
+                    name_en: r.name_en.clone(),
+                    slug: r.slug.clone(),
+                    image_url: r.image_url.clone(),
                     density_g_per_ml: density,
                     equivalent_g: grams,
                 }

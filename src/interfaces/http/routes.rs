@@ -193,6 +193,7 @@ pub fn create_router(
 
     // Clone pool for public routes (before move into jwt_middleware)
     let pool_for_public = pool.clone();
+    let pool_for_tools = pool.clone();
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -372,7 +373,8 @@ pub fn create_router(
         .route("/tools/food-cost", get(food_cost_calc))
         .route("/tools/ingredient-suggestions", get(ingredient_suggestions))
         .route("/tools/popular-conversions", get(popular_conversions))
-        .route("/tools/ingredient-scale", get(ingredient_scale));
+        .route("/tools/ingredient-scale", get(ingredient_scale))
+        .with_state(pool_for_tools);
 
     let public_router = Router::new()
         .merge(public_ingredients_router)
