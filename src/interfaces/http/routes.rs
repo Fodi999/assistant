@@ -22,6 +22,11 @@ use crate::interfaces::http::{
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, search_ingredients, CatalogState},
+    chef_reference_public::{convert_units, fish_season, get_ingredient},
+    public::{
+        ingredients::{get_ingredient_by_slug, list_ingredients},
+        tools::{convert_units as tools_convert, fish_season as tools_fish_season, nutrition},
+    },
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
         add_product, delete_product, get_alerts, get_dashboard, get_health, get_loss_report,
@@ -186,6 +191,9 @@ pub fn create_router(
         ))
         .with_state(pool.clone());
 
+    // Clone pool for public routes (before move into jwt_middleware)
+    let pool_for_public = pool.clone();
+
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
         let jwt_service = jwt_service.clone();
@@ -339,9 +347,33 @@ pub fn create_router(
     // Health check endpoint (no auth, no middleware)
     let health_route = Router::new().route("/health", get(|| async { "OK" }));
 
+    // ── Public router (no auth, no JWT) ──────────────────────────────────────
+    // Old chef-reference aliases kept for backward compatibility
+    let chef_reference_routes = Router::new()
+        .route("/public/chef-reference/convert", get(convert_units))
+        .route("/public/chef-reference/ingredient", get(get_ingredient))
+        .route("/public/chef-reference/fish-season", get(fish_season));
+
+    // New clean /public/* routes
+    let public_ingredients_router = Router::new()
+        .route("/ingredients", get(list_ingredients))
+        .route("/ingredients/:slug", get(get_ingredient_by_slug))
+        .with_state(pool_for_public);
+
+    let public_tools_router = Router::new()
+        .route("/tools/convert", get(tools_convert))
+        .route("/tools/fish-season", get(tools_fish_season))
+        .route("/tools/nutrition", get(nutrition));
+
+    let public_router = Router::new()
+        .merge(public_ingredients_router)
+        .merge(public_tools_router);
+
     // Combine all routes
     Router::new()
         .merge(health_route)
+        .merge(chef_reference_routes)
+        .nest("/public", public_router)
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
         .nest("/api/admin/catalog", admin_catalog_routes)
