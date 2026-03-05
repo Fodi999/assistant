@@ -463,11 +463,15 @@ pub async fn ingredient_equivalents(Query(params): Query<EquivalentsQuery>) -> J
 
 #[derive(Deserialize)]
 pub struct FoodCostQuery {
-    /// Price per 1 unit (e.g. per kg)
+    /// Price for a given price_amount in price_unit (e.g. 5.50 for 1 kg)
     pub price: f64,
-    /// Amount used
+    /// How much of the price_unit the price covers (default 1)
+    pub price_amount: Option<f64>,
+    /// Unit of the price (default "kg")
+    pub price_unit: Option<String>,
+    /// Amount actually used
     pub amount: f64,
-    /// Unit of amount (default "kg")
+    /// Unit of the used amount (default same as price_unit)
     pub unit: Option<String>,
     /// Number of portions this produces
     pub portions: Option<f64>,
@@ -478,7 +482,8 @@ pub struct FoodCostQuery {
 
 #[derive(Serialize)]
 pub struct FoodCostResponse {
-    pub price_per_unit: f64,
+    pub price: f64,
+    pub price_unit: String,
     pub amount: f64,
     pub unit: String,
     pub total_cost: f64,
@@ -488,18 +493,31 @@ pub struct FoodCostResponse {
     pub markup_percent: Option<f64>,
 }
 
-/// GET /public/tools/food-cost?price=12.50&amount=0.5&unit=kg&portions=4&sell_price=8.00
+/// GET /public/tools/food-cost?price=5.50&price_unit=kg&amount=500&unit=g&portions=4&sell_price=15.0
+///
+/// `price` = cost for `price_amount` (default 1) of `price_unit` (default "kg").
+/// `amount` = how much you actually use in `unit` (default = price_unit).
+/// Converts amount to the same base as price_unit to compute total_cost.
 pub async fn food_cost_calc(Query(params): Query<FoodCostQuery>) -> Json<FoodCostResponse> {
-    let unit = params.unit.as_deref().unwrap_or("kg");
+    let price_unit = params.price_unit.as_deref().unwrap_or("kg");
+    let unit = params.unit.as_deref().unwrap_or(price_unit);
+    let price_amount = params.price_amount.unwrap_or(1.0);
 
-    // Normalize amount to base unit (g or ml) then back to price-unit to get total cost
-    // price is assumed to be per 1 of the given unit, so total = price * amount
-    let total_cost = uc::round_to(uc::food_cost(params.price, params.amount), 2);
+    // Convert used amount into the same unit as price_unit
+    let amount_in_price_unit = if unit == price_unit {
+        params.amount
+    } else {
+        uc::convert_units(params.amount, unit, price_unit).unwrap_or(params.amount)
+    };
+
+    // price_per_one = price / price_amount  →  total = price_per_one * amount_in_price_unit
+    let price_per_one = if price_amount > 0.0 { params.price / price_amount } else { params.price };
+    let total_cost = uc::round_to(price_per_one * amount_in_price_unit, 2);
 
     let cost_per_portion = params.portions.map(|p| uc::round_to(uc::cost_per_portion(total_cost, p), 2));
 
     let margin_percent = match (params.sell_price, cost_per_portion) {
-        (Some(sp), Some(cpp)) => Some(uc::round_to(uc::margin_percent(sp, cpp), 1)),
+        (Some(sp), Some(cpp)) if sp > 0.0 => Some(uc::round_to(uc::margin_percent(sp, cpp), 1)),
         _ => None,
     };
 
@@ -509,7 +527,8 @@ pub async fn food_cost_calc(Query(params): Query<FoodCostQuery>) -> Json<FoodCos
     };
 
     Json(FoodCostResponse {
-        price_per_unit: params.price,
+        price: params.price,
+        price_unit: price_unit.to_string(),
         amount: params.amount,
         unit: unit.to_string(),
         total_cost,
@@ -531,8 +550,8 @@ pub struct SuggestionsQuery {
 #[derive(Serialize)]
 pub struct Suggestion {
     pub name: String,
-    pub density: f64,
-    pub grams_per_unit: f64,
+    pub density_g_per_ml: f64,
+    pub equivalent_g: f64,
 }
 
 #[derive(Serialize)]
@@ -554,11 +573,11 @@ pub async fn ingredient_suggestions(Query(params): Query<SuggestionsQuery>) -> J
             .iter()
             .filter(|&&(_, _, _, _, _, d)| d > 0.0 && d != 1.0) // skip water-like
             .map(|&(name, _, _, _, _, density)| {
-                let grams = uc::round_to(ml * density, 1);
+                let grams = uc::display_round(ml * density);
                 Suggestion {
                     name: name.to_string(),
-                    density,
-                    grams_per_unit: grams,
+                    density_g_per_ml: density,
+                    equivalent_g: grams,
                 }
             })
             .collect()

@@ -143,9 +143,15 @@ pub fn round_to(value: f64, decimals: u32) -> f64 {
     (value * factor).round() / factor
 }
 
-/// Display-friendly rounding: 4 decimals for small values, 2 for big.
-/// Eliminates artefacts like 4.000004 → 4.0 and 15.999946 → 16.0
+/// Display-friendly rounding that snaps near-integers.
+/// Eliminates artefacts like 4.000004 → 4.0, 15.999946 → 16.0, 0.99998 → 1.0
 pub fn display_round(v: f64) -> f64 {
+    // First: snap to nearest integer if within 0.0005
+    let rounded_int = v.round();
+    if (v - rounded_int).abs() < 0.0005 {
+        return rounded_int;
+    }
+    // Then: adaptive precision
     let abs = v.abs();
     if abs >= 100.0 {
         round_to(v, 2)
