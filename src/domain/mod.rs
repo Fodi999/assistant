@@ -12,6 +12,7 @@ pub mod recipe_v2; // V2 with translation support
 pub mod report;
 pub mod tenant;
 pub mod tenant_ingredient;
+pub mod tools; // 🆕 Chef tools domain (unit converter, yield, scale)
 pub mod user;
 
 pub use admin::*;

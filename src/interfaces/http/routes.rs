@@ -25,7 +25,7 @@ use crate::interfaces::http::{
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
         ingredients::{get_ingredient_by_slug, list_ingredients},
-        tools::{convert_units as tools_convert, fish_season as tools_fish_season, list_units, list_categories, nutrition},
+        tools::{convert_units as tools_convert, fish_season as tools_fish_season, list_units, list_categories, nutrition, scale_recipe, yield_calc, ingredient_equivalents},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
@@ -365,7 +365,10 @@ pub fn create_router(
         .route("/tools/fish-season", get(tools_fish_season))
         .route("/tools/nutrition", get(nutrition))
         .route("/tools/units", get(list_units))
-        .route("/tools/categories", get(list_categories));
+        .route("/tools/categories", get(list_categories))
+        .route("/tools/scale", get(scale_recipe))
+        .route("/tools/yield", get(yield_calc))
+        .route("/tools/ingredient-equivalents", get(ingredient_equivalents));
 
     let public_router = Router::new()
         .merge(public_ingredients_router)
