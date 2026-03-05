@@ -312,7 +312,7 @@ pub async fn nutrition(
     let raw_amount = params.amount.unwrap_or(100.0);
     let unit = params.unit.as_deref().unwrap_or("g");
 
-    // Try DB first — fuzzy match on name_en
+    // Try DB first — match on name_en, slug, or fuzzy
     let db_row: Option<CatalogNutritionRow> = sqlx::query_as(
         r#"
         SELECT name_en, name_ru, name_pl, name_uk, image_url, slug,
@@ -320,8 +320,10 @@ pub async fn nutrition(
                carbs_per_100g, density_g_per_ml
         FROM catalog_ingredients
         WHERE is_active = true
-          AND (LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
-        ORDER BY (LOWER(name_en) = $1) DESC, LENGTH(name_en) ASC
+          AND (LOWER(name_en) = $1
+               OR slug = $1
+               OR LOWER(name_en) LIKE '%' || $1 || '%')
+        ORDER BY (LOWER(name_en) = $1 OR slug = $1) DESC, LENGTH(name_en) ASC
         LIMIT 1
         "#,
     )
@@ -459,12 +461,12 @@ pub async fn ingredient_equivalents(
     let lang = parse_lang(&params.lang);
     let name_lower = params.name.to_lowercase();
 
-    // DB lookup for density
+    // DB lookup for density (by name_en, slug, or fuzzy)
     let density = sqlx::query_scalar::<_, rust_decimal::Decimal>(
         r#"SELECT density_g_per_ml FROM catalog_ingredients
            WHERE is_active = true AND density_g_per_ml IS NOT NULL
-             AND (LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
-           ORDER BY (LOWER(name_en) = $1) DESC
+             AND (LOWER(name_en) = $1 OR slug = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
+           ORDER BY (LOWER(name_en) = $1 OR slug = $1) DESC
            LIMIT 1"#,
     )
     .bind(&name_lower)
@@ -708,6 +710,9 @@ pub struct PopularConversion {
     pub to_label: String,
     pub result: f64,
     pub ingredient: Option<String>,
+    pub localized_name: Option<String>,
+    pub slug: Option<String>,
+    pub image_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -718,22 +723,60 @@ pub struct PopularResponse {
 /// GET /public/tools/popular-conversions?lang=ru
 ///
 /// Returns a curated list of the most-searched cooking conversions (great for SEO).
-pub async fn popular_conversions(Query(params): Query<PopularQuery>) -> Json<PopularResponse> {
+/// Each ingredient-based conversion is enriched with localized name, slug & image from DB.
+pub async fn popular_conversions(
+    State(pool): State<PgPool>,
+    Query(params): Query<PopularQuery>,
+) -> Json<PopularResponse> {
     let lang = parse_lang(&params.lang);
+
+    // Preload all ingredient rows we need
+    let ingredient_names: Vec<&str> = POPULAR_CONVERSIONS.iter()
+        .filter_map(|e| e.ingredient)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let db_rows: Vec<CatalogNutritionRow> = if !ingredient_names.is_empty() {
+        sqlx::query_as(
+            r#"SELECT name_en, name_ru, name_pl, name_uk, image_url, slug,
+                      calories_per_100g, protein_per_100g, fat_per_100g,
+                      carbs_per_100g, density_g_per_ml
+               FROM catalog_ingredients
+               WHERE is_active = true"#,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    let find_db = |name: &str| -> Option<&CatalogNutritionRow> {
+        let n = name.to_lowercase();
+        db_rows.iter().find(|r| r.name_en.to_lowercase() == n || r.slug.as_deref() == Some(name))
+            .or_else(|| db_rows.iter().find(|r| r.name_en.to_lowercase().contains(&n)))
+    };
 
     let conversions = POPULAR_CONVERSIONS.iter().filter_map(|e| {
         let result = match (e.ingredient, e.density) {
             (Some(_), Some(d)) => uc::convert_with_density(e.value, e.from_unit, e.to_unit, d),
             _ => uc::convert_units(e.value, e.from_unit, e.to_unit),
         };
-        result.map(|r| PopularConversion {
-            value: e.value,
-            from_unit: e.from_unit.to_string(),
-            from_label: label(e.from_unit, lang),
-            to_unit: e.to_unit.to_string(),
-            to_label: label(e.to_unit, lang),
-            result: uc::display_round(r),
-            ingredient: e.ingredient.map(|s| s.to_string()),
+        result.map(|r| {
+            let db = e.ingredient.and_then(find_db);
+            PopularConversion {
+                value: e.value,
+                from_unit: e.from_unit.to_string(),
+                from_label: label(e.from_unit, lang),
+                to_unit: e.to_unit.to_string(),
+                to_label: label(e.to_unit, lang),
+                result: uc::display_round(r),
+                ingredient: e.ingredient.map(|s| s.to_string()),
+                localized_name: db.map(|row| row.localized_name(lang).to_string()),
+                slug: db.and_then(|row| row.slug.clone()),
+                image_url: db.and_then(|row| row.image_url.clone()),
+            }
         })
     }).collect();
 
