@@ -143,6 +143,43 @@ pub fn round_to(value: f64, decimals: u32) -> f64 {
     (value * factor).round() / factor
 }
 
+/// Display-friendly rounding: 4 decimals for small values, 2 for big.
+/// Eliminates artefacts like 4.000004 → 4.0 and 15.999946 → 16.0
+pub fn display_round(v: f64) -> f64 {
+    let abs = v.abs();
+    if abs >= 100.0 {
+        round_to(v, 2)
+    } else if abs >= 1.0 {
+        round_to(v, 4)
+    } else {
+        round_to(v, 6)
+    }
+}
+
+/// Smart rounding for auto-unit display: 2 dp for ≥ 1, 3 dp for < 1.
+pub fn smart_round(v: f64) -> f64 {
+    if v.abs() >= 1.0 {
+        round_to(v, 2)
+    } else {
+        round_to(v, 3)
+    }
+}
+
+/// Food cost helpers
+pub fn food_cost(price_per_unit: f64, amount: f64) -> f64 {
+    price_per_unit * amount
+}
+
+pub fn cost_per_portion(total_cost: f64, portions: f64) -> f64 {
+    if portions <= 0.0 { return 0.0; }
+    total_cost / portions
+}
+
+pub fn margin_percent(sell_price: f64, cost: f64) -> f64 {
+    if sell_price <= 0.0 { return 0.0; }
+    ((sell_price - cost) / sell_price) * 100.0
+}
+
 /// Check if unit is a mass unit
 pub fn is_mass(unit: &str) -> bool {
     mass_to_grams(unit).is_some()

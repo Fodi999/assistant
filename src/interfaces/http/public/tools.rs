@@ -117,18 +117,18 @@ pub async fn convert_units(Query(params): Query<ConvertQuery>) -> Json<ConvertRe
 
     let result_raw = uc::convert_units(value, &params.from, &params.to);
     let supported = result_raw.is_some();
-    let result = uc::round_to(result_raw.unwrap_or(0.0), 6);
+    let result = uc::display_round(result_raw.unwrap_or(0.0));
 
     // Smart auto-unit for the result
     let smart_result = if supported {
         if uc::is_mass(&params.to) {
             let grams = result * uc::mass_to_grams(&params.to).unwrap_or(1.0);
             let (su, sv) = uc::smart_mass_unit(grams);
-            Some(SmartUnit { value: uc::round_to(sv, 4), unit: su.to_string(), label: label(su, lang) })
+            Some(SmartUnit { value: uc::smart_round(sv), unit: su.to_string(), label: label(su, lang) })
         } else if uc::is_volume(&params.to) {
             let ml = result * uc::volume_to_ml(&params.to).unwrap_or(1.0);
             let (su, sv) = uc::smart_volume_unit(ml);
-            Some(SmartUnit { value: uc::round_to(sv, 4), unit: su.to_string(), label: label(su, lang) })
+            Some(SmartUnit { value: uc::smart_round(sv), unit: su.to_string(), label: label(su, lang) })
         } else {
             None
         }
@@ -446,7 +446,7 @@ pub async fn ingredient_equivalents(Query(params): Query<EquivalentsQuery>) -> J
                 .map(|v| Equivalent {
                     unit: u.to_string(),
                     label: label(u, lang),
-                    value: uc::round_to(v, 4),
+                    value: uc::display_round(v),
                 })
         })
         .collect();
@@ -459,7 +459,121 @@ pub async fn ingredient_equivalents(Query(params): Query<EquivalentsQuery>) -> J
     })
 }
 
-// ── 8. Categories ────────────────────────────────────────────────────────────
+// ── 8. Food cost calculator ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct FoodCostQuery {
+    /// Price per 1 unit (e.g. per kg)
+    pub price: f64,
+    /// Amount used
+    pub amount: f64,
+    /// Unit of amount (default "kg")
+    pub unit: Option<String>,
+    /// Number of portions this produces
+    pub portions: Option<f64>,
+    /// Menu sell price per portion
+    pub sell_price: Option<f64>,
+    pub lang: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FoodCostResponse {
+    pub price_per_unit: f64,
+    pub amount: f64,
+    pub unit: String,
+    pub total_cost: f64,
+    pub cost_per_portion: Option<f64>,
+    pub sell_price: Option<f64>,
+    pub margin_percent: Option<f64>,
+    pub markup_percent: Option<f64>,
+}
+
+/// GET /public/tools/food-cost?price=12.50&amount=0.5&unit=kg&portions=4&sell_price=8.00
+pub async fn food_cost_calc(Query(params): Query<FoodCostQuery>) -> Json<FoodCostResponse> {
+    let unit = params.unit.as_deref().unwrap_or("kg");
+
+    // Normalize amount to base unit (g or ml) then back to price-unit to get total cost
+    // price is assumed to be per 1 of the given unit, so total = price * amount
+    let total_cost = uc::round_to(uc::food_cost(params.price, params.amount), 2);
+
+    let cost_per_portion = params.portions.map(|p| uc::round_to(uc::cost_per_portion(total_cost, p), 2));
+
+    let margin_percent = match (params.sell_price, cost_per_portion) {
+        (Some(sp), Some(cpp)) => Some(uc::round_to(uc::margin_percent(sp, cpp), 1)),
+        _ => None,
+    };
+
+    let markup_percent = match (params.sell_price, cost_per_portion) {
+        (Some(sp), Some(cpp)) if cpp > 0.0 => Some(uc::round_to(((sp - cpp) / cpp) * 100.0, 1)),
+        _ => None,
+    };
+
+    Json(FoodCostResponse {
+        price_per_unit: params.price,
+        amount: params.amount,
+        unit: unit.to_string(),
+        total_cost,
+        cost_per_portion,
+        sell_price: params.sell_price,
+        margin_percent,
+        markup_percent,
+    })
+}
+
+// ── 9. Ingredient suggestions ────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct SuggestionsQuery {
+    pub unit: String,
+    pub lang: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Suggestion {
+    pub name: String,
+    pub density: f64,
+    pub grams_per_unit: f64,
+}
+
+#[derive(Serialize)]
+pub struct SuggestionsResponse {
+    pub unit: String,
+    pub ml_per_unit: Option<f64>,
+    pub suggestions: Vec<Suggestion>,
+}
+
+/// GET /public/tools/ingredient-suggestions?unit=cup&lang=ru
+///
+/// Given a volume unit, returns common ingredients with their weight per that unit.
+pub async fn ingredient_suggestions(Query(params): Query<SuggestionsQuery>) -> Json<SuggestionsResponse> {
+    let _lang = parse_lang(&params.lang);
+    let ml_factor = uc::volume_to_ml(&params.unit);
+
+    let suggestions: Vec<Suggestion> = if let Some(ml) = ml_factor {
+        NUTRITION_TABLE
+            .iter()
+            .filter(|&&(_, _, _, _, _, d)| d > 0.0 && d != 1.0) // skip water-like
+            .map(|&(name, _, _, _, _, density)| {
+                let grams = uc::round_to(ml * density, 1);
+                Suggestion {
+                    name: name.to_string(),
+                    density,
+                    grams_per_unit: grams,
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    Json(SuggestionsResponse {
+        unit: params.unit,
+        ml_per_unit: ml_factor,
+        suggestions,
+    })
+}
+
+// ── 10. Categories ───────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 pub struct ToolInfo {
@@ -484,6 +598,8 @@ pub async fn list_categories() -> Json<CategoriesResponse> {
             ToolInfo { id: "scale",                   path: "/public/tools/scale",                   description: "Recipe portion scaler" },
             ToolInfo { id: "yield",                   path: "/public/tools/yield",                   description: "Cooking yield & waste calculator" },
             ToolInfo { id: "ingredient-equivalents",  path: "/public/tools/ingredient-equivalents",  description: "Convert ingredient to all units via density" },
+            ToolInfo { id: "food-cost",               path: "/public/tools/food-cost",               description: "Food cost, margin & markup calculator" },
+            ToolInfo { id: "ingredient-suggestions",  path: "/public/tools/ingredient-suggestions",  description: "Suggest ingredients by volume unit with grams" },
         ],
     })
 }
