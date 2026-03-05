@@ -275,6 +275,32 @@ static NUTRITION_TABLE: &[(&str, f64, f64, f64, f64, f64)] = &[
     ("coconut oil",    862.0,  0.0, 100.0,   0.0,  0.92),
     ("water",            0.0,  0.0,   0.0,   0.0,  1.00),
     ("salt",             0.0,  0.0,   0.0,   0.0,  1.26),
+    // ── New: extended density table ──
+    ("cocoa powder",   228.0,  19.6,  13.7,  57.9, 0.72),
+    ("maple syrup",    260.0,   0.0,   0.1,  67.0, 1.32),
+    ("corn starch",    381.0,   0.3,   0.1,  91.3, 0.56),
+    ("brown sugar",    380.0,   0.1,   0.0,  98.0, 0.83),
+    ("powdered sugar", 389.0,   0.0,   0.0, 100.0, 0.56),
+    ("baking powder",   53.0,   0.0,   0.0,  28.0, 0.90),
+    ("baking soda",      0.0,   0.0,   0.0,   0.0, 1.10),
+    ("vanilla extract", 288.0,  0.1,   0.1,  12.7, 1.04),
+    ("soy sauce",       53.0,   8.1,   0.6,   4.9, 1.08),
+    ("vinegar",         21.0,   0.0,   0.0,   0.9, 1.01),
+    ("ketchup",        112.0,   1.7,   0.1,  27.4, 1.15),
+    ("mayonnaise",     680.0,   1.0,  75.0,   0.6, 0.91),
+    ("mustard",         66.0,   4.4,   4.0,   5.8, 1.05),
+    ("peanut butter",  588.0,  25.0,  50.0,  20.0, 1.09),
+    ("oats",           389.0,  16.9,   6.9,  66.3, 0.43),
+    ("breadcrumbs",    395.0,  13.4,   5.3,  71.0, 0.55),
+    ("parmesan",       431.0,  38.5,  29.0,   4.1, 1.20),
+    ("cinnamon",       247.0,   4.0,   1.2,  80.6, 0.56),
+    ("black pepper",   251.0,  10.4,   3.3,  63.9, 0.50),
+    ("paprika",        282.0,  14.1,  13.0,  53.9, 0.50),
+    ("cumin",          375.0,  17.8,  22.3,  44.2, 0.45),
+    ("turmeric",       354.0,   7.8,   9.9,  64.9, 0.67),
+    ("ginger",          80.0,   1.8,   0.8,  17.8, 0.56),
+    ("sesame oil",     884.0,   0.0, 100.0,   0.0, 0.92),
+    ("lard",           902.0,   0.0, 100.0,   0.0, 0.92),
 ];
 
 fn find_nutrition(name: &str) -> Option<&'static (&'static str, f64, f64, f64, f64, f64)> {
@@ -592,7 +618,146 @@ pub async fn ingredient_suggestions(Query(params): Query<SuggestionsQuery>) -> J
     })
 }
 
-// ── 10. Categories ───────────────────────────────────────────────────────────
+// ── 10. Popular conversions (SEO) ────────────────────────────────────────────
+
+struct PopularEntry {
+    value: f64,
+    from_unit: &'static str,
+    to_unit: &'static str,
+    ingredient: Option<&'static str>,
+    density: Option<f64>,
+}
+
+static POPULAR_CONVERSIONS: &[PopularEntry] = &[
+    // Flour
+    PopularEntry { value: 1.0, from_unit: "cup",  to_unit: "g", ingredient: Some("flour"),  density: Some(0.53) },
+    PopularEntry { value: 1.0, from_unit: "tbsp", to_unit: "g", ingredient: Some("flour"),  density: Some(0.53) },
+    // Sugar
+    PopularEntry { value: 1.0, from_unit: "cup",  to_unit: "g", ingredient: Some("sugar"),  density: Some(0.85) },
+    PopularEntry { value: 1.0, from_unit: "tbsp", to_unit: "g", ingredient: Some("sugar"),  density: Some(0.85) },
+    // Butter
+    PopularEntry { value: 1.0, from_unit: "tbsp", to_unit: "g", ingredient: Some("butter"), density: Some(0.92) },
+    PopularEntry { value: 1.0, from_unit: "cup",  to_unit: "g", ingredient: Some("butter"), density: Some(0.92) },
+    PopularEntry { value: 1.0, from_unit: "stick_butter", to_unit: "g", ingredient: Some("butter"), density: Some(0.92) },
+    // Honey
+    PopularEntry { value: 1.0, from_unit: "tbsp", to_unit: "g", ingredient: Some("honey"),  density: Some(1.42) },
+    PopularEntry { value: 1.0, from_unit: "cup",  to_unit: "g", ingredient: Some("honey"),  density: Some(1.42) },
+    // Rice
+    PopularEntry { value: 1.0, from_unit: "cup",  to_unit: "g", ingredient: Some("rice"),   density: Some(0.77) },
+    // Milk
+    PopularEntry { value: 1.0, from_unit: "cup",  to_unit: "g", ingredient: Some("milk"),   density: Some(1.03) },
+    PopularEntry { value: 1.0, from_unit: "cup",  to_unit: "ml", ingredient: None, density: None },
+    // Pure unit conversions
+    PopularEntry { value: 1.0, from_unit: "lb",     to_unit: "g",   ingredient: None, density: None },
+    PopularEntry { value: 1.0, from_unit: "oz",     to_unit: "g",   ingredient: None, density: None },
+    PopularEntry { value: 1.0, from_unit: "gallon", to_unit: "l",   ingredient: None, density: None },
+    PopularEntry { value: 1.0, from_unit: "pint",   to_unit: "ml",  ingredient: None, density: None },
+    PopularEntry { value: 1.0, from_unit: "quart",  to_unit: "ml",  ingredient: None, density: None },
+];
+
+#[derive(Deserialize)]
+pub struct PopularQuery {
+    pub lang: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PopularConversion {
+    pub value: f64,
+    pub from_unit: String,
+    pub from_label: String,
+    pub to_unit: String,
+    pub to_label: String,
+    pub result: f64,
+    pub ingredient: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PopularResponse {
+    pub conversions: Vec<PopularConversion>,
+}
+
+/// GET /public/tools/popular-conversions?lang=ru
+///
+/// Returns a curated list of the most-searched cooking conversions (great for SEO).
+pub async fn popular_conversions(Query(params): Query<PopularQuery>) -> Json<PopularResponse> {
+    let lang = parse_lang(&params.lang);
+
+    let conversions = POPULAR_CONVERSIONS.iter().filter_map(|e| {
+        let result = match (e.ingredient, e.density) {
+            (Some(_), Some(d)) => uc::convert_with_density(e.value, e.from_unit, e.to_unit, d),
+            _ => uc::convert_units(e.value, e.from_unit, e.to_unit),
+        };
+        result.map(|r| PopularConversion {
+            value: e.value,
+            from_unit: e.from_unit.to_string(),
+            from_label: label(e.from_unit, lang),
+            to_unit: e.to_unit.to_string(),
+            to_label: label(e.to_unit, lang),
+            result: uc::display_round(r),
+            ingredient: e.ingredient.map(|s| s.to_string()),
+        })
+    }).collect();
+
+    Json(PopularResponse { conversions })
+}
+
+// ── 11. Ingredient scale ─────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct IngredientScaleQuery {
+    pub ingredient: Option<String>,
+    pub value: f64,
+    pub unit: Option<String>,
+    pub from_portions: f64,
+    pub to_portions: f64,
+    pub lang: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct IngredientScaleResponse {
+    pub ingredient: Option<String>,
+    pub original_value: f64,
+    pub unit: String,
+    pub from_portions: f64,
+    pub to_portions: f64,
+    pub scaled_value: f64,
+    pub smart_result: Option<SmartUnit>,
+}
+
+/// GET /public/tools/ingredient-scale?ingredient=flour&value=200&unit=g&from_portions=4&to_portions=10&lang=ru
+///
+/// Scales an ingredient amount between portion sizes.
+/// Returns smart_result with auto-optimised unit (e.g. 2500g → 2.5 kg).
+pub async fn ingredient_scale(Query(params): Query<IngredientScaleQuery>) -> Json<IngredientScaleResponse> {
+    let lang = parse_lang(&params.lang);
+    let unit = params.unit.as_deref().unwrap_or("g");
+    let scaled = uc::display_round(uc::scale(params.value, params.from_portions, params.to_portions));
+
+    // Smart auto-unit
+    let smart_result = if uc::is_mass(unit) {
+        let grams = scaled * uc::mass_to_grams(unit).unwrap_or(1.0);
+        let (su, sv) = uc::smart_mass_unit(grams);
+        Some(SmartUnit { value: uc::display_round(sv), unit: su.to_string(), label: label(su, lang) })
+    } else if uc::is_volume(unit) {
+        let ml = scaled * uc::volume_to_ml(unit).unwrap_or(1.0);
+        let (su, sv) = uc::smart_volume_unit(ml);
+        Some(SmartUnit { value: uc::display_round(sv), unit: su.to_string(), label: label(su, lang) })
+    } else {
+        None
+    };
+
+    Json(IngredientScaleResponse {
+        ingredient: params.ingredient,
+        original_value: params.value,
+        unit: unit.to_string(),
+        from_portions: params.from_portions,
+        to_portions: params.to_portions,
+        scaled_value: scaled,
+        smart_result,
+    })
+}
+
+// ── 12. Categories ───────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 pub struct ToolInfo {
@@ -619,6 +784,8 @@ pub async fn list_categories() -> Json<CategoriesResponse> {
             ToolInfo { id: "ingredient-equivalents",  path: "/public/tools/ingredient-equivalents",  description: "Convert ingredient to all units via density" },
             ToolInfo { id: "food-cost",               path: "/public/tools/food-cost",               description: "Food cost, margin & markup calculator" },
             ToolInfo { id: "ingredient-suggestions",  path: "/public/tools/ingredient-suggestions",  description: "Suggest ingredients by volume unit with grams" },
+            ToolInfo { id: "popular-conversions",    path: "/public/tools/popular-conversions",    description: "Curated popular cooking conversions (SEO)" },
+            ToolInfo { id: "ingredient-scale",       path: "/public/tools/ingredient-scale",       description: "Scale an ingredient between portion sizes" },
         ],
     })
 }
