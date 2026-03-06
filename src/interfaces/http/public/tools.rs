@@ -189,9 +189,18 @@ struct FishData {
 }
 
 static FISH_TABLE: &[FishData] = &[
-    FishData { name: "salmon", months: [true,  true,  true,  false, false, false, true,  true,  true,  true,  true,  true ] },
-    FishData { name: "tuna",   months: [false, false, false, true,  true,  true,  true,  true,  true,  false, false, false] },
-    FishData { name: "cod",    months: [true,  true,  true,  true,  false, false, false, false, false, true,  true,  true ] },
+    //                                   J      F      M      A      M      J      J      A      S      O      N      D
+    FishData { name: "salmon",   months: [true,  true,  true,  false, false, false, true,  true,  true,  true,  true,  true ] },
+    FishData { name: "tuna",     months: [false, false, false, true,  true,  true,  true,  true,  true,  false, false, false] },
+    FishData { name: "canned-tuna", months:[true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true ] },
+    FishData { name: "cod",      months: [true,  true,  true,  true,  false, false, false, false, false, true,  true,  true ] },
+    FishData { name: "herring",  months: [true,  true,  false, false, false, false, false, false, true,  true,  true,  true ] },
+    FishData { name: "trout",    months: [false, false, true,  true,  true,  false, false, false, true,  true,  true,  false] },
+    FishData { name: "mackerel", months: [false, false, false, false, true,  true,  true,  true,  true,  true,  false, false] },
+    FishData { name: "sea-bass", months: [false, false, true,  true,  true,  true,  true,  false, false, false, false, false] },
+    FishData { name: "pike",     months: [true,  true,  true,  true,  false, false, false, false, false, false, true,  true ] },
+    FishData { name: "carp",     months: [true,  false, false, false, false, false, false, false, false, true,  true,  true ] },
+    FishData { name: "shrimp",   months: [false, false, false, true,  true,  true,  true,  true,  true,  false, false, false] },
 ];
 
 #[derive(Deserialize)]
@@ -240,6 +249,116 @@ pub async fn fish_season(Query(params): Query<FishQuery>) -> Json<FishSeasonResp
         available: availability[(m - 1) as usize],
     }).collect();
     Json(FishSeasonResponse { fish: params.fish, season })
+}
+
+// ── 3b. Fish season table (DB-enriched) ──────────────────────────────────────
+
+#[derive(sqlx::FromRow)]
+struct FishCatalogRow {
+    slug: Option<String>,
+    name_en: String,
+    name_ru: String,
+    name_pl: String,
+    name_uk: String,
+    image_url: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FishSeasonTableItem {
+    pub slug: String,
+    pub name: String,
+    pub name_en: String,
+    pub name_ru: String,
+    pub name_pl: String,
+    pub name_uk: String,
+    pub image_url: Option<String>,
+    pub season: Vec<FishSeasonEntry>,
+}
+
+#[derive(Serialize)]
+pub struct FishSeasonTableResponse {
+    pub fish: Vec<FishSeasonTableItem>,
+    pub lang: String,
+}
+
+/// GET /public/tools/fish-season-table?lang=ru
+///
+/// Returns all fish from FISH_TABLE enriched with catalog data
+/// (localized names, image_url) and month-by-month availability.
+pub async fn fish_season_table(
+    State(pool): State<PgPool>,
+    Query(params): Query<FishQuery>,
+) -> Json<FishSeasonTableResponse> {
+    let lang = parse_lang(&params.lang);
+    let lang_code = match lang {
+        Language::Ru => "ru",
+        Language::Pl => "pl",
+        Language::Uk => "uk",
+        Language::En => "en",
+    };
+
+    // Fetch all catalog rows for slugs in FISH_TABLE in one query
+    let slugs: Vec<&str> = FISH_TABLE.iter().map(|f| f.name).collect();
+    let db_rows: Vec<FishCatalogRow> = sqlx::query_as(
+        r#"
+        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url
+        FROM catalog_ingredients
+        WHERE is_active = true
+          AND slug = ANY($1)
+        "#,
+    )
+    .bind(&slugs[..])
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let fish = FISH_TABLE.iter().map(|fd| {
+        let catalog = db_rows.iter().find(|r| r.slug.as_deref() == Some(fd.name));
+
+        let (name_en, name_ru, name_pl, name_uk, image_url) = if let Some(r) = catalog {
+            (r.name_en.clone(), r.name_ru.clone(), r.name_pl.clone(), r.name_uk.clone(), r.image_url.clone())
+        } else {
+            // Fallback: capitalise slug
+            let fallback = fd.name.replace('-', " ");
+            let fallback = {
+                let mut chars = fallback.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+                }
+            };
+            (fallback.clone(), fallback.clone(), fallback.clone(), fallback, None)
+        };
+
+        let name = match lang {
+            Language::Ru => name_ru.clone(),
+            Language::Pl => name_pl.clone(),
+            Language::Uk => name_uk.clone(),
+            Language::En => name_en.clone(),
+        };
+
+        let season = (1u8..=12).map(|m| FishSeasonEntry {
+            month: m,
+            month_name: month_name(m, lang).to_string(),
+            available: fd.months[(m - 1) as usize],
+        }).collect();
+
+        FishSeasonTableItem {
+            slug: fd.name.to_string(),
+            name,
+            name_en,
+            name_ru,
+            name_pl,
+            name_uk,
+            image_url,
+            season,
+        }
+    }).collect();
+
+    Json(FishSeasonTableResponse {
+        fish,
+        lang: lang_code.to_string(),
+    })
 }
 
 // ── 4. Nutrition (DB-first, static fallback) ─────────────────────────────────
@@ -860,7 +979,8 @@ pub async fn list_categories() -> Json<CategoriesResponse> {
             ToolInfo { id: "converter",              path: "/public/tools/convert",                description: "Universal unit converter (mass & volume)" },
             ToolInfo { id: "units",                   path: "/public/tools/units",                  description: "List all supported units with labels" },
             ToolInfo { id: "nutrition",               path: "/public/tools/nutrition",               description: "Nutrition calculator (supports any unit)" },
-            ToolInfo { id: "fish-season",             path: "/public/tools/fish-season",             description: "Fish seasonality calendar" },
+            ToolInfo { id: "fish-season",             path: "/public/tools/fish-season",             description: "Fish seasonality calendar (single fish)" },
+            ToolInfo { id: "fish-season-table",       path: "/public/tools/fish-season-table",       description: "Full fish seasonality table with catalog data (name, image)" },
             ToolInfo { id: "scale",                   path: "/public/tools/scale",                   description: "Recipe portion scaler" },
             ToolInfo { id: "yield",                   path: "/public/tools/yield",                   description: "Cooking yield & waste calculator" },
             ToolInfo { id: "ingredient-equivalents",  path: "/public/tools/ingredient-equivalents",  description: "Convert ingredient to all units via density" },

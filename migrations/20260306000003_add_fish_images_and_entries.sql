@@ -1,0 +1,130 @@
+-- Migration: add image_url for fish and insert missing fish entries
+-- Also corrects seasons for fish that have real month patterns
+
+-- ── Update existing fish with image URLs ─────────────────────────────────────
+
+UPDATE catalog_ingredients SET image_url = 'https://cdn.dima-fomin.pl/ingredients/salmon.webp'
+WHERE slug = 'salmon';
+
+UPDATE catalog_ingredients SET image_url = 'https://cdn.dima-fomin.pl/ingredients/cod.webp'
+WHERE slug = 'cod';
+
+UPDATE catalog_ingredients SET image_url = 'https://cdn.dima-fomin.pl/ingredients/herring.webp'
+WHERE slug = 'herring';
+
+UPDATE catalog_ingredients SET image_url = 'https://cdn.dima-fomin.pl/ingredients/tuna.webp'
+WHERE slug = 'canned-tuna';
+
+UPDATE catalog_ingredients SET image_url = 'https://cdn.dima-fomin.pl/ingredients/shrimp.webp'
+WHERE slug = 'shrimp';
+
+-- ── Insert missing fish (tuna fresh, trout, mackerel, sea bass, pike, carp) ──
+
+INSERT INTO catalog_ingredients (
+    slug, name_en, name_ru, name_pl, name_uk,
+    image_url,
+    calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g,
+    density_g_per_ml, seasons, allergens,
+    description_en, description_ru, description_pl, description_uk,
+    is_active
+) VALUES
+(
+    'tuna',
+    'Tuna', 'Тунец', 'Tuńczyk', 'Тунець',
+    'https://cdn.dima-fomin.pl/ingredients/tuna.webp',
+    144, 23.3, 4.9, 0,
+    1.05,
+    ARRAY['Summer', 'Autumn']::text[],
+    ARRAY['fish']::text[],
+    'Fresh tuna is a large saltwater fish prized for its rich, meaty flesh and high protein content.',
+    'Свежий тунец — крупная морская рыба с насыщенным вкусом и высоким содержанием белка.',
+    'Świeży tuńczyk to duża ryba morska ceniona za bogate, mięsiste ciało i wysoką zawartość białka.',
+    'Свіжий тунець — велика морська риба з насиченим смаком і високим вмістом білка.',
+    true
+),
+(
+    'trout',
+    'Trout', 'Форель', 'Pstrąg', 'Форель',
+    'https://cdn.dima-fomin.pl/ingredients/trout.webp',
+    141, 19.9, 6.2, 0,
+    1.05,
+    ARRAY['Spring', 'Autumn']::text[],
+    ARRAY['fish']::text[],
+    'Trout is a freshwater fish with delicate pink flesh and a mild, slightly nutty flavour.',
+    'Форель — пресноводная рыба с нежным розовым мясом и мягким, слегка ореховым вкусом.',
+    'Pstrąg to ryba słodkowodna o delikatnym różowym mięsie i łagodnym, lekko orzechowym smaku.',
+    'Форель — прісноводна риба з ніжним рожевим м''ясом і м''яким, злегка горіховим смаком.',
+    true
+),
+(
+    'mackerel',
+    'Mackerel', 'Скумбрия', 'Makrela', 'Скумбрія',
+    'https://cdn.dima-fomin.pl/ingredients/mackerel.webp',
+    205, 19.0, 13.9, 0,
+    1.05,
+    ARRAY['Summer', 'Autumn']::text[],
+    ARRAY['fish']::text[],
+    'Mackerel is an oily fish rich in omega-3 fatty acids with a strong, distinctive flavour.',
+    'Скумбрия — жирная рыба, богатая омега-3 жирными кислотами, с насыщенным характерным вкусом.',
+    'Makrela to tłusta ryba bogata w kwasy tłuszczowe omega-3 o mocnym, charakterystycznym smaku.',
+    'Скумбрія — жирна риба, багата на омега-3 жирні кислоти, з насиченим характерним смаком.',
+    true
+),
+(
+    'sea-bass',
+    'Sea bass', 'Морской окунь', 'Okoń morski', 'Морський окунь',
+    'https://cdn.dima-fomin.pl/ingredients/sea-bass.webp',
+    97, 18.4, 2.0, 0,
+    1.05,
+    ARRAY['Spring', 'Summer', 'Autumn']::text[],
+    ARRAY['fish']::text[],
+    'Sea bass is a prized white fish with firm, sweet flesh and a clean flavour, popular in Mediterranean cuisine.',
+    'Морской окунь — ценная белая рыба с плотным сладковатым мясом, популярная в средиземноморской кухне.',
+    'Okoń morski to ceniona biała ryba o zbitym, słodkawym mięsie, popularna w kuchni śródziemnomorskiej.',
+    'Морський окунь — цінна біла риба з щільним солодкуватим м''ясом, популярна в середземноморській кухні.',
+    true
+),
+(
+    'pike',
+    'Pike', 'Щука', 'Szczupak', 'Щука',
+    'https://cdn.dima-fomin.pl/ingredients/pike.webp',
+    88, 18.7, 1.1, 0,
+    1.05,
+    ARRAY['Winter', 'Spring']::text[],
+    ARRAY['fish']::text[],
+    'Pike is a freshwater predatory fish with white, lean meat, widely used in Central and Eastern European cuisine.',
+    'Щука — пресноводная хищная рыба с белым нежирным мясом, широко используемая в центральноевропейской кухне.',
+    'Szczupak to drapieżna ryba słodkowodna o białym, chudym mięsie, powszechnie stosowana w kuchni środkowoeuropejskiej.',
+    'Щука — прісноводна хижа риба з білим нежирним м''ясом, широко використовувана в центральноєвропейській кухні.',
+    true
+),
+(
+    'carp',
+    'Carp', 'Карп', 'Karp', 'Короп',
+    'https://cdn.dima-fomin.pl/ingredients/carp.webp',
+    127, 17.8, 5.6, 0,
+    1.05,
+    ARRAY['Winter', 'Autumn']::text[],
+    ARRAY['fish']::text[],
+    'Carp is a traditional freshwater fish, a staple of Christmas Eve tables in Poland and Central Europe.',
+    'Карп — традиционная пресноводная рыба, неотъемлемый элемент рождественского стола в Польше и Центральной Европе.',
+    'Karp to tradycyjna ryba słodkowodna, nieodłączny element wigilijnego stołu w Polsce i Europie Środkowej.',
+    'Короп — традиційна прісноводна риба, невід''ємний елемент різдвяного столу в Польщі та Центральній Європі.',
+    true
+)
+ON CONFLICT (slug) DO UPDATE SET
+    image_url = EXCLUDED.image_url,
+    name_ru = EXCLUDED.name_ru,
+    name_pl = EXCLUDED.name_pl,
+    name_uk = EXCLUDED.name_uk,
+    calories_per_100g = EXCLUDED.calories_per_100g,
+    protein_per_100g = EXCLUDED.protein_per_100g,
+    fat_per_100g = EXCLUDED.fat_per_100g,
+    carbs_per_100g = EXCLUDED.carbs_per_100g,
+    density_g_per_ml = EXCLUDED.density_g_per_ml,
+    seasons = EXCLUDED.seasons,
+    allergens = EXCLUDED.allergens,
+    description_en = EXCLUDED.description_en,
+    description_ru = EXCLUDED.description_ru,
+    description_pl = EXCLUDED.description_pl,
+    description_uk = EXCLUDED.description_uk;
