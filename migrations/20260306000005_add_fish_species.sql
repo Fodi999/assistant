@@ -2,7 +2,7 @@
 
 INSERT INTO catalog_ingredients (
     slug, name_en, name_ru, name_pl, name_uk,
-    image_url,
+    image_url, default_unit,
     calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g,
     density_g_per_ml, seasons, allergens,
     description_en, description_ru, description_pl, description_uk,
@@ -11,7 +11,7 @@ INSERT INTO catalog_ingredients (
 (
     'tuna',
     'Tuna', 'Тунец', 'Tuńczyk', 'Тунець',
-    'https://cdn.dima-fomin.pl/ingredients/tuna.webp',
+    'https://cdn.dima-fomin.pl/ingredients/tuna.webp', 'kilogram',
     144, 23.3, 4.9, 0,
     1.05,
     ARRAY['Summer', 'Autumn']::season_type[],
@@ -25,7 +25,7 @@ INSERT INTO catalog_ingredients (
 (
     'trout',
     'Trout', 'Форель', 'Pstrąg', 'Форель',
-    'https://cdn.dima-fomin.pl/ingredients/trout.webp',
+    'https://cdn.dima-fomin.pl/ingredients/trout.webp', 'kilogram',
     141, 19.9, 6.2, 0,
     1.05,
     ARRAY['Spring', 'Autumn']::season_type[],
@@ -39,7 +39,7 @@ INSERT INTO catalog_ingredients (
 (
     'mackerel',
     'Mackerel', 'Скумбрия', 'Makrela', 'Скумбрія',
-    'https://cdn.dima-fomin.pl/ingredients/mackerel.webp',
+    'https://cdn.dima-fomin.pl/ingredients/mackerel.webp', 'kilogram',
     205, 19.0, 13.9, 0,
     1.05,
     ARRAY['Summer', 'Autumn']::season_type[],
@@ -53,7 +53,7 @@ INSERT INTO catalog_ingredients (
 (
     'sea-bass',
     'Sea bass', 'Морской окунь', 'Okoń morski', 'Морський окунь',
-    'https://cdn.dima-fomin.pl/ingredients/sea-bass.webp',
+    'https://cdn.dima-fomin.pl/ingredients/sea-bass.webp', 'kilogram',
     97, 18.4, 2.0, 0,
     1.05,
     ARRAY['Spring', 'Summer', 'Autumn']::season_type[],
@@ -67,7 +67,7 @@ INSERT INTO catalog_ingredients (
 (
     'pike',
     'Pike', 'Щука', 'Szczupak', 'Щука',
-    'https://cdn.dima-fomin.pl/ingredients/pike.webp',
+    'https://cdn.dima-fomin.pl/ingredients/pike.webp', 'kilogram',
     88, 18.7, 1.1, 0,
     1.05,
     ARRAY['Winter', 'Spring']::season_type[],
@@ -81,7 +81,7 @@ INSERT INTO catalog_ingredients (
 (
     'carp',
     'Carp', 'Карп', 'Karp', 'Короп',
-    'https://cdn.dima-fomin.pl/ingredients/carp.webp',
+    'https://cdn.dima-fomin.pl/ingredients/carp.webp', 'kilogram',
     127, 17.8, 5.6, 0,
     1.05,
     ARRAY['Winter', 'Autumn']::season_type[],
