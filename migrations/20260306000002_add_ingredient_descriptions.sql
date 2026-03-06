@@ -61,7 +61,7 @@ UPDATE catalog_ingredients SET
   description_en = 'Tomato is botanically a fruit but culinarily a vegetable, originating from Central America. Rich in lycopene — a powerful antioxidant linked to reduced cancer risk and heart health.',
   description_pl = 'Pomidor jest botanicznie owocem, ale kulinarnie warzywem, pochodzącym z Ameryki Środkowej. Bogaty w likopen — silny antyoksydant związany ze zmniejszonym ryzykiem nowotworów.',
   description_ru = 'Помидор — ботанически фрукт, но кулинарно — овощ, родом из Центральной Америки. Богат ликопином — мощным антиоксидантом, снижающим риск рака и улучшающим здоровье сердца.',
-  description_uk = 'Томат — ботанічно фрукт, але кулінарно — овоч, родом з Центральної Америки. Багатий на лікопін — потужний антиоксидант, що знижує ризик раку та покращує здоров'\''я серця.'
+  description_uk = 'Томат — ботанічно фрукт, але кулінарно — овоч, родом з Центральної Америки. Багатий на лікопін — потужний антиоксидант, що знижує ризик раку та покращує здоров''я серця.'
 WHERE LOWER(name_en) LIKE '%tomato%' AND LOWER(name_en) NOT LIKE '%paste%' AND LOWER(name_en) NOT LIKE '%sauce%';
 
 UPDATE catalog_ingredients SET
@@ -75,7 +75,7 @@ UPDATE catalog_ingredients SET
   description_en = 'Milk is a nutrient-rich liquid produced by mammals, a cornerstone of dairy nutrition. An excellent source of calcium, protein, vitamin B12 and phosphorus for bone health.',
   description_pl = 'Mleko to bogaty w składniki odżywcze płyn produkowany przez ssaki. Doskonałe źródło wapnia, białka, witaminy B12 i fosforu niezbędnych dla zdrowia kości.',
   description_ru = 'Молоко — богатая питательными веществами жидкость, производимая млекопитающими. Отличный источник кальция, белка, витамина B12 и фосфора для здоровья костей.',
-  description_uk = 'Молоко — багата на поживні речовини рідина, що виробляється ссавцями. Відмінне джерело кальцію, білка, вітаміну B12 та фосфору для здоров'\''я кісток.'
+  description_uk = 'Молоко — багата на поживні речовини рідина, що виробляється ссавцями. Відмінне джерело кальцію, білка, вітаміну B12 та фосфору для здоров''я кісток.'
 WHERE LOWER(name_en) LIKE '%milk%' AND LOWER(name_en) NOT LIKE '%coconut%';
 
 UPDATE catalog_ingredients SET
@@ -103,5 +103,5 @@ UPDATE catalog_ingredients SET
   description_en = 'Carrot is a root vegetable exceptionally rich in beta-carotene, which the body converts to vitamin A. Supports eye health, immune function and gives a natural sweetness to soups and stews.',
   description_pl = 'Marchew to warzywo korzeniowe wyjątkowo bogate w beta-karoten, który organizm przekształca w witaminę A. Wspiera zdrowie oczu, funkcje odpornościowe i nadaje naturalną słodycz zupom.',
   description_ru = 'Морковь — корнеплод, исключительно богатый бета-каротином, который организм превращает в витамин A. Поддерживает здоровье глаз и иммунную функцию.',
-  description_uk = 'Морква — коренеплід, надзвичайно багатий на бета-каротин, який організм перетворює на вітамін A. Підтримує здоров'\''я очей та імунну функцію.'
+  description_uk = 'Морква — коренеплід, надзвичайно багатий на бета-каротин, який організм перетворює на вітамін A. Підтримує здоров''я очей та імунну функцію.'
 WHERE LOWER(name_en) LIKE '%carrot%';
