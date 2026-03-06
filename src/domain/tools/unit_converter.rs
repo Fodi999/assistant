@@ -4,6 +4,32 @@
 ///   mass   → grams (g)
 ///   volume → milliliters (ml)
 
+// ── Kitchen volume constants (ml) ────────────────────────────────────────────
+
+pub const CUP_ML: f64 = 236.588;
+pub const TBSP_ML: f64 = 14.7868;
+pub const TSP_ML: f64 = 4.92892;
+
+/// Convert density + volume (ml) to grams, rounded to 2 decimal places
+pub fn grams_from_volume(density: f64, ml: f64) -> f64 {
+    (density * ml * 100.0).round() / 100.0
+}
+
+/// How many grams fit in one standard cup given a density
+pub fn grams_per_cup(density: f64) -> f64 {
+    grams_from_volume(density, CUP_ML)
+}
+
+/// How many grams fit in one tablespoon given a density
+pub fn grams_per_tbsp(density: f64) -> f64 {
+    grams_from_volume(density, TBSP_ML)
+}
+
+/// How many grams fit in one teaspoon given a density
+pub fn grams_per_tsp(density: f64) -> f64 {
+    grams_from_volume(density, TSP_ML)
+}
+
 // ── Mass table (base: grams) ─────────────────────────────────────────────────
 
 pub fn mass_to_grams(unit: &str) -> Option<f64> {

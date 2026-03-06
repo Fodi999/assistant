@@ -288,3 +288,63 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
         rows.iter().map(Self::row_to_ingredient).collect()
     }
 }
+
+// ── Public reference query (SEO / public API) ─────────────────────────────────
+
+/// Full ingredient reference row from DB — includes macros, density, descriptions
+#[derive(sqlx::FromRow)]
+pub struct CatalogIngredientRefRow {
+    pub slug: Option<String>,
+    pub name_en: String,
+    pub name_pl: String,
+    pub name_ru: String,
+    pub name_uk: String,
+    pub description_en: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_uk: Option<String>,
+    pub image_url: Option<String>,
+    pub calories_per_100g: Option<i32>,
+    pub protein_per_100g: Option<rust_decimal::Decimal>,
+    pub fat_per_100g: Option<rust_decimal::Decimal>,
+    pub carbs_per_100g: Option<rust_decimal::Decimal>,
+    pub density_g_per_ml: Option<rust_decimal::Decimal>,
+    pub seasons: Vec<String>,
+    pub allergens: Vec<String>,
+}
+
+/// Fetch a full public ingredient reference by slug.
+///
+/// Used by `GET /public/ingredients/:slug`.
+pub async fn find_ingredient_ref_by_slug(
+    pool: &PgPool,
+    slug: &str,
+) -> Result<Option<CatalogIngredientRefRow>, sqlx::Error> {
+    sqlx::query_as(
+        r#"
+        SELECT
+            slug,
+            name_en,
+            name_pl,
+            name_ru,
+            name_uk,
+            description_en,
+            description_pl,
+            description_ru,
+            description_uk,
+            image_url,
+            calories_per_100g,
+            protein_per_100g,
+            fat_per_100g,
+            carbs_per_100g,
+            density_g_per_ml,
+            ARRAY(SELECT unnest(seasons::text[])) AS seasons,
+            ARRAY(SELECT unnest(allergens::text[])) AS allergens
+        FROM catalog_ingredients
+        WHERE slug = $1 AND is_active = true
+        "#,
+    )
+    .bind(slug)
+    .fetch_optional(pool)
+    .await
+}

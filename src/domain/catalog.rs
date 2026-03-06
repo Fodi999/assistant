@@ -386,3 +386,49 @@ impl CatalogIngredient {
         }
     }
 }
+
+// ── Ingredient reference (public catalog, SEO pages) ─────────────────────────
+
+/// Nutritional values per 100 g
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngredientNutrition {
+    pub calories_per_100g: Option<f64>,
+    pub protein_per_100g: Option<f64>,
+    pub fat_per_100g: Option<f64>,
+    pub carbs_per_100g: Option<f64>,
+}
+
+/// Pre-calculated volume-to-weight measures for common kitchen units
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngredientMeasures {
+    pub grams_per_cup: Option<f64>,
+    pub grams_per_tbsp: Option<f64>,
+    pub grams_per_tsp: Option<f64>,
+}
+
+/// Full public-facing ingredient reference — used by SEO pages & public API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngredientReference {
+    pub slug: String,
+
+    pub name_en: String,
+    pub name_pl: String,
+    pub name_ru: String,
+    pub name_uk: String,
+
+    pub description_en: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_uk: Option<String>,
+
+    pub image_url: Option<String>,
+
+    pub nutrition: IngredientNutrition,
+
+    pub density_g_per_ml: Option<f64>,
+
+    pub measures: IngredientMeasures,
+
+    pub seasons: Vec<String>,
+    pub allergens: Vec<String>,
+}
