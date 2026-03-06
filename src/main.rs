@@ -66,6 +66,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Database connection pool established (max={})", max_conn);
 
     // Run migrations
+    // Clean up any dirty (failed) migration entries so sqlx can re-run them
+    // with updated content. This handles checksum mismatches from previously
+    // failed migrations that were later fixed.
+    sqlx::query(
+        "DELETE FROM _sqlx_migrations WHERE success = false"
+    )
+    .execute(&pool)
+    .await
+    .ok(); // ignore error if table doesn't exist yet
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Database migrations completed");
 
