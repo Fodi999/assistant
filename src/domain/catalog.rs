@@ -416,6 +416,9 @@ pub struct IngredientReference {
     pub name_ru: String,
     pub name_uk: String,
 
+    /// Description in the requested language (falls back to English)
+    pub description: Option<String>,
+
     pub description_en: Option<String>,
     pub description_pl: Option<String>,
     pub description_ru: Option<String>,
@@ -429,6 +432,13 @@ pub struct IngredientReference {
 
     pub measures: IngredientMeasures,
 
+    /// Raw season codes (e.g. ["AllYear", "Spring"])
     pub seasons: Vec<String>,
+    /// Translated season labels in the requested language
+    pub localized_seasons: Vec<String>,
+
+    /// Raw allergen codes (e.g. ["Fish", "Milk"])
     pub allergens: Vec<String>,
+    /// Translated allergen labels in the requested language
+    pub localized_allergens: Vec<String>,
 }

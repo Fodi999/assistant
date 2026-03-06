@@ -1,5 +1,203 @@
 use crate::shared::Language;
 
+// ── Season translations ───────────────────────────────────────────────────────
+
+/// Translate a raw season code (e.g. "AllYear", "Spring") to a human-readable label.
+pub fn translate_season(season: &str, lang: Language) -> String {
+    let label: &str = match season.to_lowercase().replace(['-', '_', ' '], "").as_str() {
+        "allyear" | "all_year" | "allyears" => match lang {
+            Language::En => "all year",
+            Language::Pl => "cały rok",
+            Language::Ru => "круглый год",
+            Language::Uk => "цілий рік",
+        },
+        "spring" => match lang {
+            Language::En => "spring",
+            Language::Pl => "wiosna",
+            Language::Ru => "весна",
+            Language::Uk => "весна",
+        },
+        "summer" => match lang {
+            Language::En => "summer",
+            Language::Pl => "lato",
+            Language::Ru => "лето",
+            Language::Uk => "літо",
+        },
+        "autumn" | "fall" => match lang {
+            Language::En => "autumn",
+            Language::Pl => "jesień",
+            Language::Ru => "осень",
+            Language::Uk => "осінь",
+        },
+        "winter" => match lang {
+            Language::En => "winter",
+            Language::Pl => "zima",
+            Language::Ru => "зима",
+            Language::Uk => "зима",
+        },
+        "january" => match lang {
+            Language::En => "January",
+            Language::Pl => "styczeń",
+            Language::Ru => "январь",
+            Language::Uk => "січень",
+        },
+        "february" => match lang {
+            Language::En => "February",
+            Language::Pl => "luty",
+            Language::Ru => "февраль",
+            Language::Uk => "лютий",
+        },
+        "march" => match lang {
+            Language::En => "March",
+            Language::Pl => "marzec",
+            Language::Ru => "март",
+            Language::Uk => "березень",
+        },
+        "april" => match lang {
+            Language::En => "April",
+            Language::Pl => "kwiecień",
+            Language::Ru => "апрель",
+            Language::Uk => "квітень",
+        },
+        "may" => match lang {
+            Language::En => "May",
+            Language::Pl => "maj",
+            Language::Ru => "май",
+            Language::Uk => "травень",
+        },
+        "june" => match lang {
+            Language::En => "June",
+            Language::Pl => "czerwiec",
+            Language::Ru => "июнь",
+            Language::Uk => "червень",
+        },
+        "july" => match lang {
+            Language::En => "July",
+            Language::Pl => "lipiec",
+            Language::Ru => "июль",
+            Language::Uk => "липень",
+        },
+        "august" => match lang {
+            Language::En => "August",
+            Language::Pl => "sierpień",
+            Language::Ru => "август",
+            Language::Uk => "серпень",
+        },
+        "september" => match lang {
+            Language::En => "September",
+            Language::Pl => "wrzesień",
+            Language::Ru => "сентябрь",
+            Language::Uk => "вересень",
+        },
+        "october" => match lang {
+            Language::En => "October",
+            Language::Pl => "październik",
+            Language::Ru => "октябрь",
+            Language::Uk => "жовтень",
+        },
+        "november" => match lang {
+            Language::En => "November",
+            Language::Pl => "listopad",
+            Language::Ru => "ноябрь",
+            Language::Uk => "листопад",
+        },
+        "december" => match lang {
+            Language::En => "December",
+            Language::Pl => "grudzień",
+            Language::Ru => "декабрь",
+            Language::Uk => "грудень",
+        },
+        _ => return season.to_string(),
+    };
+    label.to_string()
+}
+
+/// Translate a list of raw season codes
+pub fn translate_seasons(seasons: &[String], lang: Language) -> Vec<String> {
+    seasons
+        .iter()
+        .map(|s| translate_season(s, lang).to_string())
+        .collect()
+}
+
+// ── Allergen translations ─────────────────────────────────────────────────────
+
+pub fn translate_allergen(allergen: &str, lang: Language) -> String {
+    let label: &str = match allergen.to_lowercase().as_str() {
+        "fish" => match lang {
+            Language::En => "fish",
+            Language::Pl => "ryby",
+            Language::Ru => "рыба",
+            Language::Uk => "риба",
+        },
+        "milk" | "dairy" => match lang {
+            Language::En => "milk",
+            Language::Pl => "mleko",
+            Language::Ru => "молоко",
+            Language::Uk => "молоко",
+        },
+        "eggs" | "egg" => match lang {
+            Language::En => "eggs",
+            Language::Pl => "jaja",
+            Language::Ru => "яйца",
+            Language::Uk => "яйця",
+        },
+        "wheat" | "gluten" => match lang {
+            Language::En => "wheat / gluten",
+            Language::Pl => "pszenica / gluten",
+            Language::Ru => "пшеница / глютен",
+            Language::Uk => "пшениця / глютен",
+        },
+        "nuts" | "treenuts" => match lang {
+            Language::En => "tree nuts",
+            Language::Pl => "orzechy",
+            Language::Ru => "орехи",
+            Language::Uk => "горіхи",
+        },
+        "peanuts" => match lang {
+            Language::En => "peanuts",
+            Language::Pl => "orzeszki ziemne",
+            Language::Ru => "арахис",
+            Language::Uk => "арахіс",
+        },
+        "soy" | "soya" => match lang {
+            Language::En => "soy",
+            Language::Pl => "soja",
+            Language::Ru => "соя",
+            Language::Uk => "соя",
+        },
+        "shellfish" => match lang {
+            Language::En => "shellfish",
+            Language::Pl => "skorupiaki",
+            Language::Ru => "ракообразные",
+            Language::Uk => "ракоподібні",
+        },
+        "sesame" => match lang {
+            Language::En => "sesame",
+            Language::Pl => "sezam",
+            Language::Ru => "кунжут",
+            Language::Uk => "кунжут",
+        },
+        "mustard" => match lang {
+            Language::En => "mustard",
+            Language::Pl => "gorczyca",
+            Language::Ru => "горчица",
+            Language::Uk => "гірчиця",
+        },
+        _ => return allergen.to_string(),
+    };
+    label.to_string()
+}
+
+pub fn translate_allergens(allergens: &[String], lang: Language) -> Vec<String> {
+    allergens
+        .iter()
+        .map(|a| translate_allergen(a, lang).to_string())
+        .collect()
+}
+
+
+
 /// Message keys for assistant messages
 #[derive(Debug, Clone, Copy)]
 pub enum AssistantMessage {
