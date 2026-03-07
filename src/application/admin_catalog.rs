@@ -61,7 +61,7 @@ fn default_empty_string() -> String {
     String::new()
 }
 
-/// Update Product Request
+/// Update Product Request — full editing support for admin panel
 #[derive(Debug, Deserialize)]
 pub struct UpdateProductRequest {
     pub name_en: Option<String>,
@@ -72,16 +72,37 @@ pub struct UpdateProductRequest {
     pub unit: Option<UnitType>,
     pub description: Option<String>,
     pub image_url: Option<String>,
+
+    // Multilingual descriptions
+    pub description_en: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_uk: Option<String>,
+
+    // Nutrition per 100g
+    pub calories_per_100g: Option<i32>,
+    pub protein_per_100g: Option<f64>,
+    pub fat_per_100g: Option<f64>,
+    pub carbs_per_100g: Option<f64>,
+
+    // Physical properties
+    pub density_g_per_ml: Option<f64>,
+
+    // Seasons & allergens
+    pub seasons: Option<Vec<String>>,
+    pub allergens: Option<Vec<String>>,
+
     /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default)]
     pub auto_translate: bool,
 }
 
-/// Product Response
+/// Product Response — full data for admin panel
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct ProductResponse {
     pub id: Uuid,
+    pub slug: Option<String>,
     pub name_en: String,
     pub name_pl: Option<String>,
     pub name_uk: Option<String>,
@@ -90,6 +111,25 @@ pub struct ProductResponse {
     pub unit: UnitType,
     pub description: Option<String>,
     pub image_url: Option<String>,
+
+    // Multilingual descriptions
+    pub description_en: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_uk: Option<String>,
+
+    // Nutrition per 100g
+    pub calories_per_100g: Option<i32>,
+    pub protein_per_100g: Option<rust_decimal::Decimal>,
+    pub fat_per_100g: Option<rust_decimal::Decimal>,
+    pub carbs_per_100g: Option<rust_decimal::Decimal>,
+
+    // Physical properties
+    pub density_g_per_ml: Option<rust_decimal::Decimal>,
+
+    // Seasons & allergens as text arrays
+    pub seasons: Vec<String>,
+    pub allergens: Vec<String>,
 }
 
 /// Admin Category Requests
@@ -291,11 +331,13 @@ impl AdminCatalogService {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING
-                id, name_en, name_pl, name_uk, name_ru,
-                category_id, 
-                default_unit as unit,
-                description,
-                image_url
+                id, slug, name_en, name_pl, name_uk, name_ru,
+                category_id, default_unit as unit, description, image_url,
+                description_en, description_pl, description_ru, description_uk,
+                calories_per_100g,
+                protein_per_100g, fat_per_100g, carbs_per_100g,
+                density_g_per_ml,
+                seasons::text[] as seasons, allergens::text[] as allergens
             "#,
         )
         .bind(id)
@@ -319,9 +361,15 @@ impl AdminCatalogService {
     /// Get product by ID
     pub async fn get_product_by_id(&self, id: Uuid) -> AppResult<ProductResponse> {
         let product = sqlx::query_as::<_, ProductResponse>(
-            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
-             FROM catalog_ingredients 
-             WHERE id = $1 AND is_active = true"
+            r#"SELECT id, slug, name_en, name_pl, name_uk, name_ru,
+                      category_id, default_unit as unit, description, image_url,
+                      description_en, description_pl, description_ru, description_uk,
+                      calories_per_100g,
+                      protein_per_100g, fat_per_100g, carbs_per_100g,
+                      density_g_per_ml,
+                      seasons::text[] as seasons, allergens::text[] as allergens
+               FROM catalog_ingredients
+               WHERE id = $1 AND is_active = true"#
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -334,10 +382,16 @@ impl AdminCatalogService {
     /// List all products in the catalog
     pub async fn list_products(&self) -> AppResult<Vec<ProductResponse>> {
         let products = sqlx::query_as::<_, ProductResponse>(
-            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
-             FROM catalog_ingredients 
-             WHERE is_active = true 
-             ORDER BY name_en ASC"
+            r#"SELECT id, slug, name_en, name_pl, name_uk, name_ru,
+                      category_id, default_unit as unit, description, image_url,
+                      description_en, description_pl, description_ru, description_uk,
+                      calories_per_100g,
+                      protein_per_100g, fat_per_100g, carbs_per_100g,
+                      density_g_per_ml,
+                      seasons::text[] as seasons, allergens::text[] as allergens
+               FROM catalog_ingredients
+               WHERE is_active = true
+               ORDER BY name_en ASC"#
         )
         .fetch_all(&self.pool)
         .await?;
@@ -345,7 +399,7 @@ impl AdminCatalogService {
         Ok(products)
     }
 
-    /// Update product in the catalog
+    /// Update product in the catalog (all fields)
     pub async fn update_product(
         &self,
         id: Uuid,
@@ -355,16 +409,22 @@ impl AdminCatalogService {
 
         // 1. Get existing product
         let product = sqlx::query_as::<_, ProductResponse>(
-            "SELECT id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url 
-             FROM catalog_ingredients 
-             WHERE id = $1 AND is_active = true FOR UPDATE"
+            r#"SELECT id, slug, name_en, name_pl, name_uk, name_ru,
+                      category_id, default_unit as unit, description, image_url,
+                      description_en, description_pl, description_ru, description_uk,
+                      calories_per_100g,
+                      protein_per_100g, fat_per_100g, carbs_per_100g,
+                      density_g_per_ml,
+                      seasons::text[] as seasons, allergens::text[] as allergens
+               FROM catalog_ingredients
+               WHERE id = $1 AND is_active = true FOR UPDATE"#
         )
         .bind(id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::not_found("Product not found"))?;
 
-        // 2. Prepare values
+        // 2. Prepare name values
         let name_en = req.name_en.unwrap_or(product.name_en);
         let mut name_pl = req.name_pl.or(product.name_pl);
         let mut name_uk = req.name_uk.or(product.name_uk);
@@ -407,25 +467,72 @@ impl AdminCatalogService {
             }
         }
 
-        // 3. Update record
+        // 3. Prepare nutrition & description values
+        let description_en = req.description_en.or(product.description_en);
+        let description_pl = req.description_pl.or(product.description_pl);
+        let description_ru = req.description_ru.or(product.description_ru);
+        let description_uk = req.description_uk.or(product.description_uk);
+
+        let calories = req.calories_per_100g.or(product.calories_per_100g);
+        let protein: Option<rust_decimal::Decimal> = req.protein_per_100g
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
+            .or(product.protein_per_100g);
+        let fat: Option<rust_decimal::Decimal> = req.fat_per_100g
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
+            .or(product.fat_per_100g);
+        let carbs: Option<rust_decimal::Decimal> = req.carbs_per_100g
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
+            .or(product.carbs_per_100g);
+        let density: Option<rust_decimal::Decimal> = req.density_g_per_ml
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
+            .or(product.density_g_per_ml);
+
+        // 4. Update record with ALL fields
+        let seasons_val: Option<Vec<String>> = req.seasons;
+        let allergens_val: Option<Vec<String>> = req.allergens;
+
         let updated_product = sqlx::query_as::<_, ProductResponse>(
             r#"
-            UPDATE catalog_ingredients 
-            SET name_en = $1, name_pl = $2, name_uk = $3, name_ru = $4, 
+            UPDATE catalog_ingredients
+            SET name_en = $1, name_pl = $2, name_uk = $3, name_ru = $4,
                 category_id = $5, default_unit = $6, description = $7,
-                image_url = COALESCE($8, image_url)
-            WHERE id = $9
-            RETURNING id, name_en, name_pl, name_uk, name_ru, category_id, default_unit as unit, description, image_url
+                image_url = COALESCE($8, image_url),
+                description_en = $9, description_pl = $10,
+                description_ru = $11, description_uk = $12,
+                calories_per_100g = $13, protein_per_100g = $14,
+                fat_per_100g = $15, carbs_per_100g = $16,
+                density_g_per_ml = $17,
+                seasons = CASE WHEN $18::text[] IS NOT NULL THEN $18::text[]::season_type[] ELSE seasons END,
+                allergens = CASE WHEN $19::text[] IS NOT NULL THEN $19::text[]::allergen_type[] ELSE allergens END
+            WHERE id = $20
+            RETURNING id, slug, name_en, name_pl, name_uk, name_ru,
+                      category_id, default_unit as unit, description, image_url,
+                      description_en, description_pl, description_ru, description_uk,
+                      calories_per_100g,
+                      protein_per_100g, fat_per_100g, carbs_per_100g,
+                      density_g_per_ml,
+                      seasons::text[] as seasons, allergens::text[] as allergens
             "#
         )
-        .bind(name_en)
-        .bind(name_pl)
-        .bind(name_uk)
-        .bind(name_ru)
+        .bind(&name_en)
+        .bind(&name_pl)
+        .bind(&name_uk)
+        .bind(&name_ru)
         .bind(req.category_id.unwrap_or(product.category_id))
         .bind(req.unit.unwrap_or(product.unit))
         .bind(req.description.or(product.description))
-        .bind(req.image_url)
+        .bind(&req.image_url)
+        .bind(&description_en)
+        .bind(&description_pl)
+        .bind(&description_ru)
+        .bind(&description_uk)
+        .bind(calories)
+        .bind(protein)
+        .bind(fat)
+        .bind(carbs)
+        .bind(density)
+        .bind(&seasons_val)
+        .bind(&allergens_val)
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
