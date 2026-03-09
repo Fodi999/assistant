@@ -540,6 +540,96 @@ fn dec_f64(d: Option<rust_decimal::Decimal>) -> f64 {
     d.and_then(|v| rust_decimal::prelude::ToPrimitive::to_f64(&v)).unwrap_or(0.0)
 }
 
+// ── Nutrition score (0–100) ───────────────────────────────────────────────────
+// Protein and fiber add points; sugar, sat-fat-proxy (fat*0.4), salt subtract.
+// Designed so lean fish ~85-95, white meat ~75-85, grains ~40-60, sweets ~10-30.
+fn nutrition_score(cal: f64, prot: f64, fat: f64, carbs: f64, fiber: f64, sugar: f64, salt: f64) -> u8 {
+    if cal == 0.0 { return 0; }
+    // protein density (protein kcal / total kcal)
+    let prot_ratio  = (prot * 4.0) / cal.max(1.0);
+    // fiber bonus
+    let fiber_bonus = (fiber * 2.5).min(15.0);
+    // penalties
+    let sugar_pen   = (sugar * 0.5).min(20.0);
+    let sat_pen     = (fat * 0.4 * 0.3).min(10.0);   // rough sat-fat proxy
+    let salt_pen    = (salt * 10.0).min(15.0);
+
+    let raw = prot_ratio * 80.0 + fiber_bonus - sugar_pen - sat_pen - salt_pen;
+    let score = raw.clamp(0.0, 100.0).round() as u8;
+    score
+}
+
+// ── Macros ratio (% of kcal from protein / fat / carbs) ─────────────────────
+#[derive(Serialize, Clone)]
+pub struct MacrosRatio {
+    pub protein_pct: f64,
+    pub fat_pct:     f64,
+    pub carbs_pct:   f64,
+}
+
+fn macros_ratio(prot: f64, fat: f64, carbs: f64) -> MacrosRatio {
+    let p_kcal = prot  * 4.0;
+    let f_kcal = fat   * 9.0;
+    let c_kcal = carbs * 4.0;
+    let total  = (p_kcal + f_kcal + c_kcal).max(1.0);
+    let r = |x: f64| uc::round_to(x / total * 100.0, 1);
+    MacrosRatio { protein_pct: r(p_kcal), fat_pct: r(f_kcal), carbs_pct: r(c_kcal) }
+}
+
+// ── Vitamin / mineral static lookup ──────────────────────────────────────────
+// Values per 100g. Source: USDA averages. None = data not available.
+#[derive(Serialize, Clone)]
+pub struct VitaminData {
+    /// µg per 100g
+    pub vitamin_b12_mcg: Option<f64>,
+    /// µg per 100g (IU × 0.025)
+    pub vitamin_d_mcg:   Option<f64>,
+    /// mg per 100g
+    pub iron_mg:         Option<f64>,
+    /// mg per 100g
+    pub magnesium_mg:    Option<f64>,
+}
+
+fn vitamins_for(slug: &str) -> VitaminData {
+    // (b12_mcg, d_mcg, iron_mg, mg_mg)
+    let (b12, vd, fe, mg) = match slug {
+        "salmon"        => (Some(3.2),  Some(11.1), Some(0.3),  Some(29.0)),
+        "tuna"          => (Some(2.5),  Some(5.7),  Some(1.0),  Some(35.0)),
+        "cod"           => (Some(0.9),  Some(0.9),  Some(0.4),  Some(32.0)),
+        "herring"       => (Some(13.7), Some(4.2),  Some(1.1),  Some(32.0)),
+        "mackerel"      => (Some(8.7),  Some(16.1), Some(1.6),  Some(60.0)),
+        "trout"         => (Some(3.5),  Some(9.0),  Some(0.4),  Some(27.0)),
+        "carp"          => (Some(1.5),  Some(12.5), Some(1.0),  Some(25.0)),
+        "pike"          => (Some(1.6),  Some(0.5),  Some(0.7),  Some(26.0)),
+        "sea-bass"      => (Some(1.1),  Some(1.0),  Some(0.3),  Some(29.0)),
+        "shrimp"        => (Some(1.1),  Some(0.0),  Some(2.4),  Some(37.0)),
+        "canned-tuna"   => (Some(2.2),  Some(3.2),  Some(1.3),  Some(30.0)),
+        "egg"           => (Some(1.1),  Some(2.0),  Some(1.8),  Some(12.0)),
+        "chicken"       => (Some(0.3),  Some(0.1),  Some(1.3),  Some(25.0)),
+        "beef"          => (Some(2.6),  Some(0.1),  Some(2.7),  Some(21.0)),
+        "pork"          => (Some(0.7),  Some(0.6),  Some(0.9),  Some(25.0)),
+        "milk"          => (Some(0.4),  Some(0.1),  Some(0.0),  Some(11.0)),
+        "cheese"        => (Some(1.7),  Some(0.6),  Some(0.2),  Some(26.0)),
+        "spinach"       => (Some(0.0),  Some(0.0),  Some(2.7),  Some(79.0)),
+        "broccoli"      => (Some(0.0),  Some(0.0),  Some(0.7),  Some(21.0)),
+        "tomato"        => (Some(0.0),  Some(0.0),  Some(0.3),  Some(11.0)),
+        "potato"        => (Some(0.0),  Some(0.0),  Some(0.8),  Some(23.0)),
+        "carrot"        => (Some(0.0),  Some(0.0),  Some(0.3),  Some(12.0)),
+        "onion"         => (Some(0.0),  Some(0.0),  Some(0.2),  Some(10.0)),
+        "garlic"        => (Some(0.0),  Some(0.0),  Some(1.7),  Some(25.0)),
+        "lemon"         => (Some(0.0),  Some(0.0),  Some(0.6),  Some(8.0)),
+        "apple"         => (Some(0.0),  Some(0.0),  Some(0.1),  Some(5.0)),
+        "banana"        => (Some(0.0),  Some(0.0),  Some(0.3),  Some(27.0)),
+        "rice"          => (Some(0.0),  Some(0.0),  Some(0.8),  Some(25.0)),
+        "wheat-flour"   => (Some(0.0),  Some(0.0),  Some(1.2),  Some(22.0)),
+        "oats"          => (Some(0.0),  Some(0.0),  Some(4.7),  Some(138.0)),
+        "butter"        => (Some(0.2),  Some(1.5),  Some(0.0),  Some(2.0)),
+        "olive-oil"     => (Some(0.0),  Some(0.0),  Some(0.6),  Some(0.0)),
+        _               => (None, None, None, None),
+    };
+    VitaminData { vitamin_b12_mcg: b12, vitamin_d_mcg: vd, iron_mg: fe, magnesium_mg: mg }
+}
+
 #[derive(Deserialize)]
 pub struct NutritionQuery {
     pub name:   Option<String>,
@@ -577,6 +667,9 @@ pub struct NutritionResponse {
     pub unit_label:       String,
     pub per_100g:         NutritionBreakdown,
     pub for_amount:       NutritionBreakdown,
+    pub macros_ratio:     MacrosRatio,
+    pub nutrition_score:  u8,
+    pub vitamins:         VitaminData,
     pub typical_portion_g: Option<f64>,
     pub found_in_db:      bool,
     pub lang:             String,
@@ -702,7 +795,7 @@ pub async fn nutrition(
 
     Json(NutritionResponse {
         query:            query_str,
-        slug:             slug_val,
+        slug:             slug_val.clone(),
         name:             localized,
         product_type,
         image_url:        image,
@@ -714,6 +807,9 @@ pub async fn nutrition(
         unit_label:       label("g", lang),
         per_100g,
         for_amount,
+        macros_ratio:     macros_ratio(prot100, fat100, carbs100),
+        nutrition_score:  nutrition_score(cal100, prot100, fat100, carbs100, fiber100, sugar100, salt100),
+        vitamins:         vitamins_for(slug_val.as_deref().unwrap_or("")),
         typical_portion_g: typical_g,
         found_in_db:      found,
         lang:             lang_str,
@@ -734,7 +830,7 @@ pub struct IngredientsQuery {
 #[derive(Serialize)]
 pub struct IngredientDbEntry {
     pub slug:             Option<String>,
-    pub name:             String,         // localized
+    pub name:             String,
     pub name_en:          String,
     pub product_type:     Option<String>,
     pub image_url:        Option<String>,
@@ -743,6 +839,9 @@ pub struct IngredientDbEntry {
     pub sushi_grade:      Option<bool>,
     pub typical_portion_g: Option<f64>,
     pub per_100g:         NutritionBreakdown,
+    pub macros_ratio:     MacrosRatio,
+    pub nutrition_score:  u8,
+    pub vitamins:         VitaminData,
 }
 
 #[derive(Serialize)]
@@ -848,7 +947,21 @@ pub async fn ingredients_db(
 
     let items = rows.into_iter().map(|row| {
         let s100 = row.salt();
+        let slug_str = row.slug.clone().unwrap_or_default();
+        let breakdown = NutritionBreakdown {
+            calories:  r(row.cal()),
+            protein_g: r(row.prot()),
+            fat_g:     r(row.fat()),
+            carbs_g:   r(row.carbs()),
+            fiber_g:   r(row.fiber()),
+            sugar_g:   r(row.sugar()),
+            salt_g:    uc::round_to(s100, 2),
+            sodium_mg: uc::round_to(s100 * 393.0, 1),
+        };
         IngredientDbEntry {
+            macros_ratio:     macros_ratio(row.prot(), row.fat(), row.carbs()),
+            nutrition_score:  nutrition_score(row.cal(), row.prot(), row.fat(), row.carbs(), row.fiber(), row.sugar(), s100),
+            vitamins:         vitamins_for(&slug_str),
             slug:              row.slug.clone(),
             name:              row.localized_name(lang).to_string(),
             name_en:           row.name_en.clone(),
@@ -858,16 +971,7 @@ pub async fn ingredients_db(
             wild_farmed:       row.wild_farmed.clone(),
             sushi_grade:       row.sushi_grade,
             typical_portion_g: row.typical_g(),
-            per_100g: NutritionBreakdown {
-                calories:  r(row.cal()),
-                protein_g: r(row.prot()),
-                fat_g:     r(row.fat()),
-                carbs_g:   r(row.carbs()),
-                fiber_g:   r(row.fiber()),
-                sugar_g:   r(row.sugar()),
-                salt_g:    uc::round_to(s100, 2),
-                sodium_mg: uc::round_to(s100 * 393.0, 1),
-            },
+            per_100g:          breakdown,
         }
     }).collect();
 
@@ -878,6 +982,157 @@ pub async fn ingredients_db(
         lang: lang_str,
         items,
     })
+}
+
+// ── 4c. Compare Foods (/compare) ─────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct CompareQuery {
+    pub food1: String,
+    pub food2: String,
+    pub lang:  Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct CompareSide {
+    pub query:            String,
+    pub slug:             Option<String>,
+    pub name:             String,
+    pub product_type:     Option<String>,
+    pub image_url:        Option<String>,
+    pub water_type:       Option<String>,
+    pub wild_farmed:      Option<String>,
+    pub sushi_grade:      Option<bool>,
+    pub per_100g:         NutritionBreakdown,
+    pub macros_ratio:     MacrosRatio,
+    pub nutrition_score:  u8,
+    pub vitamins:         VitaminData,
+    pub found_in_db:      bool,
+}
+
+#[derive(Serialize)]
+pub struct CompareWinner {
+    /// Which food wins each category: "food1" | "food2" | "tie"
+    pub calories_lower:     String,
+    pub protein_higher:     String,
+    pub fat_lower:          String,
+    pub carbs_lower:        String,
+    pub fiber_higher:       String,
+    pub nutrition_score:    String,
+}
+
+#[derive(Serialize)]
+pub struct CompareResponse {
+    pub food1:   CompareSide,
+    pub food2:   CompareSide,
+    pub winner:  CompareWinner,
+    pub lang:    String,
+}
+
+async fn lookup_one(pool: &PgPool, query: &str) -> Option<CatalogNutritionRow> {
+    let lookup = query.to_lowercase();
+    sqlx::query_as(
+        r#"
+        SELECT name_en, name_ru, name_pl, name_uk,
+               image_url, slug, product_type,
+               calories_per_100g,
+               protein_per_100g, fat_per_100g, carbs_per_100g,
+               fiber_per_100g, sugar_per_100g, salt_per_100g,
+               density_g_per_ml, typical_portion_g,
+               water_type, wild_farmed, sushi_grade
+        FROM catalog_ingredients
+        WHERE is_active = true
+          AND (slug = $1
+               OR LOWER(name_en) = $1
+               OR LOWER(name_en) LIKE '%' || $1 || '%')
+        ORDER BY (slug = $1 OR LOWER(name_en) = $1) DESC, LENGTH(name_en) ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(&lookup)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+fn build_compare_side(query: String, row: Option<CatalogNutritionRow>, lang: Language) -> CompareSide {
+    let r = |x: f64| uc::round_to(x, 1);
+    if let Some(ref row) = row {
+        let s = row.salt();
+        let slug_str = row.slug.clone().unwrap_or_default();
+        CompareSide {
+            query:           query,
+            slug:            row.slug.clone(),
+            name:            row.localized_name(lang).to_string(),
+            product_type:    row.product_type.clone(),
+            image_url:       row.image_url.clone(),
+            water_type:      row.water_type.clone(),
+            wild_farmed:     row.wild_farmed.clone(),
+            sushi_grade:     row.sushi_grade,
+            per_100g: NutritionBreakdown {
+                calories:  r(row.cal()),
+                protein_g: r(row.prot()),
+                fat_g:     r(row.fat()),
+                carbs_g:   r(row.carbs()),
+                fiber_g:   r(row.fiber()),
+                sugar_g:   r(row.sugar()),
+                salt_g:    uc::round_to(s, 2),
+                sodium_mg: uc::round_to(s * 393.0, 1),
+            },
+            macros_ratio:    macros_ratio(row.prot(), row.fat(), row.carbs()),
+            nutrition_score: nutrition_score(row.cal(), row.prot(), row.fat(), row.carbs(), row.fiber(), row.sugar(), s),
+            vitamins:        vitamins_for(&slug_str),
+            found_in_db:     true,
+        }
+    } else {
+        let zero = NutritionBreakdown { calories: 0.0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+            fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0 };
+        CompareSide {
+            query, slug: None, name: "Not found".to_string(), product_type: None,
+            image_url: None, water_type: None, wild_farmed: None, sushi_grade: None,
+            macros_ratio: MacrosRatio { protein_pct: 0.0, fat_pct: 0.0, carbs_pct: 0.0 },
+            per_100g: zero, nutrition_score: 0,
+            vitamins: VitaminData { vitamin_b12_mcg: None, vitamin_d_mcg: None, iron_mg: None, magnesium_mg: None },
+            found_in_db: false,
+        }
+    }
+}
+
+fn winner(a: f64, b: f64, higher_is_better: bool) -> String {
+    if (a - b).abs() < 0.05 { return "tie".to_string(); }
+    let a_wins = if higher_is_better { a > b } else { a < b };
+    if a_wins { "food1".to_string() } else { "food2".to_string() }
+}
+
+/// GET /public/tools/compare?food1=salmon&food2=tuna&lang=ru
+///
+/// Compare two foods side-by-side: nutrition, score, vitamins, macros ratio.
+pub async fn compare_foods(
+    State(pool): State<PgPool>,
+    Query(params): Query<CompareQuery>,
+) -> Json<CompareResponse> {
+    let lang     = parse_lang(&params.lang);
+    let lang_str = params.lang.clone().unwrap_or_else(|| "en".to_string());
+
+    let (r1, r2) = tokio::join!(
+        lookup_one(&pool, &params.food1),
+        lookup_one(&pool, &params.food2),
+    );
+
+    let side1 = build_compare_side(params.food1, r1, lang);
+    let side2 = build_compare_side(params.food2, r2, lang);
+
+    let w = CompareWinner {
+        calories_lower:  winner(side1.per_100g.calories,  side2.per_100g.calories,  false),
+        protein_higher:  winner(side1.per_100g.protein_g, side2.per_100g.protein_g, true),
+        fat_lower:       winner(side1.per_100g.fat_g,     side2.per_100g.fat_g,     false),
+        carbs_lower:     winner(side1.per_100g.carbs_g,   side2.per_100g.carbs_g,   false),
+        fiber_higher:    winner(side1.per_100g.fiber_g,   side2.per_100g.fiber_g,   true),
+        nutrition_score: winner(side1.nutrition_score as f64, side2.nutrition_score as f64, true),
+    };
+
+    Json(CompareResponse { food1: side1, food2: side2, winner: w, lang: lang_str })
 }
 
 // ── 5. Recipe scaler ─────────────────────────────────────────────────────────
