@@ -14,6 +14,21 @@ pub struct CatalogNutritionRow {
     pub name_ru: String,
     pub name_pl: String,
     pub name_uk: String,
+    pub name_en_gen: Option<String>,
+    pub name_ru_gen: Option<String>,
+    pub name_pl_gen: Option<String>,
+    pub name_uk_gen: Option<String>,
+
+    pub name_en_loc: Option<String>,
+    pub name_ru_loc: Option<String>,
+    pub name_pl_loc: Option<String>,
+    pub name_uk_loc: Option<String>,
+
+    pub name_en_dat: Option<String>,
+    pub name_ru_dat: Option<String>,
+    pub name_pl_dat: Option<String>,
+    pub name_uk_dat: Option<String>,
+
     pub image_url:         Option<String>,
     pub slug:              Option<String>,
     pub product_type:      Option<String>,
@@ -59,11 +74,44 @@ impl CatalogNutritionRow {
             Language::En => &self.name_en,
         }
     }
+
+    pub fn localized_genitive(&self, lang: Language) -> &str {
+        let gen = match lang {
+            Language::Ru => self.name_ru_gen.as_deref(),
+            Language::Pl => self.name_pl_gen.as_deref(),
+            Language::Uk => self.name_uk_gen.as_deref(),
+            Language::En => self.name_en_gen.as_deref(),
+        };
+        gen.unwrap_or_else(|| self.localized_name(lang))
+    }
+
+    pub fn localized_locative(&self, lang: Language) -> &str {
+        let loc = match lang {
+            Language::Ru => self.name_ru_loc.as_deref(),
+            Language::Pl => self.name_pl_loc.as_deref(),
+            Language::Uk => self.name_uk_loc.as_deref(),
+            Language::En => self.name_en_loc.as_deref(),
+        };
+        loc.unwrap_or_else(|| self.localized_name(lang))
+    }
+
+    pub fn localized_dative(&self, lang: Language) -> &str {
+        let dat = match lang {
+            Language::Ru => self.name_ru_dat.as_deref(),
+            Language::Pl => self.name_pl_dat.as_deref(),
+            Language::Uk => self.name_uk_dat.as_deref(),
+            Language::En => self.name_en_dat.as_deref(),
+        };
+        dat.unwrap_or_else(|| self.localized_name(lang))
+    }
 }
 
 /// Reusable SELECT columns string for all queries using CatalogNutritionRow
 pub const CATALOG_NUTRITION_COLS: &str = r#"
     name_en, name_ru, name_pl, name_uk,
+    name_en_gen, name_ru_gen, name_pl_gen, name_uk_gen,
+    name_en_loc, name_ru_loc, name_pl_loc, name_uk_loc,
+    name_en_dat, name_ru_dat, name_pl_dat, name_uk_dat,
     image_url, slug, product_type,
     calories_per_100g,
     protein_per_100g, fat_per_100g, carbs_per_100g,

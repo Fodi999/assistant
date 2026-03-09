@@ -175,6 +175,18 @@ struct IngredientConvertRow {
     name_ru:          String,
     name_pl:          String,
     name_uk:          String,
+    name_en_gen:      Option<String>,
+    name_ru_gen:      Option<String>,
+    name_pl_gen:      Option<String>,
+    name_uk_gen:      Option<String>,
+    name_en_loc:      Option<String>,
+    name_ru_loc:      Option<String>,
+    name_pl_loc:      Option<String>,
+    name_uk_loc:      Option<String>,
+    name_en_dat:      Option<String>,
+    name_ru_dat:      Option<String>,
+    name_pl_dat:      Option<String>,
+    name_uk_dat:      Option<String>,
     image_url:        Option<String>,
     density_g_per_ml: Option<rust_decimal::Decimal>,
     // Nutrition per 100 g
@@ -264,7 +276,11 @@ pub async fn ingredient_convert(
     // ── DB lookup: slug OR any language name, exact → prefix → substring ────
     let row: Option<IngredientConvertRow> = sqlx::query_as(
         r#"
-        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url, density_g_per_ml,
+        SELECT slug, name_en, name_ru, name_pl, name_uk,
+               name_en_gen, name_ru_gen, name_pl_gen, name_uk_gen,
+               name_en_loc, name_ru_loc, name_pl_loc, name_uk_loc,
+               name_en_dat, name_ru_dat, name_pl_dat, name_uk_dat,
+               image_url, density_g_per_ml,
                calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g
         FROM catalog_ingredients
         WHERE is_active = true
@@ -322,6 +338,13 @@ pub async fn ingredient_convert(
         Language::En => &row.name_en,
     }.clone();
 
+    let name_genitive = match lang {
+        Language::Pl => row.name_pl_gen.as_deref().unwrap_or(&row.name_pl),
+        Language::Ru => row.name_ru_gen.as_deref().unwrap_or(&row.name_ru),
+        Language::Uk => row.name_uk_gen.as_deref().unwrap_or(&row.name_uk),
+        Language::En => row.name_en_gen.as_deref().unwrap_or(&row.name_en),
+    }.to_lowercase();
+
     let from_label   = label(&params.from, lang);
     let from_loc     = label_loc(&params.from, lang);  // locative: "cup", "szklance", "стакане"
     let to_label     = label(&params.to,   lang);
@@ -331,10 +354,6 @@ pub async fn ingredient_convert(
     // ── source_volume_ml: ml in source unit (if it's a volume) ───────────────
     let source_volume_ml = uc::volume_to_ml(&params.from)
         .map(|ml_per| params.value * ml_per);
-
-    // ── Ingredient name in lowercase for use in sentences ─────────────────────
-    // Display name (Title Case) kept for SEO title; sentence form lowercased.
-    let name_sentence = ingredient_name.to_lowercase();
 
     // ── Question / Answer with natural grammar ────────────────────────────────
     //
@@ -353,38 +372,38 @@ pub async fn ingredient_convert(
     let question = match lang {
         Language::En => format!(
             "How many {} are in {} {} of {}?",
-            to_label_gen, params.value, from_label, name_sentence
+            to_label_gen, params.value, from_label, name_genitive
         ),
         Language::Pl => format!(
             "Ile {} ma {} {} {}?",
-            to_label_gen, params.value, from_loc, name_sentence
+            to_label_gen, params.value, from_label, name_genitive
         ),
         Language::Ru => format!(
             "Сколько {} в {} {} {}?",
-            to_label_gen, params.value, from_loc, name_sentence
+            to_label_gen, params.value, from_loc, name_genitive
         ),
         Language::Uk => format!(
             "Скільки {} у {} {} {}?",
-            to_label_gen, params.value, from_loc, name_sentence
+            to_label_gen, params.value, from_loc, name_genitive
         ),
     };
 
     let answer = match lang {
         Language::En => format!(
             "{} {} of {} equals {} {}.",
-            params.value, from_label, name_sentence, result, to_short
+            params.value, from_label, name_genitive, result, to_short
         ),
         Language::Pl => format!(
             "{} {} {} to {} g.",
-            params.value, from_label, name_sentence, result
+            params.value, from_label, name_genitive, result
         ),
         Language::Ru => format!(
             "{} {} {} = {} г.",
-            params.value, from_label, name_sentence, result
+            params.value, from_label, name_genitive, result
         ),
         Language::Uk => format!(
             "{} {} {} = {} г.",
-            params.value, from_label, name_sentence, result
+            params.value, from_label, name_genitive, result
         ),
     };
 
@@ -432,7 +451,7 @@ pub async fn ingredient_convert(
     // ── SEO metadata ──────────────────────────────────────────────────────────
     let seo = build_seo(
         &from_label, &from_loc, to_short, &to_label_gen,
-        &ingredient_name, &name_sentence, params.value, result, density,
+        &ingredient_name, &name_genitive, params.value, result, density,
         lang,
     );
 
