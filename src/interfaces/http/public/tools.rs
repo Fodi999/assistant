@@ -1588,3 +1588,248 @@ pub async fn product_seasonality(
         season,
     })
 }
+
+// ── 11. Best in season ────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BestInSeasonQuery {
+    pub r#type: Option<String>,
+    pub month:  Option<u8>,
+    pub lang:   Option<String>,
+    pub region: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct BestInSeasonItem {
+    pub slug:      String,
+    pub name:      String,
+    pub image_url: Option<String>,
+    pub status:    String,
+}
+
+#[derive(Serialize)]
+pub struct BestInSeasonResponse {
+    pub product_type: String,
+    pub month:        u8,
+    pub lang:         String,
+    pub region:       String,
+    pub items:        Vec<BestInSeasonItem>,
+}
+
+/// GET /public/tools/best-in-season?type=seafood&month=8&lang=ru
+///
+/// Returns only peak-season products for a given type and month.
+/// Ideal for SEO pages: "Best fish in August", "Best vegetables in July"
+pub async fn best_in_season(
+    State(pool): State<PgPool>,
+    Query(params): Query<BestInSeasonQuery>,
+) -> Json<BestInSeasonResponse> {
+    let lang         = parse_lang(&params.lang);
+    let product_type = params.r#type.clone().unwrap_or_else(|| "seafood".to_string());
+    let region       = params.region.clone().unwrap_or_else(|| "GLOBAL".to_string());
+    let lang_code    = match lang {
+        Language::Ru => "ru", Language::Pl => "pl",
+        Language::Uk => "uk", Language::En => "en",
+    };
+
+    // Use provided month or current UTC month
+    let month: u8 = params.month.unwrap_or_else(|| {
+        time::OffsetDateTime::now_utc().month() as u8
+    });
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        slug:      Option<String>,
+        name_en:   String,
+        name_ru:   String,
+        name_pl:   String,
+        name_uk:   String,
+        image_url: Option<String>,
+        status:    String,
+    }
+
+    let rows: Vec<Row> = sqlx::query_as(
+        r#"
+        SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+               ci.image_url, cps.status
+        FROM catalog_ingredients ci
+        JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
+        WHERE ci.is_active = true
+          AND ci.product_type = $1
+          AND cps.region_code = $2
+          AND cps.month       = $3
+          AND cps.status      = 'peak'
+        ORDER BY ci.name_en
+        "#,
+    )
+    .bind(&product_type)
+    .bind(&region)
+    .bind(month as i16)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let items = rows.iter().map(|r| {
+        let name = match lang {
+            Language::Ru => r.name_ru.clone(),
+            Language::Pl => r.name_pl.clone(),
+            Language::Uk => r.name_uk.clone(),
+            Language::En => r.name_en.clone(),
+        };
+        BestInSeasonItem {
+            slug:      r.slug.clone().unwrap_or_default(),
+            name,
+            image_url: r.image_url.clone(),
+            status:    r.status.clone(),
+        }
+    }).collect();
+
+    Json(BestInSeasonResponse {
+        product_type,
+        month,
+        lang: lang_code.to_string(),
+        region,
+        items,
+    })
+}
+
+// ── 12. Products by month ─────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ProductsByMonthQuery {
+    pub month:  Option<u8>,
+    pub r#type: Option<String>,
+    pub lang:   Option<String>,
+    pub region: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ProductsByMonthItem {
+    pub slug:      String,
+    pub name:      String,
+    pub image_url: Option<String>,
+    pub status:    String,   // peak | good | limited
+}
+
+#[derive(Serialize)]
+pub struct ProductsByMonthResponse {
+    pub month:        u8,
+    pub month_name:   String,
+    pub product_type: Option<String>,
+    pub lang:         String,
+    pub region:       String,
+    pub items:        Vec<ProductsByMonthItem>,
+}
+
+/// GET /public/tools/products-by-month?month=7&type=vegetable&lang=ru
+///
+/// Returns all in-season products for a given month (optionally filtered by type).
+/// Sorted by status: peak → good → limited
+/// SEO powerhouse: "What vegetables are in season in July?"
+pub async fn products_by_month(
+    State(pool): State<PgPool>,
+    Query(params): Query<ProductsByMonthQuery>,
+) -> Json<ProductsByMonthResponse> {
+    let lang       = parse_lang(&params.lang);
+    let region     = params.region.clone().unwrap_or_else(|| "GLOBAL".to_string());
+    let lang_code  = match lang {
+        Language::Ru => "ru", Language::Pl => "pl",
+        Language::Uk => "uk", Language::En => "en",
+    };
+
+    let month: u8 = params.month.unwrap_or_else(|| {
+        time::OffsetDateTime::now_utc().month() as u8
+    });
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        slug:         Option<String>,
+        name_en:      String,
+        name_ru:      String,
+        name_pl:      String,
+        name_uk:      String,
+        image_url:    Option<String>,
+        status:       String,
+    }
+
+    // Build query — type filter is optional
+    let rows: Vec<Row> = match &params.r#type {
+        Some(ptype) => sqlx::query_as(
+            r#"
+            SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+                   ci.image_url, cps.status
+            FROM catalog_ingredients ci
+            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
+            WHERE ci.is_active = true
+              AND ci.product_type = $1
+              AND cps.region_code = $2
+              AND cps.month       = $3
+              AND cps.status     != 'off'
+            ORDER BY
+                CASE cps.status
+                    WHEN 'peak'    THEN 1
+                    WHEN 'good'    THEN 2
+                    WHEN 'limited' THEN 3
+                    ELSE 4
+                END,
+                ci.name_en
+            "#,
+        )
+        .bind(ptype)
+        .bind(&region)
+        .bind(month as i16)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default(),
+
+        None => sqlx::query_as(
+            r#"
+            SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+                   ci.image_url, cps.status
+            FROM catalog_ingredients ci
+            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
+            WHERE ci.is_active = true
+              AND cps.region_code = $1
+              AND cps.month       = $2
+              AND cps.status     != 'off'
+            ORDER BY
+                CASE cps.status
+                    WHEN 'peak'    THEN 1
+                    WHEN 'good'    THEN 2
+                    WHEN 'limited' THEN 3
+                    ELSE 4
+                END,
+                ci.product_type, ci.name_en
+            "#,
+        )
+        .bind(&region)
+        .bind(month as i16)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default(),
+    };
+
+    let items = rows.iter().map(|r| {
+        let name = match lang {
+            Language::Ru => r.name_ru.clone(),
+            Language::Pl => r.name_pl.clone(),
+            Language::Uk => r.name_uk.clone(),
+            Language::En => r.name_en.clone(),
+        };
+        ProductsByMonthItem {
+            slug:      r.slug.clone().unwrap_or_default(),
+            name,
+            image_url: r.image_url.clone(),
+            status:    r.status.clone(),
+        }
+    }).collect();
+
+    Json(ProductsByMonthResponse {
+        month,
+        month_name:   month_name(month, lang).to_string(),
+        product_type: params.r#type,
+        lang:         lang_code.to_string(),
+        region,
+        items,
+    })
+}

@@ -25,7 +25,7 @@ use crate::interfaces::http::{
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
         ingredients::{get_ingredient_by_slug, list_ingredients},
-        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality},
+        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
@@ -381,6 +381,9 @@ pub fn create_router(
         .route("/tools/seasonal-calendar", get(seasonal_calendar))
         .route("/tools/in-season-now", get(in_season_now))
         .route("/tools/product-seasonality", get(product_seasonality))
+        // SEO-powerhouse endpoints
+        .route("/tools/best-in-season", get(best_in_season))
+        .route("/tools/products-by-month", get(products_by_month))
         .with_state(pool_for_tools);
 
     let public_router = Router::new()
