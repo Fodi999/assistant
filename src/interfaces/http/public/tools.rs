@@ -891,7 +891,10 @@ pub async fn ingredients_db(
         }
         if let Some(ref s) = params.search {
             srch_val = format!("%{}%", s.to_lowercase());
-            q.push_str(&format!(" AND LOWER(name_en) LIKE ${}", bind_idx));
+            q.push_str(&format!(
+                " AND (LOWER(name_en) LIKE ${0} OR LOWER(name_ru) LIKE ${0} OR LOWER(name_pl) LIKE ${0} OR LOWER(name_uk) LIKE ${0} OR LOWER(slug) LIKE ${0})",
+                bind_idx
+            ));
         }
 
         let mut builder = sqlx::query_scalar::<_, i64>(&q);
@@ -924,7 +927,10 @@ pub async fn ingredients_db(
         }
         if let Some(ref s) = params.search {
             srch_val = format!("%{}%", s.to_lowercase());
-            q.push_str(&format!(" AND LOWER(name_en) LIKE ${}", bind_idx));
+            q.push_str(&format!(
+                " AND (LOWER(name_en) LIKE ${0} OR LOWER(name_ru) LIKE ${0} OR LOWER(name_pl) LIKE ${0} OR LOWER(name_uk) LIKE ${0} OR LOWER(slug) LIKE ${0})",
+                bind_idx
+            ));
             bind_idx += 1;
         }
         q.push_str(&format!(
