@@ -3,6 +3,7 @@ use crate::shared::Language;
 use axum::{extract::{Query, State}, response::Json};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use time;
 
 // ── Language helper ───────────────────────────────────────────────────────────
 
@@ -1218,5 +1219,372 @@ pub async fn ingredient_measures(
         image_url,
         density_g_per_ml: density_opt,
         measures,
+    })
+}
+
+// ── 8. Seasonal Calendar (fully DB-driven, universal) ─────────────────────────
+
+#[derive(Deserialize)]
+pub struct SeasonalCalendarQuery {
+    pub r#type: Option<String>,   // seafood | vegetable | fruit | meat | ...
+    pub lang:   Option<String>,
+    pub region: Option<String>,   // default: GLOBAL
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct SeasonalCalendarProduct {
+    pub slug:      String,
+    pub name:      String,
+    pub image_url: Option<String>,
+    pub season:    Vec<FishSeasonEntry>,
+}
+
+#[derive(Serialize)]
+pub struct SeasonalCalendarResponse {
+    pub product_type: String,
+    pub lang:         String,
+    pub region:       String,
+    pub products:     Vec<SeasonalCalendarProduct>,
+}
+
+#[derive(sqlx::FromRow)]
+struct SeasonalProductRow {
+    slug:      Option<String>,
+    name_en:   String,
+    name_ru:   String,
+    name_pl:   String,
+    name_uk:   String,
+    image_url: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct SeasonalityRow {
+    product_id: uuid::Uuid,
+    month:      i16,
+    status:     String,
+}
+
+/// GET /public/tools/seasonal-calendar?type=seafood&lang=ru&region=GLOBAL
+pub async fn seasonal_calendar(
+    State(pool): State<PgPool>,
+    Query(params): Query<SeasonalCalendarQuery>,
+) -> Json<SeasonalCalendarResponse> {
+    let lang        = parse_lang(&params.lang);
+    let product_type = params.r#type.clone().unwrap_or_else(|| "seafood".to_string());
+    let region      = params.region.clone().unwrap_or_else(|| "GLOBAL".to_string());
+    let lang_code   = match lang {
+        Language::Ru => "ru", Language::Pl => "pl",
+        Language::Uk => "uk", Language::En => "en",
+    };
+
+    // Fetch all products of given type that have seasonality data
+    let products: Vec<SeasonalProductRow> = sqlx::query_as(
+        r#"
+        SELECT DISTINCT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url
+        FROM catalog_ingredients ci
+        JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
+        WHERE ci.is_active = true
+          AND ci.product_type = $1
+          AND cps.region_code = $2
+        ORDER BY ci.name_en
+        "#,
+    )
+    .bind(&product_type)
+    .bind(&region)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // Fetch all seasonality rows for these products at once
+    let seasonality: Vec<SeasonalityRow> = sqlx::query_as(
+        r#"
+        SELECT cps.product_id, cps.month, cps.status
+        FROM catalog_product_seasonality cps
+        JOIN catalog_ingredients ci ON ci.id = cps.product_id
+        WHERE ci.is_active = true
+          AND ci.product_type = $1
+          AND cps.region_code = $2
+        ORDER BY cps.product_id, cps.month
+        "#,
+    )
+    .bind(&product_type)
+    .bind(&region)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // Also fetch product IDs to map slug → id
+    let product_ids: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+        r#"
+        SELECT DISTINCT ci.id, ci.slug
+        FROM catalog_ingredients ci
+        JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
+        WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2
+        "#,
+    )
+    .bind(&product_type)
+    .bind(&region)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let result = products.iter().map(|p| {
+        let slug = p.slug.clone().unwrap_or_default();
+
+        // Find product id
+        let product_id = product_ids.iter()
+            .find(|(_, s)| s.as_str() == slug.as_str())
+            .map(|(id, _)| *id);
+
+        let name = match lang {
+            Language::Ru => p.name_ru.clone(),
+            Language::Pl => p.name_pl.clone(),
+            Language::Uk => p.name_uk.clone(),
+            Language::En => p.name_en.clone(),
+        };
+
+        let season = (1u8..=12).map(|m| {
+            let status = product_id
+                .and_then(|pid| seasonality.iter()
+                    .find(|r| r.product_id == pid && r.month == m as i16)
+                    .map(|r| r.status.clone()))
+                .unwrap_or_else(|| "off".to_string());
+
+            FishSeasonEntry {
+                month: m,
+                month_name: month_name(m, lang).to_string(),
+                available: status != "off",
+            }
+        }).collect();
+
+        SeasonalCalendarProduct {
+            slug,
+            name,
+            image_url: p.image_url.clone(),
+            season,
+        }
+    }).collect();
+
+    Json(SeasonalCalendarResponse {
+        product_type,
+        lang: lang_code.to_string(),
+        region,
+        products: result,
+    })
+}
+
+// ── 9. In-season-now ──────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct InSeasonItem {
+    pub slug:      String,
+    pub name:      String,
+    pub image_url: Option<String>,
+    pub status:    String,
+}
+
+#[derive(Serialize)]
+pub struct InSeasonNowResponse {
+    pub product_type: String,
+    pub month:        u8,
+    pub lang:         String,
+    pub region:       String,
+    pub items:        Vec<InSeasonItem>,
+}
+
+/// GET /public/tools/in-season-now?type=seafood&lang=ru
+pub async fn in_season_now(
+    State(pool): State<PgPool>,
+    Query(params): Query<SeasonalCalendarQuery>,
+) -> Json<InSeasonNowResponse> {
+    let lang         = parse_lang(&params.lang);
+    let product_type = params.r#type.clone().unwrap_or_else(|| "seafood".to_string());
+    let region       = params.region.clone().unwrap_or_else(|| "GLOBAL".to_string());
+    let lang_code    = match lang {
+        Language::Ru => "ru", Language::Pl => "pl",
+        Language::Uk => "uk", Language::En => "en",
+    };
+
+    // Current month (UTC)
+    let now   = time::OffsetDateTime::now_utc();
+    let month = now.month() as u8;
+
+    #[derive(sqlx::FromRow)]
+    struct InSeasonRow {
+        slug:      Option<String>,
+        name_en:   String,
+        name_ru:   String,
+        name_pl:   String,
+        name_uk:   String,
+        image_url: Option<String>,
+        status:    String,
+    }
+
+    let rows: Vec<InSeasonRow> = sqlx::query_as(
+        r#"
+        SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url,
+               cps.status
+        FROM catalog_ingredients ci
+        JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
+        WHERE ci.is_active = true
+          AND ci.product_type = $1
+          AND cps.region_code = $2
+          AND cps.month = $3
+          AND cps.status != 'off'
+        ORDER BY
+            CASE cps.status
+                WHEN 'peak'    THEN 1
+                WHEN 'good'    THEN 2
+                WHEN 'limited' THEN 3
+                ELSE 4
+            END,
+            ci.name_en
+        "#,
+    )
+    .bind(&product_type)
+    .bind(&region)
+    .bind(month as i16)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let items = rows.iter().map(|r| {
+        let name = match lang {
+            Language::Ru => r.name_ru.clone(),
+            Language::Pl => r.name_pl.clone(),
+            Language::Uk => r.name_uk.clone(),
+            Language::En => r.name_en.clone(),
+        };
+        InSeasonItem {
+            slug:      r.slug.clone().unwrap_or_default(),
+            name,
+            image_url: r.image_url.clone(),
+            status:    r.status.clone(),
+        }
+    }).collect();
+
+    Json(InSeasonNowResponse {
+        product_type,
+        month,
+        lang: lang_code.to_string(),
+        region,
+        items,
+    })
+}
+
+// ── 10. Product seasonality detail ────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ProductSeasonalityQuery {
+    pub slug:   String,
+    pub lang:   Option<String>,
+    pub region: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ProductSeasonalityEntry {
+    pub month:      u8,
+    pub month_name: String,
+    pub status:     String,   // peak | good | limited | off
+    pub available:  bool,
+    pub note:       Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ProductSeasonalityResponse {
+    pub slug:         String,
+    pub name:         String,
+    pub product_type: String,
+    pub image_url:    Option<String>,
+    pub region:       String,
+    pub lang:         String,
+    pub season:       Vec<ProductSeasonalityEntry>,
+}
+
+/// GET /public/tools/product-seasonality?slug=salmon&lang=ru
+pub async fn product_seasonality(
+    State(pool): State<PgPool>,
+    Query(params): Query<ProductSeasonalityQuery>,
+) -> Json<ProductSeasonalityResponse> {
+    let lang   = parse_lang(&params.lang);
+    let region = params.region.clone().unwrap_or_else(|| "GLOBAL".to_string());
+    let lang_code = match lang {
+        Language::Ru => "ru", Language::Pl => "pl",
+        Language::Uk => "uk", Language::En => "en",
+    };
+
+    #[derive(sqlx::FromRow)]
+    struct ProdRow {
+        id:           uuid::Uuid,
+        name_en:      String,
+        name_ru:      String,
+        name_pl:      String,
+        name_uk:      String,
+        image_url:    Option<String>,
+        product_type: Option<String>,
+    }
+
+    let prod: Option<ProdRow> = sqlx::query_as(
+        r#"SELECT id, name_en, name_ru, name_pl, name_uk, image_url, product_type
+           FROM catalog_ingredients
+           WHERE is_active = true AND slug = $1"#,
+    )
+    .bind(&params.slug)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    let (prod_id, name, product_type, image_url) = if let Some(ref p) = prod {
+        let n = match lang {
+            Language::Ru => p.name_ru.clone(),
+            Language::Pl => p.name_pl.clone(),
+            Language::Uk => p.name_uk.clone(),
+            Language::En => p.name_en.clone(),
+        };
+        (Some(p.id), n, p.product_type.clone().unwrap_or_else(|| "other".to_string()), p.image_url.clone())
+    } else {
+        (None, params.slug.clone(), "other".to_string(), None)
+    };
+
+    #[derive(sqlx::FromRow)]
+    struct SRow { month: i16, status: String, note: Option<String> }
+
+    let srows: Vec<SRow> = if let Some(pid) = prod_id {
+        sqlx::query_as(
+            r#"SELECT month, status, note
+               FROM catalog_product_seasonality
+               WHERE product_id = $1 AND region_code = $2
+               ORDER BY month"#,
+        )
+        .bind(pid)
+        .bind(&region)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    let season = (1u8..=12).map(|m| {
+        let row = srows.iter().find(|r| r.month == m as i16);
+        let status = row.map(|r| r.status.clone()).unwrap_or_else(|| "off".to_string());
+        let note   = row.and_then(|r| r.note.clone());
+        ProductSeasonalityEntry {
+            month:      m,
+            month_name: month_name(m, lang).to_string(),
+            available:  status != "off",
+            status,
+            note,
+        }
+    }).collect();
+
+    Json(ProductSeasonalityResponse {
+        slug:         params.slug,
+        name,
+        product_type,
+        image_url,
+        region,
+        lang:         lang_code.to_string(),
+        season,
     })
 }

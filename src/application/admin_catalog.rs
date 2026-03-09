@@ -95,6 +95,16 @@ pub struct UpdateProductRequest {
     // Fish availability calendar (12 bools: Jan..Dec)
     pub availability_months: Option<Vec<bool>>,
 
+    // Product type & availability model
+    pub product_type: Option<String>,
+    pub availability_model: Option<String>,
+
+    // Kitchen calculator fields
+    pub shelf_life_days: Option<i32>,
+    pub edible_yield_percent: Option<f64>,
+    pub typical_portion_g: Option<f64>,
+    pub substitution_group: Option<String>,
+
     /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default)]
@@ -136,6 +146,21 @@ pub struct ProductResponse {
 
     // Fish availability calendar (12 bools: Jan..Dec)
     pub availability_months: Option<Vec<bool>>,
+
+    // Product type & availability model
+    pub product_type: String,
+    pub availability_model: String,
+
+    // Kitchen calculator fields
+    pub shelf_life_days: Option<i32>,
+    pub edible_yield_percent: Option<rust_decimal::Decimal>,
+    pub typical_portion_g: Option<rust_decimal::Decimal>,
+    pub substitution_group: Option<String>,
+
+    // Extra nutrients per 100g
+    pub fiber_per_100g: Option<rust_decimal::Decimal>,
+    pub sugar_per_100g: Option<rust_decimal::Decimal>,
+    pub salt_per_100g: Option<rust_decimal::Decimal>,
 }
 
 /// Admin Category Requests
@@ -344,7 +369,11 @@ impl AdminCatalogService {
                 protein_per_100g, fat_per_100g, carbs_per_100g,
                 density_g_per_ml,
                 seasons::text[] as seasons, allergens::text[] as allergens,
-                availability_months
+                availability_months,
+                COALESCE(product_type, 'other') as product_type,
+                COALESCE(availability_model, 'all_year') as availability_model,
+                shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
+                fiber_per_100g, sugar_per_100g, salt_per_100g
             "#,
         )
         .bind(id)
@@ -375,7 +404,11 @@ impl AdminCatalogService {
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
                       seasons::text[] as seasons, allergens::text[] as allergens,
-                      availability_months
+                      availability_months,
+                      COALESCE(product_type, 'other') as product_type,
+                      COALESCE(availability_model, 'all_year') as availability_model,
+                      shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
+                      fiber_per_100g, sugar_per_100g, salt_per_100g
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true"#
         )
@@ -397,7 +430,11 @@ impl AdminCatalogService {
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
                       seasons::text[] as seasons, allergens::text[] as allergens,
-                      availability_months
+                      availability_months,
+                      COALESCE(product_type, 'other') as product_type,
+                      COALESCE(availability_model, 'all_year') as availability_model,
+                      shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
+                      fiber_per_100g, sugar_per_100g, salt_per_100g
                FROM catalog_ingredients
                WHERE is_active = true
                ORDER BY name_en ASC"#
@@ -425,7 +462,11 @@ impl AdminCatalogService {
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
                       seasons::text[] as seasons, allergens::text[] as allergens,
-                      availability_months
+                      availability_months,
+                      COALESCE(product_type, 'other') as product_type,
+                      COALESCE(availability_model, 'all_year') as availability_model,
+                      shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
+                      fiber_per_100g, sugar_per_100g, salt_per_100g
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true FOR UPDATE"#
         )
@@ -501,6 +542,16 @@ impl AdminCatalogService {
         let seasons_val: Option<Vec<String>> = req.seasons;
         let allergens_val: Option<Vec<String>> = req.allergens;
         let availability_months_val: Option<Vec<bool>> = req.availability_months;
+        let shelf_life = req.shelf_life_days.or(product.shelf_life_days);
+        let edible_yield: Option<rust_decimal::Decimal> = req.edible_yield_percent
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
+            .or(product.edible_yield_percent);
+        let typical_portion: Option<rust_decimal::Decimal> = req.typical_portion_g
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
+            .or(product.typical_portion_g);
+        let subst_group = req.substitution_group.or(product.substitution_group);
+        let prod_type = req.product_type.unwrap_or(product.product_type);
+        let avail_model = req.availability_model.unwrap_or(product.availability_model);
 
         let updated_product = sqlx::query_as::<_, ProductResponse>(
             r#"
@@ -515,8 +566,14 @@ impl AdminCatalogService {
                 density_g_per_ml = $17,
                 seasons = CASE WHEN $18::text[] IS NOT NULL THEN $18::text[]::season_type[] ELSE seasons END,
                 allergens = CASE WHEN $19::text[] IS NOT NULL THEN $19::text[]::allergen_type[] ELSE allergens END,
-                availability_months = COALESCE($20, availability_months)
-            WHERE id = $21
+                availability_months = COALESCE($20, availability_months),
+                product_type = $21,
+                availability_model = $22,
+                shelf_life_days = $23,
+                edible_yield_percent = $24,
+                typical_portion_g = $25,
+                substitution_group = $26
+            WHERE id = $27
             RETURNING id, slug, name_en, name_pl, name_uk, name_ru,
                       category_id, default_unit as unit, description, image_url,
                       description_en, description_pl, description_ru, description_uk,
@@ -524,7 +581,11 @@ impl AdminCatalogService {
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
                       seasons::text[] as seasons, allergens::text[] as allergens,
-                      availability_months
+                      availability_months,
+                      COALESCE(product_type, 'other') as product_type,
+                      COALESCE(availability_model, 'all_year') as availability_model,
+                      shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
+                      fiber_per_100g, sugar_per_100g, salt_per_100g
             "#
         )
         .bind(&name_en)
@@ -547,6 +608,12 @@ impl AdminCatalogService {
         .bind(&seasons_val)
         .bind(&allergens_val)
         .bind(&availability_months_val)
+        .bind(&prod_type)
+        .bind(&avail_model)
+        .bind(shelf_life)
+        .bind(edible_yield)
+        .bind(typical_portion)
+        .bind(&subst_group)
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
