@@ -692,7 +692,7 @@ fn build_seo(
     match lang {
         Language::En => SeoMeta {
             title: format!(
-                "{} {} {} in {} ({}) – Conversion Calculator",
+                "{} {} of {} in {} ({}) – Kitchen Converter",
                 value, from_title, name_title, to_full_en, to_short
             ),
             h1: format!(
@@ -707,11 +707,11 @@ fn build_seo(
         Language::Pl => SeoMeta {
             title: format!(
                 "{} {} {} w gramach – przelicznik kuchenny",
-                value, from_label, ingredient_name
+                value, from_label, name_sentence
             ),
             h1: format!(
                 "Ile {} ma {} {} {}?",
-                to_label_gen, value, from_loc, name_sentence
+                to_label_gen, value, from_label, name_sentence
             ),
             text: format!(
                 "{} {} {} to około {} {}.\n\nPrzeliczenie opiera się na średniej gęstości produktu {} g/ml.",
@@ -721,7 +721,7 @@ fn build_seo(
         Language::Ru => SeoMeta {
             title: format!(
                 "{} {} {} в граммах – кухонный конвертер",
-                value, from_label, ingredient_name
+                value, from_label, name_sentence
             ),
             h1: format!(
                 "Сколько {} в {} {} {}?",
@@ -735,7 +735,7 @@ fn build_seo(
         Language::Uk => SeoMeta {
             title: format!(
                 "{} {} {} у грамах – кухонний конвертер",
-                value, from_label, ingredient_name
+                value, from_label, name_sentence
             ),
             h1: format!(
                 "Скільки {} у {} {} {}?",
