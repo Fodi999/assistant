@@ -1,6 +1,6 @@
 use crate::domain::tools::unit_converter as uc;
 use crate::shared::Language;
-use axum::{extract::{Query, State}, response::Json};
+use axum::{extract::{Query, State}, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use time;
@@ -1831,5 +1831,451 @@ pub async fn products_by_month(
         lang:         lang_code.to_string(),
         region,
         items,
+    })
+}
+
+// ── 13. Product search ────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ProductSearchQuery {
+    pub q:    String,
+    pub lang: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct ProductSearchItem {
+    pub slug:         String,
+    pub name:         String,
+    pub name_en:      String,
+    pub product_type: Option<String>,
+    pub image_url:    Option<String>,
+    pub availability_model: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ProductSearchResponse {
+    pub query:   String,
+    pub results: Vec<ProductSearchItem>,
+}
+
+/// GET /public/tools/product-search?q=tom&lang=ru&limit=10
+///
+/// Full-text search across all languages (en/ru/pl/uk) + slug.
+/// Returns matching products with name, type, image.
+pub async fn product_search(
+    State(pool): State<PgPool>,
+    Query(params): Query<ProductSearchQuery>,
+) -> Json<ProductSearchResponse> {
+    let lang  = parse_lang(&params.lang);
+    let q     = params.q.to_lowercase();
+    let limit = params.limit.unwrap_or(10).min(50);
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        slug:               Option<String>,
+        name_en:            String,
+        name_ru:            String,
+        name_pl:            String,
+        name_uk:            String,
+        image_url:          Option<String>,
+        product_type:       Option<String>,
+        availability_model: Option<String>,
+    }
+
+    let rows: Vec<Row> = sqlx::query_as(
+        r#"
+        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url,
+               product_type, availability_model
+        FROM catalog_ingredients
+        WHERE is_active = true
+          AND (
+              LOWER(name_en) LIKE '%' || $1 || '%'
+           OR LOWER(name_ru) LIKE '%' || $1 || '%'
+           OR LOWER(name_pl) LIKE '%' || $1 || '%'
+           OR LOWER(name_uk) LIKE '%' || $1 || '%'
+           OR slug LIKE '%' || $1 || '%'
+          )
+        ORDER BY
+            CASE
+                WHEN LOWER(name_en) = $1 OR slug = $1 THEN 0
+                WHEN LOWER(name_en) LIKE $1 || '%'    THEN 1
+                ELSE 2
+            END,
+            name_en
+        LIMIT $2
+        "#,
+    )
+    .bind(&q)
+    .bind(limit)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let results = rows.iter().map(|r| {
+        let name = match lang {
+            Language::Ru => r.name_ru.clone(),
+            Language::Pl => r.name_pl.clone(),
+            Language::Uk => r.name_uk.clone(),
+            Language::En => r.name_en.clone(),
+        };
+        ProductSearchItem {
+            slug:               r.slug.clone().unwrap_or_default(),
+            name,
+            name_en:            r.name_en.clone(),
+            product_type:       r.product_type.clone(),
+            image_url:          r.image_url.clone(),
+            availability_model: r.availability_model.clone(),
+        }
+    }).collect();
+
+    Json(ProductSearchResponse { query: params.q, results })
+}
+
+// ── 14. Recipe nutrition calculator ──────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RecipeIngredientInput {
+    pub name:   String,
+    pub amount: f64,
+    pub unit:   Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RecipeNutritionQuery {
+    pub lang:     Option<String>,
+    pub portions: Option<f64>,
+}
+
+#[derive(Deserialize)]
+pub struct RecipeNutritionRequest {
+    pub ingredients: Vec<RecipeIngredientInput>,
+    pub lang:        Option<String>,
+    pub portions:    Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct RecipeIngredientNutrition {
+    pub name:         String,
+    pub localized_name: String,
+    pub slug:         Option<String>,
+    pub amount_g:     f64,
+    pub calories:     f64,
+    pub protein_g:    f64,
+    pub fat_g:        f64,
+    pub carbs_g:      f64,
+    pub found:        bool,
+}
+
+#[derive(Serialize)]
+pub struct RecipeTotals {
+    pub calories:   f64,
+    pub protein_g:  f64,
+    pub fat_g:      f64,
+    pub carbs_g:    f64,
+    pub weight_g:   f64,
+}
+
+#[derive(Serialize)]
+pub struct RecipeNutritionResponse {
+    pub ingredients:        Vec<RecipeIngredientNutrition>,
+    pub total:              RecipeTotals,
+    pub per_portion:        Option<RecipeTotals>,
+    pub portions:           Option<f64>,
+}
+
+/// POST /public/tools/recipe-nutrition
+///
+/// Body: { "ingredients": [{"name":"salmon","amount":200,"unit":"g"}, ...], "portions": 4 }
+/// Returns full nutrition breakdown per ingredient + totals + per-portion.
+pub async fn recipe_nutrition(
+    State(pool): State<PgPool>,
+    Json(body): Json<RecipeNutritionRequest>,
+) -> Json<RecipeNutritionResponse> {
+    let lang     = parse_lang(&body.lang);
+    let portions = body.portions;
+
+    // Load all catalog rows in one query
+    let names: Vec<String> = body.ingredients.iter()
+        .map(|i| i.name.to_lowercase())
+        .collect();
+
+    let db_rows: Vec<CatalogNutritionRow> = sqlx::query_as(
+        r#"SELECT name_en, name_ru, name_pl, name_uk, image_url, slug,
+                  calories_per_100g, protein_per_100g, fat_per_100g,
+                  carbs_per_100g, density_g_per_ml
+           FROM catalog_ingredients
+           WHERE is_active = true"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let find = |name: &str| -> Option<&CatalogNutritionRow> {
+        let n = name.to_lowercase();
+        db_rows.iter()
+            .find(|r| r.name_en.to_lowercase() == n || r.slug.as_deref() == Some(name))
+            .or_else(|| db_rows.iter().find(|r|
+                r.name_ru.to_lowercase() == n ||
+                r.name_pl.to_lowercase() == n ||
+                r.name_uk.to_lowercase() == n
+            ))
+            .or_else(|| db_rows.iter().find(|r| r.name_en.to_lowercase().contains(&n)))
+    };
+
+    let mut items: Vec<RecipeIngredientNutrition> = Vec::new();
+    let mut tot_cal = 0.0_f64;
+    let mut tot_pro = 0.0_f64;
+    let mut tot_fat = 0.0_f64;
+    let mut tot_car = 0.0_f64;
+    let mut tot_wgt = 0.0_f64;
+
+    for ing in &body.ingredients {
+        let unit    = ing.unit.as_deref().unwrap_or("g");
+        let db      = find(&ing.name);
+        let density = db.map(|r| r.density()).unwrap_or(1.0);
+
+        let amount_g = if unit == "g" {
+            ing.amount
+        } else if let Some(g) = uc::mass_to_grams(unit) {
+            ing.amount * g
+        } else if let Some(ml) = uc::volume_to_ml(unit) {
+            ing.amount * ml * density
+        } else {
+            ing.amount
+        };
+
+        let f = amount_g / 100.0;
+        let (cal, pro, fat, car) = db.map(|r| (r.cal(), r.prot(), r.fat(), r.carbs()))
+            .unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+        let r = |x: f64| uc::round_to(x, 1);
+
+        tot_cal += cal * f;
+        tot_pro += pro * f;
+        tot_fat += fat * f;
+        tot_car += car * f;
+        tot_wgt += amount_g;
+
+        items.push(RecipeIngredientNutrition {
+            name:           ing.name.clone(),
+            localized_name: db.map(|r| r.localized_name(lang).to_string())
+                              .unwrap_or_else(|| ing.name.clone()),
+            slug:           db.and_then(|r| r.slug.clone()),
+            amount_g:       uc::round_to(amount_g, 1),
+            calories:       r(cal * f),
+            protein_g:      r(pro * f),
+            fat_g:          r(fat * f),
+            carbs_g:        r(car * f),
+            found:          db.is_some(),
+        });
+    }
+
+    let total = RecipeTotals {
+        calories:  uc::round_to(tot_cal, 1),
+        protein_g: uc::round_to(tot_pro, 1),
+        fat_g:     uc::round_to(tot_fat, 1),
+        carbs_g:   uc::round_to(tot_car, 1),
+        weight_g:  uc::round_to(tot_wgt, 1),
+    };
+
+    let per_portion = portions.filter(|&p| p > 0.0).map(|p| RecipeTotals {
+        calories:  uc::round_to(tot_cal / p, 1),
+        protein_g: uc::round_to(tot_pro / p, 1),
+        fat_g:     uc::round_to(tot_fat / p, 1),
+        carbs_g:   uc::round_to(tot_car / p, 1),
+        weight_g:  uc::round_to(tot_wgt / p, 1),
+    });
+
+    Json(RecipeNutritionResponse { ingredients: items, total, per_portion, portions })
+}
+
+// ── 15. Recipe cost calculator ────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RecipeCostIngredient {
+    pub name:         String,
+    pub amount:       f64,
+    pub unit:         Option<String>,
+    pub price_per_kg: Option<f64>,   // manual price override
+}
+
+#[derive(Deserialize)]
+pub struct RecipeCostRequest {
+    pub ingredients:  Vec<RecipeCostIngredient>,
+    pub portions:     Option<f64>,
+    pub target_margin: Option<f64>,  // e.g. 70.0 = 70% margin
+    pub lang:         Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct RecipeCostItem {
+    pub name:        String,
+    pub localized_name: String,
+    pub amount_g:    f64,
+    pub price_per_kg: Option<f64>,
+    pub cost:        Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct RecipeCostResponse {
+    pub ingredients:         Vec<RecipeCostItem>,
+    pub total_cost:          Option<f64>,
+    pub cost_per_portion:    Option<f64>,
+    pub portions:            Option<f64>,
+    pub suggested_menu_price: Option<f64>,
+    pub food_cost_percent:   Option<f64>,
+    pub note:                String,
+}
+
+/// POST /public/tools/recipe-cost
+///
+/// Body: { "ingredients": [{"name":"salmon","amount":200,"unit":"g","price_per_kg":25.0}], "portions":4, "target_margin":70 }
+/// Returns cost per ingredient, total, per portion and suggested menu price.
+pub async fn recipe_cost(
+    State(pool): State<PgPool>,
+    Json(body): Json<RecipeCostRequest>,
+) -> Json<RecipeCostResponse> {
+    let lang     = parse_lang(&body.lang);
+    let portions = body.portions;
+    let target_margin = body.target_margin.unwrap_or(70.0); // default 70% margin
+
+    let db_rows: Vec<CatalogNutritionRow> = sqlx::query_as(
+        r#"SELECT name_en, name_ru, name_pl, name_uk, image_url, slug,
+                  calories_per_100g, protein_per_100g, fat_per_100g,
+                  carbs_per_100g, density_g_per_ml
+           FROM catalog_ingredients
+           WHERE is_active = true"#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let find = |name: &str| -> Option<&CatalogNutritionRow> {
+        let n = name.to_lowercase();
+        db_rows.iter()
+            .find(|r| r.name_en.to_lowercase() == n || r.slug.as_deref() == Some(name))
+            .or_else(|| db_rows.iter().find(|r|
+                r.name_ru.to_lowercase() == n ||
+                r.name_pl.to_lowercase() == n ||
+                r.name_uk.to_lowercase() == n
+            ))
+            .or_else(|| db_rows.iter().find(|r| r.name_en.to_lowercase().contains(&n)))
+    };
+
+    let mut items: Vec<RecipeCostItem> = Vec::new();
+    let mut total_cost_sum = 0.0_f64;
+    let mut all_have_price = true;
+
+    for ing in &body.ingredients {
+        let unit    = ing.unit.as_deref().unwrap_or("g");
+        let db      = find(&ing.name);
+        let density = db.map(|r| r.density()).unwrap_or(1.0);
+
+        let amount_g = if unit == "g" {
+            ing.amount
+        } else if let Some(g) = uc::mass_to_grams(unit) {
+            ing.amount * g
+        } else if let Some(ml) = uc::volume_to_ml(unit) {
+            ing.amount * ml * density
+        } else {
+            ing.amount
+        };
+
+        let cost = ing.price_per_kg.map(|ppkg| {
+            uc::round_to((amount_g / 1000.0) * ppkg, 4)
+        });
+
+        if cost.is_none() { all_have_price = false; }
+        if let Some(c) = cost { total_cost_sum += c; }
+
+        items.push(RecipeCostItem {
+            name:           ing.name.clone(),
+            localized_name: db.map(|r| r.localized_name(lang).to_string())
+                              .unwrap_or_else(|| ing.name.clone()),
+            amount_g:       uc::round_to(amount_g, 1),
+            price_per_kg:   ing.price_per_kg,
+            cost,
+        });
+    }
+
+    let total_cost = if all_have_price {
+        Some(uc::round_to(total_cost_sum, 2))
+    } else {
+        None
+    };
+
+    let cost_per_portion = total_cost.zip(portions)
+        .filter(|(_, p)| *p > 0.0)
+        .map(|(tc, p)| uc::round_to(tc / p, 2));
+
+    // suggested_menu_price = cost / (1 - margin%)
+    let suggested_menu_price = cost_per_portion.map(|cpp| {
+        let margin = target_margin.clamp(1.0, 99.0) / 100.0;
+        uc::round_to(cpp / (1.0 - margin), 2)
+    });
+
+    let food_cost_percent = cost_per_portion.zip(suggested_menu_price).map(|(cpp, smp)| {
+        if smp > 0.0 { uc::round_to((cpp / smp) * 100.0, 1) } else { 0.0 }
+    });
+
+    let note = if !all_have_price {
+        "Some ingredients are missing price_per_kg — provide prices for full cost calculation.".to_string()
+    } else {
+        format!("Cost calculated at {target_margin:.0}% target margin.")
+    };
+
+    Json(RecipeCostResponse {
+        ingredients: items,
+        total_cost,
+        cost_per_portion,
+        portions,
+        suggested_menu_price,
+        food_cost_percent,
+        note,
+    })
+}
+
+// ── 16. Region seasonality data ───────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct AddRegionSeasonalityRequest {
+    pub product_slug: String,
+    pub region_code:  String,
+    pub data: Vec<RegionMonthInput>,
+}
+
+#[derive(Deserialize)]
+pub struct RegionMonthInput {
+    pub month:  u8,
+    pub status: String,  // peak | good | limited | off
+    pub note:   Option<String>,
+}
+
+// Supported regions info endpoint
+#[derive(Serialize)]
+pub struct RegionInfo {
+    pub code:        &'static str,
+    pub name_en:     &'static str,
+    pub description: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct RegionsResponse {
+    pub regions: Vec<RegionInfo>,
+}
+
+/// GET /public/tools/regions
+///
+/// Returns list of supported region codes for seasonal calendar.
+pub async fn list_regions() -> Json<RegionsResponse> {
+    Json(RegionsResponse {
+        regions: vec![
+            RegionInfo { code: "GLOBAL",  name_en: "Global",         description: "Generic global average seasonality" },
+            RegionInfo { code: "PL",      name_en: "Poland",         description: "Central European seasonality (Poland)" },
+            RegionInfo { code: "EU",      name_en: "European Union", description: "Average Western/Central Europe" },
+            RegionInfo { code: "ES",      name_en: "Spain",          description: "Mediterranean / Southern Europe" },
+            RegionInfo { code: "UA",      name_en: "Ukraine",        description: "Eastern European seasonality" },
+        ],
     })
 }
