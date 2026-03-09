@@ -265,7 +265,8 @@ pub async fn ingredient_convert(
             (StatusCode::BAD_REQUEST, Json(json!({ "error": "Unsupported unit pair" })))
         })?;
 
-    let result = uc::display_round(raw);
+    // smart_round: 2 dp for ≥1, 3 dp for <1  (e.g. 125.39, 0.997)
+    let result = uc::smart_round(raw);
 
     // ── Localised name ────────────────────────────────────────────────────────
     let ingredient_name = match lang {
