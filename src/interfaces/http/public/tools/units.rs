@@ -1,7 +1,7 @@
 //! Unit conversion handlers: convert_units, list_units, ingredient_scale,
 //! ingredient_convert (density-aware cross-group converter).
 
-use super::shared::{label, parse_lang, sanitize_value, SmartUnit};
+use super::shared::{label, label_short, parse_lang, sanitize_value, SmartUnit};
 use crate::domain::tools::unit_converter as uc;
 use crate::shared::Language;
 use axum::extract::{Query, State};
@@ -208,22 +208,33 @@ pub struct Equivalents {
 }
 
 #[derive(Serialize)]
+pub struct SeoMeta {
+    pub title: String,
+    pub h1:    String,
+    pub text:  String,
+}
+
+#[derive(Serialize)]
 pub struct IngredientConvertResponse {
-    pub ingredient:          String,
-    pub ingredient_name:     String,
-    pub slug:                String,
-    pub image_url:           Option<String>,
-    pub value:               f64,
-    pub from:                String,
-    pub from_label:          String,
-    pub to:                  String,
-    pub to_label:            String,
-    pub result:              f64,
-    pub density_g_per_ml:    f64,
-    pub equivalents:         Option<Equivalents>,
+    pub ingredient:           String,
+    pub ingredient_name:      String,
+    pub slug:                 String,
+    pub image_url:            Option<String>,
+    pub value:                f64,
+    pub from:                 String,
+    pub from_label:           String,
+    pub to:                   String,
+    pub to_label:             String,
+    pub to_label_short:       &'static str,
+    pub result:               f64,
+    pub density_g_per_ml:     f64,
+    pub source_volume_ml:     Option<f64>,  // ml of source volume (e.g. 236 for 1 cup)
+    pub equivalents:          Option<Equivalents>,
     pub nutrition_for_result: Option<NutritionForResult>,
-    pub question:            String,
-    pub answer:              String,
+    pub related:              Vec<String>,
+    pub seo:                  SeoMeta,
+    pub question:             String,
+    pub answer:               String,
 }
 
 type ApiError = (StatusCode, Json<serde_json::Value>);
@@ -303,13 +314,64 @@ pub async fn ingredient_convert(
 
     let from_label = label(&params.from, lang);
     let to_label   = label(&params.to,   lang);
+    let to_short   = label_short(&params.to);
 
-    // ── Question / Answer — universal clean format ────────────────────────────
-    // "1 szklanka mąki pszennej = 125 g"  (no tricky declension)
-    let question = format!("{} {} {} = {} {}",
-        params.value, from_label, ingredient_name,
-        result, to_label);
-    let answer = question.clone();
+    // ── source_volume_ml: ml in source unit (if it's a volume) ───────────────
+    let source_volume_ml = uc::volume_to_ml(&params.from)
+        .map(|ml_per| params.value * ml_per);
+
+    // ── Question / Answer with natural grammar ────────────────────────────────
+    //
+    // EN: "1 cup of Wheat flour = 125 g"
+    //     "How many grams in 1 cup of Wheat flour?"
+    //     "1 cup of Wheat flour equals 125 g."
+    //
+    // PL: "1 szklanka Mąka pszenna = 125 g"
+    //     (Polish genitive of ingredient names requires dictionary → skip for now,
+    //      use neutral "of" pattern that is universally correct)
+    //
+    // RU: "1 стакан Пшеничная мука = 125 г"
+    // UK: "1 склянка Пшеничне борошно = 125 г"
+    //
+    // We use the short unit code for results (g, ml, cup, tbsp, tsp).
+
+    let question = match lang {
+        Language::En => format!(
+            "How many {} in {} {} of {}?",
+            to_short, params.value, from_label, ingredient_name
+        ),
+        Language::Pl => format!(
+            "Ile {} ma {} {} {}?",
+            to_short, params.value, from_label, ingredient_name
+        ),
+        Language::Ru => format!(
+            "Сколько {} в {} {} {}?",
+            to_short, params.value, from_label, ingredient_name
+        ),
+        Language::Uk => format!(
+            "Скільки {} у {} {} {}?",
+            to_short, params.value, from_label, ingredient_name
+        ),
+    };
+
+    let answer = match lang {
+        Language::En => format!(
+            "{} {} of {} equals {} {}.",
+            params.value, from_label, ingredient_name, result, to_short
+        ),
+        Language::Pl => format!(
+            "{} {} {} = {} {}.",
+            params.value, from_label, ingredient_name, result, to_short
+        ),
+        Language::Ru => format!(
+            "{} {} {} = {} {}.",
+            params.value, from_label, ingredient_name, result, to_short
+        ),
+        Language::Uk => format!(
+            "{} {} {} = {} {}.",
+            params.value, from_label, ingredient_name, result, to_short
+        ),
+    };
 
     // ── Equivalents: always in grams, expressed in tbsp/tsp ──────────────────
     // result_g = how many grams the converted result represents
@@ -348,6 +410,17 @@ pub async fn ingredient_convert(
         })
     });
 
+    // ── Related conversions ───────────────────────────────────────────────────
+    let slug_ref = row.slug.as_deref().unwrap_or(&params.ingredient);
+    let related = build_related(&params.from, &params.to, slug_ref);
+
+    // ── SEO metadata ──────────────────────────────────────────────────────────
+    let seo = build_seo(
+        &params.from, &params.to, &from_label, to_short,
+        &ingredient_name, params.value, result, density,
+        lang,
+    );
+
     Ok(Json(IngredientConvertResponse {
         ingredient:           params.ingredient,
         ingredient_name,
@@ -358,10 +431,14 @@ pub async fn ingredient_convert(
         from_label,
         to:                   params.to,
         to_label,
+        to_label_short:       to_short,
         result,
         density_g_per_ml:     density,
+        source_volume_ml,
         equivalents,
         nutrition_for_result,
+        related,
+        seo,
         question,
         answer,
     }))
@@ -444,17 +521,141 @@ fn parse_seo_from_to(s: &str) -> Option<(&'static str, &'static str)> {
 // ── Kitchen rounding ──────────────────────────────────────────────────────────
 
 /// Rounds converted values in a kitchen-friendly way:
-///   • If the value rounds to a multiple of 0.05 within 2 % → snap to that multiple
-///     (0.997 → 1.00, 1.498 → 1.50)
-///   • Otherwise: 2 dp for ≥ 1, 3 dp for < 1  (same as smart_round)
+///   • ≥ 10 g/ml → round to nearest integer   (182.15 → 182)
+///   • ≥ 1       → snap to nearest 0.05 if within 2%  (0.997 → 1.00, 1.498 → 1.50)
+///   • < 1       → 3 decimal places             (0.042)
 fn kitchen_round(v: f64) -> f64 {
-    let step = 0.05_f64;
-    let snapped = (v / step).round() * step;
-    let rel_err = (v - snapped).abs() / v.max(0.001);
-    if rel_err < 0.02 {
-        // round snapped itself to 2 dp to avoid 0.9999999... artefacts
-        uc::round_to(snapped, 2)
+    if v >= 10.0 {
+        v.round()
+    } else if v >= 1.0 {
+        let step = 0.05_f64;
+        let snapped = (v / step).round() * step;
+        let rel_err = (v - snapped).abs() / v.max(0.001);
+        if rel_err < 0.02 {
+            uc::round_to(snapped, 2)
+        } else {
+            uc::round_to(v, 2)
+        }
     } else {
-        uc::smart_round(v)
+        uc::round_to(v, 3)
+    }
+}
+
+// ── Related conversions ───────────────────────────────────────────────────────
+
+/// Returns 3 related SEO-path strings for cross-linking.
+/// Excludes the current from→to pair.
+fn build_related(from: &str, to: &str, slug: &str) -> Vec<String> {
+    // Common useful pairs, priority-ordered
+    let pairs: &[(&str, &str)] = &[
+        ("cup",  "g"),
+        ("tbsp", "g"),
+        ("tsp",  "g"),
+        ("g",    "cup"),
+        ("g",    "tbsp"),
+        ("g",    "tsp"),
+        ("oz",   "g"),
+        ("g",    "oz"),
+        ("ml",   "g"),
+        ("g",    "ml"),
+    ];
+
+    pairs.iter()
+        .filter(|(f, t)| !(*f == from && *t == to))
+        .take(3)
+        .map(|(f, t)| format!("{}-to-{}/{}", seo_unit_name(f), seo_unit_name(t), slug))
+        .collect()
+}
+
+/// Maps an internal unit code to its SEO-friendly URL segment.
+fn seo_unit_name(unit: &str) -> &'static str {
+    match unit {
+        "g"    => "grams",
+        "kg"   => "kilograms",
+        "oz"   => "ounces",
+        "lb"   => "pounds",
+        "mg"   => "milligrams",
+        "ml"   => "milliliters",
+        "l"    => "liters",
+        "cup"  => "cup",
+        "tbsp" => "tablespoon",
+        "tsp"  => "teaspoon",
+        "pint" => "pint",
+        "quart"  => "quart",
+        "gallon" => "gallon",
+        _      => "unit",
+    }
+}
+
+// ── SEO metadata ──────────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn build_seo(
+    from: &str, to: &str,
+    from_label: &str, to_short: &str,
+    ingredient_name: &str,
+    value: f64, result: f64, density: f64,
+    lang: Language,
+) -> SeoMeta {
+    let density_str = uc::round_to(density, 2);
+
+    match lang {
+        Language::En => SeoMeta {
+            title: format!(
+                "{} {} {} in {} ({}) – Kitchen Converter",
+                value, from_label, ingredient_name,
+                to_short.to_uppercase(), to_short
+            ),
+            h1: format!(
+                "How many {} in {} {} of {}?",
+                to_short, value, from_label, ingredient_name
+            ),
+            text: format!(
+                "{} {} of {} equals {} {}.\n\nThis conversion is based on an average density of {} g/ml.",
+                value, from_label, ingredient_name, result, to_short, density_str
+            ),
+        },
+        Language::Pl => SeoMeta {
+            title: format!(
+                "{} {} {} w {} – Przelicznik kuchenny",
+                value, from_label, ingredient_name, to_short
+            ),
+            h1: format!(
+                "Ile {} ma {} {} {}?",
+                to_short, value, from_label, ingredient_name
+            ),
+            text: format!(
+                "{} {} {} = {} {}.\n\nPrzeliczenie opiera się na gęstości {} g/ml.",
+                value, from_label, ingredient_name, result, to_short, density_str
+            ),
+        },
+        Language::Ru => SeoMeta {
+            title: format!(
+                "{} {} {} в {} – Кухонный конвертер",
+                value, from_label, ingredient_name, to_short
+            ),
+            h1: format!(
+                "Сколько {} в {} {} {}?",
+                to_short, value, from_label, ingredient_name
+            ),
+            text: format!(
+                "{} {} {} = {} {}.\n\nРасчёт основан на плотности {} г/мл.",
+                value, from_label, ingredient_name, result, to_short, density_str
+            ),
+        },
+        Language::Uk => SeoMeta {
+            title: format!(
+                "{} {} {} у {} – Кухонний конвертер",
+                value, from_label, ingredient_name, to_short
+            ),
+            h1: format!(
+                "Скільки {} у {} {} {}?",
+                to_short, value, from_label, ingredient_name
+            ),
+            text: format!(
+                "{} {} {} = {} {}.\n\nРозрахунок базується на густині {} г/мл.",
+                value, from_label, ingredient_name, result, to_short, density_str
+            ),
+        },
     }
 }

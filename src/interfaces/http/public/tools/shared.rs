@@ -180,6 +180,41 @@ pub fn label(unit: &str, lang: Language) -> String {
         .unwrap_or_else(|| unit.to_string())
 }
 
+/// Short/abbreviated label for use in converted results ("g", "ml", "cup", "tbsp", "tsp")
+/// Falls back to the unit code itself when no short form is defined.
+pub fn label_short(unit: &str) -> &'static str {
+    match unit {
+        "g"           => "g",
+        "mg"          => "mg",
+        "kg"          => "kg",
+        "oz"          => "oz",
+        "lb"          => "lb",
+        "ml"          => "ml",
+        "l"           => "l",
+        "fl_oz"       => "fl oz",
+        "tsp"         => "tsp",
+        "tbsp"        => "tbsp",
+        "cup"         => "cup",
+        "pint"        => "pint",
+        "quart"       => "qt",
+        "gallon"      => "gal",
+        "dash"        => "dash",
+        "pinch"       => "pinch",
+        "drop"        => "drop",
+        "stick_butter"=> "stick",
+        other         => {
+            // static leak is fine — unit codes are a closed set from URL params
+            // but to avoid unsafe we just return the code as-is (it's &str not &'static str)
+            // We convert to 'static by looking up in the full labels table
+            UNIT_LABELS
+                .iter()
+                .find(|(code, _)| *code == other)
+                .map(|(code, _)| *code)
+                .unwrap_or("?")
+        }
+    }
+}
+
 /// Genitive label — "how many ___ " (gramów, граммов, grамів, grams)
 pub fn label_gen(unit: &str, lang: Language) -> String {
     UNIT_LABELS
