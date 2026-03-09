@@ -105,6 +105,16 @@ pub struct UpdateProductRequest {
     pub typical_portion_g: Option<f64>,
     pub substitution_group: Option<String>,
 
+    // Extra nutrients per 100g
+    pub fiber_per_100g: Option<f64>,
+    pub sugar_per_100g: Option<f64>,
+    pub salt_per_100g: Option<f64>,
+
+    // Fish / seafood attributes
+    pub water_type: Option<String>,   // "sea" | "freshwater" | "both"
+    pub wild_farmed: Option<String>,  // "wild" | "farmed" | "both"
+    pub sushi_grade: Option<bool>,
+
     /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default)]
@@ -161,6 +171,11 @@ pub struct ProductResponse {
     pub fiber_per_100g: Option<rust_decimal::Decimal>,
     pub sugar_per_100g: Option<rust_decimal::Decimal>,
     pub salt_per_100g: Option<rust_decimal::Decimal>,
+
+    // Fish / seafood attributes
+    pub water_type: Option<String>,
+    pub wild_farmed: Option<String>,
+    pub sushi_grade: Option<bool>,
 }
 
 /// Admin Category Requests
@@ -373,7 +388,8 @@ impl AdminCatalogService {
                 COALESCE(product_type, 'other') as product_type,
                 COALESCE(availability_model, 'all_year') as availability_model,
                 shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
-                fiber_per_100g, sugar_per_100g, salt_per_100g
+                fiber_per_100g, sugar_per_100g, salt_per_100g,
+                      water_type, wild_farmed, sushi_grade
             "#,
         )
         .bind(id)
@@ -408,7 +424,8 @@ impl AdminCatalogService {
                       COALESCE(product_type, 'other') as product_type,
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
-                      fiber_per_100g, sugar_per_100g, salt_per_100g
+                      fiber_per_100g, sugar_per_100g, salt_per_100g,
+                      water_type, wild_farmed, sushi_grade
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true"#
         )
@@ -434,7 +451,8 @@ impl AdminCatalogService {
                       COALESCE(product_type, 'other') as product_type,
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
-                      fiber_per_100g, sugar_per_100g, salt_per_100g
+                      fiber_per_100g, sugar_per_100g, salt_per_100g,
+                      water_type, wild_farmed, sushi_grade
                FROM catalog_ingredients
                WHERE is_active = true
                ORDER BY name_en ASC"#
@@ -466,7 +484,8 @@ impl AdminCatalogService {
                       COALESCE(product_type, 'other') as product_type,
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
-                      fiber_per_100g, sugar_per_100g, salt_per_100g
+                      fiber_per_100g, sugar_per_100g, salt_per_100g,
+                      water_type, wild_farmed, sushi_grade
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true FOR UPDATE"#
         )
@@ -553,6 +572,17 @@ impl AdminCatalogService {
         let prod_type = req.product_type.unwrap_or(product.product_type);
         let avail_model = req.availability_model.unwrap_or(product.availability_model);
 
+        // New nutrition fields — use COALESCE in SQL so None keeps existing value
+        let fiber: Option<rust_decimal::Decimal> = req.fiber_per_100g
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default());
+        let sugar: Option<rust_decimal::Decimal> = req.sugar_per_100g
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default());
+        let salt: Option<rust_decimal::Decimal> = req.salt_per_100g
+            .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default());
+        let water_type_val = req.water_type;
+        let wild_farmed_val = req.wild_farmed;
+        let sushi_grade_val = req.sushi_grade;
+
         let updated_product = sqlx::query_as::<_, ProductResponse>(
             r#"
             UPDATE catalog_ingredients
@@ -572,7 +602,13 @@ impl AdminCatalogService {
                 shelf_life_days = $23,
                 edible_yield_percent = $24,
                 typical_portion_g = $25,
-                substitution_group = $26
+                substitution_group = $26,
+                fiber_per_100g = COALESCE($28, fiber_per_100g),
+                sugar_per_100g = COALESCE($29, sugar_per_100g),
+                salt_per_100g = COALESCE($30, salt_per_100g),
+                water_type = COALESCE($31, water_type),
+                wild_farmed = COALESCE($32, wild_farmed),
+                sushi_grade = COALESCE($33, sushi_grade)
             WHERE id = $27
             RETURNING id, slug, name_en, name_pl, name_uk, name_ru,
                       category_id, default_unit as unit, description, image_url,
@@ -585,7 +621,8 @@ impl AdminCatalogService {
                       COALESCE(product_type, 'other') as product_type,
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
-                      fiber_per_100g, sugar_per_100g, salt_per_100g
+                      fiber_per_100g, sugar_per_100g, salt_per_100g,
+                      water_type, wild_farmed, sushi_grade
             "#
         )
         .bind(&name_en)
@@ -614,7 +651,13 @@ impl AdminCatalogService {
         .bind(edible_yield)
         .bind(typical_portion)
         .bind(&subst_group)
-        .bind(id)
+        .bind(id)              // $27
+        .bind(fiber)           // $28
+        .bind(sugar)           // $29
+        .bind(salt)            // $30
+        .bind(&water_type_val) // $31
+        .bind(&wild_farmed_val)// $32
+        .bind(sushi_grade_val) // $33
         .fetch_one(&mut *tx)
         .await?;
 
