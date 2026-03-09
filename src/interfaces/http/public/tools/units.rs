@@ -322,18 +322,16 @@ pub async fn ingredient_convert(
 
     // ── Question / Answer with natural grammar ────────────────────────────────
     //
-    // EN: "1 cup of Wheat flour = 125 g"
-    //     "How many grams in 1 cup of Wheat flour?"
-    //     "1 cup of Wheat flour equals 125 g."
+    // EN:  "How many g in 1 cup of Wheat flour?"   (short unit code — SEO standard)
+    //      "1 cup of Wheat flour equals 125 g."
     //
-    // PL: "1 szklanka Mąka pszenna = 125 g"
-    //     (Polish genitive of ingredient names requires dictionary → skip for now,
-    //      use neutral "of" pattern that is universally correct)
+    // PL:  "Ile gramów ma 1 szklanka Mąka pszenna?"  (localised word)
+    //      "1 szklanka Mąka pszenna = 125 gramów."
     //
-    // RU: "1 стакан Пшеничная мука = 125 г"
-    // UK: "1 склянка Пшеничне борошно = 125 г"
+    // RU:  "Сколько граммов в 1 стакан Рис?"
+    //      "1 стакан Рис = 182 грамма."
     //
-    // We use the short unit code for results (g, ml, cup, tbsp, tsp).
+    // UK:  same pattern with Ukrainian localised labels
 
     let question = match lang {
         Language::En => format!(
@@ -342,15 +340,15 @@ pub async fn ingredient_convert(
         ),
         Language::Pl => format!(
             "Ile {} ma {} {} {}?",
-            to_short, params.value, from_label, ingredient_name
+            to_label, params.value, from_label, ingredient_name
         ),
         Language::Ru => format!(
             "Сколько {} в {} {} {}?",
-            to_short, params.value, from_label, ingredient_name
+            to_label, params.value, from_label, ingredient_name
         ),
         Language::Uk => format!(
             "Скільки {} у {} {} {}?",
-            to_short, params.value, from_label, ingredient_name
+            to_label, params.value, from_label, ingredient_name
         ),
     };
 
@@ -361,15 +359,15 @@ pub async fn ingredient_convert(
         ),
         Language::Pl => format!(
             "{} {} {} = {} {}.",
-            params.value, from_label, ingredient_name, result, to_short
+            params.value, from_label, ingredient_name, result, to_label
         ),
         Language::Ru => format!(
             "{} {} {} = {} {}.",
-            params.value, from_label, ingredient_name, result, to_short
+            params.value, from_label, ingredient_name, result, to_label
         ),
         Language::Uk => format!(
             "{} {} {} = {} {}.",
-            params.value, from_label, ingredient_name, result, to_short
+            params.value, from_label, ingredient_name, result, to_label
         ),
     };
 
@@ -416,7 +414,7 @@ pub async fn ingredient_convert(
 
     // ── SEO metadata ──────────────────────────────────────────────────────────
     let seo = build_seo(
-        &params.from, &params.to, &from_label, to_short,
+        &params.from, &params.to, &from_label, to_short, &to_label,
         &ingredient_name, params.value, result, density,
         lang,
     );
@@ -592,7 +590,7 @@ fn seo_unit_name(unit: &str) -> &'static str {
 #[allow(clippy::too_many_arguments)]
 fn build_seo(
     from: &str, to: &str,
-    from_label: &str, to_short: &str,
+    from_label: &str, to_short: &str, to_label: &str,
     ingredient_name: &str,
     value: f64, result: f64, density: f64,
     lang: Language,
@@ -622,11 +620,11 @@ fn build_seo(
             ),
             h1: format!(
                 "Ile {} ma {} {} {}?",
-                to_short, value, from_label, ingredient_name
+                to_label, value, from_label, ingredient_name
             ),
             text: format!(
                 "{} {} {} = {} {}.\n\nPrzeliczenie opiera się na gęstości {} g/ml.",
-                value, from_label, ingredient_name, result, to_short, density_str
+                value, from_label, ingredient_name, result, to_label, density_str
             ),
         },
         Language::Ru => SeoMeta {
@@ -636,11 +634,11 @@ fn build_seo(
             ),
             h1: format!(
                 "Сколько {} в {} {} {}?",
-                to_short, value, from_label, ingredient_name
+                to_label, value, from_label, ingredient_name
             ),
             text: format!(
                 "{} {} {} = {} {}.\n\nРасчёт основан на плотности {} г/мл.",
-                value, from_label, ingredient_name, result, to_short, density_str
+                value, from_label, ingredient_name, result, to_label, density_str
             ),
         },
         Language::Uk => SeoMeta {
@@ -650,11 +648,11 @@ fn build_seo(
             ),
             h1: format!(
                 "Скільки {} у {} {} {}?",
-                to_short, value, from_label, ingredient_name
+                to_label, value, from_label, ingredient_name
             ),
             text: format!(
                 "{} {} {} = {} {}.\n\nРозрахунок базується на густині {} г/мл.",
-                value, from_label, ingredient_name, result, to_short, density_str
+                value, from_label, ingredient_name, result, to_label, density_str
             ),
         },
     }
