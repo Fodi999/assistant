@@ -92,6 +92,9 @@ pub struct UpdateProductRequest {
     pub seasons: Option<Vec<String>>,
     pub allergens: Option<Vec<String>>,
 
+    // Fish availability calendar (12 bools: Jan..Dec)
+    pub availability_months: Option<Vec<bool>>,
+
     /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default)]
@@ -130,6 +133,9 @@ pub struct ProductResponse {
     // Seasons & allergens as text arrays
     pub seasons: Vec<String>,
     pub allergens: Vec<String>,
+
+    // Fish availability calendar (12 bools: Jan..Dec)
+    pub availability_months: Option<Vec<bool>>,
 }
 
 /// Admin Category Requests
@@ -337,7 +343,8 @@ impl AdminCatalogService {
                 calories_per_100g,
                 protein_per_100g, fat_per_100g, carbs_per_100g,
                 density_g_per_ml,
-                seasons::text[] as seasons, allergens::text[] as allergens
+                seasons::text[] as seasons, allergens::text[] as allergens,
+                availability_months
             "#,
         )
         .bind(id)
@@ -367,7 +374,8 @@ impl AdminCatalogService {
                       calories_per_100g,
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
-                      seasons::text[] as seasons, allergens::text[] as allergens
+                      seasons::text[] as seasons, allergens::text[] as allergens,
+                      availability_months
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true"#
         )
@@ -388,7 +396,8 @@ impl AdminCatalogService {
                       calories_per_100g,
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
-                      seasons::text[] as seasons, allergens::text[] as allergens
+                      seasons::text[] as seasons, allergens::text[] as allergens,
+                      availability_months
                FROM catalog_ingredients
                WHERE is_active = true
                ORDER BY name_en ASC"#
@@ -415,7 +424,8 @@ impl AdminCatalogService {
                       calories_per_100g,
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
-                      seasons::text[] as seasons, allergens::text[] as allergens
+                      seasons::text[] as seasons, allergens::text[] as allergens,
+                      availability_months
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true FOR UPDATE"#
         )
@@ -490,6 +500,7 @@ impl AdminCatalogService {
         // 4. Update record with ALL fields
         let seasons_val: Option<Vec<String>> = req.seasons;
         let allergens_val: Option<Vec<String>> = req.allergens;
+        let availability_months_val: Option<Vec<bool>> = req.availability_months;
 
         let updated_product = sqlx::query_as::<_, ProductResponse>(
             r#"
@@ -503,15 +514,17 @@ impl AdminCatalogService {
                 fat_per_100g = $15, carbs_per_100g = $16,
                 density_g_per_ml = $17,
                 seasons = CASE WHEN $18::text[] IS NOT NULL THEN $18::text[]::season_type[] ELSE seasons END,
-                allergens = CASE WHEN $19::text[] IS NOT NULL THEN $19::text[]::allergen_type[] ELSE allergens END
-            WHERE id = $20
+                allergens = CASE WHEN $19::text[] IS NOT NULL THEN $19::text[]::allergen_type[] ELSE allergens END,
+                availability_months = COALESCE($20, availability_months)
+            WHERE id = $21
             RETURNING id, slug, name_en, name_pl, name_uk, name_ru,
                       category_id, default_unit as unit, description, image_url,
                       description_en, description_pl, description_ru, description_uk,
                       calories_per_100g,
                       protein_per_100g, fat_per_100g, carbs_per_100g,
                       density_g_per_ml,
-                      seasons::text[] as seasons, allergens::text[] as allergens
+                      seasons::text[] as seasons, allergens::text[] as allergens,
+                      availability_months
             "#
         )
         .bind(&name_en)
@@ -533,6 +546,7 @@ impl AdminCatalogService {
         .bind(density)
         .bind(&seasons_val)
         .bind(&allergens_val)
+        .bind(&availability_months_val)
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;

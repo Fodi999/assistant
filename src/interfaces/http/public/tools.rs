@@ -181,27 +181,7 @@ pub async fn list_units(Query(params): Query<UnitsQuery>) -> Json<UnitsResponse>
     })
 }
 
-// ── 3. Fish season ───────────────────────────────────────────────────────────
-
-struct FishData {
-    name:   &'static str,
-    months: [bool; 12],
-}
-
-static FISH_TABLE: &[FishData] = &[
-    //                                   J      F      M      A      M      J      J      A      S      O      N      D
-    FishData { name: "salmon",   months: [true,  true,  true,  false, false, false, true,  true,  true,  true,  true,  true ] },
-    FishData { name: "tuna",     months: [false, false, false, true,  true,  true,  true,  true,  true,  false, false, false] },
-    FishData { name: "canned-tuna", months:[true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true ] },
-    FishData { name: "cod",      months: [true,  true,  true,  true,  false, false, false, false, false, true,  true,  true ] },
-    FishData { name: "herring",  months: [true,  true,  false, false, false, false, false, false, true,  true,  true,  true ] },
-    FishData { name: "trout",    months: [false, false, true,  true,  true,  false, false, false, true,  true,  true,  false] },
-    FishData { name: "mackerel", months: [false, false, false, false, true,  true,  true,  true,  true,  true,  false, false] },
-    FishData { name: "sea-bass", months: [false, false, true,  true,  true,  true,  true,  false, false, false, false, false] },
-    FishData { name: "pike",     months: [true,  true,  true,  true,  false, false, false, false, false, false, true,  true ] },
-    FishData { name: "carp",     months: [true,  false, false, false, false, false, false, false, false, true,  true,  true ] },
-    FishData { name: "shrimp",   months: [false, false, false, true,  true,  true,  true,  true,  true,  false, false, false] },
-];
+// ── 3. Fish season (fully DB-driven from catalog_ingredients) ─────────────────
 
 #[derive(Deserialize)]
 pub struct FishQuery {
@@ -239,19 +219,44 @@ fn month_name(m: u8, lang: Language) -> &'static str {
 }
 
 /// GET /public/tools/fish-season?fish=salmon&lang=ru
-pub async fn fish_season(Query(params): Query<FishQuery>) -> Json<FishSeasonResponse> {
+///
+/// Returns month-by-month availability for a single fish from catalog DB.
+pub async fn fish_season(
+    State(pool): State<PgPool>,
+    Query(params): Query<FishQuery>,
+) -> Json<FishSeasonResponse> {
     let lang = parse_lang(&params.lang);
     let fish_lower = params.fish.to_lowercase();
-    let availability = FISH_TABLE.iter().find(|f| f.name == fish_lower)
-        .map(|f| &f.months).unwrap_or(&[true; 12]);
+
+    // Fetch availability_months from catalog
+    let row: Option<(Vec<bool>,)> = sqlx::query_as(
+        r#"
+        SELECT availability_months
+        FROM catalog_ingredients
+        WHERE is_active = true AND slug = $1
+          AND availability_months IS NOT NULL
+        "#,
+    )
+    .bind(&fish_lower)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    let months = row
+        .map(|(m,)| m)
+        .unwrap_or_else(|| vec![true; 12]); // fallback: available all year
+
     let season = (1u8..=12).map(|m| FishSeasonEntry {
-        month: m, month_name: month_name(m, lang).to_string(),
-        available: availability[(m - 1) as usize],
+        month: m,
+        month_name: month_name(m, lang).to_string(),
+        available: months.get((m - 1) as usize).copied().unwrap_or(true),
     }).collect();
+
     Json(FishSeasonResponse { fish: params.fish, season })
 }
 
-// ── 3b. Fish season table (DB-enriched) ──────────────────────────────────────
+// ── 3b. Fish season table (fully DB-driven) ──────────────────────────────────
 
 #[derive(sqlx::FromRow)]
 struct FishCatalogRow {
@@ -261,6 +266,7 @@ struct FishCatalogRow {
     name_pl: String,
     name_uk: String,
     image_url: Option<String>,
+    availability_months: Option<Vec<bool>>,
 }
 
 #[derive(Serialize)]
@@ -281,10 +287,14 @@ pub struct FishSeasonTableResponse {
     pub lang: String,
 }
 
+/// Fish & Seafood category ID (stable UUID in our catalog)
+const FISH_CATEGORY_ID: &str = "503794cf-37e0-48c1-a6d8-b5c3f21e03a1";
+
 /// GET /public/tools/fish-season-table?lang=ru
 ///
-/// Returns all fish from FISH_TABLE enriched with catalog data
-/// (localized names, image_url) and month-by-month availability.
+/// Returns ALL active fish from catalog_ingredients (category = Fish & Seafood)
+/// with availability_months, localized names and images.
+/// Single source of truth = catalog DB.
 pub async fn fish_season_table(
     State(pool): State<PgPool>,
     Query(params): Query<FishQuery>,
@@ -297,60 +307,47 @@ pub async fn fish_season_table(
         Language::En => "en",
     };
 
-    // Fetch all catalog rows for slugs in FISH_TABLE in one query
-    let slugs: Vec<&str> = FISH_TABLE.iter().map(|f| f.name).collect();
+    // Fetch all fish from catalog by category
     let db_rows: Vec<FishCatalogRow> = sqlx::query_as(
         r#"
-        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url
+        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url, availability_months
         FROM catalog_ingredients
         WHERE is_active = true
-          AND slug = ANY($1)
+          AND category_id = $1::uuid
+          AND availability_months IS NOT NULL
+        ORDER BY name_en
         "#,
     )
-    .bind(&slugs[..])
+    .bind(FISH_CATEGORY_ID)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
 
-    let fish = FISH_TABLE.iter().map(|fd| {
-        let catalog = db_rows.iter().find(|r| r.slug.as_deref() == Some(fd.name));
-
-        let (name_en, name_ru, name_pl, name_uk, image_url) = if let Some(r) = catalog {
-            (r.name_en.clone(), r.name_ru.clone(), r.name_pl.clone(), r.name_uk.clone(), r.image_url.clone())
-        } else {
-            // Fallback: capitalise slug
-            let fallback = fd.name.replace('-', " ");
-            let fallback = {
-                let mut chars = fallback.chars();
-                match chars.next() {
-                    None => String::new(),
-                    Some(c) => c.to_uppercase().to_string() + chars.as_str(),
-                }
-            };
-            (fallback.clone(), fallback.clone(), fallback.clone(), fallback, None)
-        };
+    let fish = db_rows.iter().map(|r| {
+        let slug = r.slug.clone().unwrap_or_default();
+        let months = r.availability_months.clone().unwrap_or_else(|| vec![true; 12]);
 
         let name = match lang {
-            Language::Ru => name_ru.clone(),
-            Language::Pl => name_pl.clone(),
-            Language::Uk => name_uk.clone(),
-            Language::En => name_en.clone(),
+            Language::Ru => r.name_ru.clone(),
+            Language::Pl => r.name_pl.clone(),
+            Language::Uk => r.name_uk.clone(),
+            Language::En => r.name_en.clone(),
         };
 
         let season = (1u8..=12).map(|m| FishSeasonEntry {
             month: m,
             month_name: month_name(m, lang).to_string(),
-            available: fd.months[(m - 1) as usize],
+            available: months.get((m - 1) as usize).copied().unwrap_or(true),
         }).collect();
 
         FishSeasonTableItem {
-            slug: fd.name.to_string(),
+            slug,
             name,
-            name_en,
-            name_ru,
-            name_pl,
-            name_uk,
-            image_url,
+            name_en: r.name_en.clone(),
+            name_ru: r.name_ru.clone(),
+            name_pl: r.name_pl.clone(),
+            name_uk: r.name_uk.clone(),
+            image_url: r.image_url.clone(),
             season,
         }
     }).collect();
