@@ -272,15 +272,18 @@ struct FishCatalogRow {
 
 #[derive(Serialize)]
 pub struct FishSeasonTableItem {
-    pub slug:      String,
-    pub name:      String,
-    pub name_en:   String,
-    pub name_ru:   String,
-    pub name_pl:   String,
-    pub name_uk:   String,
-    pub image_url: Option<String>,
-    pub season:    Vec<FishSeasonEntry>,
-    pub status:    String,  // "peak" | "good" | "off" for current month
+    pub slug:        String,
+    pub name:        String,
+    pub name_en:     String,
+    pub name_ru:     String,
+    pub name_pl:     String,
+    pub name_uk:     String,
+    pub image_url:   Option<String>,
+    pub season:      Vec<FishSeasonEntry>,
+    pub status:      String,              // "peak" | "good" | "limited" | "off" for current month
+    pub water_type:  Option<String>,      // "sea" | "freshwater" | "both"
+    pub wild_farmed: Option<String>,      // "wild" | "farmed" | "both"
+    pub sushi_grade: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -362,19 +365,23 @@ pub async fn fish_season_table(
     // ── Seasonal products — from catalog_product_seasonality ─────────────────
     #[derive(sqlx::FromRow)]
     struct SeasonRow {
-        slug:      Option<String>,
-        name_en:   String,
-        name_ru:   String,
-        name_pl:   String,
-        name_uk:   String,
-        image_url: Option<String>,
+        slug:        Option<String>,
+        name_en:     String,
+        name_ru:     String,
+        name_pl:     String,
+        name_uk:     String,
+        image_url:   Option<String>,
+        water_type:  Option<String>,
+        wild_farmed: Option<String>,
+        sushi_grade: Option<bool>,
     }
 
     #[derive(sqlx::FromRow)]
     struct MonthRow { product_id: uuid::Uuid, month: i16, status: String }
 
     let season_rows: Vec<SeasonRow> = sqlx::query_as(
-        r#"SELECT DISTINCT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url
+        r#"SELECT DISTINCT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url,
+                  ci.water_type, ci.wild_farmed, ci.sushi_grade
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
            WHERE ci.is_active = true
@@ -447,13 +454,16 @@ pub async fn fish_season_table(
 
         FishSeasonTableItem {
             slug, name,
-            name_en:   r.name_en.clone(),
-            name_ru:   r.name_ru.clone(),
-            name_pl:   r.name_pl.clone(),
-            name_uk:   r.name_uk.clone(),
-            image_url: r.image_url.clone(),
+            name_en:     r.name_en.clone(),
+            name_ru:     r.name_ru.clone(),
+            name_pl:     r.name_pl.clone(),
+            name_uk:     r.name_uk.clone(),
+            image_url:   r.image_url.clone(),
             season,
-            status: cur_status,
+            status:      cur_status,
+            water_type:  r.water_type.clone(),
+            wild_farmed: r.wild_farmed.clone(),
+            sushi_grade: r.sushi_grade,
         }
     }).collect();
 
@@ -1707,18 +1717,29 @@ pub async fn product_seasonality(
 
 #[derive(Deserialize)]
 pub struct BestInSeasonQuery {
-    pub r#type: Option<String>,
-    pub month:  Option<u8>,
-    pub lang:   Option<String>,
-    pub region: Option<String>,
+    pub r#type:      Option<String>,
+    pub month:       Option<u8>,
+    pub lang:        Option<String>,
+    pub region:      Option<String>,
+    /// When false (default) returns peak + good. When true — only peak.
+    pub peak_only:   Option<bool>,
+    /// Filter by water type: "sea" | "freshwater" | "both"
+    pub water_type:  Option<String>,
+    /// Filter by wild/farmed: "wild" | "farmed" | "both"
+    pub wild_farmed: Option<String>,
+    /// When true — only sushi-grade fish
+    pub sushi:       Option<bool>,
 }
 
 #[derive(Serialize)]
 pub struct BestInSeasonItem {
-    pub slug:      String,
-    pub name:      String,
-    pub image_url: Option<String>,
-    pub status:    String,
+    pub slug:        String,
+    pub name:        String,
+    pub image_url:   Option<String>,
+    pub status:      String,
+    pub water_type:  Option<String>,
+    pub wild_farmed: Option<String>,
+    pub sushi_grade: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -1730,10 +1751,10 @@ pub struct BestInSeasonResponse {
     pub items:        Vec<BestInSeasonItem>,
 }
 
-/// GET /public/tools/best-in-season?type=seafood&month=8&lang=ru
+/// GET /public/tools/best-in-season?type=seafood&month=8&lang=ru&peak_only=true&water_type=sea&sushi=true
 ///
-/// Returns only peak-season products for a given type and month.
-/// Ideal for SEO pages: "Best fish in August", "Best vegetables in July"
+/// Returns peak (and optionally good) products for given type/month.
+/// Supports: peak_only, water_type, wild_farmed, sushi filters.
 pub async fn best_in_season(
     State(pool): State<PgPool>,
     Query(params): Query<BestInSeasonQuery>,
@@ -1741,47 +1762,64 @@ pub async fn best_in_season(
     let lang         = parse_lang(&params.lang);
     let product_type = params.r#type.clone().unwrap_or_else(|| "seafood".to_string());
     let region       = params.region.clone().unwrap_or_else(|| "PL".to_string());
+    let peak_only    = params.peak_only.unwrap_or(false);
     let lang_code    = match lang {
         Language::Ru => "ru", Language::Pl => "pl",
         Language::Uk => "uk", Language::En => "en",
     };
 
-    // Use provided month or current UTC month
     let month: u8 = params.month.unwrap_or_else(|| {
         time::OffsetDateTime::now_utc().month() as u8
     });
 
     #[derive(sqlx::FromRow)]
     struct Row {
-        slug:      Option<String>,
-        name_en:   String,
-        name_ru:   String,
-        name_pl:   String,
-        name_uk:   String,
-        image_url: Option<String>,
-        status:    String,
+        slug:        Option<String>,
+        name_en:     String,
+        name_ru:     String,
+        name_pl:     String,
+        name_uk:     String,
+        image_url:   Option<String>,
+        status:      String,
+        water_type:  Option<String>,
+        wild_farmed: Option<String>,
+        sushi_grade: Option<bool>,
     }
 
-    let rows: Vec<Row> = sqlx::query_as(
+    // Build dynamic status filter
+    let status_filter = if peak_only { "cps.status = 'peak'" } else { "cps.status IN ('peak','good')" };
+
+    let sql = format!(
         r#"
         SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
-               ci.image_url, cps.status
+               ci.image_url, cps.status,
+               ci.water_type, ci.wild_farmed, ci.sushi_grade
         FROM catalog_ingredients ci
         JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
         WHERE ci.is_active = true
           AND ci.product_type = $1
           AND cps.region_code = $2
           AND cps.month       = $3
-          AND cps.status      = 'peak'
-        ORDER BY ci.name_en
-        "#,
-    )
-    .bind(&product_type)
-    .bind(&region)
-    .bind(month as i16)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+          AND {status_filter}
+          AND ($4::text IS NULL OR ci.water_type = $4)
+          AND ($5::text IS NULL OR ci.wild_farmed = $5)
+          AND ($6::boolean IS NULL OR ci.sushi_grade = $6)
+        ORDER BY
+            CASE cps.status WHEN 'peak' THEN 1 WHEN 'good' THEN 2 ELSE 3 END,
+            ci.name_en
+        "#
+    );
+
+    let rows: Vec<Row> = sqlx::query_as(&sql)
+        .bind(&product_type)
+        .bind(&region)
+        .bind(month as i16)
+        .bind(params.water_type.as_deref())
+        .bind(params.wild_farmed.as_deref())
+        .bind(params.sushi)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
 
     let items = rows.iter().map(|r| {
         let name = match lang {
@@ -1791,10 +1829,13 @@ pub async fn best_in_season(
             Language::En => r.name_en.clone(),
         };
         BestInSeasonItem {
-            slug:      r.slug.clone().unwrap_or_default(),
+            slug:        r.slug.clone().unwrap_or_default(),
             name,
-            image_url: r.image_url.clone(),
-            status:    r.status.clone(),
+            image_url:   r.image_url.clone(),
+            status:      r.status.clone(),
+            water_type:  r.water_type.clone(),
+            wild_farmed: r.wild_farmed.clone(),
+            sushi_grade: r.sushi_grade,
         }
     }).collect();
 
@@ -2350,8 +2391,166 @@ pub async fn recipe_cost(
     })
 }
 
-// ── 16. Region seasonality data ───────────────────────────────────────────────
+// ── 16. Best right now ────────────────────────────────────────────────────────
 
+#[derive(Deserialize)]
+pub struct BestRightNowQuery {
+    pub r#type:      Option<String>,   // seafood | vegetable | fruit | …
+    pub lang:        Option<String>,
+    pub region:      Option<String>,
+    pub water_type:  Option<String>,   // sea | freshwater | both
+    pub wild_farmed: Option<String>,   // wild | farmed | both
+    pub sushi:       Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct BestRightNowResponse {
+    pub headline:     String,               // "🔥 Лучшая рыба в мае"
+    pub month:        u8,
+    pub month_name:   String,
+    pub product_type: String,
+    pub region:       String,
+    pub lang:         String,
+    pub peak:         Vec<BestInSeasonItem>,  // status = peak
+    pub also_good:    Vec<BestInSeasonItem>,  // status = good
+}
+
+/// GET /public/tools/best-right-now?type=seafood&lang=ru&region=PL
+///
+/// SEO powerhouse: returns current month's peak + also-good products.
+/// Includes localized headline. Supports water_type / wild_farmed / sushi filters.
+pub async fn best_right_now(
+    State(pool): State<PgPool>,
+    Query(params): Query<BestRightNowQuery>,
+) -> Json<BestRightNowResponse> {
+    let lang         = parse_lang(&params.lang);
+    let product_type = params.r#type.clone().unwrap_or_else(|| "seafood".to_string());
+    let region       = params.region.clone().unwrap_or_else(|| "PL".to_string());
+    let lang_code    = match lang {
+        Language::Ru => "ru", Language::Pl => "pl",
+        Language::Uk => "uk", Language::En => "en",
+    };
+
+    let now   = time::OffsetDateTime::now_utc();
+    let month = now.month() as u8;
+    let mn    = month_name(month, lang);
+
+    let type_label = match lang {
+        Language::Ru => match product_type.as_str() {
+            "seafood"   => "рыба и морепродукты",
+            "vegetable" => "овощи",
+            "fruit"     => "фрукты",
+            "meat"      => "мясо",
+            _           => product_type.as_str(),
+        },
+        Language::Pl => match product_type.as_str() {
+            "seafood"   => "ryby i owoce morza",
+            "vegetable" => "warzywa",
+            "fruit"     => "owoce",
+            "meat"      => "mięso",
+            _           => product_type.as_str(),
+        },
+        Language::Uk => match product_type.as_str() {
+            "seafood"   => "риба та морепродукти",
+            "vegetable" => "овочі",
+            "fruit"     => "фрукти",
+            "meat"      => "мʼясо",
+            _           => product_type.as_str(),
+        },
+        Language::En => match product_type.as_str() {
+            "seafood"   => "fish & seafood",
+            "vegetable" => "vegetables",
+            "fruit"     => "fruits",
+            "meat"      => "meat",
+            _           => product_type.as_str(),
+        },
+    };
+
+    let headline = match lang {
+        Language::Ru => format!("🔥 Лучшие {} в {}", type_label, mn),
+        Language::Pl => format!("🔥 Najlepsze {} w {}", type_label, mn),
+        Language::Uk => format!("🔥 Найкращі {} у {}", type_label, mn),
+        Language::En => format!("🔥 Best {} in {}", type_label, mn),
+    };
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        slug:        Option<String>,
+        name_en:     String,
+        name_ru:     String,
+        name_pl:     String,
+        name_uk:     String,
+        image_url:   Option<String>,
+        status:      String,
+        water_type:  Option<String>,
+        wild_farmed: Option<String>,
+        sushi_grade: Option<bool>,
+    }
+
+    let rows: Vec<Row> = sqlx::query_as(
+        r#"
+        SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+               ci.image_url, cps.status,
+               ci.water_type, ci.wild_farmed, ci.sushi_grade
+        FROM catalog_ingredients ci
+        JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
+        WHERE ci.is_active = true
+          AND ci.product_type = $1
+          AND cps.region_code = $2
+          AND cps.month       = $3
+          AND cps.status      IN ('peak','good')
+          AND ($4::text IS NULL OR ci.water_type = $4)
+          AND ($5::text IS NULL OR ci.wild_farmed = $5)
+          AND ($6::boolean IS NULL OR ci.sushi_grade = $6)
+        ORDER BY
+            CASE cps.status WHEN 'peak' THEN 1 ELSE 2 END,
+            ci.name_en
+        "#,
+    )
+    .bind(&product_type)
+    .bind(&region)
+    .bind(month as i16)
+    .bind(params.water_type.as_deref())
+    .bind(params.wild_farmed.as_deref())
+    .bind(params.sushi)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let map_row = |r: &Row| {
+        let name = match lang {
+            Language::Ru => r.name_ru.clone(),
+            Language::Pl => r.name_pl.clone(),
+            Language::Uk => r.name_uk.clone(),
+            Language::En => r.name_en.clone(),
+        };
+        BestInSeasonItem {
+            slug:        r.slug.clone().unwrap_or_default(),
+            name,
+            image_url:   r.image_url.clone(),
+            status:      r.status.clone(),
+            water_type:  r.water_type.clone(),
+            wild_farmed: r.wild_farmed.clone(),
+            sushi_grade: r.sushi_grade,
+        }
+    };
+
+    let peak: Vec<BestInSeasonItem>      = rows.iter().filter(|r| r.status == "peak").map(map_row).collect();
+    let also_good: Vec<BestInSeasonItem> = rows.iter().filter(|r| r.status == "good").map(map_row).collect();
+
+    Json(BestRightNowResponse {
+        headline,
+        month,
+        month_name: mn.to_string(),
+        product_type,
+        region,
+        lang: lang_code.to_string(),
+        peak,
+        also_good,
+    })
+}
+
+// ── 17. Region seasonality data ───────────────────────────────────────────────
 #[derive(Deserialize)]
 pub struct AddRegionSeasonalityRequest {
     pub product_slug: String,
