@@ -1,7 +1,7 @@
 //! Unit conversion handlers: convert_units, list_units, ingredient_scale,
 //! ingredient_convert (density-aware cross-group converter).
 
-use super::shared::{label, label_gen, label_short, parse_lang, sanitize_value, SmartUnit};
+use super::shared::{label, label_gen, label_loc, label_short, parse_lang, sanitize_value, SmartUnit};
 use crate::domain::tools::unit_converter as uc;
 use crate::shared::Language;
 use axum::extract::{Query, State};
@@ -322,10 +322,11 @@ pub async fn ingredient_convert(
         Language::En => &row.name_en,
     }.clone();
 
-    let from_label = label(&params.from, lang);
-    let to_label   = label(&params.to,   lang);
+    let from_label   = label(&params.from, lang);
+    let from_loc     = label_loc(&params.from, lang);  // locative: "cup", "szklance", "стакане"
+    let to_label     = label(&params.to,   lang);
     let to_label_gen = label_gen(&params.to, lang);  // genitive: "grams", "gramów", "граммов", "грамів"
-    let to_short   = label_short(&params.to);
+    let to_short     = label_short(&params.to);
 
     // ── source_volume_ml: ml in source unit (if it's a volume) ───────────────
     let source_volume_ml = uc::volume_to_ml(&params.from)
@@ -337,33 +338,34 @@ pub async fn ingredient_convert(
 
     // ── Question / Answer with natural grammar ────────────────────────────────
     //
-    // EN:  "How many grams in 1 cup of wheat flour?"    (full word, lowercase)
+    // EN:  "How many grams are in 1 cup of wheat flour?"
     //      "1 cup of wheat flour equals 125 g."
     //
-    // PL:  "Ile gramów ma 1 szklanka mąka pszenna?"     (genitive unit, lowercase)
-    //      "1 szklanka mąka pszenna = 125 gramów."
+    // PL:  "Ile gramów ma 1 szklanka mąki pszennej?"  → unit_loc in question
+    //      "1 szklanka mąki pszennej to 125 g."
     //
-    // RU:  "Сколько граммов в 1 стакан риса?"           (genitive, lowercase)
-    //      "1 стакан риса = 182 грамма."
+    // RU:  "Сколько граммов в 1 стакане риса?"        → unit_loc (стакане)
+    //      "1 стакан риса = 182 г."
     //
-    // UK:  same pattern with Ukrainian localised genitive labels
+    // UK:  "Скільки грамів у 1 склянці рису?"         → unit_loc (склянці)
+    //      "1 склянка рису = 182 г."
 
     let question = match lang {
         Language::En => format!(
-            "How many {} in {} {} of {}?",
+            "How many {} are in {} {} of {}?",
             to_label_gen, params.value, from_label, name_sentence
         ),
         Language::Pl => format!(
             "Ile {} ma {} {} {}?",
-            to_label_gen, params.value, from_label, name_sentence
+            to_label_gen, params.value, from_loc, name_sentence
         ),
         Language::Ru => format!(
             "Сколько {} в {} {} {}?",
-            to_label_gen, params.value, from_label, name_sentence
+            to_label_gen, params.value, from_loc, name_sentence
         ),
         Language::Uk => format!(
             "Скільки {} у {} {} {}?",
-            to_label_gen, params.value, from_label, name_sentence
+            to_label_gen, params.value, from_loc, name_sentence
         ),
     };
 
@@ -373,16 +375,16 @@ pub async fn ingredient_convert(
             params.value, from_label, name_sentence, result, to_short
         ),
         Language::Pl => format!(
-            "{} {} {} = {} {}.",
-            params.value, from_label, name_sentence, result, to_label_gen
+            "{} {} {} to {} g.",
+            params.value, from_label, name_sentence, result
         ),
         Language::Ru => format!(
-            "{} {} {} = {} {}.",
-            params.value, from_label, name_sentence, result, to_label_gen
+            "{} {} {} = {} г.",
+            params.value, from_label, name_sentence, result
         ),
         Language::Uk => format!(
-            "{} {} {} = {} {}.",
-            params.value, from_label, name_sentence, result, to_label_gen
+            "{} {} {} = {} г.",
+            params.value, from_label, name_sentence, result
         ),
     };
 
@@ -429,7 +431,7 @@ pub async fn ingredient_convert(
 
     // ── SEO metadata ──────────────────────────────────────────────────────────
     let seo = build_seo(
-        &from_label, to_short, &to_label_gen,
+        &from_label, &from_loc, to_short, &to_label_gen,
         &ingredient_name, &name_sentence, params.value, result, density,
         lang,
     );
@@ -635,7 +637,10 @@ fn seo_unit_full(unit: &str) -> &'static str {
 
 #[allow(clippy::too_many_arguments)]
 fn build_seo(
-    from_label: &str, to_short: &str, to_label_gen: &str,
+    from_label: &str,
+    from_loc: &str,      // locative: "cup", "szklance", "стакане", "склянці"
+    to_short: &str,
+    to_label_gen: &str,  // genitive: "grams", "gramów", "граммов", "грамів"
     ingredient_name: &str,   // Title Case display name, e.g. "Wheat flour"
     name_sentence: &str,     // lowercase for sentences, e.g. "wheat flour"
     value: f64, result: f64, density: f64,
@@ -653,74 +658,72 @@ fn build_seo(
     // Full word for `to` unit in EN title, e.g. "g" → "Grams"
     let to_full_en = seo_unit_full(to_short);
     // Title-case ingredient for title
-    let name_title = {
-        ingredient_name.split_whitespace()
-            .map(|w| {
-                let mut c = w.chars();
-                match c.next() {
-                    None => String::new(),
-                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
+    let name_title = ingredient_name
+        .split_whitespace()
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
 
     match lang {
         Language::En => SeoMeta {
             title: format!(
                 "{} {} {} in {} ({}) – Conversion Calculator",
-                value, from_title, name_title,
-                to_full_en, to_short
+                value, from_title, name_title, to_full_en, to_short
             ),
             h1: format!(
-                "How many {} in {} {} of {}?",
+                "How many {} are in {} {} of {}?",
                 to_label_gen, value, from_label, name_sentence
             ),
             text: format!(
-                "{} {} of {} equals {} {}.\n\nThis conversion is based on an average density of {} g/ml.",
+                "{} {} of {} equals {} {}.\n\nThis conversion is based on the average density of {} g/ml.",
                 value, from_label, name_sentence, result, to_short, density_str
             ),
         },
         Language::Pl => SeoMeta {
             title: format!(
-                "{} {} {} w {} – Przelicznik kuchenny",
-                value, from_label, ingredient_name, to_short
+                "{} {} {} w gramach – przelicznik kuchenny",
+                value, from_label, ingredient_name
             ),
             h1: format!(
                 "Ile {} ma {} {} {}?",
-                to_label_gen, value, from_label, name_sentence
+                to_label_gen, value, from_loc, name_sentence
             ),
             text: format!(
-                "{} {} {} = {} {}.\n\nPrzeliczenie opiera się na gęstości {} g/ml.",
+                "{} {} {} to około {} {}.\n\nPrzeliczenie opiera się na średniej gęstości produktu {} g/ml.",
                 value, from_label, name_sentence, result, to_label_gen, density_str
             ),
         },
         Language::Ru => SeoMeta {
             title: format!(
-                "{} {} {} в {} – Кухонный конвертер",
-                value, from_label, ingredient_name, to_short
+                "{} {} {} в граммах – кухонный конвертер",
+                value, from_label, ingredient_name
             ),
             h1: format!(
                 "Сколько {} в {} {} {}?",
-                to_label_gen, value, from_label, name_sentence
+                to_label_gen, value, from_loc, name_sentence
             ),
             text: format!(
-                "{} {} {} = {} {}.\n\nРасчёт основан на плотности {} г/мл.",
+                "{} {} {} составляет примерно {} {}.\n\nРасчёт основан на средней плотности продукта {} г/мл.",
                 value, from_label, name_sentence, result, to_label_gen, density_str
             ),
         },
         Language::Uk => SeoMeta {
             title: format!(
-                "{} {} {} у {} – Кухонний конвертер",
-                value, from_label, ingredient_name, to_short
+                "{} {} {} у грамах – кухонний конвертер",
+                value, from_label, ingredient_name
             ),
             h1: format!(
                 "Скільки {} у {} {} {}?",
-                to_label_gen, value, from_label, name_sentence
+                to_label_gen, value, from_loc, name_sentence
             ),
             text: format!(
-                "{} {} {} = {} {}.\n\nРозрахунок базується на густині {} г/мл.",
+                "{} {} {} становить приблизно {} {}.\n\nРозрахунок базується на середній густині продукту {} г/мл.",
                 value, from_label, name_sentence, result, to_label_gen, density_str
             ),
         },
