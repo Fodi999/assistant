@@ -494,19 +494,38 @@ struct CatalogNutritionRow {
     name_uk: String,
     image_url: Option<String>,
     slug: Option<String>,
+    product_type: Option<String>,
     calories_per_100g: Option<i32>,
-    protein_per_100g: Option<rust_decimal::Decimal>,
-    fat_per_100g:     Option<rust_decimal::Decimal>,
-    carbs_per_100g:   Option<rust_decimal::Decimal>,
-    density_g_per_ml: Option<rust_decimal::Decimal>,
+    protein_per_100g:  Option<rust_decimal::Decimal>,
+    fat_per_100g:      Option<rust_decimal::Decimal>,
+    carbs_per_100g:    Option<rust_decimal::Decimal>,
+    fiber_per_100g:    Option<rust_decimal::Decimal>,
+    sugar_per_100g:    Option<rust_decimal::Decimal>,
+    salt_per_100g:     Option<rust_decimal::Decimal>,
+    density_g_per_ml:  Option<rust_decimal::Decimal>,
+    typical_portion_g: Option<rust_decimal::Decimal>,
+    water_type:        Option<String>,
+    wild_farmed:       Option<String>,
+    sushi_grade:       Option<bool>,
 }
 
 impl CatalogNutritionRow {
-    fn cal(&self) -> f64 { self.calories_per_100g.unwrap_or(0) as f64 }
-    fn prot(&self) -> f64 { self.protein_per_100g.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(0.0) }
-    fn fat(&self) -> f64  { self.fat_per_100g.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(0.0) }
-    fn carbs(&self) -> f64 { self.carbs_per_100g.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(0.0) }
-    fn density(&self) -> f64 { self.density_g_per_ml.and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d)).unwrap_or(1.0) }
+    fn cal(&self)   -> f64 { self.calories_per_100g.unwrap_or(0) as f64 }
+    fn prot(&self)  -> f64 { dec_f64(self.protein_per_100g) }
+    fn fat(&self)   -> f64 { dec_f64(self.fat_per_100g) }
+    fn carbs(&self) -> f64 { dec_f64(self.carbs_per_100g) }
+    fn fiber(&self) -> f64 { dec_f64(self.fiber_per_100g) }
+    fn sugar(&self) -> f64 { dec_f64(self.sugar_per_100g) }
+    fn salt(&self)  -> f64 { dec_f64(self.salt_per_100g) }
+    fn density(&self) -> f64 {
+        self.density_g_per_ml
+            .and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d))
+            .unwrap_or(1.0)
+    }
+    fn typical_g(&self) -> Option<f64> {
+        self.typical_portion_g
+            .and_then(|d| rust_decimal::prelude::ToPrimitive::to_f64(&d))
+    }
     fn localized_name(&self, lang: Language) -> &str {
         match lang {
             Language::Ru => &self.name_ru,
@@ -517,73 +536,135 @@ impl CatalogNutritionRow {
     }
 }
 
+fn dec_f64(d: Option<rust_decimal::Decimal>) -> f64 {
+    d.and_then(|v| rust_decimal::prelude::ToPrimitive::to_f64(&v)).unwrap_or(0.0)
+}
+
 #[derive(Deserialize)]
 pub struct NutritionQuery {
-    #[serde(default = "default_fish")]
-    pub name: String,
+    pub name:   Option<String>,
+    pub slug:   Option<String>,
     pub amount: Option<f64>,
-    pub unit: Option<String>,
-    pub lang: Option<String>,
+    pub unit:   Option<String>,
+    pub lang:   Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct NutritionBreakdown {
+    pub calories:   f64,
+    pub protein_g:  f64,
+    pub fat_g:      f64,
+    pub carbs_g:    f64,
+    pub fiber_g:    f64,
+    pub sugar_g:    f64,
+    pub salt_g:     f64,
+    /// Sodium derived from salt: sodium_mg = salt_g × 393
+    pub sodium_mg:  f64,
 }
 
 #[derive(Serialize)]
 pub struct NutritionResponse {
-    pub name: String,
-    pub localized_name: String,
-    pub slug: Option<String>,
-    pub image_url: Option<String>,
-    pub amount_g: f64,
-    pub calories: f64,
-    pub protein_g: f64,
-    pub fat_g: f64,
-    pub carbs_g: f64,
-    pub unit_label: String,
+    pub query:            String,
+    pub slug:             Option<String>,
+    pub name:             String,
+    pub product_type:     Option<String>,
+    pub image_url:        Option<String>,
+    pub water_type:       Option<String>,
+    pub wild_farmed:      Option<String>,
+    pub sushi_grade:      Option<bool>,
+    pub amount_g:         f64,
+    pub unit:             String,
+    pub unit_label:       String,
+    pub per_100g:         NutritionBreakdown,
+    pub for_amount:       NutritionBreakdown,
+    pub typical_portion_g: Option<f64>,
+    pub found_in_db:      bool,
+    pub lang:             String,
 }
 
-/// GET /public/tools/nutrition?name=salmon&amount=150&unit=g&lang=pl
+/// GET /public/tools/nutrition — Unified Ingredient Nutrition Database
 ///
-/// Primary source: catalog_ingredients DB (with photo, translations, density).
-/// Fallback: static table for ingredients not yet in catalog.
+/// Params:
+///   name=salmon        search by name (name_en, slug, fuzzy)
+///   slug=salmon        exact slug lookup (takes priority over name)
+///   amount=150         amount (default 100)
+///   unit=g             unit: g/kg/oz/lb/cup/tbsp/tsp/ml/l (default g)
+///   lang=ru            response language: en/ru/pl/uk (default en)
+///
+/// Returns per-100g and for-amount breakdowns plus full ingredient metadata.
 pub async fn nutrition(
     State(pool): State<PgPool>,
     Query(params): Query<NutritionQuery>,
 ) -> Json<NutritionResponse> {
-    let lang = parse_lang(&params.lang);
-    let name_lower = params.name.to_lowercase();
+    let lang     = parse_lang(&params.lang);
+    let lang_str = params.lang.clone().unwrap_or_else(|| "en".to_string());
     let raw_amount = params.amount.unwrap_or(100.0);
-    let unit = params.unit.as_deref().unwrap_or("g");
+    let unit_str   = params.unit.clone().unwrap_or_else(|| "g".to_string());
+    let unit       = unit_str.as_str();
 
-    // Try DB first — match on name_en, slug, or fuzzy
+    // Build query string for response
+    let query_str = params.slug.clone()
+        .or_else(|| params.name.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Determine lookup value: slug takes priority, then name
+    let lookup = if let Some(ref s) = params.slug {
+        s.to_lowercase()
+    } else if let Some(ref n) = params.name {
+        n.to_lowercase()
+    } else {
+        "unknown".to_string()
+    };
+
+    // DB query — all columns including new ones
     let db_row: Option<CatalogNutritionRow> = sqlx::query_as(
         r#"
-        SELECT name_en, name_ru, name_pl, name_uk, image_url, slug,
-               calories_per_100g, protein_per_100g, fat_per_100g,
-               carbs_per_100g, density_g_per_ml
+        SELECT name_en, name_ru, name_pl, name_uk,
+               image_url, slug, product_type,
+               calories_per_100g,
+               protein_per_100g, fat_per_100g, carbs_per_100g,
+               fiber_per_100g, sugar_per_100g, salt_per_100g,
+               density_g_per_ml, typical_portion_g,
+               water_type, wild_farmed, sushi_grade
         FROM catalog_ingredients
         WHERE is_active = true
-          AND (LOWER(name_en) = $1
-               OR slug = $1
+          AND (slug = $1
+               OR LOWER(name_en) = $1
                OR LOWER(name_en) LIKE '%' || $1 || '%')
-        ORDER BY (LOWER(name_en) = $1 OR slug = $1) DESC, LENGTH(name_en) ASC
+        ORDER BY (slug = $1 OR LOWER(name_en) = $1) DESC, LENGTH(name_en) ASC
         LIMIT 1
         "#,
     )
-    .bind(&name_lower)
+    .bind(&lookup)
     .fetch_optional(&pool)
     .await
     .ok()
     .flatten();
 
-    let (cal, prot, fat, carbs, density, localized_name, slug, image_url) = if let Some(ref row) = db_row {
-        (row.cal(), row.prot(), row.fat(), row.carbs(), row.density(),
-         row.localized_name(lang).to_string(),
-         row.slug.clone(),
-         row.image_url.clone())
-    } else {
-        (0.0, 0.0, 0.0, 0.0, 1.0, params.name.clone(), None, None)
-    };
+    let found = db_row.is_some();
 
-    // Convert to grams
+    // Extract values from row (or zero defaults)
+    let (localized, slug_val, image, product_type, water_type, wild_farmed, sushi_grade,
+         typical_g, density,
+         cal100, prot100, fat100, carbs100, fiber100, sugar100, salt100) =
+        if let Some(ref row) = db_row {
+            (row.localized_name(lang).to_string(),
+             row.slug.clone(),
+             row.image_url.clone(),
+             row.product_type.clone(),
+             row.water_type.clone(),
+             row.wild_farmed.clone(),
+             row.sushi_grade,
+             row.typical_g(),
+             row.density(),
+             row.cal(), row.prot(), row.fat(), row.carbs(),
+             row.fiber(), row.sugar(), row.salt())
+        } else {
+            (query_str.clone(), None, None, None, None, None, None, None, 1.0,
+             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        };
+
+    // Convert input amount to grams
     let amount_g = if unit == "g" {
         raw_amount
     } else if let Some(g) = uc::mass_to_grams(unit) {
@@ -597,17 +678,205 @@ pub async fn nutrition(
     let f = amount_g / 100.0;
     let r = |x: f64| uc::round_to(x, 1);
 
+    let per_100g = NutritionBreakdown {
+        calories:  r(cal100),
+        protein_g: r(prot100),
+        fat_g:     r(fat100),
+        carbs_g:   r(carbs100),
+        fiber_g:   r(fiber100),
+        sugar_g:   r(sugar100),
+        salt_g:    uc::round_to(salt100, 2),
+        sodium_mg: uc::round_to(salt100 * 393.0, 1),
+    };
+
+    let for_amount = NutritionBreakdown {
+        calories:  r(cal100   * f),
+        protein_g: r(prot100  * f),
+        fat_g:     r(fat100   * f),
+        carbs_g:   r(carbs100 * f),
+        fiber_g:   r(fiber100 * f),
+        sugar_g:   r(sugar100 * f),
+        salt_g:    uc::round_to(salt100 * f, 2),
+        sodium_mg: uc::round_to(salt100 * f * 393.0, 1),
+    };
+
     Json(NutritionResponse {
-        name: params.name,
-        localized_name,
-        slug,
-        image_url,
-        amount_g: uc::round_to(amount_g, 1),
-        calories:  r(cal  * f),
-        protein_g: r(prot * f),
-        fat_g:     r(fat  * f),
-        carbs_g:   r(carbs * f),
-        unit_label: label("g", lang),
+        query:            query_str,
+        slug:             slug_val,
+        name:             localized,
+        product_type,
+        image_url:        image,
+        water_type,
+        wild_farmed,
+        sushi_grade,
+        amount_g:         uc::round_to(amount_g, 1),
+        unit:             unit_str,
+        unit_label:       label("g", lang),
+        per_100g,
+        for_amount,
+        typical_portion_g: typical_g,
+        found_in_db:      found,
+        lang:             lang_str,
+    })
+}
+
+// ── 4b. Ingredient Nutrition Database (/ingredients) ─────────────────────────
+
+#[derive(Deserialize)]
+pub struct IngredientsQuery {
+    pub lang:          Option<String>,
+    pub product_type:  Option<String>,   // seafood/vegetable/fruit/meat/grain/dairy/…
+    pub search:        Option<String>,   // partial name search
+    pub limit:         Option<i64>,      // max rows, default 200
+    pub offset:        Option<i64>,      // pagination offset, default 0
+}
+
+#[derive(Serialize)]
+pub struct IngredientDbEntry {
+    pub slug:             Option<String>,
+    pub name:             String,         // localized
+    pub name_en:          String,
+    pub product_type:     Option<String>,
+    pub image_url:        Option<String>,
+    pub water_type:       Option<String>,
+    pub wild_farmed:      Option<String>,
+    pub sushi_grade:      Option<bool>,
+    pub typical_portion_g: Option<f64>,
+    pub per_100g:         NutritionBreakdown,
+}
+
+#[derive(Serialize)]
+pub struct IngredientsResponse {
+    pub total:   i64,
+    pub limit:   i64,
+    pub offset:  i64,
+    pub lang:    String,
+    pub items:   Vec<IngredientDbEntry>,
+}
+
+/// GET /public/tools/ingredients — Full Ingredient Nutrition Database
+///
+/// Returns all ingredients (with nutrition per 100g) as a paginated list.
+///
+/// Params:
+///   lang=ru              localize names (en/ru/pl/uk)
+///   product_type=seafood filter by type
+///   search=sal           partial name search (name_en)
+///   limit=50             page size (max 200, default 200)
+///   offset=0             pagination
+///
+/// Example:
+///   GET /public/tools/ingredients?lang=ru&product_type=seafood&limit=50
+pub async fn ingredients_db(
+    State(pool): State<PgPool>,
+    Query(params): Query<IngredientsQuery>,
+) -> Json<IngredientsResponse> {
+    let lang     = parse_lang(&params.lang);
+    let lang_str = params.lang.clone().unwrap_or_else(|| "en".to_string());
+    let limit    = params.limit.unwrap_or(200).min(200).max(1);
+    let offset   = params.offset.unwrap_or(0).max(0);
+
+    // Count total matching rows
+    let total: i64 = {
+        let mut q = String::from(
+            "SELECT COUNT(*) FROM catalog_ingredients WHERE is_active = true"
+        );
+        let mut bind_idx = 1usize;
+        let mut pt_val  = String::new();
+        let mut srch_val = String::new();
+
+        if let Some(ref pt) = params.product_type {
+            pt_val = pt.to_lowercase();
+            q.push_str(&format!(" AND product_type = ${}", bind_idx));
+            bind_idx += 1;
+        }
+        if let Some(ref s) = params.search {
+            srch_val = format!("%{}%", s.to_lowercase());
+            q.push_str(&format!(" AND LOWER(name_en) LIKE ${}", bind_idx));
+        }
+
+        let mut builder = sqlx::query_scalar::<_, i64>(&q);
+        if !pt_val.is_empty()   { builder = builder.bind(pt_val.clone()); }
+        if !srch_val.is_empty() { builder = builder.bind(srch_val.clone()); }
+        builder.fetch_one(&pool).await.unwrap_or(0)
+    };
+
+    // Fetch rows
+    let rows: Vec<CatalogNutritionRow> = {
+        let mut q = String::from(
+            r#"SELECT name_en, name_ru, name_pl, name_uk,
+                      image_url, slug, product_type,
+                      calories_per_100g,
+                      protein_per_100g, fat_per_100g, carbs_per_100g,
+                      fiber_per_100g, sugar_per_100g, salt_per_100g,
+                      density_g_per_ml, typical_portion_g,
+                      water_type, wild_farmed, sushi_grade
+               FROM catalog_ingredients
+               WHERE is_active = true"#
+        );
+        let mut bind_idx = 1usize;
+        let mut pt_val   = String::new();
+        let mut srch_val = String::new();
+
+        if let Some(ref pt) = params.product_type {
+            pt_val = pt.to_lowercase();
+            q.push_str(&format!(" AND product_type = ${}", bind_idx));
+            bind_idx += 1;
+        }
+        if let Some(ref s) = params.search {
+            srch_val = format!("%{}%", s.to_lowercase());
+            q.push_str(&format!(" AND LOWER(name_en) LIKE ${}", bind_idx));
+            bind_idx += 1;
+        }
+        q.push_str(&format!(
+            " ORDER BY product_type NULLS LAST, name_en ASC LIMIT ${} OFFSET ${}",
+            bind_idx, bind_idx + 1
+        ));
+
+        let mut builder = sqlx::query_as::<_, CatalogNutritionRow>(&q);
+        if !pt_val.is_empty()   { builder = builder.bind(pt_val); }
+        if !srch_val.is_empty() { builder = builder.bind(srch_val); }
+        builder
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default()
+    };
+
+    let r = |x: f64| uc::round_to(x, 1);
+
+    let items = rows.into_iter().map(|row| {
+        let s100 = row.salt();
+        IngredientDbEntry {
+            slug:              row.slug.clone(),
+            name:              row.localized_name(lang).to_string(),
+            name_en:           row.name_en.clone(),
+            product_type:      row.product_type.clone(),
+            image_url:         row.image_url.clone(),
+            water_type:        row.water_type.clone(),
+            wild_farmed:       row.wild_farmed.clone(),
+            sushi_grade:       row.sushi_grade,
+            typical_portion_g: row.typical_g(),
+            per_100g: NutritionBreakdown {
+                calories:  r(row.cal()),
+                protein_g: r(row.prot()),
+                fat_g:     r(row.fat()),
+                carbs_g:   r(row.carbs()),
+                fiber_g:   r(row.fiber()),
+                sugar_g:   r(row.sugar()),
+                salt_g:    uc::round_to(s100, 2),
+                sodium_mg: uc::round_to(s100 * 393.0, 1),
+            },
+        }
+    }).collect();
+
+    Json(IngredientsResponse {
+        total,
+        limit,
+        offset,
+        lang: lang_str,
+        items,
     })
 }
 
