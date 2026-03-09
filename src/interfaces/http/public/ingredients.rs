@@ -44,6 +44,10 @@ pub struct IngredientListItem {
     pub name_uk: String,
     pub image_url: Option<String>,
     pub category_id: Option<Uuid>,
+    pub category_name_en: Option<String>,
+    pub category_name_ru: Option<String>,
+    pub category_name_pl: Option<String>,
+    pub category_name_uk: Option<String>,
     pub calories_per_100g: Option<i32>,
     pub seasons: Vec<String>,
 }
@@ -65,6 +69,10 @@ struct IngredientRow {
     name_uk: String,
     image_url: Option<String>,
     category_id: Option<Uuid>,
+    category_name_en: Option<String>,
+    category_name_ru: Option<String>,
+    category_name_pl: Option<String>,
+    category_name_uk: Option<String>,
     calories_per_100g: Option<i32>,
     seasons: Vec<String>,
 }
@@ -84,21 +92,26 @@ pub async fn list_ingredients(
         sqlx::query_as(
             r#"
             SELECT
-                slug, name_en, name_ru, name_pl, name_uk,
-                image_url, category_id, calories_per_100g,
-                ARRAY(SELECT unnest(seasons::text[])) AS seasons
-            FROM catalog_ingredients
-            WHERE is_active = true AND slug IS NOT NULL AND slug != ''
+                ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+                ci.image_url, ci.category_id, ci.calories_per_100g,
+                ARRAY(SELECT unnest(ci.seasons::text[])) AS seasons,
+                cc.name_en AS category_name_en,
+                cc.name_ru AS category_name_ru,
+                cc.name_pl AS category_name_pl,
+                cc.name_uk AS category_name_uk
+            FROM catalog_ingredients ci
+            LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
+            WHERE ci.is_active = true AND ci.slug IS NOT NULL AND ci.slug != ''
               AND (
-                LOWER(name_en) LIKE $1 OR
-                LOWER(name_ru) LIKE $1 OR
-                LOWER(name_pl) LIKE $1 OR
-                LOWER(name_uk) LIKE $1 OR
-                slug LIKE $1
+                LOWER(ci.name_en) LIKE $1 OR
+                LOWER(ci.name_ru) LIKE $1 OR
+                LOWER(ci.name_pl) LIKE $1 OR
+                LOWER(ci.name_uk) LIKE $1 OR
+                ci.slug LIKE $1
               )
             ORDER BY
-                CASE WHEN LOWER(name_en) = $2 OR slug = $2 THEN 0 ELSE 1 END,
-                name_en ASC
+                CASE WHEN LOWER(ci.name_en) = $2 OR ci.slug = $2 THEN 0 ELSE 1 END,
+                ci.name_en ASC
             "#,
         )
         .bind(&pattern)
@@ -109,12 +122,17 @@ pub async fn list_ingredients(
         sqlx::query_as(
             r#"
             SELECT
-                slug, name_en, name_ru, name_pl, name_uk,
-                image_url, category_id, calories_per_100g,
-                ARRAY(SELECT unnest(seasons::text[])) AS seasons
-            FROM catalog_ingredients
-            WHERE is_active = true AND slug IS NOT NULL AND slug != ''
-            ORDER BY name_en ASC
+                ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+                ci.image_url, ci.category_id, ci.calories_per_100g,
+                ARRAY(SELECT unnest(ci.seasons::text[])) AS seasons,
+                cc.name_en AS category_name_en,
+                cc.name_ru AS category_name_ru,
+                cc.name_pl AS category_name_pl,
+                cc.name_uk AS category_name_uk
+            FROM catalog_ingredients ci
+            LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
+            WHERE ci.is_active = true AND ci.slug IS NOT NULL AND ci.slug != ''
+            ORDER BY ci.name_en ASC
             "#,
         )
         .fetch_all(&pool)
@@ -139,6 +157,10 @@ pub async fn list_ingredients(
             name_uk: r.name_uk,
             image_url: r.image_url,
             category_id: r.category_id,
+            category_name_en: r.category_name_en,
+            category_name_ru: r.category_name_ru,
+            category_name_pl: r.category_name_pl,
+            category_name_uk: r.category_name_uk,
             calories_per_100g: r.calories_per_100g,
             seasons: r.seasons,
         })
