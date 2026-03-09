@@ -1,7 +1,7 @@
 //! Unit conversion handlers: convert_units, list_units, ingredient_scale,
 //! ingredient_convert (density-aware cross-group converter).
 
-use super::shared::{label, parse_lang, sanitize_value, SmartUnit};
+use super::shared::{label, label_gen, label_in, parse_lang, sanitize_value, SmartUnit};
 use crate::domain::tools::unit_converter as uc;
 use crate::shared::Language;
 use axum::extract::{Query, State};
@@ -275,21 +275,29 @@ pub async fn ingredient_convert(
         Language::En => &row.name_en,
     }.clone();
 
-    let from_label = label(&params.from, lang);
-    let to_label   = label(&params.to,   lang);
+    let from_label     = label(&params.from, lang);
+    let to_label       = label(&params.to,   lang);
+    let to_label_gen   = label_gen(&params.to,   lang);  // genitive: "gramów", "граммов"
+    let from_label_in  = label_in(&params.from,  lang);  // "w 1 szklance", "в 1 ст. ложке"
 
+    // "Ile gramów w jednej szklance Mąka pszenna?"
+    // "Сколько граммов в 1 ст. ложке Сливочное масло?"
+    // "How many grams in 1 cup of Wheat flour?"
     let question = match lang {
-        Language::Pl => format!("Ile {} w jednej {} {}?",     to_label, from_label, ingredient_name),
-        Language::Ru => format!("Сколько {} в {} {}?",        to_label, from_label, ingredient_name),
-        Language::Uk => format!("Скільки {} у {} {}?",        to_label, from_label, ingredient_name),
-        Language::En => format!("How many {} in one {} of {}?", to_label, from_label, ingredient_name),
+        Language::Pl => format!("Ile {} {} {}?",                  to_label_gen, from_label_in, ingredient_name),
+        Language::Ru => format!("Сколько {} {} {}?",              to_label_gen, from_label_in, ingredient_name),
+        Language::Uk => format!("Скільки {} {} {}?",              to_label_gen, from_label_in, ingredient_name),
+        Language::En => format!("How many {} {} of {}?",          to_label_gen, from_label_in, ingredient_name),
     };
 
+    // "1 szklanka Mąka pszenna = 125.39 gramów."
+    // "1 стакан Пшеничная мука = 125.39 граммов."
+    // "1 cup of Wheat flour equals 125.39 grams."
     let answer = match lang {
-        Language::Pl => format!("1 {} {} = {} {}.",          from_label, ingredient_name, result, to_label),
-        Language::Ru => format!("{} {} {} = {} {}.",          params.value, from_label, ingredient_name, result, to_label),
-        Language::Uk => format!("{} {} {} = {} {}.",          params.value, from_label, ingredient_name, result, to_label),
-        Language::En => format!("{} {} of {} equals {} {}.",  params.value, from_label, ingredient_name, result, to_label),
+        Language::Pl => format!("{} {} {} = {} {}.",             params.value, from_label, ingredient_name, result, to_label_gen),
+        Language::Ru => format!("{} {} {} = {} {}.",             params.value, from_label, ingredient_name, result, to_label_gen),
+        Language::Uk => format!("{} {} {} = {} {}.",             params.value, from_label, ingredient_name, result, to_label_gen),
+        Language::En => format!("{} {} of {} equals {} {}.",     params.value, from_label, ingredient_name, result, to_label_gen),
     };
 
     Ok(Json(IngredientConvertResponse {
