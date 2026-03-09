@@ -217,7 +217,7 @@ pub async fn ingredient_convert(
 ) -> Result<Json<IngredientConvertResponse>, ApiError> {
     let lang = parse_lang(&params.lang);
 
-    // ── DB lookup: slug OR any language name, exact match first ──────────────
+    // ── DB lookup: slug OR any language name, exact → prefix → substring ────
     let row: Option<IngredientConvertRow> = sqlx::query_as(
         r#"
         SELECT slug, name_en, name_ru, name_pl, name_uk, image_url, density_g_per_ml
@@ -229,8 +229,16 @@ pub async fn ingredient_convert(
             OR LOWER(name_pl) = LOWER($1)
             OR LOWER(name_ru) = LOWER($1)
             OR LOWER(name_uk) = LOWER($1)
+            OR slug ILIKE '%' || $1 || '%'
+            OR LOWER(name_en) ILIKE '%' || $1 || '%'
+            OR LOWER(name_pl) ILIKE '%' || $1 || '%'
+            OR LOWER(name_ru) ILIKE '%' || $1 || '%'
+            OR LOWER(name_uk) ILIKE '%' || $1 || '%'
           )
-        ORDER BY (slug = $1) DESC
+        ORDER BY
+          (slug = $1)::int +
+          (LOWER(name_en) = LOWER($1))::int +
+          (LOWER(name_pl) = LOWER($1))::int DESC
         LIMIT 1
         "#,
     )
@@ -271,17 +279,17 @@ pub async fn ingredient_convert(
     let to_label   = label(&params.to,   lang);
 
     let question = match lang {
-        Language::Pl => format!("Ile {} ma {} {}?",          to_label, from_label, ingredient_name),
-        Language::Ru => format!("Сколько {} в {} {}?",       to_label, from_label, ingredient_name),
-        Language::Uk => format!("Скільки {} у {} {}?",       to_label, from_label, ingredient_name),
-        Language::En => format!("How many {} in a {} of {}?", to_label, from_label, ingredient_name),
+        Language::Pl => format!("Ile {} w jednej {} {}?",     to_label, from_label, ingredient_name),
+        Language::Ru => format!("Сколько {} в {} {}?",        to_label, from_label, ingredient_name),
+        Language::Uk => format!("Скільки {} у {} {}?",        to_label, from_label, ingredient_name),
+        Language::En => format!("How many {} in one {} of {}?", to_label, from_label, ingredient_name),
     };
 
     let answer = match lang {
-        Language::Pl => format!("{} {} {} to {} {}.",          params.value, from_label, ingredient_name, result, to_label),
-        Language::Ru => format!("{} {} {} = {} {}.",           params.value, from_label, ingredient_name, result, to_label),
-        Language::Uk => format!("{} {} {} = {} {}.",           params.value, from_label, ingredient_name, result, to_label),
-        Language::En => format!("{} {} of {} equals {} {}.",   params.value, from_label, ingredient_name, result, to_label),
+        Language::Pl => format!("1 {} {} = {} {}.",          from_label, ingredient_name, result, to_label),
+        Language::Ru => format!("{} {} {} = {} {}.",          params.value, from_label, ingredient_name, result, to_label),
+        Language::Uk => format!("{} {} {} = {} {}.",          params.value, from_label, ingredient_name, result, to_label),
+        Language::En => format!("{} {} of {} equals {} {}.",  params.value, from_label, ingredient_name, result, to_label),
     };
 
     Ok(Json(IngredientConvertResponse {
