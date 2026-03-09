@@ -1,7 +1,7 @@
 //! Unit conversion handlers: convert_units, list_units, ingredient_scale,
 //! ingredient_convert (density-aware cross-group converter).
 
-use super::shared::{label, label_gen, label_in, parse_lang, sanitize_value, SmartUnit};
+use super::shared::{label, parse_lang, sanitize_value, SmartUnit};
 use crate::domain::tools::unit_converter as uc;
 use crate::shared::Language;
 use axum::extract::{Query, State};
@@ -167,7 +167,7 @@ pub async fn ingredient_scale(Query(params): Query<IngredientScaleQuery>) -> Jso
 
 // ── ingredient-convert ────────────────────────────────────────────────────────
 
-/// DB row for density lookup
+/// DB row for density + nutrition lookup
 #[derive(sqlx::FromRow)]
 struct IngredientConvertRow {
     slug:             Option<String>,
@@ -177,6 +177,11 @@ struct IngredientConvertRow {
     name_uk:          String,
     image_url:        Option<String>,
     density_g_per_ml: Option<rust_decimal::Decimal>,
+    // Nutrition per 100 g
+    calories_per_100g:   Option<i32>,
+    protein_per_100g:    Option<rust_decimal::Decimal>,
+    fat_per_100g:        Option<rust_decimal::Decimal>,
+    carbs_per_100g:      Option<rust_decimal::Decimal>,
 }
 
 #[derive(Deserialize)]
@@ -189,20 +194,36 @@ pub struct IngredientConvertQuery {
 }
 
 #[derive(Serialize)]
+pub struct NutritionForResult {
+    pub calories: f64,
+    pub protein:  f64,
+    pub fat:      f64,
+    pub carbs:    f64,
+}
+
+#[derive(Serialize)]
+pub struct Equivalents {
+    pub tbsp: f64,
+    pub tsp:  f64,
+}
+
+#[derive(Serialize)]
 pub struct IngredientConvertResponse {
-    pub ingredient:      String,
-    pub ingredient_name: String,
-    pub slug:            String,
-    pub image_url:       Option<String>,
-    pub value:           f64,
-    pub from:            String,
-    pub from_label:      String,
-    pub to:              String,
-    pub to_label:        String,
-    pub result:          f64,
-    pub density_g_per_ml: f64,
-    pub question:        String,
-    pub answer:          String,
+    pub ingredient:          String,
+    pub ingredient_name:     String,
+    pub slug:                String,
+    pub image_url:           Option<String>,
+    pub value:               f64,
+    pub from:                String,
+    pub from_label:          String,
+    pub to:                  String,
+    pub to_label:            String,
+    pub result:              f64,
+    pub density_g_per_ml:    f64,
+    pub equivalents:         Option<Equivalents>,
+    pub nutrition_for_result: Option<NutritionForResult>,
+    pub question:            String,
+    pub answer:              String,
 }
 
 type ApiError = (StatusCode, Json<serde_json::Value>);
@@ -211,6 +232,8 @@ type ApiError = (StatusCode, Json<serde_json::Value>);
 ///
 /// Density-aware converter. Supports all 4 scenarios:
 ///   mass → mass, volume → volume, volume → mass, mass → volume
+///
+/// Returns: result, equivalents (tbsp/tsp), nutrition_for_result, question, answer
 pub async fn ingredient_convert(
     State(pool): State<PgPool>,
     Query(params): Query<IngredientConvertQuery>,
@@ -220,7 +243,8 @@ pub async fn ingredient_convert(
     // ── DB lookup: slug OR any language name, exact → prefix → substring ────
     let row: Option<IngredientConvertRow> = sqlx::query_as(
         r#"
-        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url, density_g_per_ml
+        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url, density_g_per_ml,
+               calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g
         FROM catalog_ingredients
         WHERE is_active = true
           AND (
@@ -265,8 +289,9 @@ pub async fn ingredient_convert(
             (StatusCode::BAD_REQUEST, Json(json!({ "error": "Unsupported unit pair" })))
         })?;
 
-    // smart_round: 2 dp for ≥1, 3 dp for <1  (e.g. 125.39, 0.997)
-    let result = uc::smart_round(raw);
+    // kitchen_round: nearest 0.05 when result is ≥0.9 and ≤3 cups range,
+    // otherwise smart_round (2 dp ≥1, 3 dp <1)
+    let result = kitchen_round(raw);
 
     // ── Localised name ────────────────────────────────────────────────────────
     let ingredient_name = match lang {
@@ -276,44 +301,160 @@ pub async fn ingredient_convert(
         Language::En => &row.name_en,
     }.clone();
 
-    let from_label     = label(&params.from, lang);
-    let to_label       = label(&params.to,   lang);
-    let to_label_gen   = label_gen(&params.to,   lang);  // genitive: "gramów", "граммов"
-    let from_label_in  = label_in(&params.from,  lang);  // "w 1 szklance", "в 1 ст. ложке"
+    let from_label = label(&params.from, lang);
+    let to_label   = label(&params.to,   lang);
 
-    // "Ile gramów w jednej szklance Mąka pszenna?"
-    // "Сколько граммов в 1 ст. ложке Сливочное масло?"
-    // "How many grams in 1 cup of Wheat flour?"
-    let question = match lang {
-        Language::Pl => format!("Ile {} {} {}?",                  to_label_gen, from_label_in, ingredient_name),
-        Language::Ru => format!("Сколько {} {} {}?",              to_label_gen, from_label_in, ingredient_name),
-        Language::Uk => format!("Скільки {} {} {}?",              to_label_gen, from_label_in, ingredient_name),
-        Language::En => format!("How many {} {} of {}?",          to_label_gen, from_label_in, ingredient_name),
+    // ── Question / Answer — universal clean format ────────────────────────────
+    // "1 szklanka mąki pszennej = 125 g"  (no tricky declension)
+    let question = format!("{} {} {} = {} {}",
+        params.value, from_label, ingredient_name,
+        result, to_label);
+    let answer = question.clone();
+
+    // ── Equivalents: always in grams, expressed in tbsp/tsp ──────────────────
+    // result_g = how many grams the converted result represents
+    let result_g: Option<f64> = if uc::is_mass(&params.to) {
+        let per_g = uc::mass_to_grams(&params.to).unwrap_or(1.0);
+        Some(result * per_g)
+    } else if uc::is_volume(&params.to) {
+        // volume result → grams via density
+        let per_ml = uc::volume_to_ml(&params.to).unwrap_or(1.0);
+        Some(result * per_ml * density)
+    } else {
+        None
     };
 
-    // "1 szklanka Mąka pszenna = 125.39 gramów."
-    // "1 стакан Пшеничная мука = 125.39 граммов."
-    // "1 cup of Wheat flour equals 125.39 grams."
-    let answer = match lang {
-        Language::Pl => format!("{} {} {} = {} {}.",             params.value, from_label, ingredient_name, result, to_label_gen),
-        Language::Ru => format!("{} {} {} = {} {}.",             params.value, from_label, ingredient_name, result, to_label_gen),
-        Language::Uk => format!("{} {} {} = {} {}.",             params.value, from_label, ingredient_name, result, to_label_gen),
-        Language::En => format!("{} {} of {} equals {} {}.",     params.value, from_label, ingredient_name, result, to_label_gen),
-    };
+    let equivalents = result_g.map(|g| {
+        let tbsp_g = uc::TBSP_ML * density;
+        let tsp_g  = uc::TSP_ML  * density;
+        Equivalents {
+            tbsp: uc::smart_round(g / tbsp_g),
+            tsp:  uc::smart_round(g / tsp_g),
+        }
+    });
+
+    // ── Nutrition for result ──────────────────────────────────────────────────
+    let nutrition_for_result = result_g.and_then(|g| {
+        let cal = row.calories_per_100g? as f64;
+        let pro = row.protein_per_100g.and_then(|x| x.to_f64())?;
+        let fat = row.fat_per_100g.and_then(|x| x.to_f64())?;
+        let crb = row.carbs_per_100g.and_then(|x| x.to_f64())?;
+        let factor = g / 100.0;
+        Some(NutritionForResult {
+            calories: uc::round_to(cal * factor, 1),
+            protein:  uc::round_to(pro * factor, 1),
+            fat:      uc::round_to(fat * factor, 1),
+            carbs:    uc::round_to(crb * factor, 1),
+        })
+    });
 
     Ok(Json(IngredientConvertResponse {
-        ingredient:       params.ingredient,
+        ingredient:           params.ingredient,
         ingredient_name,
-        slug:             row.slug.unwrap_or_default(),
-        image_url:        row.image_url,
-        value:            params.value,
-        from:             params.from,
+        slug:                 row.slug.unwrap_or_default(),
+        image_url:            row.image_url,
+        value:                params.value,
+        from:                 params.from,
         from_label,
-        to:               params.to,
+        to:                   params.to,
         to_label,
         result,
-        density_g_per_ml: density,
+        density_g_per_ml:     density,
+        equivalents,
+        nutrition_for_result,
         question,
         answer,
     }))
+}
+
+// ── SEO-friendly alias ────────────────────────────────────────────────────────
+
+/// Path params for `/public/tools/{from}-to-{to}/{slug}`
+#[derive(Deserialize)]
+pub struct SeoConvertPath {
+    pub from_to: String,   // e.g. "cup-to-grams"
+    pub slug:    String,   // e.g. "wheat-flour"
+}
+
+#[derive(Deserialize)]
+pub struct SeoConvertQuery {
+    pub value: Option<f64>,
+    pub lang:  Option<String>,
+}
+
+/// GET /public/tools/cup-to-grams/wheat-flour?value=1&lang=pl
+///
+/// SEO-friendly alias. Parses `{from}-to-{to}` into unit codes, then delegates
+/// to the same logic as `ingredient_convert`.
+pub async fn seo_ingredient_convert(
+    State(pool): State<PgPool>,
+    axum::extract::Path(path): axum::extract::Path<SeoConvertPath>,
+    Query(q): Query<SeoConvertQuery>,
+) -> Result<Json<IngredientConvertResponse>, ApiError> {
+    // Parse "cup-to-grams" → from="cup", to="g"
+    let (from, to) = parse_seo_from_to(&path.from_to).ok_or_else(|| {
+        (StatusCode::BAD_REQUEST, Json(json!({ "error": "Cannot parse unit path. Use e.g. cup-to-grams" })))
+    })?;
+
+    let params = IngredientConvertQuery {
+        ingredient: path.slug,
+        value:      q.value.unwrap_or(1.0),
+        from:       from.to_string(),
+        to:         to.to_string(),
+        lang:       q.lang,
+    };
+
+    // Re-use existing handler logic
+    let pool_state = axum::extract::State(pool);
+    ingredient_convert(pool_state, Query(params)).await
+}
+
+/// Parse "cup-to-grams" → ("cup", "g"),  "tablespoon-to-grams" → ("tbsp", "g"), etc.
+fn parse_seo_from_to(s: &str) -> Option<(&'static str, &'static str)> {
+    // Map human-readable names → unit codes
+    fn canonical(word: &str) -> Option<&'static str> {
+        match word {
+            "grams" | "gram" | "g"            => Some("g"),
+            "kilograms" | "kilogram" | "kg"   => Some("kg"),
+            "oz" | "ounce" | "ounces"         => Some("oz"),
+            "lb" | "lbs" | "pound" | "pounds" => Some("lb"),
+            "mg" | "milligrams"               => Some("mg"),
+            "ml" | "milliliters"              => Some("ml"),
+            "l" | "liters" | "litres"         => Some("l"),
+            "cup" | "cups"                    => Some("cup"),
+            "tbsp" | "tablespoon" | "tablespoons" => Some("tbsp"),
+            "tsp" | "teaspoon" | "teaspoons"  => Some("tsp"),
+            "fl_oz" | "floz" | "fluid-oz"     => Some("fl_oz"),
+            "pint" | "pints"                  => Some("pint"),
+            "quart" | "quarts"                => Some("quart"),
+            "gallon" | "gallons"              => Some("gallon"),
+            _                                 => None,
+        }
+    }
+
+    // Expect exactly one "-to-" separator
+    let idx = s.find("-to-")?;
+    let from_str = &s[..idx];
+    let to_str   = &s[idx + 4..];
+    let from = canonical(from_str)?;
+    let to   = canonical(to_str)?;
+    Some((from, to))
+}
+
+// ── Kitchen rounding ──────────────────────────────────────────────────────────
+
+/// Rounds converted values in a kitchen-friendly way:
+///   • If the value rounds to a multiple of 0.05 within 2 % → snap to that multiple
+///     (0.997 → 1.00, 1.498 → 1.50)
+///   • Otherwise: 2 dp for ≥ 1, 3 dp for < 1  (same as smart_round)
+fn kitchen_round(v: f64) -> f64 {
+    let step = 0.05_f64;
+    let snapped = (v / step).round() * step;
+    let rel_err = (v - snapped).abs() / v.max(0.001);
+    if rel_err < 0.02 {
+        // round snapped itself to 2 dp to avoid 0.9999999... artefacts
+        uc::round_to(snapped, 2)
+    } else {
+        uc::smart_round(v)
+    }
 }

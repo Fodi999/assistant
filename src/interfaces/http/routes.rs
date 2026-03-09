@@ -25,7 +25,7 @@ use crate::interfaces::http::{
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
         ingredients::{get_ingredient_by_slug, list_ingredients},
-        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now},
+        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
@@ -377,6 +377,8 @@ pub fn create_router(
         .route("/tools/popular-conversions", get(popular_conversions))
         .route("/tools/ingredient-scale", get(ingredient_scale))
         .route("/tools/ingredient-convert", get(ingredient_convert))
+        // SEO alias: /tools/cup-to-grams/wheat-flour?value=1&lang=pl
+        .route("/tools/:from_to/:slug", get(seo_ingredient_convert))
         .route("/tools/measure-conversion", get(measure_conversion))
         .route("/tools/ingredient-measures", get(ingredient_measures))
         .route("/tools/fish-season-table", get(fish_season_table))

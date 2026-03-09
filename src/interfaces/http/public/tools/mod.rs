@@ -33,4 +33,4 @@ pub use seasonality::{
     best_in_season, best_right_now, in_season_now, list_regions, product_search,
     product_seasonality, products_by_month, recipe_cost, recipe_nutrition, seasonal_calendar,
 };
-pub use units::{convert_units, ingredient_convert, ingredient_scale, list_units};
+pub use units::{convert_units, ingredient_convert, seo_ingredient_convert, ingredient_scale, list_units};
