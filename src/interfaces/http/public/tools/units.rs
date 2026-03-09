@@ -1,10 +1,16 @@
-//! Unit conversion handlers: convert_units, list_units, ingredient_scale.
+//! Unit conversion handlers: convert_units, list_units, ingredient_scale,
+//! ingredient_convert (density-aware cross-group converter).
 
 use super::shared::{label, parse_lang, sanitize_value, SmartUnit};
 use crate::domain::tools::unit_converter as uc;
-use axum::extract::Query;
+use crate::shared::Language;
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
 use axum::Json;
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sqlx::PgPool;
 
 // ── Request / Response types ──────────────────────────────────────────────────
 
@@ -157,4 +163,140 @@ pub async fn ingredient_scale(Query(params): Query<IngredientScaleQuery>) -> Jso
         scaled_value:   scaled,
         smart_result,
     })
+}
+
+// ── ingredient-convert ────────────────────────────────────────────────────────
+
+/// DB row for density lookup
+#[derive(sqlx::FromRow)]
+struct IngredientConvertRow {
+    slug:             Option<String>,
+    name_en:          String,
+    name_ru:          String,
+    name_pl:          String,
+    name_uk:          String,
+    image_url:        Option<String>,
+    density_g_per_ml: Option<rust_decimal::Decimal>,
+}
+
+#[derive(Deserialize)]
+pub struct IngredientConvertQuery {
+    pub ingredient: String,
+    pub value:      f64,
+    pub from:       String,
+    pub to:         String,
+    pub lang:       Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct IngredientConvertResponse {
+    pub ingredient:      String,
+    pub ingredient_name: String,
+    pub slug:            String,
+    pub image_url:       Option<String>,
+    pub value:           f64,
+    pub from:            String,
+    pub from_label:      String,
+    pub to:              String,
+    pub to_label:        String,
+    pub result:          f64,
+    pub density_g_per_ml: f64,
+    pub question:        String,
+    pub answer:          String,
+}
+
+type ApiError = (StatusCode, Json<serde_json::Value>);
+
+/// GET /public/tools/ingredient-convert?ingredient=flour&value=1&from=cup&to=g&lang=pl
+///
+/// Density-aware converter. Supports all 4 scenarios:
+///   mass → mass, volume → volume, volume → mass, mass → volume
+pub async fn ingredient_convert(
+    State(pool): State<PgPool>,
+    Query(params): Query<IngredientConvertQuery>,
+) -> Result<Json<IngredientConvertResponse>, ApiError> {
+    let lang = parse_lang(&params.lang);
+
+    // ── DB lookup: slug OR any language name, exact match first ──────────────
+    let row: Option<IngredientConvertRow> = sqlx::query_as(
+        r#"
+        SELECT slug, name_en, name_ru, name_pl, name_uk, image_url, density_g_per_ml
+        FROM catalog_ingredients
+        WHERE is_active = true
+          AND (
+            slug = $1
+            OR LOWER(name_en) = LOWER($1)
+            OR LOWER(name_pl) = LOWER($1)
+            OR LOWER(name_ru) = LOWER($1)
+            OR LOWER(name_uk) = LOWER($1)
+          )
+        ORDER BY (slug = $1) DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(&params.ingredient)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("ingredient_convert DB error: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Database error" })))
+    })?;
+
+    let row = row.ok_or_else(|| {
+        (StatusCode::NOT_FOUND, Json(json!({ "error": "Ingredient not found" })))
+    })?;
+
+    let density = row.density_g_per_ml
+        .and_then(|d| d.to_f64())
+        .ok_or_else(|| {
+            (StatusCode::BAD_REQUEST, Json(json!({ "error": "Ingredient has no density data" })))
+        })?;
+
+    let raw = uc::convert_with_density(params.value, &params.from, &params.to, density)
+        .ok_or_else(|| {
+            (StatusCode::BAD_REQUEST, Json(json!({ "error": "Unsupported unit pair" })))
+        })?;
+
+    let result = uc::display_round(raw);
+
+    // ── Localised name ────────────────────────────────────────────────────────
+    let ingredient_name = match lang {
+        Language::Pl => &row.name_pl,
+        Language::Ru => &row.name_ru,
+        Language::Uk => &row.name_uk,
+        Language::En => &row.name_en,
+    }.clone();
+
+    let from_label = label(&params.from, lang);
+    let to_label   = label(&params.to,   lang);
+
+    let question = match lang {
+        Language::Pl => format!("Ile {} ma {} {}?",          to_label, from_label, ingredient_name),
+        Language::Ru => format!("Сколько {} в {} {}?",       to_label, from_label, ingredient_name),
+        Language::Uk => format!("Скільки {} у {} {}?",       to_label, from_label, ingredient_name),
+        Language::En => format!("How many {} in a {} of {}?", to_label, from_label, ingredient_name),
+    };
+
+    let answer = match lang {
+        Language::Pl => format!("{} {} {} to {} {}.",          params.value, from_label, ingredient_name, result, to_label),
+        Language::Ru => format!("{} {} {} = {} {}.",           params.value, from_label, ingredient_name, result, to_label),
+        Language::Uk => format!("{} {} {} = {} {}.",           params.value, from_label, ingredient_name, result, to_label),
+        Language::En => format!("{} {} of {} equals {} {}.",   params.value, from_label, ingredient_name, result, to_label),
+    };
+
+    Ok(Json(IngredientConvertResponse {
+        ingredient:       params.ingredient,
+        ingredient_name,
+        slug:             row.slug.unwrap_or_default(),
+        image_url:        row.image_url,
+        value:            params.value,
+        from:             params.from,
+        from_label,
+        to:               params.to,
+        to_label,
+        result,
+        density_g_per_ml: density,
+        question,
+        answer,
+    }))
 }
