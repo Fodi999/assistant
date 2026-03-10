@@ -258,6 +258,7 @@ pub struct UpdateGalleryRequest {
 pub struct ArticleRow {
     pub id:              Uuid,
     pub slug:            String,
+    pub category:        String,
     pub title_en:        String,
     pub title_pl:        String,
     pub title_ru:        String,
@@ -275,9 +276,60 @@ pub struct ArticleRow {
     pub updated_at:      OffsetDateTime,
 }
 
+/// Public-facing article response — clean ISO dates, no internal fields
+#[derive(Debug, Serialize)]
+pub struct ArticlePublicItem {
+    pub id:              Uuid,
+    pub slug:            String,
+    pub category:        String,
+    pub title_en:        String,
+    pub title_pl:        String,
+    pub title_ru:        String,
+    pub title_uk:        String,
+    pub content_en:      String,
+    pub content_pl:      String,
+    pub content_ru:      String,
+    pub content_uk:      String,
+    pub image_url:       Option<String>,
+    pub seo_title:       String,
+    pub seo_description: String,
+    pub published:       bool,
+    pub order_index:     i32,
+    pub created_at:      String,
+    pub updated_at:      String,
+}
+
+impl From<ArticleRow> for ArticlePublicItem {
+    fn from(r: ArticleRow) -> Self {
+        Self {
+            id:              r.id,
+            slug:            r.slug,
+            category:        r.category,
+            title_en:        r.title_en,
+            title_pl:        r.title_pl,
+            title_ru:        r.title_ru,
+            title_uk:        r.title_uk,
+            content_en:      r.content_en,
+            content_pl:      r.content_pl,
+            content_ru:      r.content_ru,
+            content_uk:      r.content_uk,
+            image_url:       r.image_url,
+            seo_title:       r.seo_title,
+            seo_description: r.seo_description,
+            published:       r.published,
+            order_index:     r.order_index,
+            created_at:      r.created_at.format(&time::format_description::well_known::Rfc3339)
+                               .unwrap_or_default(),
+            updated_at:      r.updated_at.format(&time::format_description::well_known::Rfc3339)
+                               .unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateArticleRequest {
     pub slug:            Option<String>,   // auto-generated from title_en if empty
+    pub category:        Option<String>,
     pub title_en:        String,
     pub title_pl:        Option<String>,
     pub title_ru:        Option<String>,
@@ -297,6 +349,7 @@ pub struct CreateArticleRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateArticleRequest {
     pub slug:            Option<String>,
+    pub category:        Option<String>,
     pub title_en:        Option<String>,
     pub title_pl:        Option<String>,
     pub title_ru:        Option<String>,
@@ -316,14 +369,15 @@ pub struct UpdateArticleRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct ArticleQuery {
-    pub page:   Option<i64>,
-    pub limit:  Option<i64>,
-    pub search: Option<String>,
+    pub page:     Option<i64>,
+    pub limit:    Option<i64>,
+    pub search:   Option<String>,
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ArticleListResponse {
-    pub data:  Vec<ArticleRow>,
+    pub data:  Vec<ArticlePublicItem>,
     pub total: i64,
     pub page:  i64,
     pub limit: i64,
@@ -663,13 +717,14 @@ impl CmsService {
 
         sqlx::query_as(
             r#"INSERT INTO knowledge_articles
-               (slug, title_en, title_pl, title_ru, title_uk,
+               (slug, category, title_en, title_pl, title_ru, title_uk,
                 content_en, content_pl, content_ru, content_uk,
                 image_url, seo_title, seo_description, published, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                RETURNING *"#,
         )
         .bind(&slug)
+        .bind(req.category.unwrap_or_default())
         .bind(&req.title_en)
         .bind(req.title_pl.unwrap_or_default())
         .bind(req.title_ru.unwrap_or_default())
@@ -700,13 +755,14 @@ impl CmsService {
 
         sqlx::query_as(
             r#"UPDATE knowledge_articles SET
-               slug=$1, title_en=$2, title_pl=$3, title_ru=$4, title_uk=$5,
-               content_en=$6, content_pl=$7, content_ru=$8, content_uk=$9,
-               image_url=$10, seo_title=$11, seo_description=$12,
-               published=$13, order_index=$14, updated_at=NOW()
-               WHERE id=$15 RETURNING *"#,
+               slug=$1, category=$2, title_en=$3, title_pl=$4, title_ru=$5, title_uk=$6,
+               content_en=$7, content_pl=$8, content_ru=$9, content_uk=$10,
+               image_url=$11, seo_title=$12, seo_description=$13,
+               published=$14, order_index=$15, updated_at=NOW()
+               WHERE id=$16 RETURNING *"#,
         )
         .bind(req.slug.unwrap_or(cur.slug))
+        .bind(req.category.unwrap_or(cur.category))
         .bind(req.title_en.unwrap_or(cur.title_en))
         .bind(req.title_pl.unwrap_or(cur.title_pl))
         .bind(req.title_ru.unwrap_or(cur.title_ru))
@@ -740,56 +796,75 @@ impl CmsService {
         let limit = q.limit.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * limit;
 
+        let category_filter = q.category.as_deref().filter(|s| !s.is_empty());
+
         let (total, rows) = if let Some(search) = q.search.as_deref().filter(|s| !s.is_empty()) {
             let pattern = format!("%{}%", search.to_lowercase());
+
+            let (count_sql, list_sql) = if let Some(cat) = category_filter {
+                (
+                    format!("SELECT COUNT(*) FROM knowledge_articles WHERE published = true AND category = '{cat}'
+                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                          OR LOWER(content_en) LIKE $1)"),
+                    format!("SELECT * FROM knowledge_articles WHERE published = true AND category = '{cat}'
+                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                          OR LOWER(content_en) LIKE $1)
+                     ORDER BY order_index ASC, created_at DESC LIMIT $2 OFFSET $3"),
+                )
+            } else {
+                (
+                    "SELECT COUNT(*) FROM knowledge_articles WHERE published = true
+                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                          OR LOWER(content_en) LIKE $1)".to_string(),
+                    "SELECT * FROM knowledge_articles WHERE published = true
+                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                          OR LOWER(content_en) LIKE $1)
+                     ORDER BY order_index ASC, created_at DESC LIMIT $2 OFFSET $3".to_string(),
+                )
+            };
+
+            let total: i64 = sqlx::query_scalar(&count_sql)
+                .bind(&pattern).fetch_one(&self.pool).await.unwrap_or(0);
+            let rows: Vec<ArticleRow> = sqlx::query_as(&list_sql)
+                .bind(&pattern).bind(limit).bind(offset)
+                .fetch_all(&self.pool).await
+                .map_err(|e| { tracing::error!("list_articles_paged search: {e}"); AppError::internal("DB error") })?;
+            (total, rows)
+
+        } else if let Some(cat) = category_filter {
             let total: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM knowledge_articles WHERE published = true
-                 AND (LOWER(title_en) LIKE $1 OR LOWER(title_pl) LIKE $1
-                      OR LOWER(title_ru) LIKE $1 OR LOWER(title_uk) LIKE $1
-                      OR LOWER(content_en) LIKE $1)",
-            )
-            .bind(&pattern)
-            .fetch_one(&self.pool)
-            .await.unwrap_or(0);
+                "SELECT COUNT(*) FROM knowledge_articles WHERE published = true AND category = $1",
+            ).bind(cat).fetch_one(&self.pool).await.unwrap_or(0);
 
             let rows: Vec<ArticleRow> = sqlx::query_as(
-                "SELECT * FROM knowledge_articles WHERE published = true
-                 AND (LOWER(title_en) LIKE $1 OR LOWER(title_pl) LIKE $1
-                      OR LOWER(title_ru) LIKE $1 OR LOWER(title_uk) LIKE $1
-                      OR LOWER(content_en) LIKE $1)
-                 ORDER BY order_index ASC, created_at DESC
-                 LIMIT $2 OFFSET $3",
-            )
-            .bind(&pattern)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| { tracing::error!("list_articles_paged search: {e}"); AppError::internal("DB error") })?;
+                "SELECT * FROM knowledge_articles WHERE published = true AND category = $1
+                 ORDER BY order_index ASC, created_at DESC LIMIT $2 OFFSET $3",
+            ).bind(cat).bind(limit).bind(offset)
+            .fetch_all(&self.pool).await
+            .map_err(|e| { tracing::error!("list_articles_paged category: {e}"); AppError::internal("DB error") })?;
 
             (total, rows)
         } else {
             let total: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM knowledge_articles WHERE published = true",
-            )
-            .fetch_one(&self.pool)
-            .await.unwrap_or(0);
+            ).fetch_one(&self.pool).await.unwrap_or(0);
 
             let rows: Vec<ArticleRow> = sqlx::query_as(
                 "SELECT * FROM knowledge_articles WHERE published = true
-                 ORDER BY order_index ASC, created_at DESC
-                 LIMIT $1 OFFSET $2",
-            )
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await
+                 ORDER BY order_index ASC, created_at DESC LIMIT $1 OFFSET $2",
+            ).bind(limit).bind(offset)
+            .fetch_all(&self.pool).await
             .map_err(|e| { tracing::error!("list_articles_paged: {e}"); AppError::internal("DB error") })?;
 
             (total, rows)
         };
 
-        Ok(ArticleListResponse { data: rows, total, page, limit })
+        let data = rows.into_iter().map(ArticlePublicItem::from).collect();
+        Ok(ArticleListResponse { data, total, page, limit })
     }
 
     // ── SITEMAP ───────────────────────────────────────────────────────────────
