@@ -506,8 +506,9 @@ impl CmsService {
         sqlx::query_as(
             r#"INSERT INTO gallery
                (image_url, title_en, title_pl, title_ru, title_uk,
-                description_en, description_pl, description_ru, description_uk, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                description_en, description_pl, description_ru, description_uk,
+                alt_en, alt_pl, alt_ru, alt_uk, order_index)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
                RETURNING *"#,
         )
         .bind(&req.image_url)
@@ -519,6 +520,10 @@ impl CmsService {
         .bind(req.description_pl.unwrap_or_default())
         .bind(req.description_ru.unwrap_or_default())
         .bind(req.description_uk.unwrap_or_default())
+        .bind(req.alt_en.unwrap_or_default())
+        .bind(req.alt_pl.unwrap_or_default())
+        .bind(req.alt_ru.unwrap_or_default())
+        .bind(req.alt_uk.unwrap_or_default())
         .bind(req.order_index.unwrap_or(0))
         .fetch_one(&self.pool)
         .await
@@ -534,8 +539,9 @@ impl CmsService {
             r#"UPDATE gallery SET
                image_url=$1, title_en=$2, title_pl=$3, title_ru=$4, title_uk=$5,
                description_en=$6, description_pl=$7, description_ru=$8, description_uk=$9,
-               order_index=$10
-               WHERE id=$11 RETURNING *"#,
+               alt_en=$10, alt_pl=$11, alt_ru=$12, alt_uk=$13,
+               order_index=$14
+               WHERE id=$15 RETURNING *"#,
         )
         .bind(req.image_url.unwrap_or(cur.image_url))
         .bind(req.title_en.unwrap_or(cur.title_en))
@@ -546,6 +552,10 @@ impl CmsService {
         .bind(req.description_pl.unwrap_or(cur.description_pl))
         .bind(req.description_ru.unwrap_or(cur.description_ru))
         .bind(req.description_uk.unwrap_or(cur.description_uk))
+        .bind(req.alt_en.unwrap_or(cur.alt_en))
+        .bind(req.alt_pl.unwrap_or(cur.alt_pl))
+        .bind(req.alt_ru.unwrap_or(cur.alt_ru))
+        .bind(req.alt_uk.unwrap_or(cur.alt_uk))
         .bind(req.order_index.unwrap_or(cur.order_index))
         .bind(id)
         .fetch_one(&self.pool)
