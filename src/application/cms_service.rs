@@ -671,11 +671,23 @@ impl CmsService {
     // ── KNOWLEDGE ARTICLES ────────────────────────────────────────────────────
 
     /// Admin: list all articles (including drafts)
-    pub async fn list_articles_admin(&self) -> AppResult<Vec<ArticleRow>> {
-        sqlx::query_as("SELECT * FROM knowledge_articles ORDER BY order_index ASC, created_at DESC")
+    pub async fn list_articles_admin(&self, category: Option<&str>) -> AppResult<Vec<ArticleRow>> {
+        match category.filter(|s| !s.is_empty()) {
+            Some(cat) => sqlx::query_as(
+                "SELECT * FROM knowledge_articles WHERE category = $1 ORDER BY order_index ASC, created_at DESC",
+            )
+            .bind(cat)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| { tracing::error!("list_articles_admin: {e}"); AppError::internal("DB error") })
+            .map_err(|e| { tracing::error!("list_articles_admin: {e}"); AppError::internal("DB error") }),
+
+            None => sqlx::query_as(
+                "SELECT * FROM knowledge_articles ORDER BY order_index ASC, created_at DESC",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| { tracing::error!("list_articles_admin: {e}"); AppError::internal("DB error") }),
+        }
     }
 
     /// Public: list only published articles

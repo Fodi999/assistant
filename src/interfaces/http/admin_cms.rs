@@ -13,6 +13,13 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+// ── QUERY PARAMS ──────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ArticleFilterQuery {
+    pub category: Option<String>,
+}
+
 // ── ABOUT PAGE ────────────────────────────────────────────────────────────────
 
 pub async fn get_about(
@@ -150,9 +157,10 @@ pub async fn delete_gallery(
 
 pub async fn list_articles(
     _claims: AdminClaims,
+    Query(q): Query<ArticleFilterQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_articles_admin().await?;
+    let rows = svc.list_articles_admin(q.category.as_deref()).await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 
