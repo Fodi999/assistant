@@ -1,4 +1,5 @@
 use crate::application::{
+    cms_service::CmsService,
     recipe_v2_service::RecipeV2Service, // V2 with translations
     report::ReportService,
     AdminAuthService,
@@ -18,12 +19,14 @@ use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
     admin_auth,
     admin_catalog,
+    admin_cms,
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{get_categories, search_ingredients, CatalogState},
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
+        cms as public_cms,
         ingredients::{get_ingredient_by_slug, list_ingredients},
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug},
     },
@@ -194,6 +197,8 @@ pub fn create_router(
     // Clone pool for public routes (before move into jwt_middleware)
     let pool_for_public = pool.clone();
     let pool_for_tools = pool.clone();
+    let pool_for_cms = pool.clone();
+    let cms_service = CmsService::new(pool_for_cms);
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -398,9 +403,59 @@ pub fn create_router(
         .route("/tools/recipe-cost", post(recipe_cost))
         .with_state(pool_for_tools);
 
+    // ── Admin CMS routes (protected) ─────────────────────────────────────────
+    let admin_cms_routes = Router::new()
+        // About page
+        .route("/about", get(admin_cms::get_about).put(admin_cms::update_about))
+        // Expertise
+        .route("/expertise", get(admin_cms::list_expertise).post(admin_cms::create_expertise))
+        .route(
+            "/expertise/:id",
+            axum::routing::put(admin_cms::update_expertise)
+                .delete(admin_cms::delete_expertise),
+        )
+        // Experience
+        .route("/experience", get(admin_cms::list_experience).post(admin_cms::create_experience))
+        .route(
+            "/experience/:id",
+            axum::routing::put(admin_cms::update_experience)
+                .delete(admin_cms::delete_experience),
+        )
+        // Gallery
+        .route("/gallery", get(admin_cms::list_gallery).post(admin_cms::create_gallery))
+        .route(
+            "/gallery/:id",
+            axum::routing::put(admin_cms::update_gallery)
+                .delete(admin_cms::delete_gallery),
+        )
+        // Knowledge Articles
+        .route("/articles", get(admin_cms::list_articles).post(admin_cms::create_article))
+        .route("/articles/:id", get(admin_cms::get_article))
+        .route(
+            "/articles/:id",
+            axum::routing::put(admin_cms::update_article)
+                .delete(admin_cms::delete_article),
+        )
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .with_state(cms_service.clone());
+
+    // ── Public CMS routes (no auth) ───────────────────────────────────────────
+    let public_cms_router = Router::new()
+        .route("/about", get(public_cms::get_about))
+        .route("/expertise", get(public_cms::list_expertise))
+        .route("/experience", get(public_cms::list_experience))
+        .route("/gallery", get(public_cms::list_gallery))
+        .route("/articles", get(public_cms::list_articles))
+        .route("/articles/:slug", get(public_cms::get_article))
+        .with_state(cms_service);
+
     let public_router = Router::new()
         .merge(public_ingredients_router)
-        .merge(public_tools_router);
+        .merge(public_tools_router)
+        .merge(public_cms_router);
 
     // Combine all routes
     Router::new()
@@ -410,6 +465,7 @@ pub fn create_router(
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
         .nest("/api/admin/catalog", admin_catalog_routes)
+        .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", protected_routes)
         .layer(cors)

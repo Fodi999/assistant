@@ -3,6 +3,7 @@ pub mod admin_catalog;
 pub mod assistant_service;
 pub mod auth;
 pub mod catalog;
+pub mod cms_service;
 pub mod dish;
 pub mod inventory;
 pub mod inventory_alert;
