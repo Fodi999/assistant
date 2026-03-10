@@ -445,6 +445,16 @@ pub fn create_router(
             admin_auth_service.clone(),
             require_super_admin,
         ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
         .with_state(cms_service.clone());
 
     // ── Public CMS routes (no auth) ───────────────────────────────────────────
