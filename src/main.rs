@@ -239,6 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         repositories.pool.clone(),
         admin_auth_service,
         admin_catalog_service,
+        r2_client,
         cors_origins,
         rate_limit_per_second,
     );

@@ -4,6 +4,20 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Convert any text to a URL-safe slug: "How to Choose Fish" → "how-to-choose-fish"
+pub fn slugify(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 // ── Shared structs ────────────────────────────────────────────────────────────
 
 /// Multilingual text block used across all CMS entities
@@ -60,6 +74,8 @@ pub struct ExpertiseRow {
     pub title_ru:    String,
     pub title_uk:    String,
     pub order_index: i32,
+    pub created_at:  OffsetDateTime,
+    pub updated_at:  OffsetDateTime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +115,8 @@ pub struct ExperienceRow {
     pub description_ru: String,
     pub description_uk: String,
     pub order_index:    i32,
+    pub created_at:     OffsetDateTime,
+    pub updated_at:     OffsetDateTime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,8 +163,13 @@ pub struct GalleryRow {
     pub description_pl: String,
     pub description_ru: String,
     pub description_uk: String,
+    pub alt_en:         String,
+    pub alt_pl:         String,
+    pub alt_ru:         String,
+    pub alt_uk:         String,
     pub order_index:    i32,
     pub created_at:     OffsetDateTime,
+    pub updated_at:     OffsetDateTime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -160,6 +183,10 @@ pub struct CreateGalleryRequest {
     pub description_pl: Option<String>,
     pub description_ru: Option<String>,
     pub description_uk: Option<String>,
+    pub alt_en:         Option<String>,
+    pub alt_pl:         Option<String>,
+    pub alt_ru:         Option<String>,
+    pub alt_uk:         Option<String>,
     pub order_index:    Option<i32>,
 }
 
@@ -174,6 +201,10 @@ pub struct UpdateGalleryRequest {
     pub description_pl: Option<String>,
     pub description_ru: Option<String>,
     pub description_uk: Option<String>,
+    pub alt_en:         Option<String>,
+    pub alt_pl:         Option<String>,
+    pub alt_ru:         Option<String>,
+    pub alt_uk:         Option<String>,
     pub order_index:    Option<i32>,
 }
 
@@ -204,7 +235,7 @@ pub struct ArticleRow {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateArticleRequest {
-    pub slug:            String,
+    pub slug:            Option<String>,   // auto-generated from title_en if empty
     pub title_en:        String,
     pub title_pl:        Option<String>,
     pub title_ru:        Option<String>,
@@ -239,18 +270,69 @@ pub struct UpdateArticleRequest {
     pub order_index:     Option<i32>,
 }
 
+// ── Pagination & Search ───────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ArticleQuery {
+    pub page:   Option<i64>,
+    pub limit:  Option<i64>,
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ArticleListResponse {
+    pub data:  Vec<ArticleRow>,
+    pub total: i64,
+    pub page:  i64,
+    pub limit: i64,
+}
+
+// ── Sitemap ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ArticleSitemapRow {
+    pub slug:       String,
+    pub updated_at: OffsetDateTime,
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct PublicStats {
+    pub articles_count:    i64,
+    pub ingredients_count: i64,
+    pub tools_count:       i64,
+    pub experience_years:  i64,
+    pub countries:         i64,
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ArticleCategoryRow {
+    pub id:          Uuid,
+    pub slug:        String,
+    pub title_en:    String,
+    pub title_pl:    String,
+    pub title_ru:    String,
+    pub title_uk:    String,
+    pub order_index: i32,
+    pub created_at:  OffsetDateTime,
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[derive(Clone)]
 pub struct CmsService {
-    pool: PgPool,
+    pool:      PgPool,
+    r2_client: crate::infrastructure::R2Client,
 }
 
 impl CmsService {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, r2_client: crate::infrastructure::R2Client) -> Self {
+        Self { pool, r2_client }
     }
 
     // ── ABOUT PAGE ────────────────────────────────────────────────────────────
@@ -519,6 +601,12 @@ impl CmsService {
     }
 
     pub async fn create_article(&self, req: CreateArticleRequest) -> AppResult<ArticleRow> {
+        // Auto-generate slug from title_en if not provided
+        let slug = match req.slug.as_deref() {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => slugify(&req.title_en),
+        };
+
         sqlx::query_as(
             r#"INSERT INTO knowledge_articles
                (slug, title_en, title_pl, title_ru, title_uk,
@@ -527,7 +615,7 @@ impl CmsService {
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
                RETURNING *"#,
         )
-        .bind(&req.slug)
+        .bind(&slug)
         .bind(&req.title_en)
         .bind(req.title_pl.unwrap_or_default())
         .bind(req.title_ru.unwrap_or_default())
@@ -546,7 +634,7 @@ impl CmsService {
         .map_err(|e| {
             tracing::error!("create_article: {e}");
             if e.to_string().contains("unique") {
-                AppError::conflict(&format!("Article with slug '{}' already exists", req.slug))
+                AppError::conflict(&format!("Article with slug '{slug}' already exists"))
             } else {
                 AppError::internal("Failed to create article")
             }
@@ -589,5 +677,211 @@ impl CmsService {
             .bind(id).execute(&self.pool).await?;
         if r.rows_affected() == 0 { return Err(AppError::not_found("Article not found")); }
         Ok(())
+    }
+
+    // ── ARTICLES: pagination + search ─────────────────────────────────────────
+
+    pub async fn list_articles_paged(&self, q: &ArticleQuery) -> AppResult<ArticleListResponse> {
+        let page  = q.page.unwrap_or(1).max(1);
+        let limit = q.limit.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * limit;
+
+        let (total, rows) = if let Some(search) = q.search.as_deref().filter(|s| !s.is_empty()) {
+            let pattern = format!("%{}%", search.to_lowercase());
+            let total: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM knowledge_articles WHERE published = true
+                 AND (LOWER(title_en) LIKE $1 OR LOWER(title_pl) LIKE $1
+                      OR LOWER(title_ru) LIKE $1 OR LOWER(title_uk) LIKE $1
+                      OR LOWER(content_en) LIKE $1)",
+            )
+            .bind(&pattern)
+            .fetch_one(&self.pool)
+            .await.unwrap_or(0);
+
+            let rows: Vec<ArticleRow> = sqlx::query_as(
+                "SELECT * FROM knowledge_articles WHERE published = true
+                 AND (LOWER(title_en) LIKE $1 OR LOWER(title_pl) LIKE $1
+                      OR LOWER(title_ru) LIKE $1 OR LOWER(title_uk) LIKE $1
+                      OR LOWER(content_en) LIKE $1)
+                 ORDER BY order_index ASC, created_at DESC
+                 LIMIT $2 OFFSET $3",
+            )
+            .bind(&pattern)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| { tracing::error!("list_articles_paged search: {e}"); AppError::internal("DB error") })?;
+
+            (total, rows)
+        } else {
+            let total: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM knowledge_articles WHERE published = true",
+            )
+            .fetch_one(&self.pool)
+            .await.unwrap_or(0);
+
+            let rows: Vec<ArticleRow> = sqlx::query_as(
+                "SELECT * FROM knowledge_articles WHERE published = true
+                 ORDER BY order_index ASC, created_at DESC
+                 LIMIT $1 OFFSET $2",
+            )
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| { tracing::error!("list_articles_paged: {e}"); AppError::internal("DB error") })?;
+
+            (total, rows)
+        };
+
+        Ok(ArticleListResponse { data: rows, total, page, limit })
+    }
+
+    // ── SITEMAP ───────────────────────────────────────────────────────────────
+
+    pub async fn articles_sitemap(&self) -> AppResult<Vec<ArticleSitemapRow>> {
+        sqlx::query_as(
+            "SELECT slug, updated_at FROM knowledge_articles
+             WHERE published = true ORDER BY updated_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| { tracing::error!("articles_sitemap: {e}"); AppError::internal("DB error") })
+    }
+
+    // ── STATS ─────────────────────────────────────────────────────────────────
+
+    pub async fn public_stats(&self) -> AppResult<PublicStats> {
+        let articles_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM knowledge_articles WHERE published = true",
+        )
+        .fetch_one(&self.pool)
+        .await.unwrap_or(0);
+
+        let ingredients_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM catalog_ingredients WHERE deleted_at IS NULL",
+        )
+        .fetch_one(&self.pool)
+        .await.unwrap_or(0);
+
+        // Count distinct public tool routes (static number, update as tools grow)
+        let tools_count: i64 = 18;
+
+        let experience_years: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(EXTRACT(YEAR FROM NOW())::bigint - MIN(start_year)::bigint, 0)
+             FROM experience WHERE start_year IS NOT NULL",
+        )
+        .fetch_one(&self.pool)
+        .await.unwrap_or(20);
+
+        let countries: i64 = sqlx::query_scalar(
+            "SELECT COUNT(DISTINCT country) FROM experience WHERE country <> ''",
+        )
+        .fetch_one(&self.pool)
+        .await.unwrap_or(0);
+
+        Ok(PublicStats {
+            articles_count,
+            ingredients_count,
+            tools_count,
+            experience_years,
+            countries,
+        })
+    }
+
+    // ── ARTICLE CATEGORIES ────────────────────────────────────────────────────
+
+    pub async fn list_categories(&self) -> AppResult<Vec<ArticleCategoryRow>> {
+        sqlx::query_as(
+            "SELECT * FROM article_categories ORDER BY order_index ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| { tracing::error!("list_categories: {e}"); AppError::internal("DB error") })
+    }
+
+    // ── IMAGE UPLOAD: presigned URL ───────────────────────────────────────────
+
+    pub async fn get_image_upload_url(
+        &self,
+        folder: &str,
+        content_type: &str,
+    ) -> AppResult<crate::application::user::AvatarUploadResponse> {
+        let ext = match content_type {
+            ct if ct.contains("jpeg") || ct.contains("jpg") => "jpg",
+            ct if ct.contains("png")  => "png",
+            ct if ct.contains("gif")  => "gif",
+            _ => "webp",
+        };
+        let id  = Uuid::new_v4();
+        let key = format!("cms/{}/{}.{}", folder, id, ext);
+
+        let upload_url = self.r2_client.generate_presigned_upload_url(&key, content_type).await?;
+        let public_url = self.r2_client.get_public_url(&key);
+
+        Ok(crate::application::user::AvatarUploadResponse { upload_url, public_url })
+    }
+
+    // ── GALLERY (updated with alt fields) ─────────────────────────────────────
+
+    pub async fn create_gallery_v2(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {
+        sqlx::query_as(
+            r#"INSERT INTO gallery
+               (image_url, title_en, title_pl, title_ru, title_uk,
+                description_en, description_pl, description_ru, description_uk,
+                alt_en, alt_pl, alt_ru, alt_uk, order_index)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+               RETURNING *"#,
+        )
+        .bind(&req.image_url)
+        .bind(req.title_en.unwrap_or_default())
+        .bind(req.title_pl.unwrap_or_default())
+        .bind(req.title_ru.unwrap_or_default())
+        .bind(req.title_uk.unwrap_or_default())
+        .bind(req.description_en.unwrap_or_default())
+        .bind(req.description_pl.unwrap_or_default())
+        .bind(req.description_ru.unwrap_or_default())
+        .bind(req.description_uk.unwrap_or_default())
+        .bind(req.alt_en.unwrap_or_default())
+        .bind(req.alt_pl.unwrap_or_default())
+        .bind(req.alt_ru.unwrap_or_default())
+        .bind(req.alt_uk.unwrap_or_default())
+        .bind(req.order_index.unwrap_or(0))
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| { tracing::error!("create_gallery_v2: {e}"); AppError::internal("Failed to create") })
+    }
+
+    pub async fn update_gallery_v2(&self, id: Uuid, req: UpdateGalleryRequest) -> AppResult<GalleryRow> {
+        let cur: GalleryRow = sqlx::query_as("SELECT * FROM gallery WHERE id = $1")
+            .bind(id).fetch_optional(&self.pool).await?
+            .ok_or_else(|| AppError::not_found("Gallery item not found"))?;
+
+        sqlx::query_as(
+            r#"UPDATE gallery SET
+               image_url=$1, title_en=$2, title_pl=$3, title_ru=$4, title_uk=$5,
+               description_en=$6, description_pl=$7, description_ru=$8, description_uk=$9,
+               alt_en=$10, alt_pl=$11, alt_ru=$12, alt_uk=$13, order_index=$14
+               WHERE id=$15 RETURNING *"#,
+        )
+        .bind(req.image_url.unwrap_or(cur.image_url))
+        .bind(req.title_en.unwrap_or(cur.title_en))
+        .bind(req.title_pl.unwrap_or(cur.title_pl))
+        .bind(req.title_ru.unwrap_or(cur.title_ru))
+        .bind(req.title_uk.unwrap_or(cur.title_uk))
+        .bind(req.description_en.unwrap_or(cur.description_en))
+        .bind(req.description_pl.unwrap_or(cur.description_pl))
+        .bind(req.description_ru.unwrap_or(cur.description_ru))
+        .bind(req.description_uk.unwrap_or(cur.description_uk))
+        .bind(req.alt_en.unwrap_or(cur.alt_en))
+        .bind(req.alt_pl.unwrap_or(cur.alt_pl))
+        .bind(req.alt_ru.unwrap_or(cur.alt_ru))
+        .bind(req.alt_uk.unwrap_or(cur.alt_uk))
+        .bind(req.order_index.unwrap_or(cur.order_index))
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| { tracing::error!("update_gallery_v2: {e}"); AppError::internal("Failed to update") })
     }
 }

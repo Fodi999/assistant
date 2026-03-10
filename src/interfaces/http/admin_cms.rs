@@ -6,10 +6,11 @@ use crate::application::cms_service::{
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 // ── ABOUT PAGE ────────────────────────────────────────────────────────────────
@@ -190,4 +191,38 @@ pub async fn delete_article(
 ) -> Result<StatusCode, AppError> {
     svc.delete_article(id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ── IMAGE UPLOAD ──────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    pub folder:       Option<String>,
+    pub content_type: Option<String>,
+}
+
+/// GET /api/admin/cms/upload-url?folder=gallery&content_type=image/webp
+/// Returns presigned R2 upload URL + final public URL
+pub async fn get_upload_url(
+    _claims: AdminClaims,
+    Query(q): Query<UploadQuery>,
+    State(svc): State<CmsService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let folder       = q.folder.unwrap_or_else(|| "general".to_string());
+    let content_type = q.content_type.unwrap_or_else(|| "image/webp".to_string());
+    let resp = svc.get_image_upload_url(&folder, &content_type).await?;
+    Ok(Json(serde_json::json!({
+        "upload_url": resp.upload_url,
+        "url":        resp.public_url,
+    })))
+}
+
+// ── CATEGORIES (admin read) ───────────────────────────────────────────────────
+
+pub async fn list_article_categories(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = svc.list_categories().await?;
+    Ok(Json(serde_json::to_value(rows).unwrap()))
 }

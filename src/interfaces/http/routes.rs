@@ -78,6 +78,7 @@ pub fn create_router(
     pool: PgPool,                         // 🎯 ДОБАВЛЕНО: для получения language из БД
     admin_auth_service: AdminAuthService, // 🆕 Super Admin auth service
     admin_catalog_service: AdminCatalogService, // 🆕 Admin Catalog service
+    r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
 ) -> Router {
@@ -198,7 +199,7 @@ pub fn create_router(
     let pool_for_public = pool.clone();
     let pool_for_tools = pool.clone();
     let pool_for_cms = pool.clone();
-    let cms_service = CmsService::new(pool_for_cms);
+    let cms_service = CmsService::new(pool_for_cms, r2_client);
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -436,6 +437,10 @@ pub fn create_router(
             axum::routing::put(admin_cms::update_article)
                 .delete(admin_cms::delete_article),
         )
+        // Image upload
+        .route("/upload-url", get(admin_cms::get_upload_url))
+        // Categories
+        .route("/article-categories", get(admin_cms::list_article_categories))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -450,6 +455,9 @@ pub fn create_router(
         .route("/gallery", get(public_cms::list_gallery))
         .route("/articles", get(public_cms::list_articles))
         .route("/articles/:slug", get(public_cms::get_article))
+        .route("/articles-sitemap", get(public_cms::articles_sitemap))
+        .route("/article-categories", get(public_cms::list_article_categories))
+        .route("/stats", get(public_cms::public_stats))
         .with_state(cms_service);
 
     let public_router = Router::new()
