@@ -47,4 +47,25 @@ impl AiCacheRepository {
 
         Ok(())
     }
+
+    /// Delete a specific cache entry by key
+    pub async fn delete(&self, key: &str) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM ai_cache WHERE key = $1")
+            .bind(key)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+        Ok(())
+    }
+
+    /// Delete all cache entries matching a prefix (e.g. "translate_all:milk")
+    pub async fn delete_by_prefix(&self, prefix: &str) -> Result<u64, AppError> {
+        let pattern = format!("{}%", prefix);
+        let result = sqlx::query("DELETE FROM ai_cache WHERE key LIKE $1")
+            .bind(&pattern)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+        Ok(result.rows_affected())
+    }
 }

@@ -1,6 +1,7 @@
 use crate::infrastructure::R2Client;
 use crate::infrastructure::{DictionaryService, LlmAdapter, UnifiedProductResponse};
 use crate::infrastructure::persistence::{
+    AiCacheRepository,
     CatalogCategoryRepository, CatalogIngredientRepository,
 };
 use crate::shared::{AppError, AppResult, UnitType};
@@ -19,6 +20,7 @@ pub struct AdminCatalogService {
     llm_adapter: Arc<LlmAdapter>,
     category_repo: CatalogCategoryRepository,
     ingredient_repo: CatalogIngredientRepository,
+    ai_cache: AiCacheRepository,
 }
 
 /// Create Product Request - NEW ARCHITECTURE
@@ -214,6 +216,7 @@ impl AdminCatalogService {
         dictionary: DictionaryService,
         llm_adapter: Arc<LlmAdapter>,
     ) -> Self {
+        let ai_cache = AiCacheRepository::new(pool.clone());
         Self {
             pool: pool.clone(),
             r2_client,
@@ -221,6 +224,7 @@ impl AdminCatalogService {
             llm_adapter,
             category_repo: CatalogCategoryRepository::new(pool.clone()),
             ingredient_repo: CatalogIngredientRepository::new(pool),
+            ai_cache,
         }
     }
 
@@ -495,6 +499,7 @@ impl AdminCatalogService {
         .ok_or_else(|| AppError::not_found("Product not found"))?;
 
         // 2. Prepare name values
+        let old_name_en = product.name_en.clone();
         let name_en = req.name_en.unwrap_or(product.name_en);
         let mut name_pl = req.name_pl.or(product.name_pl);
         let mut name_uk = req.name_uk.or(product.name_uk);
@@ -662,6 +667,33 @@ impl AdminCatalogService {
         .await?;
 
         tx.commit().await?;
+
+        // 🧹 Invalidate AI cache for this product so frontend gets fresh data
+        let name_lower = name_en.to_lowercase();
+        let prefixes = [
+            format!("translate_all:{}", name_lower),
+            format!("product_unified:{}", name_lower),
+        ];
+        for prefix in &prefixes {
+            if let Err(e) = self.ai_cache.delete(prefix).await {
+                tracing::warn!("Failed to invalidate cache key '{}': {}", prefix, e);
+            }
+        }
+        // Also invalidate by old name if it changed
+        let old_name_lower = old_name_en.to_lowercase();
+        if old_name_lower != name_lower {
+            let old_prefixes = [
+                format!("translate_all:{}", old_name_lower),
+                format!("product_unified:{}", old_name_lower),
+            ];
+            for prefix in &old_prefixes {
+                if let Err(e) = self.ai_cache.delete(prefix).await {
+                    tracing::warn!("Failed to invalidate old cache key '{}': {}", prefix, e);
+                }
+            }
+        }
+        tracing::info!("🧹 Cache invalidated for product: {}", name_en);
+
         Ok(updated_product)
     }
 
