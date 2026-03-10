@@ -155,6 +155,7 @@ pub struct UpdateExperienceRequest {
 pub struct GalleryRow {
     pub id:             Uuid,
     pub image_url:      String,
+    pub category:       String,
     pub title_en:       String,
     pub title_pl:       String,
     pub title_ru:       String,
@@ -177,6 +178,7 @@ pub struct GalleryRow {
 pub struct GalleryPublicItem {
     pub id:             Uuid,
     pub image_url:      String,
+    pub category:       String,
     pub order_index:    i32,
     pub title_en:       String,
     pub title_pl:       String,
@@ -197,6 +199,7 @@ impl From<GalleryRow> for GalleryPublicItem {
         Self {
             id:             r.id,
             image_url:      r.image_url,
+            category:       r.category,
             order_index:    r.order_index,
             title_en:       r.title_en,
             title_pl:       r.title_pl,
@@ -217,6 +220,7 @@ impl From<GalleryRow> for GalleryPublicItem {
 #[derive(Debug, Deserialize)]
 pub struct CreateGalleryRequest {
     pub image_url:      String,
+    pub category:       Option<String>,
     pub title_en:       Option<String>,
     pub title_pl:       Option<String>,
     pub title_ru:       Option<String>,
@@ -235,6 +239,7 @@ pub struct CreateGalleryRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateGalleryRequest {
     pub image_url:      Option<String>,
+    pub category:       Option<String>,
     pub title_en:       Option<String>,
     pub title_pl:       Option<String>,
     pub title_ru:       Option<String>,
@@ -404,7 +409,7 @@ pub struct PublicStats {
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct ArticleCategoryRow {
     pub id:          Uuid,
     pub slug:        String,
@@ -414,6 +419,35 @@ pub struct ArticleCategoryRow {
     pub title_uk:    String,
     pub order_index: i32,
     pub created_at:  OffsetDateTime,
+}
+
+/// Public DTO — ISO 8601 date string instead of array
+#[derive(Debug, Serialize)]
+pub struct ArticleCategoryPublic {
+    pub id:          Uuid,
+    pub slug:        String,
+    pub title_en:    String,
+    pub title_pl:    String,
+    pub title_ru:    String,
+    pub title_uk:    String,
+    pub order_index: i32,
+    pub created_at:  String,
+}
+
+impl From<ArticleCategoryRow> for ArticleCategoryPublic {
+    fn from(r: ArticleCategoryRow) -> Self {
+        Self {
+            id:          r.id,
+            slug:        r.slug,
+            title_en:    r.title_en,
+            title_pl:    r.title_pl,
+            title_ru:    r.title_ru,
+            title_uk:    r.title_uk,
+            order_index: r.order_index,
+            created_at:  r.created_at.format(&time::format_description::well_known::Rfc3339)
+                          .unwrap_or_default(),
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -591,25 +625,34 @@ impl CmsService {
 
     // ── GALLERY ───────────────────────────────────────────────────────────────
 
-    pub async fn list_gallery(&self) -> AppResult<Vec<GalleryPublicItem>> {
-        let rows: Vec<GalleryRow> =
-            sqlx::query_as("SELECT * FROM gallery ORDER BY order_index ASC, created_at DESC")
+    pub async fn list_gallery(&self, category: Option<&str>) -> AppResult<Vec<GalleryPublicItem>> {
+        let rows: Vec<GalleryRow> = match category.filter(|s| !s.is_empty()) {
+            Some(cat) => sqlx::query_as(
+                "SELECT * FROM gallery WHERE category = $1 ORDER BY order_index ASC, created_at DESC",
+            )
+            .bind(cat)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
+            None => sqlx::query_as("SELECT * FROM gallery ORDER BY order_index ASC, created_at DESC")
                 .fetch_all(&self.pool)
                 .await
-                .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?;
+                .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
+        };
         Ok(rows.into_iter().map(GalleryPublicItem::from).collect())
     }
 
     pub async fn create_gallery(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {
         sqlx::query_as(
             r#"INSERT INTO gallery
-               (image_url, title_en, title_pl, title_ru, title_uk,
+               (image_url, category, title_en, title_pl, title_ru, title_uk,
                 description_en, description_pl, description_ru, description_uk,
                 alt_en, alt_pl, alt_ru, alt_uk, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                RETURNING *"#,
         )
         .bind(&req.image_url)
+        .bind(req.category.unwrap_or_default())
         .bind(req.title_en.unwrap_or_default())
         .bind(req.title_pl.unwrap_or_default())
         .bind(req.title_ru.unwrap_or_default())
@@ -635,13 +678,14 @@ impl CmsService {
 
         sqlx::query_as(
             r#"UPDATE gallery SET
-               image_url=$1, title_en=$2, title_pl=$3, title_ru=$4, title_uk=$5,
-               description_en=$6, description_pl=$7, description_ru=$8, description_uk=$9,
-               alt_en=$10, alt_pl=$11, alt_ru=$12, alt_uk=$13,
-               order_index=$14
-               WHERE id=$15 RETURNING *"#,
+               image_url=$1, category=$2, title_en=$3, title_pl=$4, title_ru=$5, title_uk=$6,
+               description_en=$7, description_pl=$8, description_ru=$9, description_uk=$10,
+               alt_en=$11, alt_pl=$12, alt_ru=$13, alt_uk=$14,
+               order_index=$15
+               WHERE id=$16 RETURNING *"#,
         )
         .bind(req.image_url.unwrap_or(cur.image_url))
+        .bind(req.category.unwrap_or(cur.category))
         .bind(req.title_en.unwrap_or(cur.title_en))
         .bind(req.title_pl.unwrap_or(cur.title_pl))
         .bind(req.title_ru.unwrap_or(cur.title_ru))
@@ -933,13 +977,14 @@ impl CmsService {
 
     // ── ARTICLE CATEGORIES ────────────────────────────────────────────────────
 
-    pub async fn list_categories(&self) -> AppResult<Vec<ArticleCategoryRow>> {
-        sqlx::query_as(
+    pub async fn list_categories(&self) -> AppResult<Vec<ArticleCategoryPublic>> {
+        let rows: Vec<ArticleCategoryRow> = sqlx::query_as(
             "SELECT * FROM article_categories ORDER BY order_index ASC",
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| { tracing::error!("list_categories: {e}"); AppError::internal("DB error") })
+        .map_err(|e| { tracing::error!("list_categories: {e}"); AppError::internal("DB error") })?;
+        Ok(rows.into_iter().map(ArticleCategoryPublic::from).collect())
     }
 
     // ── IMAGE UPLOAD: presigned URL ───────────────────────────────────────────
@@ -969,13 +1014,14 @@ impl CmsService {
     pub async fn create_gallery_v2(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {
         sqlx::query_as(
             r#"INSERT INTO gallery
-               (image_url, title_en, title_pl, title_ru, title_uk,
+               (image_url, category, title_en, title_pl, title_ru, title_uk,
                 description_en, description_pl, description_ru, description_uk,
                 alt_en, alt_pl, alt_ru, alt_uk, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                RETURNING *"#,
         )
         .bind(&req.image_url)
+        .bind(req.category.unwrap_or_default())
         .bind(req.title_en.unwrap_or_default())
         .bind(req.title_pl.unwrap_or_default())
         .bind(req.title_ru.unwrap_or_default())
@@ -1001,12 +1047,13 @@ impl CmsService {
 
         sqlx::query_as(
             r#"UPDATE gallery SET
-               image_url=$1, title_en=$2, title_pl=$3, title_ru=$4, title_uk=$5,
-               description_en=$6, description_pl=$7, description_ru=$8, description_uk=$9,
-               alt_en=$10, alt_pl=$11, alt_ru=$12, alt_uk=$13, order_index=$14
-               WHERE id=$15 RETURNING *"#,
+               image_url=$1, category=$2, title_en=$3, title_pl=$4, title_ru=$5, title_uk=$6,
+               description_en=$7, description_pl=$8, description_ru=$9, description_uk=$10,
+               alt_en=$11, alt_pl=$12, alt_ru=$13, alt_uk=$14, order_index=$15
+               WHERE id=$16 RETURNING *"#,
         )
         .bind(req.image_url.unwrap_or(cur.image_url))
+        .bind(req.category.unwrap_or(cur.category))
         .bind(req.title_en.unwrap_or(cur.title_en))
         .bind(req.title_pl.unwrap_or(cur.title_pl))
         .bind(req.title_ru.unwrap_or(cur.title_ru))

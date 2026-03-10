@@ -4,6 +4,14 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use serde::Deserialize;
+
+// ── GALLERY FILTER ─────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct GalleryQuery {
+    pub category: Option<String>,
+}
 
 // ── ABOUT PAGE ────────────────────────────────────────────────────────────────
 
@@ -35,9 +43,10 @@ pub async fn list_experience(
 // ── GALLERY ───────────────────────────────────────────────────────────────────
 
 pub async fn list_gallery(
+    Query(q): Query<GalleryQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_gallery().await?;
+    let rows = svc.list_gallery(q.category.as_deref()).await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 

@@ -20,6 +20,11 @@ pub struct ArticleFilterQuery {
     pub category: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct GalleryFilterQuery {
+    pub category: Option<String>,
+}
+
 // ── ABOUT PAGE ────────────────────────────────────────────────────────────────
 
 pub async fn get_about(
@@ -119,9 +124,10 @@ pub async fn delete_experience(
 
 pub async fn list_gallery(
     _claims: AdminClaims,
+    Query(q): Query<GalleryFilterQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_gallery().await?;
+    let rows = svc.list_gallery(q.category.as_deref()).await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 
