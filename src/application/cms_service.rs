@@ -172,6 +172,48 @@ pub struct GalleryRow {
     pub updated_at:     OffsetDateTime,
 }
 
+/// Public-facing gallery response — no internal timestamps, clean SEO structure
+#[derive(Debug, Serialize)]
+pub struct GalleryPublicItem {
+    pub id:             Uuid,
+    pub image_url:      String,
+    pub order_index:    i32,
+    pub title_en:       String,
+    pub title_pl:       String,
+    pub title_ru:       String,
+    pub title_uk:       String,
+    pub description_en: String,
+    pub description_pl: String,
+    pub description_ru: String,
+    pub description_uk: String,
+    pub alt_en:         String,
+    pub alt_pl:         String,
+    pub alt_ru:         String,
+    pub alt_uk:         String,
+}
+
+impl From<GalleryRow> for GalleryPublicItem {
+    fn from(r: GalleryRow) -> Self {
+        Self {
+            id:             r.id,
+            image_url:      r.image_url,
+            order_index:    r.order_index,
+            title_en:       r.title_en,
+            title_pl:       r.title_pl,
+            title_ru:       r.title_ru,
+            title_uk:       r.title_uk,
+            description_en: r.description_en,
+            description_pl: r.description_pl,
+            description_ru: r.description_ru,
+            description_uk: r.description_uk,
+            alt_en:         r.alt_en,
+            alt_pl:         r.alt_pl,
+            alt_ru:         r.alt_ru,
+            alt_uk:         r.alt_uk,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateGalleryRequest {
     pub image_url:      String,
@@ -495,11 +537,13 @@ impl CmsService {
 
     // ── GALLERY ───────────────────────────────────────────────────────────────
 
-    pub async fn list_gallery(&self) -> AppResult<Vec<GalleryRow>> {
-        sqlx::query_as("SELECT * FROM gallery ORDER BY order_index ASC, created_at DESC")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })
+    pub async fn list_gallery(&self) -> AppResult<Vec<GalleryPublicItem>> {
+        let rows: Vec<GalleryRow> =
+            sqlx::query_as("SELECT * FROM gallery ORDER BY order_index ASC, created_at DESC")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?;
+        Ok(rows.into_iter().map(GalleryPublicItem::from).collect())
     }
 
     pub async fn create_gallery(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {
