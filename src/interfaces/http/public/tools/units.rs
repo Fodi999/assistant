@@ -239,6 +239,10 @@ pub struct IngredientConvertResponse {
     pub ingredient:           String,
     pub ingredient_name:      String,
     pub slug:                 String,
+    /// If the queried slug was an old alias, this contains the canonical slug.
+    /// Frontend should 301-redirect to the new URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_slug:        Option<String>,
     pub image_url:            Option<String>,
     pub value:                f64,
     pub from:                 String,
@@ -274,33 +278,36 @@ pub async fn ingredient_convert(
 ) -> Result<Json<IngredientConvertResponse>, ApiError> {
     let lang = parse_lang(&params.lang);
 
-    // ── DB lookup: slug OR any language name, exact → prefix → substring ────
+    // ── DB lookup: slug OR slug_alias OR any language name, exact → prefix → substring ────
     let row: Option<IngredientConvertRow> = sqlx::query_as(
         r#"
-        SELECT slug, name_en, name_ru, name_pl, name_uk,
-               name_en_gen, name_ru_gen, name_pl_gen, name_uk_gen,
-               name_en_loc, name_ru_loc, name_pl_loc, name_uk_loc,
-               name_en_dat, name_ru_dat, name_pl_dat, name_uk_dat,
-               image_url, density_g_per_ml,
-               calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g
-        FROM catalog_ingredients
-        WHERE is_active = true
+        SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+               ci.name_en_gen, ci.name_ru_gen, ci.name_pl_gen, ci.name_uk_gen,
+               ci.name_en_loc, ci.name_ru_loc, ci.name_pl_loc, ci.name_uk_loc,
+               ci.name_en_dat, ci.name_ru_dat, ci.name_pl_dat, ci.name_uk_dat,
+               ci.image_url, ci.density_g_per_ml,
+               ci.calories_per_100g, ci.protein_per_100g, ci.fat_per_100g, ci.carbs_per_100g
+        FROM catalog_ingredients ci
+        LEFT JOIN slug_aliases sa ON sa.ingredient_id = ci.id AND sa.old_slug = $1
+        WHERE ci.is_active = true
           AND (
-            slug = $1
-            OR LOWER(name_en) = LOWER($1)
-            OR LOWER(name_pl) = LOWER($1)
-            OR LOWER(name_ru) = LOWER($1)
-            OR LOWER(name_uk) = LOWER($1)
-            OR slug ILIKE '%' || $1 || '%'
-            OR LOWER(name_en) ILIKE '%' || $1 || '%'
-            OR LOWER(name_pl) ILIKE '%' || $1 || '%'
-            OR LOWER(name_ru) ILIKE '%' || $1 || '%'
-            OR LOWER(name_uk) ILIKE '%' || $1 || '%'
+            ci.slug = $1
+            OR sa.old_slug = $1
+            OR LOWER(ci.name_en) = LOWER($1)
+            OR LOWER(ci.name_pl) = LOWER($1)
+            OR LOWER(ci.name_ru) = LOWER($1)
+            OR LOWER(ci.name_uk) = LOWER($1)
+            OR ci.slug ILIKE '%' || $1 || '%'
+            OR LOWER(ci.name_en) ILIKE '%' || $1 || '%'
+            OR LOWER(ci.name_pl) ILIKE '%' || $1 || '%'
+            OR LOWER(ci.name_ru) ILIKE '%' || $1 || '%'
+            OR LOWER(ci.name_uk) ILIKE '%' || $1 || '%'
           )
         ORDER BY
-          (slug = $1)::int +
-          (LOWER(name_en) = LOWER($1))::int +
-          (LOWER(name_pl) = LOWER($1))::int DESC
+          (ci.slug = $1)::int DESC,
+          (sa.old_slug = $1)::int DESC,
+          (LOWER(ci.name_en) = LOWER($1))::int +
+          (LOWER(ci.name_pl) = LOWER($1))::int DESC
         LIMIT 1
         "#,
     )
@@ -449,6 +456,18 @@ pub async fn ingredient_convert(
     let slug_ref = row.slug.as_deref().unwrap_or(&params.ingredient);
     let related = build_related(&params.from, &params.to, slug_ref);
 
+    // ── Redirect detection ────────────────────────────────────────────────────
+    // If the queried ingredient was an old slug alias, signal redirect
+    let redirect_slug = {
+        let canonical = row.slug.as_deref().unwrap_or("");
+        let queried = params.ingredient.to_lowercase();
+        if !canonical.is_empty() && canonical != queried && queried != canonical {
+            Some(canonical.to_string())
+        } else {
+            None
+        }
+    };
+
     // ── SEO metadata ──────────────────────────────────────────────────────────
     let seo = build_seo(
         &from_label, &from_loc, to_short, &to_label_gen,
@@ -469,6 +488,7 @@ pub async fn ingredient_convert(
         ingredient:           params.ingredient,
         ingredient_name,
         slug:                 slug_string,
+        redirect_slug,
         image_url:            row.image_url,
         value:                params.value,
         from:                 params.from,

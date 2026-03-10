@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
-    response::Json,
+    http::{header, StatusCode},
+    response::{IntoResponse, Json, Response},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -182,7 +182,7 @@ pub async fn get_ingredient_by_slug(
     State(pool): State<PgPool>,
     Path(slug): Path<String>,
     Query(params): Query<LangQuery>,
-) -> Result<Json<IngredientReference>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     let lang = parse_lang(&params.lang);
 
     let row = find_ingredient_ref_by_slug(&pool, &slug)
@@ -196,12 +196,48 @@ pub async fn get_ingredient_by_slug(
         })?;
 
     match row {
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": format!("Ingredient '{}' not found", slug)
-            })),
-        )),
+        None => {
+            // Check slug_aliases for 301 redirect
+            let alias: Option<(String,)> = sqlx::query_as(
+                r#"SELECT ci.slug
+                   FROM slug_aliases sa
+                   JOIN catalog_ingredients ci ON ci.id = sa.ingredient_id
+                   WHERE sa.old_slug = $1 AND ci.is_active = true
+                   LIMIT 1"#,
+            )
+            .bind(&slug)
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some((new_slug,)) = alias {
+                let lang_param = params.lang.as_deref().unwrap_or("en");
+                let location = format!("/public/ingredients/{}?lang={}", new_slug, lang_param);
+                tracing::info!("🔀 301 redirect: {} → {}", slug, new_slug);
+                Ok(Response::builder()
+                    .status(StatusCode::MOVED_PERMANENTLY)
+                    .header(header::LOCATION, &location)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::to_string(&serde_json::json!({
+                            "redirect": true,
+                            "old_slug": slug,
+                            "new_slug": new_slug,
+                            "location": location,
+                        })).unwrap_or_default()
+                    ))
+                    .unwrap()
+                    .into_response())
+            } else {
+                Err((
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": format!("Ingredient '{}' not found", slug)
+                    })),
+                ))
+            }
+        }
         Some(r) => {
             let to_f64 = |d: Option<rust_decimal::Decimal>| -> Option<f64> {
                 d.and_then(|v| rust_decimal::prelude::ToPrimitive::to_f64(&v))
@@ -253,7 +289,7 @@ pub async fn get_ingredient_by_slug(
                 localized_seasons,
                 allergens: r.allergens,
                 localized_allergens,
-            }))
+            }).into_response())
         }
     }
 }

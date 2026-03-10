@@ -323,25 +323,28 @@ pub async fn find_ingredient_ref_by_slug(
     sqlx::query_as(
         r#"
         SELECT
-            slug,
-            name_en,
-            name_pl,
-            name_ru,
-            name_uk,
-            description_en,
-            description_pl,
-            description_ru,
-            description_uk,
-            image_url,
-            calories_per_100g,
-            protein_per_100g,
-            fat_per_100g,
-            carbs_per_100g,
-            density_g_per_ml,
-            ARRAY(SELECT unnest(seasons::text[])) AS seasons,
-            ARRAY(SELECT unnest(allergens::text[])) AS allergens
-        FROM catalog_ingredients
-        WHERE slug = $1 AND is_active = true
+            ci.slug,
+            ci.name_en,
+            ci.name_pl,
+            ci.name_ru,
+            ci.name_uk,
+            ci.description_en,
+            ci.description_pl,
+            ci.description_ru,
+            ci.description_uk,
+            ci.image_url,
+            ci.calories_per_100g,
+            ci.protein_per_100g,
+            ci.fat_per_100g,
+            ci.carbs_per_100g,
+            ci.density_g_per_ml,
+            ARRAY(SELECT unnest(ci.seasons::text[])) AS seasons,
+            ARRAY(SELECT unnest(ci.allergens::text[])) AS allergens
+        FROM catalog_ingredients ci
+        LEFT JOIN slug_aliases sa ON sa.ingredient_id = ci.id AND sa.old_slug = $1
+        WHERE (ci.slug = $1 OR sa.old_slug = $1) AND ci.is_active = true
+        ORDER BY (ci.slug = $1)::int DESC
+        LIMIT 1
         "#,
     )
     .bind(slug)

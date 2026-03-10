@@ -11,6 +11,7 @@ pub mod recipe_repository;
 pub mod recipe_translation_repository;
 pub mod recipe_v2_repository; // V2 with translation support
 pub mod refresh_token_repository;
+pub mod slug_alias_repository;
 pub mod tenant_ingredient_repository;
 pub mod tenant_repository;
 pub mod user_repository;
@@ -28,6 +29,7 @@ pub use recipe_repository::*;
 pub use recipe_translation_repository::*;
 pub use recipe_v2_repository::*;
 pub use refresh_token_repository::*;
+pub use slug_alias_repository::{SlugAliasRepository, SlugResolution};
 pub use tenant_ingredient_repository::*;
 pub use tenant_repository::*;
 pub use user_repository::*;

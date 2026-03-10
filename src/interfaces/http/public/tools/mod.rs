@@ -28,7 +28,7 @@ pub use kitchen::{
     food_cost_calc, ingredient_equivalents, ingredient_suggestions, popular_conversions,
     scale_recipe, yield_calc,
 };
-pub use nutrition::{compare_foods, ingredients_db, nutrition};
+pub use nutrition::{compare_foods, ingredients_db, nutrition, resolve_slug};
 pub use seasonality::{
     best_in_season, best_right_now, in_season_now, list_regions, product_search,
     product_seasonality, products_by_month, recipe_cost, recipe_nutrition, seasonal_calendar,

@@ -694,6 +694,16 @@ impl AdminCatalogService {
         }
         tracing::info!("🧹 Cache invalidated for product: {}", name_en);
 
+        // Log slug change if name_en changed (DB trigger auto-updates slug + saves alias)
+        let old_slug = product.slug.as_deref().unwrap_or("");
+        let new_slug = updated_product.slug.as_deref().unwrap_or("");
+        if !old_slug.is_empty() && !new_slug.is_empty() && old_slug != new_slug {
+            tracing::info!(
+                "🔀 Slug auto-updated: '{}' → '{}' (old slug saved as alias for 301 redirect)",
+                old_slug, new_slug
+            );
+        }
+
         Ok(updated_product)
     }
 

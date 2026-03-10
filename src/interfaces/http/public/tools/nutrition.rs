@@ -33,6 +33,10 @@ pub struct NutritionQuery {
 pub struct NutritionResponse {
     pub query:             String,
     pub slug:              Option<String>,
+    /// If the queried slug was an old alias, this contains the canonical slug.
+    /// Frontend should 301-redirect to the new URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_slug:     Option<String>,
     pub name:              String,
     pub product_type:      Option<String>,
     pub image_url:         Option<String>,
@@ -77,9 +81,10 @@ pub async fn nutrition(
     let db_row: Option<CatalogNutritionRow> = sqlx::query_as(&format!(
         r#"SELECT {CATALOG_NUTRITION_COLS}
            FROM catalog_ingredients
+           LEFT JOIN slug_aliases sa ON sa.ingredient_id = catalog_ingredients.id AND sa.old_slug = $1
            WHERE is_active = true
-             AND (slug = $1 OR LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
-           ORDER BY (slug = $1 OR LOWER(name_en) = $1) DESC, LENGTH(name_en) ASC
+             AND (slug = $1 OR sa.old_slug = $1 OR LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
+           ORDER BY (slug = $1)::int DESC, (sa.old_slug = $1)::int DESC, (LOWER(name_en) = $1)::int DESC, LENGTH(name_en) ASC
            LIMIT 1"#,
     ))
     .bind(&lookup)
@@ -116,8 +121,20 @@ pub async fn nutrition(
     let factor    = amount_g / 100.0;
     let for_amount = per_100g.scale(factor);
 
+    // If the queried slug was an old alias, signal a redirect to the canonical slug
+    let redirect_slug = if found {
+        let canonical = slug_val.as_deref().unwrap_or("");
+        if !canonical.is_empty() && canonical != lookup {
+            Some(canonical.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     Json(NutritionResponse {
-        query: query_str, slug: slug_val.clone(), name: localized,
+        query: query_str, slug: slug_val.clone(), redirect_slug, name: localized,
         product_type, image_url: image, water_type, wild_farmed, sushi_grade,
         amount_g: uc::round_to(amount_g, 1),
         unit: unit_str, unit_label: label("g", lang),
@@ -292,9 +309,10 @@ async fn lookup_one(pool: &PgPool, query: &str) -> Option<CatalogNutritionRow> {
     sqlx::query_as(&format!(
         r#"SELECT {CATALOG_NUTRITION_COLS}
            FROM catalog_ingredients
+           LEFT JOIN slug_aliases sa ON sa.ingredient_id = catalog_ingredients.id AND sa.old_slug = $1
            WHERE is_active = true
-             AND (slug = $1 OR LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
-           ORDER BY (slug = $1 OR LOWER(name_en) = $1) DESC, LENGTH(name_en) ASC
+             AND (slug = $1 OR sa.old_slug = $1 OR LOWER(name_en) = $1 OR LOWER(name_en) LIKE '%' || $1 || '%')
+           ORDER BY (slug = $1)::int DESC, (sa.old_slug = $1)::int DESC, (LOWER(name_en) = $1)::int DESC, LENGTH(name_en) ASC
            LIMIT 1"#,
     ))
     .bind(&lookup)
@@ -364,4 +382,79 @@ pub async fn compare_foods(
     };
 
     Json(CompareResponse { food1: s1, food2: s2, winner: w, lang: lang_str })
+}
+
+// ── 4. GET /public/tools/resolve-slug ────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ResolveSlugQuery {
+    pub slug: String,
+}
+
+#[derive(Serialize)]
+pub struct ResolveSlugResponse {
+    pub slug:          String,
+    pub canonical:     String,
+    pub is_redirect:   bool,
+    pub ingredient_id: Option<String>,
+}
+
+/// Resolve a slug: returns the canonical (current) slug.
+/// If the input slug is an old alias, `is_redirect: true` + canonical slug.
+/// Useful for frontend SSR/ISR to do 301 redirects.
+pub async fn resolve_slug(
+    State(pool): State<PgPool>,
+    Query(params): Query<ResolveSlugQuery>,
+) -> Json<ResolveSlugResponse> {
+    let slug = params.slug.to_lowercase();
+
+    // 1. Direct match?
+    let direct: Option<(uuid::Uuid, String)> = sqlx::query_as(
+        "SELECT id, slug FROM catalog_ingredients WHERE slug = $1 AND is_active = true LIMIT 1",
+    )
+    .bind(&slug)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Some((id, canonical)) = direct {
+        return Json(ResolveSlugResponse {
+            slug: slug.clone(),
+            canonical,
+            is_redirect: false,
+            ingredient_id: Some(id.to_string()),
+        });
+    }
+
+    // 2. Alias?
+    let alias: Option<(uuid::Uuid, String)> = sqlx::query_as(
+        r#"SELECT ci.id, ci.slug
+           FROM slug_aliases sa
+           JOIN catalog_ingredients ci ON ci.id = sa.ingredient_id
+           WHERE sa.old_slug = $1 AND ci.is_active = true
+           LIMIT 1"#,
+    )
+    .bind(&slug)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Some((id, canonical)) = alias {
+        return Json(ResolveSlugResponse {
+            slug,
+            canonical,
+            is_redirect: true,
+            ingredient_id: Some(id.to_string()),
+        });
+    }
+
+    // 3. Not found
+    Json(ResolveSlugResponse {
+        slug: slug.clone(),
+        canonical: slug,
+        is_redirect: false,
+        ingredient_id: None,
+    })
 }
