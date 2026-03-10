@@ -248,6 +248,7 @@ pub struct IngredientConvertResponse {
     pub to_label_short:       &'static str,
     pub unit:                 &'static str,   // alias for to_label_short, convenient for frontend
     pub result:               f64,
+    pub result_fraction:      String,   // New field: "1 ¾"
     pub density_g_per_ml:     f64,
     pub source_volume_ml:     Option<f64>,
     pub equivalents:          Option<Equivalents>,
@@ -477,6 +478,7 @@ pub async fn ingredient_convert(
         to_label_short:       to_short,
         unit:                 to_short,
         result,
+        result_fraction:      to_fraction(result),
         density_g_per_ml:     density,
         source_volume_ml,
         equivalents,
@@ -584,6 +586,41 @@ fn kitchen_round(v: f64) -> f64 {
     } else {
         uc::round_to(v, 3)
     }
+}
+
+/// Converts a float to a mixed fraction string like "1 ½", "¾", etc.
+fn to_fraction(v: f64) -> String {
+    let int_part = v.floor() as i64;
+    let frac_part = v - v.floor();
+    
+    // Kitchen-friendly fractions
+    let frac_str = if frac_part < 0.06 { "" }
+    else if frac_part < 0.18 { "⅛" }
+    else if frac_part < 0.31 { "¼" }
+    else if frac_part < 0.43 { "⅓" }
+    else if frac_part < 0.58 { "½" }
+    else if frac_part < 0.70 { "⅔" }
+    else if frac_part < 0.81 { "¾" }
+    else if frac_part < 0.93 { "⅞" }
+    else { "" };
+
+    let mut result = String::new();
+    if int_part > 0 {
+        result.push_str(&int_part.to_string());
+        if !frac_str.is_empty() {
+            result.push(' ');
+        }
+    } else if v >= 0.93 {
+        // snaps to 1
+        return "1".to_string();
+    }
+    
+    if frac_str.is_empty() && int_part == 0 {
+        return format!("{:.2}", v).trim_end_matches('0').trim_end_matches('.').to_string();
+    }
+    
+    result.push_str(frac_str);
+    result
 }
 
 // ── Related conversions ───────────────────────────────────────────────────────
