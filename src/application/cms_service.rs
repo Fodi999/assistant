@@ -680,8 +680,18 @@ impl CmsService {
             .map_err(|e| { tracing::error!("list_gallery_categories: {e}"); AppError::internal("DB error") })
     }
 
-    pub async fn list_gallery(&self, category_slug: Option<&str>) -> AppResult<Vec<GalleryPublicItem>> {
+    pub async fn list_gallery(&self, category_slug: Option<&str>, published_only: bool) -> AppResult<Vec<GalleryPublicItem>> {
         let rows: Vec<GalleryRow> = match category_slug.filter(|s| !s.is_empty()) {
+            Some(slug) if published_only => sqlx::query_as(
+                r#"SELECT g.* FROM gallery g
+                   JOIN gallery_categories gc ON gc.id = g.category_id
+                   WHERE gc.slug = $1 AND g.status = 'published'
+                   ORDER BY g.order_index ASC, g.created_at DESC"#,
+            )
+            .bind(slug)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
             Some(slug) => sqlx::query_as(
                 r#"SELECT g.* FROM gallery g
                    JOIN gallery_categories gc ON gc.id = g.category_id
@@ -689,6 +699,12 @@ impl CmsService {
                    ORDER BY g.order_index ASC, g.created_at DESC"#,
             )
             .bind(slug)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
+            None if published_only => sqlx::query_as(
+                "SELECT * FROM gallery WHERE status = 'published' ORDER BY order_index ASC, created_at DESC"
+            )
             .fetch_all(&self.pool)
             .await
             .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,

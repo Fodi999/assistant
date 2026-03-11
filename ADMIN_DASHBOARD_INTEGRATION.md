@@ -1585,8 +1585,104 @@ lib/
 ### Публичный API — галерея с фильтром
 
 ```
-GET /public/gallery                    — все фото
-GET /public/gallery?category=kitchen   — только кухня
-GET /public/gallery?category=sushi     — только суши
-GET /public/gallery?category=fish      — только рыба
+GET /public/gallery                    — все фото со status='published'
+GET /public/gallery?category=kitchen   — только кухня (published)
+GET /public/gallery?category=sushi     — только суши (published)
+GET /public/gallery?category=fish      — только рыба (published)
+GET /public/gallery-categories         — список категорий (для фильтра на фронте)
+```
+
+> **Важно:** публичный endpoint возвращает **только** элементы с `status = 'published'`.
+> Черновики (`draft`) и архив (`archived`) на фронтенд не попадают.
+> Админский endpoint `GET /api/admin/cms/gallery` возвращает **все** статусы.
+
+---
+
+## 12. Как управлять публикацией фото в галерее
+
+### Значения `status`
+
+| Значение | Видно на фронте? | Описание |
+|---|---|---|
+| `published` | ✅ Да | Фото отображается на сайте |
+| `draft` | ❌ Нет | Черновик — только в админке |
+| `archived` | ❌ Нет | Скрыто без удаления |
+
+### Изменить статус через API
+
+```typescript
+// Опубликовать фото
+await updateGallery(id, { status: 'published' })
+
+// Скрыть (перевести в черновик)
+await updateGallery(id, { status: 'draft' })
+
+// Архивировать
+await updateGallery(id, { status: 'archived' })
+```
+
+### Полный флоу: создать → опубликовать
+
+```typescript
+// 1. Загрузить фото в R2
+const image_url = await uploadImage(file, 'gallery')
+
+// 2. Создать как черновик (status: 'draft' — не виден на сайте)
+const item = await createGallery({
+  image_url,
+  category_id: '...uuid...',
+  slug: 'salmon-sushi-roll',
+  status: 'draft',           // ← черновик
+  title_ru: 'Суши с лососем',
+  alt_ru: 'Суши с лососем — шеф Дмитрий Фомин',
+})
+
+// 3. Когда готово — опубликовать
+await updateGallery(item.id, { status: 'published' })
+// Теперь GET /public/gallery вернёт этот элемент
+```
+
+### Кнопка публикации в списке галереи (для admin/cms/gallery/page.tsx)
+
+```tsx
+// Добавить в карточку фото
+<button
+  onClick={() => apiFetch(`/api/admin/cms/gallery/${item.id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status: item.status === 'published' ? 'draft' : 'published' }),
+  }).then(() => load(filterCat))}
+  className={`text-xs px-2 py-1 rounded font-medium ${
+    item.status === 'published'
+      ? 'bg-green-100 text-green-700 hover:bg-green-200'
+      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+  }`}
+>
+  {item.status === 'published' ? '✅ Published' : '📝 Draft'}
+</button>
+```
+
+### Загрузить категории и показать select с реальными UUID
+
+```typescript
+// В форме добавления/редактирования фото
+// Загружать один раз при открытии страницы:
+const [categories, setCategories] = useState<GalleryCategory[]>([])
+
+useEffect(() => {
+  apiFetch<GalleryCategory[]>('/api/admin/cms/gallery-categories')
+    .then(setCategories)
+}, [])
+
+// В JSX:
+<select
+  value={form.category_id ?? ''}
+  onChange={e => set('category_id', e.target.value || null)}
+>
+  <option value="">— без категории —</option>
+  {categories.map(cat => (
+    <option key={cat.id} value={cat.id}>
+      {cat.title_ru}
+    </option>
+  ))}
+</select>
 ```

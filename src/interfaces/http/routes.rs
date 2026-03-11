@@ -464,6 +464,7 @@ pub fn create_router(
         .route("/expertise", get(public_cms::list_expertise))
         .route("/experience", get(public_cms::list_experience))
         .route("/gallery", get(public_cms::list_gallery))
+        .route("/gallery-categories", get(public_cms::list_gallery_categories))
         .route("/articles", get(public_cms::list_articles))
         .route("/articles/:slug", get(public_cms::get_article))
         .route("/articles-sitemap", get(public_cms::articles_sitemap))

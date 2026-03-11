@@ -135,7 +135,7 @@ pub async fn list_gallery(
     Query(q): Query<GalleryFilterQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_gallery(q.category.as_deref()).await?;
+    let rows = svc.list_gallery(q.category.as_deref(), false).await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 

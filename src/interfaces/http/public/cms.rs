@@ -46,7 +46,15 @@ pub async fn list_gallery(
     Query(q): Query<GalleryQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_gallery(q.category.as_deref()).await?;
+    // published_only = true: фронтенд видит только status = 'published'
+    let rows = svc.list_gallery(q.category.as_deref(), true).await?;
+    Ok(Json(serde_json::to_value(rows).unwrap()))
+}
+
+pub async fn list_gallery_categories(
+    State(svc): State<CmsService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = svc.list_gallery_categories().await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 
