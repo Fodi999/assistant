@@ -429,6 +429,7 @@ pub fn create_router(
             axum::routing::put(admin_cms::update_gallery)
                 .delete(admin_cms::delete_gallery),
         )
+        .route("/gallery-categories", get(admin_cms::list_gallery_categories))
         // Knowledge Articles
         .route("/articles", get(admin_cms::list_articles).post(admin_cms::create_article))
         .route("/articles/:id", get(admin_cms::get_article))

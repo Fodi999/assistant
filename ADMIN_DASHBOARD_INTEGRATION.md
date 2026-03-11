@@ -322,10 +322,20 @@ export interface Experience {
   created_at: string; updated_at: string
 }
 
+export interface GalleryCategory {
+  id: string
+  slug: string
+  title_en: string; title_pl: string; title_ru: string; title_uk: string
+  order_index: number
+  created_at: string; updated_at: string
+}
+
 export interface Gallery {
   id: string
   image_url: string
-  category: string          // "kitchen" | "market" | "fish" | "sushi" | ""
+  category_id: string | null    // UUID → gallery_categories.id
+  slug: string                  // unique, URL-safe
+  status: string                // "published" | "draft" | "archived"
   title_en: string; title_pl: string; title_ru: string; title_uk: string
   description_en: string; description_pl: string
   description_ru: string; description_uk: string
@@ -606,10 +616,12 @@ POST   /api/admin/cms/experience          { restaurant, country, position, start
 PUT    /api/admin/cms/experience/:id
 DELETE /api/admin/cms/experience/:id
 
-GET    /api/admin/cms/gallery             ?category=kitchen  (опционально)
-POST   /api/admin/cms/gallery             { image_url, category, title_*, description_*, alt_*, order_index, instagram_url?, pinterest_url?, facebook_url?, tiktok_url?, website_url? }
+GET    /api/admin/cms/gallery             ?category=<slug>  (фильтр по slug категории)
+POST   /api/admin/cms/gallery             { image_url, category_id?, slug?, status?, title_*, description_*, alt_*, order_index?, instagram_url?, pinterest_url?, facebook_url?, tiktok_url?, website_url? }
 PUT    /api/admin/cms/gallery/:id
 DELETE /api/admin/cms/gallery/:id
+
+GET    /api/admin/cms/gallery-categories
 
 GET    /api/admin/cms/articles            — все (включая черновики)
 GET    /api/admin/cms/articles/:id
@@ -1124,17 +1136,22 @@ GET /public/articles?page=2&limit=10
 
 ```typescript
 // lib/gallery-categories.ts
-export const GALLERY_CATEGORIES = [
-  { value: '',         label: { ru: 'Все',         en: 'All' } },
-  { value: 'kitchen',  label: { ru: 'Кухня',       en: 'Kitchen' } },
-  { value: 'market',   label: { ru: 'Рынок',       en: 'Market' } },
-  { value: 'fish',     label: { ru: 'Рыба',        en: 'Fish' } },
-  { value: 'sushi',    label: { ru: 'Суши',        en: 'Sushi' } },
-  { value: 'events',   label: { ru: 'Мероприятия', en: 'Events' } },
-  { value: 'other',    label: { ru: 'Другое',      en: 'Other' } },
+// id значения приходят из GET /api/admin/cms/gallery-categories
+// Здесь хранятся только slug-лейблы для отображения на фронте
+export const GALLERY_CATEGORY_SLUGS = [
+  { value: '',        label: { ru: 'Все',          en: 'All' } },
+  { value: 'kitchen', label: { ru: 'Кухня',        en: 'Kitchen' } },
+  { value: 'market',  label: { ru: 'Рынок',        en: 'Market' } },
+  { value: 'fish',    label: { ru: 'Рыба',         en: 'Fish' } },
+  { value: 'sushi',   label: { ru: 'Суши',         en: 'Sushi' } },
+  { value: 'events',  label: { ru: 'Мероприятия',  en: 'Events' } },
+  { value: 'other',   label: { ru: 'Другое',       en: 'Other' } },
 ] as const
 
-export type GalleryCategoryValue = typeof GALLERY_CATEGORIES[number]['value']
+export type GalleryCategorySlug = typeof GALLERY_CATEGORY_SLUGS[number]['value']
+
+// Загрузить реальные категории из API (с UUID id):
+// GET /api/admin/cms/gallery-categories → GalleryCategory[]
 ```
 
 ---
@@ -1285,7 +1302,9 @@ export default function NewGalleryPage() {
 
   const [form, setForm] = useState({
     image_url: '',
-    category: 'kitchen',
+    category_id: null as string | null,
+    slug: '',
+    status: 'published',
     order_index: 0,
     title_en: '', title_pl: '', title_ru: '', title_uk: '',
     description_en: '', description_pl: '', description_ru: '', description_uk: '',
@@ -1382,20 +1401,33 @@ export default function NewGalleryPage() {
           )}
         </div>
 
-        {/* Категория + порядок */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Категория + статус + порядок */}
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Категория</label>
             <select
-              value={form.category}
-              onChange={e => set('category', e.target.value)}
+              value={form.category_id ?? ''}
+              onChange={e => set('category_id', e.target.value || null)}
               className="w-full border rounded-lg px-3 py-2 text-sm"
             >
+              <option value="">— без категории —</option>
               {GALLERY_CATEGORIES.filter(c => c.value !== '').map(cat => (
-                <option key={cat.value} value={cat.value}>
+                <option key={cat.id} value={cat.id}>
                   {cat.label.ru}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Статус</label>
+            <select
+              value={form.status}
+              onChange={e => set('status', e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="published">✅ Опубликовано</option>
+              <option value="draft">📝 Черновик</option>
+              <option value="archived">📦 Архив</option>
             </select>
           </div>
           <div>
@@ -1407,6 +1439,20 @@ export default function NewGalleryPage() {
               className="w-full border rounded-lg px-3 py-2 text-sm"
             />
           </div>
+        </div>
+
+        {/* Slug */}
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            Slug <span className="text-gray-400 font-normal">— авто из title EN если пусто</span>
+          </label>
+          <input
+            type="text"
+            value={form.slug}
+            onChange={e => set('slug', e.target.value)}
+            placeholder="salmon-sushi-roll"
+            className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+          />
         </div>
       </div>
 

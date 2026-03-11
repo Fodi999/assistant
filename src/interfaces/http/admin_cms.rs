@@ -122,6 +122,14 @@ pub async fn delete_experience(
 
 // ── GALLERY ───────────────────────────────────────────────────────────────────
 
+pub async fn list_gallery_categories(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = svc.list_gallery_categories().await?;
+    Ok(Json(serde_json::to_value(rows).unwrap()))
+}
+
 pub async fn list_gallery(
     _claims: AdminClaims,
     Query(q): Query<GalleryFilterQuery>,

@@ -152,10 +152,25 @@ pub struct UpdateExperienceRequest {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct GalleryCategoryRow {
+    pub id:          Uuid,
+    pub slug:        String,
+    pub title_en:    String,
+    pub title_pl:    String,
+    pub title_ru:    String,
+    pub title_uk:    String,
+    pub order_index: i32,
+    pub created_at:  OffsetDateTime,
+    pub updated_at:  OffsetDateTime,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct GalleryRow {
     pub id:             Uuid,
     pub image_url:      String,
-    pub category:       String,
+    pub category_id:    Option<Uuid>,
+    pub slug:           String,
+    pub status:         String,
     pub title_en:       String,
     pub title_pl:       String,
     pub title_ru:       String,
@@ -183,7 +198,9 @@ pub struct GalleryRow {
 pub struct GalleryPublicItem {
     pub id:             Uuid,
     pub image_url:      String,
-    pub category:       String,
+    pub category_id:    Option<Uuid>,
+    pub slug:           String,
+    pub status:         String,
     pub order_index:    i32,
     pub title_en:       String,
     pub title_pl:       String,
@@ -209,7 +226,9 @@ impl From<GalleryRow> for GalleryPublicItem {
         Self {
             id:             r.id,
             image_url:      r.image_url,
-            category:       r.category,
+            category_id:    r.category_id,
+            slug:           r.slug,
+            status:         r.status,
             order_index:    r.order_index,
             title_en:       r.title_en,
             title_pl:       r.title_pl,
@@ -235,7 +254,9 @@ impl From<GalleryRow> for GalleryPublicItem {
 #[derive(Debug, Deserialize)]
 pub struct CreateGalleryRequest {
     pub image_url:      String,
-    pub category:       Option<String>,
+    pub category_id:    Option<Uuid>,
+    pub slug:           Option<String>,
+    pub status:         Option<String>,
     pub title_en:       Option<String>,
     pub title_pl:       Option<String>,
     pub title_ru:       Option<String>,
@@ -259,7 +280,9 @@ pub struct CreateGalleryRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateGalleryRequest {
     pub image_url:      Option<String>,
-    pub category:       Option<String>,
+    pub category_id:    Option<Uuid>,
+    pub slug:           Option<String>,
+    pub status:         Option<String>,
     pub title_en:       Option<String>,
     pub title_pl:       Option<String>,
     pub title_ru:       Option<String>,
@@ -650,12 +673,22 @@ impl CmsService {
 
     // ── GALLERY ───────────────────────────────────────────────────────────────
 
-    pub async fn list_gallery(&self, category: Option<&str>) -> AppResult<Vec<GalleryPublicItem>> {
-        let rows: Vec<GalleryRow> = match category.filter(|s| !s.is_empty()) {
-            Some(cat) => sqlx::query_as(
-                "SELECT * FROM gallery WHERE category = $1 ORDER BY order_index ASC, created_at DESC",
+    pub async fn list_gallery_categories(&self) -> AppResult<Vec<GalleryCategoryRow>> {
+        sqlx::query_as("SELECT * FROM gallery_categories ORDER BY order_index ASC")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| { tracing::error!("list_gallery_categories: {e}"); AppError::internal("DB error") })
+    }
+
+    pub async fn list_gallery(&self, category_slug: Option<&str>) -> AppResult<Vec<GalleryPublicItem>> {
+        let rows: Vec<GalleryRow> = match category_slug.filter(|s| !s.is_empty()) {
+            Some(slug) => sqlx::query_as(
+                r#"SELECT g.* FROM gallery g
+                   JOIN gallery_categories gc ON gc.id = g.category_id
+                   WHERE gc.slug = $1
+                   ORDER BY g.order_index ASC, g.created_at DESC"#,
             )
-            .bind(cat)
+            .bind(slug)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
@@ -668,17 +701,32 @@ impl CmsService {
     }
 
     pub async fn create_gallery(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {
+        // Auto-generate slug from title_en if not provided
+        let slug = match req.slug.as_deref().filter(|s| !s.is_empty()) {
+            Some(s) => s.to_string(),
+            None => {
+                let base = if req.title_en.as_deref().unwrap_or("").is_empty() {
+                    "gallery".to_string()
+                } else {
+                    slugify(req.title_en.as_deref().unwrap_or("gallery"))
+                };
+                format!("{}-{}", base, &uuid::Uuid::new_v4().to_string()[..8])
+            }
+        };
         sqlx::query_as(
             r#"INSERT INTO gallery
-               (image_url, category, title_en, title_pl, title_ru, title_uk,
+               (image_url, category_id, slug, status,
+                title_en, title_pl, title_ru, title_uk,
                 description_en, description_pl, description_ru, description_uk,
                 alt_en, alt_pl, alt_ru, alt_uk, order_index,
                 instagram_url, pinterest_url, facebook_url, tiktok_url, website_url)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
                RETURNING *"#,
         )
         .bind(&req.image_url)
-        .bind(req.category.unwrap_or_default())
+        .bind(req.category_id)
+        .bind(&slug)
+        .bind(req.status.unwrap_or_else(|| "published".to_string()))
         .bind(req.title_en.unwrap_or_default())
         .bind(req.title_pl.unwrap_or_default())
         .bind(req.title_ru.unwrap_or_default())
@@ -699,7 +747,13 @@ impl CmsService {
         .bind(req.website_url)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| { tracing::error!("create_gallery: {e}"); AppError::internal("Failed to create") })
+        .map_err(|e| {
+            if e.to_string().contains("unique") || e.to_string().contains("duplicate") {
+                AppError::conflict(&format!("Gallery item with slug '{slug}' already exists"))
+            } else {
+                tracing::error!("create_gallery: {e}"); AppError::internal("Failed to create")
+            }
+        })
     }
 
     pub async fn update_gallery(&self, id: Uuid, req: UpdateGalleryRequest) -> AppResult<GalleryRow> {
@@ -709,15 +763,18 @@ impl CmsService {
 
         sqlx::query_as(
             r#"UPDATE gallery SET
-               image_url=$1, category=$2, title_en=$3, title_pl=$4, title_ru=$5, title_uk=$6,
-               description_en=$7, description_pl=$8, description_ru=$9, description_uk=$10,
-               alt_en=$11, alt_pl=$12, alt_ru=$13, alt_uk=$14,
-               order_index=$15,
-               instagram_url=$16, pinterest_url=$17, facebook_url=$18, tiktok_url=$19, website_url=$20
-               WHERE id=$21 RETURNING *"#,
+               image_url=$1, category_id=$2, slug=$3, status=$4,
+               title_en=$5, title_pl=$6, title_ru=$7, title_uk=$8,
+               description_en=$9, description_pl=$10, description_ru=$11, description_uk=$12,
+               alt_en=$13, alt_pl=$14, alt_ru=$15, alt_uk=$16,
+               order_index=$17,
+               instagram_url=$18, pinterest_url=$19, facebook_url=$20, tiktok_url=$21, website_url=$22
+               WHERE id=$23 RETURNING *"#,
         )
         .bind(req.image_url.unwrap_or(cur.image_url))
-        .bind(req.category.unwrap_or(cur.category))
+        .bind(req.category_id.or(cur.category_id))
+        .bind(req.slug.unwrap_or(cur.slug))
+        .bind(req.status.unwrap_or(cur.status))
         .bind(req.title_en.unwrap_or(cur.title_en))
         .bind(req.title_pl.unwrap_or(cur.title_pl))
         .bind(req.title_ru.unwrap_or(cur.title_ru))
@@ -1049,64 +1106,10 @@ impl CmsService {
     // ── GALLERY (updated with alt fields) ─────────────────────────────────────
 
     pub async fn create_gallery_v2(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {
-        sqlx::query_as(
-            r#"INSERT INTO gallery
-               (image_url, category, title_en, title_pl, title_ru, title_uk,
-                description_en, description_pl, description_ru, description_uk,
-                alt_en, alt_pl, alt_ru, alt_uk, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-               RETURNING *"#,
-        )
-        .bind(&req.image_url)
-        .bind(req.category.unwrap_or_default())
-        .bind(req.title_en.unwrap_or_default())
-        .bind(req.title_pl.unwrap_or_default())
-        .bind(req.title_ru.unwrap_or_default())
-        .bind(req.title_uk.unwrap_or_default())
-        .bind(req.description_en.unwrap_or_default())
-        .bind(req.description_pl.unwrap_or_default())
-        .bind(req.description_ru.unwrap_or_default())
-        .bind(req.description_uk.unwrap_or_default())
-        .bind(req.alt_en.unwrap_or_default())
-        .bind(req.alt_pl.unwrap_or_default())
-        .bind(req.alt_ru.unwrap_or_default())
-        .bind(req.alt_uk.unwrap_or_default())
-        .bind(req.order_index.unwrap_or(0))
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| { tracing::error!("create_gallery_v2: {e}"); AppError::internal("Failed to create") })
+        self.create_gallery(req).await
     }
 
     pub async fn update_gallery_v2(&self, id: Uuid, req: UpdateGalleryRequest) -> AppResult<GalleryRow> {
-        let cur: GalleryRow = sqlx::query_as("SELECT * FROM gallery WHERE id = $1")
-            .bind(id).fetch_optional(&self.pool).await?
-            .ok_or_else(|| AppError::not_found("Gallery item not found"))?;
-
-        sqlx::query_as(
-            r#"UPDATE gallery SET
-               image_url=$1, category=$2, title_en=$3, title_pl=$4, title_ru=$5, title_uk=$6,
-               description_en=$7, description_pl=$8, description_ru=$9, description_uk=$10,
-               alt_en=$11, alt_pl=$12, alt_ru=$13, alt_uk=$14, order_index=$15
-               WHERE id=$16 RETURNING *"#,
-        )
-        .bind(req.image_url.unwrap_or(cur.image_url))
-        .bind(req.category.unwrap_or(cur.category))
-        .bind(req.title_en.unwrap_or(cur.title_en))
-        .bind(req.title_pl.unwrap_or(cur.title_pl))
-        .bind(req.title_ru.unwrap_or(cur.title_ru))
-        .bind(req.title_uk.unwrap_or(cur.title_uk))
-        .bind(req.description_en.unwrap_or(cur.description_en))
-        .bind(req.description_pl.unwrap_or(cur.description_pl))
-        .bind(req.description_ru.unwrap_or(cur.description_ru))
-        .bind(req.description_uk.unwrap_or(cur.description_uk))
-        .bind(req.alt_en.unwrap_or(cur.alt_en))
-        .bind(req.alt_pl.unwrap_or(cur.alt_pl))
-        .bind(req.alt_ru.unwrap_or(cur.alt_ru))
-        .bind(req.alt_uk.unwrap_or(cur.alt_uk))
-        .bind(req.order_index.unwrap_or(cur.order_index))
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| { tracing::error!("update_gallery_v2: {e}"); AppError::internal("Failed to update") })
+        self.update_gallery(id, req).await
     }
 }

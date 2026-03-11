@@ -467,25 +467,140 @@ GET /public/stats                    → { articles_count, experience_years, cou
 
 ---
 
-## 11. Структура проекта
+## 11. app/page.tsx — Главная страница (stats + последние статьи)
+
+```typescript
+// app/page.tsx
+import { getPublicStats, listArticles, getAbout } from '@/lib/public-api'
+import Link from 'next/link'
+
+export default async function HomePage() {
+  const [stats, { data: articles }, about] = await Promise.all([
+    getPublicStats(),
+    listArticles({ page: 1, limit: 3 }),   // последние 3 статьи
+    getAbout(),
+  ])
+
+  return (
+    <main>
+      {/* Hero — фото и имя шефа */}
+      <section>
+        {about.image_url && (
+          <img src={about.image_url} alt={about.title_ru} />
+        )}
+        <h1>{about.title_ru}</h1>
+        <p>{about.content_ru.slice(0, 200)}...</p>
+        <Link href="/about">Подробнее обо мне →</Link>
+      </section>
+
+      {/* Статистика */}
+      <section>
+        <div>
+          <strong>{stats.experience_years}</strong>
+          <span>лет опыта</span>
+        </div>
+        <div>
+          <strong>{stats.countries}</strong>
+          <span>стран</span>
+        </div>
+        <div>
+          <strong>{stats.articles_count}</strong>
+          <span>статей</span>
+        </div>
+      </section>
+
+      {/* Последние статьи */}
+      <section>
+        <h2>Последние статьи</h2>
+        <ul>
+          {articles.map(a => (
+            <li key={a.id}>
+              <Link href={`/articles/${a.slug}`}>
+                {a.image_url && <img src={a.image_url} alt={a.title_ru} />}
+                <h3>{a.title_ru}</h3>
+                <p>{a.seo_description}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <Link href="/articles">Все статьи →</Link>
+      </section>
+    </main>
+  )
+}
+```
+
+---
+
+## 12. app/layout.tsx — Layout с навигацией
+
+```typescript
+// app/layout.tsx
+import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Chef Dima Fomin',
+  description: 'Авторская кухня шеф-повара Димы Фомина',
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="ru">
+      <body>
+        <header>
+          <nav>
+            <Link href="/">Главная</Link>
+            <Link href="/about">О шефе</Link>
+            <Link href="/articles">Статьи</Link>
+            <Link href="/gallery">Галерея</Link>
+          </nav>
+        </header>
+
+        <main>{children}</main>
+
+        <footer>
+          <p>© {new Date().getFullYear()} Chef Dima Fomin</p>
+        </footer>
+      </body>
+    </html>
+  )
+}
+```
+
+---
+
+## 13. Структура проекта
 
 ```
 blog-site/
 ├── app/
-│   ├── layout.tsx
-│   ├── page.tsx             ← Главная (stats + последние статьи)
+│   ├── layout.tsx               ← Навигация + footer
+│   ├── page.tsx                 ← Главная (hero + stats + последние статьи)
+│   ├── sitemap.ts               ← Динамический sitemap.xml
 │   ├── about/
-│   │   └── page.tsx         ← О шефе
+│   │   └── page.tsx             ← О шефе (bio + специализации + опыт)
 │   ├── articles/
-│   │   ├── page.tsx         ← Список + поиск + пагинация
+│   │   ├── page.tsx             ← Список статей + поиск + пагинация
 │   │   └── [slug]/
-│   │       └── page.tsx     ← Статья + SEO
+│   │       └── page.tsx         ← Статья + SEO meta + SSG
 │   └── gallery/
-│       └── page.tsx
+│       └── page.tsx             ← Фотогалерея
 ├── lib/
-│   ├── public-api.ts        ← Все API вызовы
-│   ├── blog-types.ts        ← TypeScript типы
-│   └── i18n.ts              ← Мультиязычный хелпер
-└── app/
-    └── sitemap.ts           ← Динамический sitemap.xml
+│   ├── public-api.ts            ← Все API вызовы (без авторизации)
+│   ├── blog-types.ts            ← TypeScript типы
+│   └── i18n.ts                  ← pick(obj, 'title', 'ru') хелпер
+└── .env.local
+    └── NEXT_PUBLIC_API_URL      ← URL Koyeb бекенда
 ```
+
+### Какая страница что использует
+
+| Страница | API endpoint | Данные |
+|---|---|---|
+| `/` | `/public/stats` + `/public/articles` + `/public/about` | Статистика + последние 3 статьи + фото шефа |
+| `/about` | `/public/about` + `/public/expertise` + `/public/experience` | Биография + специализации + опыт работы |
+| `/articles` | `/public/articles?page=1&limit=12&search=...` | Список с пагинацией и поиском |
+| `/articles/[slug]` | `/public/articles/:slug` | Полная статья + SEO |
+| `/gallery` | `/public/gallery` | Все фото с alt-текстами |
+| `sitemap.xml` | `/public/articles-sitemap` | Динамический sitemap |
