@@ -191,6 +191,9 @@ pub struct GalleryRow {
     pub website_url:    Option<String>,
     pub created_at:     OffsetDateTime,
     pub updated_at:     OffsetDateTime,
+    /// Populated via LEFT JOIN with gallery_categories — not a real column
+    #[sqlx(default)]
+    pub category_slug:  Option<String>,
 }
 
 /// Public-facing gallery response — no internal timestamps, clean SEO structure
@@ -199,6 +202,7 @@ pub struct GalleryPublicItem {
     pub id:             Uuid,
     pub image_url:      String,
     pub category_id:    Option<Uuid>,
+    pub category_slug:  Option<String>,
     pub slug:           String,
     pub status:         String,
     pub order_index:    i32,
@@ -227,6 +231,7 @@ impl From<GalleryRow> for GalleryPublicItem {
             id:             r.id,
             image_url:      r.image_url,
             category_id:    r.category_id,
+            category_slug:  r.category_slug,
             slug:           r.slug,
             status:         r.status,
             order_index:    r.order_index,
@@ -683,8 +688,9 @@ impl CmsService {
     pub async fn list_gallery(&self, category_slug: Option<&str>, published_only: bool) -> AppResult<Vec<GalleryPublicItem>> {
         let rows: Vec<GalleryRow> = match category_slug.filter(|s| !s.is_empty()) {
             Some(slug) if published_only => sqlx::query_as(
-                r#"SELECT g.* FROM gallery g
-                   JOIN gallery_categories gc ON gc.id = g.category_id
+                r#"SELECT g.*, gc.slug AS category_slug
+                   FROM gallery g
+                   LEFT JOIN gallery_categories gc ON gc.id = g.category_id
                    WHERE gc.slug = $1 AND g.status = 'published'
                    ORDER BY g.order_index ASC, g.created_at DESC"#,
             )
@@ -693,8 +699,9 @@ impl CmsService {
             .await
             .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
             Some(slug) => sqlx::query_as(
-                r#"SELECT g.* FROM gallery g
-                   JOIN gallery_categories gc ON gc.id = g.category_id
+                r#"SELECT g.*, gc.slug AS category_slug
+                   FROM gallery g
+                   LEFT JOIN gallery_categories gc ON gc.id = g.category_id
                    WHERE gc.slug = $1
                    ORDER BY g.order_index ASC, g.created_at DESC"#,
             )
@@ -703,12 +710,21 @@ impl CmsService {
             .await
             .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
             None if published_only => sqlx::query_as(
-                "SELECT * FROM gallery WHERE status = 'published' ORDER BY order_index ASC, created_at DESC"
+                r#"SELECT g.*, gc.slug AS category_slug
+                   FROM gallery g
+                   LEFT JOIN gallery_categories gc ON gc.id = g.category_id
+                   WHERE g.status = 'published'
+                   ORDER BY g.order_index ASC, g.created_at DESC"#,
             )
             .fetch_all(&self.pool)
             .await
             .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
-            None => sqlx::query_as("SELECT * FROM gallery ORDER BY order_index ASC, created_at DESC")
+            None => sqlx::query_as(
+                r#"SELECT g.*, gc.slug AS category_slug
+                   FROM gallery g
+                   LEFT JOIN gallery_categories gc ON gc.id = g.category_id
+                   ORDER BY g.order_index ASC, g.created_at DESC"#,
+            )
                 .fetch_all(&self.pool)
                 .await
                 .map_err(|e| { tracing::error!("list_gallery: {e}"); AppError::internal("DB error") })?,
