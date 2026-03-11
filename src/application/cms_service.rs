@@ -169,6 +169,11 @@ pub struct GalleryRow {
     pub alt_ru:         String,
     pub alt_uk:         String,
     pub order_index:    i32,
+    pub instagram_url:  Option<String>,
+    pub pinterest_url:  Option<String>,
+    pub facebook_url:   Option<String>,
+    pub tiktok_url:     Option<String>,
+    pub website_url:    Option<String>,
     pub created_at:     OffsetDateTime,
     pub updated_at:     OffsetDateTime,
 }
@@ -192,6 +197,11 @@ pub struct GalleryPublicItem {
     pub alt_pl:         String,
     pub alt_ru:         String,
     pub alt_uk:         String,
+    pub instagram_url:  Option<String>,
+    pub pinterest_url:  Option<String>,
+    pub facebook_url:   Option<String>,
+    pub tiktok_url:     Option<String>,
+    pub website_url:    Option<String>,
 }
 
 impl From<GalleryRow> for GalleryPublicItem {
@@ -213,6 +223,11 @@ impl From<GalleryRow> for GalleryPublicItem {
             alt_pl:         r.alt_pl,
             alt_ru:         r.alt_ru,
             alt_uk:         r.alt_uk,
+            instagram_url:  r.instagram_url,
+            pinterest_url:  r.pinterest_url,
+            facebook_url:   r.facebook_url,
+            tiktok_url:     r.tiktok_url,
+            website_url:    r.website_url,
         }
     }
 }
@@ -234,6 +249,11 @@ pub struct CreateGalleryRequest {
     pub alt_ru:         Option<String>,
     pub alt_uk:         Option<String>,
     pub order_index:    Option<i32>,
+    pub instagram_url:  Option<String>,
+    pub pinterest_url:  Option<String>,
+    pub facebook_url:   Option<String>,
+    pub tiktok_url:     Option<String>,
+    pub website_url:    Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -253,6 +273,11 @@ pub struct UpdateGalleryRequest {
     pub alt_ru:         Option<String>,
     pub alt_uk:         Option<String>,
     pub order_index:    Option<i32>,
+    pub instagram_url:  Option<String>,
+    pub pinterest_url:  Option<String>,
+    pub facebook_url:   Option<String>,
+    pub tiktok_url:     Option<String>,
+    pub website_url:    Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -647,8 +672,9 @@ impl CmsService {
             r#"INSERT INTO gallery
                (image_url, category, title_en, title_pl, title_ru, title_uk,
                 description_en, description_pl, description_ru, description_uk,
-                alt_en, alt_pl, alt_ru, alt_uk, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                alt_en, alt_pl, alt_ru, alt_uk, order_index,
+                instagram_url, pinterest_url, facebook_url, tiktok_url, website_url)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
                RETURNING *"#,
         )
         .bind(&req.image_url)
@@ -666,6 +692,11 @@ impl CmsService {
         .bind(req.alt_ru.unwrap_or_default())
         .bind(req.alt_uk.unwrap_or_default())
         .bind(req.order_index.unwrap_or(0))
+        .bind(req.instagram_url)
+        .bind(req.pinterest_url)
+        .bind(req.facebook_url)
+        .bind(req.tiktok_url)
+        .bind(req.website_url)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| { tracing::error!("create_gallery: {e}"); AppError::internal("Failed to create") })
@@ -681,8 +712,9 @@ impl CmsService {
                image_url=$1, category=$2, title_en=$3, title_pl=$4, title_ru=$5, title_uk=$6,
                description_en=$7, description_pl=$8, description_ru=$9, description_uk=$10,
                alt_en=$11, alt_pl=$12, alt_ru=$13, alt_uk=$14,
-               order_index=$15
-               WHERE id=$16 RETURNING *"#,
+               order_index=$15,
+               instagram_url=$16, pinterest_url=$17, facebook_url=$18, tiktok_url=$19, website_url=$20
+               WHERE id=$21 RETURNING *"#,
         )
         .bind(req.image_url.unwrap_or(cur.image_url))
         .bind(req.category.unwrap_or(cur.category))
@@ -699,6 +731,11 @@ impl CmsService {
         .bind(req.alt_ru.unwrap_or(cur.alt_ru))
         .bind(req.alt_uk.unwrap_or(cur.alt_uk))
         .bind(req.order_index.unwrap_or(cur.order_index))
+        .bind(req.instagram_url.or(cur.instagram_url))
+        .bind(req.pinterest_url.or(cur.pinterest_url))
+        .bind(req.facebook_url.or(cur.facebook_url))
+        .bind(req.tiktok_url.or(cur.tiktok_url))
+        .bind(req.website_url.or(cur.website_url))
         .bind(id)
         .fetch_one(&self.pool)
         .await

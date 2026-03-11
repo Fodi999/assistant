@@ -331,6 +331,11 @@ export interface Gallery {
   description_ru: string; description_uk: string
   alt_en: string; alt_pl: string; alt_ru: string; alt_uk: string
   order_index: number
+  instagram_url?: string    // optional social links
+  pinterest_url?: string
+  facebook_url?: string
+  tiktok_url?: string
+  website_url?: string
   created_at: string; updated_at: string
 }
 
@@ -602,7 +607,7 @@ PUT    /api/admin/cms/experience/:id
 DELETE /api/admin/cms/experience/:id
 
 GET    /api/admin/cms/gallery             ?category=kitchen  (опционально)
-POST   /api/admin/cms/gallery             { image_url, category, title_*, description_*, alt_*, order_index }
+POST   /api/admin/cms/gallery             { image_url, category, title_*, description_*, alt_*, order_index, instagram_url?, pinterest_url?, facebook_url?, tiktok_url?, website_url? }
 PUT    /api/admin/cms/gallery/:id
 DELETE /api/admin/cms/gallery/:id
 
@@ -1285,6 +1290,11 @@ export default function NewGalleryPage() {
     title_en: '', title_pl: '', title_ru: '', title_uk: '',
     description_en: '', description_pl: '', description_ru: '', description_uk: '',
     alt_en: '', alt_pl: '', alt_ru: '', alt_uk: '',
+    instagram_url: null as string | null,
+    pinterest_url: null as string | null,
+    facebook_url:  null as string | null,
+    tiktok_url:    null as string | null,
+    website_url:   null as string | null,
   })
 
   const set = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }))
@@ -1459,6 +1469,31 @@ export default function NewGalleryPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* ─── Социальные сети ─── */}
+      <div className="bg-white rounded-xl border p-5 space-y-4">
+        <h2 className="font-semibold text-gray-700">Социальные сети (необязательно)</h2>
+        <div className="grid grid-cols-1 gap-3">
+          {[
+            { key: 'instagram_url', label: '📸 Instagram', placeholder: 'https://instagram.com/p/...' },
+            { key: 'pinterest_url', label: '📌 Pinterest',  placeholder: 'https://pinterest.com/pin/...' },
+            { key: 'facebook_url',  label: '👤 Facebook',   placeholder: 'https://facebook.com/...' },
+            { key: 'tiktok_url',    label: '🎵 TikTok',     placeholder: 'https://tiktok.com/@.../video/...' },
+            { key: 'website_url',   label: '🌐 Website',    placeholder: 'https://...' },
+          ].map(({ key, label, placeholder }) => (
+            <div key={key}>
+              <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+              <input
+                type="url"
+                value={(form as any)[key] ?? ''}
+                onChange={e => set(key, e.target.value || null)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                placeholder={placeholder}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ─── Кнопки ─── */}
