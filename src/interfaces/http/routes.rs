@@ -176,6 +176,11 @@ pub fn create_router(
             "/products/:id/ai-autofill",
             post(admin_catalog::ai_autofill_product),
         )
+        // AI SEO generation
+        .route(
+            "/products/:id/ai-seo",
+            post(admin_catalog::ai_generate_seo),
+        )
         // AI Audit — catalog completeness & accuracy checker
         .route(
             "/audit",

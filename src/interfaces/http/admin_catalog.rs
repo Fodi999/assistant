@@ -171,7 +171,21 @@ pub async fn ai_autofill_product(
 }
 
 // ==========================================
-// 🔍 AI AUDIT
+// � AI SEO GENERATION
+// ==========================================
+
+/// POST /api/admin/catalog/products/:id/ai-seo
+pub async fn ai_generate_seo(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.ai_generate_seo(id).await?;
+    Ok(Json(result))
+}
+
+// ==========================================
+// �🔍 AI AUDIT
 // ==========================================
 
 /// GET /api/admin/catalog/audit

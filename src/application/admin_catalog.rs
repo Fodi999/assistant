@@ -117,6 +117,15 @@ pub struct UpdateProductRequest {
     pub wild_farmed: Option<String>,  // "wild" | "farmed" | "both"
     pub sushi_grade: Option<bool>,
 
+    // SEO fields
+    pub seo_title: Option<String>,
+    pub seo_description: Option<String>,
+    pub seo_h1: Option<String>,
+    pub canonical_url: Option<String>,
+    pub og_title: Option<String>,
+    pub og_description: Option<String>,
+    pub og_image: Option<String>,
+
     /// Если true, бекенд автоматически переведёт empty поля (PL/RU/UK)
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default)]
@@ -178,6 +187,15 @@ pub struct ProductResponse {
     pub water_type: Option<String>,
     pub wild_farmed: Option<String>,
     pub sushi_grade: Option<bool>,
+
+    // SEO fields
+    pub seo_title: Option<String>,
+    pub seo_description: Option<String>,
+    pub seo_h1: Option<String>,
+    pub canonical_url: Option<String>,
+    pub og_title: Option<String>,
+    pub og_description: Option<String>,
+    pub og_image: Option<String>,
 }
 
 /// Admin Category Requests
@@ -436,7 +454,8 @@ impl AdminCatalogService {
                 COALESCE(availability_model, 'all_year') as availability_model,
                 shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                 fiber_per_100g, sugar_per_100g, salt_per_100g,
-                      water_type, wild_farmed, sushi_grade
+                      water_type, wild_farmed, sushi_grade,
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
             "#,
         )
         .bind(id)
@@ -472,7 +491,8 @@ impl AdminCatalogService {
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
-                      water_type, wild_farmed, sushi_grade
+                      water_type, wild_farmed, sushi_grade,
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true"#
         )
@@ -499,7 +519,8 @@ impl AdminCatalogService {
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
-                      water_type, wild_farmed, sushi_grade
+                      water_type, wild_farmed, sushi_grade,
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
                FROM catalog_ingredients
                WHERE is_active = true
                ORDER BY name_en ASC"#
@@ -532,7 +553,8 @@ impl AdminCatalogService {
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
-                      water_type, wild_farmed, sushi_grade
+                      water_type, wild_farmed, sushi_grade,
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true FOR UPDATE"#
         )
@@ -656,7 +678,14 @@ impl AdminCatalogService {
                 salt_per_100g = COALESCE($30, salt_per_100g),
                 water_type = COALESCE($31, water_type),
                 wild_farmed = COALESCE($32, wild_farmed),
-                sushi_grade = COALESCE($33, sushi_grade)
+                sushi_grade = COALESCE($33, sushi_grade),
+                seo_title = COALESCE($34, seo_title),
+                seo_description = COALESCE($35, seo_description),
+                seo_h1 = COALESCE($36, seo_h1),
+                canonical_url = COALESCE($37, canonical_url),
+                og_title = COALESCE($38, og_title),
+                og_description = COALESCE($39, og_description),
+                og_image = COALESCE($40, og_image)
             WHERE id = $27
             RETURNING id, slug, name_en, name_pl, name_uk, name_ru,
                       category_id, default_unit as unit, description, image_url,
@@ -670,7 +699,8 @@ impl AdminCatalogService {
                       COALESCE(availability_model, 'all_year') as availability_model,
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
-                      water_type, wild_farmed, sushi_grade
+                      water_type, wild_farmed, sushi_grade,
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
             "#
         )
         .bind(&name_en)
@@ -706,6 +736,13 @@ impl AdminCatalogService {
         .bind(&water_type_val) // $31
         .bind(&wild_farmed_val)// $32
         .bind(sushi_grade_val) // $33
+        .bind(&req.seo_title)       // $34
+        .bind(&req.seo_description) // $35
+        .bind(&req.seo_h1)         // $36
+        .bind(&req.canonical_url)   // $37
+        .bind(&req.og_title)        // $38
+        .bind(&req.og_description)  // $39
+        .bind(&req.og_image)        // $40
         .fetch_one(&mut *tx)
         .await?;
 
@@ -1102,7 +1139,101 @@ REMEMBER: FILLED=false means the field is EMPTY — you MUST provide a real valu
     }
 
     // ==========================================
-    // 🔍 AI AUDIT — Catalog completeness & accuracy checker
+    // � AI SEO GENERATION
+    // ==========================================
+
+    /// Generate SEO metadata for a product using AI.
+    /// Takes product name, category, nutrition highlights and generates
+    /// title, description, h1, og_title, og_description.
+    pub async fn ai_generate_seo(&self, id: Uuid) -> AppResult<serde_json::Value> {
+        let product = self.get_product_by_id(id).await?;
+
+        let name_en = &product.name_en;
+        let slug = product.slug.as_deref().unwrap_or("unknown");
+        let product_type = &product.product_type;
+        let name_ru = product.name_ru.as_deref().unwrap_or("");
+
+        // Collect nutrition highlights for better SEO
+        let mut highlights = Vec::new();
+        if let Some(cal) = product.calories_per_100g {
+            highlights.push(format!("{}kcal", cal));
+        }
+        if let Some(p) = &product.protein_per_100g {
+            highlights.push(format!("{}g protein", p));
+        }
+        if let Some(f) = &product.fat_per_100g {
+            highlights.push(format!("{}g fat", f));
+        }
+        if let Some(c) = &product.carbs_per_100g {
+            highlights.push(format!("{}g carbs", c));
+        }
+        let nutrition_str = if highlights.is_empty() {
+            "nutrition data available".to_string()
+        } else {
+            highlights.join(", ")
+        };
+
+        let prompt = format!(
+            r#"You are an SEO expert for a food/nutrition website "dima-fomin.pl".
+
+Generate SEO metadata for this ingredient page:
+
+Product: "{name_en}" (Russian: "{name_ru}")
+Category: {product_type}
+Slug: {slug}
+Nutrition highlights per 100g: {nutrition_str}
+Page URL: https://dima-fomin.pl/ingredients/{slug}
+
+Return ONLY a valid JSON object:
+{{
+  "seo_title": "<60 chars max, format: {{Name}} — Nutrition, Vitamins, Culinary Uses | dima-fomin.pl>",
+  "seo_description": "<155 chars max, compelling meta description with nutrition keywords>",
+  "seo_h1": "<H1 heading, format: {{Name}} — Nutrition & Culinary Profile>",
+  "canonical_url": "https://dima-fomin.pl/ingredients/{slug}",
+  "og_title": "<65 chars max, engaging Open Graph title for social sharing>",
+  "og_description": "<200 chars max, social-friendly description with key nutrition facts>"
+}}
+
+Rules:
+- seo_title: Include product name + "Nutrition" + one key benefit. Max 60 chars.
+- seo_description: Include calories, protein, key vitamin/mineral. Max 155 chars. Make it click-worthy.
+- seo_h1: Clean, keyword-rich H1. Slightly different from seo_title.
+- og_title: Social-friendly, can be more casual. Include emoji if appropriate.
+- og_description: Focus on most interesting nutrition fact or culinary use.
+- All in English.
+- Return ONLY the JSON, no other text."#,
+            name_en = name_en,
+            name_ru = name_ru,
+            product_type = product_type,
+            slug = slug,
+            nutrition_str = nutrition_str,
+        );
+
+        let raw = self.llm_adapter.groq_raw_request(&prompt, 800).await?;
+
+        let result: serde_json::Value = serde_json::from_str(&raw)
+            .or_else(|_| {
+                if let Some(start) = raw.find('{') {
+                    if let Some(end) = raw.rfind('}') {
+                        return serde_json::from_str(&raw[start..=end]);
+                    }
+                }
+                Err(serde_json::Error::io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "No JSON found",
+                )))
+            })
+            .map_err(|e| {
+                tracing::error!("Failed to parse AI SEO response: {}", e);
+                AppError::internal("AI returned invalid JSON")
+            })?;
+
+        tracing::info!("✅ AI SEO generated for product {} ({})", id, name_en);
+        Ok(result)
+    }
+
+    // ==========================================
+    // �🔍 AI AUDIT — Catalog completeness & accuracy checker
     // ==========================================
 
     /// AI Audit — scans all products, checks completeness of all fields,
