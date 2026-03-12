@@ -1947,7 +1947,7 @@ Rules:
                                 continue; // skip self-pairing
                             }
                             let score = score_base - (i as f32 * 0.3);
-                            let _ = sqlx::query(
+                            match sqlx::query(
                                 r#"INSERT INTO food_pairing (ingredient_a, ingredient_b, pairing_type, pair_score, id)
                                    VALUES ($1, $2, $3, $4, gen_random_uuid())
                                    ON CONFLICT (ingredient_a, ingredient_b)
@@ -1958,8 +1958,14 @@ Rules:
                             .bind(*ptype)
                             .bind(score)
                             .execute(&self.pool)
-                            .await;
-                            inserted += 1;
+                            .await
+                            {
+                                Ok(_) => inserted += 1,
+                                Err(e) => {
+                                    tracing::error!("Failed to insert pairing {} -> {}: {}", product_id, matched_product.name_en, e);
+                                    not_found.push(format!("{}(DB error)", name));
+                                }
+                            }
                         } else {
                             not_found.push(name.to_string());
                         }
