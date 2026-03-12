@@ -107,6 +107,25 @@ pub struct PairingPublicRow {
     pub culinary_score: Option<f32>,
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct CulinaryPublicRow {
+    pub sweetness: Option<f32>,
+    pub acidity: Option<f32>,
+    pub bitterness: Option<f32>,
+    pub umami: Option<f32>,
+    pub aroma: Option<f32>,
+    pub texture: Option<String>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct FoodPropertiesPublicRow {
+    pub glycemic_index: Option<f32>,
+    pub glycemic_load: Option<f32>,
+    pub ph: Option<f32>,
+    pub smoke_point: Option<f32>,
+    pub water_activity: Option<f32>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct NutritionPageResponse {
     pub lang: String,
@@ -116,6 +135,9 @@ pub struct NutritionPageResponse {
     pub vitamins: Option<VitaminsPublicRow>,
     pub minerals: Option<MineralsPublicRow>,
     pub diet_flags: Option<DietFlagsPublicRow>,
+    pub culinary: Option<CulinaryPublicRow>,
+    pub food_properties: Option<FoodPropertiesPublicRow>,
+    pub availability_months: Option<Vec<bool>>,
     pub pairings: Vec<PairingPublicRow>,
 }
 
@@ -232,7 +254,37 @@ impl PublicNutritionService {
         .fetch_optional(&self.pool)
         .await?;
 
-        // 6. Top-10 pairings (best pair_score)
+        // 6. Culinary profile
+        let culinary: Option<CulinaryPublicRow> = sqlx::query_as(
+            r#"SELECT sweetness, acidity, bitterness, umami, aroma, texture
+               FROM food_culinary_properties WHERE product_id = $1"#,
+        )
+        .bind(product_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
+        // 7. Food properties
+        let food_properties: Option<FoodPropertiesPublicRow> = sqlx::query_as(
+            r#"SELECT glycemic_index, glycemic_load, ph, smoke_point, water_activity
+               FROM food_properties WHERE product_id = $1"#,
+        )
+        .bind(product_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
+        // 8. Availability months
+        let availability_months: Option<Vec<bool>> = sqlx::query_scalar(
+            r#"SELECT availability_months FROM products WHERE id = $1"#,
+        )
+        .bind(product_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None)
+        .flatten();
+
+        // 9. Top-10 pairings (best pair_score)
         let pairings: Vec<PairingPublicRow> = sqlx::query_as(
             r#"SELECT b.slug, b.name_en, b.name_ru, b.name_pl, b.name_uk, b.image_url,
                       fp.pair_score, fp.flavor_score, fp.nutrition_score, fp.culinary_score
@@ -255,6 +307,9 @@ impl PublicNutritionService {
             vitamins,
             minerals,
             diet_flags,
+            culinary,
+            food_properties,
+            availability_months,
             pairings,
         })
     }
