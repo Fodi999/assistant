@@ -473,6 +473,32 @@ impl AdminCatalogService {
             AppError::internal("Failed to create product")
         })?;
 
+        // ==========================================
+        // 🔄 ШАГ 6: SYNC TO PRODUCTS TABLE (for food_pairing FK + nutrition)
+        // ==========================================
+        let _ = sqlx::query(
+            r#"INSERT INTO products (id, slug, name_en, name_pl, name_ru, name_uk,
+                                     category_id, product_type, unit, image_url)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, 'other', $8, $9)
+               ON CONFLICT (id) DO NOTHING"#,
+        )
+        .bind(id)
+        .bind(&product.slug)
+        .bind(&name_en)
+        .bind(&name_pl)
+        .bind(&name_ru)
+        .bind(&name_uk)
+        .bind(final_category_id)
+        .bind(final_unit.to_string())
+        .bind(&product.image_url)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::warn!("Failed to sync product to products table: {}", e);
+            e
+        })
+        .ok(); // Non-critical — log and continue
+
         Ok(product)
     }
 
