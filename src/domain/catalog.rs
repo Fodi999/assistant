@@ -441,4 +441,13 @@ pub struct IngredientReference {
     pub allergens: Vec<String>,
     /// Translated allergen labels in the requested language
     pub localized_allergens: Vec<String>,
+
+    // SEO fields
+    pub seo_title: Option<String>,
+    pub seo_description: Option<String>,
+    pub seo_h1: Option<String>,
+    pub canonical_url: Option<String>,
+    pub og_title: Option<String>,
+    pub og_description: Option<String>,
+    pub og_image: Option<String>,
 }

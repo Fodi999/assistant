@@ -289,6 +289,13 @@ pub async fn get_ingredient_by_slug(
                 localized_seasons,
                 allergens: r.allergens,
                 localized_allergens,
+                seo_title: r.seo_title,
+                seo_description: r.seo_description,
+                seo_h1: r.seo_h1,
+                canonical_url: r.canonical_url,
+                og_title: r.og_title,
+                og_description: r.og_description,
+                og_image: r.og_image,
             }).into_response())
         }
     }

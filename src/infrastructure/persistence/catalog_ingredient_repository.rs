@@ -291,7 +291,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
 
 // ── Public reference query (SEO / public API) ─────────────────────────────────
 
-/// Full ingredient reference row from DB — includes macros, density, descriptions
+/// Full ingredient reference row from DB — includes macros, density, descriptions, SEO
 #[derive(sqlx::FromRow)]
 pub struct CatalogIngredientRefRow {
     pub slug: Option<String>,
@@ -311,6 +311,14 @@ pub struct CatalogIngredientRefRow {
     pub density_g_per_ml: Option<rust_decimal::Decimal>,
     pub seasons: Vec<String>,
     pub allergens: Vec<String>,
+    // SEO fields
+    pub seo_title: Option<String>,
+    pub seo_description: Option<String>,
+    pub seo_h1: Option<String>,
+    pub canonical_url: Option<String>,
+    pub og_title: Option<String>,
+    pub og_description: Option<String>,
+    pub og_image: Option<String>,
 }
 
 /// Fetch a full public ingredient reference by slug.
@@ -339,7 +347,14 @@ pub async fn find_ingredient_ref_by_slug(
             ci.carbs_per_100g,
             ci.density_g_per_ml,
             ARRAY(SELECT unnest(ci.seasons::text[])) AS seasons,
-            ARRAY(SELECT unnest(ci.allergens::text[])) AS allergens
+            ARRAY(SELECT unnest(ci.allergens::text[])) AS allergens,
+            ci.seo_title,
+            ci.seo_description,
+            ci.seo_h1,
+            ci.canonical_url,
+            ci.og_title,
+            ci.og_description,
+            ci.og_image
         FROM catalog_ingredients ci
         LEFT JOIN slug_aliases sa ON sa.ingredient_id = ci.id AND sa.old_slug = $1
         WHERE (ci.slug = $1 OR sa.old_slug = $1) AND ci.is_active = true
