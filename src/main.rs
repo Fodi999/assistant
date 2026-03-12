@@ -78,6 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Database migrations completed");
 
+    // Initialise nutrition & product detail schema (idempotent — IF NOT EXISTS)
+    restaurant_backend::db::init_schema(&pool).await?;
+    tracing::info!("Nutrition schema initialised");
+
     // Initialize repositories (clone pool before move)
     let repositories = Repositories::new(pool.clone());
 
