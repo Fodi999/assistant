@@ -49,7 +49,10 @@ pub struct NutritionProductDetail {
     pub product_type: Option<String>,
     pub unit: Option<String>,
     pub image_url: Option<String>,
-    pub description: Option<String>,
+    pub description_en: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_uk: Option<String>,
     pub density_g_per_ml: Option<f64>,
     pub typical_portion_g: Option<f64>,
     pub edible_yield_percent: Option<f64>,
@@ -144,6 +147,7 @@ pub struct DietFlagsDto {
 // ── Allergens ─────────────────────────────────────────
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AllergensDto {
+    // original 7
     pub milk: Option<bool>,
     pub fish: Option<bool>,
     pub shellfish: Option<bool>,
@@ -151,6 +155,14 @@ pub struct AllergensDto {
     pub soy: Option<bool>,
     pub gluten: Option<bool>,
     pub eggs: Option<bool>,
+    // EU-14 additions
+    pub peanuts: Option<bool>,
+    pub sesame: Option<bool>,
+    pub celery: Option<bool>,
+    pub mustard: Option<bool>,
+    pub sulfites: Option<bool>,
+    pub lupin: Option<bool>,
+    pub molluscs: Option<bool>,
 }
 
 // ── Food Properties ───────────────────────────────────
@@ -185,7 +197,10 @@ pub struct UpdateProductBasicRequest {
     pub product_type: Option<String>,
     pub unit: Option<String>,
     pub image_url: Option<String>,
-    pub description: Option<String>,
+    pub description_en: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_uk: Option<String>,
     pub density_g_per_ml: Option<f64>,
     pub typical_portion_g: Option<f64>,
     pub edible_yield_percent: Option<f64>,
@@ -213,7 +228,10 @@ struct ProductBasicRow {
     product_type: Option<String>,
     unit: Option<String>,
     image_url: Option<String>,
-    description: Option<String>,
+    description_en: Option<String>,
+    description_ru: Option<String>,
+    description_pl: Option<String>,
+    description_uk: Option<String>,
     density_g_per_ml: Option<f32>,
     typical_portion_g: Option<f32>,
     edible_yield_percent: Option<f32>,
@@ -295,7 +313,8 @@ impl AdminNutritionService {
         let row = sqlx::query_as::<_, ProductBasicRow>(
             r#"
             SELECT id, slug, name_en, name_ru, name_pl, name_uk,
-                   product_type, unit, image_url, description,
+                   product_type, unit, image_url, description_en,
+                   description_ru, description_pl, description_uk,
                    density_g_per_ml, typical_portion_g, edible_yield_percent,
                    shelf_life_days, wild_farmed, water_type,
                    sushi_grade, substitution_group, availability_months
@@ -350,7 +369,7 @@ impl AdminNutritionService {
         .map_err(AppError::from)?;
 
         let allergens = sqlx::query_as::<_, AllergensDto>(
-            "SELECT milk,fish,shellfish,nuts,soy,gluten,eggs FROM product_allergens WHERE product_id=$1",
+            "SELECT milk,fish,shellfish,nuts,soy,gluten,eggs,peanuts,sesame,celery,mustard,sulfites,lupin,molluscs FROM product_allergens WHERE product_id=$1",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -383,7 +402,10 @@ impl AdminNutritionService {
             product_type: row.product_type,
             unit: row.unit,
             image_url: row.image_url,
-            description: row.description,
+            description_en: row.description_en,
+            description_ru: row.description_ru,
+            description_pl: row.description_pl,
+            description_uk: row.description_uk,
             density_g_per_ml: row.density_g_per_ml.map(|v| v as f64),
             typical_portion_g: row.typical_portion_g.map(|v| v as f64),
             edible_yield_percent: row.edible_yield_percent.map(|v| v as f64),
@@ -420,16 +442,19 @@ impl AdminNutritionService {
                 product_type         = COALESCE($6, product_type),
                 unit                 = COALESCE($7, unit),
                 image_url            = COALESCE($8, image_url),
-                description          = COALESCE($9, description),
-                density_g_per_ml     = COALESCE($10, density_g_per_ml),
-                typical_portion_g    = COALESCE($11, typical_portion_g),
-                edible_yield_percent = COALESCE($12, edible_yield_percent),
-                shelf_life_days      = COALESCE($13, shelf_life_days),
-                wild_farmed          = COALESCE($14, wild_farmed),
-                water_type           = COALESCE($15, water_type),
-                sushi_grade          = COALESCE($16, sushi_grade),
-                substitution_group   = COALESCE($17, substitution_group),
-                availability_months  = COALESCE($18, availability_months),
+                description_en       = COALESCE($9, description_en),
+                description_ru       = COALESCE($10, description_ru),
+                description_pl       = COALESCE($11, description_pl),
+                description_uk       = COALESCE($12, description_uk),
+                density_g_per_ml     = COALESCE($13, density_g_per_ml),
+                typical_portion_g    = COALESCE($14, typical_portion_g),
+                edible_yield_percent = COALESCE($15, edible_yield_percent),
+                shelf_life_days      = COALESCE($16, shelf_life_days),
+                wild_farmed          = COALESCE($17, wild_farmed),
+                water_type           = COALESCE($18, water_type),
+                sushi_grade          = COALESCE($19, sushi_grade),
+                substitution_group   = COALESCE($20, substitution_group),
+                availability_months  = COALESCE($21, availability_months),
                 updated_at           = now()
             WHERE id = $1
             "#,
@@ -442,7 +467,10 @@ impl AdminNutritionService {
         .bind(req.product_type)
         .bind(req.unit)
         .bind(req.image_url)
-        .bind(req.description)
+        .bind(req.description_en)
+        .bind(req.description_ru)
+        .bind(req.description_pl)
+        .bind(req.description_uk)
         .bind(req.density_g_per_ml.map(|v| v as f32))
         .bind(req.typical_portion_g.map(|v| v as f32))
         .bind(req.edible_yield_percent.map(|v| v as f32))
@@ -644,8 +672,9 @@ impl AdminNutritionService {
         sqlx::query(
             r#"
             INSERT INTO product_allergens
-                (product_id,milk,fish,shellfish,nuts,soy,gluten,eggs)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                (product_id,milk,fish,shellfish,nuts,soy,gluten,eggs,
+                 peanuts,sesame,celery,mustard,sulfites,lupin,molluscs)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
             ON CONFLICT (product_id) DO UPDATE SET
                 milk     = EXCLUDED.milk,
                 fish     = EXCLUDED.fish,
@@ -653,7 +682,14 @@ impl AdminNutritionService {
                 nuts     = EXCLUDED.nuts,
                 soy      = EXCLUDED.soy,
                 gluten   = EXCLUDED.gluten,
-                eggs     = EXCLUDED.eggs
+                eggs     = EXCLUDED.eggs,
+                peanuts  = EXCLUDED.peanuts,
+                sesame   = EXCLUDED.sesame,
+                celery   = EXCLUDED.celery,
+                mustard  = EXCLUDED.mustard,
+                sulfites = EXCLUDED.sulfites,
+                lupin    = EXCLUDED.lupin,
+                molluscs = EXCLUDED.molluscs
             "#,
         )
         .bind(id)
@@ -664,6 +700,13 @@ impl AdminNutritionService {
         .bind(dto.soy)
         .bind(dto.gluten)
         .bind(dto.eggs)
+        .bind(dto.peanuts)
+        .bind(dto.sesame)
+        .bind(dto.celery)
+        .bind(dto.mustard)
+        .bind(dto.sulfites)
+        .bind(dto.lupin)
+        .bind(dto.molluscs)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;

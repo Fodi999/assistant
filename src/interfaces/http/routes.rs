@@ -31,7 +31,7 @@ use crate::interfaces::http::{
     public::{
         cms as public_cms,
         ingredients::{get_ingredient_by_slug, list_ingredients},
-        nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page},
+        nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
@@ -446,6 +446,7 @@ pub fn create_router(
         .route("/nutrition/:slug", get(get_nutrition_page))
         .route("/diet/:flag",      get(get_diet_page))
         .route("/ranking/:metric", get(get_ranking_page))
+        .route("/products-slugs",  get(get_all_slugs))
         .with_state(public_nutrition_svc);
 
     // ── Admin CMS routes (protected) ─────────────────────────────────────────

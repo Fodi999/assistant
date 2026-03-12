@@ -38,7 +38,7 @@ pub struct ProductBasicPublicRow {
     pub product_type: Option<String>,
     pub unit: Option<String>,
     pub image_url: Option<String>,
-    pub description: Option<String>,
+    pub description_en: Option<String>,
     pub typical_portion_g: Option<f32>,
     pub wild_farmed: Option<String>,
     pub water_type: Option<String>,
@@ -184,7 +184,7 @@ impl PublicNutritionService {
         // 1. Basic product info
         let basic: Option<ProductBasicPublicRow> = sqlx::query_as(
             r#"SELECT id, slug, name_en, name_ru, name_pl, name_uk,
-                      product_type, unit, image_url, description,
+                      product_type, unit, image_url, description_en,
                       typical_portion_g, wild_farmed, water_type, sushi_grade
                FROM products WHERE slug = $1"#,
         )
@@ -443,5 +443,15 @@ impl PublicNutritionService {
             total: count,
             products,
         })
+    }
+
+    // ── GET /public/products-slugs ─────────────────────────────────────────────
+    pub async fn get_all_slugs(&self) -> AppResult<Vec<String>> {
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT slug FROM products ORDER BY slug")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(AppError::from)?;
+        Ok(rows.into_iter().map(|(s,)| s).collect())
     }
 }

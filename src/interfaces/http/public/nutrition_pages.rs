@@ -146,3 +146,20 @@ pub async fn get_ranking_page(
         }
     }
 }
+
+/// GET /public/products-slugs
+/// Returns an array of all product slugs — used by Next.js for SSG (generateStaticParams).
+pub async fn get_all_slugs(
+    State(svc): State<NutritionState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match svc.get_all_slugs().await {
+        Ok(slugs) => Ok(Json(serde_json::json!(slugs))),
+        Err(e) => {
+            tracing::error!("get_all_slugs error: {e}");
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "internal error" })),
+            ))
+        }
+    }
+}
