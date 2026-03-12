@@ -1,5 +1,6 @@
 pub mod admin_auth;
 pub mod admin_catalog;
+pub mod admin_nutrition;
 pub mod assistant_service;
 pub mod auth;
 pub mod catalog;
@@ -19,6 +20,7 @@ pub mod user;
 
 pub use admin_auth::*;
 pub use admin_catalog::*;
+pub use admin_nutrition::*;
 pub use assistant_service::*;
 pub use auth::*;
 pub use catalog::*;

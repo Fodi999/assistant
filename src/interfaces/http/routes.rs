@@ -4,6 +4,7 @@ use crate::application::{
     report::ReportService,
     AdminAuthService,
     AdminCatalogService,
+    AdminNutritionService,
     AssistantService,
     AuthService,
     CatalogService,
@@ -20,6 +21,7 @@ use crate::interfaces::http::{
     admin_auth,
     admin_catalog,
     admin_cms,
+    admin_nutrition,
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
@@ -78,6 +80,7 @@ pub fn create_router(
     pool: PgPool,                         // 🎯 ДОБАВЛЕНО: для получения language из БД
     admin_auth_service: AdminAuthService, // 🆕 Super Admin auth service
     admin_catalog_service: AdminCatalogService, // 🆕 Admin Catalog service
+    admin_nutrition_service: AdminNutritionService, // 🆕 Nutrition editor
     r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
@@ -183,6 +186,37 @@ pub fn create_router(
         ))
         .layer(admin_catalog_middleware)
         .with_state(admin_catalog_service);
+
+    // Admin nutrition routes (products + nutrition tables editor)
+    let admin_nutrition_middleware = {
+        let svc = admin_auth_service.clone();
+        middleware::from_fn(move |mut req: Request, next: Next| {
+            let svc = svc.clone();
+            async move {
+                req.extensions_mut().insert(svc);
+                next.run(req).await
+            }
+        })
+    };
+
+    let admin_nutrition_routes = Router::new()
+        .route("/products", get(admin_nutrition::list_products))
+        .route("/products/:id", get(admin_nutrition::get_product))
+        .route("/products/:id/basic", axum::routing::put(admin_nutrition::update_basic))
+        .route("/products/:id/macros", axum::routing::put(admin_nutrition::update_macros))
+        .route("/products/:id/vitamins", axum::routing::put(admin_nutrition::update_vitamins))
+        .route("/products/:id/minerals", axum::routing::put(admin_nutrition::update_minerals))
+        .route("/products/:id/fatty-acids", axum::routing::put(admin_nutrition::update_fatty_acids))
+        .route("/products/:id/diet-flags", axum::routing::put(admin_nutrition::update_diet_flags))
+        .route("/products/:id/allergens", axum::routing::put(admin_nutrition::update_allergens))
+        .route("/products/:id/food-props", axum::routing::put(admin_nutrition::update_food_props))
+        .route("/products/:id/culinary", axum::routing::put(admin_nutrition::update_culinary))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer(admin_nutrition_middleware)
+        .with_state(admin_nutrition_service);
 
     // Admin users route (for user management)
     let admin_users_route: Router = Router::new()
@@ -485,6 +519,7 @@ pub fn create_router(
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
         .nest("/api/admin/catalog", admin_catalog_routes)
+        .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", protected_routes)

@@ -1,6 +1,7 @@
 pub mod admin_auth;
 pub mod admin_catalog;
 pub mod admin_cms;
+pub mod admin_nutrition;
 pub mod admin_users;
 pub mod assistant;
 pub mod auth;
