@@ -157,6 +157,20 @@ pub async fn delete_product_image(
 }
 
 // ==========================================
+// 🤖 AI AUTOFILL
+// ==========================================
+
+/// POST /api/admin/catalog/products/:id/ai-autofill
+pub async fn ai_autofill_product(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.ai_autofill(id).await?;
+    Ok(Json(result))
+}
+
+// ==========================================
 // 📂 CATEGORY HANDLERS
 // ==========================================
 

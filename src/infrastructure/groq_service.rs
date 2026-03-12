@@ -664,6 +664,14 @@ Pick the best match. Do not invent values."#,
     /// ВАЖНО: Двойная страховка от hangs:
     /// 1. reqwest::Client::timeout(5s) — на уровне TCP
     /// 2. tokio::timeout(6s) — на уровне async операции
+    /// Public raw request — bypasses cache, used for admin AI autofill
+    pub async fn send_raw_request(
+        &self,
+        request_body: &serde_json::Value,
+    ) -> Result<String, AppError> {
+        self.send_groq_request_inner(request_body).await
+    }
+
     async fn send_groq_request(
         &self,
         request_body: &serde_json::Value,

@@ -870,8 +870,188 @@ impl AdminCatalogService {
     }
 
     // ==========================================
-    // 📂 CATEGORY MANAGEMENT
+    // 🤖 AI AUTOFILL
     // ==========================================
+
+    /// AI autofill — asks Groq to fill all empty nutrition/description/culinary
+    /// fields for a given product by its slug/name. Returns a JSON suggestion
+    /// that the admin reviews before saving.
+    pub async fn ai_autofill(&self, id: Uuid) -> AppResult<serde_json::Value> {
+        // Load current product to know what's already filled
+        let product = self.get_product_by_id(id).await?;
+
+        let name_en = product.name_en.clone();
+        let name_ru = product.name_ru.clone().unwrap_or_default();
+        let product_type = product.product_type.clone();
+
+        // Mark which fields are already filled so AI skips them
+        let has_description_en = product.description_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_description_ru = product.description_ru.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_description_pl = product.description_pl.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_description_uk = product.description_uk.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_calories = product.calories_per_100g.is_some();
+        let has_protein = product.protein_per_100g.is_some();
+        let has_fat = product.fat_per_100g.is_some();
+        let has_carbs = product.carbs_per_100g.is_some();
+
+        let prompt = format!(
+            r#"You are a professional food database expert. Fill in the missing data for this ingredient.
+
+Product: "{name_en}" (Russian: "{name_ru}", type: "{product_type}")
+
+Return ONLY a valid JSON object with the following fields.
+For fields that are ALREADY FILLED (marked below), return null — do not overwrite.
+For EMPTY fields, provide accurate data based on your food science knowledge.
+
+ALREADY FILLED (return null for these):
+- description_en: {has_desc_en}
+- description_ru: {has_desc_ru}
+- description_pl: {has_desc_pl}
+- description_uk: {has_desc_uk}
+- calories_per_100g: {has_cal}
+- protein_per_100g: {has_prot}
+- fat_per_100g: {has_fat}
+- carbs_per_100g: {has_carbs}
+
+Return this JSON (null for already-filled fields, real values for empty ones):
+{{
+  "description_en": "<2-3 sentence culinary description in English, or null>",
+  "description_ru": "<2-3 sentence culinary description in Russian, or null>",
+  "description_pl": "<2-3 sentence culinary description in Polish, or null>",
+  "description_uk": "<2-3 sentence culinary description in Ukrainian, or null>",
+  "calories_per_100g": <integer kcal per 100g, or null>,
+  "protein_per_100g": <float grams protein per 100g, or null>,
+  "fat_per_100g": <float grams fat per 100g, or null>,
+  "carbs_per_100g": <float grams carbs per 100g, or null>,
+  "fiber_per_100g": <float or null>,
+  "sugar_per_100g": <float or null>,
+  "density_g_per_ml": <float density g/ml, or null>,
+  "typical_portion_g": <float typical serving size in grams, or null>,
+  "shelf_life_days": <integer days shelf life, or null>,
+  "product_type": "<one of: fish, seafood, meat, vegetable, fruit, dairy, grain, spice, oil, beverage, nut, legume, other — or null if already set>",
+  "seasons": <["Spring","Summer","Autumn","Winter"] subset or ["AllYear"], based on typical availability>,
+  "macros": {{
+    "calories_kcal": <integer or null>,
+    "protein_g": <float or null>,
+    "fat_g": <float or null>,
+    "carbs_g": <float or null>,
+    "fiber_g": <float or null>,
+    "sugar_g": <float or null>,
+    "starch_g": <float or null>,
+    "water_g": <float or null>
+  }},
+  "vitamins": {{
+    "vitamin_a": <float mg per 100g or null>,
+    "vitamin_c": <float mg per 100g or null>,
+    "vitamin_d": <float mg per 100g or null>,
+    "vitamin_e": <float mg per 100g or null>,
+    "vitamin_k": <float mcg per 100g or null>,
+    "vitamin_b1": <float or null>,
+    "vitamin_b2": <float or null>,
+    "vitamin_b3": <float or null>,
+    "vitamin_b5": <float or null>,
+    "vitamin_b6": <float or null>,
+    "vitamin_b9": <float or null>,
+    "vitamin_b12": <float or null>
+  }},
+  "minerals": {{
+    "calcium": <float mg per 100g or null>,
+    "iron": <float or null>,
+    "magnesium": <float or null>,
+    "phosphorus": <float or null>,
+    "potassium": <float or null>,
+    "sodium": <float or null>,
+    "zinc": <float or null>,
+    "selenium": <float or null>
+  }},
+  "fatty_acids": {{
+    "saturated_fat": <float g per 100g or null>,
+    "monounsaturated_fat": <float or null>,
+    "polyunsaturated_fat": <float or null>,
+    "omega3": <float or null>,
+    "omega6": <float or null>,
+    "epa": <float or null>,
+    "dha": <float or null>
+  }},
+  "diet_flags": {{
+    "vegan": <true/false>,
+    "vegetarian": <true/false>,
+    "gluten_free": <true/false>,
+    "keto": <true/false>,
+    "paleo": <true/false>,
+    "mediterranean": <true/false>,
+    "low_carb": <true/false>
+  }},
+  "allergens": {{
+    "milk": <true/false>,
+    "eggs": <true/false>,
+    "fish": <true/false>,
+    "shellfish": <true/false>,
+    "nuts": <true/false>,
+    "peanuts": <true/false>,
+    "gluten": <true/false>,
+    "soy": <true/false>,
+    "sesame": <true/false>,
+    "celery": <true/false>,
+    "mustard": <true/false>,
+    "sulfites": <true/false>,
+    "lupin": <true/false>,
+    "molluscs": <true/false>
+  }},
+  "culinary": {{
+    "sweetness": <1-10 integer or null>,
+    "acidity": <1-10 integer or null>,
+    "bitterness": <1-10 integer or null>,
+    "umami": <1-10 integer or null>,
+    "aroma": <1-10 integer or null>,
+    "texture": "<string like crispy/tender/creamy or null>"
+  }},
+  "food_properties": {{
+    "glycemic_index": <integer or null>,
+    "glycemic_load": <float or null>,
+    "ph": <float 0-14 or null>,
+    "smoke_point": <integer celsius or null>,
+    "water_activity": <float 0-1 or null>
+  }}
+}}
+
+Use USDA FoodData / standard nutritional databases as reference. Be precise."#,
+            name_en = name_en,
+            name_ru = name_ru,
+            product_type = product_type,
+            has_desc_en = has_description_en,
+            has_desc_ru = has_description_ru,
+            has_desc_pl = has_description_pl,
+            has_desc_uk = has_description_uk,
+            has_cal = has_calories,
+            has_prot = has_protein,
+            has_fat = has_fat,
+            has_carbs = has_carbs,
+        );
+
+        let raw = self.llm_adapter.groq_raw_request(&prompt, 3000).await?;
+
+        // Parse JSON with fallback extraction
+        let result: serde_json::Value = serde_json::from_str(&raw)
+            .or_else(|_| {
+                if let Some(start) = raw.find('{') {
+                    if let Some(end) = raw.rfind('}') {
+                        return serde_json::from_str(&raw[start..=end]);
+                    }
+                }
+                Err(serde_json::Error::io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "No JSON found",
+                )))
+            })
+            .map_err(|e| {
+                tracing::error!("Failed to parse AI autofill response: {}", e);
+                AppError::internal("AI returned invalid JSON")
+            })?;
+
+        tracing::info!("✅ AI autofill complete for product {}", id);
+        Ok(result)
+    }
 
     /// List all categories
     pub async fn list_categories(&self) -> AppResult<Vec<CategoryResponse>> {

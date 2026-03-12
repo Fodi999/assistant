@@ -171,6 +171,11 @@ pub fn create_router(
             "/products/:id/image",
             axum::routing::delete(admin_catalog::delete_product_image),
         )
+        // AI Autofill
+        .route(
+            "/products/:id/ai-autofill",
+            post(admin_catalog::ai_autofill_product),
+        )
         // Categories
         .route("/categories", get(admin_catalog::list_categories))
         .route("/categories", post(admin_catalog::create_category))

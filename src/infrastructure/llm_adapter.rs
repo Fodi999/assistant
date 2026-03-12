@@ -170,7 +170,30 @@ impl LlmAdapter {
         self.log_usage("analyze_recipe", duration_ms).await;
         
         self.cache_repo.set(&cache_key, serde_json::Value::String(analysis.clone()), "groq", "llama-3.1-8b-instant", 30).await?;
-
+        
         Ok(analysis)
+    }
+
+    /// Raw Groq request — no cache, no rule engine.
+    /// Used for one-off admin operations like AI autofill.
+    /// `max_tokens`: how many tokens to allow in response (use 3000 for full autofill).
+    pub async fn groq_raw_request(&self, prompt: &str, max_tokens: u32) -> Result<String, AppError> {
+        let start = Instant::now();
+        let request_body = serde_json::json!({
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "max_tokens": max_tokens,
+        });
+        // Use 30s timeout — autofill is large, 70b model is slower
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            self.groq_service.send_raw_request(&request_body),
+        )
+        .await
+        .map_err(|_| AppError::internal("AI autofill timeout (30s)"))?? ;
+        let duration_ms = start.elapsed().as_millis() as i32;
+        self.log_usage("ai_autofill", duration_ms).await;
+        Ok(result)
     }
 }
