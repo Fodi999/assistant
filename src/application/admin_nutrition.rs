@@ -519,6 +519,41 @@ impl AdminNutritionService {
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
+
+        // ── Sync key macros → catalog_ingredients for public endpoints ──
+        // The public /public/ingredients list reads calories/protein/fat/carbs
+        // directly from catalog_ingredients, so we must keep them in sync.
+        let cal_i32: Option<i32> = dto.calories_kcal.map(|v| v.round() as i32);
+        let protein_dec: Option<rust_decimal::Decimal> = dto.protein_g
+            .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
+        let fat_dec: Option<rust_decimal::Decimal> = dto.fat_g
+            .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
+        let carbs_dec: Option<rust_decimal::Decimal> = dto.carbs_g
+            .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
+
+        if let Err(e) = sqlx::query(
+            r#"
+            UPDATE catalog_ingredients
+            SET calories_per_100g = COALESCE($2, calories_per_100g),
+                protein_per_100g  = COALESCE($3, protein_per_100g),
+                fat_per_100g      = COALESCE($4, fat_per_100g),
+                carbs_per_100g    = COALESCE($5, carbs_per_100g)
+            WHERE id = $1
+            "#,
+        )
+        .bind(id)
+        .bind(cal_i32)
+        .bind(protein_dec)
+        .bind(fat_dec)
+        .bind(carbs_dec)
+        .execute(&self.pool)
+        .await
+        {
+            tracing::warn!("⚠️ Failed to sync macros → catalog_ingredients for {id}: {e}");
+        } else {
+            tracing::info!("✅ Synced macros → catalog_ingredients for {id}");
+        }
+
         Ok(())
     }
 
