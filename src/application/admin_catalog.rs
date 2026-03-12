@@ -635,9 +635,40 @@ impl AdminCatalogService {
 
         // 3. Prepare nutrition & description values
         let description_en = req.description_en.or(product.description_en);
-        let description_pl = req.description_pl.or(product.description_pl);
-        let description_ru = req.description_ru.or(product.description_ru);
-        let description_uk = req.description_uk.or(product.description_uk);
+        let mut description_pl = req.description_pl.or(product.description_pl);
+        let mut description_ru = req.description_ru.or(product.description_ru);
+        let mut description_uk = req.description_uk.or(product.description_uk);
+
+        // Auto-translate descriptions when description_en exists and target lang is empty
+        if req.auto_translate {
+            if let Some(ref en_text) = description_en {
+                let en_trimmed = en_text.trim();
+                if !en_trimmed.is_empty() {
+                    let needs_pl = description_pl.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true);
+                    let needs_ru = description_ru.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true);
+                    let needs_uk = description_uk.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true);
+
+                    if needs_pl {
+                        match self.llm_adapter.translate_to_language(en_trimmed, "pl").await {
+                            Ok(t) if !t.trim().is_empty() => { description_pl = Some(t); }
+                            _ => {}
+                        }
+                    }
+                    if needs_ru {
+                        match self.llm_adapter.translate_to_language(en_trimmed, "ru").await {
+                            Ok(t) if !t.trim().is_empty() => { description_ru = Some(t); }
+                            _ => {}
+                        }
+                    }
+                    if needs_uk {
+                        match self.llm_adapter.translate_to_language(en_trimmed, "uk").await {
+                            Ok(t) if !t.trim().is_empty() => { description_uk = Some(t); }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
 
         let calories = req.calories_per_100g.or(product.calories_per_100g);
         let protein: Option<rust_decimal::Decimal> = req.protein_per_100g
