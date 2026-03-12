@@ -15,8 +15,14 @@ ALTER TABLE products
     ADD COLUMN IF NOT EXISTS description_pl TEXT,
     ADD COLUMN IF NOT EXISTS description_uk TEXT;
 
--- Migrate existing single description → description_en
-UPDATE products SET description_en = description WHERE description IS NOT NULL;
-
--- Drop old single-language description column
-ALTER TABLE products DROP COLUMN IF EXISTS description;
+-- Migrate existing single description → description_en (only if column still exists)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'products' AND column_name = 'description'
+    ) THEN
+        UPDATE products SET description_en = description WHERE description IS NOT NULL;
+        ALTER TABLE products DROP COLUMN description;
+    END IF;
+END $$;
