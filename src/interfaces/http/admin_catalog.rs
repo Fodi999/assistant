@@ -171,6 +171,20 @@ pub async fn ai_autofill_product(
 }
 
 // ==========================================
+// 🔍 AI AUDIT
+// ==========================================
+
+/// GET /api/admin/catalog/audit
+/// Scans all products, checks completeness, validates against USDA via AI
+pub async fn ai_audit(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let report = service.ai_audit().await?;
+    Ok(Json(report))
+}
+
+// ==========================================
 // 📂 CATEGORY HANDLERS
 // ==========================================
 
