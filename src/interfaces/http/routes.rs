@@ -1,5 +1,6 @@
 use crate::application::{
     cms_service::CmsService,
+    public_nutrition::PublicNutritionService,
     recipe_v2_service::RecipeV2Service, // V2 with translations
     report::ReportService,
     AdminAuthService,
@@ -30,6 +31,7 @@ use crate::interfaces::http::{
     public::{
         cms as public_cms,
         ingredients::{get_ingredient_by_slug, list_ingredients},
+        nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page},
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
@@ -399,7 +401,7 @@ pub fn create_router(
     let public_ingredients_router = Router::new()
         .route("/ingredients", get(list_ingredients))
         .route("/ingredients/:slug", get(get_ingredient_by_slug))
-        .with_state(pool_for_public);
+        .with_state(pool_for_public.clone());
 
     let public_tools_router = Router::new()
         .route("/tools/convert", get(tools_convert))
@@ -437,6 +439,14 @@ pub fn create_router(
         .route("/tools/recipe-nutrition", post(recipe_nutrition))
         .route("/tools/recipe-cost", post(recipe_cost))
         .with_state(pool_for_tools);
+
+    // ── Public Nutrition / Diet / Ranking SEO routes ──────────────────────────
+    let public_nutrition_svc = std::sync::Arc::new(PublicNutritionService::new(pool_for_public.clone()));
+    let public_nutrition_router = Router::new()
+        .route("/nutrition/:slug", get(get_nutrition_page))
+        .route("/diet/:flag",      get(get_diet_page))
+        .route("/ranking/:metric", get(get_ranking_page))
+        .with_state(public_nutrition_svc);
 
     // ── Admin CMS routes (protected) ─────────────────────────────────────────
     let admin_cms_routes = Router::new()
@@ -509,7 +519,8 @@ pub fn create_router(
     let public_router = Router::new()
         .merge(public_ingredients_router)
         .merge(public_tools_router)
-        .merge(public_cms_router);
+        .merge(public_cms_router)
+        .merge(public_nutrition_router);
 
     // Combine all routes
     Router::new()

@@ -2,6 +2,7 @@ pub mod admin_auth;
 pub mod admin_catalog;
 pub mod admin_nutrition;
 pub mod assistant_service;
+pub mod public_nutrition;
 pub mod auth;
 pub mod catalog;
 pub mod cms_service;
