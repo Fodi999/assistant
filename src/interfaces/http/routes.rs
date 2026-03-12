@@ -186,6 +186,28 @@ pub fn create_router(
             "/audit",
             get(admin_catalog::ai_audit),
         )
+        // Food Pairing CRUD
+        .route(
+            "/products/:id/pairings",
+            get(admin_catalog::get_pairings),
+        )
+        .route(
+            "/products/:id/pairings",
+            post(admin_catalog::add_pairing),
+        )
+        .route(
+            "/products/:id/pairings/:pairing_id",
+            axum::routing::delete(admin_catalog::delete_pairing),
+        )
+        .route(
+            "/products/:id/ai-pairings",
+            post(admin_catalog::ai_generate_pairings),
+        )
+        // Product search (for pairing ingredient picker)
+        .route(
+            "/products/search",
+            get(admin_catalog::search_products),
+        )
         // Categories
         .route("/categories", get(admin_catalog::list_categories))
         .route("/categories", post(admin_catalog::create_category))

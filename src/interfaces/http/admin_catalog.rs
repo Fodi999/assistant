@@ -199,6 +199,76 @@ pub async fn ai_audit(
 }
 
 // ==========================================
+// 🧬 FOOD PAIRING HANDLERS
+// ==========================================
+
+/// GET /api/admin/catalog/products/:id/pairings
+pub async fn get_pairings(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.get_pairings(id).await?;
+    Ok(Json(result))
+}
+
+/// Request body for adding a pairing
+#[derive(Debug, serde::Deserialize)]
+pub struct AddPairingRequest {
+    pub paired_product_id: Uuid,
+    pub pairing_type: String,
+    pub strength: f32,
+}
+
+/// POST /api/admin/catalog/products/:id/pairings
+pub async fn add_pairing(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<AddPairingRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service
+        .add_pairing(id, req.paired_product_id, &req.pairing_type, req.strength)
+        .await?;
+    Ok(Json(result))
+}
+
+/// DELETE /api/admin/catalog/products/:id/pairings/:pairing_id
+pub async fn delete_pairing(
+    _claims: AdminClaims,
+    Path((product_id, pairing_id)): Path<(Uuid, Uuid)>,
+    State(service): State<AdminCatalogService>,
+) -> Result<StatusCode, AppError> {
+    service.delete_pairing(product_id, pairing_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /api/admin/catalog/products/:id/ai-pairings
+pub async fn ai_generate_pairings(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.ai_generate_pairings(id).await?;
+    Ok(Json(result))
+}
+
+/// GET /api/admin/catalog/products/search?q=...
+#[derive(Debug, serde::Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+}
+
+pub async fn search_products(
+    _claims: AdminClaims,
+    axum::extract::Query(query): axum::extract::Query<SearchQuery>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    let results = service.search_products(&query.q).await?;
+    Ok(Json(results))
+}
+
+// ==========================================
 // 📂 CATEGORY HANDLERS
 // ==========================================
 
