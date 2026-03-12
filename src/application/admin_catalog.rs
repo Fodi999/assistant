@@ -634,10 +634,33 @@ impl AdminCatalogService {
         }
 
         // 3. Prepare nutrition & description values
-        let description_en = req.description_en.or(product.description_en);
+        let mut description_en = req.description_en.or(product.description_en);
         let mut description_pl = req.description_pl.or(product.description_pl);
         let mut description_ru = req.description_ru.or(product.description_ru);
         let mut description_uk = req.description_uk.or(product.description_uk);
+
+        // Guard: if description_en contains Cyrillic, move it to description_ru and translate to EN
+        if let Some(ref en_text) = description_en {
+            let has_cyrillic = en_text.chars().any(|c| matches!(c, '\u{0400}'..='\u{04FF}'));
+            if has_cyrillic {
+                let trimmed = en_text.trim().to_string();
+                tracing::warn!("description_en contains Cyrillic for product, auto-fixing: {:?}", &trimmed);
+                // Move to description_ru if RU is empty
+                if description_ru.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+                    description_ru = Some(trimmed.clone());
+                }
+                // Translate to English
+                match self.llm_adapter.translate_to_language(&trimmed, "en").await {
+                    Ok(t) if !t.trim().is_empty() => {
+                        description_en = Some(t);
+                    }
+                    _ => {
+                        // Couldn't translate — clear the field so AI autofill can fill it later
+                        description_en = Some(String::new());
+                    }
+                }
+            }
+        }
 
         // Auto-translate descriptions when description_en exists and target lang is empty
         if req.auto_translate {
