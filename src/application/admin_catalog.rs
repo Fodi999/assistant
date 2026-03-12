@@ -1666,7 +1666,7 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
                       fp.nutrition_score,
                       fp.culinary_score
                FROM food_pairing fp
-               JOIN products b ON b.id = fp.ingredient_b
+               JOIN catalog_ingredients b ON b.id = fp.ingredient_b
                WHERE fp.ingredient_a = $1
                ORDER BY fp.pair_score DESC NULLS LAST"#,
         )
@@ -1792,7 +1792,7 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
         let rows: Vec<SearchRow> = sqlx::query_as(
             r#"SELECT ci.id, ci.slug, ci.name_en, ci.name_ru, ci.image_url, ci.product_type
                FROM catalog_ingredients ci
-               WHERE ci.deleted_at IS NULL
+               WHERE ci.is_active = true
                  AND (LOWER(ci.name_en) LIKE $1
                       OR LOWER(COALESCE(ci.name_ru, '')) LIKE $1
                       OR LOWER(COALESCE(ci.name_pl, '')) LIKE $1
@@ -1840,7 +1840,7 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
         }
 
         let catalog: Vec<SlugRow> = sqlx::query_as(
-            "SELECT id, slug, name_en FROM catalog_ingredients WHERE deleted_at IS NULL ORDER BY name_en",
+            "SELECT id, slug, name_en FROM catalog_ingredients WHERE is_active = true ORDER BY name_en",
         )
         .fetch_all(&self.pool)
         .await
