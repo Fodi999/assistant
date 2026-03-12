@@ -899,26 +899,30 @@ impl AdminCatalogService {
 
 Product: "{name_en}" (Russian: "{name_ru}", type: "{product_type}")
 
-Return ONLY a valid JSON object with the following fields.
-For fields that are ALREADY FILLED (marked below), return null — do not overwrite.
-For EMPTY fields, provide accurate data based on your food science knowledge.
+Return ONLY a valid JSON object. Rules:
+- If a field says "FILLED=true" below → return null (do NOT overwrite).
+- If a field says "FILLED=false" below → you MUST provide a real value (do NOT return null).
+- For all other fields not listed below → always provide a value.
 
-ALREADY FILLED (return null for these):
-- description_en: {has_desc_en}
-- description_ru: {has_desc_ru}
-- description_pl: {has_desc_pl}
-- description_uk: {has_desc_uk}
-- calories_per_100g: {has_cal}
-- protein_per_100g: {has_prot}
-- fat_per_100g: {has_fat}
-- carbs_per_100g: {has_carbs}
+Field status (true=already has data, false=EMPTY and needs your data):
+- description_en: FILLED={has_desc_en}
+- description_ru: FILLED={has_desc_ru}
+- description_pl: FILLED={has_desc_pl}
+- description_uk: FILLED={has_desc_uk}
+- calories_per_100g: FILLED={has_cal}
+- protein_per_100g: FILLED={has_prot}
+- fat_per_100g: FILLED={has_fat}
+- carbs_per_100g: FILLED={has_carbs}
 
-Return this JSON (null for already-filled fields, real values for empty ones):
+IMPORTANT: If FILLED=false, you MUST provide the value, NOT null!
+All nutritional values should be for RAW product per 100g.
+
+Return this JSON:
 {{
-  "description_en": "<2-3 sentence culinary description in English, or null>",
-  "description_ru": "<2-3 sentence culinary description in Russian, or null>",
-  "description_pl": "<2-3 sentence culinary description in Polish, or null>",
-  "description_uk": "<2-3 sentence culinary description in Ukrainian, or null>",
+  "description_en": "<2-3 sentence culinary description in English, or null if FILLED=true>",
+  "description_ru": "<2-3 предложения кулинарное описание на русском, or null if FILLED=true>",
+  "description_pl": "<2-3 zdania opis kulinarny po polsku, or null if FILLED=true>",
+  "description_uk": "<2-3 речення кулінарний опис українською, or null if FILLED=true>",
   "calories_per_100g": <integer kcal per 100g, or null>,
   "protein_per_100g": <float grams protein per 100g, or null>,
   "fat_per_100g": <float grams fat per 100g, or null>,
@@ -1015,7 +1019,8 @@ Return this JSON (null for already-filled fields, real values for empty ones):
   }}
 }}
 
-Use USDA FoodData / standard nutritional databases as reference. Be precise."#,
+Use USDA FoodData Central (raw/uncooked values per 100g) as reference. Be precise.
+REMEMBER: FILLED=false means the field is EMPTY — you MUST provide a real value, NOT null!"#,
             name_en = name_en,
             name_ru = name_ru,
             product_type = product_type,
