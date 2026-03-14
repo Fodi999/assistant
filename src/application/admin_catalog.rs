@@ -499,6 +499,26 @@ impl AdminCatalogService {
         })
         .ok(); // Non-critical — log and continue
 
+        // ==========================================
+        // 🤖 ШАГ 7: AUTO-GENERATE PROCESSING STATES (rule_bot)
+        // ==========================================
+        // Generates all 10 states (raw, boiled, fried, etc.) deterministically
+        tokio::spawn({
+            let pool = self.pool.clone();
+            async move {
+                // Small delay to ensure the INSERT is committed
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                match crate::application::catalog_rule_bot::generate_states::generate_states_for_ingredient(&pool, id).await {
+                    Ok(states) => {
+                        tracing::info!("✅ Auto-generated {} processing states for product {}", states.len(), id);
+                    }
+                    Err(e) => {
+                        tracing::warn!("⚠️ Failed to auto-generate states for {}: {}", id, e);
+                    }
+                }
+            }
+        });
+
         Ok(product)
     }
 

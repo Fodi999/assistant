@@ -207,7 +207,8 @@ impl CatalogRuleBotService {
                 name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
                 notes_en, notes_pl, notes_ru, notes_uk,
                 notes, generated_by, data_score::float8,
-                created_at, updated_at
+                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+                to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
             FROM ingredient_states
             WHERE ingredient_id = $1
             ORDER BY
@@ -258,6 +259,6 @@ pub struct IngredientStateRow {
     pub notes: Option<String>,
     pub generated_by: Option<String>,
     pub data_score: Option<f64>,
-    pub created_at: time::OffsetDateTime,
-    pub updated_at: time::OffsetDateTime,
+    pub created_at: String,
+    pub updated_at: String,
 }

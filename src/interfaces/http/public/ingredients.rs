@@ -27,6 +27,11 @@ pub struct LangQuery {
     pub lang: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct StateQuery {
+    pub lang: Option<String>,
+}
+
 fn parse_lang(s: &Option<String>) -> Language {
     s.as_deref()
         .and_then(Language::from_code)
@@ -298,5 +303,231 @@ pub async fn get_ingredient_by_slug(
                 og_image: r.og_image,
             }).into_response())
         }
+    }
+}
+
+// ── Public States Endpoint ────────────────────────────────────────────────────
+
+/// Single processing state for public API
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct PublicStateRow {
+    pub state: String,
+    pub calories_per_100g: Option<f64>,
+    pub protein_per_100g: Option<f64>,
+    pub fat_per_100g: Option<f64>,
+    pub carbs_per_100g: Option<f64>,
+    pub fiber_per_100g: Option<f64>,
+    pub water_percent: Option<f64>,
+    pub shelf_life_hours: Option<i32>,
+    pub storage_temp_c: Option<i32>,
+    pub texture: Option<String>,
+    pub name_suffix_en: Option<String>,
+    pub name_suffix_pl: Option<String>,
+    pub name_suffix_ru: Option<String>,
+    pub name_suffix_uk: Option<String>,
+    pub notes_en: Option<String>,
+    pub notes_pl: Option<String>,
+    pub notes_ru: Option<String>,
+    pub notes_uk: Option<String>,
+    pub data_score: Option<f64>,
+}
+
+/// GET /public/ingredients/:slug/states?lang=pl
+///
+/// Returns all processing states for an ingredient (raw, boiled, fried, etc.)
+/// Each state includes recalculated nutrition, storage rules, and translations.
+/// Perfect for SEO pages: /ingredients/almonds/fried
+pub async fn get_ingredient_states(
+    State(pool): State<PgPool>,
+    Path(slug): Path<String>,
+    Query(_params): Query<StateQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // 1. Resolve slug → ingredient_id
+    let ingredient: Option<(Uuid, String, String, String, String, String, Option<String>)> =
+        sqlx::query_as(
+            r#"SELECT id, name_en, name_pl, name_ru, name_uk, COALESCE(slug, '') as slug, image_url
+               FROM catalog_ingredients
+               WHERE slug = $1 AND is_active = true"#,
+        )
+        .bind(&slug)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error resolving slug {}: {}", slug, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
+            )
+        })?;
+
+    let (ingredient_id, name_en, name_pl, name_ru, name_uk, resolved_slug, image_url) =
+        match ingredient {
+            Some(row) => row,
+            None => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": format!("Ingredient '{}' not found", slug)
+                    })),
+                ))
+            }
+        };
+
+    // 2. Fetch all states
+    let states = sqlx::query_as::<_, PublicStateRow>(
+        r#"SELECT
+            state::text as state,
+            calories_per_100g::float8, protein_per_100g::float8,
+            fat_per_100g::float8, carbs_per_100g::float8,
+            fiber_per_100g::float8, water_percent::float8,
+            shelf_life_hours, storage_temp_c, texture,
+            name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
+            notes_en, notes_pl, notes_ru, notes_uk,
+            data_score::float8
+        FROM ingredient_states
+        WHERE ingredient_id = $1
+        ORDER BY
+            CASE state
+                WHEN 'raw' THEN 0
+                WHEN 'boiled' THEN 1
+                WHEN 'steamed' THEN 2
+                WHEN 'baked' THEN 3
+                WHEN 'grilled' THEN 4
+                WHEN 'fried' THEN 5
+                WHEN 'smoked' THEN 6
+                WHEN 'frozen' THEN 7
+                WHEN 'dried' THEN 8
+                WHEN 'pickled' THEN 9
+            END"#,
+    )
+    .bind(ingredient_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error fetching states for {}: {}", slug, e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
+    })?;
+
+    Ok(Json(serde_json::json!({
+        "slug": resolved_slug,
+        "ingredient_id": ingredient_id,
+        "name_en": name_en,
+        "name_pl": name_pl,
+        "name_ru": name_ru,
+        "name_uk": name_uk,
+        "image_url": image_url,
+        "states_count": states.len(),
+        "states": states,
+    })))
+}
+
+/// GET /public/ingredients/:slug/states/:state?lang=pl
+///
+/// Returns ONE specific processing state for an ingredient.
+/// Perfect for individual SEO pages: /ingredients/almonds/fried
+pub async fn get_ingredient_state(
+    State(pool): State<PgPool>,
+    Path((slug, state)): Path<(String, String)>,
+    Query(_params): Query<StateQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // 1. Resolve slug → ingredient
+    let ingredient: Option<(Uuid, String, String, String, String, String, Option<String>)> =
+        sqlx::query_as(
+            r#"SELECT id, name_en, name_pl, name_ru, name_uk, COALESCE(slug, '') as slug, image_url
+               FROM catalog_ingredients
+               WHERE slug = $1 AND is_active = true"#,
+        )
+        .bind(&slug)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error resolving slug {}: {}", slug, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Database error" })),
+            )
+        })?;
+
+    let (ingredient_id, name_en, name_pl, name_ru, name_uk, resolved_slug, image_url) =
+        match ingredient {
+            Some(row) => row,
+            None => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": format!("Ingredient '{}' not found", slug)
+                    })),
+                ))
+            }
+        };
+
+    // 2. Fetch specific state
+    let state_row = sqlx::query_as::<_, PublicStateRow>(
+        r#"SELECT
+            state::text as state,
+            calories_per_100g::float8, protein_per_100g::float8,
+            fat_per_100g::float8, carbs_per_100g::float8,
+            fiber_per_100g::float8, water_percent::float8,
+            shelf_life_hours, storage_temp_c, texture,
+            name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
+            notes_en, notes_pl, notes_ru, notes_uk,
+            data_score::float8
+        FROM ingredient_states
+        WHERE ingredient_id = $1 AND state::text = $2"#,
+    )
+    .bind(ingredient_id)
+    .bind(&state)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error fetching state {}/{}: {}", slug, state, e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
+    })?;
+
+    match state_row {
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": format!("State '{}' not found for ingredient '{}'", state, slug)
+            })),
+        )),
+        Some(s) => Ok(Json(serde_json::json!({
+            "slug": resolved_slug,
+            "ingredient_id": ingredient_id,
+            "name_en": name_en,
+            "name_pl": name_pl,
+            "name_ru": name_ru,
+            "name_uk": name_uk,
+            "image_url": image_url,
+            "state": s.state,
+            "name_suffix_en": s.name_suffix_en,
+            "name_suffix_pl": s.name_suffix_pl,
+            "name_suffix_ru": s.name_suffix_ru,
+            "name_suffix_uk": s.name_suffix_uk,
+            "nutrition": {
+                "calories_per_100g": s.calories_per_100g,
+                "protein_per_100g": s.protein_per_100g,
+                "fat_per_100g": s.fat_per_100g,
+                "carbs_per_100g": s.carbs_per_100g,
+                "fiber_per_100g": s.fiber_per_100g,
+                "water_percent": s.water_percent,
+            },
+            "storage": {
+                "shelf_life_hours": s.shelf_life_hours,
+                "storage_temp_c": s.storage_temp_c,
+                "texture": s.texture,
+            },
+            "notes_en": s.notes_en,
+            "notes_pl": s.notes_pl,
+            "notes_ru": s.notes_ru,
+            "notes_uk": s.notes_uk,
+            "data_score": s.data_score,
+        }))),
     }
 }
