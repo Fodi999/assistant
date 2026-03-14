@@ -201,12 +201,12 @@ impl CatalogRuleBotService {
         let rows = sqlx::query_as::<_, IngredientStateRow>(
             r#"SELECT
                 id, ingredient_id, state::text as state,
-                calories_per_100g, protein_per_100g, fat_per_100g,
-                carbs_per_100g, fiber_per_100g, water_percent,
+                calories_per_100g::float8, protein_per_100g::float8, fat_per_100g::float8,
+                carbs_per_100g::float8, fiber_per_100g::float8, water_percent::float8,
                 shelf_life_hours, storage_temp_c, texture,
                 name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
                 notes_en, notes_pl, notes_ru, notes_uk,
-                notes, generated_by, data_score,
+                notes, generated_by, data_score::float8,
                 created_at, updated_at
             FROM ingredient_states
             WHERE ingredient_id = $1
