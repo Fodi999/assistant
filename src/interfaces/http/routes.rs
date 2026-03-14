@@ -1,4 +1,5 @@
 use crate::application::{
+    catalog_rule_bot::CatalogRuleBotService,
     cms_service::CmsService,
     public_nutrition::PublicNutritionService,
     recipe_v2_service::RecipeV2Service, // V2 with translations
@@ -23,6 +24,7 @@ use crate::interfaces::http::{
     admin_catalog,
     admin_cms,
     admin_nutrition,
+    admin_states,
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
@@ -267,6 +269,42 @@ pub fn create_router(
             require_super_admin,
         ))
         .with_state(pool.clone());
+
+    // Admin states routes — Catalog Rule Bot (ingredient processing states)
+    let catalog_rule_bot_service = CatalogRuleBotService::new(pool.clone());
+    let admin_states_middleware = {
+        let svc = admin_auth_service.clone();
+        middleware::from_fn(move |mut req: Request, next: Next| {
+            let svc = svc.clone();
+            async move {
+                req.extensions_mut().insert(svc);
+                next.run(req).await
+            }
+        })
+    };
+
+    let admin_states_routes = Router::new()
+        .route(
+            "/generate/:ingredient_id",
+            post(admin_states::generate_states),
+        )
+        .route("/generate-all", post(admin_states::generate_all_states))
+        .route("/audit", get(admin_states::state_audit))
+        .route("/data-quality", get(admin_states::data_quality))
+        .route(
+            "/products/:id",
+            get(admin_states::get_product_states),
+        )
+        .route(
+            "/products/:id",
+            delete(admin_states::delete_product_states),
+        )
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer(admin_states_middleware)
+        .with_state(catalog_rule_bot_service);
 
     // Clone pool for public routes (before move into jwt_middleware)
     let pool_for_public = pool.clone();
@@ -568,6 +606,7 @@ pub fn create_router(
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
         .nest("/api/admin/catalog", admin_catalog_routes)
+        .nest("/api/admin/catalog/states", admin_states_routes)
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin", admin_users_route)
