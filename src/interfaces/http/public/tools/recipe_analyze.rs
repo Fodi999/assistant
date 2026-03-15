@@ -26,6 +26,8 @@ pub struct RecipeAnalyzeRequest {
     pub ingredients: Vec<IngredientInput>,
     #[serde(default = "default_portions")]
     pub portions: u32,
+    /// Optional language code (en, ru, pl, uk) for localized names
+    pub lang: Option<String>,
 }
 
 fn default_portions() -> u32 { 1 }
@@ -85,6 +87,10 @@ pub struct FlavorSummary {
 pub struct SuggestionItem {
     pub slug:      String,
     pub name:      String,
+    pub name_en:   String,
+    pub name_ru:   Option<String>,
+    pub name_pl:   Option<String>,
+    pub name_uk:   Option<String>,
     pub image_url: Option<String>,
     pub score:     u8,
     pub reasons:   Vec<String>,
@@ -93,14 +99,19 @@ pub struct SuggestionItem {
 
 #[derive(Debug, Serialize)]
 pub struct IngredientDetail {
-    pub slug:     String,
-    pub name:     String,
-    pub grams:    f64,
-    pub calories: f64,
-    pub protein:  f64,
-    pub fat:      f64,
-    pub carbs:    f64,
-    pub found:    bool,
+    pub slug:      String,
+    pub name:      String,
+    pub name_en:   String,
+    pub name_ru:   Option<String>,
+    pub name_pl:   Option<String>,
+    pub name_uk:   Option<String>,
+    pub image_url: Option<String>,
+    pub grams:     f64,
+    pub calories:  f64,
+    pub protein:   f64,
+    pub fat:       f64,
+    pub carbs:     f64,
+    pub found:     bool,
 }
 
 // ── DB row types ─────────────────────────────────────────────────────────────
@@ -109,6 +120,9 @@ pub struct IngredientDetail {
 struct IngredientRow {
     slug:          String,
     name_en:       String,
+    name_ru:       Option<String>,
+    name_pl:       Option<String>,
+    name_uk:       Option<String>,
     image_url:     Option<String>,
     calories_kcal: Option<f32>,
     protein_g:     Option<f32>,
@@ -134,6 +148,9 @@ struct IngredientRow {
 struct CandidateRow {
     slug:          String,
     name_en:       String,
+    name_ru:       Option<String>,
+    name_pl:       Option<String>,
+    name_uk:       Option<String>,
     image_url:     Option<String>,
     calories_kcal: Option<f32>,
     protein_g:     Option<f32>,
@@ -147,6 +164,23 @@ struct CandidateRow {
     umami:         Option<f32>,
     aroma:         Option<f32>,
     avg_pair_score: Option<f64>,
+}
+
+// ── Lang helper ──────────────────────────────────────────────────────────────
+
+fn pick_name(
+    name_en: &str,
+    name_ru: &Option<String>,
+    name_pl: &Option<String>,
+    name_uk: &Option<String>,
+    lang: &str,
+) -> String {
+    match lang {
+        "ru" => name_ru.as_deref().unwrap_or(name_en).to_string(),
+        "pl" => name_pl.as_deref().unwrap_or(name_en).to_string(),
+        "uk" => name_uk.as_deref().unwrap_or(name_en).to_string(),
+        _    => name_en.to_string(),
+    }
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
@@ -169,11 +203,12 @@ pub async fn recipe_analyze(
     }
 
     let slugs: Vec<String> = body.ingredients.iter().map(|i| i.slug.clone()).collect();
+    let lang = body.lang.as_deref().unwrap_or("en");
 
     // ── 1. Fetch ingredient data from DB (nutrition + culinary + diet) ──
     let rows: Vec<IngredientRow> = sqlx::query_as(
         r#"
-        SELECT p.slug, p.name_en,
+        SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
                p.image_url,
                nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
@@ -218,7 +253,13 @@ pub async fn recipe_analyze(
 
         ingredient_details.push(IngredientDetail {
             slug: inp.slug.clone(),
-            name: row.map(|r| r.name_en.clone()).unwrap_or_else(|| inp.slug.clone()),
+            name: row.map(|r| pick_name(&r.name_en, &r.name_ru, &r.name_pl, &r.name_uk, lang))
+                     .unwrap_or_else(|| inp.slug.clone()),
+            name_en: row.map(|r| r.name_en.clone()).unwrap_or_else(|| inp.slug.clone()),
+            name_ru: row.and_then(|r| r.name_ru.clone()),
+            name_pl: row.and_then(|r| r.name_pl.clone()),
+            name_uk: row.and_then(|r| r.name_uk.clone()),
+            image_url: row.and_then(|r| r.image_url.clone()),
             grams: inp.grams,
             calories: uc::round_to(cal * factor, 1),
             protein: uc::round_to(prot * factor, 1),
@@ -279,7 +320,7 @@ pub async fn recipe_analyze(
             SELECT id FROM products WHERE slug = ANY($1)
         ),
         pair_scores AS (
-            SELECT p.slug, p.name_en, p.image_url,
+            SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk, p.image_url,
                    nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                    fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
                    AVG(fp.pair_score::float8) AS avg_pair_score
@@ -289,7 +330,7 @@ pub async fn recipe_analyze(
             LEFT JOIN food_culinary_properties fc ON fc.product_id = p.id
             WHERE fp.ingredient_a IN (SELECT id FROM recipe_ids)
               AND p.slug != ALL($1)
-            GROUP BY p.slug, p.name_en, p.image_url,
+            GROUP BY p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk, p.image_url,
                      nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                      fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma
             ORDER BY avg_pair_score DESC NULLS LAST
@@ -341,9 +382,16 @@ pub async fn recipe_analyze(
     );
 
     let suggestions: Vec<SuggestionItem> = suggestion_result.suggestions.iter().map(|s| {
+        // Look up localized names from the candidates DB rows
+        let cand = candidates_rows.iter().find(|c| c.slug == s.slug);
         SuggestionItem {
             slug: s.slug.clone(),
-            name: s.name.clone(),
+            name: cand.map(|c| pick_name(&c.name_en, &c.name_ru, &c.name_pl, &c.name_uk, lang))
+                      .unwrap_or_else(|| s.name.clone()),
+            name_en: cand.map(|c| c.name_en.clone()).unwrap_or_else(|| s.name.clone()),
+            name_ru: cand.and_then(|c| c.name_ru.clone()),
+            name_pl: cand.and_then(|c| c.name_pl.clone()),
+            name_uk: cand.and_then(|c| c.name_uk.clone()),
             image_url: s.image_url.clone(),
             score: s.score,
             reasons: s.reasons.clone(),
