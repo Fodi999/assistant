@@ -1,6 +1,7 @@
+use std::collections::HashSet;
 use crate::application::catalog_rule_bot::{
-    nutrition_transform::{transform_nutrition, BaseNutrition},
-    storage_rules::{get_storage_rule, override_shelf_life},
+    nutrition_transform::{classify_group, transform_nutrition, BaseNutrition},
+    storage_rules::{get_storage_rule, override_shelf_life, state_applicability},
     translation_rules::{get_state_notes, get_state_suffix},
 };
 use crate::domain::ProcessingState;
@@ -19,6 +20,7 @@ struct IngredientBaseRow {
     fat_per_100g: Option<f64>,
     carbs_per_100g: Option<f64>,
     fiber_per_100g: Option<f64>,
+    water_percent: Option<f64>,
 }
 
 /// Generate all missing states for a single ingredient.
@@ -27,7 +29,7 @@ pub async fn generate_states_for_ingredient(
     pool: &PgPool,
     ingredient_id: Uuid,
 ) -> AppResult<Vec<ProcessingState>> {
-    // 1. Load base ingredient
+    // 1. Load base ingredient (now includes water_percent)
     let row = sqlx::query_as::<_, IngredientBaseRow>(
         r#"SELECT id, name_en,
                   COALESCE(product_type, 'other') as product_type,
@@ -35,7 +37,8 @@ pub async fn generate_states_for_ingredient(
                   protein_per_100g::float8 as protein_per_100g,
                   fat_per_100g::float8 as fat_per_100g,
                   carbs_per_100g::float8 as carbs_per_100g,
-                  fiber_per_100g::float8 as fiber_per_100g
+                  fiber_per_100g::float8 as fiber_per_100g,
+                  water_percent::float8 as water_percent
            FROM catalog_ingredients
            WHERE id = $1 AND is_active = true"#,
     )
@@ -44,37 +47,47 @@ pub async fn generate_states_for_ingredient(
     .await?
     .ok_or_else(|| AppError::not_found("Ingredient not found"))?;
 
-    // 2. Check which states already exist
-    let existing: Vec<String> = sqlx::query_scalar(
+    // 2. Check which states already exist (HashSet for O(1) lookup)
+    let existing: HashSet<String> = sqlx::query_scalar(
         "SELECT state::text FROM ingredient_states WHERE ingredient_id = $1",
     )
     .bind(ingredient_id)
     .fetch_all(pool)
-    .await?;
+    .await?
+    .into_iter()
+    .collect();
 
-    // 3. Build base nutrition (use defaults if missing)
+    // 3. Build base nutrition — use actual water_percent from DB
     let base = BaseNutrition {
         calories: row.calories_per_100g.unwrap_or(0) as f64,
         protein: row.protein_per_100g.unwrap_or(0.0),
         fat: row.fat_per_100g.unwrap_or(0.0),
         carbs: row.carbs_per_100g.unwrap_or(0.0),
         fiber: row.fiber_per_100g.unwrap_or(0.0),
-        water_percent: 70.0, // default — will be improved later
+        water_percent: row.water_percent.unwrap_or(70.0),
     };
 
     let has_nutrition = row.calories_per_100g.is_some();
 
-    // 4. Generate missing states
+    // 4. Classify product group for nutrition transform
+    let group = classify_group(&row.product_type);
+
+    // 5. Generate missing states
     let mut created = Vec::new();
 
     for &state in ProcessingState::ALL {
         let state_str = state.as_str();
-        if existing.contains(&state_str.to_string()) {
+        if existing.contains(state_str) {
             continue; // already exists
         }
 
-        // Transform nutrition
-        let nutrition = transform_nutrition(&base, state);
+        // Skip inapplicable states (e.g. oil + grilled)
+        if state_applicability(&row.product_type, state) == "skip" {
+            continue;
+        }
+
+        // Transform nutrition using product group + state
+        let nutrition = transform_nutrition(&base, group, state);
 
         // Get storage rules
         let storage = get_storage_rule(state);

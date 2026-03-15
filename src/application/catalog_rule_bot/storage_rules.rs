@@ -18,6 +18,60 @@ pub struct StorageRule {
     pub cooking_method: &'static str,
 }
 
+/// Whether a processing state is applicable for a given product type.
+/// Returns: "normal", "rare" (uncommon but possible), or "skip" (should not generate).
+pub fn state_applicability(product_type: &str, state: ProcessingState) -> &'static str {
+    match (product_type, state) {
+        // Nuts & seeds: boiling and steaming are very rare
+        ("nut", ProcessingState::Boiled) => "rare",
+        ("nut", ProcessingState::Steamed) => "rare",
+        ("nut", ProcessingState::Pickled) => "rare",
+        ("seed", ProcessingState::Boiled) => "rare",
+        ("seed", ProcessingState::Steamed) => "rare",
+
+        // Oils: most cooking methods don't apply
+        ("oil", ProcessingState::Boiled) => "skip",
+        ("oil", ProcessingState::Steamed) => "skip",
+        ("oil", ProcessingState::Grilled) => "skip",
+        ("oil", ProcessingState::Baked) => "skip",
+        ("oil", ProcessingState::Smoked) => "skip",
+        ("oil", ProcessingState::Dried) => "skip",
+        ("oil", ProcessingState::Pickled) => "skip",
+
+        // Butter/fat: limited methods
+        ("butter", ProcessingState::Grilled) => "skip",
+        ("butter", ProcessingState::Smoked) => "skip",
+        ("butter", ProcessingState::Dried) => "skip",
+        ("butter", ProcessingState::Pickled) => "skip",
+        ("fat", ProcessingState::Grilled) => "skip",
+        ("fat", ProcessingState::Smoked) => "skip",
+        ("fat", ProcessingState::Dried) => "skip",
+        ("fat", ProcessingState::Pickled) => "skip",
+
+        // Spices: most heat methods are rare
+        ("spice", ProcessingState::Boiled) => "rare",
+        ("spice", ProcessingState::Steamed) => "rare",
+        ("spice", ProcessingState::Grilled) => "rare",
+        ("spice", ProcessingState::Smoked) => "rare",
+        ("spice", ProcessingState::Pickled) => "rare",
+
+        // Beverages: only frozen makes sense
+        ("beverage", ProcessingState::Fried) => "skip",
+        ("beverage", ProcessingState::Baked) => "skip",
+        ("beverage", ProcessingState::Grilled) => "skip",
+        ("beverage", ProcessingState::Smoked) => "skip",
+        ("beverage", ProcessingState::Dried) => "skip",
+
+        // Dairy: smoking and grilling are rare
+        ("dairy", ProcessingState::Smoked) => "rare",
+        ("dairy", ProcessingState::Grilled) => "rare",
+        ("dairy", ProcessingState::Dried) => "rare",
+
+        // Everything else is normal
+        _ => "normal",
+    }
+}
+
 /// Get storage rules for a given processing state.
 ///
 /// These are general defaults — specific products may override.
