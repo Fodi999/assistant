@@ -209,12 +209,13 @@ pub async fn recipe_analyze(
     let rows: Vec<IngredientRow> = sqlx::query_as(
         r#"
         SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
-               p.image_url,
+               COALESCE(p.image_url, ci.image_url) AS image_url,
                nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
                df.vegan, df.vegetarian, df.keto, df.paleo,
                df.gluten_free, df.mediterranean, df.low_carb
         FROM products p
+        LEFT JOIN catalog_ingredients ci ON ci.slug = p.slug
         LEFT JOIN nutrition_macros nm  ON nm.product_id = p.id
         LEFT JOIN food_culinary_properties fc ON fc.product_id = p.id
         LEFT JOIN diet_flags df        ON df.product_id = p.id
@@ -320,17 +321,20 @@ pub async fn recipe_analyze(
             SELECT id FROM products WHERE slug = ANY($1)
         ),
         pair_scores AS (
-            SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk, p.image_url,
+            SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
+                   COALESCE(p.image_url, ci.image_url) AS image_url,
                    nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                    fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
                    AVG(fp.pair_score::float8) AS avg_pair_score
             FROM food_pairing fp
             JOIN products p ON p.id = fp.ingredient_b
+            LEFT JOIN catalog_ingredients ci ON ci.slug = p.slug
             LEFT JOIN nutrition_macros nm ON nm.product_id = p.id
             LEFT JOIN food_culinary_properties fc ON fc.product_id = p.id
             WHERE fp.ingredient_a IN (SELECT id FROM recipe_ids)
               AND p.slug != ALL($1)
-            GROUP BY p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk, p.image_url,
+            GROUP BY p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
+                     COALESCE(p.image_url, ci.image_url),
                      nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                      fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma
             ORDER BY avg_pair_score DESC NULLS LAST
