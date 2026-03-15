@@ -51,6 +51,26 @@ pub struct RecipeAnalyzeResponse {
     pub diet:        Vec<String>,
     pub suggestions: Vec<SuggestionItem>,
     pub ingredients: Vec<IngredientDetail>,
+    pub flavor_contributions: Vec<FlavorContribution>,
+}
+
+/// Per-ingredient flavor influence: weighted raw values + percentages
+#[derive(Debug, Serialize)]
+pub struct FlavorContribution {
+    pub slug:        String,
+    pub sweetness:   f64,
+    pub acidity:     f64,
+    pub bitterness:  f64,
+    pub umami:       f64,
+    pub fat:         f64,
+    pub aroma:       f64,
+    /// Percentage contribution to each dimension (0–100)
+    pub pct_sweetness:   f64,
+    pub pct_acidity:     f64,
+    pub pct_bitterness:  f64,
+    pub pct_umami:       f64,
+    pub pct_fat:         f64,
+    pub pct_aroma:       f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -411,7 +431,55 @@ pub async fn recipe_analyze(
         }
     }).collect();
 
-    // ── 6. Build response ──
+    // ── 6. Compute flavor influence map ──
+    let total_grams: f64 = domain_inputs.iter().map(|i| i.grams).sum();
+
+    // Weighted absolute values: flavor_dimension * (grams / total_grams)
+    struct WeightedFlavor { slug: String, s: f64, a: f64, b: f64, u: f64, f: f64, ar: f64 }
+    let weighted: Vec<WeightedFlavor> = domain_inputs.iter().map(|i| {
+        let w = if total_grams > 0.0 { i.grams / total_grams } else { 0.0 };
+        WeightedFlavor {
+            slug: i.slug.clone(),
+            s:  i.flavor.sweetness  * w,
+            a:  i.flavor.acidity    * w,
+            b:  i.flavor.bitterness * w,
+            u:  i.flavor.umami      * w,
+            f:  i.flavor.fat        * w,
+            ar: i.flavor.aroma      * w,
+        }
+    }).collect();
+
+    // Totals per dimension for percentage calc
+    let ts: f64 = weighted.iter().map(|w| w.s).sum();
+    let ta: f64 = weighted.iter().map(|w| w.a).sum();
+    let tb: f64 = weighted.iter().map(|w| w.b).sum();
+    let tu: f64 = weighted.iter().map(|w| w.u).sum();
+    let tf: f64 = weighted.iter().map(|w| w.f).sum();
+    let tar: f64 = weighted.iter().map(|w| w.ar).sum();
+
+    let pct = |val: f64, total: f64| -> f64 {
+        if total > 0.0 { uc::round_to(val / total * 100.0, 1) } else { 0.0 }
+    };
+
+    let flavor_contributions: Vec<FlavorContribution> = weighted.iter().map(|w| {
+        FlavorContribution {
+            slug: w.slug.clone(),
+            sweetness:   uc::round_to(w.s,  2),
+            acidity:     uc::round_to(w.a,  2),
+            bitterness:  uc::round_to(w.b,  2),
+            umami:       uc::round_to(w.u,  2),
+            fat:         uc::round_to(w.f,  2),
+            aroma:       uc::round_to(w.ar, 2),
+            pct_sweetness:   pct(w.s,  ts),
+            pct_acidity:     pct(w.a,  ta),
+            pct_bitterness:  pct(w.b,  tb),
+            pct_umami:       pct(w.u,  tu),
+            pct_fat:         pct(w.f,  tf),
+            pct_aroma:       pct(w.ar, tar),
+        }
+    }).collect();
+
+    // ── 7. Build response ──
     let fv = &analysis.flavor.vector;
 
     let response = RecipeAnalyzeResponse {
@@ -456,6 +524,7 @@ pub async fn recipe_analyze(
         diet: analysis.diet_flags.active_labels().into_iter().map(|s| s.to_string()).collect(),
         suggestions,
         ingredients: ingredient_details,
+        flavor_contributions,
     };
 
     Ok(Json(response))
