@@ -96,6 +96,7 @@ pub async fn generate_states_for_ingredient(
                 carbs_per_100g, fiber_per_100g, water_percent,
                 shelf_life_hours, storage_temp_c, texture,
                 weight_change_percent, state_type, oil_absorption_g, water_loss_percent,
+                glycemic_index, cooking_method,
                 name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
                 notes_en, notes_pl, notes_ru, notes_uk,
                 notes, generated_by, data_score
@@ -104,9 +105,10 @@ pub async fn generate_states_for_ingredient(
                 $3, $4, $5, $6, $7, $8,
                 $9, $10, $11,
                 $12, $13, $14, $15,
-                $16, $17, $18, $19,
-                $20, $21, $22, $23,
-                $24, 'rule_bot', $25
+                $16, $17::cooking_method_enum,
+                $18, $19, $20, $21,
+                $22, $23, $24, $25,
+                $26, 'rule_bot', $27
             )
             ON CONFLICT (ingredient_id, state) DO NOTHING"#,
         )
@@ -125,6 +127,8 @@ pub async fn generate_states_for_ingredient(
         .bind(storage.state_type)
         .bind(storage.oil_absorption_g)
         .bind(storage.water_loss_percent)
+        .bind(None::<i16>)  // glycemic_index — NULL by default, filled per-product later
+        .bind(storage.cooking_method)
         .bind(suffix.en)
         .bind(suffix.pl)
         .bind(suffix.ru)

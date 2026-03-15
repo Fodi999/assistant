@@ -14,6 +14,8 @@ pub struct StorageRule {
     pub oil_absorption_g: f64,
     /// Water lost during processing (0–100%)
     pub water_loss_percent: f64,
+    /// Specific cooking method (cooking_method_enum)
+    pub cooking_method: &'static str,
 }
 
 /// Get storage rules for a given processing state.
@@ -30,6 +32,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "raw",
             oil_absorption_g: 0.0,
             water_loss_percent: 0.0,
+            cooking_method: "raw",
         },
         ProcessingState::Boiled => StorageRule {
             shelf_life_hours: 48,    // 2 days in fridge
@@ -39,6 +42,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "heat",
             oil_absorption_g: 0.0,
             water_loss_percent: 0.0,      // actually gains water
+            cooking_method: "boiled",
         },
         ProcessingState::Fried => StorageRule {
             shelf_life_hours: 24,    // consume same day ideally
@@ -48,6 +52,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "heat",
             oil_absorption_g: 10.0,       // ~10g oil per 100g product
             water_loss_percent: 30.0,
+            cooking_method: "pan_fried",
         },
         ProcessingState::Baked => StorageRule {
             shelf_life_hours: 48,
@@ -57,6 +62,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "heat",
             oil_absorption_g: 0.0,
             water_loss_percent: 15.0,
+            cooking_method: "baked",
         },
         ProcessingState::Grilled => StorageRule {
             shelf_life_hours: 24,
@@ -66,6 +72,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "heat",
             oil_absorption_g: 0.0,
             water_loss_percent: 18.0,
+            cooking_method: "grilled",
         },
         ProcessingState::Steamed => StorageRule {
             shelf_life_hours: 48,
@@ -75,6 +82,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "heat",
             oil_absorption_g: 0.0,
             water_loss_percent: 3.0,
+            cooking_method: "steamed",
         },
         ProcessingState::Smoked => StorageRule {
             shelf_life_hours: 168,   // 7 days — smoking preserves
@@ -84,6 +92,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "preserved",
             oil_absorption_g: 0.0,
             water_loss_percent: 25.0,
+            cooking_method: "smoked",
         },
         ProcessingState::Frozen => StorageRule {
             shelf_life_hours: 2160,  // 90 days
@@ -93,6 +102,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "preserved",
             oil_absorption_g: 0.0,
             water_loss_percent: 0.0,
+            cooking_method: "frozen",
         },
         ProcessingState::Dried => StorageRule {
             shelf_life_hours: 4320,  // 180 days
@@ -102,6 +112,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "preserved",
             oil_absorption_g: 0.0,
             water_loss_percent: 70.0,
+            cooking_method: "dried",
         },
         ProcessingState::Pickled => StorageRule {
             shelf_life_hours: 720,   // 30 days
@@ -111,6 +122,7 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             state_type: "preserved",
             oil_absorption_g: 0.0,
             water_loss_percent: 0.0,
+            cooking_method: "pickled",
         },
     }
 }
