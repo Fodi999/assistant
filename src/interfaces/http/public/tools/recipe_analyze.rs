@@ -18,6 +18,7 @@ use crate::domain::tools::nutrition::{self as nut, NutritionBreakdown};
 use crate::domain::tools::recipe_analyzer::{self, DietFlags, RecipeIngredientInput};
 use crate::domain::tools::suggestion_engine::{self, Candidate};
 use crate::domain::tools::unit_converter as uc;
+use crate::domain::tools::rule_engine;
 
 // ── Request ──────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ pub struct RecipeAnalyzeResponse {
     pub suggestions: Vec<SuggestionItem>,
     pub ingredients: Vec<IngredientDetail>,
     pub flavor_contributions: Vec<FlavorContribution>,
+    pub diagnosis: rule_engine::RuleDiagnosis,
 }
 
 /// Per-ingredient flavor influence: weighted raw values + percentages
@@ -479,7 +481,25 @@ pub async fn recipe_analyze(
         }
     }).collect();
 
-    // ── 7. Build response ──
+    // ── 7. Run Rule Engine diagnosis ──
+    let rule_ctx = rule_engine::RecipeContext {
+        flavor: analysis.flavor.vector.clone(),
+        balance_score: analysis.flavor.balance_score,
+        total_calories: analysis.total_nutrition.calories,
+        protein_pct: analysis.macros.protein_pct,
+        fat_pct: analysis.macros.fat_pct,
+        carbs_pct: analysis.macros.carbs_pct,
+        fiber_g: analysis.total_nutrition.fiber_g,
+        sugar_g: analysis.total_nutrition.sugar_g,
+        total_grams,
+        ingredients: body.ingredients.iter().map(|inp| {
+            let pt = find_row(&inp.slug).and_then(|r| r.product_type.clone());
+            (inp.slug.clone(), inp.grams, pt)
+        }).collect(),
+    };
+    let diagnosis = rule_engine::diagnose(&rule_ctx);
+
+    // ── 8. Build response ──
     let fv = &analysis.flavor.vector;
 
     let response = RecipeAnalyzeResponse {
@@ -525,6 +545,7 @@ pub async fn recipe_analyze(
         suggestions,
         ingredients: ingredient_details,
         flavor_contributions,
+        diagnosis,
     };
 
     Ok(Json(response))
