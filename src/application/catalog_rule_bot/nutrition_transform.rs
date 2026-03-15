@@ -10,13 +10,13 @@ use crate::domain::ProcessingState;
 pub enum ProductGroup {
     /// Fruits, vegetables, leafy greens, salads (water 80–96%)
     WateryProduce,
-    /// Potatoes, root vegetables, legumes (water 60–80%, starchy)
+    /// Potatoes, root vegetables (water 60–80%, starchy)
     DensePlant,
     /// Nuts, seeds (water 2–6%)
     NutsSeeds,
     /// Meat, poultry, fish, seafood (water 60–80%, protein-rich)
     MeatFish,
-    /// Grains, cereals, flour, pasta (water 10–13%)
+    /// Grains, cereals, flour, pasta, legumes (water 10–13%)
     DryGoods,
     /// Oils, butter, fats (water 0–16%)
     OilsFats,
@@ -32,10 +32,10 @@ pub fn classify_group(product_type: &str) -> ProductGroup {
     match product_type.to_lowercase().as_str() {
         "fruit" | "berry" | "melon" => ProductGroup::WateryProduce,
         "vegetable" | "leafy" | "salad" | "mushroom" => ProductGroup::WateryProduce,
-        "root" | "tuber" | "legume" => ProductGroup::DensePlant,
+        "root" | "tuber" => ProductGroup::DensePlant,
         "nut" | "seed" => ProductGroup::NutsSeeds,
         "meat" | "poultry" | "fish" | "seafood" => ProductGroup::MeatFish,
-        "grain" | "cereal" | "flour" | "pasta" | "bread" => ProductGroup::DryGoods,
+        "grain" | "cereal" | "flour" | "pasta" | "bread" | "legume" => ProductGroup::DryGoods,
         "oil" | "fat" | "butter" => ProductGroup::OilsFats,
         "spice" | "herb" | "seasoning" => ProductGroup::Spices,
         _ => ProductGroup::Other, // dairy, egg, sauce, condiment, sweetener, beverage, etc.
@@ -150,7 +150,7 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // DENSE PLANT (potato, root, legumes)
+        // DENSE PLANT (potato, root vegetables)
         // Moderate water, starchy → absorbs oil well when fried
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::DensePlant, ProcessingState::Boiled) => TransformCoefficients {
@@ -268,8 +268,8 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // DRY GOODS (grains, cereals, flour, pasta — water 10–13%)
-        // Boiling absorbs a LOT of water (rice doubles in weight)
+        // DRY GOODS (grains, cereals, flour, pasta, legumes — water 10–13%)
+        // Boiling absorbs a LOT of water (weight_ratio ≈ 2.5)
         // Drying barely changes already-dry product
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::DryGoods, ProcessingState::Boiled) => TransformCoefficients {
