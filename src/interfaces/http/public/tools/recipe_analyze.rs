@@ -1,0 +1,402 @@
+//! Handler for POST /public/tools/recipe-analyze
+//!
+//! Accepts a list of ingredients (slug + grams), fetches nutrition + culinary
+//! + diet flags + pairings from the DB, then runs the domain-layer engines:
+//!   - recipe_analyzer::analyze_recipe()
+//!   - suggestion_engine::suggest_ingredients()
+//!
+//! Returns a unified JSON response with nutrition, flavor radar, and suggestions.
+
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::Json;
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::domain::tools::flavor_graph::{self, FlavorVector, FlavorIngredient};
+use crate::domain::tools::nutrition::{self as nut, NutritionBreakdown};
+use crate::domain::tools::recipe_analyzer::{self, DietFlags, RecipeIngredientInput};
+use crate::domain::tools::suggestion_engine::{self, Candidate};
+use crate::domain::tools::unit_converter as uc;
+
+// ── Request ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct RecipeAnalyzeRequest {
+    pub ingredients: Vec<IngredientInput>,
+    #[serde(default = "default_portions")]
+    pub portions: u32,
+}
+
+fn default_portions() -> u32 { 1 }
+
+#[derive(Debug, Deserialize)]
+pub struct IngredientInput {
+    pub slug:  String,
+    pub grams: f64,
+}
+
+// ── Response ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct RecipeAnalyzeResponse {
+    pub nutrition:   NutritionSummary,
+    pub per_portion: Option<NutritionSummary>,
+    pub portions:    u32,
+    pub macros:      MacrosSummary,
+    pub score:       u8,
+    pub flavor:      FlavorSummary,
+    pub diet:        Vec<String>,
+    pub suggestions: Vec<SuggestionItem>,
+    pub ingredients: Vec<IngredientDetail>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NutritionSummary {
+    pub calories: f64,
+    pub protein:  f64,
+    pub fat:      f64,
+    pub carbs:    f64,
+    pub fiber:    f64,
+    pub sugar:    f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MacrosSummary {
+    pub protein_pct: f64,
+    pub fat_pct:     f64,
+    pub carbs_pct:   f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FlavorSummary {
+    pub sweetness:  f64,
+    pub acidity:    f64,
+    pub bitterness: f64,
+    pub umami:      f64,
+    pub fat:        f64,
+    pub aroma:      f64,
+    pub balance_score: u8,
+    pub weak:       Vec<String>,
+    pub strong:     Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SuggestionItem {
+    pub slug:      String,
+    pub name:      String,
+    pub image_url: Option<String>,
+    pub score:     u8,
+    pub reasons:   Vec<String>,
+    pub fills:     Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IngredientDetail {
+    pub slug:     String,
+    pub name:     String,
+    pub grams:    f64,
+    pub calories: f64,
+    pub protein:  f64,
+    pub fat:      f64,
+    pub carbs:    f64,
+    pub found:    bool,
+}
+
+// ── DB row types ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, sqlx::FromRow)]
+struct IngredientRow {
+    slug:          String,
+    name_en:       String,
+    image_url:     Option<String>,
+    calories_kcal: Option<f32>,
+    protein_g:     Option<f32>,
+    fat_g:         Option<f32>,
+    carbs_g:       Option<f32>,
+    fiber_g:       Option<f32>,
+    sugar_g:       Option<f32>,
+    sweetness:     Option<f32>,
+    acidity:       Option<f32>,
+    bitterness:    Option<f32>,
+    umami:         Option<f32>,
+    aroma:         Option<f32>,
+    vegan:         Option<bool>,
+    vegetarian:    Option<bool>,
+    keto:          Option<bool>,
+    paleo:         Option<bool>,
+    gluten_free:   Option<bool>,
+    mediterranean: Option<bool>,
+    low_carb:      Option<bool>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CandidateRow {
+    slug:          String,
+    name_en:       String,
+    image_url:     Option<String>,
+    calories_kcal: Option<f32>,
+    protein_g:     Option<f32>,
+    fat_g:         Option<f32>,
+    carbs_g:       Option<f32>,
+    fiber_g:       Option<f32>,
+    sugar_g:       Option<f32>,
+    sweetness:     Option<f32>,
+    acidity:       Option<f32>,
+    bitterness:    Option<f32>,
+    umami:         Option<f32>,
+    aroma:         Option<f32>,
+    avg_pair_score: Option<f64>,
+}
+
+// ── Handler ──────────────────────────────────────────────────────────────────
+
+pub async fn recipe_analyze(
+    State(pool): State<PgPool>,
+    Json(body): Json<RecipeAnalyzeRequest>,
+) -> Result<Json<RecipeAnalyzeResponse>, (StatusCode, Json<serde_json::Value>)> {
+    if body.ingredients.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "ingredients list is empty" })),
+        ));
+    }
+    if body.ingredients.len() > 30 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "max 30 ingredients" })),
+        ));
+    }
+
+    let slugs: Vec<String> = body.ingredients.iter().map(|i| i.slug.clone()).collect();
+
+    // ── 1. Fetch ingredient data from DB (nutrition + culinary + diet) ──
+    let rows: Vec<IngredientRow> = sqlx::query_as(
+        r#"
+        SELECT p.slug, p.name_en,
+               p.image_url,
+               nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
+               fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
+               df.vegan, df.vegetarian, df.keto, df.paleo,
+               df.gluten_free, df.mediterranean, df.low_carb
+        FROM products p
+        LEFT JOIN nutrition_macros nm  ON nm.product_id = p.id
+        LEFT JOIN food_culinary_properties fc ON fc.product_id = p.id
+        LEFT JOIN diet_flags df        ON df.product_id = p.id
+        WHERE p.slug = ANY($1)
+        "#,
+    )
+    .bind(&slugs)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("recipe_analyze DB error: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Database error" })))
+    })?;
+
+    // Build lookup
+    let find_row = |slug: &str| -> Option<&IngredientRow> {
+        rows.iter().find(|r| r.slug == slug)
+    };
+
+    // ── 2. Build domain inputs ──
+    let mut domain_inputs: Vec<RecipeIngredientInput> = Vec::new();
+    let mut ingredient_details: Vec<IngredientDetail> = Vec::new();
+
+    for inp in &body.ingredients {
+        let row = find_row(&inp.slug);
+        let found = row.is_some();
+
+        let cal   = row.and_then(|r| r.calories_kcal).map(|v| v as f64).unwrap_or(0.0);
+        let prot  = row.and_then(|r| r.protein_g).map(|v| v as f64).unwrap_or(0.0);
+        let fat   = row.and_then(|r| r.fat_g).map(|v| v as f64).unwrap_or(0.0);
+        let carbs = row.and_then(|r| r.carbs_g).map(|v| v as f64).unwrap_or(0.0);
+        let fiber = row.and_then(|r| r.fiber_g).map(|v| v as f64).unwrap_or(0.0);
+        let sugar = row.and_then(|r| r.sugar_g).map(|v| v as f64).unwrap_or(0.0);
+
+        let factor = inp.grams / 100.0;
+
+        ingredient_details.push(IngredientDetail {
+            slug: inp.slug.clone(),
+            name: row.map(|r| r.name_en.clone()).unwrap_or_else(|| inp.slug.clone()),
+            grams: inp.grams,
+            calories: uc::round_to(cal * factor, 1),
+            protein: uc::round_to(prot * factor, 1),
+            fat: uc::round_to(fat * factor, 1),
+            carbs: uc::round_to(carbs * factor, 1),
+            found,
+        });
+
+        let nutrition_100g = NutritionBreakdown {
+            calories: cal,
+            protein_g: prot,
+            fat_g: fat,
+            carbs_g: carbs,
+            fiber_g: fiber,
+            sugar_g: sugar,
+            salt_g: 0.0,
+            sodium_mg: 0.0,
+        };
+
+        let flavor = row.map(|r| {
+            flavor_graph::flavor_from_culinary(
+                r.sweetness.map(|v| v as f64).unwrap_or(0.0),
+                r.acidity.map(|v| v as f64).unwrap_or(0.0),
+                r.bitterness.map(|v| v as f64).unwrap_or(0.0),
+                r.umami.map(|v| v as f64).unwrap_or(0.0),
+                r.aroma.map(|v| v as f64).unwrap_or(0.0),
+                fat,
+            )
+        }).unwrap_or(FlavorVector::zero());
+
+        let diet_flags = row.map(|r| DietFlags {
+            vegan: r.vegan.unwrap_or(false),
+            vegetarian: r.vegetarian.unwrap_or(false),
+            keto: r.keto.unwrap_or(false),
+            paleo: r.paleo.unwrap_or(false),
+            gluten_free: r.gluten_free.unwrap_or(false),
+            mediterranean: r.mediterranean.unwrap_or(false),
+            low_carb: r.low_carb.unwrap_or(false),
+        }).unwrap_or_default();
+
+        domain_inputs.push(RecipeIngredientInput {
+            slug: inp.slug.clone(),
+            grams: inp.grams,
+            nutrition_100g,
+            flavor,
+            cost_per_kg: None,
+            diet_flags,
+        });
+    }
+
+    // ── 3. Run recipe analyzer ──
+    let analysis = recipe_analyzer::analyze_recipe(&domain_inputs, body.portions);
+
+    // ── 4. Fetch suggestion candidates (top pairings for recipe ingredients) ──
+    let candidates_rows: Vec<CandidateRow> = sqlx::query_as(
+        r#"
+        WITH recipe_ids AS (
+            SELECT id FROM products WHERE slug = ANY($1)
+        ),
+        pair_scores AS (
+            SELECT p.slug, p.name_en, p.image_url,
+                   nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
+                   fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
+                   AVG(fp.pair_score::float8) AS avg_pair_score
+            FROM food_pairing fp
+            JOIN products p ON p.id = fp.ingredient_b
+            LEFT JOIN nutrition_macros nm ON nm.product_id = p.id
+            LEFT JOIN food_culinary_properties fc ON fc.product_id = p.id
+            WHERE fp.ingredient_a IN (SELECT id FROM recipe_ids)
+              AND p.slug != ALL($1)
+            GROUP BY p.slug, p.name_en, p.image_url,
+                     nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
+                     fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma
+            ORDER BY avg_pair_score DESC NULLS LAST
+            LIMIT 20
+        )
+        SELECT * FROM pair_scores
+        "#,
+    )
+    .bind(&slugs)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let candidates: Vec<Candidate> = candidates_rows.iter().map(|r| {
+        let fat_val = r.fat_g.map(|v| v as f64).unwrap_or(0.0);
+        Candidate {
+            slug: r.slug.clone(),
+            name: r.name_en.clone(),
+            image_url: r.image_url.clone(),
+            flavor: flavor_graph::flavor_from_culinary(
+                r.sweetness.map(|v| v as f64).unwrap_or(0.0),
+                r.acidity.map(|v| v as f64).unwrap_or(0.0),
+                r.bitterness.map(|v| v as f64).unwrap_or(0.0),
+                r.umami.map(|v| v as f64).unwrap_or(0.0),
+                r.aroma.map(|v| v as f64).unwrap_or(0.0),
+                fat_val,
+            ),
+            nutrition: NutritionBreakdown {
+                calories: r.calories_kcal.map(|v| v as f64).unwrap_or(0.0),
+                protein_g: r.protein_g.map(|v| v as f64).unwrap_or(0.0),
+                fat_g: fat_val,
+                carbs_g: r.carbs_g.map(|v| v as f64).unwrap_or(0.0),
+                fiber_g: r.fiber_g.map(|v| v as f64).unwrap_or(0.0),
+                sugar_g: r.sugar_g.map(|v| v as f64).unwrap_or(0.0),
+                salt_g: 0.0,
+                sodium_mg: 0.0,
+            },
+            pair_score: r.avg_pair_score.unwrap_or(0.0),
+            typical_g: 30.0, // default suggestion amount
+        }
+    }).collect();
+
+    // ── 5. Run suggestion engine ──
+    let suggestion_result = suggestion_engine::suggest_ingredients(
+        &analysis.flavor,
+        &candidates,
+        &slugs,
+        5,
+    );
+
+    let suggestions: Vec<SuggestionItem> = suggestion_result.suggestions.iter().map(|s| {
+        SuggestionItem {
+            slug: s.slug.clone(),
+            name: s.name.clone(),
+            image_url: s.image_url.clone(),
+            score: s.score,
+            reasons: s.reasons.clone(),
+            fills: s.fills_gaps.clone(),
+        }
+    }).collect();
+
+    // ── 6. Build response ──
+    let fv = &analysis.flavor.vector;
+
+    let response = RecipeAnalyzeResponse {
+        nutrition: NutritionSummary {
+            calories: analysis.total_nutrition.calories,
+            protein: analysis.total_nutrition.protein_g,
+            fat: analysis.total_nutrition.fat_g,
+            carbs: analysis.total_nutrition.carbs_g,
+            fiber: analysis.total_nutrition.fiber_g,
+            sugar: analysis.total_nutrition.sugar_g,
+        },
+        per_portion: if body.portions > 1 {
+            Some(NutritionSummary {
+                calories: analysis.per_portion.calories,
+                protein: analysis.per_portion.protein_g,
+                fat: analysis.per_portion.fat_g,
+                carbs: analysis.per_portion.carbs_g,
+                fiber: analysis.per_portion.fiber_g,
+                sugar: analysis.per_portion.sugar_g,
+            })
+        } else {
+            None
+        },
+        portions: body.portions,
+        macros: MacrosSummary {
+            protein_pct: analysis.macros.protein_pct,
+            fat_pct: analysis.macros.fat_pct,
+            carbs_pct: analysis.macros.carbs_pct,
+        },
+        score: analysis.nutrition_score,
+        flavor: FlavorSummary {
+            sweetness: fv.sweetness,
+            acidity: fv.acidity,
+            bitterness: fv.bitterness,
+            umami: fv.umami,
+            fat: fv.fat,
+            aroma: fv.aroma,
+            balance_score: analysis.flavor.balance_score,
+            weak: analysis.flavor.weak_dimensions.iter().map(|d| d.dimension.clone()).collect(),
+            strong: analysis.flavor.strong_dimensions.iter().map(|d| d.dimension.clone()).collect(),
+        },
+        diet: analysis.diet_flags.active_labels().into_iter().map(|s| s.to_string()).collect(),
+        suggestions,
+        ingredients: ingredient_details,
+    };
+
+    Ok(Json(response))
+}
