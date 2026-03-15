@@ -273,12 +273,14 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         // Drying barely changes already-dry product
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::DryGoods, ProcessingState::Boiled) => TransformCoefficients {
-            // Rice/pasta absorbs ~60% water → nutrients dilute per 100g cooked
-            calories: 0.42, protein: 0.40, fat: 0.30, carbs: 0.45, fiber: 0.45,
+            // weight_ratio ≈ 2.5 → coeff = 1/2.5 = 0.40
+            // Rice 360 raw / 2.5 = 144 kcal cooked ≈ USDA 130 kcal ✓
+            calories: 0.40, protein: 0.40, fat: 0.30, carbs: 0.40, fiber: 0.40,
             fat_add: 0.0, water_delta: 55.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Steamed) => TransformCoefficients {
-            calories: 0.45, protein: 0.42, fat: 0.35, carbs: 0.48, fiber: 0.48,
+            // weight_ratio ≈ 2.2 for steaming (slightly less water)
+            calories: 0.45, protein: 0.42, fat: 0.35, carbs: 0.45, fiber: 0.45,
             fat_add: 0.0, water_delta: 50.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Baked) => TransformCoefficients {
