@@ -6,6 +6,14 @@ pub struct StorageRule {
     pub shelf_life_hours: i32,
     pub storage_temp_c: i32,
     pub texture: &'static str,
+    /// Weight change during processing (negative = loss, positive = gain)
+    pub weight_change_percent: f64,
+    /// Classification: "raw", "heat", or "preserved"
+    pub state_type: &'static str,
+    /// Oil absorbed per 100g raw product (mainly fried)
+    pub oil_absorption_g: f64,
+    /// Water lost during processing (0–100%)
+    pub water_loss_percent: f64,
 }
 
 /// Get storage rules for a given processing state.
@@ -18,51 +26,91 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             shelf_life_hours: 72,    // 3 days typical for fresh produce
             storage_temp_c: 4,       // standard fridge
             texture: "natural",
+            weight_change_percent: 0.0,
+            state_type: "raw",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 0.0,
         },
         ProcessingState::Boiled => StorageRule {
             shelf_life_hours: 48,    // 2 days in fridge
             storage_temp_c: 4,
             texture: "soft",
+            weight_change_percent: 5.0,   // absorbs water → gains ~5%
+            state_type: "heat",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 0.0,      // actually gains water
         },
         ProcessingState::Fried => StorageRule {
             shelf_life_hours: 24,    // consume same day ideally
             storage_temp_c: 4,
             texture: "crispy",
+            weight_change_percent: -25.0, // loses water, absorbs oil → net loss ~25%
+            state_type: "heat",
+            oil_absorption_g: 10.0,       // ~10g oil per 100g product
+            water_loss_percent: 30.0,
         },
         ProcessingState::Baked => StorageRule {
             shelf_life_hours: 48,
             storage_temp_c: 4,
             texture: "firm",
+            weight_change_percent: -15.0, // moderate water loss
+            state_type: "heat",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 15.0,
         },
         ProcessingState::Grilled => StorageRule {
             shelf_life_hours: 24,
             storage_temp_c: 4,
             texture: "charred",
+            weight_change_percent: -20.0, // fat drips + water evaporates
+            state_type: "heat",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 18.0,
         },
         ProcessingState::Steamed => StorageRule {
             shelf_life_hours: 48,
             storage_temp_c: 4,
             texture: "tender",
+            weight_change_percent: -3.0,  // minimal loss
+            state_type: "heat",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 3.0,
         },
         ProcessingState::Smoked => StorageRule {
             shelf_life_hours: 168,   // 7 days — smoking preserves
             storage_temp_c: 4,
             texture: "firm-smoky",
+            weight_change_percent: -30.0, // significant water loss
+            state_type: "preserved",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 25.0,
         },
         ProcessingState::Frozen => StorageRule {
             shelf_life_hours: 2160,  // 90 days
             storage_temp_c: -18,     // standard freezer
             texture: "frozen",
+            weight_change_percent: 0.0,   // no change
+            state_type: "preserved",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 0.0,
         },
         ProcessingState::Dried => StorageRule {
             shelf_life_hours: 4320,  // 180 days
             storage_temp_c: 20,      // room temperature OK
             texture: "brittle",
+            weight_change_percent: -70.0, // extreme water loss
+            state_type: "preserved",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 70.0,
         },
         ProcessingState::Pickled => StorageRule {
             shelf_life_hours: 720,   // 30 days
             storage_temp_c: 4,
             texture: "crunchy-sour",
+            weight_change_percent: 5.0,   // absorbs brine
+            state_type: "preserved",
+            oil_absorption_g: 0.0,
+            water_loss_percent: 0.0,
         },
     }
 }

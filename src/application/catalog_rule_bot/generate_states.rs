@@ -95,6 +95,7 @@ pub async fn generate_states_for_ingredient(
                 calories_per_100g, protein_per_100g, fat_per_100g,
                 carbs_per_100g, fiber_per_100g, water_percent,
                 shelf_life_hours, storage_temp_c, texture,
+                weight_change_percent, state_type, oil_absorption_g, water_loss_percent,
                 name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
                 notes_en, notes_pl, notes_ru, notes_uk,
                 notes, generated_by, data_score
@@ -104,7 +105,8 @@ pub async fn generate_states_for_ingredient(
                 $9, $10, $11,
                 $12, $13, $14, $15,
                 $16, $17, $18, $19,
-                $20, 'rule_bot', $21
+                $20, $21, $22, $23,
+                $24, 'rule_bot', $25
             )
             ON CONFLICT (ingredient_id, state) DO NOTHING"#,
         )
@@ -119,6 +121,10 @@ pub async fn generate_states_for_ingredient(
         .bind(shelf_life)
         .bind(storage.storage_temp_c)
         .bind(storage.texture)
+        .bind(storage.weight_change_percent)
+        .bind(storage.state_type)
+        .bind(storage.oil_absorption_g)
+        .bind(storage.water_loss_percent)
         .bind(suffix.en)
         .bind(suffix.pl)
         .bind(suffix.ru)

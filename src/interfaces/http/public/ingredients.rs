@@ -321,6 +321,10 @@ pub struct PublicStateRow {
     pub shelf_life_hours: Option<i32>,
     pub storage_temp_c: Option<i32>,
     pub texture: Option<String>,
+    pub weight_change_percent: Option<f64>,
+    pub state_type: Option<String>,
+    pub oil_absorption_g: Option<f64>,
+    pub water_loss_percent: Option<f64>,
     pub name_suffix_en: Option<String>,
     pub name_suffix_pl: Option<String>,
     pub name_suffix_ru: Option<String>,
@@ -381,6 +385,7 @@ pub async fn get_ingredient_states(
             fat_per_100g::float8, carbs_per_100g::float8,
             fiber_per_100g::float8, water_percent::float8,
             shelf_life_hours, storage_temp_c, texture,
+            weight_change_percent::float8, state_type, oil_absorption_g::float8, water_loss_percent::float8,
             name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
             notes_en, notes_pl, notes_ru, notes_uk,
             data_score::float8
@@ -472,6 +477,7 @@ pub async fn get_ingredient_state(
             fat_per_100g::float8, carbs_per_100g::float8,
             fiber_per_100g::float8, water_percent::float8,
             shelf_life_hours, storage_temp_c, texture,
+            weight_change_percent::float8, state_type, oil_absorption_g::float8, water_loss_percent::float8,
             name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
             notes_en, notes_pl, notes_ru, notes_uk,
             data_score::float8
@@ -506,6 +512,7 @@ pub async fn get_ingredient_state(
             "name_uk": name_uk,
             "image_url": image_url,
             "state": s.state,
+            "state_type": s.state_type,
             "name_suffix_en": s.name_suffix_en,
             "name_suffix_pl": s.name_suffix_pl,
             "name_suffix_ru": s.name_suffix_ru,
@@ -517,6 +524,11 @@ pub async fn get_ingredient_state(
                 "carbs_per_100g": s.carbs_per_100g,
                 "fiber_per_100g": s.fiber_per_100g,
                 "water_percent": s.water_percent,
+            },
+            "cooking": {
+                "weight_change_percent": s.weight_change_percent,
+                "oil_absorption_g": s.oil_absorption_g,
+                "water_loss_percent": s.water_loss_percent,
             },
             "storage": {
                 "shelf_life_hours": s.shelf_life_hours,
