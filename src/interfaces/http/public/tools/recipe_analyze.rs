@@ -99,19 +99,22 @@ pub struct SuggestionItem {
 
 #[derive(Debug, Serialize)]
 pub struct IngredientDetail {
-    pub slug:      String,
-    pub name:      String,
-    pub name_en:   String,
-    pub name_ru:   Option<String>,
-    pub name_pl:   Option<String>,
-    pub name_uk:   Option<String>,
-    pub image_url: Option<String>,
-    pub grams:     f64,
-    pub calories:  f64,
-    pub protein:   f64,
-    pub fat:       f64,
-    pub carbs:     f64,
-    pub found:     bool,
+    pub slug:         String,
+    pub name:         String,
+    pub name_en:      String,
+    pub name_ru:      Option<String>,
+    pub name_pl:      Option<String>,
+    pub name_uk:      Option<String>,
+    pub image_url:    Option<String>,
+    pub grams:        f64,
+    pub calories:     f64,
+    pub protein:      f64,
+    pub fat:          f64,
+    pub carbs:        f64,
+    pub fiber:        f64,
+    pub sugar:        f64,
+    pub product_type: Option<String>,
+    pub found:        bool,
 }
 
 // ── DB row types ─────────────────────────────────────────────────────────────
@@ -124,6 +127,7 @@ struct IngredientRow {
     name_pl:       Option<String>,
     name_uk:       Option<String>,
     image_url:     Option<String>,
+    product_type:  Option<String>,
     calories_kcal: Option<f32>,
     protein_g:     Option<f32>,
     fat_g:         Option<f32>,
@@ -210,6 +214,7 @@ pub async fn recipe_analyze(
         r#"
         SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
                COALESCE(p.image_url, ci.image_url) AS image_url,
+               p.product_type,
                nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
                df.vegan, df.vegetarian, df.keto, df.paleo,
@@ -266,6 +271,9 @@ pub async fn recipe_analyze(
             protein: uc::round_to(prot * factor, 1),
             fat: uc::round_to(fat * factor, 1),
             carbs: uc::round_to(carbs * factor, 1),
+            fiber: uc::round_to(fiber * factor, 1),
+            sugar: uc::round_to(sugar * factor, 1),
+            product_type: row.and_then(|r| r.product_type.clone()),
             found,
         });
 
