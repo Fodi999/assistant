@@ -299,6 +299,10 @@ pub fn create_router(
             "/products/:id",
             delete(admin_states::delete_product_states),
         )
+        .route(
+            "/products/:id/states/:state",
+            axum::routing::put(admin_states::update_product_state),
+        )
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,

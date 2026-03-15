@@ -1,4 +1,4 @@
-use crate::application::catalog_rule_bot::CatalogRuleBotService;
+use crate::application::catalog_rule_bot::{CatalogRuleBotService, UpdateStateRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -156,6 +156,28 @@ pub async fn delete_product_states(
         }))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "ok": false,
+                "error": e.to_string(),
+            })),
+        )),
+    }
+}
+
+/// PUT /api/admin/catalog/states/products/:id/states/:state
+/// Update a single ingredient state (admin manual edit)
+pub async fn update_product_state(
+    Path((ingredient_id, state_name)): Path<(Uuid, String)>,
+    State(service): State<CatalogRuleBotService>,
+    Json(req): Json<UpdateStateRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match service.update_state(ingredient_id, &state_name, req).await {
+        Ok(updated) => Ok(Json(serde_json::json!({
+            "ok": true,
+            "state": updated,
+        }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
                 "ok": false,
                 "error": e.to_string(),

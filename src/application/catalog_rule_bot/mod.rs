@@ -5,7 +5,7 @@ pub mod storage_rules;
 pub mod translation_rules;
 
 use crate::shared::AppResult;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -44,6 +44,34 @@ pub struct DataQualityRow {
     pub total: i64,
 }
 
+/// Admin request to update a single ingredient state
+#[derive(Debug, Deserialize)]
+pub struct UpdateStateRequest {
+    pub calories_per_100g: Option<f64>,
+    pub protein_per_100g: Option<f64>,
+    pub fat_per_100g: Option<f64>,
+    pub carbs_per_100g: Option<f64>,
+    pub fiber_per_100g: Option<f64>,
+    pub water_percent: Option<f64>,
+    pub shelf_life_hours: Option<i32>,
+    pub storage_temp_c: Option<i32>,
+    pub texture: Option<String>,
+    pub weight_change_percent: Option<f64>,
+    pub state_type: Option<String>,
+    pub oil_absorption_g: Option<f64>,
+    pub water_loss_percent: Option<f64>,
+    pub glycemic_index: Option<i16>,
+    pub cooking_method: Option<String>,
+    pub notes_en: Option<String>,
+    pub notes_pl: Option<String>,
+    pub notes_ru: Option<String>,
+    pub notes_uk: Option<String>,
+    pub name_suffix_en: Option<String>,
+    pub name_suffix_pl: Option<String>,
+    pub name_suffix_ru: Option<String>,
+    pub name_suffix_uk: Option<String>,
+}
+
 impl CatalogRuleBotService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
@@ -52,6 +80,109 @@ impl CatalogRuleBotService {
     /// Access the pool (for direct queries from handlers)
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    /// Update a single state field-by-field (admin manual edit)
+    pub async fn update_state(
+        &self,
+        ingredient_id: Uuid,
+        state_name: &str,
+        req: UpdateStateRequest,
+    ) -> AppResult<IngredientStateRow> {
+        // Verify the state row exists
+        let row_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM ingredient_states WHERE ingredient_id = $1 AND state = $2::processing_state",
+        )
+        .bind(ingredient_id)
+        .bind(state_name)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let row_id = row_id.ok_or_else(|| {
+            crate::shared::AppError::not_found("State not found for this ingredient")
+        })?;
+
+        // Build dynamic UPDATE — only set provided fields
+        sqlx::query(
+            r#"UPDATE ingredient_states SET
+                calories_per_100g   = COALESCE($2, calories_per_100g),
+                protein_per_100g    = COALESCE($3, protein_per_100g),
+                fat_per_100g        = COALESCE($4, fat_per_100g),
+                carbs_per_100g      = COALESCE($5, carbs_per_100g),
+                fiber_per_100g      = COALESCE($6, fiber_per_100g),
+                water_percent       = COALESCE($7, water_percent),
+                shelf_life_hours    = COALESCE($8, shelf_life_hours),
+                storage_temp_c      = COALESCE($9, storage_temp_c),
+                texture             = COALESCE($10, texture),
+                weight_change_percent = COALESCE($11, weight_change_percent),
+                state_type          = COALESCE($12, state_type),
+                oil_absorption_g    = COALESCE($13, oil_absorption_g),
+                water_loss_percent  = COALESCE($14, water_loss_percent),
+                glycemic_index      = COALESCE($15, glycemic_index),
+                cooking_method      = COALESCE($16::cooking_method_enum, cooking_method),
+                notes_en            = COALESCE($17, notes_en),
+                notes_pl            = COALESCE($18, notes_pl),
+                notes_ru            = COALESCE($19, notes_ru),
+                notes_uk            = COALESCE($20, notes_uk),
+                name_suffix_en      = COALESCE($21, name_suffix_en),
+                name_suffix_pl      = COALESCE($22, name_suffix_pl),
+                name_suffix_ru      = COALESCE($23, name_suffix_ru),
+                name_suffix_uk      = COALESCE($24, name_suffix_uk),
+                generated_by        = 'admin_edit',
+                updated_at          = now()
+            WHERE id = $1"#,
+        )
+        .bind(row_id)
+        .bind(req.calories_per_100g)
+        .bind(req.protein_per_100g)
+        .bind(req.fat_per_100g)
+        .bind(req.carbs_per_100g)
+        .bind(req.fiber_per_100g)
+        .bind(req.water_percent)
+        .bind(req.shelf_life_hours)
+        .bind(req.storage_temp_c)
+        .bind(&req.texture)
+        .bind(req.weight_change_percent)
+        .bind(&req.state_type)
+        .bind(req.oil_absorption_g)
+        .bind(req.water_loss_percent)
+        .bind(req.glycemic_index)
+        .bind(&req.cooking_method)
+        .bind(&req.notes_en)
+        .bind(&req.notes_pl)
+        .bind(&req.notes_ru)
+        .bind(&req.notes_uk)
+        .bind(&req.name_suffix_en)
+        .bind(&req.name_suffix_pl)
+        .bind(&req.name_suffix_ru)
+        .bind(&req.name_suffix_uk)
+        .execute(&self.pool)
+        .await?;
+
+        // Re-fetch and return updated row
+        let updated = sqlx::query_as::<_, IngredientStateRow>(
+            r#"SELECT
+                id, ingredient_id, state::text as state,
+                calories_per_100g::float8, protein_per_100g::float8, fat_per_100g::float8,
+                carbs_per_100g::float8, fiber_per_100g::float8, water_percent::float8,
+                shelf_life_hours, storage_temp_c, texture,
+                weight_change_percent::float8, state_type, oil_absorption_g::float8, water_loss_percent::float8,
+                glycemic_index, cooking_method::text as cooking_method,
+                name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
+                notes_en, notes_pl, notes_ru, notes_uk,
+                notes, generated_by, data_score::float8,
+                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+                to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+            FROM ingredient_states
+            WHERE id = $1"#,
+        )
+        .bind(row_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        tracing::info!("✏️ Admin edited state {} / {} → generated_by=admin_edit", ingredient_id, state_name);
+
+        Ok(updated)
     }
 
     /// Generate all missing states for ONE ingredient
