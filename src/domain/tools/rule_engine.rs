@@ -123,7 +123,7 @@ fn check_flavor_rules(flavor: &FlavorVector, issues: &mut Vec<RuleIssue>) {
             rule: "low_acidity".into(),
             title_key: "rules.lowAcidity".into(),
             description_key: "rules.lowAcidityDesc".into(),
-            fix_slugs: vec!["lemon".into(), "tomato".into(), "white-wine-vinegar".into()],
+            fix_slugs: vec!["lemon".into(), "tomato".into(), "vinegar".into()],
             fix_keys: vec!["rules.fixAddAcid".into()],
             value: Some(uc::round_to(flavor.acidity, 2)), threshold: Some(1.5),
             impact: sev_impact(sev),
@@ -137,7 +137,7 @@ fn check_flavor_rules(flavor: &FlavorVector, issues: &mut Vec<RuleIssue>) {
             rule: "low_umami".into(),
             title_key: "rules.lowUmami".into(),
             description_key: "rules.lowUmamiDesc".into(),
-            fix_slugs: vec!["hard-cheese".into(), "soy-sauce".into(), "tomato".into(), "mushrooms".into()],
+            fix_slugs: vec!["hard-cheese".into(), "soy-sauce".into(), "tomato".into(), "button-mushroom".into()],
             fix_keys: vec!["rules.fixAddUmami".into()],
             value: Some(uc::round_to(flavor.umami, 2)), threshold: Some(2.0),
             impact: sev_impact(sev),
@@ -150,7 +150,7 @@ fn check_flavor_rules(flavor: &FlavorVector, issues: &mut Vec<RuleIssue>) {
             rule: "low_fat".into(),
             title_key: "rules.lowFat".into(),
             description_key: "rules.lowFatDesc".into(),
-            fix_slugs: vec!["butter".into(), "olive-oil".into(), "cream".into()],
+            fix_slugs: vec!["butter".into(), "olive-oil".into(), "milk".into()],
             fix_keys: vec!["rules.fixAddFat".into()],
             value: Some(uc::round_to(flavor.fat, 2)), threshold: Some(1.0),
             impact: 7,
@@ -191,7 +191,7 @@ fn check_flavor_rules(flavor: &FlavorVector, issues: &mut Vec<RuleIssue>) {
             rule: "low_bitterness".into(),
             title_key: "rules.lowBitterness".into(),
             description_key: "rules.lowBitternessDesc".into(),
-            fix_slugs: vec!["black-pepper".into(), "arugula".into(), "coffee".into()],
+            fix_slugs: vec!["black-pepper".into(), "spinach".into(), "walnuts".into()],
             fix_keys: vec!["rules.fixAddBitter".into()],
             value: Some(uc::round_to(flavor.bitterness, 2)), threshold: Some(0.3),
             impact: 3,
@@ -225,7 +225,7 @@ fn check_nutrition_rules(ctx: &RecipeContext, issues: &mut Vec<RuleIssue>) {
             rule: "high_carbs".into(),
             title_key: "rules.highCarbs".into(),
             description_key: "rules.highCarbsDesc".into(),
-            fix_slugs: vec!["chicken-breast".into(), "salmon".into(), "egg".into()],
+            fix_slugs: vec!["chicken-breast".into(), "salmon".into(), "chicken-eggs".into()],
             fix_keys: vec!["rules.fixReduceCarbs".into()],
             value: Some(uc::round_to(ctx.carbs_pct, 1)), threshold: Some(65.0),
             impact: sev_impact(sev),
@@ -239,7 +239,7 @@ fn check_nutrition_rules(ctx: &RecipeContext, issues: &mut Vec<RuleIssue>) {
             rule: "low_protein".into(),
             title_key: "rules.lowProtein".into(),
             description_key: "rules.lowProteinDesc".into(),
-            fix_slugs: vec!["chicken-breast".into(), "egg".into(), "hard-cheese".into(), "lentils".into()],
+            fix_slugs: vec!["chicken-breast".into(), "chicken-eggs".into(), "hard-cheese".into(), "lentils".into()],
             fix_keys: vec!["rules.fixAddProtein".into()],
             value: Some(uc::round_to(ctx.protein_pct, 1)), threshold: Some(12.0),
             impact: sev_impact(sev),
@@ -268,7 +268,7 @@ fn check_nutrition_rules(ctx: &RecipeContext, issues: &mut Vec<RuleIssue>) {
                 rule: "low_fiber".into(),
                 title_key: "rules.lowFiber".into(),
                 description_key: "rules.lowFiberDesc".into(),
-                fix_slugs: vec!["broccoli".into(), "lentils".into(), "oats".into()],
+                fix_slugs: vec!["broccoli".into(), "lentils".into(), "oatmeal".into()],
                 fix_keys: vec!["rules.fixAddFiber".into()],
                 value: Some(uc::round_to(fiber_per_1000, 1)), threshold: Some(10.0),
                 impact: sev_impact(sev),
@@ -360,14 +360,14 @@ fn check_structure_rules(ctx: &RecipeContext, issues: &mut Vec<RuleIssue>) {
         });
     }
 
-    let has_protein = has("meat") || has("fish") || has("seafood") || has("egg") || has("legume");
+    let has_protein = has("meat") || has("fish") || has("seafood") || has("egg") || has("dairy") || has("legume");
     if !has_protein && has("grain") {
         issues.push(RuleIssue {
             category: "structure".into(), severity: "warning".into(),
             rule: "missing_protein_source".into(),
             title_key: "rules.missingProtein".into(),
             description_key: "rules.missingProteinDesc".into(),
-            fix_slugs: vec!["chicken-breast".into(), "egg".into(), "salmon".into()],
+            fix_slugs: vec!["chicken-breast".into(), "chicken-eggs".into(), "salmon".into()],
             fix_keys: vec!["rules.fixAddProteinSource".into()],
             value: None, threshold: None, impact: 7,
         });
@@ -380,7 +380,7 @@ fn check_structure_rules(ctx: &RecipeContext, issues: &mut Vec<RuleIssue>) {
             rule: "missing_acid_source".into(),
             title_key: "rules.missingAcid".into(),
             description_key: "rules.missingAcidDesc".into(),
-            fix_slugs: vec!["lemon".into(), "tomato".into(), "white-wine-vinegar".into()],
+            fix_slugs: vec!["lemon".into(), "tomato".into(), "vinegar".into()],
             fix_keys: vec!["rules.fixAddAcidSource".into()],
             value: None, threshold: None, impact: 3,
         });
