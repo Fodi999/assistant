@@ -34,7 +34,7 @@ use crate::interfaces::http::{
         cms as public_cms,
         ingredients::{get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, list_ingredients},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
-        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze},
+        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
@@ -520,6 +520,8 @@ pub fn create_router(
         .route("/tools/recipe-nutrition", post(recipe_nutrition))
         .route("/tools/recipe-cost", post(recipe_cost))
         .route("/tools/recipe-analyze", post(recipe_analyze))
+        .route("/tools/share-recipe", post(share_recipe))
+        .route("/tools/shared-recipe/:slug", get(get_shared_recipe))
         .with_state(pool_for_tools);
 
     // ── Public Nutrition / Diet / Ranking SEO routes ──────────────────────────

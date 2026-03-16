@@ -20,6 +20,7 @@ pub mod kitchen;
 pub mod categories;
 pub mod seasonality;
 pub mod recipe_analyze;
+pub mod share_recipe;
 
 // ── Re-exports for routes.rs ──────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ pub use kitchen::{
 };
 pub use nutrition::{compare_foods, ingredients_db, nutrition, resolve_slug};
 pub use recipe_analyze::recipe_analyze;
+pub use share_recipe::{share_recipe, get_shared_recipe};
 pub use seasonality::{
     best_in_season, best_right_now, in_season_now, list_regions, product_search,
     product_seasonality, products_by_month, recipe_cost, recipe_nutrition, seasonal_calendar,
