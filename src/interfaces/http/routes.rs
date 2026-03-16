@@ -626,8 +626,21 @@ pub fn create_router(
 // ── Strict CORS builder ──
 
 fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
+    // Always-allowed production origins (never depend on env alone)
+    const REQUIRED_ORIGINS: &[&str] = &[
+        "https://dima-fomin.pl",
+        "https://www.dima-fomin.pl",
+    ];
+
     // Filter out wildcards — never allow permissive CORS
-    let safe_origins: Vec<String> = allowed_origins.into_iter().filter(|o| o != "*").collect();
+    let mut safe_origins: Vec<String> = allowed_origins.into_iter().filter(|o| o != "*").collect();
+
+    // Ensure required origins are always present
+    for &req in REQUIRED_ORIGINS {
+        if !safe_origins.iter().any(|o| o == req) {
+            safe_origins.push(req.to_string());
+        }
+    }
 
     if safe_origins.is_empty() {
         tracing::warn!(
@@ -637,6 +650,8 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
         let default_origins: Vec<axum::http::HeaderValue> = [
             "http://localhost:3000",
             "http://localhost:3001",
+            "https://dima-fomin.pl",
+            "https://www.dima-fomin.pl",
         ]
         .iter()
         .filter_map(|o| o.parse().ok())
