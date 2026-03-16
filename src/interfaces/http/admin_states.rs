@@ -1,4 +1,4 @@
-use crate::application::catalog_rule_bot::{CatalogRuleBotService, UpdateStateRequest};
+use crate::application::ai_sous_chef::{AiSousChefService, UpdateStateRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -10,7 +10,7 @@ use uuid::Uuid;
 /// Generate all 10 processing states for one ingredient
 pub async fn generate_states(
     Path(ingredient_id): Path<Uuid>,
-    State(service): State<CatalogRuleBotService>,
+    State(service): State<AiSousChefService>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
     match service.generate_states_for(ingredient_id).await {
         Ok(result) => Ok((
@@ -36,7 +36,7 @@ pub async fn generate_states(
 /// POST /api/admin/catalog/states/generate-all
 /// Generate missing states for ALL ingredients in catalog
 pub async fn generate_all_states(
-    State(service): State<CatalogRuleBotService>,
+    State(service): State<AiSousChefService>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
     match service.generate_all_states().await {
         Ok(result) => Ok((
@@ -62,7 +62,7 @@ pub async fn generate_all_states(
 /// GET /api/admin/catalog/states/audit
 /// Return full state coverage audit across the catalog
 pub async fn state_audit(
-    State(service): State<CatalogRuleBotService>,
+    State(service): State<AiSousChefService>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     match service.state_audit().await {
         Ok(audit) => Ok(Json(serde_json::json!({
@@ -88,7 +88,7 @@ pub async fn state_audit(
 /// GET /api/admin/catalog/states/data-quality
 /// Return data quality/completeness scores for all products
 pub async fn data_quality(
-    State(service): State<CatalogRuleBotService>,
+    State(service): State<AiSousChefService>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     match service.data_quality().await {
         Ok(rows) => {
@@ -118,7 +118,7 @@ pub async fn data_quality(
 /// Return all states for a specific ingredient
 pub async fn get_product_states(
     Path(ingredient_id): Path<Uuid>,
-    State(service): State<CatalogRuleBotService>,
+    State(service): State<AiSousChefService>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     match service.get_states(ingredient_id).await {
         Ok(states) => Ok(Json(serde_json::json!({
@@ -141,7 +141,7 @@ pub async fn get_product_states(
 /// Delete all states for a specific ingredient (allows regeneration)
 pub async fn delete_product_states(
     Path(ingredient_id): Path<Uuid>,
-    State(service): State<CatalogRuleBotService>,
+    State(service): State<AiSousChefService>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let pool = service.pool();
     match sqlx::query("DELETE FROM ingredient_states WHERE ingredient_id = $1")
@@ -168,7 +168,7 @@ pub async fn delete_product_states(
 /// Update a single ingredient state (admin manual edit)
 pub async fn update_product_state(
     Path((ingredient_id, state_name)): Path<(Uuid, String)>,
-    State(service): State<CatalogRuleBotService>,
+    State(service): State<AiSousChefService>,
     Json(req): Json<UpdateStateRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     match service.update_state(ingredient_id, &state_name, req).await {

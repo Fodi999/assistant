@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Catalog Rule Bot Service — orchestrates state generation, rules, and scanning
+/// AI Sous Chef Service — orchestrates state generation, rules, and scanning
 #[derive(Clone)]
-pub struct CatalogRuleBotService {
+pub struct AiSousChefService {
     pool: PgPool,
 }
 
@@ -72,7 +72,7 @@ pub struct UpdateStateRequest {
     pub name_suffix_uk: Option<String>,
 }
 
-impl CatalogRuleBotService {
+impl AiSousChefService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }

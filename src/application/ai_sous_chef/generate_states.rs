@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use crate::application::catalog_rule_bot::{
+use crate::application::ai_sous_chef::{
     nutrition_transform::{classify_group, transform_nutrition, BaseNutrition},
     storage_rules::{get_storage_rule, override_shelf_life, state_applicability},
     translation_rules::{get_state_notes, get_state_suffix},
@@ -121,7 +121,7 @@ pub async fn generate_states_for_ingredient(
                 $16, $17::cooking_method_enum,
                 $18, $19, $20, $21,
                 $22, $23, $24, $25,
-                $26, 'rule_bot', $27
+                $26, 'ai_sous_chef', $27
             )
             ON CONFLICT (ingredient_id, state) DO NOTHING"#,
         )

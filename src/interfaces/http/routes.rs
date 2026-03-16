@@ -1,5 +1,5 @@
 use crate::application::{
-    catalog_rule_bot::CatalogRuleBotService,
+    ai_sous_chef::AiSousChefService,
     cms_service::CmsService,
     public_nutrition::PublicNutritionService,
     recipe_v2_service::RecipeV2Service, // V2 with translations
@@ -270,8 +270,8 @@ pub fn create_router(
         ))
         .with_state(pool.clone());
 
-    // Admin states routes — Catalog Rule Bot (ingredient processing states)
-    let catalog_rule_bot_service = CatalogRuleBotService::new(pool.clone());
+    // Admin states routes — AI Sous Chef (ingredient processing states)
+    let ai_sous_chef_service = AiSousChefService::new(pool.clone());
     let admin_states_middleware = {
         let svc = admin_auth_service.clone();
         middleware::from_fn(move |mut req: Request, next: Next| {
@@ -308,7 +308,7 @@ pub fn create_router(
             require_super_admin,
         ))
         .layer(admin_states_middleware)
-        .with_state(catalog_rule_bot_service);
+        .with_state(ai_sous_chef_service);
 
     // Clone pool for public routes (before move into jwt_middleware)
     let pool_for_public = pool.clone();
