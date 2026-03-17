@@ -441,7 +441,14 @@ impl AiSousChefService {
             "fiber_per_100g" => {
                 if Self::type_matches(product_type, Self::ANIMAL_TYPES) {
                     Some(Requirement::NotApplicable)
-                } else if Self::type_matches(product_type, &["vegetables", "fruits", "grains", "grains_and_pasta", "legumes", "nuts"]) {
+                } else if Self::type_matches(product_type, &[
+                    // singular (DB values) + plural (legacy/AI slugs)
+                    "vegetable", "vegetables",
+                    "fruit", "fruits",
+                    "grain", "grains", "grains_and_pasta",
+                    "legume", "legumes",
+                    "nut", "nuts",
+                ]) {
                     Some(Requirement::Required)
                 } else {
                     None // use default (recommended)
