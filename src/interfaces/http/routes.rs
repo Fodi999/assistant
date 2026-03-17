@@ -291,6 +291,7 @@ pub fn create_router(
         .route("/generate-all", post(admin_states::generate_all_states))
         .route("/audit", get(admin_states::state_audit))
         .route("/data-quality", get(admin_states::data_quality))
+        .route("/data-quality/:product_id", get(admin_states::data_quality_single))
         .route(
             "/products/:id",
             get(admin_states::get_product_states),

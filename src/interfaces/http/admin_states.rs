@@ -86,7 +86,7 @@ pub async fn state_audit(
 }
 
 /// GET /api/admin/catalog/states/data-quality
-/// Return data quality/completeness scores for all products
+/// Return data quality/completeness scores for all products (backend = source of truth)
 pub async fn data_quality(
     State(service): State<AiSousChefService>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -97,15 +97,39 @@ pub async fn data_quality(
             } else {
                 rows.iter().map(|r| r.score).sum::<f64>() / rows.len() as f64
             };
+            let complete = rows.iter().filter(|r| r.status == "complete").count();
+            let critical = rows.iter().filter(|r| r.status == "critical_missing").count();
+            let optional = rows.iter().filter(|r| r.status == "optional_missing").count();
             Ok(Json(serde_json::json!({
                 "ok": true,
                 "total": rows.len(),
                 "avg_score": (avg_score * 10.0).round() / 10.0,
+                "complete": complete,
+                "critical_missing": critical,
+                "optional_missing": optional,
                 "products": rows,
             })))
         }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "ok": false,
+                "error": e.to_string(),
+            })),
+        )),
+    }
+}
+
+/// GET /api/admin/catalog/states/data-quality/:product_id
+/// Re-validate data quality for a SINGLE product (call after save/autofill)
+pub async fn data_quality_single(
+    Path(product_id): Path<Uuid>,
+    State(service): State<AiSousChefService>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match service.data_quality_single(product_id).await {
+        Ok(row) => Ok(Json(serde_json::json!(row))),
+        Err(e) => Err((
+            StatusCode::NOT_FOUND,
             Json(serde_json::json!({
                 "ok": false,
                 "error": e.to_string(),
