@@ -37,6 +37,16 @@ pub struct BulkGenerateResult {
     pub errors: Vec<String>,
 }
 
+/// Field requirement level — determines how a field is treated per product type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Requirement {
+    Required,
+    Recommended,
+    Optional,
+    NotApplicable,
+}
+
 /// Data quality score for a product (backend = source of truth)
 #[derive(Debug, Serialize, Clone)]
 pub struct DataQualityRow {
@@ -47,6 +57,7 @@ pub struct DataQualityRow {
     pub filled: i64,
     pub total: i64,
     pub missing_fields: Vec<MissingField>,
+    pub not_applicable_fields: Vec<NotApplicableField>,
     pub status: &'static str, // "complete" | "optional_missing" | "critical_missing"
 }
 
@@ -55,8 +66,16 @@ pub struct DataQualityRow {
 pub struct MissingField {
     pub field: &'static str,
     pub label_ru: &'static str,
-    pub group: &'static str, // "basic" | "nutrition" | "seo" | "relations"
-    pub severity: &'static str, // "critical" | "recommended" | "optional"
+    pub group: &'static str,      // "basic" | "nutrition" | "seo" | "relations"
+    pub severity: &'static str,   // "critical" | "recommended" | "optional"
+}
+
+/// A field that is not applicable to this product type (excluded from score)
+#[derive(Debug, Serialize, Clone)]
+pub struct NotApplicableField {
+    pub field: &'static str,
+    pub label_ru: &'static str,
+    pub reason: &'static str,
 }
 
 /// Raw DB row for data quality query
@@ -82,6 +101,10 @@ struct DataQualityRaw {
     pub has_density: bool,
     pub has_shelf_life: bool,
     pub has_typical_portion: bool,
+    // fish/seafood-specific
+    pub has_water_type: bool,
+    pub has_wild_farmed: bool,
+    pub has_sushi_grade: bool,
     // seo
     pub has_seo_title: bool,
     // relations
@@ -347,6 +370,10 @@ impl AiSousChefService {
                 (ci.density_g_per_ml IS NOT NULL) as has_density,
                 (ci.shelf_life_days IS NOT NULL) as has_shelf_life,
                 (ci.typical_portion_g IS NOT NULL) as has_typical_portion,
+                -- fish/seafood-specific
+                (ci.water_type IS NOT NULL AND ci.water_type != '') as has_water_type,
+                (ci.wild_farmed IS NOT NULL AND ci.wild_farmed != '') as has_wild_farmed,
+                (ci.sushi_grade IS NOT NULL) as has_sushi_grade,
                 -- seo
                 (ci.seo_title IS NOT NULL AND ci.seo_title != '') as has_seo_title,
                 -- relations
@@ -371,71 +398,160 @@ impl AiSousChefService {
         Ok(rows)
     }
 
-    /// Categories where fiber is naturally 0 (animal products)
-    const FIBER_NOT_APPLICABLE: &'static [&'static str] = &[
+    // ── Product type category sets for Field Requirement rules ──────────
+
+    /// Animal products — fiber is not applicable
+    const ANIMAL_TYPES: &'static [&'static str] = &[
         "fish", "seafood", "meat", "poultry", "eggs", "dairy",
         "fish_and_seafood", "meat_and_poultry", "dairy_and_eggs",
     ];
 
-    /// Build DataQualityRow from raw booleans — defines ALL field checks in one place
-    fn build_quality_row(r: DataQualityRaw) -> DataQualityRow {
-        // Rule: fiber is OK for animal products even if null (naturally 0)
-        let fiber_ok = r.has_fiber
-            || Self::FIBER_NOT_APPLICABLE.iter().any(|&cat| {
-                r.product_type.eq_ignore_ascii_case(cat)
-            });
+    /// Aquatic products — water_type / wild_farmed / sushi_grade are applicable
+    const AQUATIC_TYPES: &'static [&'static str] = &[
+        "fish", "seafood", "fish_and_seafood",
+    ];
 
-        // Define all checks: (ok, field, label_ru, group, severity)
-        let checks: Vec<(bool, &'static str, &'static str, &'static str, &'static str)> = vec![
+    /// Check if product_type matches any of the given categories
+    fn type_matches(product_type: &str, categories: &[&str]) -> bool {
+        categories.iter().any(|&cat| product_type.eq_ignore_ascii_case(cat))
+    }
+
+    /// ─── Field Requirement Rules Engine ─────────────────────────────────
+    ///
+    /// Returns Some(requirement) if there's a category-specific override,
+    /// or None to use the field's default severity from the checks table.
+    fn field_requirement(field: &str, product_type: &str) -> Option<Requirement> {
+        match field {
+            // ── Fiber: required for plants, not applicable for animals ──
+            "fiber_per_100g" => {
+                if Self::type_matches(product_type, Self::ANIMAL_TYPES) {
+                    Some(Requirement::NotApplicable)
+                } else if Self::type_matches(product_type, &["vegetables", "fruits", "grains", "grains_and_pasta", "legumes", "nuts"]) {
+                    Some(Requirement::Required)
+                } else {
+                    None // use default (recommended)
+                }
+            }
+
+            // ── Fish/seafood-specific fields: only for aquatic ──
+            "water_type" | "wild_farmed" | "sushi_grade" => {
+                if Self::type_matches(product_type, Self::AQUATIC_TYPES) {
+                    None // use default (recommended)
+                } else {
+                    Some(Requirement::NotApplicable)
+                }
+            }
+
+            // ── No override — use the default severity from the table ──
+            _ => None,
+        }
+    }
+
+    /// Build DataQualityRow from raw booleans — Field Requirement Level system
+    ///
+    /// Each field is evaluated:
+    ///   NotApplicable → excluded from total & filled, added to not_applicable_fields
+    ///   Required/Recommended/Optional → counted; if missing → added to missing_fields
+    fn build_quality_row(r: DataQualityRaw) -> DataQualityRow {
+        let pt = &r.product_type;
+
+        // Define all fields: (has_value, field, label_ru, group, default_severity)
+        // default_severity is used when field_requirement() returns Required (placeholder)
+        let all_fields: Vec<(bool, &'static str, &'static str, &'static str, &'static str, &'static str)> = vec![
+            // (has_value, field_key, label_ru, group, default_severity, na_reason)
             // ── basic (critical) ──
-            (r.has_image,          "image_url",       "Фото",          "basic",     "critical"),
-            (r.has_name_ru,        "name_ru",         "Название RU",   "basic",     "critical"),
-            (r.has_name_pl,        "name_pl",         "Название PL",   "basic",     "critical"),
-            (r.has_name_uk,        "name_uk",         "Название UK",   "basic",     "critical"),
-            (r.has_description_en, "description_en",  "Описание EN",   "basic",     "critical"),
-            (r.has_description_ru, "description_ru",  "Описание RU",   "basic",     "critical"),
-            (r.has_slug,           "slug",            "Slug",          "basic",     "critical"),
+            (r.has_image,          "image_url",       "Фото",          "basic",     "critical",    ""),
+            (r.has_name_ru,        "name_ru",         "Название RU",   "basic",     "critical",    ""),
+            (r.has_name_pl,        "name_pl",         "Название PL",   "basic",     "critical",    ""),
+            (r.has_name_uk,        "name_uk",         "Название UK",   "basic",     "critical",    ""),
+            (r.has_description_en, "description_en",  "Описание EN",   "basic",     "critical",    ""),
+            (r.has_description_ru, "description_ru",  "Описание RU",   "basic",     "critical",    ""),
+            (r.has_slug,           "slug",            "Slug",          "basic",     "critical",    ""),
             // ── nutrition (critical) ──
-            (r.has_calories,       "calories_per_100g", "Калории",     "nutrition", "critical"),
-            (r.has_protein,        "protein_per_100g",  "Белки",       "nutrition", "critical"),
-            (r.has_fat,            "fat_per_100g",      "Жиры",        "nutrition", "critical"),
-            (r.has_carbs,          "carbs_per_100g",    "Углеводы",    "nutrition", "critical"),
-            // ── nutrition (recommended) — fiber uses category-aware rule ──
-            (fiber_ok,             "fiber_per_100g",    "Клетчатка",   "nutrition", "recommended"),
-            (r.has_density,        "density_g_per_ml",  "Плотность",   "nutrition", "recommended"),
-            (r.has_shelf_life,     "shelf_life_days",   "Срок годности", "nutrition", "recommended"),
-            (r.has_typical_portion,"typical_portion_g", "Типичная порция","nutrition","recommended"),
+            (r.has_calories,       "calories_per_100g", "Калории",     "nutrition", "critical",    ""),
+            (r.has_protein,        "protein_per_100g",  "Белки",       "nutrition", "critical",    ""),
+            (r.has_fat,            "fat_per_100g",      "Жиры",        "nutrition", "critical",    ""),
+            (r.has_carbs,          "carbs_per_100g",    "Углеводы",    "nutrition", "critical",    ""),
+            // ── nutrition (context-aware) ──
+            (r.has_fiber,          "fiber_per_100g",    "Клетчатка",   "nutrition", "recommended", "Животный продукт — клетчатка = 0"),
+            (r.has_density,        "density_g_per_ml",  "Плотность",   "nutrition", "recommended", ""),
+            (r.has_shelf_life,     "shelf_life_days",   "Срок годности", "nutrition", "recommended", ""),
+            (r.has_typical_portion,"typical_portion_g", "Типичная порция","nutrition","recommended", ""),
+            // ── fish/seafood-specific (context-aware) ──
+            (r.has_water_type,     "water_type",        "Тип воды",      "nutrition", "recommended", "Только для рыбы/морепродуктов"),
+            (r.has_wild_farmed,    "wild_farmed",       "Дикий/фермерский","nutrition","recommended", "Только для рыбы/морепродуктов"),
+            (r.has_sushi_grade,    "sushi_grade",       "Сашими-качество","nutrition", "optional",    "Только для рыбы/морепродуктов"),
             // ── seo (recommended) ──
-            (r.has_seo_title,      "seo_title",       "SEO Title",    "seo",       "recommended"),
+            (r.has_seo_title,      "seo_title",       "SEO Title",    "seo",       "recommended", ""),
             // ── relations (optional) ──
-            (r.has_macros,         "nutrition_macros",  "Макронутриенты (таблица)", "relations", "optional"),
-            (r.has_vitamins,       "nutrition_vitamins","Витамины",     "relations", "optional"),
-            (r.has_minerals,       "nutrition_minerals","Минералы",     "relations", "optional"),
-            (r.has_allergens,      "product_allergens", "Аллергены",    "relations", "optional"),
-            (r.has_diet_flags,     "diet_flags",        "Диет-флаги",   "relations", "optional"),
-            (r.has_culinary,       "food_culinary",     "Кулинарные свойства", "relations", "optional"),
-            (r.has_food_props,     "food_properties",   "Свойства продукта",   "relations", "optional"),
-            (r.has_states,         "ingredient_states", "Состояния (≥10)", "relations", "optional"),
+            (r.has_macros,         "nutrition_macros",  "Макронутриенты (таблица)", "relations", "optional", ""),
+            (r.has_vitamins,       "nutrition_vitamins","Витамины",     "relations", "optional", ""),
+            (r.has_minerals,       "nutrition_minerals","Минералы",     "relations", "optional", ""),
+            (r.has_allergens,      "product_allergens", "Аллергены",    "relations", "optional", ""),
+            (r.has_diet_flags,     "diet_flags",        "Диет-флаги",   "relations", "optional", ""),
+            (r.has_culinary,       "food_culinary",     "Кулинарные свойства", "relations", "optional", ""),
+            (r.has_food_props,     "food_properties",   "Свойства продукта",   "relations", "optional", ""),
+            (r.has_states,         "ingredient_states", "Состояния (≥10)", "relations", "optional", ""),
         ];
 
-        let total = checks.len() as i64;
-        let filled = checks.iter().filter(|(ok, ..)| *ok).count() as i64;
+        let mut total: i64 = 0;
+        let mut filled: i64 = 0;
+        let mut missing_fields: Vec<MissingField> = Vec::new();
+        let mut not_applicable_fields: Vec<NotApplicableField> = Vec::new();
+
+        for (has_value, field, label_ru, group, default_severity, na_reason) in &all_fields {
+            let override_req = Self::field_requirement(field, pt);
+
+            match override_req {
+                Some(Requirement::NotApplicable) => {
+                    // Completely excluded from score — not counted at all
+                    let reason = if !na_reason.is_empty() {
+                        na_reason
+                    } else {
+                        "Не применимо для данного типа продукта"
+                    };
+                    not_applicable_fields.push(NotApplicableField {
+                        field,
+                        label_ru,
+                        reason,
+                    });
+                }
+                Some(Requirement::Required) => {
+                    // Override to critical
+                    total += 1;
+                    if *has_value {
+                        filled += 1;
+                    } else {
+                        missing_fields.push(MissingField {
+                            field,
+                            label_ru,
+                            group,
+                            severity: "critical",
+                        });
+                    }
+                }
+                _ => {
+                    // None or Some(Recommended/Optional) → use the default_severity
+                    total += 1;
+                    if *has_value {
+                        filled += 1;
+                    } else {
+                        missing_fields.push(MissingField {
+                            field,
+                            label_ru,
+                            group,
+                            severity: default_severity,
+                        });
+                    }
+                }
+            }
+        }
+
         let score = if total > 0 {
             ((filled as f64 / total as f64) * 1000.0).round() / 10.0
         } else {
             0.0
         };
-
-        let missing_fields: Vec<MissingField> = checks
-            .iter()
-            .filter(|(ok, ..)| !ok)
-            .map(|(_, field, label_ru, group, severity)| MissingField {
-                field,
-                label_ru,
-                group,
-                severity,
-            })
-            .collect();
 
         let has_critical_missing = missing_fields.iter().any(|f| f.severity == "critical");
         let status = if missing_fields.is_empty() {
@@ -454,6 +570,7 @@ impl AiSousChefService {
             filled,
             total,
             missing_fields,
+            not_applicable_fields,
             status,
         }
     }
