@@ -140,6 +140,15 @@ pub struct QualityWarning {
     pub message: String,
 }
 
+/// A correction made by the Validation Layer (AI was wrong, backend fixed it)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftCorrection {
+    pub field: String,
+    pub original_value: String,
+    pub corrected_to: String,
+    pub reason: String,
+}
+
 /// Envelope response
 #[derive(Debug, Serialize)]
 pub struct CreateDraftResponse {
@@ -147,6 +156,8 @@ pub struct CreateDraftResponse {
     pub raw_input: String,
     pub model: String,
     pub cached: bool,
+    /// Corrections applied by the Validation Layer (backend = source of truth)
+    pub corrections: Vec<DraftCorrection>,
 }
 
 // ── Implementation ───────────────────────────────────────────────────
@@ -174,16 +185,19 @@ impl AdminCatalogService {
         };
 
         if let Some(cached_json) = cached {
-            let draft: ProductDraft = serde_json::from_value(cached_json)
+            let mut draft: ProductDraft = serde_json::from_value(cached_json)
                 .map_err(|e| {
                     tracing::warn!("Failed to parse cached draft: {}", e);
                     AppError::internal("Cached draft is corrupt")
                 })?;
+            // Always re-validate even cached drafts (rules may have changed)
+            let corrections = validate_draft(&mut draft);
             return Ok(CreateDraftResponse {
                 draft,
                 raw_input: input,
                 model: "cache".to_string(),
                 cached: true,
+                corrections,
             });
         }
 
@@ -200,9 +214,19 @@ impl AdminCatalogService {
         let ai_json = parse_json_response(&raw)?;
 
         // ── Convert to ProductDraft with confidence + field-level metadata ──
-        let draft = build_product_draft(&ai_json, &input)?;
+        let mut draft = build_product_draft(&ai_json, &input)?;
 
-        // ── Cache the draft ──
+        // ── 🔥 AI Validation Layer — backend = source of truth ──
+        let corrections = validate_draft(&mut draft);
+        if !corrections.is_empty() {
+            tracing::info!(
+                "🔧 Validation Layer applied {} corrections for '{}'",
+                corrections.len(),
+                &input[..input.len().min(50)]
+            );
+        }
+
+        // ── Cache the VALIDATED draft (post-correction) ──
         let draft_json = serde_json::to_value(&draft)
             .map_err(|e| AppError::internal(format!("Failed to serialize draft: {}", e)))?;
         if let Err(e) = self
@@ -230,8 +254,277 @@ impl AdminCatalogService {
             raw_input: input,
             model: "llama-3.3-70b-versatile".to_string(),
             cached: false,
+            corrections,
         })
     }
+}
+
+// ── 🔥 AI Validation Layer ───────────────────────────────────────────
+//
+// AI ≠ source of truth. Backend = source of truth.
+//
+// This layer runs AFTER AI generation, BEFORE returning to frontend.
+// It catches common AI mistakes and corrects them automatically.
+
+/// Validate and correct an AI-generated draft.
+/// Returns a list of corrections made (so UI can show "⚠️ Исправлено автоматически").
+fn validate_draft(draft: &mut ProductDraft) -> Vec<DraftCorrection> {
+    let mut corrections = Vec::new();
+
+    let product_type = draft
+        .product_type
+        .value
+        .as_deref()
+        .unwrap_or("other")
+        .to_string();
+
+    // ── Rule 1: Fish/seafood category correction ──────────────────────
+    // AI often classifies fish as "vegetable", "other", etc.
+    // If the product is clearly aquatic, force product_type to the right value.
+    let aquatic_keywords_en = [
+        "salmon", "tuna", "cod", "trout", "carp", "herring", "mackerel",
+        "sardine", "bass", "perch", "pike", "catfish", "tilapia", "halibut",
+        "swordfish", "anchovy", "crucian", "bream", "zander", "walleye",
+        "shrimp", "prawn", "lobster", "crab", "squid", "octopus", "mussel",
+        "oyster", "clam", "scallop",
+    ];
+    let aquatic_keywords_ru = [
+        "лосось", "тунец", "треска", "форель", "карп", "карась", "сельдь",
+        "скумбрия", "сардина", "окунь", "щука", "сом", "тилапия", "палтус",
+        "анчоус", "лещ", "судак", "сёмга", "горбуша", "кета", "минтай",
+        "креветка", "лобстер", "краб", "кальмар", "осьминог", "мидия",
+        "устрица", "гребешок",
+    ];
+
+    let name_en_lower = draft
+        .names
+        .en
+        .value
+        .as_deref()
+        .unwrap_or("")
+        .to_lowercase();
+    let name_ru_lower = draft
+        .names
+        .ru
+        .value
+        .as_deref()
+        .unwrap_or("")
+        .to_lowercase();
+
+    let is_aquatic_by_name = aquatic_keywords_en
+        .iter()
+        .any(|kw| name_en_lower.contains(kw))
+        || aquatic_keywords_ru
+            .iter()
+            .any(|kw| name_ru_lower.contains(kw));
+
+    // Determine correct product_type for aquatic products
+    let fish_types = ["fish", "seafood", "fish_and_seafood"];
+    let shellfish_keywords = [
+        "shrimp", "prawn", "lobster", "crab", "squid", "octopus", "mussel",
+        "oyster", "clam", "scallop", "креветка", "лобстер", "краб",
+        "кальмар", "осьминог", "мидия", "устрица", "гребешок",
+    ];
+
+    if is_aquatic_by_name && !fish_types.iter().any(|t| product_type.eq_ignore_ascii_case(t)) {
+        let is_shellfish = shellfish_keywords
+            .iter()
+            .any(|kw| name_en_lower.contains(kw) || name_ru_lower.contains(kw));
+        let correct_type = if is_shellfish { "seafood" } else { "seafood" };
+
+        corrections.push(DraftCorrection {
+            field: "product_type".into(),
+            original_value: product_type.clone(),
+            corrected_to: correct_type.into(),
+            reason: format!(
+                "AI classified as '{}', but product name indicates fish/seafood",
+                product_type
+            ),
+        });
+        draft.product_type = DraftField {
+            value: Some(correct_type.to_string()),
+            source: DataSource::AiCorrected,
+            confidence: FieldConfidence::High,
+        };
+    }
+
+    // ── Rule 2: Meat category correction ──────────────────────────────
+    let meat_keywords_en = [
+        "beef", "pork", "lamb", "veal", "chicken", "turkey", "duck",
+        "goose", "rabbit", "venison", "bacon", "ham", "sausage",
+    ];
+    let meat_keywords_ru = [
+        "говядина", "свинина", "баранина", "телятина", "курица", "индейка",
+        "утка", "гусь", "кролик", "оленина", "бекон", "ветчина", "колбаса",
+        "фарш", "филе куриное", "грудка",
+    ];
+    let is_meat_by_name = meat_keywords_en
+        .iter()
+        .any(|kw| name_en_lower.contains(kw))
+        || meat_keywords_ru
+            .iter()
+            .any(|kw| name_ru_lower.contains(kw));
+
+    let meat_types = ["meat", "poultry", "meat_and_poultry"];
+    let current_type = draft
+        .product_type
+        .value
+        .as_deref()
+        .unwrap_or("other");
+    if is_meat_by_name && !meat_types.iter().any(|t| current_type.eq_ignore_ascii_case(t)) {
+        corrections.push(DraftCorrection {
+            field: "product_type".into(),
+            original_value: current_type.to_string(),
+            corrected_to: "meat".into(),
+            reason: format!(
+                "AI classified as '{}', but product name indicates meat/poultry",
+                current_type
+            ),
+        });
+        draft.product_type = DraftField {
+            value: Some("meat".to_string()),
+            source: DataSource::AiCorrected,
+            confidence: FieldConfidence::High,
+        };
+    }
+
+    // ── Rule 3: Dairy category correction ─────────────────────────────
+    let dairy_keywords_en = [
+        "milk", "cheese", "yogurt", "yoghurt", "butter", "cream", "kefir",
+        "cottage cheese", "sour cream", "ricotta", "mozzarella",
+    ];
+    let dairy_keywords_ru = [
+        "молоко", "сыр", "йогурт", "масло сливочное", "сливки", "кефир",
+        "творог", "сметана", "рикотта", "моцарелла", "ряженка",
+    ];
+    let is_dairy_by_name = dairy_keywords_en
+        .iter()
+        .any(|kw| name_en_lower.contains(kw))
+        || dairy_keywords_ru
+            .iter()
+            .any(|kw| name_ru_lower.contains(kw));
+
+    let current_type = draft.product_type.value.as_deref().unwrap_or("other");
+    if is_dairy_by_name && !current_type.eq_ignore_ascii_case("dairy") {
+        corrections.push(DraftCorrection {
+            field: "product_type".into(),
+            original_value: current_type.to_string(),
+            corrected_to: "dairy".into(),
+            reason: format!(
+                "AI classified as '{}', but product name indicates dairy",
+                current_type
+            ),
+        });
+        draft.product_type = DraftField {
+            value: Some("dairy".to_string()),
+            source: DataSource::AiCorrected,
+            confidence: FieldConfidence::High,
+        };
+    }
+
+    // ── Rule 4: Unit correction based on product_type ─────────────────
+    let current_type = draft
+        .product_type
+        .value
+        .as_deref()
+        .unwrap_or("other");
+    let current_unit = draft.unit.value.as_deref().unwrap_or("кг");
+
+    let correct_unit = match current_type {
+        // Fish and meat are always sold by weight
+        t if ["fish", "seafood", "meat", "poultry", "fish_and_seafood", "meat_and_poultry"]
+            .iter()
+            .any(|x| t.eq_ignore_ascii_case(x)) =>
+        {
+            "кг"
+        }
+        // Liquids
+        t if ["beverage", "oil"].iter().any(|x| t.eq_ignore_ascii_case(x)) => "л",
+        // Dairy: depends on product
+        "dairy" => {
+            if name_en_lower.contains("milk")
+                || name_en_lower.contains("cream")
+                || name_en_lower.contains("kefir")
+                || name_ru_lower.contains("молоко")
+                || name_ru_lower.contains("сливки")
+                || name_ru_lower.contains("кефир")
+                || name_ru_lower.contains("ряженка")
+            {
+                "л"
+            } else {
+                "кг"
+            }
+        }
+        // Eggs
+        _ if name_en_lower.contains("egg") || name_ru_lower.contains("яйц") => "шт",
+        // Everything else by weight
+        _ => current_unit, // don't change if no strong rule
+    };
+
+    if correct_unit != current_unit {
+        corrections.push(DraftCorrection {
+            field: "unit".into(),
+            original_value: current_unit.to_string(),
+            corrected_to: correct_unit.into(),
+            reason: format!(
+                "Unit '{}' is incorrect for product type '{}', should be '{}'",
+                current_unit, current_type, correct_unit
+            ),
+        });
+        draft.unit = DraftField {
+            value: Some(correct_unit.to_string()),
+            source: DataSource::AiCorrected,
+            confidence: FieldConfidence::High,
+        };
+    }
+
+    // ── Rule 5: Fiber must be 0 (not null) for animal products ────────
+    let current_type = draft.product_type.value.as_deref().unwrap_or("other");
+    let animal_types = [
+        "fish", "seafood", "meat", "poultry", "dairy",
+        "fish_and_seafood", "meat_and_poultry", "dairy_and_eggs",
+    ];
+    let is_animal = animal_types
+        .iter()
+        .any(|t| current_type.eq_ignore_ascii_case(t));
+
+    if is_animal {
+        // Ensure fiber is marked NotApplicable (not just null)
+        if !matches!(draft.nutrition.fiber_per_100g.confidence, FieldConfidence::NotApplicable) {
+            draft.nutrition.fiber_per_100g = DraftField::not_applicable();
+        }
+    }
+
+    // ── Rule 6: product_type normalization (plural → singular) ────────
+    let current_type = draft.product_type.value.as_deref().unwrap_or("other");
+    let normalized = match current_type {
+        "vegetables" => Some("vegetable"),
+        "fruits" => Some("fruit"),
+        "grains" | "grains_and_pasta" => Some("grain"),
+        "legumes" => Some("legume"),
+        "nuts" => Some("nut"),
+        "spices" => Some("spice"),
+        "meats" => Some("meat"),
+        "beverages" => Some("beverage"),
+        "oils" => Some("oil"),
+        _ => None,
+    };
+
+    if let Some(singular) = normalized {
+        corrections.push(DraftCorrection {
+            field: "product_type".into(),
+            original_value: current_type.to_string(),
+            corrected_to: singular.into(),
+            reason: format!("Normalized plural '{}' → singular '{}'", current_type, singular),
+        });
+        draft.product_type = DraftField {
+            value: Some(singular.to_string()),
+            source: DataSource::AiCorrected,
+            confidence: FieldConfidence::High,
+        };
+    }
+
+    corrections
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
