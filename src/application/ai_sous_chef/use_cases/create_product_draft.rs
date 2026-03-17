@@ -496,6 +496,95 @@ fn validate_draft(draft: &mut ProductDraft) -> Vec<DraftCorrection> {
     }
 
     // ── Rule 6: product_type normalization (plural → singular) ────────
+    // Also REJECTS "other" — forces re-classification from name keywords
+    let current_type = draft.product_type.value.as_deref().unwrap_or("other");
+
+    // First: if product_type is "other", try to infer from name keywords
+    if current_type.eq_ignore_ascii_case("other") || current_type.is_empty() {
+        // Try to infer from all keyword lists we already checked
+        let inferred = if is_aquatic_by_name {
+            Some("seafood")
+        } else if is_meat_by_name {
+            Some("meat")
+        } else if is_dairy_by_name {
+            Some("dairy")
+        } else {
+            // Check additional categories
+            let fruit_keywords = [
+                "apple", "banana", "orange", "grape", "lemon", "lime", "mango",
+                "peach", "pear", "plum", "cherry", "strawberry", "blueberry",
+                "raspberry", "watermelon", "melon", "kiwi", "pineapple", "coconut",
+                "яблоко", "банан", "апельсин", "виноград", "лимон", "лайм",
+                "манго", "персик", "груша", "слива", "вишня", "клубника",
+                "черника", "малина", "арбуз", "дыня", "киви", "ананас", "кокос",
+            ];
+            let vegetable_keywords = [
+                "carrot", "potato", "tomato", "onion", "garlic", "pepper",
+                "cucumber", "cabbage", "broccoli", "spinach", "lettuce", "celery",
+                "zucchini", "eggplant", "corn", "peas", "beet", "radish",
+                "морковь", "картофель", "помидор", "лук", "чеснок", "перец",
+                "огурец", "капуста", "брокколи", "шпинат", "салат", "сельдерей",
+                "кабачок", "баклажан", "кукуруза", "горох", "свёкла", "редис",
+            ];
+            let grain_keywords = [
+                "rice", "wheat", "oat", "barley", "buckwheat", "corn", "quinoa",
+                "pasta", "noodle", "bread", "flour",
+                "рис", "пшеница", "овёс", "ячмень", "гречка", "кукуруза",
+                "киноа", "паста", "макароны", "хлеб", "мука",
+            ];
+            let spice_keywords = [
+                "cinnamon", "pepper", "turmeric", "cumin", "paprika", "basil",
+                "oregano", "thyme", "rosemary", "dill", "parsley", "bay leaf",
+                "корица", "перец", "куркума", "тмин", "паприка", "базилик",
+                "орегано", "тимьян", "розмарин", "укроп", "петрушка", "лавр",
+            ];
+
+            let is_fruit = fruit_keywords.iter().any(|kw| name_en_lower.contains(kw) || name_ru_lower.contains(kw));
+            let is_vegetable = vegetable_keywords.iter().any(|kw| name_en_lower.contains(kw) || name_ru_lower.contains(kw));
+            let is_grain = grain_keywords.iter().any(|kw| name_en_lower.contains(kw) || name_ru_lower.contains(kw));
+            let is_spice = spice_keywords.iter().any(|kw| name_en_lower.contains(kw) || name_ru_lower.contains(kw));
+
+            if is_fruit {
+                Some("fruit")
+            } else if is_vegetable {
+                Some("vegetable")
+            } else if is_grain {
+                Some("grain")
+            } else if is_spice {
+                Some("spice")
+            } else {
+                None // Truly unknown — leave as "other", Data Quality Engine will flag it
+            }
+        };
+
+        if let Some(inferred_type) = inferred {
+            corrections.push(DraftCorrection {
+                field: "product_type".into(),
+                original_value: current_type.to_string(),
+                corrected_to: inferred_type.into(),
+                reason: format!(
+                    "AI returned '{}' — inferred '{}' from product name keywords",
+                    current_type, inferred_type
+                ),
+            });
+            draft.product_type = DraftField {
+                value: Some(inferred_type.to_string()),
+                source: DataSource::AiCorrected,
+                confidence: FieldConfidence::High,
+            };
+        } else {
+            // Add a quality warning so the admin knows to set it manually
+            draft.quality_warnings.push(QualityWarning {
+                field: "product_type".into(),
+                label_ru: "Тип продукта".into(),
+                severity: "critical".into(),
+                message: "AI не смог определить тип продукта. Укажите вручную перед сохранением.".into(),
+            });
+            draft.needs_review = true;
+        }
+    }
+
+    // Now normalize plural → singular for the (possibly corrected) product_type
     let current_type = draft.product_type.value.as_deref().unwrap_or("other");
     let normalized = match current_type {
         "vegetables" => Some("vegetable"),

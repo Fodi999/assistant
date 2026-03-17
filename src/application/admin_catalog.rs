@@ -49,6 +49,10 @@ pub struct CreateProductRequest {
 
     pub description: Option<String>,
 
+    /// Product type from AI draft (e.g. "seafood", "meat", "dairy")
+    /// Used by enforce_category() to validate category ↔ product_type consistency
+    pub product_type: Option<String>,
+
     /// Если true, бекенд автоматически переведёт на все языки и классифицирует
     /// Использует dictionary cache, затем Groq если нужно
     #[serde(default = "default_true")]
@@ -61,6 +65,65 @@ fn default_true() -> bool {
 
 fn default_empty_string() -> String {
     String::new()
+}
+
+// ── 🔒 enforce_category: product_type ↔ category hard rules ─────────
+//
+// AI cannot be trusted with categories. Backend is the source of truth.
+// This function enforces a strict mapping: product_type → correct category name.
+// It also rejects "other" — every product MUST have a real type.
+
+/// Map product_type to the canonical category name_en in the DB.
+/// Returns None if product_type is unknown (caller should reject or fallback).
+fn product_type_to_category(product_type: &str) -> Option<&'static str> {
+    match product_type.to_lowercase().as_str() {
+        "fish" | "seafood" | "fish_and_seafood" => Some("Fish & Seafood"),
+        "meat" | "poultry" | "meat_and_poultry" => Some("Meat & Poultry"),
+        "dairy" | "dairy_and_eggs" | "eggs" => Some("Dairy & Eggs"),
+        "vegetable" | "vegetables" => Some("Vegetables"),
+        "fruit" | "fruits" => Some("Fruits"),
+        "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => Some("Grains & Pasta"),
+        "legume" | "legumes" => Some("Legumes"),
+        "nut" | "nuts" | "seeds" => Some("Nuts & Seeds"),
+        "spice" | "spices" | "herb" | "herbs" | "seasoning" => Some("Spices & Herbs"),
+        "oil" | "oils" | "fat" | "fats" => Some("Oils & Fats"),
+        "beverage" | "beverages" | "drink" => Some("Beverages"),
+        "mushroom" | "mushrooms" | "fungi" => Some("Vegetables"), // mushrooms → vegetables
+        _ => None, // "other" or anything unknown → rejected
+    }
+}
+
+/// Normalize product_type to canonical singular form.
+/// Rejects "other" — returns error.
+fn normalize_product_type(raw: &str) -> AppResult<String> {
+    let normalized = match raw.to_lowercase().as_str() {
+        "fish" | "seafood" | "fish_and_seafood" => "seafood",
+        "meat" | "poultry" | "meat_and_poultry" => "meat",
+        "dairy" | "dairy_and_eggs" | "eggs" => "dairy",
+        "vegetable" | "vegetables" => "vegetable",
+        "fruit" | "fruits" => "fruit",
+        "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => "grain",
+        "legume" | "legumes" => "legume",
+        "nut" | "nuts" | "seeds" => "nut",
+        "spice" | "spices" | "herb" | "herbs" | "seasoning" => "spice",
+        "oil" | "oils" | "fat" | "fats" => "oil",
+        "beverage" | "beverages" | "drink" => "beverage",
+        "mushroom" | "mushrooms" | "fungi" => "vegetable",
+        "other" => {
+            return Err(AppError::validation(
+                "product_type 'other' is not allowed. Every product must have a specific type \
+                 (e.g. seafood, meat, dairy, vegetable, fruit, grain, legume, nut, spice, oil, beverage)."
+            ));
+        }
+        unknown => {
+            return Err(AppError::validation(&format!(
+                "Unknown product_type '{}'. Allowed: seafood, meat, dairy, vegetable, fruit, \
+                 grain, legume, nut, spice, oil, beverage.",
+                unknown
+            )));
+        }
+    };
+    Ok(normalized.to_string())
 }
 
 /// Update Product Request — full editing support for admin panel
@@ -350,11 +413,78 @@ impl AdminCatalogService {
         // ==========================================
         // 🤖 ШАГ 4: RESOLVE CATEGORY & UNIT (override AI if provided)
         // ==========================================
-        let (final_category_id, final_unit) = if req.category_id.is_some() && req.unit.is_some() {
+        // 🔒 enforce_category: product_type is the source of truth for category
+        let (final_category_id, final_unit, final_product_type) = if req.category_id.is_some()
+            && req.unit.is_some()
+        {
             // User provided explicit overrides
-            (req.category_id.unwrap(), req.unit.unwrap())
+            let pt = if let Some(ref pt_raw) = req.product_type {
+                normalize_product_type(pt_raw)?
+            } else {
+                // No product_type but category_id provided — allow but log warning
+                tracing::warn!("Product created with explicit category_id but no product_type");
+                "other".to_string() // Legacy path — will be fixed by data quality engine
+            };
+            (req.category_id.unwrap(), req.unit.unwrap(), pt)
+        } else if let Some(ref pt_raw) = req.product_type {
+            // 🔒 product_type provided (from AI draft) → enforce category mapping
+            let pt = normalize_product_type(pt_raw)?;
+
+            let category_name = product_type_to_category(&pt).ok_or_else(|| {
+                AppError::validation(&format!(
+                    "Cannot map product_type '{}' to a category",
+                    pt
+                ))
+            })?;
+
+            let cat_id = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM catalog_categories WHERE name_en = $1 LIMIT 1",
+            )
+            .bind(category_name)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error resolving category for product_type '{}': {}", pt, e);
+                AppError::internal("Failed to resolve category")
+            })?
+            .ok_or_else(|| {
+                tracing::error!(
+                    "Category '{}' not found in DB for product_type '{}'",
+                    category_name,
+                    pt
+                );
+                AppError::internal(&format!(
+                    "Category '{}' not found in database. Please create it first.",
+                    category_name
+                ))
+            })?;
+
+            tracing::info!(
+                "🔒 enforce_category: product_type '{}' → category '{}' ({})",
+                pt,
+                category_name,
+                cat_id
+            );
+
+            // Unit from request or smart default
+            let unit_resolved = if let Some(u) = req.unit {
+                u
+            } else {
+                let default_unit = match pt.as_str() {
+                    "seafood" | "meat" | "vegetable" | "fruit" | "grain" | "legume" | "nut"
+                    | "spice" => "kilogram",
+                    "dairy" => "liter",
+                    "oil" | "beverage" => "liter",
+                    _ => "kilogram",
+                };
+                UnitType::from_string(default_unit).unwrap_or(UnitType::from_string("kilogram").unwrap())
+            };
+
+            (cat_id, unit_resolved, pt)
         } else {
-            // Use AI results
+            // Legacy path: no product_type, no explicit category — use AI slug
+            tracing::info!("Running unified AI processing for: {}", name_input);
+
             let cat_id = match self.find_category_by_slug(&category_slug).await {
                 Ok(id) => id,
                 Err(_) => {
@@ -363,7 +493,7 @@ impl AdminCatalogService {
                         category_slug
                     );
                     return Err(AppError::validation(&format!(
-                        "Invalid category from AI: {}. Please provide explicit category_id",
+                        "Invalid category from AI: {}. Please provide explicit category_id or product_type",
                         category_slug
                     )));
                 }
@@ -383,7 +513,19 @@ impl AdminCatalogService {
                 }
             };
 
-            (cat_id, unit_resolved)
+            // Try to infer product_type from category_slug
+            let inferred_pt = match category_slug.to_lowercase().as_str() {
+                "seafood" | "fish_and_seafood" => "seafood",
+                "meat" | "meat_and_poultry" => "meat",
+                "dairy_and_eggs" => "dairy",
+                "vegetables" => "vegetable",
+                "fruits" => "fruit",
+                "grains" | "grains_and_pasta" => "grain",
+                "beverages" => "beverage",
+                _ => "other", // Legacy — will be caught by data quality engine
+            };
+
+            (cat_id, unit_resolved, inferred_pt.to_string())
         };
 
         // ==========================================
@@ -395,9 +537,9 @@ impl AdminCatalogService {
             r#"
             INSERT INTO catalog_ingredients (
                 id, name_en, name_pl, name_uk, name_ru,
-                category_id, default_unit, description
+                category_id, default_unit, description, product_type
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING
                 id, slug, name_en, name_pl, name_uk, name_ru,
                 category_id, default_unit as unit, description, image_url,
@@ -423,6 +565,7 @@ impl AdminCatalogService {
         .bind(final_category_id)
         .bind(&final_unit)
         .bind(&req.description)
+        .bind(&final_product_type)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -436,7 +579,7 @@ impl AdminCatalogService {
         let _ = sqlx::query(
             r#"INSERT INTO products (id, slug, name_en, name_pl, name_ru, name_uk,
                                      category_id, product_type, unit, image_url)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, 'other', $8, $9)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                ON CONFLICT (id) DO NOTHING"#,
         )
         .bind(id)
@@ -446,6 +589,7 @@ impl AdminCatalogService {
         .bind(&name_ru)
         .bind(&name_uk)
         .bind(final_category_id)
+        .bind(&final_product_type)
         .bind(final_unit.to_string())
         .bind(&product.image_url)
         .execute(&self.pool)
@@ -696,8 +840,62 @@ impl AdminCatalogService {
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.typical_portion_g);
         let subst_group = req.substitution_group.or(product.substitution_group);
-        let prod_type = req.product_type.unwrap_or(product.product_type);
+        let prod_type = {
+            let raw = req.product_type.unwrap_or(product.product_type);
+            // 🔒 enforce_category on update: reject "other", normalize product_type
+            if raw == "other" {
+                tracing::warn!(
+                    "⚠️ Product {} has product_type 'other' — allowing update but flagging",
+                    id
+                );
+                // Don't block update of existing "other" products, but keep the value
+                // Data Quality Engine will flag it
+                raw
+            } else {
+                // Validate and normalize
+                match normalize_product_type(&raw) {
+                    Ok(normalized) => normalized,
+                    Err(_) => {
+                        tracing::warn!("Unknown product_type '{}' for product {}, keeping as-is", raw, id);
+                        raw
+                    }
+                }
+            }
+        };
         let avail_model = req.availability_model.unwrap_or(product.availability_model);
+
+        // 🔒 enforce_category: if product_type changed, auto-fix category to match
+        let final_category_id = if let Some(explicit_cat) = req.category_id {
+            explicit_cat
+        } else if prod_type != "other" {
+            // product_type is set and not "other" — enforce correct category
+            if let Some(correct_cat_name) = product_type_to_category(&prod_type) {
+                match sqlx::query_scalar::<_, Uuid>(
+                    "SELECT id FROM catalog_categories WHERE name_en = $1 LIMIT 1",
+                )
+                .bind(correct_cat_name)
+                .fetch_optional(&self.pool)
+                .await
+                {
+                    Ok(Some(cat_id)) => {
+                        if cat_id != product.category_id {
+                            tracing::info!(
+                                "🔒 enforce_category on update: product_type '{}' → category '{}' (was {})",
+                                prod_type,
+                                correct_cat_name,
+                                product.category_id
+                            );
+                        }
+                        cat_id
+                    }
+                    _ => product.category_id, // Can't resolve — keep existing
+                }
+            } else {
+                product.category_id
+            }
+        } else {
+            product.category_id
+        };
 
         // New nutrition fields — use COALESCE in SQL so None keeps existing value
         let fiber: Option<rust_decimal::Decimal> = req.fiber_per_100g
@@ -764,7 +962,7 @@ impl AdminCatalogService {
         .bind(&name_pl)
         .bind(&name_uk)
         .bind(&name_ru)
-        .bind(req.category_id.unwrap_or(product.category_id))
+        .bind(final_category_id)
         .bind(req.unit.unwrap_or(product.unit))
         .bind(req.description.or(product.description))
         .bind(&req.image_url)
@@ -1109,9 +1307,20 @@ impl AdminCatalogService {
             "seafood" | "fish_and_seafood" => "Fish & Seafood",
             "grains" | "grains_and_pasta" => "Grains & Pasta",
             "beverages" => "Beverages",
+            "legumes" => "Legumes",
+            "nuts" | "nuts_and_seeds" => "Nuts & Seeds",
+            "spices" | "spices_and_herbs" => "Spices & Herbs",
+            "oils" | "oils_and_fats" => "Oils & Fats",
             _ => {
-                tracing::warn!("Unknown category slug: {}, defaulting to Vegetables", slug);
-                "Vegetables"
+                // 🔒 No more defaulting to Vegetables! Return error.
+                tracing::error!(
+                    "❌ Unknown category slug '{}' — refusing to default to Vegetables",
+                    slug
+                );
+                return Err(AppError::validation(&format!(
+                    "Unknown category '{}'. Please provide a valid product_type or category_id.",
+                    slug
+                )));
             }
         };
 
