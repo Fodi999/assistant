@@ -188,6 +188,11 @@ pub fn create_router(
             "/audit",
             get(admin_catalog::ai_audit),
         )
+        // AI Create Product Draft — returns draft for review, NEVER saves
+        .route(
+            "/ai/create-product-draft",
+            post(admin_catalog::ai_create_product_draft),
+        )
         // Food Pairing CRUD
         .route(
             "/products/:id/pairings",

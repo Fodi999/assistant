@@ -9,6 +9,7 @@
 //! 4. Возвращает результат
 
 pub mod autofill;
+pub mod create_product_draft;
 pub mod generate_seo;
 pub mod audit;
 pub mod pairing;

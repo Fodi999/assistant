@@ -311,3 +311,22 @@ pub async fn delete_category(
     service.delete_category(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+// ── AI Draft Endpoint ────────────────────────────────────────────────
+
+use crate::application::ai_sous_chef::use_cases::create_product_draft::{
+    CreateDraftRequest, CreateDraftResponse,
+};
+
+/// POST /api/admin/catalog/ai/create-product-draft
+///
+/// AI generates a rich product draft from free-text input.
+/// NEVER saves to DB — returns a draft for admin review.
+pub async fn ai_create_product_draft(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<CreateDraftRequest>,
+) -> Result<Json<CreateDraftResponse>, AppError> {
+    let response = service.ai_create_product_draft(req).await?;
+    Ok(Json(response))
+}
