@@ -358,6 +358,7 @@ pub async fn find_ingredient_ref_by_slug(
         FROM catalog_ingredients ci
         LEFT JOIN slug_aliases sa ON sa.ingredient_id = ci.id AND sa.old_slug = $1
         WHERE (ci.slug = $1 OR sa.old_slug = $1) AND ci.is_active = true
+              AND COALESCE(ci.is_published, false) = true
         ORDER BY (ci.slug = $1)::int DESC
         LIMIT 1
         "#,

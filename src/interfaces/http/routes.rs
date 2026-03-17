@@ -183,6 +183,15 @@ pub fn create_router(
             "/products/:id/ai-seo",
             post(admin_catalog::ai_generate_seo),
         )
+        // Publish / Unpublish — controls visibility in blog
+        .route(
+            "/products/:id/publish",
+            post(admin_catalog::publish_product),
+        )
+        .route(
+            "/products/:id/unpublish",
+            post(admin_catalog::unpublish_product),
+        )
         // AI Audit — catalog completeness & accuracy checker
         .route(
             "/audit",

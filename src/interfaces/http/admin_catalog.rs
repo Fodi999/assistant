@@ -157,6 +157,32 @@ pub async fn delete_product_image(
 }
 
 // ==========================================
+// 📢 PUBLISH / UNPUBLISH
+// ==========================================
+
+/// POST /api/admin/catalog/products/:id/publish
+/// Publishes product to the public blog. Validates minimum data quality.
+pub async fn publish_product(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<ProductResponse>, AppError> {
+    let product = service.publish_product(id).await?;
+    Ok(Json(product))
+}
+
+/// POST /api/admin/catalog/products/:id/unpublish
+/// Removes product from the public blog (sets is_published = false).
+pub async fn unpublish_product(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<ProductResponse>, AppError> {
+    let product = service.unpublish_product(id).await?;
+    Ok(Json(product))
+}
+
+// ==========================================
 // 🤖 AI AUTOFILL
 // ==========================================
 

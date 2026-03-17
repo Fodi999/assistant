@@ -106,7 +106,8 @@ pub async fn list_ingredients(
                 cc.name_uk AS category_name_uk
             FROM catalog_ingredients ci
             LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
-            WHERE ci.is_active = true AND ci.slug IS NOT NULL AND ci.slug != ''
+            WHERE ci.is_active = true AND COALESCE(ci.is_published, false) = true
+              AND ci.slug IS NOT NULL AND ci.slug != ''
               AND (
                 LOWER(ci.name_en) LIKE $1 OR
                 LOWER(ci.name_ru) LIKE $1 OR
@@ -136,7 +137,8 @@ pub async fn list_ingredients(
                 cc.name_uk AS category_name_uk
             FROM catalog_ingredients ci
             LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
-            WHERE ci.is_active = true AND ci.slug IS NOT NULL AND ci.slug != ''
+            WHERE ci.is_active = true AND COALESCE(ci.is_published, false) = true
+              AND ci.slug IS NOT NULL AND ci.slug != ''
             ORDER BY ci.name_en ASC
             "#,
         )

@@ -259,6 +259,10 @@ pub struct ProductResponse {
     pub og_title: Option<String>,
     pub og_description: Option<String>,
     pub og_image: Option<String>,
+
+    // Publication status
+    pub is_published: bool,
+    pub published_at: Option<String>,
 }
 
 /// Admin Category Requests
@@ -554,7 +558,8 @@ impl AdminCatalogService {
                 shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                 fiber_per_100g, sugar_per_100g, salt_per_100g,
                       water_type, wild_farmed, sushi_grade,
-                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
+                      COALESCE(is_published, false) as is_published, published_at::text
             "#,
         )
         .bind(id)
@@ -639,7 +644,8 @@ impl AdminCatalogService {
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
                       water_type, wild_farmed, sushi_grade,
-                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
+                      COALESCE(is_published, false) as is_published, published_at::text
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true"#
         )
@@ -667,7 +673,8 @@ impl AdminCatalogService {
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
                       water_type, wild_farmed, sushi_grade,
-                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
+                      COALESCE(is_published, false) as is_published, published_at::text
                FROM catalog_ingredients
                WHERE is_active = true
                ORDER BY name_en ASC"#
@@ -701,7 +708,8 @@ impl AdminCatalogService {
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
                       water_type, wild_farmed, sushi_grade,
-                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
+                      COALESCE(is_published, false) as is_published, published_at::text
                FROM catalog_ingredients
                WHERE id = $1 AND is_active = true FOR UPDATE"#
         )
@@ -955,7 +963,8 @@ impl AdminCatalogService {
                       shelf_life_days, edible_yield_percent, typical_portion_g, substitution_group,
                       fiber_per_100g, sugar_per_100g, salt_per_100g,
                       water_type, wild_farmed, sushi_grade,
-                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image
+                      seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
+                      COALESCE(is_published, false) as is_published, published_at::text
             "#
         )
         .bind(&name_en)
@@ -1202,6 +1211,78 @@ impl AdminCatalogService {
 
         tracing::info!("Product {} soft-deleted successfully", id);
         Ok(())
+    }
+
+    // ── Publication Flow ──────────────────────────────────────────────
+
+    /// Publish a product — makes it visible in the public blog/catalog.
+    ///
+    /// Rules:
+    /// - Product must have calories_per_100g (at minimum)
+    /// - Product must have product_type != 'other'
+    /// - Product must have at least name_en + name_ru
+    pub async fn publish_product(&self, id: Uuid) -> AppResult<ProductResponse> {
+        // 1. Fetch product to validate readiness
+        let product = self.get_product_by_id(id).await?;
+
+        // 2. Validate minimum requirements for publication
+        let mut errors = Vec::new();
+        if product.product_type == "other" {
+            errors.push("product_type is 'other' — must be a specific type");
+        }
+        if product.calories_per_100g.is_none() {
+            errors.push("calories_per_100g is missing");
+        }
+        if product.name_en.trim().is_empty() {
+            errors.push("name_en is empty");
+        }
+        if product.name_ru.as_deref().unwrap_or("").trim().is_empty() {
+            errors.push("name_ru is empty");
+        }
+
+        if !errors.is_empty() {
+            return Err(AppError::validation(&format!(
+                "Cannot publish: {}",
+                errors.join(", ")
+            )));
+        }
+
+        // 3. Set is_published = true, published_at = now()
+        sqlx::query(
+            "UPDATE catalog_ingredients SET is_published = true, published_at = NOW() WHERE id = $1"
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error publishing product {}: {}", id, e);
+            AppError::internal("Failed to publish product")
+        })?;
+
+        tracing::info!("✅ Product {} ('{}') published to blog", id, product.name_en);
+
+        // Return updated product
+        self.get_product_by_id(id).await
+    }
+
+    /// Unpublish a product — removes it from the public blog/catalog.
+    pub async fn unpublish_product(&self, id: Uuid) -> AppResult<ProductResponse> {
+        // Verify exists
+        let _ = self.get_product_by_id(id).await?;
+
+        sqlx::query(
+            "UPDATE catalog_ingredients SET is_published = false WHERE id = $1"
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error unpublishing product {}: {}", id, e);
+            AppError::internal("Failed to unpublish product")
+        })?;
+
+        tracing::info!("Product {} unpublished from blog", id);
+        self.get_product_by_id(id).await
     }
 
     /// List all categories
