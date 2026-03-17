@@ -371,8 +371,20 @@ impl AiSousChefService {
         Ok(rows)
     }
 
+    /// Categories where fiber is naturally 0 (animal products)
+    const FIBER_NOT_APPLICABLE: &'static [&'static str] = &[
+        "fish", "seafood", "meat", "poultry", "eggs", "dairy",
+        "fish_and_seafood", "meat_and_poultry", "dairy_and_eggs",
+    ];
+
     /// Build DataQualityRow from raw booleans — defines ALL field checks in one place
     fn build_quality_row(r: DataQualityRaw) -> DataQualityRow {
+        // Rule: fiber is OK for animal products even if null (naturally 0)
+        let fiber_ok = r.has_fiber
+            || Self::FIBER_NOT_APPLICABLE.iter().any(|&cat| {
+                r.product_type.eq_ignore_ascii_case(cat)
+            });
+
         // Define all checks: (ok, field, label_ru, group, severity)
         let checks: Vec<(bool, &'static str, &'static str, &'static str, &'static str)> = vec![
             // ── basic (critical) ──
@@ -388,8 +400,8 @@ impl AiSousChefService {
             (r.has_protein,        "protein_per_100g",  "Белки",       "nutrition", "critical"),
             (r.has_fat,            "fat_per_100g",      "Жиры",        "nutrition", "critical"),
             (r.has_carbs,          "carbs_per_100g",    "Углеводы",    "nutrition", "critical"),
-            // ── nutrition (recommended) ──
-            (r.has_fiber,          "fiber_per_100g",    "Клетчатка",   "nutrition", "recommended"),
+            // ── nutrition (recommended) — fiber uses category-aware rule ──
+            (fiber_ok,             "fiber_per_100g",    "Клетчатка",   "nutrition", "recommended"),
             (r.has_density,        "density_g_per_ml",  "Плотность",   "nutrition", "recommended"),
             (r.has_shelf_life,     "shelf_life_days",   "Срок годности", "nutrition", "recommended"),
             (r.has_typical_portion,"typical_portion_g", "Типичная порция","nutrition","recommended"),

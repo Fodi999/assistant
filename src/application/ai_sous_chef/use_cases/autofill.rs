@@ -238,6 +238,7 @@ Return this JSON:
 }}
 
 Use USDA FoodData Central (raw/uncooked values per 100g) as reference. Be precise.
+IMPORTANT: If a nutrient is naturally absent in a product (e.g. fiber in fish/meat/eggs/dairy), return 0, NOT null.
 REMEMBER: FILLED=false means the field is EMPTY — you MUST provide a real value, NOT null!"#,
         name_en = name_en,
         name_ru = name_ru,
