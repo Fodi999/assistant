@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod ai_ports;  // 🆕 AI abstraction traits (AiClient, AiQuality)
 pub mod assistant;
 pub mod auth;
 pub mod catalog;
@@ -17,6 +18,7 @@ pub mod tools; // 🆕 Chef tools domain (unit converter, yield, scale)
 pub mod user;
 
 pub use admin::*;
+pub use ai_ports::*;
 pub use assistant::*;
 pub use auth::*;
 pub use catalog::*;

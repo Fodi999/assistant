@@ -1,3 +1,4 @@
+pub mod ai_client_impl; // 🆕 AiClient trait implementation for LlmAdapter
 pub mod config;
 pub mod groq_service;
 pub mod llm_adapter; // 🆕 Added LLM adapter

@@ -4,6 +4,10 @@ pub mod scan_products;
 pub mod storage_rules;
 pub mod translation_rules;
 
+// 🆕 AI Use Cases — Clean Architecture (replaces flat files)
+// Each use-case: cache check → AiClient trait → parse → cache store
+pub mod use_cases;
+
 use crate::shared::AppResult;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;

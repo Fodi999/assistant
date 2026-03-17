@@ -178,9 +178,20 @@ impl LlmAdapter {
     /// Used for one-off admin operations like AI autofill.
     /// `max_tokens`: how many tokens to allow in response (use 3000 for full autofill).
     pub async fn groq_raw_request(&self, prompt: &str, max_tokens: u32) -> Result<String, AppError> {
+        self.groq_raw_request_with_model(prompt, max_tokens, "llama-3.3-70b-versatile").await
+    }
+
+    /// Raw Groq request with explicit model selection.
+    /// Used by AiClient trait implementation for quality tiers.
+    pub async fn groq_raw_request_with_model(
+        &self,
+        prompt: &str,
+        max_tokens: u32,
+        model: &str,
+    ) -> Result<String, AppError> {
         let start = Instant::now();
         let request_body = serde_json::json!({
-            "model": "llama-3.3-70b-versatile",
+            "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1,
             "max_tokens": max_tokens,
@@ -191,9 +202,9 @@ impl LlmAdapter {
             self.groq_service.send_raw_request(&request_body),
         )
         .await
-        .map_err(|_| AppError::internal("AI autofill timeout (30s)"))?? ;
+        .map_err(|_| AppError::internal(&format!("AI timeout (30s) for model {}", model)))?? ;
         let duration_ms = start.elapsed().as_millis() as i32;
-        self.log_usage("ai_autofill", duration_ms).await;
+        self.log_usage(&format!("raw_{}", model), duration_ms).await;
         Ok(result)
     }
 }
