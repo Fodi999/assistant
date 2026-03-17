@@ -97,6 +97,11 @@ pub async fn data_quality(
             } else {
                 rows.iter().map(|r| r.score).sum::<f64>() / rows.len() as f64
             };
+            let avg_weighted = if rows.is_empty() {
+                0.0
+            } else {
+                rows.iter().map(|r| r.weighted_score).sum::<f64>() / rows.len() as f64
+            };
             let complete = rows.iter().filter(|r| r.status == "complete").count();
             let critical = rows.iter().filter(|r| r.status == "critical_missing").count();
             let optional = rows.iter().filter(|r| r.status == "optional_missing").count();
@@ -104,6 +109,7 @@ pub async fn data_quality(
                 "ok": true,
                 "total": rows.len(),
                 "avg_score": (avg_score * 10.0).round() / 10.0,
+                "avg_weighted_score": (avg_weighted * 10.0).round() / 10.0,
                 "complete": complete,
                 "critical_missing": critical,
                 "optional_missing": optional,

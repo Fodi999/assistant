@@ -56,9 +56,24 @@ pub struct DataQualityRow {
     pub score: f64,
     pub filled: i64,
     pub total: i64,
+    /// Weighted score: Required=1.0, Recommended=0.6, Optional=0.3
+    pub weighted_score: f64,
+    pub weight_filled: f64,
+    pub weight_total: f64,
     pub missing_fields: Vec<MissingField>,
     pub not_applicable_fields: Vec<NotApplicableField>,
+    pub next_actions: Vec<NextAction>,
     pub status: &'static str, // "complete" | "optional_missing" | "critical_missing"
+}
+
+/// A prioritised next action for improving product data quality
+#[derive(Debug, Serialize, Clone)]
+pub struct NextAction {
+    pub field: &'static str,
+    pub label_ru: &'static str,
+    pub priority: &'static str,    // "high" | "medium" | "low"
+    pub reason: &'static str,
+    pub fix_hint: &'static str,    // auto-fix suggestion
 }
 
 /// A single missing field with metadata
@@ -452,6 +467,8 @@ impl AiSousChefService {
     /// Each field is evaluated:
     ///   NotApplicable → excluded from total & filled, added to not_applicable_fields
     ///   Required/Recommended/Optional → counted; if missing → added to missing_fields
+    ///
+    /// Weighted scoring: Required=1.0, Recommended=0.6, Optional=0.3
     fn build_quality_row(r: DataQualityRaw) -> DataQualityRow {
         let pt = &r.product_type;
 
@@ -496,6 +513,8 @@ impl AiSousChefService {
 
         let mut total: i64 = 0;
         let mut filled: i64 = 0;
+        let mut weight_total: f64 = 0.0;
+        let mut weight_filled: f64 = 0.0;
         let mut missing_fields: Vec<MissingField> = Vec::new();
         let mut not_applicable_fields: Vec<NotApplicableField> = Vec::new();
 
@@ -518,9 +537,12 @@ impl AiSousChefService {
                 }
                 Some(Requirement::Required) => {
                     // Override to critical
+                    let w = Self::severity_weight("critical");
                     total += 1;
+                    weight_total += w;
                     if *has_value {
                         filled += 1;
+                        weight_filled += w;
                     } else {
                         missing_fields.push(MissingField {
                             field,
@@ -532,9 +554,12 @@ impl AiSousChefService {
                 }
                 _ => {
                     // None or Some(Recommended/Optional) → use the default_severity
+                    let w = Self::severity_weight(default_severity);
                     total += 1;
+                    weight_total += w;
                     if *has_value {
                         filled += 1;
+                        weight_filled += w;
                     } else {
                         missing_fields.push(MissingField {
                             field,
@@ -547,8 +572,16 @@ impl AiSousChefService {
             }
         }
 
+        // Flat score (backward-compatible)
         let score = if total > 0 {
             ((filled as f64 / total as f64) * 1000.0).round() / 10.0
+        } else {
+            0.0
+        };
+
+        // Weighted score — Required fields matter more
+        let weighted_score = if weight_total > 0.0 {
+            ((weight_filled / weight_total) * 1000.0).round() / 10.0
         } else {
             0.0
         };
@@ -562,6 +595,9 @@ impl AiSousChefService {
             "optional_missing"
         };
 
+        // ── Build next_actions: top-5 prioritised items ──
+        let next_actions = Self::build_next_actions(&missing_fields);
+
         DataQualityRow {
             id: r.id,
             name_en: r.name_en,
@@ -569,9 +605,122 @@ impl AiSousChefService {
             score,
             filled,
             total,
+            weighted_score,
+            weight_filled: (weight_filled * 100.0).round() / 100.0,
+            weight_total: (weight_total * 100.0).round() / 100.0,
             missing_fields,
             not_applicable_fields,
+            next_actions,
             status,
+        }
+    }
+
+    /// Weight multiplier per severity level
+    fn severity_weight(severity: &str) -> f64 {
+        match severity {
+            "critical"    => 1.0,
+            "recommended" => 0.6,
+            "optional"    => 0.3,
+            _             => 0.5,
+        }
+    }
+
+    /// Build top-5 prioritised next actions from missing fields
+    fn build_next_actions(missing: &[MissingField]) -> Vec<NextAction> {
+        let mut actions: Vec<NextAction> = missing.iter().map(|m| {
+            let (priority, reason, fix_hint) = match m.severity {
+                "critical" => (
+                    "high",
+                    Self::field_reason(m.field, "critical"),
+                    Self::field_fix_hint(m.field),
+                ),
+                "recommended" => (
+                    "medium",
+                    Self::field_reason(m.field, "recommended"),
+                    Self::field_fix_hint(m.field),
+                ),
+                _ => (
+                    "low",
+                    Self::field_reason(m.field, "optional"),
+                    Self::field_fix_hint(m.field),
+                ),
+            };
+            NextAction {
+                field: m.field,
+                label_ru: m.label_ru,
+                priority,
+                reason,
+                fix_hint,
+            }
+        }).collect();
+
+        // Sort: high → medium → low
+        actions.sort_by(|a, b| {
+            let ord = |p: &str| -> u8 { match p { "high" => 0, "medium" => 1, _ => 2 } };
+            ord(a.priority).cmp(&ord(b.priority))
+        });
+
+        actions.truncate(5);
+        actions
+    }
+
+    /// Human-readable reason why a field matters
+    fn field_reason(field: &str, severity: &str) -> &'static str {
+        match field {
+            "image_url"        => "Фото — первое впечатление, критично для каталога",
+            "name_ru"          => "Название RU — необходимо для русскоязычных пользователей",
+            "name_pl"          => "Название PL — необходимо для польскоязычных пользователей",
+            "name_uk"          => "Название UK — необходимо для украиноязычных пользователей",
+            "description_en"   => "Описание EN — базовый контент продукта",
+            "description_ru"   => "Описание RU — контент для русскоязычной аудитории",
+            "slug"             => "Slug — нужен для SEO и ссылок",
+            "calories_per_100g"=> "Калории — главный показатель пищевой ценности",
+            "protein_per_100g" => "Белки — один из трёх макронутриентов",
+            "fat_per_100g"     => "Жиры — один из трёх макронутриентов",
+            "carbs_per_100g"   => "Углеводы — один из трёх макронутриентов",
+            "fiber_per_100g"   => "Клетчатка — важно для растительных продуктов",
+            "density_g_per_ml" => "Плотность — нужна для пересчёта объёмов",
+            "shelf_life_days"  => "Срок годности — планирование хранения",
+            "typical_portion_g"=> "Типичная порция — удобство для пользователей",
+            "water_type"       => "Тип воды — пресноводная/морская рыба",
+            "wild_farmed"      => "Дикий/фермерский — качество рыбы/морепродуктов",
+            "sushi_grade"      => "Сашими-качество — можно есть сырым",
+            "seo_title"        => "SEO Title — поисковая оптимизация",
+            _ => match severity {
+                "critical" => "Критическое поле — без него продукт неполный",
+                "recommended" => "Рекомендуемое — улучшает качество карточки",
+                _ => "Опциональное — дополняет данные продукта",
+            },
+        }
+    }
+
+    /// Auto-fix suggestion for a missing field
+    fn field_fix_hint(field: &str) -> &'static str {
+        match field {
+            "image_url"        => "Загрузите фото через админку или AI-генерацию",
+            "name_ru" | "name_pl" | "name_uk"
+                               => "Запустите AI-автоперевод (/autofill)",
+            "description_en" | "description_ru"
+                               => "Запустите AI-автозаполнение (/autofill)",
+            "slug"             => "Генерируется автоматически при создании",
+            "calories_per_100g" | "protein_per_100g" | "fat_per_100g" | "carbs_per_100g"
+                               => "Запустите AI-автозаполнение (/autofill) — USDA данные",
+            "fiber_per_100g"   => "Запустите AI-автозаполнение (/autofill)",
+            "density_g_per_ml" => "Запустите AI-автозаполнение или введите вручную",
+            "shelf_life_days"  => "Укажите типичный срок годности в днях",
+            "typical_portion_g"=> "Запустите AI-автозаполнение (/autofill)",
+            "water_type"       => "Укажите: freshwater / saltwater / brackish",
+            "wild_farmed"      => "Укажите: wild / farmed / both",
+            "sushi_grade"      => "Укажите: true / false",
+            "seo_title"        => "Заполните SEO-поля для поисковой выдачи",
+            "nutrition_macros" | "nutrition_vitamins" | "nutrition_minerals"
+                               => "Запустите AI-автозаполнение — создаст связанные таблицы",
+            "product_allergens" | "diet_flags"
+                               => "Запустите AI-автозаполнение — заполнит аллергены и диет-флаги",
+            "food_culinary" | "food_properties"
+                               => "Запустите AI-автозаполнение — создаст кулинарные/физические свойства",
+            "ingredient_states"=> "Запустите генерацию состояний (/generate-states)",
+            _                  => "Заполните вручную или запустите AI-автозаполнение",
         }
     }
 
