@@ -3,6 +3,23 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+// ── Float precision helper ────────────────────────────
+/// Round f32 to N decimal places to avoid IEEE 754 display artifacts
+/// e.g. 0.53f32 → 0.5299999713897705 → round2 → 0.53
+fn round_f32(v: f32, decimals: u32) -> f32 {
+    let factor = 10f32.powi(decimals as i32);
+    (v * factor).round() / factor
+}
+
+fn round_opt(v: Option<f32>, decimals: u32) -> Option<f32> {
+    v.map(|x| round_f32(x, decimals))
+}
+
+/// Round Option<f64> → Option<f32> with precision (for update_basic f64→f32 cast)
+fn round_f64_to_f32(v: Option<f64>, decimals: u32) -> Option<f32> {
+    v.map(|x| round_f32(x as f32, decimals))
+}
+
 // ══════════════════════════════════════════════════════
 // SERVICE
 // ══════════════════════════════════════════════════════
@@ -406,9 +423,9 @@ impl AdminNutritionService {
             description_ru: row.description_ru,
             description_pl: row.description_pl,
             description_uk: row.description_uk,
-            density_g_per_ml: row.density_g_per_ml.map(|v| v as f64),
-            typical_portion_g: row.typical_portion_g.map(|v| v as f64),
-            edible_yield_percent: row.edible_yield_percent.map(|v| v as f64),
+            density_g_per_ml: row.density_g_per_ml.map(|v| round_f32(v, 2) as f64),
+            typical_portion_g: row.typical_portion_g.map(|v| round_f32(v, 1) as f64),
+            edible_yield_percent: row.edible_yield_percent.map(|v| round_f32(v, 1) as f64),
             shelf_life_days: row.shelf_life_days,
             wild_farmed: row.wild_farmed,
             water_type: row.water_type,
@@ -471,9 +488,9 @@ impl AdminNutritionService {
         .bind(req.description_ru)
         .bind(req.description_pl)
         .bind(req.description_uk)
-        .bind(req.density_g_per_ml.map(|v| v as f32))
-        .bind(req.typical_portion_g.map(|v| v as f32))
-        .bind(req.edible_yield_percent.map(|v| v as f32))
+        .bind(round_f64_to_f32(req.density_g_per_ml, 2))
+        .bind(round_f64_to_f32(req.typical_portion_g, 1))
+        .bind(round_f64_to_f32(req.edible_yield_percent, 1))
         .bind(req.shelf_life_days)
         .bind(req.wild_farmed)
         .bind(req.water_type)
@@ -489,6 +506,17 @@ impl AdminNutritionService {
 
     // ── Upsert macros ─────────────────────────────────
     pub async fn upsert_macros(&self, id: Uuid, dto: MacrosDto) -> AppResult<()> {
+        // Round to 2 decimal places to avoid IEEE 754 display artifacts
+        let calories  = round_opt(dto.calories_kcal, 1);
+        let protein   = round_opt(dto.protein_g, 2);
+        let fat       = round_opt(dto.fat_g, 2);
+        let carbs     = round_opt(dto.carbs_g, 2);
+        let fiber     = round_opt(dto.fiber_g, 2);
+        let sugar     = round_opt(dto.sugar_g, 2);
+        let starch    = round_opt(dto.starch_g, 2);
+        let water     = round_opt(dto.water_g, 1);
+        let alcohol   = round_opt(dto.alcohol_g, 2);
+
         sqlx::query(
             r#"
             INSERT INTO nutrition_macros
@@ -507,15 +535,15 @@ impl AdminNutritionService {
             "#,
         )
         .bind(id)
-        .bind(dto.calories_kcal)
-        .bind(dto.protein_g)
-        .bind(dto.fat_g)
-        .bind(dto.carbs_g)
-        .bind(dto.fiber_g)
-        .bind(dto.sugar_g)
-        .bind(dto.starch_g)
-        .bind(dto.water_g)
-        .bind(dto.alcohol_g)
+        .bind(calories)
+        .bind(protein)
+        .bind(fat)
+        .bind(carbs)
+        .bind(fiber)
+        .bind(sugar)
+        .bind(starch)
+        .bind(water)
+        .bind(alcohol)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
@@ -559,6 +587,20 @@ impl AdminNutritionService {
 
     // ── Upsert vitamins ───────────────────────────────
     pub async fn upsert_vitamins(&self, id: Uuid, dto: VitaminsDto) -> AppResult<()> {
+        let vitamin_a   = round_opt(dto.vitamin_a, 2);
+        let vitamin_c   = round_opt(dto.vitamin_c, 2);
+        let vitamin_d   = round_opt(dto.vitamin_d, 2);
+        let vitamin_e   = round_opt(dto.vitamin_e, 2);
+        let vitamin_k   = round_opt(dto.vitamin_k, 2);
+        let vitamin_b1  = round_opt(dto.vitamin_b1, 2);
+        let vitamin_b2  = round_opt(dto.vitamin_b2, 2);
+        let vitamin_b3  = round_opt(dto.vitamin_b3, 2);
+        let vitamin_b5  = round_opt(dto.vitamin_b5, 2);
+        let vitamin_b6  = round_opt(dto.vitamin_b6, 2);
+        let vitamin_b7  = round_opt(dto.vitamin_b7, 2);
+        let vitamin_b9  = round_opt(dto.vitamin_b9, 2);
+        let vitamin_b12 = round_opt(dto.vitamin_b12, 2);
+
         sqlx::query(
             r#"
             INSERT INTO nutrition_vitamins
@@ -583,19 +625,19 @@ impl AdminNutritionService {
             "#,
         )
         .bind(id)
-        .bind(dto.vitamin_a)
-        .bind(dto.vitamin_c)
-        .bind(dto.vitamin_d)
-        .bind(dto.vitamin_e)
-        .bind(dto.vitamin_k)
-        .bind(dto.vitamin_b1)
-        .bind(dto.vitamin_b2)
-        .bind(dto.vitamin_b3)
-        .bind(dto.vitamin_b5)
-        .bind(dto.vitamin_b6)
-        .bind(dto.vitamin_b7)
-        .bind(dto.vitamin_b9)
-        .bind(dto.vitamin_b12)
+        .bind(vitamin_a)
+        .bind(vitamin_c)
+        .bind(vitamin_d)
+        .bind(vitamin_e)
+        .bind(vitamin_k)
+        .bind(vitamin_b1)
+        .bind(vitamin_b2)
+        .bind(vitamin_b3)
+        .bind(vitamin_b5)
+        .bind(vitamin_b6)
+        .bind(vitamin_b7)
+        .bind(vitamin_b9)
+        .bind(vitamin_b12)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
@@ -604,6 +646,17 @@ impl AdminNutritionService {
 
     // ── Upsert minerals ───────────────────────────────
     pub async fn upsert_minerals(&self, id: Uuid, dto: MineralsDto) -> AppResult<()> {
+        let calcium    = round_opt(dto.calcium, 2);
+        let iron       = round_opt(dto.iron, 2);
+        let magnesium  = round_opt(dto.magnesium, 2);
+        let phosphorus = round_opt(dto.phosphorus, 2);
+        let potassium  = round_opt(dto.potassium, 2);
+        let sodium     = round_opt(dto.sodium, 2);
+        let zinc       = round_opt(dto.zinc, 2);
+        let copper     = round_opt(dto.copper, 2);
+        let manganese  = round_opt(dto.manganese, 2);
+        let selenium   = round_opt(dto.selenium, 2);
+
         sqlx::query(
             r#"
             INSERT INTO nutrition_minerals
@@ -624,16 +677,16 @@ impl AdminNutritionService {
             "#,
         )
         .bind(id)
-        .bind(dto.calcium)
-        .bind(dto.iron)
-        .bind(dto.magnesium)
-        .bind(dto.phosphorus)
-        .bind(dto.potassium)
-        .bind(dto.sodium)
-        .bind(dto.zinc)
-        .bind(dto.copper)
-        .bind(dto.manganese)
-        .bind(dto.selenium)
+        .bind(calcium)
+        .bind(iron)
+        .bind(magnesium)
+        .bind(phosphorus)
+        .bind(potassium)
+        .bind(sodium)
+        .bind(zinc)
+        .bind(copper)
+        .bind(manganese)
+        .bind(selenium)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
@@ -642,6 +695,14 @@ impl AdminNutritionService {
 
     // ── Upsert fatty acids ────────────────────────────
     pub async fn upsert_fatty_acids(&self, id: Uuid, dto: FattyAcidsDto) -> AppResult<()> {
+        let saturated       = round_opt(dto.saturated_fat, 2);
+        let monounsaturated = round_opt(dto.monounsaturated_fat, 2);
+        let polyunsaturated = round_opt(dto.polyunsaturated_fat, 2);
+        let omega3          = round_opt(dto.omega3, 2);
+        let omega6          = round_opt(dto.omega6, 2);
+        let epa             = round_opt(dto.epa, 2);
+        let dha             = round_opt(dto.dha, 2);
+
         sqlx::query(
             r#"
             INSERT INTO nutrition_fatty_acids
@@ -658,13 +719,13 @@ impl AdminNutritionService {
             "#,
         )
         .bind(id)
-        .bind(dto.saturated_fat)
-        .bind(dto.monounsaturated_fat)
-        .bind(dto.polyunsaturated_fat)
-        .bind(dto.omega3)
-        .bind(dto.omega6)
-        .bind(dto.epa)
-        .bind(dto.dha)
+        .bind(saturated)
+        .bind(monounsaturated)
+        .bind(polyunsaturated)
+        .bind(omega3)
+        .bind(omega6)
+        .bind(epa)
+        .bind(dha)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
@@ -750,6 +811,12 @@ impl AdminNutritionService {
 
     // ── Upsert food properties ────────────────────────
     pub async fn upsert_food_properties(&self, id: Uuid, dto: FoodPropertiesDto) -> AppResult<()> {
+        let gi = round_opt(dto.glycemic_index, 1);
+        let gl = round_opt(dto.glycemic_load, 1);
+        let ph = round_opt(dto.ph, 2);
+        let smoke_point    = round_opt(dto.smoke_point, 1);
+        let water_activity = round_opt(dto.water_activity, 2);
+
         sqlx::query(
             r#"
             INSERT INTO food_properties
@@ -764,11 +831,11 @@ impl AdminNutritionService {
             "#,
         )
         .bind(id)
-        .bind(dto.glycemic_index)
-        .bind(dto.glycemic_load)
-        .bind(dto.ph)
-        .bind(dto.smoke_point)
-        .bind(dto.water_activity)
+        .bind(gi)
+        .bind(gl)
+        .bind(ph)
+        .bind(smoke_point)
+        .bind(water_activity)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
@@ -777,6 +844,12 @@ impl AdminNutritionService {
 
     // ── Upsert culinary ───────────────────────────────
     pub async fn upsert_culinary(&self, id: Uuid, dto: CulinaryDto) -> AppResult<()> {
+        let sweetness  = round_opt(dto.sweetness, 1);
+        let acidity    = round_opt(dto.acidity, 1);
+        let bitterness = round_opt(dto.bitterness, 1);
+        let umami      = round_opt(dto.umami, 1);
+        let aroma      = round_opt(dto.aroma, 1);
+
         sqlx::query(
             r#"
             INSERT INTO food_culinary_properties
@@ -792,11 +865,11 @@ impl AdminNutritionService {
             "#,
         )
         .bind(id)
-        .bind(dto.sweetness)
-        .bind(dto.acidity)
-        .bind(dto.bitterness)
-        .bind(dto.umami)
-        .bind(dto.aroma)
+        .bind(sweetness)
+        .bind(acidity)
+        .bind(bitterness)
+        .bind(umami)
+        .bind(aroma)
         .bind(dto.texture)
         .execute(&self.pool)
         .await
