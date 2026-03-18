@@ -115,10 +115,29 @@ pub fn breakdown_per_100g(
 
 // ── Nullable Nutrition Breakdown (for public API — null ≠ 0) ─────────────────
 
+/// Nutrition data completeness state
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NutritionState {
+    /// No nutrition data at all
+    None,
+    /// Some fields filled, some missing
+    Partial,
+    /// All core fields (cal, protein, fat, carbs) present
+    Complete,
+}
+
 /// API-safe nutrition breakdown: null means "no data", NOT "zero".
 /// Used in public API responses to avoid showing 0 for unfilled products.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NutritionBreakdownNullable {
+    /// none | partial | complete
+    pub nutrition_state: NutritionState,
+    /// How many of the 4 core fields are filled (0-4)
+    pub filled_count: u8,
+    /// Total core fields checked
+    pub total_count: u8,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub calories:  Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,6 +160,9 @@ impl NutritionBreakdownNullable {
     /// All null — no data available
     pub fn empty() -> Self {
         Self {
+            nutrition_state: NutritionState::None,
+            filled_count: 0,
+            total_count: 4,
             calories: None, protein_g: None, fat_g: None, carbs_g: None,
             fiber_g: None, sugar_g: None, salt_g: None, sodium_mg: None,
         }
@@ -150,6 +172,9 @@ impl NutritionBreakdownNullable {
     pub fn scale(&self, factor: f64) -> Self {
         let r = |x: Option<f64>| x.map(|v| uc::round_to(v * factor, 1));
         Self {
+            nutrition_state: self.nutrition_state.clone(),
+            filled_count: self.filled_count,
+            total_count: self.total_count,
             calories:  r(self.calories),
             protein_g: r(self.protein_g),
             fat_g:     r(self.fat_g),
@@ -164,13 +189,27 @@ impl NutritionBreakdownNullable {
 
 /// Build nullable per-100g breakdown from Option<f64> values.
 /// None in → None out. No silent conversion to 0.
+/// Automatically calculates nutrition_state: none / partial / complete.
 pub fn breakdown_per_100g_nullable(
     cal: Option<f64>, prot: Option<f64>, fat: Option<f64>, carbs: Option<f64>,
     fiber: Option<f64>, sugar: Option<f64>, salt: Option<f64>,
 ) -> NutritionBreakdownNullable {
     let r = |x: Option<f64>| x.map(|v| uc::round_to(v, 1));
     let sodium = salt.map(|s| uc::round_to(s * 393.0, 1));
+
+    // Count core fields: calories, protein, fat, carbs
+    let filled = [cal.is_some(), prot.is_some(), fat.is_some(), carbs.is_some()]
+        .iter().filter(|&&v| v).count() as u8;
+    let state = match filled {
+        0 => NutritionState::None,
+        4 => NutritionState::Complete,
+        _ => NutritionState::Partial,
+    };
+
     NutritionBreakdownNullable {
+        nutrition_state: state,
+        filled_count: filled,
+        total_count: 4,
         calories:  r(cal),
         protein_g: r(prot),
         fat_g:     r(fat),

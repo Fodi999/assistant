@@ -178,7 +178,6 @@ pub struct IngredientDbEntry {
     pub macros_ratio:      MacrosRatio,
     pub nutrition_score:   u8,
     pub vitamins:          VitaminData,
-    pub has_nutrition:     bool,
 }
 
 #[derive(Serialize)]
@@ -246,7 +245,6 @@ pub async fn ingredients_db(
     let items = rows.into_iter().map(|row| {
         let salt = row.salt();
         let slug_str = row.slug.clone().unwrap_or_default();
-        let has_nutr = row.has_nutrition();
         IngredientDbEntry {
             per_100g:          breakdown_per_100g_nullable(
                 row.cal_opt(), row.prot_opt(), row.fat_opt(), row.carbs_opt(),
@@ -264,7 +262,6 @@ pub async fn ingredients_db(
             wild_farmed:       row.wild_farmed.clone(),
             sushi_grade:       row.sushi_grade,
             typical_portion_g: row.typical_g(),
-            has_nutrition:     has_nutr,
         }
     }).collect();
 
@@ -295,7 +292,6 @@ pub struct CompareSide {
     pub nutrition_score: u8,
     pub vitamins:        VitaminData,
     pub found_in_db:     bool,
-    pub has_nutrition:   bool,
 }
 
 #[derive(Serialize)]
@@ -339,7 +335,6 @@ fn build_side(query: String, row: Option<CatalogNutritionRow>, lang: Language) -
         Some(r) => {
             let salt     = r.salt();
             let slug_str = r.slug.clone().unwrap_or_default();
-            let has_nutr = r.has_nutrition();
             CompareSide {
                 query, slug: r.slug.clone(), name: r.localized_name(lang).to_string(),
                 product_type: r.product_type.clone(), image_url: r.image_url.clone(),
@@ -353,7 +348,6 @@ fn build_side(query: String, row: Option<CatalogNutritionRow>, lang: Language) -
                 nutrition_score: nutrition_score(r.cal(), r.prot(), r.fat(), r.carbs(), r.fiber(), r.sugar(), salt),
                 vitamins:        vitamins_for(&slug_str),
                 found_in_db:     true,
-                has_nutrition:   has_nutr,
             }
         }
         None => CompareSide {
@@ -365,7 +359,6 @@ fn build_side(query: String, row: Option<CatalogNutritionRow>, lang: Language) -
             nutrition_score: 0,
             vitamins:        VitaminData::unknown(),
             found_in_db:     false,
-            has_nutrition:   false,
         },
     }
 }

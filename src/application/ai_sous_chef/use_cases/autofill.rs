@@ -78,6 +78,23 @@ impl AdminCatalogService {
 
         if let Ok(Some(cached)) = self.ai_cache.get(&cache_key).await {
             tracing::info!("📦 Autofill cache hit for product {}", id);
+            // Tag data source
+            if let Some(obj) = cached.as_object() {
+                let mut tagged = cached.clone();
+                if let Some(t) = tagged.as_object_mut() {
+                    t.insert("_data_source".into(), serde_json::json!("cache"));
+                    t.insert("_nutrition_state".into(), serde_json::json!(
+                        if obj.get("calories_per_100g").and_then(|v| v.as_f64()).is_some()
+                            && obj.get("protein_per_100g").and_then(|v| v.as_f64()).is_some()
+                            && obj.get("fat_per_100g").and_then(|v| v.as_f64()).is_some()
+                            && obj.get("carbs_per_100g").and_then(|v| v.as_f64()).is_some()
+                        { "complete" } else if obj.get("calories_per_100g").and_then(|v| v.as_f64()).is_some()
+                            || obj.get("protein_per_100g").and_then(|v| v.as_f64()).is_some()
+                        { "partial" } else { "none" }
+                    ));
+                }
+                return Ok(tagged);
+            }
             return Ok(cached);
         }
 
@@ -123,6 +140,35 @@ impl AdminCatalogService {
             obj.insert("unit".into(), serde_json::json!(dict_unit));
             // Keep product_type from DB (not AI)
             obj.insert("product_type".into(), serde_json::json!(product_type));
+
+            // ── Data source & nutrition state ──
+            let has_cal = obj.get("calories_per_100g").and_then(|v| v.as_f64()).is_some();
+            let has_prot = obj.get("protein_per_100g").and_then(|v| v.as_f64()).is_some();
+            let has_fat = obj.get("fat_per_100g").and_then(|v| v.as_f64()).is_some();
+            let has_carbs = obj.get("carbs_per_100g").and_then(|v| v.as_f64()).is_some();
+            let filled = [has_cal, has_prot, has_fat, has_carbs].iter().filter(|&&v| v).count();
+
+            let nutrition_state = match filled {
+                4 => "complete",
+                0 => "none",
+                _ => "partial",
+            };
+
+            obj.insert("_data_source".into(), serde_json::json!("ai"));
+            obj.insert("_nutrition_state".into(), serde_json::json!(nutrition_state));
+            obj.insert("_nutrition_filled".into(), serde_json::json!(filled));
+            obj.insert("_nutrition_total".into(), serde_json::json!(4));
+
+            // ── Warn if AI returned no nutrition (prompt problem) ──
+            if filled == 0 {
+                tracing::warn!(
+                    "⚠️ AI returned NO nutrition for '{}' — check prompt or model",
+                    name_en
+                );
+                obj.insert("_warning".into(), serde_json::json!(
+                    "AI did not return nutrition data. Product needs manual entry or USDA lookup."
+                ));
+            }
         }
 
         // ── Cache result ──
