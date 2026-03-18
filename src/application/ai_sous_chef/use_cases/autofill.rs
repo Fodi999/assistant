@@ -1,13 +1,18 @@
 //! Use Case: AI Autofill — fill missing nutrition/description fields
 //!
+//! v2 Architecture: Dictionary = truth, AI = helper for descriptions + nutrition.
+//! Names, unit, product_type come from dictionary/DB — NEVER from AI.
+//!
 //! Pipeline:
-//! 1. Check cache (hash of product_id + field_status)
-//! 2. If miss → call AiClient::generate (70b model)
-//! 3. Parse JSON response
-//! 4. Cache result (TTL: 30 days — nutrition data doesn't change often)
-//! 5. Return JSON suggestion for admin review
+//! 1. Load product from DB (already has names from dictionary)
+//! 2. Resolve names from dictionary (override if product names are wrong)
+//! 3. AI fills ONLY: descriptions, nutrition, vitamins, minerals, culinary, etc.
+//! 4. Strip names/unit/product_type from AI response (safety net)
+//! 5. Merge dictionary names into response
+//! 6. Cache & return
 
 use crate::application::admin_catalog::AdminCatalogService;
+use crate::application::ai_sous_chef::product_dictionary;
 use crate::domain::ai_ports::{AiClient, AiQuality};
 use crate::shared::{AppError, AppResult};
 use sha2::{Digest, Sha256};
@@ -17,10 +22,8 @@ use uuid::Uuid;
 const AUTOFILL_CACHE_TTL_DAYS: i32 = 30;
 
 impl AdminCatalogService {
-    /// AI autofill — asks AI to fill all empty nutrition/description/culinary
-    /// fields for a given product. Returns a JSON suggestion for admin review.
-    ///
-    /// 🚀 With caching: −70% AI costs for repeated requests
+    /// AI autofill — asks AI to fill missing nutrition/description fields.
+    /// Names and unit come from DICTIONARY, not AI.
     pub async fn ai_autofill(&self, id: Uuid) -> AppResult<serde_json::Value> {
         let product = self.get_product_by_id(id).await?;
 
@@ -28,22 +31,38 @@ impl AdminCatalogService {
         let name_ru = product.name_ru.clone().unwrap_or_default();
         let product_type = product.product_type.clone();
 
+        // ── Resolve correct names from dictionary ──
+        let dict_entry = self.dictionary.find_by_en(&name_en).await.ok().flatten();
+        let (dict_name_ru, dict_name_pl, dict_name_uk) = if let Some(ref d) = dict_entry {
+            (d.name_ru.clone(), d.name_pl.clone(), d.name_uk.clone())
+        } else {
+            (
+                name_ru.clone(),
+                product.name_pl.clone().unwrap_or_default(),
+                product.name_uk.clone().unwrap_or_default(),
+            )
+        };
+
+        // ── Resolve unit from lookup (not AI) ──
+        let name_en_lower = name_en.to_lowercase();
+        let dict_unit = product_dictionary::unit_for_type(&product_type, &name_en_lower).to_string();
+
         // Build field status fingerprint for cache key
-        let has_description_en = product.description_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_description_ru = product.description_ru.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_description_pl = product.description_pl.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_description_uk = product.description_uk.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_calories = product.calories_per_100g.is_some();
-        let has_protein = product.protein_per_100g.is_some();
+        let has_desc_en = product.description_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_desc_ru = product.description_ru.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_desc_pl = product.description_pl.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_desc_uk = product.description_uk.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_cal = product.calories_per_100g.is_some();
+        let has_prot = product.protein_per_100g.is_some();
         let has_fat = product.fat_per_100g.is_some();
         let has_carbs = product.carbs_per_100g.is_some();
 
         // ── Cache check ──
         let fingerprint = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v2:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             name_en, product_type,
-            has_description_en, has_description_ru, has_description_pl, has_description_uk,
-            has_calories, has_protein, has_fat
+            has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
+            has_cal, has_prot, has_fat
         );
         let cache_key = format!("uc:autofill:{}", hash_input(&fingerprint));
 
@@ -52,20 +71,34 @@ impl AdminCatalogService {
             return Ok(cached);
         }
 
-        // ── Build prompt ──
+        // ── Build slim prompt (no names/unit/product_type) ──
         let prompt = build_autofill_prompt(
             &name_en, &name_ru, &product_type,
-            has_description_en, has_description_ru, has_description_pl, has_description_uk,
-            has_calories, has_protein, has_fat, has_carbs,
+            has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
+            has_cal, has_prot, has_fat, has_carbs,
         );
 
-        // ── Call AI via trait ──
+        // ── Call AI ──
         let raw = self.llm_adapter
             .generate_with_quality(&prompt, 3000, AiQuality::Balanced)
             .await?;
 
         // ── Parse JSON ──
-        let result = parse_json_response(&raw)?;
+        let mut result = parse_json_response(&raw)?;
+
+        // ══════════════════════════════════════════════════════════════
+        // SAFETY NET: Override AI names/unit with dictionary values
+        // AI may still return these fields — we ALWAYS use dictionary.
+        // ══════════════════════════════════════════════════════════════
+        if let Some(obj) = result.as_object_mut() {
+            obj.insert("name_en".into(), serde_json::json!(name_en));
+            obj.insert("name_ru".into(), serde_json::json!(dict_name_ru));
+            obj.insert("name_pl".into(), serde_json::json!(dict_name_pl));
+            obj.insert("name_uk".into(), serde_json::json!(dict_name_uk));
+            obj.insert("unit".into(), serde_json::json!(dict_unit));
+            // Keep product_type from DB (not AI)
+            obj.insert("product_type".into(), serde_json::json!(product_type));
+        }
 
         // ── Cache result ──
         if let Err(e) = self.ai_cache.set(
@@ -74,12 +107,13 @@ impl AdminCatalogService {
             tracing::warn!("Failed to cache autofill result: {}", e);
         }
 
-        tracing::info!("✅ AI autofill complete for product {} (cached)", id);
+        tracing::info!("✅ AI autofill v2 complete for product {} (names from dictionary)", id);
         Ok(result)
     }
 }
 
-/// SHA-256 hash of input string → short hex key
+// ── Helpers ──────────────────────────────────────────────────────────
+
 fn hash_input(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
@@ -87,7 +121,6 @@ fn hash_input(input: &str) -> String {
     format!("{:x}", result)[..16].to_string()
 }
 
-/// Parse JSON from AI response with fallback extraction
 fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
     serde_json::from_str(raw)
         .or_else(|_| {
@@ -107,22 +140,17 @@ fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
         })
 }
 
+/// Build autofill prompt — AI only fills descriptions + nutrition + extended data.
+/// Names, unit, product_type are handled by dictionary/backend.
 fn build_autofill_prompt(
     name_en: &str, name_ru: &str, product_type: &str,
     has_desc_en: bool, has_desc_ru: bool, has_desc_pl: bool, has_desc_uk: bool,
     has_cal: bool, has_prot: bool, has_fat: bool, has_carbs: bool,
 ) -> String {
     format!(
-        r#"You are a professional food database expert. Fill in the missing data for this ingredient.
+        r#"You are a food nutrition expert. Fill missing data for: "{name_en}" (Russian: "{name_ru}", type: {product_type}).
 
-Product: "{name_en}" (Russian: "{name_ru}", type: "{product_type}")
-
-Return ONLY a valid JSON object. Rules:
-- If a field says "FILLED=true" below → return null (do NOT overwrite).
-- If a field says "FILLED=false" below → you MUST provide a real value (do NOT return null).
-- For all other fields not listed below → always provide a value.
-
-Field status (true=already has data, false=EMPTY and needs your data):
+Field status (true = already filled, skip; false = EMPTY, you MUST fill):
 - description_en: FILLED={has_desc_en}
 - description_ru: FILLED={has_desc_ru}
 - description_pl: FILLED={has_desc_pl}
@@ -132,26 +160,22 @@ Field status (true=already has data, false=EMPTY and needs your data):
 - fat_per_100g: FILLED={has_fat}
 - carbs_per_100g: FILLED={has_carbs}
 
-IMPORTANT: If FILLED=false, you MUST provide the value, NOT null!
-All nutritional values should be for RAW product per 100g.
-
-Return this JSON:
+Return ONLY valid JSON:
 {{
-  "description_en": "<2-3 sentence culinary description in English, or null if FILLED=true>",
-  "description_ru": "<2-3 предложения кулинарное описание на русском, or null if FILLED=true>",
-  "description_pl": "<2-3 zdania opis kulinarny po polsku, or null if FILLED=true>",
-  "description_uk": "<2-3 речення кулінарний опис українською, or null if FILLED=true>",
-  "calories_per_100g": <integer kcal per 100g, or null>,
-  "protein_per_100g": <float grams protein per 100g, or null>,
-  "fat_per_100g": <float grams fat per 100g, or null>,
-  "carbs_per_100g": <float grams carbs per 100g, or null>,
-  "fiber_per_100g": <float or null>,
+  "description_en": "<2-3 sentences culinary description or null if FILLED=true>",
+  "description_ru": "<2-3 предложения на русском — пиши как повар, or null>",
+  "description_pl": "<2-3 zdania po polsku — pisz jak kucharz, or null>",
+  "description_uk": "<2-3 речення українською — пиши як кухар, or null>",
+  "calories_per_100g": <integer or null>,
+  "protein_per_100g": <float or null>,
+  "fat_per_100g": <float or null>,
+  "carbs_per_100g": <float or null>,
+  "fiber_per_100g": <float or 0 for animal products>,
   "sugar_per_100g": <float or null>,
-  "density_g_per_ml": <float density g/ml, or null>,
-  "typical_portion_g": <float typical serving size in grams, or null>,
-  "shelf_life_days": <integer days shelf life, or null>,
-  "product_type": "<one of: fish, seafood, meat, vegetable, fruit, dairy, grain, spice, oil, beverage, nut, legume, other — or null if already set>",
-  "seasons": <["Spring","Summer","Autumn","Winter"] subset or ["AllYear"], based on typical availability>,
+  "density_g_per_ml": <float or null>,
+  "typical_portion_g": <float or null>,
+  "shelf_life_days": <integer or null>,
+  "seasons": ["Spring","Summer","Autumn","Winter"] or ["AllYear"],
   "macros": {{
     "calories_kcal": <integer or null>,
     "protein_g": <float or null>,
@@ -163,11 +187,11 @@ Return this JSON:
     "water_g": <float or null>
   }},
   "vitamins": {{
-    "vitamin_a": <float mg per 100g or null>,
-    "vitamin_c": <float mg per 100g or null>,
-    "vitamin_d": <float mg per 100g or null>,
-    "vitamin_e": <float mg per 100g or null>,
-    "vitamin_k": <float mcg per 100g or null>,
+    "vitamin_a": <float mg or null>,
+    "vitamin_c": <float mg or null>,
+    "vitamin_d": <float mg or null>,
+    "vitamin_e": <float mg or null>,
+    "vitamin_k": <float mcg or null>,
     "vitamin_b1": <float or null>,
     "vitamin_b2": <float or null>,
     "vitamin_b3": <float or null>,
@@ -177,7 +201,7 @@ Return this JSON:
     "vitamin_b12": <float or null>
   }},
   "minerals": {{
-    "calcium": <float mg per 100g or null>,
+    "calcium": <float mg or null>,
     "iron": <float or null>,
     "magnesium": <float or null>,
     "phosphorus": <float or null>,
@@ -187,7 +211,7 @@ Return this JSON:
     "selenium": <float or null>
   }},
   "fatty_acids": {{
-    "saturated_fat": <float g per 100g or null>,
+    "saturated_fat": <float g or null>,
     "monounsaturated_fat": <float or null>,
     "polyunsaturated_fat": <float or null>,
     "omega3": <float or null>,
@@ -196,50 +220,34 @@ Return this JSON:
     "dha": <float or null>
   }},
   "diet_flags": {{
-    "vegan": <true/false>,
-    "vegetarian": <true/false>,
-    "gluten_free": <true/false>,
-    "keto": <true/false>,
-    "paleo": <true/false>,
-    "mediterranean": <true/false>,
-    "low_carb": <true/false>
+    "vegan": <bool>, "vegetarian": <bool>, "gluten_free": <bool>,
+    "keto": <bool>, "paleo": <bool>, "mediterranean": <bool>, "low_carb": <bool>
   }},
   "allergens": {{
-    "milk": <true/false>,
-    "eggs": <true/false>,
-    "fish": <true/false>,
-    "shellfish": <true/false>,
-    "nuts": <true/false>,
-    "peanuts": <true/false>,
-    "gluten": <true/false>,
-    "soy": <true/false>,
-    "sesame": <true/false>,
-    "celery": <true/false>,
-    "mustard": <true/false>,
-    "sulfites": <true/false>,
-    "lupin": <true/false>,
-    "molluscs": <true/false>
+    "milk": <bool>, "eggs": <bool>, "fish": <bool>, "shellfish": <bool>,
+    "nuts": <bool>, "peanuts": <bool>, "gluten": <bool>, "soy": <bool>,
+    "sesame": <bool>, "celery": <bool>, "mustard": <bool>, "sulfites": <bool>,
+    "lupin": <bool>, "molluscs": <bool>
   }},
   "culinary": {{
-    "sweetness": <1-10 integer or null>,
-    "acidity": <1-10 integer or null>,
-    "bitterness": <1-10 integer or null>,
-    "umami": <1-10 integer or null>,
-    "aroma": <1-10 integer or null>,
-    "texture": "<string like crispy/tender/creamy or null>"
+    "sweetness": <1-10 or null>, "acidity": <1-10 or null>,
+    "bitterness": <1-10 or null>, "umami": <1-10 or null>,
+    "aroma": <1-10 or null>, "texture": "<string or null>"
   }},
   "food_properties": {{
-    "glycemic_index": <integer or null>,
-    "glycemic_load": <float or null>,
-    "ph": <float 0-14 or null>,
-    "smoke_point": <integer celsius or null>,
+    "glycemic_index": <int or null>, "glycemic_load": <float or null>,
+    "ph": <float or null>, "smoke_point": <int celsius or null>,
     "water_activity": <float 0-1 or null>
   }}
 }}
 
-Use USDA FoodData Central (raw/uncooked values per 100g) as reference. Be precise.
-IMPORTANT: If a nutrient is naturally absent in a product (e.g. fiber in fish/meat/eggs/dairy), return 0, NOT null.
-REMEMBER: FILLED=false means the field is EMPTY — you MUST provide a real value, NOT null!"#,
+Rules:
+- All nutrition per 100g RAW product (USDA FoodData Central reference)
+- For animal products: fiber = 0, carbs near 0
+- Descriptions must be natural, not machine-translated
+- If FILLED=true → return null for that field
+- If FILLED=false → you MUST provide real value, NOT null
+- Return ONLY JSON, no extra text"#,
         name_en = name_en,
         name_ru = name_ru,
         product_type = product_type,

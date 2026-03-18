@@ -1,5 +1,6 @@
 pub mod generate_states;
 pub mod nutrition_transform;
+pub mod product_dictionary;
 pub mod scan_products;
 pub mod storage_rules;
 pub mod translation_rules;
