@@ -10,8 +10,8 @@ use sqlx::PgPool;
 
 use crate::domain::tools::catalog_row::{CatalogNutritionRow, CATALOG_NUTRITION_COLS};
 use crate::domain::tools::nutrition::{
-    breakdown_per_100g, macros_ratio, nutrition_score, vitamins_for,
-    MacrosRatio, NutritionBreakdown, VitaminData,
+    breakdown_per_100g_nullable, macros_ratio, nutrition_score, vitamins_for,
+    MacrosRatio, NutritionBreakdownNullable, VitaminData,
 };
 use crate::domain::tools::unit_converter as uc;
 use crate::shared::Language;
@@ -46,8 +46,8 @@ pub struct NutritionResponse {
     pub amount_g:          f64,
     pub unit:              String,
     pub unit_label:        String,
-    pub per_100g:          NutritionBreakdown,
-    pub for_amount:        NutritionBreakdown,
+    pub per_100g:          NutritionBreakdownNullable,
+    pub for_amount:        NutritionBreakdownNullable,
     pub macros_ratio:      MacrosRatio,
     pub nutrition_score:   u8,
     pub vitamins:          VitaminData,
@@ -96,15 +96,19 @@ pub async fn nutrition(
     let found = db_row.is_some();
 
     let (localized, slug_val, image, product_type, water_type, wild_farmed, sushi_grade,
-         typical_g, density, cal, prot, fat, carbs, fiber, sugar, salt) =
+         typical_g, density,
+         cal, prot, fat, carbs, fiber, sugar, salt,
+         cal_opt, prot_opt, fat_opt, carbs_opt, fiber_opt, sugar_opt, salt_opt) =
         if let Some(ref r) = db_row {
             (r.localized_name(lang).to_string(), r.slug.clone(), r.image_url.clone(),
              r.product_type.clone(), r.water_type.clone(), r.wild_farmed.clone(), r.sushi_grade,
              r.typical_g(), r.density(),
-             r.cal(), r.prot(), r.fat(), r.carbs(), r.fiber(), r.sugar(), r.salt())
+             r.cal(), r.prot(), r.fat(), r.carbs(), r.fiber(), r.sugar(), r.salt(),
+             r.cal_opt(), r.prot_opt(), r.fat_opt(), r.carbs_opt(), r.fiber_opt(), r.sugar_opt(), r.salt_opt())
         } else {
             (query_str.clone(), None, None, None, None, None, None, None, 1.0,
-             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+             None, None, None, None, None, None, None)
         };
 
     let amount_g = if unit == "g" {
@@ -117,7 +121,8 @@ pub async fn nutrition(
         raw_amount
     };
 
-    let per_100g  = breakdown_per_100g(cal, prot, fat, carbs, fiber, sugar, salt);
+    // Nullable breakdown for API response (null = no data, NOT 0)
+    let per_100g  = breakdown_per_100g_nullable(cal_opt, prot_opt, fat_opt, carbs_opt, fiber_opt, sugar_opt, salt_opt);
     let factor    = amount_g / 100.0;
     let for_amount = per_100g.scale(factor);
 
@@ -169,10 +174,11 @@ pub struct IngredientDbEntry {
     pub wild_farmed:       Option<String>,
     pub sushi_grade:       Option<bool>,
     pub typical_portion_g: Option<f64>,
-    pub per_100g:          NutritionBreakdown,
+    pub per_100g:          NutritionBreakdownNullable,
     pub macros_ratio:      MacrosRatio,
     pub nutrition_score:   u8,
     pub vitamins:          VitaminData,
+    pub has_nutrition:     bool,
 }
 
 #[derive(Serialize)]
@@ -240,8 +246,12 @@ pub async fn ingredients_db(
     let items = rows.into_iter().map(|row| {
         let salt = row.salt();
         let slug_str = row.slug.clone().unwrap_or_default();
+        let has_nutr = row.has_nutrition();
         IngredientDbEntry {
-            per_100g:          breakdown_per_100g(row.cal(), row.prot(), row.fat(), row.carbs(), row.fiber(), row.sugar(), salt),
+            per_100g:          breakdown_per_100g_nullable(
+                row.cal_opt(), row.prot_opt(), row.fat_opt(), row.carbs_opt(),
+                row.fiber_opt(), row.sugar_opt(), row.salt_opt(),
+            ),
             macros_ratio:      macros_ratio(row.prot(), row.fat(), row.carbs()),
             nutrition_score:   nutrition_score(row.cal(), row.prot(), row.fat(), row.carbs(), row.fiber(), row.sugar(), salt),
             vitamins:          vitamins_for(&slug_str),
@@ -254,6 +264,7 @@ pub async fn ingredients_db(
             wild_farmed:       row.wild_farmed.clone(),
             sushi_grade:       row.sushi_grade,
             typical_portion_g: row.typical_g(),
+            has_nutrition:     has_nutr,
         }
     }).collect();
 
@@ -279,11 +290,12 @@ pub struct CompareSide {
     pub water_type:      Option<String>,
     pub wild_farmed:     Option<String>,
     pub sushi_grade:     Option<bool>,
-    pub per_100g:        NutritionBreakdown,
+    pub per_100g:        NutritionBreakdownNullable,
     pub macros_ratio:    MacrosRatio,
     pub nutrition_score: u8,
     pub vitamins:        VitaminData,
     pub found_in_db:     bool,
+    pub has_nutrition:   bool,
 }
 
 #[derive(Serialize)]
@@ -327,34 +339,49 @@ fn build_side(query: String, row: Option<CatalogNutritionRow>, lang: Language) -
         Some(r) => {
             let salt     = r.salt();
             let slug_str = r.slug.clone().unwrap_or_default();
+            let has_nutr = r.has_nutrition();
             CompareSide {
                 query, slug: r.slug.clone(), name: r.localized_name(lang).to_string(),
                 product_type: r.product_type.clone(), image_url: r.image_url.clone(),
                 water_type: r.water_type.clone(), wild_farmed: r.wild_farmed.clone(),
                 sushi_grade: r.sushi_grade,
-                per_100g:        breakdown_per_100g(r.cal(), r.prot(), r.fat(), r.carbs(), r.fiber(), r.sugar(), salt),
+                per_100g:        breakdown_per_100g_nullable(
+                    r.cal_opt(), r.prot_opt(), r.fat_opt(), r.carbs_opt(),
+                    r.fiber_opt(), r.sugar_opt(), r.salt_opt(),
+                ),
                 macros_ratio:    macros_ratio(r.prot(), r.fat(), r.carbs()),
                 nutrition_score: nutrition_score(r.cal(), r.prot(), r.fat(), r.carbs(), r.fiber(), r.sugar(), salt),
                 vitamins:        vitamins_for(&slug_str),
                 found_in_db:     true,
+                has_nutrition:   has_nutr,
             }
         }
         None => CompareSide {
             query, slug: None, name: "Not found".to_string(),
             product_type: None, image_url: None,
             water_type: None, wild_farmed: None, sushi_grade: None,
-            per_100g:        NutritionBreakdown::zero(),
+            per_100g:        NutritionBreakdownNullable::empty(),
             macros_ratio:    MacrosRatio { protein_pct: 0.0, fat_pct: 0.0, carbs_pct: 0.0 },
             nutrition_score: 0,
             vitamins:        VitaminData::unknown(),
             found_in_db:     false,
+            has_nutrition:   false,
         },
     }
 }
 
 fn winner(a: f64, b: f64, higher_is_better: bool) -> String {
     if (a - b).abs() < 0.05 { return "tie".to_string(); }
-    if (if higher_is_better { a > b } else { a < b }) { "food1".to_string() } else { "food2".to_string() }
+    if higher_is_better {
+        if a > b { "food1".to_string() } else { "food2".to_string() }
+    } else {
+        if a < b { "food1".to_string() } else { "food2".to_string() }
+    }
+}
+
+/// Compare Option<f64> values — treat None as 0 for winner logic
+fn winner_opt(a: Option<f64>, b: Option<f64>, higher_is_better: bool) -> String {
+    winner(a.unwrap_or(0.0), b.unwrap_or(0.0), higher_is_better)
 }
 
 pub async fn compare_foods(
@@ -373,11 +400,11 @@ pub async fn compare_foods(
     let s2 = build_side(params.food2, r2, lang);
 
     let w = CompareWinner {
-        calories_lower:  winner(s1.per_100g.calories,  s2.per_100g.calories,  false),
-        protein_higher:  winner(s1.per_100g.protein_g, s2.per_100g.protein_g, true),
-        fat_lower:       winner(s1.per_100g.fat_g,     s2.per_100g.fat_g,     false),
-        carbs_lower:     winner(s1.per_100g.carbs_g,   s2.per_100g.carbs_g,   false),
-        fiber_higher:    winner(s1.per_100g.fiber_g,   s2.per_100g.fiber_g,   true),
+        calories_lower:  winner_opt(s1.per_100g.calories,  s2.per_100g.calories,  false),
+        protein_higher:  winner_opt(s1.per_100g.protein_g, s2.per_100g.protein_g, true),
+        fat_lower:       winner_opt(s1.per_100g.fat_g,     s2.per_100g.fat_g,     false),
+        carbs_lower:     winner_opt(s1.per_100g.carbs_g,   s2.per_100g.carbs_g,   false),
+        fiber_higher:    winner_opt(s1.per_100g.fiber_g,   s2.per_100g.fiber_g,   true),
         nutrition_score: winner(s1.nutrition_score as f64, s2.nutrition_score as f64, true),
     };
 

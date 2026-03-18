@@ -7,6 +7,11 @@ pub fn dec_f64(d: Option<rust_decimal::Decimal>) -> f64 {
     d.and_then(|v| rust_decimal::prelude::ToPrimitive::to_f64(&v)).unwrap_or(0.0)
 }
 
+/// Convert Option<Decimal> to Option<f64> — preserves None (null).
+pub fn dec_f64_opt(d: Option<rust_decimal::Decimal>) -> Option<f64> {
+    d.and_then(|v| rust_decimal::prelude::ToPrimitive::to_f64(&v))
+}
+
 /// Full nutrition + metadata row from catalog_ingredients.
 #[derive(sqlx::FromRow, Clone)]
 pub struct CatalogNutritionRow {
@@ -47,6 +52,7 @@ pub struct CatalogNutritionRow {
 }
 
 impl CatalogNutritionRow {
+    // ── f64 helpers (for calculations — NULL → 0.0) ──
     pub fn cal(&self)   -> f64 { self.calories_per_100g.unwrap_or(0) as f64 }
     pub fn prot(&self)  -> f64 { dec_f64(self.protein_per_100g) }
     pub fn fat(&self)   -> f64 { dec_f64(self.fat_per_100g) }
@@ -54,6 +60,23 @@ impl CatalogNutritionRow {
     pub fn fiber(&self) -> f64 { dec_f64(self.fiber_per_100g) }
     pub fn sugar(&self) -> f64 { dec_f64(self.sugar_per_100g) }
     pub fn salt(&self)  -> f64 { dec_f64(self.salt_per_100g) }
+
+    // ── Option<f64> helpers (for API responses — NULL → null, NOT 0) ──
+    pub fn cal_opt(&self)   -> Option<f64> { self.calories_per_100g.map(|v| v as f64) }
+    pub fn prot_opt(&self)  -> Option<f64> { dec_f64_opt(self.protein_per_100g) }
+    pub fn fat_opt(&self)   -> Option<f64> { dec_f64_opt(self.fat_per_100g) }
+    pub fn carbs_opt(&self) -> Option<f64> { dec_f64_opt(self.carbs_per_100g) }
+    pub fn fiber_opt(&self) -> Option<f64> { dec_f64_opt(self.fiber_per_100g) }
+    pub fn sugar_opt(&self) -> Option<f64> { dec_f64_opt(self.sugar_per_100g) }
+    pub fn salt_opt(&self)  -> Option<f64> { dec_f64_opt(self.salt_per_100g) }
+
+    /// Returns true if the product has ANY nutrition data filled
+    pub fn has_nutrition(&self) -> bool {
+        self.calories_per_100g.is_some()
+            || self.protein_per_100g.is_some()
+            || self.fat_per_100g.is_some()
+            || self.carbs_per_100g.is_some()
+    }
 
     pub fn density(&self) -> f64 {
         self.density_g_per_ml

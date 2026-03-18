@@ -113,6 +113,75 @@ pub fn breakdown_per_100g(
     }
 }
 
+// ── Nullable Nutrition Breakdown (for public API — null ≠ 0) ─────────────────
+
+/// API-safe nutrition breakdown: null means "no data", NOT "zero".
+/// Used in public API responses to avoid showing 0 for unfilled products.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NutritionBreakdownNullable {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calories:  Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protein_g: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fat_g:     Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub carbs_g:   Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fiber_g:   Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sugar_g:   Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salt_g:    Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sodium_mg: Option<f64>,
+}
+
+impl NutritionBreakdownNullable {
+    /// All null — no data available
+    pub fn empty() -> Self {
+        Self {
+            calories: None, protein_g: None, fat_g: None, carbs_g: None,
+            fiber_g: None, sugar_g: None, salt_g: None, sodium_mg: None,
+        }
+    }
+
+    /// Scale all present values by factor (amount_g / 100.0)
+    pub fn scale(&self, factor: f64) -> Self {
+        let r = |x: Option<f64>| x.map(|v| uc::round_to(v * factor, 1));
+        Self {
+            calories:  r(self.calories),
+            protein_g: r(self.protein_g),
+            fat_g:     r(self.fat_g),
+            carbs_g:   r(self.carbs_g),
+            fiber_g:   r(self.fiber_g),
+            sugar_g:   r(self.sugar_g),
+            salt_g:    self.salt_g.map(|v| uc::round_to(v * factor, 2)),
+            sodium_mg: r(self.sodium_mg),
+        }
+    }
+}
+
+/// Build nullable per-100g breakdown from Option<f64> values.
+/// None in → None out. No silent conversion to 0.
+pub fn breakdown_per_100g_nullable(
+    cal: Option<f64>, prot: Option<f64>, fat: Option<f64>, carbs: Option<f64>,
+    fiber: Option<f64>, sugar: Option<f64>, salt: Option<f64>,
+) -> NutritionBreakdownNullable {
+    let r = |x: Option<f64>| x.map(|v| uc::round_to(v, 1));
+    let sodium = salt.map(|s| uc::round_to(s * 393.0, 1));
+    NutritionBreakdownNullable {
+        calories:  r(cal),
+        protein_g: r(prot),
+        fat_g:     r(fat),
+        carbs_g:   r(carbs),
+        fiber_g:   r(fiber),
+        sugar_g:   r(sugar),
+        salt_g:    salt.map(|v| uc::round_to(v, 2)),
+        sodium_mg: sodium,
+    }
+}
+
 // ── Vitamin static lookup — USDA averages (per 100g) ─────────────────────────
 
 pub fn vitamins_for(slug: &str) -> VitaminData {

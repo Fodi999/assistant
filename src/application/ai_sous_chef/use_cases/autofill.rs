@@ -93,8 +93,23 @@ impl AdminCatalogService {
             .generate_with_quality(&prompt, 3000, AiQuality::Balanced)
             .await?;
 
+        // ── Log raw AI response for debugging nutrition pipeline ──
+        tracing::info!("🤖 AI autofill raw response for product {} ({}): {}", id, name_en, &raw[..raw.len().min(500)]);
+
         // ── Parse JSON ──
         let mut result = parse_json_response(&raw)?;
+
+        // ── Log parsed nutrition values ──
+        if let Some(obj) = result.as_object() {
+            let cal = obj.get("calories_per_100g");
+            let prot = obj.get("protein_per_100g");
+            let fat = obj.get("fat_per_100g");
+            let carbs = obj.get("carbs_per_100g");
+            tracing::info!(
+                "📊 AI nutrition for '{}': cal={:?}, prot={:?}, fat={:?}, carbs={:?}",
+                name_en, cal, prot, fat, carbs
+            );
+        }
 
         // ══════════════════════════════════════════════════════════════
         // SAFETY NET: Override AI names/unit with dictionary values
