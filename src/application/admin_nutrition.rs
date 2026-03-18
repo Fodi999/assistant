@@ -501,6 +501,35 @@ impl AdminNutritionService {
         .await
         .map_err(AppError::from)?;
 
+        // ── Sync physical fields → catalog_ingredients for data-quality audit ──
+        // The data-quality endpoint reads density/portion/shelf_life from
+        // catalog_ingredients, so we must keep them in sync with the products table.
+        let density_dec: Option<rust_decimal::Decimal> = req.density_g_per_ml
+            .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
+        let portion_dec: Option<rust_decimal::Decimal> = req.typical_portion_g
+            .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
+
+        if let Err(e) = sqlx::query(
+            r#"
+            UPDATE catalog_ingredients
+            SET density_g_per_ml  = COALESCE($2, density_g_per_ml),
+                typical_portion_g = COALESCE($3, typical_portion_g),
+                shelf_life_days   = COALESCE($4, shelf_life_days)
+            WHERE id = $1
+            "#,
+        )
+        .bind(id)
+        .bind(density_dec)
+        .bind(portion_dec)
+        .bind(req.shelf_life_days)
+        .execute(&self.pool)
+        .await
+        {
+            tracing::warn!("⚠️ Failed to sync basic → catalog_ingredients for {id}: {e}");
+        } else {
+            tracing::info!("✅ Synced basic → catalog_ingredients for {id}");
+        }
+
         Ok(())
     }
 
@@ -549,14 +578,17 @@ impl AdminNutritionService {
         .map_err(AppError::from)?;
 
         // ── Sync key macros → catalog_ingredients for public endpoints ──
-        // The public /public/ingredients list reads calories/protein/fat/carbs
+        // The public /public/ingredients list reads calories/protein/fat/carbs/fiber
         // directly from catalog_ingredients, so we must keep them in sync.
+        // The data-quality audit also reads fiber_per_100g from catalog_ingredients.
         let cal_i32: Option<i32> = dto.calories_kcal.map(|v| v.round() as i32);
         let protein_dec: Option<rust_decimal::Decimal> = dto.protein_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
         let fat_dec: Option<rust_decimal::Decimal> = dto.fat_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
         let carbs_dec: Option<rust_decimal::Decimal> = dto.carbs_g
+            .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
+        let fiber_dec: Option<rust_decimal::Decimal> = dto.fiber_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
 
         if let Err(e) = sqlx::query(
@@ -565,7 +597,8 @@ impl AdminNutritionService {
             SET calories_per_100g = COALESCE($2, calories_per_100g),
                 protein_per_100g  = COALESCE($3, protein_per_100g),
                 fat_per_100g      = COALESCE($4, fat_per_100g),
-                carbs_per_100g    = COALESCE($5, carbs_per_100g)
+                carbs_per_100g    = COALESCE($5, carbs_per_100g),
+                fiber_per_100g    = COALESCE($6, fiber_per_100g)
             WHERE id = $1
             "#,
         )
@@ -574,6 +607,7 @@ impl AdminNutritionService {
         .bind(protein_dec)
         .bind(fat_dec)
         .bind(carbs_dec)
+        .bind(fiber_dec)
         .execute(&self.pool)
         .await
         {
