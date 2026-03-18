@@ -1,3 +1,4 @@
+pub mod fish_seasonality;
 pub mod generate_states;
 pub mod nutrition_transform;
 pub mod product_dictionary;

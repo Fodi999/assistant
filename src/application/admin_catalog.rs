@@ -625,6 +625,26 @@ impl AdminCatalogService {
             }
         });
 
+        // ==========================================
+        // 🗓️ ШАГ 8: AUTO-GENERATE FISH SEASONALITY CALENDAR
+        // ==========================================
+        // If product_type is fish/seafood → auto-generate 12 months × 4 regions
+        tokio::spawn({
+            let pool = self.pool.clone();
+            async move {
+                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                match crate::application::ai_sous_chef::fish_seasonality::generate_seasonality_for_product(&pool, id).await {
+                    Ok(count) if count > 0 => {
+                        tracing::info!("🗓️ Auto-generated {} seasonality rows for product {}", count, id);
+                    }
+                    Ok(_) => {} // Not fish/seafood — skipped silently
+                    Err(e) => {
+                        tracing::warn!("⚠️ Failed to auto-generate seasonality for {}: {}", id, e);
+                    }
+                }
+            }
+        });
+
         Ok(product)
     }
 
@@ -848,6 +868,7 @@ impl AdminCatalogService {
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.typical_portion_g);
         let subst_group = req.substitution_group.or(product.substitution_group);
+        let old_product_type = product.product_type.clone();
         let prod_type = {
             let raw = req.product_type.unwrap_or(product.product_type);
             // 🔒 enforce_category on update: reject "other", normalize product_type
@@ -1046,6 +1067,24 @@ impl AdminCatalogService {
                 "🔀 Slug auto-updated: '{}' → '{}' (old slug saved as alias for 301 redirect)",
                 old_slug, new_slug
             );
+        }
+
+        // 🗓️ Auto-generate seasonality if product_type changed TO fish/seafood
+        if prod_type != old_product_type
+            && (prod_type == "fish" || prod_type == "seafood")
+        {
+            let pool = self.pool.clone();
+            tokio::spawn(async move {
+                match crate::application::ai_sous_chef::fish_seasonality::generate_seasonality_for_product(&pool, id).await {
+                    Ok(count) if count > 0 => {
+                        tracing::info!("🗓️ Reclassified → auto-generated {} seasonality rows for {}", count, id);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("⚠️ Failed to generate seasonality on reclassify for {}: {}", id, e);
+                    }
+                }
+            });
         }
 
         Ok(updated_product)
