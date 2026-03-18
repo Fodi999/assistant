@@ -58,6 +58,20 @@ pub async fn generate_states_for_ingredient(
     .collect();
 
     // 3. Build base nutrition — use actual water_percent from DB
+    //    If no nutrition data at all → skip generation (would produce all zeros)
+    let has_nutrition = row.calories_per_100g.is_some()
+        || row.protein_per_100g.is_some()
+        || row.fat_per_100g.is_some()
+        || row.carbs_per_100g.is_some();
+
+    if !has_nutrition {
+        tracing::warn!(
+            "⚠️ Skipping state generation for '{}' — no nutrition data in catalog_ingredients",
+            row.name_en
+        );
+        return Ok(Vec::new());
+    }
+
     let base = BaseNutrition {
         calories: row.calories_per_100g.unwrap_or(0) as f64,
         protein: row.protein_per_100g.unwrap_or(0.0),
@@ -66,8 +80,6 @@ pub async fn generate_states_for_ingredient(
         fiber: row.fiber_per_100g.unwrap_or(0.0),
         water_percent: row.water_percent.unwrap_or(70.0),
     };
-
-    let has_nutrition = row.calories_per_100g.is_some();
 
     // 4. Classify product group for nutrition transform
     let group = classify_group(&row.product_type);
