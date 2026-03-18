@@ -202,6 +202,24 @@ pub fn create_router(
             "/ai/create-product-draft",
             post(admin_catalog::ai_create_product_draft),
         )
+        // Dictionary admin — review AI translations
+        .route(
+            "/dictionary",
+            get(admin_catalog::list_dictionary).post(admin_catalog::create_dictionary_entry),
+        )
+        .route(
+            "/dictionary/pending",
+            get(admin_catalog::list_pending_dictionary),
+        )
+        .route(
+            "/dictionary/:id/approve",
+            post(admin_catalog::approve_dictionary_entry)
+                .put(admin_catalog::approve_dictionary_with_edits),
+        )
+        .route(
+            "/dictionary/:id/reject",
+            post(admin_catalog::reject_dictionary_entry),
+        )
         // Food Pairing CRUD
         .route(
             "/products/:id/pairings",

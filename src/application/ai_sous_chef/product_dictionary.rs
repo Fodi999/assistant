@@ -2,6 +2,9 @@
 //!
 //! AI is NOT the brain. Dictionary + lookup tables = truth.
 //! AI is only a helper for descriptions + nutrition values.
+//!
+//! Input normalization: "fresh salmon fillet" → "salmon"
+//! Validation: reject garbage AI names before saving to dictionary.
 
 use serde::Serialize;
 
@@ -19,6 +22,118 @@ pub struct ResolvedProduct {
     pub density_g_per_ml: Option<f64>,
     pub typical_portion_g: Option<f64>,
     pub shelf_life_days: Option<i32>,
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// INPUT NORMALIZATION — strip adjectives, percentages, weights
+// "fresh salmon fillet" → "salmon"
+// "milk 3.2% 1l" → "milk"
+// "куриное филе" → "курица"
+// ══════════════════════════════════════════════════════════════════════
+
+/// Normalize input to base ingredient name for dictionary lookup.
+/// Strips adjectives, percentages, weights, fillet/fresh/raw.
+pub fn normalize_ingredient_name(input: &str) -> String {
+    let input = input.trim().to_lowercase();
+
+    // Remove patterns: "3.2%", "1l", "500g", "1kg", etc.
+    let re_numbers = regex_lite::Regex::new(r"\d+[.,]?\d*\s*(%|ml|l|g|kg|oz|lb)\b").unwrap();
+    let cleaned = re_numbers.replace_all(&input, "");
+
+    // English stop-words (adjectives that pollute dictionary)
+    let en_stop = [
+        "fresh", "raw", "dried", "frozen", "organic", "natural", "whole",
+        "fillet", "fillets", "boneless", "skinless", "smoked", "salted",
+        "canned", "pickled", "grilled", "fried", "boiled", "steamed",
+        "ground", "minced", "sliced", "chopped", "diced", "grated",
+        "large", "small", "medium", "extra", "premium", "quality",
+        "baby", "young", "wild", "farm", "farmed",
+    ];
+
+    // Russian stop-words
+    let ru_stop = [
+        "свежий", "свежая", "свежее", "свежие",
+        "сырой", "сырая", "сырое", "сырые",
+        "сушёный", "сушёная", "сушёное", "сушёные",
+        "замороженный", "замороженная", "замороженное", "замороженные",
+        "филе", "фарш", "кусок", "кусочки",
+        "копчёный", "копчёная", "копчёное", "копчёные",
+        "солёный", "солёная", "солёное", "солёные",
+        "куриное", "куриная", "куриный", "куриные",
+        "говяжий", "говяжья", "говяжье", "говяжьи",
+        "свиной", "свиная", "свиное", "свиные",
+    ];
+
+    let mut words: Vec<&str> = cleaned.split_whitespace().collect();
+
+    // Remove stop-words
+    words.retain(|w| {
+        !en_stop.iter().any(|s| w == s)
+            && !ru_stop.iter().any(|s| w == s)
+    });
+
+    let result = words.join(" ").trim().to_string();
+
+    // If everything was stripped, return original trimmed input
+    if result.is_empty() {
+        input.trim().to_string()
+    } else {
+        // Capitalize first letter
+        let mut chars = result.chars();
+        match chars.next() {
+            None => result,
+            Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// AI NAME VALIDATION — reject garbage before saving to dictionary
+// ══════════════════════════════════════════════════════════════════════
+
+/// Validate AI-generated ingredient name. Returns true if name is acceptable.
+/// Rejects: too long, contains numbers/%, adjectives, empty, garbage.
+pub fn is_valid_ingredient_name(name: &str) -> bool {
+    let name = name.trim();
+
+    // Must not be empty
+    if name.is_empty() {
+        return false;
+    }
+
+    // Must be <= 40 chars (ingredient names are short)
+    if name.len() > 40 {
+        return false;
+    }
+
+    // Must not contain numbers or %
+    if name.chars().any(|c| c.is_ascii_digit()) || name.contains('%') {
+        return false;
+    }
+
+    // Must not contain forbidden English words (adjectives/modifiers)
+    let forbidden_en = [
+        "fillet", "fresh", "raw", "frozen", "organic", "dried",
+        "smoked", "grilled", "fried", "boiled", "boneless", "skinless",
+        "canned", "pickled", "ground", "minced", "sliced",
+    ];
+    let lower = name.to_lowercase();
+    if forbidden_en.iter().any(|w| lower.contains(w)) {
+        return false;
+    }
+
+    // Must not contain forbidden Russian words
+    let forbidden_ru = ["филе", "фарш", "кусок", "копчён", "солён", "сушён"];
+    if forbidden_ru.iter().any(|w| lower.contains(w)) {
+        return false;
+    }
+
+    // Must not be a single character
+    if name.chars().count() < 2 {
+        return false;
+    }
+
+    true
 }
 
 // ── Default density by product type ─────────────────────────────────

@@ -356,3 +356,97 @@ pub async fn ai_create_product_draft(
     let response = service.ai_create_product_draft(req).await?;
     Ok(Json(response))
 }
+
+// ==========================================
+// 📖 DICTIONARY ADMIN ENDPOINTS
+// ==========================================
+
+use crate::infrastructure::DictionaryEntryFull;
+
+/// GET /api/admin/catalog/dictionary
+/// List ALL dictionary entries (active, pending, rejected) for admin page
+pub async fn list_dictionary(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<Vec<DictionaryEntryFull>>, AppError> {
+    let entries = service.dictionary.list_all().await?;
+    Ok(Json(entries))
+}
+
+/// GET /api/admin/catalog/dictionary/pending
+/// List only PENDING entries awaiting admin review
+pub async fn list_pending_dictionary(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<Vec<DictionaryEntryFull>>, AppError> {
+    let entries = service.dictionary.list_pending().await?;
+    Ok(Json(entries))
+}
+
+/// POST /api/admin/catalog/dictionary/:id/approve
+/// Approve a pending AI translation → becomes active
+pub async fn approve_dictionary_entry(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<Json<DictionaryEntryFull>, AppError> {
+    let entry = service.dictionary.approve(id).await?;
+    Ok(Json(entry))
+}
+
+/// Request body for approving with edits
+#[derive(Debug, serde::Deserialize)]
+pub struct ApproveWithEditsRequest {
+    pub name_ru: String,
+    pub name_pl: String,
+    pub name_uk: String,
+}
+
+/// PUT /api/admin/catalog/dictionary/:id/approve
+/// Approve with corrections — admin fixes translations before activating
+pub async fn approve_dictionary_with_edits(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<ApproveWithEditsRequest>,
+) -> Result<Json<DictionaryEntryFull>, AppError> {
+    let entry = service
+        .dictionary
+        .approve_with_edits(id, &req.name_ru, &req.name_pl, &req.name_uk)
+        .await?;
+    Ok(Json(entry))
+}
+
+/// POST /api/admin/catalog/dictionary/:id/reject
+/// Reject a pending AI translation → marked as rejected
+pub async fn reject_dictionary_entry(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(service): State<AdminCatalogService>,
+) -> Result<StatusCode, AppError> {
+    service.dictionary.reject(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Request body for manual dictionary entry
+#[derive(Debug, serde::Deserialize)]
+pub struct CreateDictionaryEntryRequest {
+    pub name_en: String,
+    pub name_ru: String,
+    pub name_pl: String,
+    pub name_uk: String,
+}
+
+/// POST /api/admin/catalog/dictionary
+/// Manually add a new active dictionary entry (admin-curated, source=manual)
+pub async fn create_dictionary_entry(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<CreateDictionaryEntryRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let entry = service
+        .dictionary
+        .insert(&req.name_en, &req.name_pl, &req.name_ru, &req.name_uk)
+        .await?;
+    Ok((StatusCode::CREATED, Json(serde_json::json!(entry))))
+}

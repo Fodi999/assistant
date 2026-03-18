@@ -254,18 +254,25 @@ impl AdminCatalogService {
     }
 
     /// Resolve product info from dictionary + keyword inference.
-    /// Dictionary = source of truth for names.
-    /// Keyword inference = source of truth for product_type.
+    ///
+    /// Pipeline:
+    /// 1. Normalize input ("fresh salmon fillet" → "Salmon")
+    /// 2. Dictionary lookup (ACTIVE entries only)
+    /// 3. If miss → AI translate name → save as PENDING (admin must approve!)
+    /// 4. Infer product_type + unit from keywords
     async fn resolve_from_dictionary(
         &self,
         input: &str,
     ) -> product_dictionary::ResolvedProduct {
-        let input_trimmed = input.trim().to_string();
+        // ── STEP 1: Normalize input ──
+        let normalized = product_dictionary::normalize_ingredient_name(input);
+        tracing::info!("🔍 Normalized input: '{}' → '{}'", input.trim(), &normalized);
 
-        // Try dictionary lookup by English name
-        let dict_entry = self.dictionary.find_by_en(&input_trimmed).await.ok().flatten();
+        // ── STEP 2: Dictionary lookup (ACTIVE only) ──
+        let dict_entry = self.dictionary.find_by_en(&normalized).await.ok().flatten();
 
         let (name_en, name_ru, name_pl, name_uk) = if let Some(ref d) = dict_entry {
+            tracing::info!("📖 Dictionary hit: {} → RU:{}, PL:{}, UK:{}", d.name_en, d.name_ru, d.name_pl, d.name_uk);
             (
                 d.name_en.clone(),
                 d.name_ru.clone(),
@@ -273,8 +280,21 @@ impl AdminCatalogService {
                 d.name_uk.clone(),
             )
         } else {
-            // No dictionary hit — use input as name_en, others empty
-            (input_trimmed.clone(), String::new(), String::new(), String::new())
+            // ══════════════════════════════════════════════════════════
+            // NOT IN DICTIONARY → AI translate → save as PENDING
+            // Admin must approve before it becomes "truth"!
+            // ══════════════════════════════════════════════════════════
+            tracing::info!("📖 Dictionary miss for '{}' — requesting AI translation", &normalized);
+            match self.ai_translate_and_save_pending(&normalized).await {
+                Ok((ru, pl, uk)) => {
+                    // Return AI suggestions but they're NOT active in dictionary yet
+                    (normalized.clone(), ru, pl, uk)
+                }
+                Err(e) => {
+                    tracing::warn!("AI name translation failed: {} — names will be empty", e);
+                    (normalized.clone(), String::new(), String::new(), String::new())
+                }
+            }
         };
 
         let name_en_lower = name_en.to_lowercase();
@@ -306,6 +326,86 @@ impl AdminCatalogService {
             typical_portion_g: portion,
             shelf_life_days: shelf_life,
         }
+    }
+
+    /// AI translates the product name + validates + saves as PENDING.
+    ///
+    /// Pipeline:
+    /// 1. AI translate (tiny prompt, ~50 tokens)
+    /// 2. Validate all 3 names (reject garbage)
+    /// 3. Save as PENDING with confidence score
+    /// 4. Return names for use in draft (source: AI, not Dictionary)
+    ///
+    /// Admin must approve pending entries before they become active!
+    pub(crate) async fn ai_translate_and_save_pending(
+        &self,
+        name_en: &str,
+    ) -> AppResult<(String, String, String)> {
+        let prompt = format!(
+            r#"Translate the food ingredient name "{name_en}" into 3 languages.
+Return ONLY valid JSON:
+{{"ru": "<Russian>", "pl": "<Polish>", "uk": "<Ukrainian>"}}
+
+Rules:
+- Use standard culinary/market names, no adjectives
+- Crucian carp: ru=Карась, pl=Karaś, uk=Карась
+- Carp: ru=Карп, pl=Karp, uk=Короп
+- Salmon: ru=Лосось, pl=Łosoś, uk=Лосось
+- Cod: ru=Треска, pl=Dorsz, uk=Тріска
+- Use singular form, base ingredient only
+- Return ONLY JSON"#,
+            name_en = name_en,
+        );
+
+        let raw = self
+            .llm_adapter
+            .generate_with_quality(&prompt, 200, AiQuality::Fast)
+            .await?;
+
+        let json = parse_json_response(&raw)?;
+        let ru = json.get("ru").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let pl = json.get("pl").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let uk = json.get("uk").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+
+        if ru.is_empty() && pl.is_empty() && uk.is_empty() {
+            return Err(AppError::internal("AI returned empty translations"));
+        }
+
+        // ── Validate AI names (reject garbage) ──
+        let en_valid = product_dictionary::is_valid_ingredient_name(name_en);
+        let ru_valid = product_dictionary::is_valid_ingredient_name(&ru);
+        let pl_valid = product_dictionary::is_valid_ingredient_name(&pl);
+        let uk_valid = product_dictionary::is_valid_ingredient_name(&uk);
+
+        let valid_count = [en_valid, ru_valid, pl_valid, uk_valid].iter().filter(|&&v| v).count();
+        let confidence = valid_count as f32 / 4.0;
+
+        tracing::info!(
+            "🌍 AI translated '{}' → RU:{}, PL:{}, UK:{} (confidence: {:.2}, valid: {}/4)",
+            name_en, ru, pl, uk, confidence, valid_count
+        );
+
+        // ── Save as PENDING (admin must approve!) ──
+        if confidence >= 0.5 {
+            match self.dictionary.insert_pending(name_en, &pl, &ru, &uk, confidence).await {
+                Ok(entry) => {
+                    tracing::info!(
+                        "🟡 Saved PENDING: {} → RU:{}, PL:{}, UK:{} (awaiting admin review)",
+                        entry.name_en, entry.name_ru, entry.name_pl, entry.name_uk
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to save pending entry: {}", e);
+                }
+            }
+        } else {
+            tracing::warn!(
+                "⚠️ AI translation confidence too low ({:.2}) for '{}' — NOT saving to dictionary",
+                confidence, name_en
+            );
+        }
+
+        Ok((ru, pl, uk))
     }
 }
 

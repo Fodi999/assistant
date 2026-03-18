@@ -32,15 +32,25 @@ impl AdminCatalogService {
         let product_type = product.product_type.clone();
 
         // ── Resolve correct names from dictionary ──
+        // If not in dictionary → use ai_translate_and_save_pending
+        // Names saved as PENDING — admin must approve!
         let dict_entry = self.dictionary.find_by_en(&name_en).await.ok().flatten();
         let (dict_name_ru, dict_name_pl, dict_name_uk) = if let Some(ref d) = dict_entry {
             (d.name_ru.clone(), d.name_pl.clone(), d.name_uk.clone())
         } else {
-            (
-                name_ru.clone(),
-                product.name_pl.clone().unwrap_or_default(),
-                product.name_uk.clone().unwrap_or_default(),
-            )
+            // Not in dictionary — try AI translation + save as PENDING
+            tracing::info!("📖 Autofill: dictionary miss for '{}' — requesting AI translation", &name_en);
+            match self.ai_translate_and_save_pending(&name_en).await {
+                Ok((ru, pl, uk)) => (ru, pl, uk),
+                Err(_) => {
+                    // Fallback: use whatever the product already has
+                    (
+                        name_ru.clone(),
+                        product.name_pl.clone().unwrap_or_default(),
+                        product.name_uk.clone().unwrap_or_default(),
+                    )
+                }
+            }
         };
 
         // ── Resolve unit from lookup (not AI) ──
