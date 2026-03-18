@@ -49,6 +49,7 @@ pub struct FishSeasonEntry {
     pub month:      u8,
     pub month_name: String,
     pub available:  bool,
+    pub status:     String,
 }
 
 #[derive(Serialize)]
@@ -108,7 +109,7 @@ pub async fn fish_season(
     let row: Option<(Vec<bool>,)> = sqlx::query_as(
         r#"SELECT availability_months
            FROM catalog_ingredients
-           WHERE is_active = true AND slug = $1
+           WHERE is_active = true AND is_published = true AND slug = $1
              AND availability_months IS NOT NULL"#,
     )
     .bind(&fish_lower)
@@ -120,10 +121,14 @@ pub async fn fish_season(
     let months = row.map(|(m,)| m).unwrap_or_else(|| vec![true; 12]);
 
     let season = (1u8..=12)
-        .map(|m| FishSeasonEntry {
-            month: m,
-            month_name: month_name(m, lang).to_string(),
-            available: months.get((m - 1) as usize).copied().unwrap_or(true),
+        .map(|m| {
+            let avail = months.get((m - 1) as usize).copied().unwrap_or(true);
+            FishSeasonEntry {
+                month: m,
+                month_name: month_name(m, lang).to_string(),
+                available: avail,
+                status: if avail { "good".to_string() } else { "off".to_string() },
+            }
         })
         .collect();
 
@@ -159,7 +164,7 @@ pub async fn fish_season_table(
     let all_year_rows: Vec<AllYearRow> = sqlx::query_as(
         r#"SELECT slug, name_en, name_ru, name_pl, name_uk, image_url
            FROM catalog_ingredients
-           WHERE is_active = true
+           WHERE is_active = true AND is_published = true
              AND category_id = $1::uuid
              AND availability_model = 'all_year'
            ORDER BY name_en"#,
@@ -199,7 +204,7 @@ pub async fn fish_season_table(
                   ci.image_url, ci.water_type, ci.wild_farmed, ci.sushi_grade
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-           WHERE ci.is_active = true
+           WHERE ci.is_active = true AND ci.is_published = true
              AND ci.category_id = $1::uuid
              AND ci.availability_model != 'all_year'
              AND cps.region_code = $2
@@ -215,7 +220,7 @@ pub async fn fish_season_table(
         r#"SELECT cps.product_id, cps.month, cps.status
            FROM catalog_product_seasonality cps
            JOIN catalog_ingredients ci ON ci.id = cps.product_id
-           WHERE ci.is_active = true
+           WHERE ci.is_active = true AND ci.is_published = true
              AND ci.category_id = $1::uuid
              AND ci.availability_model != 'all_year'
              AND cps.region_code = $2
@@ -231,7 +236,7 @@ pub async fn fish_season_table(
         r#"SELECT DISTINCT ci.id, ci.slug
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-           WHERE ci.is_active = true AND ci.category_id = $1::uuid
+           WHERE ci.is_active = true AND ci.is_published = true AND ci.category_id = $1::uuid
              AND ci.availability_model != 'all_year' AND cps.region_code = $2"#,
     )
     .bind(FISH_CATEGORY_ID)
@@ -263,6 +268,7 @@ pub async fn fish_season_table(
                 month: m,
                 month_name: month_name(m, lang).to_string(),
                 available: st != "off",
+                status: st,
             }
         }).collect();
 

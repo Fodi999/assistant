@@ -89,7 +89,7 @@ pub async fn seasonal_calendar(
         r#"SELECT DISTINCT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-           WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2
+           WHERE ci.is_active = true AND ci.is_published = true AND ci.product_type = $1 AND cps.region_code = $2
            ORDER BY ci.name_en"#,
     )
     .bind(&product_type)
@@ -102,7 +102,7 @@ pub async fn seasonal_calendar(
         r#"SELECT cps.product_id, cps.month, cps.status
            FROM catalog_product_seasonality cps
            JOIN catalog_ingredients ci ON ci.id = cps.product_id
-           WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2
+           WHERE ci.is_active = true AND ci.is_published = true AND ci.product_type = $1 AND cps.region_code = $2
            ORDER BY cps.product_id, cps.month"#,
     )
     .bind(&product_type)
@@ -115,7 +115,7 @@ pub async fn seasonal_calendar(
         r#"SELECT DISTINCT ci.id, ci.slug
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-           WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2"#,
+           WHERE ci.is_active = true AND ci.is_published = true AND ci.product_type = $1 AND cps.region_code = $2"#,
     )
     .bind(&product_type)
     .bind(&region)
@@ -180,7 +180,7 @@ pub async fn in_season_now(
         r#"SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url, cps.status
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-           WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2
+           WHERE ci.is_active = true AND ci.is_published = true AND ci.product_type = $1 AND cps.region_code = $2
              AND cps.month = $3 AND cps.status != 'off'
            ORDER BY CASE cps.status WHEN 'peak' THEN 1 WHEN 'good' THEN 2 WHEN 'limited' THEN 3 ELSE 4 END, ci.name_en"#,
     )
@@ -251,7 +251,7 @@ pub async fn product_seasonality(
 
     let prod: Option<ProdRow> = sqlx::query_as(
         r#"SELECT id, name_en, name_ru, name_pl, name_uk, image_url, product_type
-           FROM catalog_ingredients WHERE is_active = true AND slug = $1"#,
+           FROM catalog_ingredients WHERE is_active = true AND is_published = true AND slug = $1"#,
     )
     .bind(&params.slug)
     .fetch_optional(&pool)
@@ -346,7 +346,7 @@ pub async fn best_in_season(
                   ci.image_url, cps.status, ci.water_type, ci.wild_farmed, ci.sushi_grade
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-           WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2
+           WHERE ci.is_active = true AND ci.is_published = true AND ci.product_type = $1 AND cps.region_code = $2
              AND cps.month = $3 AND {status_filter}
              AND ($4::text IS NULL OR ci.water_type = $4)
              AND ($5::text IS NULL OR ci.wild_farmed = $5)
@@ -430,7 +430,7 @@ pub async fn products_by_month(
                 r#"SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url, cps.status
                    FROM catalog_ingredients ci
                    JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-                   WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2
+                   WHERE ci.is_active = true AND ci.is_published = true AND ci.product_type = $1 AND cps.region_code = $2
                      AND cps.month = $3 AND cps.status != 'off'
                    {order}, ci.name_en"#
             ),
@@ -443,7 +443,7 @@ pub async fn products_by_month(
                 r#"SELECT ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk, ci.image_url, cps.status
                    FROM catalog_ingredients ci
                    JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-                   WHERE ci.is_active = true AND cps.region_code = $1
+                   WHERE ci.is_active = true AND ci.is_published = true AND cps.region_code = $1
                      AND cps.month = $2 AND cps.status != 'off'
                    {order}, ci.product_type, ci.name_en"#
             ),
@@ -512,7 +512,7 @@ pub async fn product_search(
     let rows: Vec<Row> = sqlx::query_as(
         r#"SELECT slug, name_en, name_ru, name_pl, name_uk, image_url, product_type, availability_model
            FROM catalog_ingredients
-           WHERE is_active = true
+           WHERE is_active = true AND is_published = true
              AND (LOWER(name_en) LIKE '%' || $1 || '%' OR LOWER(name_ru) LIKE '%' || $1 || '%'
                   OR LOWER(name_pl) LIKE '%' || $1 || '%' OR LOWER(name_uk) LIKE '%' || $1 || '%'
                   OR slug LIKE '%' || $1 || '%')
@@ -798,7 +798,7 @@ pub async fn best_right_now(
                   cps.status, ci.water_type, ci.wild_farmed, ci.sushi_grade
            FROM catalog_ingredients ci
            JOIN catalog_product_seasonality cps ON cps.product_id = ci.id
-           WHERE ci.is_active = true AND ci.product_type = $1 AND cps.region_code = $2
+           WHERE ci.is_active = true AND ci.is_published = true AND ci.product_type = $1 AND cps.region_code = $2
              AND cps.month = $3 AND cps.status IN ('peak','good')
              AND ($4::text IS NULL OR ci.water_type = $4)
              AND ($5::text IS NULL OR ci.wild_farmed = $5)
@@ -887,6 +887,7 @@ fn build_season(
             month: m,
             month_name: month_name(m, lang).to_string(),
             available: status != "off",
+            status,
         }
     }).collect()
 }
