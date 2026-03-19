@@ -47,6 +47,7 @@ use crate::interfaces::http::{
     recipe_ai_insights, // AI insights handlers
     recipe_v2,          // V2 handlers with translations
     report::get_summary,
+    smart::smart_ingredient, // 🆕 SmartService handler
     tenant_ingredient,
     user::{get_avatar_upload_url, me_handler, update_avatar_url},
 };
@@ -347,6 +348,7 @@ pub fn create_router(
     let pool_for_public = pool.clone();
     let pool_for_tools = pool.clone();
     let pool_for_rulebot = pool.clone(); // 🆕 RuleBot orchestrator
+    let pool_for_smart = pool.clone(); // 🆕 SmartService
     let pool_for_cms = pool.clone();
     let cms_service = CmsService::new(pool_for_cms, r2_client);
 
@@ -568,6 +570,14 @@ pub fn create_router(
         .route("/tools/catalog", get(tools_catalog))
         .with_state(rulebot);
 
+    // ── 🆕 SmartService — POST /api/smart/ingredient ─────────────────────────
+    let smart_service = std::sync::Arc::new(
+        crate::application::smart_service::SmartService::new(pool_for_smart)
+    );
+    let smart_router = Router::new()
+        .route("/smart/ingredient", post(smart_ingredient))
+        .with_state(smart_service);
+
     // ── Public Nutrition / Diet / Ranking SEO routes ──────────────────────────
     let public_nutrition_svc = std::sync::Arc::new(PublicNutritionService::new(pool_for_public.clone()));
     let public_nutrition_router = Router::new()
@@ -664,6 +674,7 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin", admin_users_route)
+        .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", protected_routes)
         .layer(cors)
 }

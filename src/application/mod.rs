@@ -18,6 +18,7 @@ pub mod recipe_v2_service; // V2 recipe service
 pub mod recipe_validator; // Rule-based validator
 pub mod report;
 pub mod rulebot; // 🆕 RuleBot orchestrator — Culinary Intelligence Platform
+pub mod smart_service; // 🆕 SmartService — intelligent ingredient aggregator
 pub mod tenant_ingredient;
 pub mod user;
 
