@@ -625,25 +625,12 @@ impl AdminCatalogService {
             }
         });
 
-        // ==========================================
-        // 🗓️ ШАГ 8: AUTO-GENERATE FISH SEASONALITY CALENDAR
-        // ==========================================
-        // If product_type is fish/seafood → auto-generate 12 months × 4 regions
-        tokio::spawn({
-            let pool = self.pool.clone();
-            async move {
-                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                match crate::application::ai_sous_chef::fish_seasonality::generate_seasonality_for_product(&pool, id).await {
-                    Ok(count) if count > 0 => {
-                        tracing::info!("🗓️ Auto-generated {} seasonality rows for product {}", count, id);
-                    }
-                    Ok(_) => {} // Not fish/seafood — skipped silently
-                    Err(e) => {
-                        tracing::warn!("⚠️ Failed to auto-generate seasonality for {}: {}", id, e);
-                    }
-                }
-            }
-        });
+        // 🗓️ Fish seasonality calendar is handled entirely by DB triggers:
+        //   - trg_auto_fish_seasonality (INSERT)
+        //   - trg_auto_fish_seasonality_update (UPDATE product_type)
+        //   - trg_auto_seasonality_sushi_grade (UPDATE sushi_grade)
+        //   - trg_refresh_seasonality_months (UPDATE availability_months)
+        // DB = single source of truth. No dual-write.
 
         Ok(product)
     }
@@ -1069,23 +1056,12 @@ impl AdminCatalogService {
             );
         }
 
-        // 🗓️ Auto-generate seasonality if product_type changed TO fish/seafood
-        if prod_type != old_product_type
-            && (prod_type == "fish" || prod_type == "seafood")
-        {
-            let pool = self.pool.clone();
-            tokio::spawn(async move {
-                match crate::application::ai_sous_chef::fish_seasonality::generate_seasonality_for_product(&pool, id).await {
-                    Ok(count) if count > 0 => {
-                        tracing::info!("🗓️ Reclassified → auto-generated {} seasonality rows for {}", count, id);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!("⚠️ Failed to generate seasonality on reclassify for {}: {}", id, e);
-                    }
-                }
-            });
-        }
+        // 🗓️ Fish seasonality is handled entirely by DB triggers:
+        //   - trg_auto_fish_seasonality_update (product_type change → fish/seafood)
+        //   - trg_auto_seasonality_sushi_grade (sushi_grade → true)
+        //   - trg_refresh_seasonality_months (availability_months change)
+        //   - trg_cleanup_seasonality_sushi_off (sushi_grade → false cleanup)
+        // DB = single source of truth. No dual-write.
 
         Ok(updated_product)
     }
