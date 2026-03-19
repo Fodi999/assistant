@@ -11,6 +11,7 @@
 //! - seasonality: seasonal_calendar, in_season_now, product_seasonality,
 //!                best_in_season, products_by_month, product_search,
 //!                recipe_nutrition, recipe_cost, best_right_now, list_regions
+//! - platform:    🆕 POST /tools/run (RuleBot), GET /tools/catalog
 
 pub mod shared;
 pub mod units;
@@ -21,6 +22,7 @@ pub mod categories;
 pub mod seasonality;
 pub mod recipe_analyze;
 pub mod share_recipe;
+pub mod platform; // 🆕 Culinary Intelligence Platform endpoints
 
 // ── Re-exports for routes.rs ──────────────────────────────────────────────────
 
@@ -38,3 +40,4 @@ pub use seasonality::{
     product_seasonality, products_by_month, recipe_cost, recipe_nutrition, seasonal_calendar,
 };
 pub use units::{convert_units, ingredient_convert, seo_ingredient_convert, ingredient_scale, list_units};
+pub use platform::{tools_run, tools_catalog}; // 🆕

@@ -34,7 +34,7 @@ use crate::interfaces::http::{
         cms as public_cms,
         ingredients::{get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, list_ingredients, list_ingredients_full},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
-        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe},
+        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe, tools_run, tools_catalog},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
@@ -346,6 +346,7 @@ pub fn create_router(
     // Clone pool for public routes (before move into jwt_middleware)
     let pool_for_public = pool.clone();
     let pool_for_tools = pool.clone();
+    let pool_for_rulebot = pool.clone(); // 🆕 RuleBot orchestrator
     let pool_for_cms = pool.clone();
     let cms_service = CmsService::new(pool_for_cms, r2_client);
 
@@ -558,6 +559,15 @@ pub fn create_router(
         .route("/tools/shared-recipe/:slug", get(get_shared_recipe))
         .with_state(pool_for_tools);
 
+    // ── 🆕 Culinary Intelligence Platform (RuleBot + Catalog) ────────────────
+    let rulebot = std::sync::Arc::new(
+        crate::application::rulebot::orchestrator::RuleBot::new(pool_for_rulebot)
+    );
+    let platform_router = Router::new()
+        .route("/tools/run", post(tools_run))
+        .route("/tools/catalog", get(tools_catalog))
+        .with_state(rulebot);
+
     // ── Public Nutrition / Diet / Ranking SEO routes ──────────────────────────
     let public_nutrition_svc = std::sync::Arc::new(PublicNutritionService::new(pool_for_public.clone()));
     let public_nutrition_router = Router::new()
@@ -638,6 +648,7 @@ pub fn create_router(
     let public_router = Router::new()
         .merge(public_ingredients_router)
         .merge(public_tools_router)
+        .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
         .merge(public_cms_router)
         .merge(public_nutrition_router);
 
