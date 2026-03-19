@@ -1,13 +1,20 @@
-//! Pipeline — orchestrates DB queries + domain engines into SmartResponse.
+//! Pipeline v2 — orchestrates DB queries + domain engines into SmartResponse.
+//!
+//! v2 improvements:
+//! 1. State-aware: state affects nutrition, flavor, pairings, suggestions, explain
+//! 2. Equivalents: unit equivalents from density
+//! 3. Processing state explain: detailed before/after comparison
 //!
 //! Data flow:
 //! 1. Lookup main ingredient in catalog_ingredients (+ culinary props, pairings, seasonality)
-//! 2. Build FlavorVector from culinary properties
-//! 3. Compute FlavorBalance (aggregate with additional ingredients)
-//! 4. Run SuggestionEngine on pairing candidates
-//! 5. Run RuleEngine diagnostics (if additional ingredients present)
-//! 6. Build deterministic explanation text
-//! 7. Compose SmartResponse
+//! 2. Load state data from ingredient_states (if state requested)
+//! 3. Build FlavorVector from culinary properties, adjusted by state
+//! 4. Compute FlavorBalance (aggregate with additional ingredients)
+//! 5. Run SuggestionEngine on pairing candidates
+//! 6. Run RuleEngine diagnostics (if additional ingredients present)
+//! 7. Compute unit equivalents from density
+//! 8. Build deterministic explanation text (with state-change details)
+//! 9. Compose SmartResponse
 
 use sqlx::PgPool;
 
@@ -21,6 +28,7 @@ use crate::domain::tools::nutrition::{
 };
 use crate::domain::tools::suggestion_engine::{self, Candidate};
 use crate::domain::tools::rule_engine::{self, RecipeContext};
+use crate::domain::tools::unit_converter as uc;
 
 use super::context::CulinaryContext;
 use super::response::*;
@@ -58,8 +66,21 @@ struct SeasonRow {
 
 #[derive(sqlx::FromRow)]
 struct StateRow {
-    state:       String,
-    description: Option<String>,
+    state:                String,
+    description:          Option<String>,
+    calories_per_100g:    Option<f64>,
+    protein_per_100g:     Option<f64>,
+    fat_per_100g:         Option<f64>,
+    carbs_per_100g:       Option<f64>,
+    fiber_per_100g:       Option<f64>,
+    water_percent:        Option<f64>,
+    shelf_life_hours:     Option<i32>,
+    storage_temp_c:       Option<i32>,
+    texture:              Option<String>,
+    weight_change_percent: Option<f64>,
+    oil_absorption_g:     Option<f64>,
+    water_loss_percent:   Option<f64>,
+    glycemic_index:       Option<i16>,
 }
 
 // ── Pipeline entry point ─────────────────────────────────────────────────────
@@ -272,23 +293,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         })
         .collect();
 
-    let suggestion_result = suggestion_engine::suggest_ingredients(
-        &balance, &candidates, &existing_slugs, 5,
-    );
-
-    let suggestions: Vec<SuggestionInfo> = suggestion_result
-        .suggestions
-        .into_iter()
-        .map(|s| SuggestionInfo {
-            slug: s.slug,
-            name: s.name,
-            image_url: s.image_url,
-            score: s.score,
-            reasons: s.reasons,
-            fills_gaps: s.fills_gaps,
-            suggested_grams: s.suggested_grams,
-        })
-        .collect();
+    // Suggestions will be computed after potential state adjustment (step 11c)
 
     // ── 9. Diagnostics (RuleEngine — only if we have 2+ ingredients) ─────────
     let diagnostics = if !ctx.additional_ingredients.is_empty() {
@@ -410,31 +415,142 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         .map(|s| SeasonalityInfo { month: s.month, status: s.status, note: s.note })
         .collect();
 
-    // ── 11. State info (from ingredient_states if exists) ────────────────────
-    let state_info: Option<StateInfo> = if let Some(ref state_name) = ctx.state {
-        let state_row: Option<StateRow> = sqlx::query_as(
-            r#"SELECT state, description FROM ingredient_states
-               WHERE product_id = (SELECT id FROM catalog_ingredients WHERE slug = $1 LIMIT 1)
-               AND state = $2"#,
+    // ── 11. State info (v2: full row from ingredient_states) ───────────────
+    let full_state: Option<StateRow> = if let Some(ref state_name) = ctx.state {
+        sqlx::query_as(
+            r#"SELECT
+                state::text as state,
+                COALESCE(notes_en, notes) as description,
+                calories_per_100g::float8 as calories_per_100g,
+                protein_per_100g::float8 as protein_per_100g,
+                fat_per_100g::float8 as fat_per_100g,
+                carbs_per_100g::float8 as carbs_per_100g,
+                fiber_per_100g::float8 as fiber_per_100g,
+                water_percent::float8 as water_percent,
+                shelf_life_hours, storage_temp_c, texture,
+                weight_change_percent::float8 as weight_change_percent,
+                oil_absorption_g::float8 as oil_absorption_g,
+                water_loss_percent::float8 as water_loss_percent,
+                glycemic_index
+            FROM ingredient_states
+            WHERE ingredient_id = (SELECT id FROM catalog_ingredients WHERE slug = $1 LIMIT 1)
+              AND state = $2::processing_state"#,
         )
         .bind(&ctx.ingredient)
         .bind(state_name)
         .fetch_optional(pool)
         .await
-        .unwrap_or(None);
-
-        state_row.map(|r| StateInfo {
-            state: r.state,
-            description: r.description,
-        })
+        .unwrap_or(None)
     } else {
         None
     };
 
-    // ── 12. Build explanation ─────────────────────────────────────────────────
-    let explain = build_explain(&ingredient_info, &balance, &pairings, &suggestions, &diagnostics, &ctx.goal);
+    // v2: Build StateInfo with full cooking details
+    let state_info: Option<StateInfo> = full_state.as_ref().map(|r| StateInfo {
+        state: r.state.clone(),
+        description: r.description.clone(),
+        nutrition: if r.calories_per_100g.is_some() || r.protein_per_100g.is_some() {
+            Some(StateNutrition {
+                calories: r.calories_per_100g,
+                protein_g: r.protein_per_100g,
+                fat_g: r.fat_per_100g,
+                carbs_g: r.carbs_per_100g,
+                fiber_g: r.fiber_per_100g,
+                water_percent: r.water_percent,
+            })
+        } else {
+            None
+        },
+        texture: r.texture.clone(),
+        weight_change_percent: r.weight_change_percent,
+        oil_absorption_g: r.oil_absorption_g,
+        water_loss_percent: r.water_loss_percent,
+        glycemic_index: r.glycemic_index,
+        shelf_life_hours: r.shelf_life_hours,
+        storage_temp_c: r.storage_temp_c,
+    });
 
-    // ── 13. Compose response ─────────────────────────────────────────────────
+    // ── 11a. v2: Override nutrition with state nutrition if available ─────────
+    let nutrition = if let Some(ref st) = full_state {
+        if st.calories_per_100g.is_some() || st.protein_per_100g.is_some() {
+            // Use state-specific nutrition instead of raw
+            breakdown_per_100g_nullable(
+                st.calories_per_100g,
+                st.protein_per_100g,
+                st.fat_per_100g,
+                st.carbs_per_100g,
+                st.fiber_per_100g,
+                None, // sugar not tracked per state
+                None, // salt not tracked per state
+            )
+        } else {
+            nutrition
+        }
+    } else {
+        nutrition
+    };
+
+    // ── 11b. v2: Adjust flavor vector based on state ─────────────────────────
+    let (main_flavor, flavor_profile) = if let Some(ref st) = full_state {
+        let adjusted = adjust_flavor_for_state(&main_flavor, &st.state, st.oil_absorption_g, st.water_loss_percent);
+        // Rebuild flavor_ingredients with adjusted main flavor
+        let mut adj_ingredients = vec![FlavorIngredient {
+            slug: ctx.ingredient.clone(),
+            grams: typical_g,
+            flavor: adjusted.clone(),
+        }];
+        for (i, extra_slug) in ctx.additional_ingredients.iter().enumerate() {
+            if let Some((_, extra_fv)) = additional_rows.get(i) {
+                let extra_typical = additional_rows[i].0.typical_g().unwrap_or(50.0);
+                adj_ingredients.push(FlavorIngredient {
+                    slug: extra_slug.clone(),
+                    grams: extra_typical,
+                    flavor: extra_fv.clone(),
+                });
+            }
+        }
+        let adj_balance = flavor_graph::analyze_balance(&adj_ingredients);
+        let fpi = FlavorProfileInfo {
+            vector: adjusted.clone(),
+            balance: adj_balance,
+        };
+        (adjusted, fpi)
+    } else {
+        (main_flavor, flavor_profile)
+    };
+
+    // Use the (possibly adjusted) balance for subsequent engines
+    let balance = &flavor_profile.balance;
+
+    // ── 11c. v2: Re-run suggestions with state-adjusted balance ──────────────
+    let suggestion_result = suggestion_engine::suggest_ingredients(
+        balance, &candidates, &existing_slugs, 5,
+    );
+    let suggestions: Vec<SuggestionInfo> = suggestion_result
+        .suggestions
+        .into_iter()
+        .map(|s| SuggestionInfo {
+            slug: s.slug,
+            name: s.name,
+            image_url: s.image_url,
+            score: s.score,
+            reasons: s.reasons,
+            fills_gaps: s.fills_gaps,
+            suggested_grams: s.suggested_grams,
+        })
+        .collect();
+
+    // ── 12. Unit equivalents from density (v2) ──────────────────────────────
+    let density = row.density();
+    let equivalents = build_equivalents(100.0, density);
+
+    // ── 13. Build explanation (v2: includes state-change details) ─────────────
+    let explain = build_explain_v2(
+        &ingredient_info, balance, &pairings, &suggestions,
+        &diagnostics, &ctx.goal, &full_state, &row,
+    );
+
+    // ── 14. Compose response ─────────────────────────────────────────────────
     let timing_ms = start.elapsed().as_millis() as u64;
 
     Ok(SmartResponse {
@@ -446,26 +562,120 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         pairings,
         suggestions,
         diagnostics,
+        equivalents,
         seasonality,
         explain,
         meta: SmartMeta {
             timing_ms,
             cached: false,
             cache_key: ctx.cache_key(),
-            engine_version: "1.0.0".to_string(),
+            engine_version: "2.0.0".to_string(),
         },
     })
 }
 
-// ── Deterministic explanation builder ────────────────────────────────────────
+// ── State → flavor adjustment (v2) ──────────────────────────────────────────
 
-fn build_explain(
+/// Deterministic flavor adjustment based on cooking method.
+/// Each state shifts specific flavor dimensions.
+fn adjust_flavor_for_state(
+    base: &FlavorVector,
+    state: &str,
+    oil_absorption: Option<f64>,
+    water_loss: Option<f64>,
+) -> FlavorVector {
+    let mut v = base.clone();
+
+    match state {
+        "grilled" => {
+            v.umami      = (v.umami + 1.5).min(10.0);       // Maillard reaction
+            v.aroma      = (v.aroma + 2.0).min(10.0);       // smoke + char
+            v.sweetness  = (v.sweetness + 0.5).min(10.0);   // caramelization
+            v.bitterness = (v.bitterness + 0.3).min(10.0);  // slight char
+        }
+        "fried" => {
+            let oil_boost = oil_absorption.unwrap_or(5.0) / 10.0; // 0-1 scale
+            v.fat        = (v.fat + 2.0 + oil_boost).min(10.0);
+            v.umami      = (v.umami + 1.0).min(10.0);
+            v.aroma      = (v.aroma + 1.5).min(10.0);
+            v.sweetness  = (v.sweetness + 0.3).min(10.0);
+        }
+        "baked" => {
+            v.sweetness  = (v.sweetness + 1.0).min(10.0);   // caramelization
+            v.aroma      = (v.aroma + 1.5).min(10.0);       // toasting
+            v.umami      = (v.umami + 0.5).min(10.0);
+        }
+        "boiled" | "steamed" => {
+            // Cooking in water dilutes some flavors
+            let loss = water_loss.unwrap_or(10.0) / 100.0;
+            v.aroma      = (v.aroma * (1.0 - loss * 0.3)).max(0.0);
+            v.sweetness  = (v.sweetness * (1.0 - loss * 0.2)).max(0.0);
+            // But can concentrate umami
+            if state == "boiled" {
+                v.umami = (v.umami + 0.3).min(10.0);
+            }
+        }
+        "smoked" => {
+            v.aroma      = (v.aroma + 3.0).min(10.0);       // heavy smoke
+            v.umami      = (v.umami + 1.0).min(10.0);       // concentration
+            v.bitterness = (v.bitterness + 0.5).min(10.0);  // smoke phenols
+        }
+        "dried" => {
+            // Concentration effect — everything intensifies except water-based notes
+            v.sweetness  = (v.sweetness * 1.5).min(10.0);
+            v.umami      = (v.umami * 1.5).min(10.0);
+            v.aroma      = (v.aroma * 1.3).min(10.0);
+        }
+        "pickled" => {
+            v.acidity    = (v.acidity + 3.0).min(10.0);     // vinegar/brine
+            v.sweetness  = (v.sweetness * 0.7).max(0.0);    // suppressed
+            v.aroma      = (v.aroma + 0.5).min(10.0);       // fermentation
+        }
+        "frozen" => {
+            // Freezing dulls flavors slightly
+            v.aroma      = (v.aroma * 0.85).max(0.0);
+            v.sweetness  = (v.sweetness * 0.9).max(0.0);
+        }
+        // "raw" or unknown → no change
+        _ => {}
+    }
+
+    v.round();
+    v
+}
+
+// ── Unit equivalents builder (v2) ────────────────────────────────────────────
+
+fn build_equivalents(grams: f64, density: f64) -> Vec<EquivalentInfo> {
+    let targets: &[(&str, &str)] = &[
+        ("kg", "kg"), ("oz", "oz"), ("lb", "lb"),
+        ("ml", "ml"), ("l", "l"),
+        ("tsp", "tsp"), ("tbsp", "tbsp"), ("cup", "cup"),
+    ];
+
+    targets
+        .iter()
+        .filter_map(|&(unit, label)| {
+            uc::convert_with_density(grams, "g", unit, density).map(|v| EquivalentInfo {
+                unit: unit.to_string(),
+                label: label.to_string(),
+                value: uc::display_round(v),
+            })
+        })
+        .collect()
+}
+
+// ── Deterministic explanation builder v2 ─────────────────────────────────────
+
+fn build_explain_v2(
     ingredient: &IngredientInfo,
     balance: &FlavorBalance,
     pairings: &[PairingInfo],
     suggestions: &[SuggestionInfo],
     diagnostics: &Option<DiagnosticsInfo>,
     goal: &Option<String>,
+    full_state: &Option<StateRow>,
+    raw_row: &CatalogNutritionRow,
 ) -> Vec<String> {
     let mut lines = Vec::new();
 
@@ -476,6 +686,84 @@ fn build_explain(
         ingredient.product_type.as_deref().unwrap_or("unknown"),
         balance.balance_score,
     ));
+
+    // ── State-change explanation (v2 step 4) ────────────────────────────────
+    if let Some(st) = full_state {
+        if st.state != "raw" {
+            lines.push(format!("Processing state: {}.", st.state));
+
+            // Nutrition comparison (raw vs cooked)
+            if let Some(cooked_cal) = st.calories_per_100g {
+                let raw_cal = raw_row.cal();
+                let diff = cooked_cal - raw_cal;
+                if diff.abs() > 1.0 {
+                    let direction = if diff > 0.0 { "+" } else { "" };
+                    lines.push(format!(
+                        "Calories: {:.0} → {:.0} kcal/100g ({}{:.0}).",
+                        raw_cal, cooked_cal, direction, diff,
+                    ));
+                }
+            }
+            if let Some(cooked_fat) = st.fat_per_100g {
+                let raw_fat = raw_row.fat();
+                let diff = cooked_fat - raw_fat;
+                if diff.abs() > 0.5 {
+                    let direction = if diff > 0.0 { "+" } else { "" };
+                    lines.push(format!(
+                        "Fat: {:.1} → {:.1} g/100g ({}{:.1}).",
+                        raw_fat, cooked_fat, direction, diff,
+                    ));
+                }
+            }
+            if let Some(cooked_prot) = st.protein_per_100g {
+                let raw_prot = raw_row.prot();
+                let diff = cooked_prot - raw_prot;
+                if diff.abs() > 0.5 {
+                    let direction = if diff > 0.0 { "+" } else { "" };
+                    lines.push(format!(
+                        "Protein: {:.1} → {:.1} g/100g ({}{:.1}).",
+                        raw_prot, cooked_prot, direction, diff,
+                    ));
+                }
+            }
+
+            // Physical changes
+            if let Some(wc) = st.weight_change_percent {
+                if wc.abs() > 1.0 {
+                    if wc < 0.0 {
+                        lines.push(format!("Weight loss: {:.0}% (concentrates flavor).", wc.abs()));
+                    } else {
+                        lines.push(format!("Weight gain: +{:.0}% (absorbs liquid).", wc));
+                    }
+                }
+            }
+            if let Some(oil) = st.oil_absorption_g {
+                if oil > 1.0 {
+                    lines.push(format!("Oil absorption: {:.1}g per 100g raw product.", oil));
+                }
+            }
+            if let Some(wl) = st.water_loss_percent {
+                if wl > 2.0 {
+                    lines.push(format!("Water loss: {:.0}%.", wl));
+                }
+            }
+
+            // Texture
+            if let Some(ref tex) = st.texture {
+                lines.push(format!("Texture: {}.", tex));
+            }
+
+            // Storage
+            if let Some(hours) = st.shelf_life_hours {
+                let days = hours / 24;
+                if days > 0 {
+                    lines.push(format!("Shelf life: ~{} days.", days));
+                } else {
+                    lines.push(format!("Shelf life: ~{} hours.", hours));
+                }
+            }
+        }
+    }
 
     // Weak dimensions
     if !balance.weak_dimensions.is_empty() {

@@ -1,4 +1,4 @@
-//! SmartResponse — output contract for SmartService.
+//! SmartResponse — output contract for SmartService v2.
 
 use serde::{Deserialize, Serialize};
 use crate::domain::tools::flavor_graph::{FlavorVector, FlavorBalance};
@@ -10,17 +10,19 @@ pub struct SmartResponse {
     /// Main ingredient info
     pub ingredient: IngredientInfo,
 
-    /// Cooking state data (if available)
+    /// Cooking state data (if available) — v2: full nutrition + cooking details
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<StateInfo>,
 
     /// Nutrition per 100g (null-safe: missing = null, not 0)
+    /// v2: adjusted by cooking state when state is provided
     pub nutrition: NutritionBreakdownNullable,
 
     /// Vitamins & minerals (static USDA lookup)
     pub vitamins: VitaminData,
 
     /// Flavor profile (6D vector + balance analysis)
+    /// v2: flavor vector modified by cooking state
     pub flavor_profile: FlavorProfileInfo,
 
     /// Top pairings from DB
@@ -33,10 +35,14 @@ pub struct SmartResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<DiagnosticsInfo>,
 
+    /// Unit equivalents (g, kg, ml, cups, tbsp, tsp, etc.) — v2
+    pub equivalents: Vec<EquivalentInfo>,
+
     /// Seasonality data
     pub seasonality: Vec<SeasonalityInfo>,
 
     /// Human-readable deterministic explanation (no AI)
+    /// v2: includes state-change explanations
     pub explain: Vec<String>,
 
     /// Response metadata
@@ -56,6 +62,49 @@ pub struct IngredientInfo {
 pub struct StateInfo {
     pub state: String,
     pub description: Option<String>,
+    /// Nutrition per 100g *in this state* (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nutrition: Option<StateNutrition>,
+    /// Texture in this state (e.g. "crispy", "tender")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub texture: Option<String>,
+    /// Weight change percent (negative = loss, positive = gain)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight_change_percent: Option<f64>,
+    /// Oil absorbed per 100g (mainly fried states)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oil_absorption_g: Option<f64>,
+    /// Water lost during cooking (0-100%)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_loss_percent: Option<f64>,
+    /// Glycemic index in this state
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glycemic_index: Option<i16>,
+    /// Storage shelf life (hours)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shelf_life_hours: Option<i32>,
+    /// Storage temperature (°C)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_temp_c: Option<i32>,
+}
+
+/// Nutrition values for a specific cooking state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateNutrition {
+    pub calories: Option<f64>,
+    pub protein_g: Option<f64>,
+    pub fat_g: Option<f64>,
+    pub carbs_g: Option<f64>,
+    pub fiber_g: Option<f64>,
+    pub water_percent: Option<f64>,
+}
+
+/// Unit equivalent for an ingredient (100g expressed in other units).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EquivalentInfo {
+    pub unit: String,
+    pub label: String,
+    pub value: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

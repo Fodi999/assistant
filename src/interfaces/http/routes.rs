@@ -48,6 +48,7 @@ use crate::interfaces::http::{
     recipe_v2,          // V2 handlers with translations
     report::get_summary,
     smart::smart_ingredient, // 🆕 SmartService handler
+    smart::smart_autocomplete, // 🆕 SmartService autocomplete
     tenant_ingredient,
     user::{get_avatar_upload_url, me_handler, update_avatar_url},
 };
@@ -349,6 +350,7 @@ pub fn create_router(
     let pool_for_tools = pool.clone();
     let pool_for_rulebot = pool.clone(); // 🆕 RuleBot orchestrator
     let pool_for_smart = pool.clone(); // 🆕 SmartService
+    let pool_for_autocomplete = pool.clone(); // 🆕 SmartService autocomplete
     let pool_for_cms = pool.clone();
     let cms_service = CmsService::new(pool_for_cms, r2_client);
 
@@ -570,13 +572,16 @@ pub fn create_router(
         .route("/tools/catalog", get(tools_catalog))
         .with_state(rulebot);
 
-    // ── 🆕 SmartService — POST /api/smart/ingredient ─────────────────────────
+    // ── 🆕 SmartService v2 ──────────────────────────────────────────────────
     let smart_service = std::sync::Arc::new(
         crate::application::smart_service::SmartService::new(pool_for_smart)
     );
     let smart_router = Router::new()
         .route("/smart/ingredient", post(smart_ingredient))
         .with_state(smart_service);
+    let smart_autocomplete_router = Router::new()
+        .route("/smart/autocomplete", get(smart_autocomplete))
+        .with_state(pool_for_autocomplete);
 
     // ── Public Nutrition / Diet / Ranking SEO routes ──────────────────────────
     let public_nutrition_svc = std::sync::Arc::new(PublicNutritionService::new(pool_for_public.clone()));
@@ -675,6 +680,7 @@ pub fn create_router(
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
+        .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete
         .nest("/api", protected_routes)
         .layer(cors)
 }
