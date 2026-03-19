@@ -70,6 +70,16 @@ struct SeasonRow {
 }
 
 #[derive(sqlx::FromRow)]
+struct ExtraCulinaryRow {
+    slug:       String,
+    sweetness:  Option<f32>,
+    acidity:    Option<f32>,
+    bitterness: Option<f32>,
+    umami:      Option<f32>,
+    aroma:      Option<f32>,
+}
+
+#[derive(sqlx::FromRow)]
 struct StateRow {
     state:                String,
     description:          Option<String>,
@@ -94,16 +104,25 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     let lang = Language::from_code(&ctx.lang).unwrap_or(Language::En);
     let start = std::time::Instant::now();
 
-    // ── 1. Main ingredient from catalog ──────────────────────────────────────
-    let sql = format!(
+    // ═══════════════════════════════════════════════════════════════════════
+    //  PARALLEL PHASE 1: main_row + product_id  (2 queries in parallel)
+    // ═══════════════════════════════════════════════════════════════════════
+    let main_sql = format!(
         "SELECT {} FROM catalog_ingredients WHERE slug = $1 AND COALESCE(is_active, true) = true",
         CATALOG_NUTRITION_COLS
     );
-    let row: CatalogNutritionRow = sqlx::query_as(&sql)
+    let pid_fut = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT p.id FROM products p JOIN catalog_ingredients ci ON ci.slug = p.slug WHERE ci.slug = $1 LIMIT 1"
+    )
+    .bind(&ctx.ingredient)
+    .fetch_optional(pool);
+
+    let row_fut = sqlx::query_as::<_, CatalogNutritionRow>(&main_sql)
         .bind(&ctx.ingredient)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::not_found(format!("ingredient '{}' not found", ctx.ingredient)))?;
+        .fetch_optional(pool);
+
+    let (row_opt, product_id) = tokio::try_join!(row_fut, pid_fut)?;
+    let row = row_opt.ok_or_else(|| AppError::not_found(format!("ingredient '{}' not found", ctx.ingredient)))?;
 
     let ingredient_info = IngredientInfo {
         slug: row.slug.clone().unwrap_or_default(),
@@ -113,34 +132,164 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         sushi_grade: row.sushi_grade,
     };
 
-    // ── 2. Nutrition per 100g ────────────────────────────────────────────────
+    // Nutrition + vitamins (CPU-only, instant)
     let nutrition = breakdown_per_100g_nullable(
         row.cal_opt(), row.prot_opt(), row.fat_opt(), row.carbs_opt(),
         row.fiber_opt(), row.sugar_opt(), row.salt_opt(),
     );
-
-    // ── 3. Vitamins (static USDA lookup) ─────────────────────────────────────
     let vitamins = nutrition::vitamins_for(&ctx.ingredient);
 
-    // ── 4. Culinary flavor vector ────────────────────────────────────────────
-    // Need product_id for JOINs. Get it from a quick lookup.
-    let product_id: Option<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT p.id FROM products p JOIN catalog_ingredients ci ON ci.slug = p.slug WHERE ci.slug = $1 LIMIT 1"
-    )
-    .bind(&ctx.ingredient)
-    .fetch_optional(pool)
-    .await?;
+    // ═══════════════════════════════════════════════════════════════════════
+    //  PARALLEL PHASE 2: culinary + pairings + seasonality + state + batch_additional
+    //  (up to 5 queries in parallel — single DB round-trip)
+    // ═══════════════════════════════════════════════════════════════════════
 
-    let culinary: Option<CulinaryRow> = if let Some(pid) = product_id {
-        sqlx::query_as(
-            "SELECT sweetness, acidity, bitterness, umami, aroma FROM food_culinary_properties WHERE product_id = $1"
-        )
-        .bind(pid)
-        .fetch_optional(pool)
-        .await?
-    } else {
-        None
+    // 2a. Culinary flavor
+    let culinary_fut = async {
+        if let Some(pid) = product_id {
+            sqlx::query_as::<_, CulinaryRow>(
+                "SELECT sweetness, acidity, bitterness, umami, aroma FROM food_culinary_properties WHERE product_id = $1"
+            )
+            .bind(pid)
+            .fetch_optional(pool)
+            .await
+        } else {
+            Ok(None)
+        }
     };
+
+    // 2b. Pairings
+    let pairings_fut = async {
+        if let Some(pid) = product_id {
+            sqlx::query_as::<_, PairingRow>(
+                r#"SELECT b.slug, b.name_en, b.name_ru, b.name_pl, b.name_uk, b.image_url,
+                          fp.pair_score, fp.flavor_score, fp.nutrition_score
+                   FROM food_pairing fp
+                   JOIN products b ON b.id = fp.ingredient_b
+                   WHERE fp.ingredient_a = $1
+                   ORDER BY fp.pair_score DESC NULLS LAST
+                   LIMIT 8"#,
+            )
+            .bind(pid)
+            .fetch_all(pool)
+            .await
+        } else {
+            Ok(vec![])
+        }
+    };
+
+    // 2c. Seasonality
+    let season_fut = async {
+        sqlx::query_as::<_, SeasonRow>(
+            "SELECT month, status, note FROM catalog_product_seasonality WHERE product_id = (SELECT id FROM catalog_ingredients WHERE slug = $1 LIMIT 1) ORDER BY month"
+        )
+        .bind(&ctx.ingredient)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    };
+
+    // 2d. State info
+    let state_fut = async {
+        if let Some(ref state_name) = ctx.state {
+            sqlx::query_as::<_, StateRow>(
+                r#"SELECT
+                    state::text as state,
+                    COALESCE(notes_en, notes) as description,
+                    calories_per_100g::float8 as calories_per_100g,
+                    protein_per_100g::float8 as protein_per_100g,
+                    fat_per_100g::float8 as fat_per_100g,
+                    carbs_per_100g::float8 as carbs_per_100g,
+                    fiber_per_100g::float8 as fiber_per_100g,
+                    water_percent::float8 as water_percent,
+                    shelf_life_hours, storage_temp_c, texture,
+                    weight_change_percent::float8 as weight_change_percent,
+                    oil_absorption_g::float8 as oil_absorption_g,
+                    water_loss_percent::float8 as water_loss_percent,
+                    glycemic_index
+                FROM ingredient_states
+                WHERE ingredient_id = (SELECT id FROM catalog_ingredients WHERE slug = $1 LIMIT 1)
+                  AND state = $2::processing_state"#,
+            )
+            .bind(&ctx.ingredient)
+            .bind(state_name)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None)
+        } else {
+            None
+        }
+    };
+
+    // 2e. Batch additional ingredients (single query with ANY instead of loop)
+    let additional_slugs: Vec<String> = ctx.additional_ingredients.clone();
+    let batch_additional_fut = async {
+        if additional_slugs.is_empty() {
+            return Ok::<Vec<(CatalogNutritionRow, FlavorVector)>, AppError>(vec![]);
+        }
+        // Batch load catalog rows
+        let batch_sql = format!(
+            "SELECT {} FROM catalog_ingredients WHERE slug = ANY($1) AND COALESCE(is_active, true) = true",
+            CATALOG_NUTRITION_COLS
+        );
+        let extra_rows: Vec<CatalogNutritionRow> = sqlx::query_as(&batch_sql)
+            .bind(&additional_slugs)
+            .fetch_all(pool)
+            .await?;
+
+        // Batch load culinary properties (single JOIN query)
+        let extra_culinary_rows: Vec<ExtraCulinaryRow> = if !extra_rows.is_empty() {
+            let slugs: Vec<String> = extra_rows.iter().filter_map(|r| r.slug.clone()).collect();
+            sqlx::query_as(
+                r#"SELECT p.slug,
+                          fcp.sweetness, fcp.acidity, fcp.bitterness, fcp.umami, fcp.aroma
+                   FROM products p
+                   JOIN food_culinary_properties fcp ON fcp.product_id = p.id
+                   WHERE p.slug = ANY($1)"#,
+            )
+            .bind(&slugs)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        let mut result = Vec::new();
+        for extra_row in extra_rows {
+            let slug = extra_row.slug.clone().unwrap_or_default();
+            let extra_flavor = extra_culinary_rows.iter()
+                .find(|ecr| ecr.slug == slug)
+                .map(|ecr| flavor_graph::flavor_from_culinary(
+                    ecr.sweetness.unwrap_or(0.0) as f64,
+                    ecr.acidity.unwrap_or(0.0) as f64,
+                    ecr.bitterness.unwrap_or(0.0) as f64,
+                    ecr.umami.unwrap_or(0.0) as f64,
+                    ecr.aroma.unwrap_or(0.0) as f64,
+                    extra_row.fat(),
+                ))
+                .unwrap_or_else(FlavorVector::zero);
+            result.push((extra_row, extra_flavor));
+        }
+        Ok(result)
+    };
+
+    // Fire all 5 in parallel
+    let (culinary, pairings_raw, seasonality_rows, full_state, additional_rows) = tokio::join!(
+        culinary_fut,
+        pairings_fut,
+        season_fut,
+        state_fut,
+        batch_additional_fut,
+    );
+    let culinary = culinary?;
+    let pairings_raw = pairings_raw?;
+    let additional_rows = additional_rows?;
+    // seasonality_rows and full_state are already unwrapped
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  CPU PHASE: all computation from here on — no more DB queries (except feedback)
+    // ═══════════════════════════════════════════════════════════════════════
 
     let main_flavor = culinary
         .as_ref()
@@ -156,7 +305,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         })
         .unwrap_or_else(FlavorVector::zero);
 
-    // ── 5. Build flavor ingredients list (main + additional) ─────────────────
+    // Build flavor ingredients list (main + additional)
     let typical_g = row.typical_g().unwrap_or(100.0);
     let mut flavor_ingredients = vec![FlavorIngredient {
         slug: ctx.ingredient.clone(),
@@ -164,63 +313,18 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         flavor: main_flavor.clone(),
     }];
 
-    // Load additional ingredients' flavor vectors
-    let mut additional_rows: Vec<(CatalogNutritionRow, FlavorVector)> = Vec::new();
-    for extra_slug in &ctx.additional_ingredients {
-        let extra_sql = format!(
-            "SELECT {} FROM catalog_ingredients WHERE slug = $1 AND COALESCE(is_active, true) = true",
-            CATALOG_NUTRITION_COLS
-        );
-        if let Some(extra_row) = sqlx::query_as::<_, CatalogNutritionRow>(&extra_sql)
-            .bind(extra_slug)
-            .fetch_optional(pool)
-            .await?
-        {
-            // Try to get culinary props for this extra ingredient
-            let extra_pid: Option<uuid::Uuid> = sqlx::query_scalar(
-                "SELECT p.id FROM products p WHERE p.slug = $1 LIMIT 1"
-            )
-            .bind(extra_slug)
-            .fetch_optional(pool)
-            .await?;
-
-            let extra_culinary: Option<CulinaryRow> = if let Some(epid) = extra_pid {
-                sqlx::query_as(
-                    "SELECT sweetness, acidity, bitterness, umami, aroma FROM food_culinary_properties WHERE product_id = $1"
-                )
-                .bind(epid)
-                .fetch_optional(pool)
-                .await?
-            } else {
-                None
-            };
-
-            let extra_flavor = extra_culinary
-                .as_ref()
-                .map(|c| {
-                    flavor_graph::flavor_from_culinary(
-                        c.sweetness.unwrap_or(0.0) as f64,
-                        c.acidity.unwrap_or(0.0) as f64,
-                        c.bitterness.unwrap_or(0.0) as f64,
-                        c.umami.unwrap_or(0.0) as f64,
-                        c.aroma.unwrap_or(0.0) as f64,
-                        extra_row.fat(),
-                    )
-                })
-                .unwrap_or_else(FlavorVector::zero);
-
+    for (i, extra_slug) in ctx.additional_ingredients.iter().enumerate() {
+        if let Some((extra_row, extra_flavor)) = additional_rows.get(i) {
             let extra_typical = extra_row.typical_g().unwrap_or(50.0);
             flavor_ingredients.push(FlavorIngredient {
                 slug: extra_slug.clone(),
                 grams: extra_typical,
                 flavor: extra_flavor.clone(),
             });
-
-            additional_rows.push((extra_row, extra_flavor));
         }
     }
 
-    // ── 6. FlavorBalance ─────────────────────────────────────────────────────
+    // FlavorBalance
     let balance = flavor_graph::analyze_balance(&flavor_ingredients);
 
     let flavor_profile = FlavorProfileInfo {
@@ -228,25 +332,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         balance: balance.clone(),
     };
 
-    // ── 7. Pairings from DB ─────────────────────────────────────────────────
-    let pairings_raw: Vec<PairingRow> = if let Some(pid) = product_id {
-        sqlx::query_as(
-            r#"SELECT b.slug, b.name_en, b.name_ru, b.name_pl, b.name_uk, b.image_url,
-                      fp.pair_score, fp.flavor_score, fp.nutrition_score
-               FROM food_pairing fp
-               JOIN products b ON b.id = fp.ingredient_b
-               WHERE fp.ingredient_a = $1
-               ORDER BY fp.pair_score DESC NULLS LAST
-               LIMIT 8"#,
-        )
-        .bind(pid)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-    } else {
-        vec![]
-    };
-
+    // Pairings
     let pairings: Vec<PairingInfo> = pairings_raw
         .iter()
         .map(|p| {
@@ -267,8 +353,13 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         })
         .collect();
 
-    // ── 8. Suggestions (SuggestionEngine) ────────────────────────────────────
-    // Build candidates from pairings + any additional catalog items
+    // Seasonality
+    let seasonality: Vec<SeasonalityInfo> = seasonality_rows
+        .into_iter()
+        .map(|s| SeasonalityInfo { month: s.month, status: s.status, note: s.note })
+        .collect();
+
+    // Candidates from pairings
     let existing_slugs: Vec<String> = flavor_ingredients.iter().map(|fi| fi.slug.clone()).collect();
 
     let candidates: Vec<Candidate> = pairings_raw
@@ -287,7 +378,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
                     Language::En => p.name_en.clone(),
                 },
                 image_url: p.image_url.clone(),
-                flavor: FlavorVector::zero(), // pairing doesn't carry flavor — use pair_score
+                flavor: FlavorVector::zero(),
                 nutrition: NutritionBreakdown {
                     calories: 0.0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
                     fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
@@ -405,54 +496,9 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             .collect(),
     });
 
-    // ── 10. Seasonality ──────────────────────────────────────────────────────
-    let seasonality_rows: Vec<SeasonRow> = if let Some(_pid) = product_id {
-        sqlx::query_as(
-            "SELECT month, status, note FROM catalog_product_seasonality WHERE product_id = (SELECT id FROM catalog_ingredients WHERE slug = $1 LIMIT 1) ORDER BY month"
-        )
-        .bind(&ctx.ingredient)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-    } else {
-        vec![]
-    };
+    // Seasonality already loaded in parallel phase 2
 
-    let seasonality: Vec<SeasonalityInfo> = seasonality_rows
-        .into_iter()
-        .map(|s| SeasonalityInfo { month: s.month, status: s.status, note: s.note })
-        .collect();
-
-    // ── 11. State info (v2: full row from ingredient_states) ───────────────
-    let full_state: Option<StateRow> = if let Some(ref state_name) = ctx.state {
-        sqlx::query_as(
-            r#"SELECT
-                state::text as state,
-                COALESCE(notes_en, notes) as description,
-                calories_per_100g::float8 as calories_per_100g,
-                protein_per_100g::float8 as protein_per_100g,
-                fat_per_100g::float8 as fat_per_100g,
-                carbs_per_100g::float8 as carbs_per_100g,
-                fiber_per_100g::float8 as fiber_per_100g,
-                water_percent::float8 as water_percent,
-                shelf_life_hours, storage_temp_c, texture,
-                weight_change_percent::float8 as weight_change_percent,
-                oil_absorption_g::float8 as oil_absorption_g,
-                water_loss_percent::float8 as water_loss_percent,
-                glycemic_index
-            FROM ingredient_states
-            WHERE ingredient_id = (SELECT id FROM catalog_ingredients WHERE slug = $1 LIMIT 1)
-              AND state = $2::processing_state"#,
-        )
-        .bind(&ctx.ingredient)
-        .bind(state_name)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)
-    } else {
-        None
-    };
-
+    // ── 11. State info (already loaded in parallel phase 2) ────────────────
     // v2: Build StateInfo with full cooking details
     let state_info: Option<StateInfo> = full_state.as_ref().map(|r| StateInfo {
         state: r.state.clone(),
@@ -530,7 +576,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     // ── v3 Step 1 — Goal Engine: resolve goal ────────────────────────────────
     let goal = ctx.resolved_goal();
 
-    // ── v3 Step 2 — Feedback Loop: diagnostics issues → synthetic candidates ─
+    // ── v3 Step 2 — Feedback Loop: batch load fix_slug candidates ──────────
     let mut all_candidates = candidates;
 
     if let Some(ref diag) = raw_diag {
@@ -539,54 +585,51 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             .filter(|issue| issue.severity == "critical" || issue.severity == "warning")
             .flat_map(|issue| issue.fix_slugs.clone())
             .filter(|slug| !existing_slugs.contains(slug))
-            .collect::<std::collections::HashSet<_>>() // dedup
+            .filter(|slug| !all_candidates.iter().any(|c| c.slug == *slug))
+            .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
 
-        // Try to load these from DB and create synthetic candidates
-        for fix_slug in &feedback_slugs {
-            // Skip if already in candidates
-            if all_candidates.iter().any(|c| c.slug == *fix_slug) {
-                continue;
-            }
+        if !feedback_slugs.is_empty() {
+            // BATCH: single query for ALL feedback slugs
             let fix_sql = format!(
-                "SELECT {} FROM catalog_ingredients WHERE slug = $1 AND COALESCE(is_active, true) = true",
+                "SELECT {} FROM catalog_ingredients WHERE slug = ANY($1) AND COALESCE(is_active, true) = true",
                 CATALOG_NUTRITION_COLS
             );
-            if let Ok(Some(fix_row)) = sqlx::query_as::<_, CatalogNutritionRow>(&fix_sql)
-                .bind(fix_slug)
-                .fetch_optional(pool)
+            let fix_rows: Vec<CatalogNutritionRow> = sqlx::query_as(&fix_sql)
+                .bind(&feedback_slugs)
+                .fetch_all(pool)
                 .await
-            {
-                // Try to get culinary props
-                let fix_pid: Option<uuid::Uuid> = sqlx::query_scalar(
-                    "SELECT p.id FROM products p WHERE p.slug = $1 LIMIT 1"
+                .unwrap_or_default();
+
+            // BATCH: single query for culinary props of all feedback slugs
+            let fix_slugs_for_culinary: Vec<String> = fix_rows.iter().filter_map(|r| r.slug.clone()).collect();
+            let fix_culinary_rows: Vec<ExtraCulinaryRow> = if !fix_slugs_for_culinary.is_empty() {
+                sqlx::query_as(
+                    r#"SELECT p.slug,
+                              fcp.sweetness, fcp.acidity, fcp.bitterness, fcp.umami, fcp.aroma
+                       FROM products p
+                       JOIN food_culinary_properties fcp ON fcp.product_id = p.id
+                       WHERE p.slug = ANY($1)"#,
                 )
-                .bind(fix_slug)
-                .fetch_optional(pool)
+                .bind(&fix_slugs_for_culinary)
+                .fetch_all(pool)
                 .await
-                .unwrap_or(None);
+                .unwrap_or_default()
+            } else {
+                vec![]
+            };
 
-                let fix_culinary: Option<CulinaryRow> = if let Some(fpid) = fix_pid {
-                    sqlx::query_as(
-                        "SELECT sweetness, acidity, bitterness, umami, aroma FROM food_culinary_properties WHERE product_id = $1"
-                    )
-                    .bind(fpid)
-                    .fetch_optional(pool)
-                    .await
-                    .unwrap_or(None)
-                } else {
-                    None
-                };
-
-                let fix_flavor = fix_culinary
-                    .as_ref()
-                    .map(|c| flavor_graph::flavor_from_culinary(
-                        c.sweetness.unwrap_or(0.0) as f64,
-                        c.acidity.unwrap_or(0.0) as f64,
-                        c.bitterness.unwrap_or(0.0) as f64,
-                        c.umami.unwrap_or(0.0) as f64,
-                        c.aroma.unwrap_or(0.0) as f64,
+            for fix_row in &fix_rows {
+                let slug = fix_row.slug.clone().unwrap_or_default();
+                let fix_flavor = fix_culinary_rows.iter()
+                    .find(|ecr| ecr.slug == slug)
+                    .map(|ecr| flavor_graph::flavor_from_culinary(
+                        ecr.sweetness.unwrap_or(0.0) as f64,
+                        ecr.acidity.unwrap_or(0.0) as f64,
+                        ecr.bitterness.unwrap_or(0.0) as f64,
+                        ecr.umami.unwrap_or(0.0) as f64,
+                        ecr.aroma.unwrap_or(0.0) as f64,
                         fix_row.fat(),
                     ))
                     .unwrap_or_else(FlavorVector::zero);
@@ -603,12 +646,12 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
                 };
 
                 all_candidates.push(Candidate {
-                    slug: fix_slug.clone(),
+                    slug: slug.clone(),
                     name: fix_row.localized_name(lang).to_string(),
                     image_url: fix_row.image_url.clone(),
                     flavor: fix_flavor,
                     nutrition: fix_nutrition,
-                    pair_score: 5.0, // moderate baseline for feedback candidates
+                    pair_score: 5.0,
                     typical_g: fix_row.typical_g().unwrap_or(30.0),
                 });
             }
