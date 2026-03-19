@@ -55,6 +55,7 @@ pub struct IngredientListItem {
     pub category_name_uk: Option<String>,
     pub calories_per_100g: Option<i32>,
     pub seasons: Vec<String>,
+    pub updated_at: String,
 }
 
 #[derive(Serialize)]
@@ -80,6 +81,7 @@ struct IngredientRow {
     category_name_uk: Option<String>,
     calories_per_100g: Option<i32>,
     seasons: Vec<String>,
+    updated_at: sqlx::types::time::OffsetDateTime,
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -103,7 +105,8 @@ pub async fn list_ingredients(
                 cc.name_en AS category_name_en,
                 cc.name_ru AS category_name_ru,
                 cc.name_pl AS category_name_pl,
-                cc.name_uk AS category_name_uk
+                cc.name_uk AS category_name_uk,
+                ci.updated_at
             FROM catalog_ingredients ci
             LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
             WHERE ci.is_active = true AND COALESCE(ci.is_published, false) = true
@@ -134,7 +137,8 @@ pub async fn list_ingredients(
                 cc.name_en AS category_name_en,
                 cc.name_ru AS category_name_ru,
                 cc.name_pl AS category_name_pl,
-                cc.name_uk AS category_name_uk
+                cc.name_uk AS category_name_uk,
+                ci.updated_at
             FROM catalog_ingredients ci
             LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
             WHERE ci.is_active = true AND COALESCE(ci.is_published, false) = true
@@ -170,6 +174,7 @@ pub async fn list_ingredients(
             category_name_uk: r.category_name_uk,
             calories_per_100g: r.calories_per_100g,
             seasons: r.seasons,
+            updated_at: r.updated_at.to_string(),
         })
         .collect();
 

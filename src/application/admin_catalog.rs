@@ -1300,6 +1300,10 @@ impl AdminCatalogService {
 
         tracing::info!("✅ Product {} ('{}') published to blog", id, product.name_en);
 
+        // Ping blog to revalidate sitemap + product pages immediately
+        let slug = product.slug.clone();
+        tokio::spawn(revalidate_blog(slug));
+
         // Return updated product
         self.get_product_by_id(id).await
     }
@@ -1307,7 +1311,7 @@ impl AdminCatalogService {
     /// Unpublish a product — removes it from the public blog/catalog.
     pub async fn unpublish_product(&self, id: Uuid) -> AppResult<ProductResponse> {
         // Verify exists
-        let _ = self.get_product_by_id(id).await?;
+        let product = self.get_product_by_id(id).await?;
 
         sqlx::query(
             "UPDATE catalog_ingredients SET is_published = false WHERE id = $1"
@@ -1321,6 +1325,11 @@ impl AdminCatalogService {
         })?;
 
         tracing::info!("Product {} unpublished from blog", id);
+
+        // Ping blog to revalidate sitemap (product removed)
+        let slug = product.slug.clone();
+        tokio::spawn(revalidate_blog(slug));
+
         self.get_product_by_id(id).await
     }
 
@@ -1461,5 +1470,53 @@ impl AdminCatalogService {
 
         tracing::info!("Found category {} -> {}", slug, category_id);
         Ok(category_id)
+    }
+}
+
+// ── Blog revalidation ─────────────────────────────────────────────────────────
+
+/// Ping Next.js ISR revalidation endpoint so the sitemap + ingredient pages
+/// refresh immediately after publish/unpublish — no waiting for revalidate timer.
+///
+/// Uses env vars:
+///   BLOG_URL                (default: https://dima-fomin.pl)
+///   BLOG_REVALIDATE_SECRET  (default: fodi-revalidate-2025-secret)
+pub async fn revalidate_blog(slug: Option<String>) {
+    let blog_url = std::env::var("BLOG_URL")
+        .unwrap_or_else(|_| "https://dima-fomin.pl".to_string());
+    let secret = std::env::var("BLOG_REVALIDATE_SECRET")
+        .unwrap_or_else(|_| "fodi-revalidate-2025-secret".to_string());
+
+    let url = format!("{}/api/revalidate", blog_url);
+
+    // Build tag-based payload: always invalidate "ingredients" tag + specific product
+    let mut tags = vec!["ingredients".to_string()];
+    let mut paths = vec!["/chef-tools/ingredients".to_string()];
+
+    if let Some(ref s) = slug {
+        tags.push(format!("ingredient-{}", s));
+        paths.push(format!("/chef-tools/nutrition/{}", s));
+        paths.push(format!("/chef-tools/ingredients/{}", s));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    // Try tag-based first (preferred, faster)
+    let body = serde_json::json!({ "tags": tags, "paths": paths });
+    match client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", secret))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => tracing::info!(
+            "🔄 Blog revalidated (tags={:?}, paths={:?}) → {}",
+            tags, paths, resp.status()
+        ),
+        Err(e) => tracing::warn!("⚠️ Blog revalidate failed: {}", e),
     }
 }
