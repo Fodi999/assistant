@@ -181,6 +181,115 @@ pub async fn list_ingredients(
     Ok(Json(ListResponse { items, total }))
 }
 
+// ── Full bulk endpoint (sitemap + SSG — eliminates N+1) ───────────────────────
+
+/// Response item with macros included — no need for per-slug detail fetch.
+#[derive(Serialize)]
+pub struct IngredientFullItem {
+    pub slug: String,
+    pub name_en: String,
+    pub name_ru: String,
+    pub name_pl: String,
+    pub name_uk: String,
+    pub image_url: Option<String>,
+    pub category_id: Option<Uuid>,
+    pub category_name_en: Option<String>,
+    pub calories_per_100g: Option<i32>,
+    pub protein_per_100g: Option<f64>,
+    pub fat_per_100g: Option<f64>,
+    pub carbs_per_100g: Option<f64>,
+    pub seasons: Vec<String>,
+    pub updated_at: String,
+}
+
+#[derive(Serialize)]
+pub struct FullListResponse {
+    pub items: Vec<IngredientFullItem>,
+    pub total: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct FullRow {
+    slug: Option<String>,
+    name_en: String,
+    name_ru: String,
+    name_pl: String,
+    name_uk: String,
+    image_url: Option<String>,
+    category_id: Option<Uuid>,
+    category_name_en: Option<String>,
+    calories_per_100g: Option<i32>,
+    protein_per_100g: Option<rust_decimal::Decimal>,
+    fat_per_100g: Option<rust_decimal::Decimal>,
+    carbs_per_100g: Option<rust_decimal::Decimal>,
+    seasons: Vec<String>,
+    updated_at: sqlx::types::time::OffsetDateTime,
+}
+
+/// GET /public/ingredients-full
+///
+/// Returns ALL published ingredients with macros in a single query.
+/// Designed for sitemap generation and SSG — eliminates N+1 fetches.
+/// No limit by default (returns everything published).
+pub async fn list_ingredients_full(
+    State(pool): State<PgPool>,
+) -> Result<Json<FullListResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let rows: Vec<FullRow> = sqlx::query_as(
+        r#"
+        SELECT
+            ci.slug, ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+            ci.image_url, ci.category_id,
+            cc.name_en AS category_name_en,
+            ci.calories_per_100g,
+            ci.protein_per_100g,
+            ci.fat_per_100g,
+            ci.carbs_per_100g,
+            ARRAY(SELECT unnest(ci.seasons::text[])) AS seasons,
+            ci.updated_at
+        FROM catalog_ingredients ci
+        LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
+        WHERE ci.is_active = true AND COALESCE(ci.is_published, false) = true
+          AND ci.slug IS NOT NULL AND ci.slug != ''
+        ORDER BY ci.name_en ASC
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error listing ingredients-full: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
+    })?;
+
+    let total = rows.len() as i64;
+    let items = rows
+        .into_iter()
+        .map(|r| {
+            use rust_decimal::prelude::ToPrimitive;
+            IngredientFullItem {
+                slug: r.slug.unwrap_or_default(),
+                name_en: r.name_en,
+                name_ru: r.name_ru,
+                name_pl: r.name_pl,
+                name_uk: r.name_uk,
+                image_url: r.image_url,
+                category_id: r.category_id,
+                category_name_en: r.category_name_en,
+                calories_per_100g: r.calories_per_100g,
+                protein_per_100g: r.protein_per_100g.and_then(|d| d.to_f64()),
+                fat_per_100g: r.fat_per_100g.and_then(|d| d.to_f64()),
+                carbs_per_100g: r.carbs_per_100g.and_then(|d| d.to_f64()),
+                seasons: r.seasons,
+                updated_at: r.updated_at.to_string(),
+            }
+        })
+        .collect();
+
+    Ok(Json(FullListResponse { items, total }))
+}
+
 /// GET /public/ingredients/:slug?lang=pl
 ///
 /// Returns the full structured ingredient reference:
