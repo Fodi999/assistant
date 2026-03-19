@@ -1,20 +1,25 @@
-//! Pipeline v2 — orchestrates DB queries + domain engines into SmartResponse.
+//! Pipeline v3 — orchestrates DB queries + domain engines into SmartResponse.
 //!
-//! v2 improvements:
-//! 1. State-aware: state affects nutrition, flavor, pairings, suggestions, explain
-//! 2. Equivalents: unit equivalents from density
-//! 3. Processing state explain: detailed before/after comparison
+//! v3 improvements:
+//! 1. Goal Engine: typed Goal enum affects suggestion scoring, diagnostics priority, explain
+//! 2. Feedback Loop: diagnostics issues → synthetic suggestion candidates
+//! 3. Confidence System: data-completeness scores per section
+//! 4. Next Actions: actionable [{type, ingredient, reason}] from issues + weak dims + goal
+//! 5. Session: session_id for continuity (storage in SmartService)
 //!
 //! Data flow:
 //! 1. Lookup main ingredient in catalog_ingredients (+ culinary props, pairings, seasonality)
 //! 2. Load state data from ingredient_states (if state requested)
 //! 3. Build FlavorVector from culinary properties, adjusted by state
 //! 4. Compute FlavorBalance (aggregate with additional ingredients)
-//! 5. Run SuggestionEngine on pairing candidates
-//! 6. Run RuleEngine diagnostics (if additional ingredients present)
-//! 7. Compute unit equivalents from density
-//! 8. Build deterministic explanation text (with state-change details)
-//! 9. Compose SmartResponse
+//! 5. Run RuleEngine diagnostics (if additional ingredients present)
+//! 6. Feedback Loop: extract fix_slugs from diagnostics → inject candidates
+//! 7. Run SuggestionEngine with goal-aware weight adjustments
+//! 8. Compute confidence scores from data completeness
+//! 9. Build next_actions from diagnostics + weak dimensions + goal
+//! 10. Compute unit equivalents from density
+//! 11. Build deterministic explanation text (goal-aware + feedback-loop)
+//! 12. Compose SmartResponse
 
 use sqlx::PgPool;
 
@@ -30,7 +35,7 @@ use crate::domain::tools::suggestion_engine::{self, Candidate};
 use crate::domain::tools::rule_engine::{self, RecipeContext};
 use crate::domain::tools::unit_converter as uc;
 
-use super::context::CulinaryContext;
+use super::context::{CulinaryContext, Goal};
 use super::response::*;
 
 // ── DB row types ─────────────────────────────────────────────────────────────
@@ -296,7 +301,8 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     // Suggestions will be computed after potential state adjustment (step 11c)
 
     // ── 9. Diagnostics (RuleEngine — only if we have 2+ ingredients) ─────────
-    let diagnostics = if !ctx.additional_ingredients.is_empty() {
+    // v3: We keep the full RuleDiagnosis for feedback loop + next_actions
+    let raw_diag = if !ctx.additional_ingredients.is_empty() {
         // Build RecipeContext from all ingredients
         let total_grams: f64 = flavor_ingredients.iter().map(|fi| fi.grams).sum();
         let total_cal: f64 = {
@@ -373,29 +379,30 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             ingredients: rule_ingredients,
         };
 
-        let diag = rule_engine::diagnose(&recipe_ctx);
-
-        Some(DiagnosticsInfo {
-            health_score: diag.health_score,
-            category_scores: {
-                let mut m = std::collections::HashMap::new();
-                m.insert("flavor".to_string(), diag.category_scores.flavor);
-                m.insert("nutrition".to_string(), diag.category_scores.nutrition);
-                m.insert("dominance".to_string(), diag.category_scores.dominance);
-                m.insert("structure".to_string(), diag.category_scores.structure);
-                m
-            },
-            issues: diag.issues.iter()
-                .map(|i| DiagnosticIssue {
-                    severity: i.severity.clone(),
-                    code: i.rule.clone(),
-                    message: i.description_key.clone(),
-                })
-                .collect(),
-        })
+        Some(rule_engine::diagnose(&recipe_ctx))
     } else {
         None
     };
+
+    // Convert to response DiagnosticsInfo
+    let diagnostics = raw_diag.as_ref().map(|diag| DiagnosticsInfo {
+        health_score: diag.health_score,
+        category_scores: {
+            let mut m = std::collections::HashMap::new();
+            m.insert("flavor".to_string(), diag.category_scores.flavor);
+            m.insert("nutrition".to_string(), diag.category_scores.nutrition);
+            m.insert("dominance".to_string(), diag.category_scores.dominance);
+            m.insert("structure".to_string(), diag.category_scores.structure);
+            m
+        },
+        issues: diag.issues.iter()
+            .map(|i| DiagnosticIssue {
+                severity: i.severity.clone(),
+                code: i.rule.clone(),
+                message: i.description_key.clone(),
+            })
+            .collect(),
+    });
 
     // ── 10. Seasonality ──────────────────────────────────────────────────────
     let seasonality_rows: Vec<SeasonRow> = if let Some(_pid) = product_id {
@@ -473,15 +480,13 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     // ── 11a. v2: Override nutrition with state nutrition if available ─────────
     let nutrition = if let Some(ref st) = full_state {
         if st.calories_per_100g.is_some() || st.protein_per_100g.is_some() {
-            // Use state-specific nutrition instead of raw
             breakdown_per_100g_nullable(
                 st.calories_per_100g,
                 st.protein_per_100g,
                 st.fat_per_100g,
                 st.carbs_per_100g,
                 st.fiber_per_100g,
-                None, // sugar not tracked per state
-                None, // salt not tracked per state
+                None, None,
             )
         } else {
             nutrition
@@ -491,9 +496,8 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     };
 
     // ── 11b. v2: Adjust flavor vector based on state ─────────────────────────
-    let (main_flavor, flavor_profile) = if let Some(ref st) = full_state {
+    let (_main_flavor, flavor_profile) = if let Some(ref st) = full_state {
         let adjusted = adjust_flavor_for_state(&main_flavor, &st.state, st.oil_absorption_g, st.water_loss_percent);
-        // Rebuild flavor_ingredients with adjusted main flavor
         let mut adj_ingredients = vec![FlavorIngredient {
             slug: ctx.ingredient.clone(),
             grams: typical_g,
@@ -522,33 +526,159 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     // Use the (possibly adjusted) balance for subsequent engines
     let balance = &flavor_profile.balance;
 
-    // ── 11c. v2: Re-run suggestions with state-adjusted balance ──────────────
+    // ── v3 Step 1 — Goal Engine: resolve goal ────────────────────────────────
+    let goal = ctx.resolved_goal();
+
+    // ── v3 Step 2 — Feedback Loop: diagnostics issues → synthetic candidates ─
+    let mut all_candidates = candidates;
+
+    if let Some(ref diag) = raw_diag {
+        // Collect fix_slugs from issues, excluding ingredients already present
+        let feedback_slugs: Vec<String> = diag.issues.iter()
+            .filter(|issue| issue.severity == "critical" || issue.severity == "warning")
+            .flat_map(|issue| issue.fix_slugs.clone())
+            .filter(|slug| !existing_slugs.contains(slug))
+            .collect::<std::collections::HashSet<_>>() // dedup
+            .into_iter()
+            .collect();
+
+        // Try to load these from DB and create synthetic candidates
+        for fix_slug in &feedback_slugs {
+            // Skip if already in candidates
+            if all_candidates.iter().any(|c| c.slug == *fix_slug) {
+                continue;
+            }
+            let fix_sql = format!(
+                "SELECT {} FROM catalog_ingredients WHERE slug = $1 AND COALESCE(is_active, true) = true",
+                CATALOG_NUTRITION_COLS
+            );
+            if let Ok(Some(fix_row)) = sqlx::query_as::<_, CatalogNutritionRow>(&fix_sql)
+                .bind(fix_slug)
+                .fetch_optional(pool)
+                .await
+            {
+                // Try to get culinary props
+                let fix_pid: Option<uuid::Uuid> = sqlx::query_scalar(
+                    "SELECT p.id FROM products p WHERE p.slug = $1 LIMIT 1"
+                )
+                .bind(fix_slug)
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None);
+
+                let fix_culinary: Option<CulinaryRow> = if let Some(fpid) = fix_pid {
+                    sqlx::query_as(
+                        "SELECT sweetness, acidity, bitterness, umami, aroma FROM food_culinary_properties WHERE product_id = $1"
+                    )
+                    .bind(fpid)
+                    .fetch_optional(pool)
+                    .await
+                    .unwrap_or(None)
+                } else {
+                    None
+                };
+
+                let fix_flavor = fix_culinary
+                    .as_ref()
+                    .map(|c| flavor_graph::flavor_from_culinary(
+                        c.sweetness.unwrap_or(0.0) as f64,
+                        c.acidity.unwrap_or(0.0) as f64,
+                        c.bitterness.unwrap_or(0.0) as f64,
+                        c.umami.unwrap_or(0.0) as f64,
+                        c.aroma.unwrap_or(0.0) as f64,
+                        fix_row.fat(),
+                    ))
+                    .unwrap_or_else(FlavorVector::zero);
+
+                let fix_nutrition = NutritionBreakdown {
+                    calories: fix_row.cal(),
+                    protein_g: fix_row.prot(),
+                    fat_g: fix_row.fat(),
+                    carbs_g: fix_row.carbs(),
+                    fiber_g: fix_row.fiber(),
+                    sugar_g: fix_row.sugar(),
+                    salt_g: 0.0,
+                    sodium_mg: 0.0,
+                };
+
+                all_candidates.push(Candidate {
+                    slug: fix_slug.clone(),
+                    name: fix_row.localized_name(lang).to_string(),
+                    image_url: fix_row.image_url.clone(),
+                    flavor: fix_flavor,
+                    nutrition: fix_nutrition,
+                    pair_score: 5.0, // moderate baseline for feedback candidates
+                    typical_g: fix_row.typical_g().unwrap_or(30.0),
+                });
+            }
+        }
+    }
+
+    // ── v3 Step 1+11c: Goal-aware suggestions ────────────────────────────────
+    // Run SuggestionEngine, then re-rank by goal
     let suggestion_result = suggestion_engine::suggest_ingredients(
-        balance, &candidates, &existing_slugs, 5,
+        balance, &all_candidates, &existing_slugs, 10, // fetch more, then re-rank
     );
-    let suggestions: Vec<SuggestionInfo> = suggestion_result
+    let mut scored_suggestions: Vec<SuggestionInfo> = suggestion_result
         .suggestions
         .into_iter()
-        .map(|s| SuggestionInfo {
-            slug: s.slug,
-            name: s.name,
-            image_url: s.image_url,
-            score: s.score,
-            reasons: s.reasons,
-            fills_gaps: s.fills_gaps,
-            suggested_grams: s.suggested_grams,
+        .map(|s| {
+            let base_score = s.score as f64;
+            // Goal-aware bonus (up to +15 points)
+            let goal_bonus = goal_bonus_for_candidate(&s.slug, &s.reasons, &s.fills_gaps, goal, &all_candidates);
+            let final_score = (base_score + goal_bonus).clamp(0.0, 100.0).round() as u8;
+            SuggestionInfo {
+                slug: s.slug,
+                name: s.name,
+                image_url: s.image_url,
+                score: final_score,
+                reasons: s.reasons,
+                fills_gaps: s.fills_gaps,
+                suggested_grams: s.suggested_grams,
+            }
         })
         .collect();
+
+    // Re-sort by adjusted score and take top 5
+    scored_suggestions.sort_by(|a, b| b.score.cmp(&a.score));
+    scored_suggestions.truncate(5);
+    let suggestions = scored_suggestions;
 
     // ── 12. Unit equivalents from density (v2) ──────────────────────────────
     let density = row.density();
     let equivalents = build_equivalents(100.0, density);
 
-    // ── 13. Build explanation (v2: includes state-change details) ─────────────
-    let explain = build_explain_v2(
-        &ingredient_info, balance, &pairings, &suggestions,
-        &diagnostics, &ctx.goal, &full_state, &row,
+    // ── v3 Step 3 — Confidence System ────────────────────────────────────────
+    let confidence = build_confidence(
+        &row,
+        culinary.is_some(),
+        pairings.len(),
+        &full_state,
+        &nutrition,
     );
+
+    // ── v3 Step 4 — Next Actions ─────────────────────────────────────────────
+    let next_actions = build_next_actions(
+        &raw_diag,
+        balance,
+        goal,
+        &suggestions,
+        &existing_slugs,
+    );
+
+    // ── 13. Build explanation (v3: goal-aware + feedback-loop) ───────────────
+    let explain = build_explain_v3(
+        &ingredient_info, balance, &pairings, &suggestions,
+        &diagnostics, goal, &full_state, &row,
+        &confidence, &next_actions,
+    );
+
+    // ── v3 Step 5 — Session ID ───────────────────────────────────────────────
+    let session_id = ctx.session_id.clone().unwrap_or_else(|| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+        format!("ss-{:x}", ts)
+    });
 
     // ── 14. Compose response ─────────────────────────────────────────────────
     let timing_ms = start.elapsed().as_millis() as u64;
@@ -564,12 +694,15 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         diagnostics,
         equivalents,
         seasonality,
+        confidence,
+        next_actions,
         explain,
+        session_id,
         meta: SmartMeta {
             timing_ms,
             cached: false,
             cache_key: ctx.cache_key(),
-            engine_version: "2.0.0".to_string(),
+            engine_version: "3.0.0".to_string(),
         },
     })
 }
@@ -665,17 +798,19 @@ fn build_equivalents(grams: f64, density: f64) -> Vec<EquivalentInfo> {
         .collect()
 }
 
-// ── Deterministic explanation builder v2 ─────────────────────────────────────
+// ── Deterministic explanation builder v3 ─────────────────────────────────────
 
-fn build_explain_v2(
+fn build_explain_v3(
     ingredient: &IngredientInfo,
     balance: &FlavorBalance,
     pairings: &[PairingInfo],
     suggestions: &[SuggestionInfo],
     diagnostics: &Option<DiagnosticsInfo>,
-    goal: &Option<String>,
+    goal: Goal,
     full_state: &Option<StateRow>,
     raw_row: &CatalogNutritionRow,
+    confidence: &ConfidenceInfo,
+    next_actions: &[NextAction],
 ) -> Vec<String> {
     let mut lines = Vec::new();
 
@@ -687,12 +822,11 @@ fn build_explain_v2(
         balance.balance_score,
     ));
 
-    // ── State-change explanation (v2 step 4) ────────────────────────────────
+    // ── State-change explanation ─────────────────────────────────────────────
     if let Some(st) = full_state {
         if st.state != "raw" {
             lines.push(format!("Processing state: {}.", st.state));
 
-            // Nutrition comparison (raw vs cooked)
             if let Some(cooked_cal) = st.calories_per_100g {
                 let raw_cal = raw_row.cal();
                 let diff = cooked_cal - raw_cal;
@@ -727,7 +861,6 @@ fn build_explain_v2(
                 }
             }
 
-            // Physical changes
             if let Some(wc) = st.weight_change_percent {
                 if wc.abs() > 1.0 {
                     if wc < 0.0 {
@@ -747,13 +880,9 @@ fn build_explain_v2(
                     lines.push(format!("Water loss: {:.0}%.", wl));
                 }
             }
-
-            // Texture
             if let Some(ref tex) = st.texture {
                 lines.push(format!("Texture: {}.", tex));
             }
-
-            // Storage
             if let Some(hours) = st.shelf_life_hours {
                 let days = hours / 24;
                 if days > 0 {
@@ -765,13 +894,11 @@ fn build_explain_v2(
         }
     }
 
-    // Weak dimensions
+    // Weak / strong dimensions
     if !balance.weak_dimensions.is_empty() {
         let weak: Vec<&str> = balance.weak_dimensions.iter().map(|d| d.dimension.as_str()).collect();
         lines.push(format!("Weak flavor areas: {}.", weak.join(", ")));
     }
-
-    // Strong dimensions
     if !balance.strong_dimensions.is_empty() {
         let strong: Vec<&str> = balance.strong_dimensions.iter().map(|d| d.dimension.as_str()).collect();
         lines.push(format!("Strong flavor areas: {}.", strong.join(", ")));
@@ -779,10 +906,7 @@ fn build_explain_v2(
 
     // Top pairing
     if let Some(top) = pairings.first() {
-        lines.push(format!(
-            "Best pairing: {} (score {:.1}).",
-            top.name, top.pair_score,
-        ));
+        lines.push(format!("Best pairing: {} (score {:.1}).", top.name, top.pair_score));
     }
 
     // Top suggestion
@@ -805,15 +929,252 @@ fn build_explain_v2(
         }
     }
 
-    // Goal hint
-    if let Some(goal) = goal {
-        match goal.as_str() {
-            "high-protein" => lines.push("Goal: high-protein — prioritize protein-rich ingredients.".to_string()),
-            "low-carb" => lines.push("Goal: low-carb — minimize carbohydrate sources.".to_string()),
-            "flavor-boost" => lines.push("Goal: flavor-boost — focus on filling weak flavor dimensions.".to_string()),
-            _ => lines.push(format!("Goal: {} — balanced approach.", goal)),
-        }
+    // ── v3: Goal-aware explanation ───────────────────────────────────────────
+    match goal {
+        Goal::HighProtein => lines.push("Goal: high-protein — prioritize protein-rich ingredients, reduce carb sources.".to_string()),
+        Goal::LowCalorie  => lines.push("Goal: low-calorie — prefer low-energy-density ingredients, watch portion sizes.".to_string()),
+        Goal::Keto        => lines.push("Goal: keto — minimize carbs (<20g), favor fat + protein sources.".to_string()),
+        Goal::MuscleGain  => lines.push("Goal: muscle-gain — high protein + moderate carbs for recovery.".to_string()),
+        Goal::Diet        => lines.push("Goal: diet — calorie deficit, high satiety (fiber + protein).".to_string()),
+        Goal::FlavorBoost => lines.push("Goal: flavor-boost — focus on filling weak flavor dimensions.".to_string()),
+        Goal::Balanced    => {} // no extra line for default
+    }
+
+    // ── v3: Confidence explanation ───────────────────────────────────────────
+    if confidence.overall < 0.5 {
+        lines.push(format!(
+            "⚠ Low data confidence ({:.0}%). Results may be approximate.",
+            confidence.overall * 100.0,
+        ));
+    }
+
+    // ── v3: Next actions summary ─────────────────────────────────────────────
+    if !next_actions.is_empty() {
+        let top_action = &next_actions[0];
+        lines.push(format!(
+            "Next step: {} {} — {}.",
+            top_action.action_type, top_action.ingredient, top_action.reason,
+        ));
     }
 
     lines
+}
+
+// ── v3: Goal-aware suggestion bonus ──────────────────────────────────────────
+
+/// Compute a bonus (or penalty) for a suggestion based on the active goal.
+/// Looks up the candidate's nutrition to decide.
+fn goal_bonus_for_candidate(
+    slug: &str,
+    _reasons: &[String],
+    fills_gaps: &[String],
+    goal: Goal,
+    candidates: &[Candidate],
+) -> f64 {
+    let candidate = candidates.iter().find(|c| c.slug == slug);
+    let n = candidate.map(|c| &c.nutrition);
+
+    match goal {
+        Goal::Balanced => 0.0, // no adjustment
+
+        Goal::HighProtein | Goal::MuscleGain => {
+            // Boost protein-rich candidates
+            if let Some(nut) = n {
+                let protein_ratio = if nut.calories > 0.0 {
+                    (nut.protein_g * 4.0 / nut.calories).min(1.0)
+                } else { 0.0 };
+                protein_ratio * 15.0 // up to +15 for pure protein
+            } else { 0.0 }
+        }
+
+        Goal::LowCalorie | Goal::Diet => {
+            // Boost low-cal, high-fiber; penalize high-cal
+            if let Some(nut) = n {
+                let cal_penalty = if nut.calories > 200.0 { -8.0 } else { 0.0 };
+                let fiber_bonus = (nut.fiber_g / 10.0).min(1.0) * 8.0;
+                cal_penalty + fiber_bonus
+            } else { 0.0 }
+        }
+
+        Goal::Keto => {
+            // Boost fat, penalize carbs
+            if let Some(nut) = n {
+                let carb_penalty = if nut.carbs_g > 10.0 { -12.0 } else { 0.0 };
+                let fat_bonus = (nut.fat_g / 30.0).min(1.0) * 10.0;
+                carb_penalty + fat_bonus
+            } else { 0.0 }
+        }
+
+        Goal::FlavorBoost => {
+            // Bonus for candidates that fill flavor gaps
+            if !fills_gaps.is_empty() {
+                fills_gaps.len() as f64 * 5.0 // +5 per gap filled
+            } else { 0.0 }
+        }
+    }
+}
+
+// ── v3: Confidence System ────────────────────────────────────────────────────
+
+fn build_confidence(
+    row: &CatalogNutritionRow,
+    has_culinary: bool,
+    pairing_count: usize,
+    full_state: &Option<StateRow>,
+    nutrition: &nutrition::NutritionBreakdownNullable,
+) -> ConfidenceInfo {
+    // Nutrition confidence: count non-null fields / total expected fields (7)
+    let nut_fields = [
+        nutrition.calories.is_some(),
+        nutrition.protein_g.is_some(),
+        nutrition.fat_g.is_some(),
+        nutrition.carbs_g.is_some(),
+        nutrition.fiber_g.is_some(),
+        nutrition.sugar_g.is_some(),
+        nutrition.salt_g.is_some(),
+    ];
+    let nut_filled = nut_fields.iter().filter(|&&b| b).count() as f64;
+    let nutrition_conf = nut_filled / 7.0;
+
+    // Flavor confidence: do we have culinary properties?
+    let flavor_conf = if has_culinary { 0.95 } else { 0.3 };
+
+    // Pairing confidence: based on how many pairings we found (0→0.2, 8→1.0)
+    let pairing_conf = ((pairing_count as f64) / 8.0).min(1.0).max(0.2);
+
+    // State bonus: if state was requested and found, boost confidence
+    let state_bonus = match full_state {
+        Some(_) => 0.05,
+        None => 0.0,
+    };
+
+    // Density bonus: affects equivalents quality
+    let density_bonus = if row.density() > 0.0 && row.density() != 1.0 { 0.05 } else { 0.0 };
+
+    // Overall: weighted average
+    let overall = (
+        nutrition_conf * 0.35 +
+        flavor_conf * 0.30 +
+        pairing_conf * 0.25 +
+        state_bonus +
+        density_bonus
+    ).min(1.0);
+
+    ConfidenceInfo {
+        overall:   uc::display_round(overall),
+        nutrition: uc::display_round(nutrition_conf),
+        pairings:  uc::display_round(pairing_conf),
+        flavor:    uc::display_round(flavor_conf),
+    }
+}
+
+// ── v3: Next Actions ─────────────────────────────────────────────────────────
+
+fn build_next_actions(
+    raw_diag: &Option<rule_engine::RuleDiagnosis>,
+    balance: &FlavorBalance,
+    goal: Goal,
+    suggestions: &[SuggestionInfo],
+    existing_slugs: &[String],
+) -> Vec<NextAction> {
+    let mut actions: Vec<NextAction> = Vec::new();
+    let mut used_slugs: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // 1. From diagnostics: critical issues → "add" actions with fix_slugs
+    if let Some(diag) = raw_diag {
+        for issue in &diag.issues {
+            if issue.severity != "critical" && issue.severity != "warning" {
+                continue;
+            }
+            for slug in &issue.fix_slugs {
+                if existing_slugs.contains(slug) || used_slugs.contains(slug) {
+                    continue;
+                }
+                let reason = match issue.rule.as_str() {
+                    "low_acidity"          => "balances acidity",
+                    "low_umami"            => "adds umami depth",
+                    "low_fat"              => "adds fat richness",
+                    "low_aroma"            => "boosts aroma",
+                    "low_protein"          => "increases protein content",
+                    "high_carbs"           => "balances macros (reduce carb ratio)",
+                    "missing_fat_source"   => "adds fat source for mouthfeel",
+                    "missing_aromatics"    => "adds aromatic complexity",
+                    "missing_vegetables"   => "adds vegetable nutrition",
+                    "missing_protein_source" => "adds protein source",
+                    "missing_acid_source"  => "adds acid for brightness",
+                    "low_fiber"            => "adds fiber",
+                    _                      => "addresses recipe issue",
+                };
+
+                let priority = if issue.severity == "critical" { 1 } else { 2 };
+                actions.push(NextAction {
+                    action_type: "add".to_string(),
+                    ingredient: slug.clone(),
+                    reason: reason.to_string(),
+                    priority,
+                });
+                used_slugs.insert(slug.clone());
+
+                if actions.len() >= 5 { break; }
+            }
+            if actions.len() >= 5 { break; }
+        }
+    }
+
+    // 2. From weak dimensions: suggest top suggestion that fills a gap
+    if actions.len() < 5 {
+        for gap in &balance.weak_dimensions {
+            if let Some(s) = suggestions.iter().find(|s| s.fills_gaps.contains(&gap.dimension)) {
+                if !used_slugs.contains(&s.slug) && !existing_slugs.contains(&s.slug) {
+                    actions.push(NextAction {
+                        action_type: "add".to_string(),
+                        ingredient: s.slug.clone(),
+                        reason: format!("fills {} gap", gap.dimension),
+                        priority: 3,
+                    });
+                    used_slugs.insert(s.slug.clone());
+                }
+            }
+            if actions.len() >= 5 { break; }
+        }
+    }
+
+    // 3. Goal-specific actions
+    if actions.len() < 5 {
+        match goal {
+            Goal::HighProtein | Goal::MuscleGain => {
+                for s in suggestions {
+                    if s.reasons.iter().any(|r| r.contains("nutritional value")) && !used_slugs.contains(&s.slug) {
+                        actions.push(NextAction {
+                            action_type: "add".to_string(),
+                            ingredient: s.slug.clone(),
+                            reason: "boosts protein for your goal".to_string(),
+                            priority: 3,
+                        });
+                        used_slugs.insert(s.slug.clone());
+                        break;
+                    }
+                }
+            }
+            Goal::FlavorBoost => {
+                if let Some(s) = suggestions.first() {
+                    if !used_slugs.contains(&s.slug) {
+                        actions.push(NextAction {
+                            action_type: "add".to_string(),
+                            ingredient: s.slug.clone(),
+                            reason: "maximizes flavor balance".to_string(),
+                            priority: 3,
+                        });
+                        used_slugs.insert(s.slug.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Sort by priority
+    actions.sort_by_key(|a| a.priority);
+    actions.truncate(5);
+    actions
 }

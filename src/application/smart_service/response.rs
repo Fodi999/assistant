@@ -1,4 +1,4 @@
-//! SmartResponse — output contract for SmartService v2.
+//! SmartResponse — output contract for SmartService v3.
 
 use serde::{Deserialize, Serialize};
 use crate::domain::tools::flavor_graph::{FlavorVector, FlavorBalance};
@@ -29,6 +29,7 @@ pub struct SmartResponse {
     pub pairings: Vec<PairingInfo>,
 
     /// Suggested ingredients to complement (from SuggestionEngine)
+    /// v3: goal-aware scoring + feedback-loop from diagnostics
     pub suggestions: Vec<SuggestionInfo>,
 
     /// Recipe diagnostics (from RuleEngine — if additional ingredients present)
@@ -41,9 +42,18 @@ pub struct SmartResponse {
     /// Seasonality data
     pub seasonality: Vec<SeasonalityInfo>,
 
+    /// Confidence scores for each data source (v3)
+    pub confidence: ConfidenceInfo,
+
+    /// Actionable next steps derived from diagnostics + goal (v3)
+    pub next_actions: Vec<NextAction>,
+
     /// Human-readable deterministic explanation (no AI)
-    /// v2: includes state-change explanations
+    /// v3: goal-aware + feedback-loop explanations
     pub explain: Vec<String>,
+
+    /// Session ID for continuity (v3)
+    pub session_id: String,
 
     /// Response metadata
     pub meta: SmartMeta,
@@ -171,4 +181,35 @@ pub struct SmartMeta {
     pub cached: bool,
     pub cache_key: String,
     pub engine_version: String,
+}
+
+// ── v3: Confidence System ────────────────────────────────────────────────────
+
+/// Confidence scores indicating data completeness / reliability (0.0–1.0).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfidenceInfo {
+    /// Overall confidence (weighted average of sub-scores)
+    pub overall: f64,
+    /// How complete nutrition data is (fields present / total fields)
+    pub nutrition: f64,
+    /// How confident we are in pairing recommendations
+    pub pairings: f64,
+    /// How reliable the flavor vector is (culinary props in DB?)
+    pub flavor: f64,
+}
+
+// ── v3: Next Actions ─────────────────────────────────────────────────────────
+
+/// A concrete actionable step the user can take next.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NextAction {
+    /// Action type: "add", "remove", "swap", "adjust"
+    #[serde(rename = "type")]
+    pub action_type: String,
+    /// Target ingredient slug (clickable)
+    pub ingredient: String,
+    /// Human-readable reason
+    pub reason: String,
+    /// Priority: 1 = highest
+    pub priority: u8,
 }
