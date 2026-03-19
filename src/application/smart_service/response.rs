@@ -164,7 +164,11 @@ pub struct DiagnosticsInfo {
 pub struct DiagnosticIssue {
     pub severity: String,
     pub code: String,
+    /// Localized human-readable message
     pub message: String,
+    /// Suggested fix slugs (clickable ingredients)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fix_slugs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,7 +212,9 @@ pub struct NextAction {
     pub action_type: String,
     /// Target ingredient slug (clickable)
     pub ingredient: String,
-    /// Human-readable reason
+    /// Localized ingredient name for display
+    pub name: String,
+    /// Human-readable reason (localized)
     pub reason: String,
     /// Priority: 1 = highest
     pub priority: u8,

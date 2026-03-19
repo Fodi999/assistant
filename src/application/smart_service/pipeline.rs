@@ -384,7 +384,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         None
     };
 
-    // Convert to response DiagnosticsInfo
+    // Convert to response DiagnosticsInfo (v3: localized messages + fix_slugs)
     let diagnostics = raw_diag.as_ref().map(|diag| DiagnosticsInfo {
         health_score: diag.health_score,
         category_scores: {
@@ -399,7 +399,8 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             .map(|i| DiagnosticIssue {
                 severity: i.severity.clone(),
                 code: i.rule.clone(),
-                message: i.description_key.clone(),
+                message: localize_diagnostic(&i.rule, &i.severity, lang),
+                fix_slugs: i.fix_slugs.clone(),
             })
             .collect(),
     });
@@ -658,19 +659,33 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     );
 
     // ── v3 Step 4 — Next Actions ─────────────────────────────────────────────
+    // Build slug→name map from all known ingredients for localized display
+    let mut slug_names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for c in &all_candidates {
+        slug_names.entry(c.slug.clone()).or_insert_with(|| c.name.clone());
+    }
+    for p in &pairings {
+        slug_names.entry(p.slug.clone()).or_insert_with(|| p.name.clone());
+    }
+    for s in &suggestions {
+        slug_names.entry(s.slug.clone()).or_insert_with(|| s.name.clone());
+    }
+
     let next_actions = build_next_actions(
         &raw_diag,
         balance,
         goal,
         &suggestions,
         &existing_slugs,
+        lang,
+        &slug_names,
     );
 
     // ── 13. Build explanation (v3: goal-aware + feedback-loop) ───────────────
     let explain = build_explain_v3(
         &ingredient_info, balance, &pairings, &suggestions,
         &diagnostics, goal, &full_state, &row,
-        &confidence, &next_actions,
+        &confidence, &next_actions, lang,
     );
 
     // ── v3 Step 5 — Session ID ───────────────────────────────────────────────
@@ -811,150 +826,118 @@ fn build_explain_v3(
     raw_row: &CatalogNutritionRow,
     confidence: &ConfidenceInfo,
     next_actions: &[NextAction],
+    lang: Language,
 ) -> Vec<String> {
     let mut lines = Vec::new();
 
     // Ingredient overview
+    let lbl_balance = match lang {
+        Language::Ru => "баланс вкуса",
+        Language::Uk => "баланс смаку",
+        Language::Pl => "balans smaku",
+        Language::En => "flavor balance score",
+    };
     lines.push(format!(
-        "{} ({}) — flavor balance score: {}/100.",
+        "{} ({}) — {}: {}/100.",
         ingredient.name,
-        ingredient.product_type.as_deref().unwrap_or("unknown"),
+        ingredient.product_type.as_deref().unwrap_or("—"),
+        lbl_balance,
         balance.balance_score,
     ));
 
     // ── State-change explanation ─────────────────────────────────────────────
     if let Some(st) = full_state {
         if st.state != "raw" {
-            lines.push(format!("Processing state: {}.", st.state));
+            let lbl_state = match lang {
+                Language::Ru => "Обработка",
+                Language::Uk => "Обробка",
+                Language::Pl => "Obróbka",
+                Language::En => "Processing state",
+            };
+            lines.push(format!("{}: {}.", lbl_state, st.state));
 
             if let Some(cooked_cal) = st.calories_per_100g {
                 let raw_cal = raw_row.cal();
                 let diff = cooked_cal - raw_cal;
                 if diff.abs() > 1.0 {
-                    let direction = if diff > 0.0 { "+" } else { "" };
-                    lines.push(format!(
-                        "Calories: {:.0} → {:.0} kcal/100g ({}{:.0}).",
-                        raw_cal, cooked_cal, direction, diff,
-                    ));
+                    let dir = if diff > 0.0 { "+" } else { "" };
+                    lines.push(format!("Calories: {:.0} → {:.0} kcal/100g ({}{:.0}).", raw_cal, cooked_cal, dir, diff));
                 }
             }
             if let Some(cooked_fat) = st.fat_per_100g {
                 let raw_fat = raw_row.fat();
                 let diff = cooked_fat - raw_fat;
                 if diff.abs() > 0.5 {
-                    let direction = if diff > 0.0 { "+" } else { "" };
-                    lines.push(format!(
-                        "Fat: {:.1} → {:.1} g/100g ({}{:.1}).",
-                        raw_fat, cooked_fat, direction, diff,
-                    ));
+                    let dir = if diff > 0.0 { "+" } else { "" };
+                    lines.push(format!("Fat: {:.1} → {:.1} g/100g ({}{:.1}).", raw_fat, cooked_fat, dir, diff));
                 }
             }
             if let Some(cooked_prot) = st.protein_per_100g {
                 let raw_prot = raw_row.prot();
                 let diff = cooked_prot - raw_prot;
                 if diff.abs() > 0.5 {
-                    let direction = if diff > 0.0 { "+" } else { "" };
-                    lines.push(format!(
-                        "Protein: {:.1} → {:.1} g/100g ({}{:.1}).",
-                        raw_prot, cooked_prot, direction, diff,
-                    ));
-                }
-            }
-
-            if let Some(wc) = st.weight_change_percent {
-                if wc.abs() > 1.0 {
-                    if wc < 0.0 {
-                        lines.push(format!("Weight loss: {:.0}% (concentrates flavor).", wc.abs()));
-                    } else {
-                        lines.push(format!("Weight gain: +{:.0}% (absorbs liquid).", wc));
-                    }
-                }
-            }
-            if let Some(oil) = st.oil_absorption_g {
-                if oil > 1.0 {
-                    lines.push(format!("Oil absorption: {:.1}g per 100g raw product.", oil));
-                }
-            }
-            if let Some(wl) = st.water_loss_percent {
-                if wl > 2.0 {
-                    lines.push(format!("Water loss: {:.0}%.", wl));
+                    let dir = if diff > 0.0 { "+" } else { "" };
+                    lines.push(format!("Protein: {:.1} → {:.1} g/100g ({}{:.1}).", raw_prot, cooked_prot, dir, diff));
                 }
             }
             if let Some(ref tex) = st.texture {
-                lines.push(format!("Texture: {}.", tex));
-            }
-            if let Some(hours) = st.shelf_life_hours {
-                let days = hours / 24;
-                if days > 0 {
-                    lines.push(format!("Shelf life: ~{} days.", days));
-                } else {
-                    lines.push(format!("Shelf life: ~{} hours.", hours));
-                }
+                let lbl = match lang { Language::Ru => "Текстура", Language::Uk => "Текстура", Language::Pl => "Tekstura", Language::En => "Texture" };
+                lines.push(format!("{}: {}.", lbl, tex));
             }
         }
     }
 
-    // Weak / strong dimensions
+    // Weak / strong dimensions (localized)
     if !balance.weak_dimensions.is_empty() {
-        let weak: Vec<&str> = balance.weak_dimensions.iter().map(|d| d.dimension.as_str()).collect();
-        lines.push(format!("Weak flavor areas: {}.", weak.join(", ")));
+        let weak: Vec<String> = balance.weak_dimensions.iter().map(|d| localize_dimension(&d.dimension, lang)).collect();
+        let lbl = match lang { Language::Ru => "Слабые зоны вкуса", Language::Uk => "Слабкі зони смаку", Language::Pl => "Słabe strefy smaku", Language::En => "Weak flavor areas" };
+        lines.push(format!("{}: {}.", lbl, weak.join(", ")));
     }
     if !balance.strong_dimensions.is_empty() {
-        let strong: Vec<&str> = balance.strong_dimensions.iter().map(|d| d.dimension.as_str()).collect();
-        lines.push(format!("Strong flavor areas: {}.", strong.join(", ")));
+        let strong: Vec<String> = balance.strong_dimensions.iter().map(|d| localize_dimension(&d.dimension, lang)).collect();
+        let lbl = match lang { Language::Ru => "Сильные зоны вкуса", Language::Uk => "Сильні зони смаку", Language::Pl => "Silne strefy smaku", Language::En => "Strong flavor areas" };
+        lines.push(format!("{}: {}.", lbl, strong.join(", ")));
     }
 
     // Top pairing
     if let Some(top) = pairings.first() {
-        lines.push(format!("Best pairing: {} (score {:.1}).", top.name, top.pair_score));
+        let lbl = match lang { Language::Ru => "Лучшая пара", Language::Uk => "Найкраща пара", Language::Pl => "Najlepsza para", Language::En => "Best pairing" };
+        lines.push(format!("{}: {} ({:.1}).", lbl, top.name, top.pair_score));
     }
 
     // Top suggestion
     if let Some(top) = suggestions.first() {
-        lines.push(format!(
-            "Top suggestion: {} — {} (score {}/100).",
-            top.name,
-            top.reasons.first().map(|s| s.as_str()).unwrap_or("complementary"),
-            top.score,
-        ));
+        let lbl = match lang { Language::Ru => "Рекомендация", Language::Uk => "Рекомендація", Language::Pl => "Rekomendacja", Language::En => "Top suggestion" };
+        lines.push(format!("{}: {} ({}/100).", lbl, top.name, top.score));
     }
 
     // Diagnostics summary
     if let Some(diag) = diagnostics {
-        lines.push(format!("Recipe health score: {}/100.", diag.health_score));
-        let critical = diag.issues.iter().filter(|i| i.severity == "critical").count();
-        let warnings = diag.issues.iter().filter(|i| i.severity == "warning").count();
-        if critical > 0 || warnings > 0 {
-            lines.push(format!("{} critical, {} warnings found.", critical, warnings));
-        }
+        let lbl = match lang { Language::Ru => "Здоровье рецепта", Language::Uk => "Здоров'я рецепту", Language::Pl => "Zdrowie przepisu", Language::En => "Recipe health score" };
+        lines.push(format!("{}: {}/100.", lbl, diag.health_score));
     }
 
-    // ── v3: Goal-aware explanation ───────────────────────────────────────────
-    match goal {
-        Goal::HighProtein => lines.push("Goal: high-protein — prioritize protein-rich ingredients, reduce carb sources.".to_string()),
-        Goal::LowCalorie  => lines.push("Goal: low-calorie — prefer low-energy-density ingredients, watch portion sizes.".to_string()),
-        Goal::Keto        => lines.push("Goal: keto — minimize carbs (<20g), favor fat + protein sources.".to_string()),
-        Goal::MuscleGain  => lines.push("Goal: muscle-gain — high protein + moderate carbs for recovery.".to_string()),
-        Goal::Diet        => lines.push("Goal: diet — calorie deficit, high satiety (fiber + protein).".to_string()),
-        Goal::FlavorBoost => lines.push("Goal: flavor-boost — focus on filling weak flavor dimensions.".to_string()),
-        Goal::Balanced    => {} // no extra line for default
+    // Goal
+    if goal != Goal::Balanced {
+        lines.push(localize_goal_explain(goal, lang));
     }
 
-    // ── v3: Confidence explanation ───────────────────────────────────────────
+    // Confidence warning
     if confidence.overall < 0.5 {
-        lines.push(format!(
-            "⚠ Low data confidence ({:.0}%). Results may be approximate.",
-            confidence.overall * 100.0,
-        ));
+        let msg = match lang {
+            Language::Ru => format!("⚠ Низкая уверенность данных ({:.0}%). Результаты приблизительные.", confidence.overall * 100.0),
+            Language::Uk => format!("⚠ Низька впевненість даних ({:.0}%). Результати приблизні.", confidence.overall * 100.0),
+            Language::Pl => format!("⚠ Niska pewność danych ({:.0}%). Wyniki przybliżone.", confidence.overall * 100.0),
+            Language::En => format!("⚠ Low data confidence ({:.0}%). Results may be approximate.", confidence.overall * 100.0),
+        };
+        lines.push(msg);
     }
 
-    // ── v3: Next actions summary ─────────────────────────────────────────────
+    // Next action hint
     if !next_actions.is_empty() {
-        let top_action = &next_actions[0];
-        lines.push(format!(
-            "Next step: {} {} — {}.",
-            top_action.action_type, top_action.ingredient, top_action.reason,
-        ));
+        let a = &next_actions[0];
+        let lbl = match lang { Language::Ru => "Следующий шаг", Language::Uk => "Наступний крок", Language::Pl => "Następny krok", Language::En => "Next step" };
+        lines.push(format!("{}: {} {} — {}.", lbl, a.action_type, a.name, a.reason));
     }
 
     lines
@@ -1068,7 +1051,7 @@ fn build_confidence(
     }
 }
 
-// ── v3: Next Actions ─────────────────────────────────────────────────────────
+// ── v3: Next Actions (localized) ─────────────────────────────────────────────
 
 fn build_next_actions(
     raw_diag: &Option<rule_engine::RuleDiagnosis>,
@@ -1076,11 +1059,17 @@ fn build_next_actions(
     goal: Goal,
     suggestions: &[SuggestionInfo],
     existing_slugs: &[String],
+    lang: Language,
+    slug_names: &std::collections::HashMap<String, String>,
 ) -> Vec<NextAction> {
     let mut actions: Vec<NextAction> = Vec::new();
     let mut used_slugs: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // 1. From diagnostics: critical issues → "add" actions with fix_slugs
+    let resolve_name = |slug: &str| -> String {
+        slug_names.get(slug).cloned().unwrap_or_else(|| slug.replace('-', " "))
+    };
+
+    // 1. From diagnostics: critical/warning issues → "add" actions with fix_slugs
     if let Some(diag) = raw_diag {
         for issue in &diag.issues {
             if issue.severity != "critical" && issue.severity != "warning" {
@@ -1090,31 +1079,16 @@ fn build_next_actions(
                 if existing_slugs.contains(slug) || used_slugs.contains(slug) {
                     continue;
                 }
-                let reason = match issue.rule.as_str() {
-                    "low_acidity"          => "balances acidity",
-                    "low_umami"            => "adds umami depth",
-                    "low_fat"              => "adds fat richness",
-                    "low_aroma"            => "boosts aroma",
-                    "low_protein"          => "increases protein content",
-                    "high_carbs"           => "balances macros (reduce carb ratio)",
-                    "missing_fat_source"   => "adds fat source for mouthfeel",
-                    "missing_aromatics"    => "adds aromatic complexity",
-                    "missing_vegetables"   => "adds vegetable nutrition",
-                    "missing_protein_source" => "adds protein source",
-                    "missing_acid_source"  => "adds acid for brightness",
-                    "low_fiber"            => "adds fiber",
-                    _                      => "addresses recipe issue",
-                };
-
+                let reason = localize_action_reason(&issue.rule, lang);
                 let priority = if issue.severity == "critical" { 1 } else { 2 };
                 actions.push(NextAction {
                     action_type: "add".to_string(),
                     ingredient: slug.clone(),
-                    reason: reason.to_string(),
+                    name: resolve_name(slug),
+                    reason,
                     priority,
                 });
                 used_slugs.insert(slug.clone());
-
                 if actions.len() >= 5 { break; }
             }
             if actions.len() >= 5 { break; }
@@ -1126,10 +1100,17 @@ fn build_next_actions(
         for gap in &balance.weak_dimensions {
             if let Some(s) = suggestions.iter().find(|s| s.fills_gaps.contains(&gap.dimension)) {
                 if !used_slugs.contains(&s.slug) && !existing_slugs.contains(&s.slug) {
+                    let reason = match lang {
+                        Language::Ru => format!("заполняет пробел: {}", localize_dimension(&gap.dimension, lang)),
+                        Language::Uk => format!("заповнює прогалину: {}", localize_dimension(&gap.dimension, lang)),
+                        Language::Pl => format!("wypełnia lukę: {}", localize_dimension(&gap.dimension, lang)),
+                        Language::En => format!("fills {} gap", gap.dimension),
+                    };
                     actions.push(NextAction {
                         action_type: "add".to_string(),
                         ingredient: s.slug.clone(),
-                        reason: format!("fills {} gap", gap.dimension),
+                        name: s.name.clone(),
+                        reason,
                         priority: 3,
                     });
                     used_slugs.insert(s.slug.clone());
@@ -1145,10 +1126,17 @@ fn build_next_actions(
             Goal::HighProtein | Goal::MuscleGain => {
                 for s in suggestions {
                     if s.reasons.iter().any(|r| r.contains("nutritional value")) && !used_slugs.contains(&s.slug) {
+                        let reason = match lang {
+                            Language::Ru => "повышает белок для вашей цели".to_string(),
+                            Language::Uk => "підвищує білок для вашої цілі".to_string(),
+                            Language::Pl => "zwiększa białko dla twojego celu".to_string(),
+                            Language::En => "boosts protein for your goal".to_string(),
+                        };
                         actions.push(NextAction {
                             action_type: "add".to_string(),
                             ingredient: s.slug.clone(),
-                            reason: "boosts protein for your goal".to_string(),
+                            name: s.name.clone(),
+                            reason,
                             priority: 3,
                         });
                         used_slugs.insert(s.slug.clone());
@@ -1159,10 +1147,17 @@ fn build_next_actions(
             Goal::FlavorBoost => {
                 if let Some(s) = suggestions.first() {
                     if !used_slugs.contains(&s.slug) {
+                        let reason = match lang {
+                            Language::Ru => "максимизирует баланс вкуса".to_string(),
+                            Language::Uk => "максимізує баланс смаку".to_string(),
+                            Language::Pl => "maksymalizuje balans smaku".to_string(),
+                            Language::En => "maximizes flavor balance".to_string(),
+                        };
                         actions.push(NextAction {
                             action_type: "add".to_string(),
                             ingredient: s.slug.clone(),
-                            reason: "maximizes flavor balance".to_string(),
+                            name: s.name.clone(),
+                            reason,
                             priority: 3,
                         });
                         used_slugs.insert(s.slug.clone());
@@ -1173,8 +1168,275 @@ fn build_next_actions(
         }
     }
 
-    // Sort by priority
     actions.sort_by_key(|a| a.priority);
     actions.truncate(5);
     actions
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  i18n helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn localize_dimension(dim: &str, lang: Language) -> String {
+    match (dim, lang) {
+        ("sweetness",  Language::Ru) => "сладость".into(),
+        ("sweetness",  Language::Uk) => "солодкість".into(),
+        ("sweetness",  Language::Pl) => "słodycz".into(),
+        ("acidity",    Language::Ru) => "кислотность".into(),
+        ("acidity",    Language::Uk) => "кислотність".into(),
+        ("acidity",    Language::Pl) => "kwasowość".into(),
+        ("bitterness", Language::Ru) => "горечь".into(),
+        ("bitterness", Language::Uk) => "гіркота".into(),
+        ("bitterness", Language::Pl) => "goryczka".into(),
+        ("umami",      Language::Ru) => "умами".into(),
+        ("umami",      Language::Uk) => "умамі".into(),
+        ("umami",      Language::Pl) => "umami".into(),
+        ("fat",        Language::Ru) => "жирность".into(),
+        ("fat",        Language::Uk) => "жирність".into(),
+        ("fat",        Language::Pl) => "tłustość".into(),
+        ("aroma",      Language::Ru) => "аромат".into(),
+        ("aroma",      Language::Uk) => "аромат".into(),
+        ("aroma",      Language::Pl) => "aromat".into(),
+        _                            => dim.to_string(),
+    }
+}
+
+fn localize_diagnostic(rule: &str, severity: &str, lang: Language) -> String {
+    let sev = match (severity, lang) {
+        ("critical", Language::Ru) => "⛔",
+        ("critical", Language::Uk) => "⛔",
+        ("critical", Language::Pl) => "⛔",
+        ("warning",  Language::Ru) => "⚠",
+        ("warning",  Language::Uk) => "⚠",
+        ("warning",  Language::Pl) => "⚠",
+        ("critical", _)            => "⛔",
+        ("warning",  _)            => "⚠",
+        _                          => "ℹ",
+    };
+    let msg = match (rule, lang) {
+        ("low_acidity",    Language::Ru) => "Не хватает кислотности — добавьте цитрус или уксус",
+        ("low_acidity",    Language::Uk) => "Бракує кислотності — додайте цитрус або оцет",
+        ("low_acidity",    Language::Pl) => "Brak kwasowości — dodaj cytrus lub ocet",
+        ("low_acidity",    _)            => "Low acidity — add citrus or vinegar",
+
+        ("low_umami",      Language::Ru) => "Не хватает умами — добавьте соевый соус, мисо или грибы",
+        ("low_umami",      Language::Uk) => "Бракує умамі — додайте соєвий соус, місо або гриби",
+        ("low_umami",      Language::Pl) => "Brak umami — dodaj sos sojowy, miso lub grzyby",
+        ("low_umami",      _)            => "Low umami — add soy sauce, miso or mushrooms",
+
+        ("low_fat",        Language::Ru) => "Мало жиров — добавьте масло или авокадо",
+        ("low_fat",        Language::Uk) => "Мало жирів — додайте олію або авокадо",
+        ("low_fat",        Language::Pl) => "Mało tłuszczu — dodaj olej lub awokado",
+        ("low_fat",        _)            => "Low fat — add oil or avocado",
+
+        ("low_aroma",      Language::Ru) => "Слабый аромат — добавьте специи или зелень",
+        ("low_aroma",      Language::Uk) => "Слабкий аромат — додайте спеції або зелень",
+        ("low_aroma",      Language::Pl) => "Słaby aromat — dodaj przyprawy lub zioła",
+        ("low_aroma",      _)            => "Weak aroma — add spices or herbs",
+
+        ("low_sweetness",  Language::Ru) => "Не хватает сладости — добавьте мёд или фрукты",
+        ("low_sweetness",  Language::Uk) => "Бракує солодкості — додайте мед або фрукти",
+        ("low_sweetness",  Language::Pl) => "Brak słodyczy — dodaj miód lub owoce",
+        ("low_sweetness",  _)            => "Low sweetness — add honey or fruit",
+
+        ("low_bitterness", Language::Ru) => "Не хватает горечи — добавьте рукколу или тёмный шоколад",
+        ("low_bitterness", Language::Uk) => "Бракує гіркоти — додайте руколу або темний шоколад",
+        ("low_bitterness", Language::Pl) => "Brak goryczki — dodaj rukolę lub gorzką czekoladę",
+        ("low_bitterness", _)            => "Low bitterness — add arugula or dark chocolate",
+
+        ("high_sweetness", Language::Ru) => "Избыток сладости — сбалансируйте кислым или горьким",
+        ("high_sweetness", Language::Uk) => "Надлишок солодкості — збалансуйте кислим або гірким",
+        ("high_sweetness", Language::Pl) => "Nadmiar słodyczy — zbalansuj kwaśnym lub gorzkim",
+        ("high_sweetness", _)            => "Too sweet — balance with acidity or bitterness",
+
+        ("high_acidity",   Language::Ru) => "Избыток кислотности — смягчите жирами или сладким",
+        ("high_acidity",   Language::Uk) => "Надлишок кислотності — пом'якшіть жирами або солодким",
+        ("high_acidity",   Language::Pl) => "Nadmiar kwasowości — złagodź tłuszczem lub słodyczą",
+        ("high_acidity",   _)            => "Too acidic — soften with fat or sweetness",
+
+        ("high_bitterness", Language::Ru) => "Избыток горечи — добавьте сладость или жиры",
+        ("high_bitterness", Language::Uk) => "Надлишок гіркоти — додайте солодкість або жири",
+        ("high_bitterness", Language::Pl) => "Nadmiar goryczki — dodaj słodycz lub tłuszcz",
+        ("high_bitterness", _)            => "Too bitter — add sweetness or fat",
+
+        ("high_umami",     Language::Ru) => "Избыток умами — разбавьте свежими овощами",
+        ("high_umami",     Language::Uk) => "Надлишок умамі — розбавте свіжими овочами",
+        ("high_umami",     Language::Pl) => "Nadmiar umami — rozrzedź świeżymi warzywami",
+        ("high_umami",     _)            => "Too much umami — dilute with fresh vegetables",
+
+        ("high_fat",       Language::Ru) => "Избыток жиров — добавьте кислотность",
+        ("high_fat",       Language::Uk) => "Надлишок жирів — додайте кислотність",
+        ("high_fat",       Language::Pl) => "Nadmiar tłuszczu — dodaj kwasowość",
+        ("high_fat",       _)            => "Too much fat — add acidity",
+
+        ("high_aroma",     Language::Ru) => "Избыток аромата — упростите набор специй",
+        ("high_aroma",     Language::Uk) => "Надлишок аромату — спростіть набір спецій",
+        ("high_aroma",     Language::Pl) => "Nadmiar aromatu — uprość przyprawy",
+        ("high_aroma",     _)            => "Too aromatic — simplify spice blend",
+
+        ("high_carbs",     Language::Ru) => "Много углеводов — замените часть крупой с низким ГИ",
+        ("high_carbs",     Language::Uk) => "Багато вуглеводів — замініть частину крупою з низьким ГІ",
+        ("high_carbs",     Language::Pl) => "Dużo węglowodanów — zamień część na nisko-GI",
+        ("high_carbs",     _)            => "High carbs — swap for low-GI alternatives",
+
+        ("low_protein",    Language::Ru) => "Мало белка — добавьте мясо, рыбу или бобовые",
+        ("low_protein",    Language::Uk) => "Мало білка — додайте м'ясо, рибу або бобові",
+        ("low_protein",    Language::Pl) => "Mało białka — dodaj mięso, rybę lub rośliny strączkowe",
+        ("low_protein",    _)            => "Low protein — add meat, fish or legumes",
+
+        ("high_fat_ratio", Language::Ru) => "Высокая доля жиров в калориях",
+        ("high_fat_ratio", Language::Uk) => "Висока частка жирів у калоріях",
+        ("high_fat_ratio", Language::Pl) => "Wysoki udział tłuszczu w kaloriach",
+        ("high_fat_ratio", _)            => "High fat-to-calorie ratio",
+
+        ("low_fiber",      Language::Ru) => "Мало клетчатки — добавьте овощи или зелень",
+        ("low_fiber",      Language::Uk) => "Мало клітковини — додайте овочі або зелень",
+        ("low_fiber",      Language::Pl) => "Mało błonnika — dodaj warzywa lub zioła",
+        ("low_fiber",      _)            => "Low fiber — add vegetables or greens",
+
+        ("high_sugar",     Language::Ru) => "Много сахара — уменьшите сладкие ингредиенты",
+        ("high_sugar",     Language::Uk) => "Багато цукру — зменшіть солодкі інгредієнти",
+        ("high_sugar",     Language::Pl) => "Dużo cukru — zmniejsz słodkie składniki",
+        ("high_sugar",     _)            => "High sugar — reduce sweet ingredients",
+
+        ("ingredient_dominance", Language::Ru) => "Один ингредиент доминирует — добавьте разнообразие",
+        ("ingredient_dominance", Language::Uk) => "Один інгредієнт домінує — додайте різноманіття",
+        ("ingredient_dominance", Language::Pl) => "Jeden składnik dominuje — dodaj różnorodność",
+        ("ingredient_dominance", _)            => "One ingredient dominates — add variety",
+
+        ("missing_fat_source",     Language::Ru) => "Нет источника жиров",
+        ("missing_fat_source",     Language::Uk) => "Немає джерела жирів",
+        ("missing_fat_source",     Language::Pl) => "Brak źródła tłuszczu",
+        ("missing_fat_source",     _)            => "No fat source found",
+
+        ("missing_aromatics",      Language::Ru) => "Нет ароматических ингредиентов",
+        ("missing_aromatics",      Language::Uk) => "Немає ароматичних інгредієнтів",
+        ("missing_aromatics",      Language::Pl) => "Brak składników aromatycznych",
+        ("missing_aromatics",      _)            => "No aromatic ingredients",
+
+        ("missing_vegetables",     Language::Ru) => "Нет овощей — добавьте клетчатку",
+        ("missing_vegetables",     Language::Uk) => "Немає овочів — додайте клітковину",
+        ("missing_vegetables",     Language::Pl) => "Brak warzyw — dodaj błonnik",
+        ("missing_vegetables",     _)            => "No vegetables — add fiber",
+
+        ("missing_protein_source", Language::Ru) => "Нет источника белка",
+        ("missing_protein_source", Language::Uk) => "Немає джерела білка",
+        ("missing_protein_source", Language::Pl) => "Brak źródła białka",
+        ("missing_protein_source", _)            => "No protein source",
+
+        ("missing_acid_source",    Language::Ru) => "Нет кислотного баланса",
+        ("missing_acid_source",    Language::Uk) => "Немає кислотного балансу",
+        ("missing_acid_source",    Language::Pl) => "Brak równowagi kwasowej",
+        ("missing_acid_source",    _)            => "No acid source for balance",
+
+        _                          => return format!("{} {}", sev, rule),
+    };
+    format!("{} {}", sev, msg)
+}
+
+fn localize_action_reason(rule: &str, lang: Language) -> String {
+    match (rule, lang) {
+        ("low_acidity",    Language::Ru) => "повысит кислотность".into(),
+        ("low_acidity",    Language::Uk) => "підвищить кислотність".into(),
+        ("low_acidity",    Language::Pl) => "zwiększy kwasowość".into(),
+        ("low_acidity",    _)            => "boosts acidity".into(),
+
+        ("low_umami",      Language::Ru) => "усилит умами".into(),
+        ("low_umami",      Language::Uk) => "посилить умамі".into(),
+        ("low_umami",      Language::Pl) => "wzmocni umami".into(),
+        ("low_umami",      _)            => "boosts umami".into(),
+
+        ("low_fat",        Language::Ru) => "добавит жирность".into(),
+        ("low_fat",        Language::Uk) => "додасть жирність".into(),
+        ("low_fat",        Language::Pl) => "doda tłustość".into(),
+        ("low_fat",        _)            => "adds fat".into(),
+
+        ("low_aroma",      Language::Ru) => "усилит аромат".into(),
+        ("low_aroma",      Language::Uk) => "посилить аромат".into(),
+        ("low_aroma",      Language::Pl) => "wzmocni aromat".into(),
+        ("low_aroma",      _)            => "boosts aroma".into(),
+
+        ("low_sweetness",  Language::Ru) => "добавит сладость".into(),
+        ("low_sweetness",  Language::Uk) => "додасть солодкість".into(),
+        ("low_sweetness",  Language::Pl) => "doda słodycz".into(),
+        ("low_sweetness",  _)            => "adds sweetness".into(),
+
+        ("low_bitterness", Language::Ru) => "добавит горечь".into(),
+        ("low_bitterness", Language::Uk) => "додасть гіркоту".into(),
+        ("low_bitterness", Language::Pl) => "doda goryczkę".into(),
+        ("low_bitterness", _)            => "adds bitterness".into(),
+
+        ("low_protein",    Language::Ru) => "повысит белок".into(),
+        ("low_protein",    Language::Uk) => "підвищить білок".into(),
+        ("low_protein",    Language::Pl) => "zwiększy białko".into(),
+        ("low_protein",    _)            => "boosts protein".into(),
+
+        ("low_fiber",      Language::Ru) => "добавит клетчатку".into(),
+        ("low_fiber",      Language::Uk) => "додасть клітковину".into(),
+        ("low_fiber",      Language::Pl) => "doda błonnik".into(),
+        ("low_fiber",      _)            => "adds fiber".into(),
+
+        ("missing_fat_source",     Language::Ru) => "источник жиров".into(),
+        ("missing_fat_source",     Language::Uk) => "джерело жирів".into(),
+        ("missing_fat_source",     Language::Pl) => "źródło tłuszczu".into(),
+        ("missing_fat_source",     _)            => "fat source".into(),
+
+        ("missing_aromatics",      Language::Ru) => "ароматический ингредиент".into(),
+        ("missing_aromatics",      Language::Uk) => "ароматичний інгредієнт".into(),
+        ("missing_aromatics",      Language::Pl) => "składnik aromatyczny".into(),
+        ("missing_aromatics",      _)            => "aromatic ingredient".into(),
+
+        ("missing_vegetables",     Language::Ru) => "источник клетчатки".into(),
+        ("missing_vegetables",     Language::Uk) => "джерело клітковини".into(),
+        ("missing_vegetables",     Language::Pl) => "źródło błonnika".into(),
+        ("missing_vegetables",     _)            => "fiber source".into(),
+
+        ("missing_protein_source", Language::Ru) => "источник белка".into(),
+        ("missing_protein_source", Language::Uk) => "джерело білка".into(),
+        ("missing_protein_source", Language::Pl) => "źródło białka".into(),
+        ("missing_protein_source", _)            => "protein source".into(),
+
+        ("missing_acid_source",    Language::Ru) => "источник кислоты".into(),
+        ("missing_acid_source",    Language::Uk) => "джерело кислоти".into(),
+        ("missing_acid_source",    Language::Pl) => "źródło kwasu".into(),
+        ("missing_acid_source",    _)            => "acid source".into(),
+
+        _                          => rule.replace('_', " "),
+    }
+}
+
+fn localize_goal_explain(goal: Goal, lang: Language) -> String {
+    match (goal, lang) {
+        (Goal::HighProtein, Language::Ru) => "🎯 Цель: высокий белок — приоритет белковым ингредиентам, меньше углеводов.".into(),
+        (Goal::HighProtein, Language::Uk) => "🎯 Ціль: високий білок — пріоритет білковим інгредієнтам, менше вуглеводів.".into(),
+        (Goal::HighProtein, Language::Pl) => "🎯 Cel: wysokie białko — priorytet składnikom białkowym, mniej węglowodanów.".into(),
+        (Goal::HighProtein, _)            => "🎯 Goal: high-protein — prioritize protein-rich, reduce carbs.".into(),
+
+        (Goal::LowCalorie,  Language::Ru) => "🎯 Цель: низкие калории — выбирайте лёгкие ингредиенты.".into(),
+        (Goal::LowCalorie,  Language::Uk) => "🎯 Ціль: низькі калорії — обирайте легкі інгредієнти.".into(),
+        (Goal::LowCalorie,  Language::Pl) => "🎯 Cel: niskie kalorie — wybieraj lekkie składniki.".into(),
+        (Goal::LowCalorie,  _)            => "🎯 Goal: low-calorie — prefer low-energy-density ingredients.".into(),
+
+        (Goal::Keto,        Language::Ru) => "🎯 Цель: кето — минимум углеводов (<20г), больше жиров и белка.".into(),
+        (Goal::Keto,        Language::Uk) => "🎯 Ціль: кето — мінімум вуглеводів (<20г), більше жирів та білка.".into(),
+        (Goal::Keto,        Language::Pl) => "🎯 Cel: keto — minimum węglowodanów (<20g), więcej tłuszczu i białka.".into(),
+        (Goal::Keto,        _)            => "🎯 Goal: keto — minimize carbs (<20g), favor fat + protein.".into(),
+
+        (Goal::MuscleGain,  Language::Ru) => "🎯 Цель: набор массы — много белка + умеренные углеводы.".into(),
+        (Goal::MuscleGain,  Language::Uk) => "🎯 Ціль: набір маси — багато білка + помірні вуглеводи.".into(),
+        (Goal::MuscleGain,  Language::Pl) => "🎯 Cel: budowa mięśni — dużo białka + umiarkowane węglowodany.".into(),
+        (Goal::MuscleGain,  _)            => "🎯 Goal: muscle-gain — high protein + moderate carbs.".into(),
+
+        (Goal::Diet,        Language::Ru) => "🎯 Цель: диета — дефицит калорий, высокая сытость.".into(),
+        (Goal::Diet,        Language::Uk) => "🎯 Ціль: дієта — дефіцит калорій, висока ситість.".into(),
+        (Goal::Diet,        Language::Pl) => "🎯 Cel: dieta — deficyt kaloryczny, wysoka sytość.".into(),
+        (Goal::Diet,        _)            => "🎯 Goal: diet — calorie deficit, high satiety.".into(),
+
+        (Goal::FlavorBoost, Language::Ru) => "🎯 Цель: усиление вкуса — заполняем слабые зоны.".into(),
+        (Goal::FlavorBoost, Language::Uk) => "🎯 Ціль: підсилення смаку — заповнюємо слабкі зони.".into(),
+        (Goal::FlavorBoost, Language::Pl) => "🎯 Cel: wzmocnienie smaku — uzupełniamy słabe strefy.".into(),
+        (Goal::FlavorBoost, _)            => "🎯 Goal: flavor-boost — fill weak flavor dimensions.".into(),
+
+        (Goal::Balanced, _) => String::new(),
+    }
 }
