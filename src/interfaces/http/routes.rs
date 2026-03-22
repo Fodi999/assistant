@@ -361,7 +361,7 @@ pub fn create_router(
     let pool_for_autocomplete = pool.clone(); // 🆕 SmartService autocomplete
     let pool_for_smart_parse = pool.clone(); // 🆕 SmartParse
     let pool_for_cms = pool.clone();
-    let cms_service = CmsService::new(pool_for_cms, r2_client);
+    let cms_service = CmsService::new(pool_for_cms, r2_client.clone());
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -631,7 +631,7 @@ pub fn create_router(
 
     // ── Intent Pages (AI-generated pSEO pages) ───────────────────────────────
     let intent_pages_svc = Arc::new(
-        IntentPagesService::new(pool_for_public.clone(), seo_content_svc)
+        IntentPagesService::new(pool_for_public.clone(), seo_content_svc, r2_client.clone())
     );
 
     // Admin intent pages routes (protected)
@@ -656,6 +656,8 @@ pub fn create_router(
         .route("/:id/enqueue", post(admin_intent_pages::enqueue_intent_page))
         .route("/:id/archive", post(admin_intent_pages::archive_intent_page))
         .route("/:id", axum::routing::delete(admin_intent_pages::delete_intent_page))
+        .route("/:id/images/:key/upload-url", get(admin_intent_pages::get_image_upload_url))
+        .route("/:id/images/:key", post(admin_intent_pages::save_image_url))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,

@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 use crate::application::intent_pages::{
     BatchGenerateRequest, BatchResult, BulkActionRequest, EnqueueBulkRequest,
-    GenerateRequest, IntentPage, IntentPagesService, ListQuery,
+    GenerateRequest, ImageUploadResponse, IntentPage, IntentPagesService, ListQuery,
     UpdateIntentPageRequest, UpdateSettingsRequest,
 };
 use crate::domain::AdminClaims;
@@ -250,4 +250,41 @@ pub async fn set_google_discovered(
         .ok_or_else(|| AppError::validation("Body must be { \"count\": <number> }"))?;
     let result = service.set_google_discovered(count).await?;
     Ok(Json(result))
+}
+
+// ── Image upload for intent-page content blocks ──────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct ImageUploadQuery {
+    pub content_type: String,
+}
+
+/// GET /api/admin/intent-pages/:id/images/:key/upload-url?content_type=image/webp
+/// Returns { upload_url, public_url } for direct R2 upload.
+pub async fn get_image_upload_url(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+    Path((id, key)): Path<(Uuid, String)>,
+    Query(q): Query<ImageUploadQuery>,
+) -> Result<Json<ImageUploadResponse>, AppError> {
+    let resp = service.get_image_upload_url(id, &key, &q.content_type).await?;
+    Ok(Json(resp))
+}
+
+#[derive(serde::Deserialize)]
+pub struct SaveImageRequest {
+    pub image_url: String,
+}
+
+/// POST /api/admin/intent-pages/:id/images/:key
+/// Body: { "image_url": "https://..." }
+/// Patches content_blocks to set src on the matching image block.
+pub async fn save_image_url(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+    Path((id, key)): Path<(Uuid, String)>,
+    Json(req): Json<SaveImageRequest>,
+) -> Result<Json<IntentPage>, AppError> {
+    let page = service.save_image_url(id, &key, req.image_url).await?;
+    Ok(Json(page))
 }

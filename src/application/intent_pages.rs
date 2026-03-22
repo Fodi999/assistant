@@ -31,6 +31,7 @@ use crate::application::admin_catalog::revalidate_blog;
 use crate::application::public_seo_content::{
     PublicSeoContentService, SeoContentRequest,
 };
+use crate::infrastructure::R2Client;
 use crate::shared::{AppError, AppResult};
 use deunicode::deunicode;
 use serde::{Deserialize, Serialize};
@@ -146,6 +147,7 @@ pub struct IntentPage {
     pub slug: String,
     pub status: String,
     pub priority: i32,
+    pub content_blocks: serde_json::Value,
     pub published_at: Option<String>,
     pub queued_at: Option<String>,
     pub created_at: String,
@@ -191,6 +193,7 @@ pub struct UpdateIntentPageRequest {
     pub faq: Option<serde_json::Value>,
     pub slug: Option<String>,
     pub priority: Option<i32>,
+    pub content_blocks: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -259,16 +262,24 @@ pub struct RelatedPage {
     pub entity_a: String,
 }
 
+/// Presigned upload URL response for intent-page images
+#[derive(Debug, Serialize)]
+pub struct ImageUploadResponse {
+    pub upload_url: String,
+    pub public_url: String,
+}
+
 // ── Service ──────────────────────────────────────────────────────────────────
 
 pub struct IntentPagesService {
     pool: PgPool,
     seo_service: Arc<PublicSeoContentService>,
+    r2_client: R2Client,
 }
 
 impl IntentPagesService {
-    pub fn new(pool: PgPool, seo_service: Arc<PublicSeoContentService>) -> Self {
-        Self { pool, seo_service }
+    pub fn new(pool: PgPool, seo_service: Arc<PublicSeoContentService>, r2_client: R2Client) -> Self {
+        Self { pool, seo_service, r2_client }
     }
 
     // ── Generate single ──────────────────────────────────────────────────────
@@ -283,7 +294,7 @@ impl IntentPagesService {
         if let Some(ref slug) = predetermined_slug {
             let existing = sqlx::query_as::<_, IntentPage>(
                 r#"SELECT id, intent_type, entity_a, entity_b, locale,
-                          title, description, answer, faq, slug, status, priority,
+                          title, description, answer, faq, slug, status, priority, content_blocks,
                           published_at::text, queued_at::text, created_at::text, updated_at::text
                    FROM intent_pages
                    WHERE slug = $1 AND locale = $2"#,
@@ -335,13 +346,16 @@ impl IntentPagesService {
         let faq_json = serde_json::to_value(&content.faq)
             .unwrap_or_else(|_| serde_json::json!([]));
 
+        let content_blocks_json = serde_json::to_value(&content.content_blocks)
+            .unwrap_or_else(|_| serde_json::json!([]));
+
         let page = sqlx::query_as::<_, IntentPage>(
             r#"INSERT INTO intent_pages
-               (intent_type, entity_a, entity_b, locale, title, description, answer, faq, slug, status)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft')
+               (intent_type, entity_a, entity_b, locale, title, description, answer, faq, slug, status, content_blocks)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10)
                ON CONFLICT (slug, locale) DO NOTHING
                RETURNING id, intent_type, entity_a, entity_b, locale,
-                         title, description, answer, faq, slug, status, priority,
+                         title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text"#,
         )
         .bind(&req.intent_type)
@@ -353,6 +367,7 @@ impl IntentPagesService {
         .bind(&content.answer)
         .bind(&faq_json)
         .bind(&slug)
+        .bind(&content_blocks_json)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::conflict("Intent page with this slug already exists"))?;
@@ -583,7 +598,7 @@ impl IntentPagesService {
 
         let pages = sqlx::query_as::<_, IntentPage>(
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
-                      title, description, answer, faq, slug, status, priority,
+                      title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text
                FROM intent_pages
                WHERE ($1::text IS NULL OR status = $1)
@@ -610,7 +625,7 @@ impl IntentPagesService {
     pub async fn get_by_id(&self, id: Uuid) -> AppResult<IntentPage> {
         sqlx::query_as::<_, IntentPage>(
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
-                      title, description, answer, faq, slug, status, priority,
+                      title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text
                FROM intent_pages WHERE id = $1"#,
         )
@@ -632,10 +647,11 @@ impl IntentPagesService {
                 answer = COALESCE($3, answer),
                 faq = COALESCE($4, faq),
                 slug = COALESCE($5, slug),
-                priority = COALESCE($6, priority)
-               WHERE id = $7
+                priority = COALESCE($6, priority),
+                content_blocks = COALESCE($7, content_blocks)
+               WHERE id = $8
                RETURNING id, intent_type, entity_a, entity_b, locale,
-                         title, description, answer, faq, slug, status, priority,
+                         title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text"#,
         )
         .bind(&req.title)
@@ -644,6 +660,7 @@ impl IntentPagesService {
         .bind(&req.faq)
         .bind(&req.slug)
         .bind(&req.priority)
+        .bind(&req.content_blocks)
         .bind(id)
         .fetch_one(&self.pool)
         .await?;
@@ -664,7 +681,7 @@ impl IntentPagesService {
                SET status = 'published', published_at = NOW()
                WHERE id = $1
                RETURNING id, intent_type, entity_a, entity_b, locale,
-                         title, description, answer, faq, slug, status, priority,
+                         title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text"#,
         )
         .bind(id)
@@ -687,7 +704,7 @@ impl IntentPagesService {
                SET status = 'draft', published_at = NULL
                WHERE id = $1
                RETURNING id, intent_type, entity_a, entity_b, locale,
-                         title, description, answer, faq, slug, status, priority,
+                         title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text"#,
         )
         .bind(id)
@@ -728,7 +745,7 @@ impl IntentPagesService {
 
         let pages = sqlx::query_as::<_, IntentPage>(
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
-                      title, description, answer, faq, slug, status, priority,
+                      title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text
                FROM intent_pages
                WHERE status = 'published'
@@ -752,7 +769,7 @@ impl IntentPagesService {
     pub async fn get_by_slug(&self, slug: &str, locale: &str) -> AppResult<IntentPage> {
         sqlx::query_as::<_, IntentPage>(
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
-                      title, description, answer, faq, slug, status, priority,
+                      title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text
                FROM intent_pages
                WHERE slug = $1 AND locale = $2 AND status = 'published'"#,
@@ -793,6 +810,83 @@ impl IntentPagesService {
         .await?;
 
         Ok(pages)
+    }
+
+    // ── Image upload for content_blocks ──────────────────────────────────────
+
+    /// Generate a presigned URL for uploading an intent-page image to R2.
+    /// Key pattern: `assets/seo/{page_id}/{image_key}.webp`
+    pub async fn get_image_upload_url(
+        &self,
+        page_id: Uuid,
+        image_key: &str,
+        content_type: &str,
+    ) -> AppResult<ImageUploadResponse> {
+        // Validate page exists
+        let _ = self.get_by_id(page_id).await?;
+
+        // Validate image_key
+        const VALID_KEYS: &[&str] = &["hero", "benefits", "nutrition", "cooking"];
+        if !VALID_KEYS.contains(&image_key) {
+            return Err(AppError::validation(&format!(
+                "Invalid image key '{}'. Must be one of: {}",
+                image_key,
+                VALID_KEYS.join(", ")
+            )));
+        }
+
+        let ext = if content_type.contains("png") { "png" }
+                  else if content_type.contains("jpeg") || content_type.contains("jpg") { "jpg" }
+                  else { "webp" };
+        let key = format!("assets/seo/{}/{}.{}", page_id, image_key, ext);
+
+        let upload_url = self.r2_client
+            .generate_presigned_upload_url(&key, content_type)
+            .await?;
+        let public_url = self.r2_client.get_public_url(&key);
+
+        Ok(ImageUploadResponse { upload_url, public_url })
+    }
+
+    /// After frontend uploaded to R2, update the matching image block's `src` in content_blocks.
+    pub async fn save_image_url(
+        &self,
+        page_id: Uuid,
+        image_key: &str,
+        image_url: String,
+    ) -> AppResult<IntentPage> {
+        let page = self.get_by_id(page_id).await?;
+
+        // Patch content_blocks: find image block with this key and set src
+        let mut blocks: Vec<serde_json::Value> = serde_json::from_value(page.content_blocks)
+            .unwrap_or_default();
+
+        for block in blocks.iter_mut() {
+            if block.get("type").and_then(|v| v.as_str()) == Some("image")
+                && block.get("key").and_then(|v| v.as_str()) == Some(image_key)
+            {
+                block.as_object_mut().map(|obj| {
+                    obj.insert("src".into(), serde_json::Value::String(image_url.clone()));
+                });
+            }
+        }
+
+        let updated_blocks = serde_json::to_value(&blocks).unwrap_or_default();
+
+        let updated = sqlx::query_as::<_, IntentPage>(
+            r#"UPDATE intent_pages
+               SET content_blocks = $1, updated_at = NOW()
+               WHERE id = $2
+               RETURNING id, intent_type, entity_a, entity_b, locale,
+                         title, description, answer, faq, slug, status, priority, content_blocks,
+                         published_at::text, queued_at::text, created_at::text, updated_at::text"#,
+        )
+        .bind(&updated_blocks)
+        .bind(page_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(updated)
     }
 
     // ── Stats ────────────────────────────────────────────────────────────────
@@ -1004,7 +1098,7 @@ impl IntentPagesService {
                SET status = 'queued', queued_at = NOW()
                WHERE id = $1
                RETURNING id, intent_type, entity_a, entity_b, locale,
-                         title, description, answer, faq, slug, status, priority,
+                         title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text"#,
         )
         .bind(id)
@@ -1055,7 +1149,7 @@ impl IntentPagesService {
                SET status = 'archived'
                WHERE id = $1
                RETURNING id, intent_type, entity_a, entity_b, locale,
-                         title, description, answer, faq, slug, status, priority,
+                         title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text"#,
         )
         .bind(id)
@@ -1195,7 +1289,7 @@ impl IntentPagesService {
         // is→are for plurals) matches another page in the same locale.
         let pages = sqlx::query_as::<_, IntentPage>(
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
-                      title, description, answer, faq, slug, status, priority,
+                      title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text
                FROM intent_pages
                ORDER BY entity_a, locale, created_at"#,

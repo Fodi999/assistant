@@ -43,6 +43,18 @@ pub struct SeoContentResponse {
     /// AI-generated SEO-friendly slug (in content language, auto-transliterated to ASCII)
     #[serde(default)]
     pub slug: Option<String>,
+    /// Structured article: heading / text / image blocks
+    #[serde(default)]
+    pub content_blocks: Vec<ContentBlock>,
+}
+
+/// A single content block inside a structured SEO article.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentBlock {
+    Heading { level: u8, text: String },
+    Text { content: String },
+    Image { key: String, alt: String },
 }
 
 // ── Valid intent types ───────────────────────────────────────────────────────
@@ -121,9 +133,9 @@ impl PublicSeoContentService {
         // ── 3. Build prompt ──
         let prompt = build_prompt(&intent, &entity_a, entity_b.as_deref(), &locale);
 
-        // ── 4. Call LLM (Fast model — cheap, ~$0.0003) ──
+        // ── 4. Call LLM (Fast model — cheap) ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 1200, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 2400, "llama-3.3-70b-versatile")
             .await?;
 
         // ── 5. Parse JSON ──
@@ -194,7 +206,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 1200, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 2400, "llama-3.3-70b-versatile")
             .await?;
 
         // ── 5. Parse ──
@@ -245,6 +257,20 @@ OUTPUT FORMAT (STRICT JSON):
     {{"q": "...", "a": "..."}},
     {{"q": "...", "a": "..."}},
     {{"q": "...", "a": "..."}}
+  ],
+  "content_blocks": [
+    {{"type": "heading", "level": 1, "text": "..."}},
+    {{"type": "text", "content": "... 2-3 sentence intro answer ..."}},
+    {{"type": "image", "key": "hero", "alt": "..."}},
+    {{"type": "heading", "level": 2, "text": "... Benefits / Properties ..."}},
+    {{"type": "text", "content": "... 3-4 sentences with specific data ..."}},
+    {{"type": "image", "key": "benefits", "alt": "..."}},
+    {{"type": "heading", "level": 2, "text": "... Calories & Nutrition ..."}},
+    {{"type": "text", "content": "... exact kcal, protein, vitamins per 100g ..."}},
+    {{"type": "image", "key": "nutrition", "alt": "..."}},
+    {{"type": "heading", "level": 2, "text": "... How to Use / Tips ..."}},
+    {{"type": "text", "content": "... cooking methods, portions, pairings ..."}},
+    {{"type": "image", "key": "cooking", "alt": "..."}}
   ]
 }}
 
@@ -305,6 +331,19 @@ STRICT SEO RULES:
   b) Nutrition: "Сколько калорий в X?" / "How many calories in X?"
   c) Health goal: "Помогает ли X для похудения?" / "Does X help with weight loss?"
   d) Cooking: "Как лучше готовить X?" / "How to cook X?"
+
+5. CONTENT_BLOCKS (structured article with images):
+- MUST produce 10-12 blocks in order: H1 → intro text → hero image → H2 → text → image → H2 → text → image → H2 → text → image
+- HEADING blocks: {{"type":"heading","level":1|2,"text":"..."}}
+- TEXT blocks: {{"type":"text","content":"..."}} — 2-4 sentences, short paragraphs, data-rich
+- IMAGE blocks: {{"type":"image","key":"hero|benefits|nutrition|cooking","alt":"..."}}
+  - "hero": product appearance, appetizing photo alt
+  - "benefits": health benefits, vitamins (alt mentions specific vitamins/properties)
+  - "nutrition": calorie/macro data (alt mentions kcal, protein, etc.)
+  - "cooking": cooking method, dish (alt mentions preparation, recipe)
+- EXACTLY 3-4 image blocks with distinct keys
+- Alt texts: SEO-rich, specific, in content language (120+ chars)
+- Text blocks use ENTITY ENRICHMENT (same rules as answer)
 
 ---
 
@@ -372,6 +411,20 @@ OUTPUT FORMAT (STRICT JSON):
     {{"q": "...", "a": "..."}},
     {{"q": "...", "a": "..."}},
     {{"q": "...", "a": "..."}}
+  ],
+  "content_blocks": [
+    {{"type": "heading", "level": 1, "text": "..."}},
+    {{"type": "text", "content": "... 2-3 sentence intro answer ..."}},
+    {{"type": "image", "key": "hero", "alt": "..."}},
+    {{"type": "heading", "level": 2, "text": "... Benefits / Properties ..."}},
+    {{"type": "text", "content": "... 3-4 sentences with specific data ..."}},
+    {{"type": "image", "key": "benefits", "alt": "..."}},
+    {{"type": "heading", "level": 2, "text": "... Calories & Nutrition ..."}},
+    {{"type": "text", "content": "... exact kcal, protein, vitamins per 100g ..."}},
+    {{"type": "image", "key": "nutrition", "alt": "..."}},
+    {{"type": "heading", "level": 2, "text": "... How to Use / Tips ..."}},
+    {{"type": "text", "content": "... cooking methods, portions, pairings ..."}},
+    {{"type": "image", "key": "cooking", "alt": "..."}}
   ]
 }}
 
@@ -428,6 +481,19 @@ STRICT SEO RULES:
   b) Nutrition: "Сколько калорий в X?"
   c) Health goal: "Помогает ли X для похудения?"
   d) Cooking: "Как лучше готовить X?"
+
+5. CONTENT_BLOCKS (structured article with images):
+- MUST produce 10-12 blocks in order: H1 → intro text → hero image → H2 → text → image → H2 → text → image → H2 → text → image
+- HEADING blocks: {{"type":"heading","level":1|2,"text":"..."}}
+- TEXT blocks: {{"type":"text","content":"..."}} — 2-4 sentences, short paragraphs, data-rich
+- IMAGE blocks: {{"type":"image","key":"hero|benefits|nutrition|cooking","alt":"..."}}
+  - "hero": product appearance photo alt
+  - "benefits": health/vitamin illustration alt
+  - "nutrition": calorie/macro infographic alt
+  - "cooking": cooking/dish photo alt
+- EXACTLY 3-4 image blocks with distinct keys
+- Alt texts: SEO-rich, specific, in content language (120+ chars)
+- Text blocks use ENTITY ENRICHMENT (same rules as answer)
 
 ---
 
