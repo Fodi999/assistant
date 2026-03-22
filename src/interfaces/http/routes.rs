@@ -36,7 +36,7 @@ use crate::interfaces::http::{
     public::{
         cms as public_cms,
         ingredients::{autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, get_ingredients_states_map, list_ingredients, list_ingredients_full},
-        intent_pages::{list_published_intent_pages, get_published_intent_page},
+        intent_pages::{list_published_intent_pages, get_published_intent_page, get_related_intent_pages},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
         seo_content::get_seo_content,
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe, tools_run, tools_catalog},
@@ -676,6 +676,7 @@ pub fn create_router(
     let public_intent_pages_router = Router::new()
         .route("/intent-pages", get(list_published_intent_pages))
         .route("/intent-pages/:slug", get(get_published_intent_page))
+        .route("/intent-pages/:slug/related", get(get_related_intent_pages))
         .with_state(intent_pages_svc.clone());
 
     // ── Background scheduler: publish queued pages every hour ────────────────

@@ -40,7 +40,7 @@ pub struct SeoContentResponse {
     pub description: String,
     pub answer: String,
     pub faq: Vec<SeoContentFaq>,
-    /// AI-generated SEO-friendly slug (always English, e.g. "is-artichoke-healthy")
+    /// AI-generated SEO-friendly slug (in content language, auto-transliterated to ASCII)
     #[serde(default)]
     pub slug: Option<String>,
 }
@@ -252,16 +252,20 @@ OUTPUT FORMAT (STRICT JSON):
 
 STRICT SEO RULES:
 
-0. SLUG (ALWAYS in English, 3-6 words separated by hyphens):
-- Must reflect the MAIN search intent, not just "intent-ingredient"
-- Use real search query keywords
+0. SLUG (in the CONTENT language, 3-6 words separated by hyphens):
+- Must reflect the MAIN search intent as a real user search query
+- Write the slug in the SAME language as the content (ru/pl/uk/en)
+- The system will auto-transliterate to Latin if needed
 - Examples:
-  - question about artichoke health → "is-artichoke-healthy"
-  - question about salmon calories → "salmon-calories-nutrition"
-  - comparison salmon vs tuna → "salmon-vs-tuna-nutrition"
-  - goal: artichoke for skin → "artichoke-benefits-for-skin"
+  - RU: question about artichoke health → "polezen-li-artishok"
+  - RU: salmon calories → "kalorijnost-lososya"
+  - EN: is artichoke healthy → "is-artichoke-healthy"
+  - PL: czy karczoch jest zdrowy → "czy-karczoch-jest-zdrowy"
+  - UK: чи корисний артишок → "chi-korisnij-artishok"
+  - comparison salmon vs tuna → "salmon-vs-tuna" / "losos-protiv-tuntsa"
+  - goal: artichoke for skin → "artishok-dlya-kozhi" / "artichoke-for-skin"
 - NEVER use generic slugs like "question-artichoke" or "goal-salmon"
-- ALWAYS English, even if content language is ru/pl/uk
+- Slug should read like a natural search query in the content language
 
 1. TITLE:
 - MUST be 50-60 characters (this is critical for Google SERP)
@@ -285,6 +289,12 @@ STRICT SEO RULES:
 - Sentence 5: who benefits most (a "Кому полезен" block, e.g. "для пищеварения, иммунитета, кожи")
 - End with a strong takeaway
 - Write naturally, like a chef explaining to a colleague
+- ENTITY ENRICHMENT (MANDATORY): use named entities, NOT generic words:
+  ✓ "витамины A, C, K и фолиевая кислота" — NOT "содержит витамины"
+  ✓ "снижает холестерин ЛПНП и артериальное давление" — NOT "полезен для здоровья"
+  ✓ "запекание при 180°C 25 минут" — NOT "можно запекать"
+  ✓ "100 г = 47 ккал, 3.3 г белка, 5.4 г клетчатки" — NOT "низкокалорийный"
+  The more specific named entities (vitamins, minerals, temperatures, weights, conditions), the better
 
 4. FAQ:
 - MUST have exactly 4 questions
@@ -369,16 +379,19 @@ OUTPUT FORMAT (STRICT JSON):
 
 STRICT SEO RULES:
 
-0. SLUG (ALWAYS in English, 3-6 words separated by hyphens):
+0. SLUG (in the CONTENT language, 3-6 words separated by hyphens):
 - Must reflect the search query intent
-- Use the same keywords as the search query (transliterated to English if needed)
+- Write the slug in the SAME language as the content
+- The system will auto-transliterate to Latin if needed
 - Examples:
-  - "Is salmon healthy?" → "is-salmon-healthy"
-  - "калории лосось" → "salmon-calories-nutrition"
+  - EN: "Is salmon healthy?" → "is-salmon-healthy"
+  - RU: "калории лосось" → "kaloriynost-lososya"
+  - PL: "ile kalorii ma łosoś" → "ile-kalorii-ma-losos"
+  - UK: "калорії лосось" → "kaloriyi-lososya"
   - "salmon vs tuna nutrition" → "salmon-vs-tuna-nutrition"
-  - "артишок для кожи" → "artichoke-benefits-for-skin"
+  - "артишок для кожи" → "artishok-dlya-kozhi"
 - NEVER use generic slugs like "question-artichoke" or "goal-salmon"
-- ALWAYS English, regardless of content language
+- Slug should read like a natural search query in the content language
 
 1. TITLE (50-60 characters, NEVER shorter):
 - Must closely match the search query
@@ -400,6 +413,12 @@ STRICT SEO RULES:
 - Sentence 6: Strong takeaway
 - Write naturally like a chef explaining to a colleague
 - DO NOT use generic filler phrases
+- ENTITY ENRICHMENT (MANDATORY): use named entities, NOT generic words:
+  ✓ "витамины A, C, K и фолиевая кислота" — NOT "содержит витамины"
+  ✓ "снижает холестерин ЛПНП и артериальное давление" — NOT "полезен для здоровья"
+  ✓ "запекание при 180°C 25 минут" — NOT "можно запекать"
+  ✓ "100 г = 47 ккал, 3.3 г белка, 5.4 г клетчатки" — NOT "низкокалорийный"
+  The more specific named entities (vitamins, minerals, temperatures, weights, conditions), the better
 
 4. FAQ (exactly 4 questions):
 - Related questions from Google "People Also Ask"
@@ -414,7 +433,7 @@ STRICT SEO RULES:
 
 LANGUAGE: {locale}
 - Title, description, answer, FAQ → write in {locale}
-- Slug → ALWAYS in English
+- Slug → in the CONTENT language ({locale}). The system will auto-transliterate to Latin if needed.
 - Use phrases that REAL users type into Google in this language
 - DO NOT translate from English — write natively
 - Match cultural context of that language

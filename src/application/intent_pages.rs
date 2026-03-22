@@ -32,6 +32,7 @@ use crate::application::public_seo_content::{
     PublicSeoContentService, SeoContentRequest,
 };
 use crate::shared::{AppError, AppResult};
+use deunicode::deunicode;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -249,6 +250,15 @@ pub struct DuplicateEntry {
     pub is_canonical: bool,
 }
 
+/// Related page for internal linking
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct RelatedPage {
+    pub title: String,
+    pub slug: String,
+    pub intent_type: String,
+    pub entity_a: String,
+}
+
 // ── Service ──────────────────────────────────────────────────────────────────
 
 pub struct IntentPagesService {
@@ -311,14 +321,9 @@ impl IntentPagesService {
 
         // 5. Use predetermined slug, or AI-generated slug, or fallback
         let slug = predetermined_slug.unwrap_or_else(|| {
-            // Prefer AI-generated slug (semantic, always English)
+            // Prefer AI-generated slug (semantic, in content language → auto-transliterated)
             if let Some(ref ai_slug) = content.slug {
-                let cleaned = ai_slug.trim().to_lowercase()
-                    .replace(' ', "-");
-                let cleaned: String = cleaned.chars()
-                    .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-                    .collect();
-                let cleaned = cleaned.split('-').filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
+                let cleaned = transliterate_to_slug(ai_slug.trim());
                 if cleaned.len() >= 5 {
                     return cleaned;
                 }
@@ -757,6 +762,37 @@ impl IntentPagesService {
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::not_found("Intent page not found"))
+    }
+
+    // ── Related pages (internal linking) ─────────────────────────────────────
+
+    /// Returns up to 5 related published pages for internal linking.
+    /// Priority: same entity_a (different intent) > same intent_type (different entity).
+    pub async fn get_related(&self, slug: &str, locale: &str) -> AppResult<Vec<RelatedPage>> {
+        let pages = sqlx::query_as::<_, RelatedPage>(
+            r#"WITH current AS (
+                 SELECT entity_a, intent_type
+                 FROM intent_pages
+                 WHERE slug = $1 AND locale = $2 AND status = 'published'
+                 LIMIT 1
+               )
+               SELECT ip.title, ip.slug, ip.intent_type, ip.entity_a
+               FROM intent_pages ip, current c
+               WHERE ip.locale = $2
+                 AND ip.status = 'published'
+                 AND ip.slug != $1
+                 AND (ip.entity_a = c.entity_a OR ip.intent_type = c.intent_type)
+               ORDER BY
+                 CASE WHEN ip.entity_a = c.entity_a THEN 0 ELSE 1 END,
+                 ip.published_at DESC NULLS LAST
+               LIMIT 5"#,
+        )
+        .bind(slug)
+        .bind(locale)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(pages)
     }
 
     // ── Stats ────────────────────────────────────────────────────────────────
@@ -1359,29 +1395,36 @@ fn normalise_slug(slug: &str) -> String {
     s
 }
 
-fn generate_slug(title: &str, intent: &str, entity_a: &str, entity_b: Option<&str>) -> String {
-    // Try to slugify the title first
-    let slug = title
+/// Transliterate any Unicode string to an ASCII URL slug.
+/// "полезен ли артишок" → "polezen-li-artishok"
+/// "czy karczoch jest zdrowy" → "czy-karczoch-jest-zdrowy"
+/// "is artichoke healthy" → "is-artichoke-healthy"
+fn transliterate_to_slug(text: &str) -> String {
+    let ascii = deunicode(text);
+    let slug: String = ascii
         .to_lowercase()
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() { c }
-            else if c == ' ' || c == '-' { '-' }
-            else { ' ' } // will be stripped
+            else if c == ' ' || c == '-' || c == '_' { '-' }
+            else { ' ' }
         })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("");
 
-    // Clean up multiple dashes
-    let slug = slug
-        .split('-')
+    // Clean up multiple dashes, trim
+    slug.split('-')
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
-        .join("-");
+        .join("-")
+}
 
-    // If slug is too short (non-latin title), generate from intent+entity
+fn generate_slug(title: &str, intent: &str, entity_a: &str, entity_b: Option<&str>) -> String {
+    let slug = transliterate_to_slug(title);
+
+    // If slug is too short after transliteration, generate from intent+entity
     if slug.len() < 5 {
         match entity_b {
             Some(b) => format!("{}-{}-vs-{}", intent, entity_a, b),
