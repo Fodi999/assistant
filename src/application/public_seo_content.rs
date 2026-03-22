@@ -135,7 +135,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM (Fast model — cheap) ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 2400, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 3200, "llama-3.3-70b-versatile")
             .await?;
 
         // ── 5. Parse JSON ──
@@ -206,7 +206,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 2400, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 3200, "llama-3.3-70b-versatile")
             .await?;
 
         // ── 5. Parse ──
@@ -259,20 +259,60 @@ OUTPUT FORMAT (STRICT JSON):
     {{"q": "...", "a": "..."}}
   ],
   "content_blocks": [
-    {{"type": "heading", "level": 1, "text": "..."}},
-    {{"type": "text", "content": "... 2-3 sentence intro answer ..."}},
-    {{"type": "image", "key": "hero", "alt": "..."}},
-    {{"type": "heading", "level": 2, "text": "... Benefits / Properties ..."}},
-    {{"type": "text", "content": "... 3-4 sentences with specific data ..."}},
-    {{"type": "image", "key": "benefits", "alt": "..."}},
-    {{"type": "heading", "level": 2, "text": "... Calories & Nutrition ..."}},
-    {{"type": "text", "content": "... exact kcal, protein, vitamins per 100g ..."}},
-    {{"type": "image", "key": "nutrition", "alt": "..."}},
-    {{"type": "heading", "level": 2, "text": "... How to Use / Tips ..."}},
-    {{"type": "text", "content": "... cooking methods, portions, pairings ..."}},
-    {{"type": "image", "key": "cooking", "alt": "..."}}
+    {{"type": "heading", "level": 1, "text": "H1 — вопрос/тема"}},
+    {{"type": "text", "content": "2-3 предложения — краткий ответ, сразу ценность"}},
+    {{"type": "image", "key": "hero", "alt": "{{{{keyword}}}} — внешний вид продукта, appetizing photo"}},
+    {{"type": "text", "content": "1-2 предложения — переход к следующей секции, micro-value"}},
+    {{"type": "heading", "level": 2, "text": "Польза / свойства"}},
+    {{"type": "text", "content": "3-4 предложения с конкретными витаминами, минералами, свойствами"}},
+    {{"type": "image", "key": "benefits", "alt": "польза {{{{ingredient}}}} для здоровья, витамины и свойства"}},
+    {{"type": "text", "content": "1-2 предложения — кому особенно полезен, при каких состояниях"}},
+    {{"type": "heading", "level": 2, "text": "Калории и состав"}},
+    {{"type": "text", "content": "3-4 предложения: точные цифры kcal, белки, жиры, углеводы, витамины на 100г"}},
+    {{"type": "image", "key": "nutrition", "alt": "{{{{ingredient}}}} калории на 100г, белки, жиры, углеводы, витамины"}},
+    {{"type": "text", "content": "1-2 предложения — сравнение с аналогами или суточная норма"}},
+    {{"type": "heading", "level": 2, "text": "Как употреблять / советы"}},
+    {{"type": "text", "content": "3-4 предложения: способы приготовления, порции, сочетания, температура"}},
+    {{"type": "image", "key": "cooking", "alt": "как готовить {{{{ingredient}}}}, блюда и способы приготовления"}},
+    {{"type": "text", "content": "1-2 предложения — итоговый совет, рекомендация шефа"}}
   ]
 }}
+
+---
+
+STRICT RULES FOR CONTENT_BLOCKS:
+
+The article MUST follow this EXACT pattern (16 blocks):
+
+[H1] → [TEXT intro] → [IMAGE hero] → [TEXT bridge]
+→ [H2 Польза] → [TEXT] → [IMAGE benefits] → [TEXT]
+→ [H2 Калории] → [TEXT] → [IMAGE nutrition] → [TEXT]
+→ [H2 Как употреблять] → [TEXT] → [IMAGE cooking] → [TEXT]
+
+EVERY image block MUST be followed by a TEXT block (1-2 sentences, micro-value).
+EVERY image block MUST be preceded by a TEXT block (main content of that section).
+This creates a rhythm: text → image → text → heading → text → image → text...
+
+EXACTLY 4 image blocks: hero, benefits, nutrition, cooking.
+EXACTLY 4 heading blocks: 1x H1 + 3x H2.
+EXACTLY 8 text blocks.
+Total: 16 blocks.
+
+IMAGE ALT REQUIREMENTS:
+- In content language ({locale})
+- SEO-rich: include ingredient name + specific benefit/data
+- 80-150 characters
+- hero: product appearance, appetizing look
+- benefits: health benefits, specific vitamins (e.g. "витамин C, калий, антиоксиданты")
+- nutrition: calorie data, macros (e.g. "47 ккал, 3г белка на 100г")
+- cooking: cooking method, dish type (e.g. "запеченный при 180°C с травами")
+
+TEXT BLOCK REQUIREMENTS:
+- Short paragraphs: 2-4 sentences max
+- Use SPECIFIC data: numbers, vitamin names, temperatures, weights
+- No filler phrases, no "вода"
+- Entity enrichment: named vitamins, minerals, temperatures, weights, conditions
+- Each text block adds unique value (never repeat)
 
 ---
 
@@ -288,62 +328,30 @@ STRICT SEO RULES:
   - EN: is artichoke healthy → "is-artichoke-healthy"
   - PL: czy karczoch jest zdrowy → "czy-karczoch-jest-zdrowy"
   - UK: чи корисний артишок → "chi-korisnij-artishok"
-  - comparison salmon vs tuna → "salmon-vs-tuna" / "losos-protiv-tuntsa"
-  - goal: artichoke for skin → "artishok-dlya-kozhi" / "artichoke-for-skin"
 - NEVER use generic slugs like "question-artichoke" or "goal-salmon"
-- Slug should read like a natural search query in the content language
 
-1. TITLE:
-- MUST be 50-60 characters (this is critical for Google SERP)
-- Include main keyword + a benefit/hook
-- Example (ru): "Полезен ли артишок для здоровья? Польза, калории и витамины"
-- Example (en): "Is Artichoke Healthy? Benefits, Calories & Nutrition"
-- DO NOT write titles shorter than 45 characters
+1. TITLE (50-60 characters):
+- Include main keyword + benefit/hook
+- Example (ru): "Полезен ли артишок? Польза, калории и витамины"
 
-2. DESCRIPTION:
-- MUST be 120-155 characters (Google truncates at 155)
-- Start with ingredient + key data (calories, protein)
-- Include "Узнайте" / "Learn" / "Dowiedz się" — a search CTA
-- Example (ru): "Артишок — 60 калорий и 3 г белка на 100 г. Узнайте, чем он полезен, какие витамины содержит и как влияет на здоровье."
-- DO NOT write descriptions shorter than 120 characters
+2. DESCRIPTION (120-155 characters):
+- Start with ingredient + key data
+- Include CTA: "Узнайте" / "Learn" / "Dowiedz się"
 
-3. ANSWER:
-- MUST be 400-800 characters (4-6 sentences)
-- Sentence 1: answer the question directly
-- Sentences 2-3: specific numbers (calories per 100g, protein grams, key vitamins)
-- Sentence 4: practical advice (how to use, when to eat, portion size)
-- Sentence 5: who benefits most (a "Кому полезен" block, e.g. "для пищеварения, иммунитета, кожи")
-- End with a strong takeaway
-- Write naturally, like a chef explaining to a colleague
-- ENTITY ENRICHMENT (MANDATORY): use named entities, NOT generic words:
-  ✓ "витамины A, C, K и фолиевая кислота" — NOT "содержит витамины"
-  ✓ "снижает холестерин ЛПНП и артериальное давление" — NOT "полезен для здоровья"
-  ✓ "запекание при 180°C 25 минут" — NOT "можно запекать"
-  ✓ "100 г = 47 ккал, 3.3 г белка, 5.4 г клетчатки" — NOT "низкокалорийный"
-  The more specific named entities (vitamins, minerals, temperatures, weights, conditions), the better
+3. ANSWER (400-800 characters, 4-6 sentences):
+- Sentence 1: direct answer
+- Sentences 2-3: specific numbers (kcal, protein, vitamins)
+- Sentence 4: practical advice (how to cook, portion)
+- Sentence 5: who benefits most
+- Sentence 6: strong takeaway
+- ENTITY ENRICHMENT: named entities only, NO generic words
 
-4. FAQ:
-- MUST have exactly 4 questions
-- Real user questions from Google (People Also Ask)
+4. FAQ (exactly 4 questions):
+- a) Daily use: "Можно ли есть X каждый день?"
+- b) Nutrition: "Сколько калорий в X?"
+- c) Health goal: "Помогает ли X для похудения?"
+- d) Cooking: "Как лучше готовить X?"
 - Each answer: 2-3 sentences with SPECIFIC data
-- Cover these 4 angles:
-  a) Daily use: "Можно ли есть X каждый день?" / "Can you eat X every day?"
-  b) Nutrition: "Сколько калорий в X?" / "How many calories in X?"
-  c) Health goal: "Помогает ли X для похудения?" / "Does X help with weight loss?"
-  d) Cooking: "Как лучше готовить X?" / "How to cook X?"
-
-5. CONTENT_BLOCKS (structured article with images):
-- MUST produce 10-12 blocks in order: H1 → intro text → hero image → H2 → text → image → H2 → text → image → H2 → text → image
-- HEADING blocks: {{"type":"heading","level":1|2,"text":"..."}}
-- TEXT blocks: {{"type":"text","content":"..."}} — 2-4 sentences, short paragraphs, data-rich
-- IMAGE blocks: {{"type":"image","key":"hero|benefits|nutrition|cooking","alt":"..."}}
-  - "hero": product appearance, appetizing photo alt
-  - "benefits": health benefits, vitamins (alt mentions specific vitamins/properties)
-  - "nutrition": calorie/macro data (alt mentions kcal, protein, etc.)
-  - "cooking": cooking method, dish (alt mentions preparation, recipe)
-- EXACTLY 3-4 image blocks with distinct keys
-- Alt texts: SEO-rich, specific, in content language (120+ chars)
-- Text blocks use ENTITY ENRICHMENT (same rules as answer)
 
 ---
 
@@ -357,13 +365,11 @@ combo → Explain synergy, nutritional balance, recipe ideas
 ---
 
 LANGUAGE: {locale}
-- Title, description, answer, FAQ → write in {locale}
-- Slug → ALWAYS in English
-- Use natural phrases that REAL users search for in this language
-- DO NOT translate from English — write natively
-- Match the search intent in that language's culture
+- All content in {locale}. Write natively, DO NOT translate from English.
+- Slug in content language (auto-transliterated by system).
+- Use natural phrases that REAL users search for in this language.
 
-TONE: Expert chef + nutritionist. Practical, data-driven, confident.
+TONE: Expert chef + nutritionist. Data-driven, practical, confident. No fluff.
 
 Return ONLY the JSON, no other text."#,
         intent = intent,
@@ -413,20 +419,60 @@ OUTPUT FORMAT (STRICT JSON):
     {{"q": "...", "a": "..."}}
   ],
   "content_blocks": [
-    {{"type": "heading", "level": 1, "text": "..."}},
-    {{"type": "text", "content": "... 2-3 sentence intro answer ..."}},
-    {{"type": "image", "key": "hero", "alt": "..."}},
-    {{"type": "heading", "level": 2, "text": "... Benefits / Properties ..."}},
-    {{"type": "text", "content": "... 3-4 sentences with specific data ..."}},
-    {{"type": "image", "key": "benefits", "alt": "..."}},
-    {{"type": "heading", "level": 2, "text": "... Calories & Nutrition ..."}},
-    {{"type": "text", "content": "... exact kcal, protein, vitamins per 100g ..."}},
-    {{"type": "image", "key": "nutrition", "alt": "..."}},
-    {{"type": "heading", "level": 2, "text": "... How to Use / Tips ..."}},
-    {{"type": "text", "content": "... cooking methods, portions, pairings ..."}},
-    {{"type": "image", "key": "cooking", "alt": "..."}}
+    {{"type": "heading", "level": 1, "text": "H1 — вопрос/тема из поиска"}},
+    {{"type": "text", "content": "2-3 предложения — прямой ответ на запрос, сразу ценность"}},
+    {{"type": "image", "key": "hero", "alt": "{{{{keyword}}}} — внешний вид продукта, appetizing photo"}},
+    {{"type": "text", "content": "1-2 предложения — переход к пользе, micro-value"}},
+    {{"type": "heading", "level": 2, "text": "Польза / свойства"}},
+    {{"type": "text", "content": "3-4 предложения с конкретными витаминами, минералами, свойствами"}},
+    {{"type": "image", "key": "benefits", "alt": "польза {{{{ingredient}}}} для здоровья, витамины и свойства"}},
+    {{"type": "text", "content": "1-2 предложения — кому особенно полезен, при каких состояниях"}},
+    {{"type": "heading", "level": 2, "text": "Калории и состав"}},
+    {{"type": "text", "content": "3-4 предложения: точные цифры kcal, белки, жиры, углеводы, витамины на 100г"}},
+    {{"type": "image", "key": "nutrition", "alt": "{{{{ingredient}}}} калории на 100г, белки, жиры, углеводы, витамины"}},
+    {{"type": "text", "content": "1-2 предложения — сравнение с аналогами или суточная норма"}},
+    {{"type": "heading", "level": 2, "text": "Как употреблять / советы"}},
+    {{"type": "text", "content": "3-4 предложения: способы приготовления, порции, сочетания, температура"}},
+    {{"type": "image", "key": "cooking", "alt": "как готовить {{{{ingredient}}}}, блюда и способы приготовления"}},
+    {{"type": "text", "content": "1-2 предложения — итоговый совет, рекомендация шефа"}}
   ]
 }}
+
+---
+
+STRICT RULES FOR CONTENT_BLOCKS:
+
+The article MUST follow this EXACT pattern (16 blocks):
+
+[H1] → [TEXT intro] → [IMAGE hero] → [TEXT bridge]
+→ [H2 Польза] → [TEXT] → [IMAGE benefits] → [TEXT]
+→ [H2 Калории] → [TEXT] → [IMAGE nutrition] → [TEXT]
+→ [H2 Как употреблять] → [TEXT] → [IMAGE cooking] → [TEXT]
+
+EVERY image block MUST be followed by a TEXT block (1-2 sentences, micro-value).
+EVERY image block MUST be preceded by a TEXT block (main content of that section).
+This creates a rhythm: text → image → text → heading → text → image → text...
+
+EXACTLY 4 image blocks: hero, benefits, nutrition, cooking.
+EXACTLY 4 heading blocks: 1x H1 + 3x H2.
+EXACTLY 8 text blocks.
+Total: 16 blocks.
+
+IMAGE ALT REQUIREMENTS:
+- In content language ({locale})
+- SEO-rich: include ingredient name + specific benefit/data
+- 80-150 characters
+- hero: product appearance, appetizing look
+- benefits: health benefits, specific vitamins (e.g. "витамин C, калий, антиоксиданты")
+- nutrition: calorie data, macros (e.g. "47 ккал, 3г белка на 100г")
+- cooking: cooking method, dish type (e.g. "запеченный при 180°C с травами")
+
+TEXT BLOCK REQUIREMENTS:
+- Short paragraphs: 2-4 sentences max
+- Use SPECIFIC data: numbers, vitamin names, temperatures, weights
+- No filler phrases, no "вода"
+- Entity enrichment: named vitamins, minerals, temperatures, weights, conditions
+- Each text block adds unique value (never repeat)
 
 ---
 
@@ -436,73 +482,33 @@ STRICT SEO RULES:
 - Must reflect the search query intent
 - Write the slug in the SAME language as the content
 - The system will auto-transliterate to Latin if needed
-- Examples:
-  - EN: "Is salmon healthy?" → "is-salmon-healthy"
-  - RU: "калории лосось" → "kaloriynost-lososya"
-  - PL: "ile kalorii ma łosoś" → "ile-kalorii-ma-losos"
-  - UK: "калорії лосось" → "kaloriyi-lososya"
-  - "salmon vs tuna nutrition" → "salmon-vs-tuna-nutrition"
-  - "артишок для кожи" → "artishok-dlya-kozhi"
-- NEVER use generic slugs like "question-artichoke" or "goal-salmon"
-- Slug should read like a natural search query in the content language
 
-1. TITLE (50-60 characters, NEVER shorter):
+1. TITLE (50-60 characters):
 - Must closely match the search query
 - Add a benefit/hook after the main keyword
-- Natural, clickable in Google SERP
-- Example for "is salmon healthy": "Is Salmon Healthy? Nutrition Facts, Benefits & Risks"
-- Example for "калории лосось": "Калорийность лосося: БЖУ на 100г, польза и сравнение"
 
-2. DESCRIPTION (120-155 characters, NEVER shorter than 120):
-- Start with ingredient + key data (calories, protein)
-- Include "Узнайте" / "Learn" / "Dowiedz się" — a search CTA
-- Example: "Лосось — 208 ккал, 20г белка и омега-3. Узнайте, как он влияет на здоровье и сколько можно есть в день."
+2. DESCRIPTION (120-155 characters):
+- Start with ingredient + key data
+- Include CTA: "Узнайте" / "Learn" / "Dowiedz się"
 
 3. ANSWER (400-800 characters, 4-6 sentences):
 - Sentence 1: Answer the search query DIRECTLY
-- Sentences 2-3: Specific numbers (calories per 100g, protein, key vitamins)
-- Sentence 4: Practical advice (how to cook, when to eat, portion size)
-- Sentence 5: Who benefits most ("Кому полезен: для пищеварения, иммунитета, кожи")
-- Sentence 6: Strong takeaway
-- Write naturally like a chef explaining to a colleague
-- DO NOT use generic filler phrases
-- ENTITY ENRICHMENT (MANDATORY): use named entities, NOT generic words:
-  ✓ "витамины A, C, K и фолиевая кислота" — NOT "содержит витамины"
-  ✓ "снижает холестерин ЛПНП и артериальное давление" — NOT "полезен для здоровья"
-  ✓ "запекание при 180°C 25 минут" — NOT "можно запекать"
-  ✓ "100 г = 47 ккал, 3.3 г белка, 5.4 г клетчатки" — NOT "низкокалорийный"
-  The more specific named entities (vitamins, minerals, temperatures, weights, conditions), the better
+- Sentences 2-3: specific numbers (kcal, protein, vitamins)
+- Sentence 4: practical advice
+- Sentence 5: who benefits most
+- Sentence 6: strong takeaway
+- ENTITY ENRICHMENT: named entities only, NO generic words
 
 4. FAQ (exactly 4 questions):
-- Related questions from Google "People Also Ask"
+- a) Daily use  b) Nutrition  c) Health goal  d) Cooking
 - Each answer: 2-3 sentences with SPECIFIC data
-- Cover these 4 angles:
-  a) Daily use: "Можно ли есть X каждый день?"
-  b) Nutrition: "Сколько калорий в X?"
-  c) Health goal: "Помогает ли X для похудения?"
-  d) Cooking: "Как лучше готовить X?"
-
-5. CONTENT_BLOCKS (structured article with images):
-- MUST produce 10-12 blocks in order: H1 → intro text → hero image → H2 → text → image → H2 → text → image → H2 → text → image
-- HEADING blocks: {{"type":"heading","level":1|2,"text":"..."}}
-- TEXT blocks: {{"type":"text","content":"..."}} — 2-4 sentences, short paragraphs, data-rich
-- IMAGE blocks: {{"type":"image","key":"hero|benefits|nutrition|cooking","alt":"..."}}
-  - "hero": product appearance photo alt
-  - "benefits": health/vitamin illustration alt
-  - "nutrition": calorie/macro infographic alt
-  - "cooking": cooking/dish photo alt
-- EXACTLY 3-4 image blocks with distinct keys
-- Alt texts: SEO-rich, specific, in content language (120+ chars)
-- Text blocks use ENTITY ENRICHMENT (same rules as answer)
 
 ---
 
 LANGUAGE: {locale}
-- Title, description, answer, FAQ → write in {locale}
-- Slug → in the CONTENT language ({locale}). The system will auto-transliterate to Latin if needed.
-- Use phrases that REAL users type into Google in this language
-- DO NOT translate from English — write natively
-- Match cultural context of that language
+- All content in {locale}. Write natively, DO NOT translate from English.
+- Slug in content language (auto-transliterated by system).
+- Use natural search phrases for this language.
 
 TONE: Expert chef + nutritionist. Data-driven, practical, confident. No fluff.
 
