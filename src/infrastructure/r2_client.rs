@@ -93,6 +93,7 @@ impl R2Client {
             .key(key)
             .body(byte_stream)
             .content_type(content_type)
+            .cache_control("public, max-age=31536000, immutable")
             .send()
             .await
             .map_err(|e| {
