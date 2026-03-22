@@ -801,3 +801,52 @@ pub async fn autocomplete_ingredients(
 
     Ok(Json(items))
 }
+
+// ── Bulk states map (sitemap use — eliminates N+1) ────────────────────────────
+
+/// GET /public/ingredients-states-map
+///
+/// Returns { "slug": ["raw", "boiled", ...] } for ALL active ingredients that
+/// have at least one processing state in the DB.
+///
+/// Used by the sitemap to emit ONLY state URLs that actually exist, avoiding
+/// 404s for ingredients that haven't had states generated yet.
+/// Single query — O(1) instead of O(N) for the sitemap.
+pub async fn get_ingredients_states_map(
+    State(pool): State<PgPool>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        slug: String,
+        state: String,
+    }
+
+    let rows: Vec<Row> = sqlx::query_as(
+        r#"
+        SELECT ci.slug, s.state::text AS state
+        FROM ingredient_states s
+        JOIN catalog_ingredients ci ON ci.id = s.ingredient_id
+        WHERE ci.is_active = true
+          AND ci.slug IS NOT NULL AND ci.slug != ''
+        ORDER BY ci.slug, s.state
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error fetching states map: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
+    })?;
+
+    // Group by slug → [states]
+    let mut map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        map.entry(row.slug).or_default().push(row.state);
+    }
+
+    Ok(Json(serde_json::json!(map)))
+}

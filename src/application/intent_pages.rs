@@ -801,54 +801,68 @@ impl IntentPagesService {
         // Get daily limit
         let limit = self.get_publish_limit().await?;
 
-        // ── Site-wide SEO page breakdown ───────────────────────────────────────
-        // These are all public-facing pages Google can discover.
+        // ── Site-wide SEO page breakdown ──────────────────────────────────────
+        //
+        // These match exactly what the blog sitemap.ts generates × 4 locales.
+        // Reference: /Users/dmitrijfomin/Desktop/blog/app/sitemap.ts
+        //
+        // locales = [pl, en, ru, uk]  →  LOCALE_MULTIPLIER = 4
 
-        // /ingredients/:slug  →  one page per active ingredient
-        let count_ingredients: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM catalog_ingredients WHERE COALESCE(is_active, true) = true"
+        const LOCALE_MULTIPLIER: i64 = 4;
+
+        // Active ingredients in catalog (base for most per-ingredient pages)
+        let count_active_ingredients: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM catalog_ingredients WHERE COALESCE(is_active, true) = true AND slug IS NOT NULL"
         )
         .fetch_one(&self.pool)
         .await
         .unwrap_or(0);
 
-        // /ingredients/:slug/states/:state  →  ingredient × state combos
-        let count_states: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM ingredient_states"
-        )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(0);
+        // /chef-tools/nutrition/:slug  →  ingredients × 4 locales
+        let count_nutrition = count_active_ingredients * LOCALE_MULTIPLIER;
 
-        // /nutrition/:slug  →  products with nutrition data
-        let count_nutrition: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM products WHERE is_published = true"
-        )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(0);
+        // /chef-tools/ingredients/:slug  →  ingredient profile pages × 4 locales
+        let count_ingredient_profiles = count_active_ingredients * LOCALE_MULTIPLIER;
 
-        // /tools/:from_to/:slug  →  SEO convert pages (ingredient × unit pairs)
-        // Estimate: each active ingredient generates N unit-conversion pages.
-        // We count real seo-convert slugs stored in slug_aliases if available,
-        // fallback to formula: ingredients × avg units (9).
-        let count_convert_real: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM slug_aliases WHERE path LIKE '/tools/%/%'"
-        )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(0);
-        let count_convert = if count_convert_real > 0 {
-            count_convert_real
-        } else {
-            count_ingredients * 9 // avg 9 unit-pairs per ingredient
-        };
+        // /chef-tools/how-many/how-many-{unit}-in-a-{measure}-of-{slug}
+        // HOW_MANY_COMBOS = 14 combos (matches sitemap.ts HOW_MANY_COMBOS array)
+        const HOW_MANY_COMBOS: i64 = 14;
+        let count_how_many = count_active_ingredients * HOW_MANY_COMBOS * LOCALE_MULTIPLIER;
 
-        // /seo/:slug  →  published intent pages
+        // /chef-tools/ingredients/:slug/:state  →  INDEXABLE_STATES = 3 (raw, boiled, fried)
+        // (other states have noindex — not counted)
+        const INDEXABLE_STATES: i64 = 3;
+        let count_states = count_active_ingredients * INDEXABLE_STATES * LOCALE_MULTIPLIER;
+
+        // /chef-tools/diet/:flag  →  7 diet flags × 4 locales
+        const DIET_FLAGS: i64 = 7;
+        let count_diet = DIET_FLAGS * LOCALE_MULTIPLIER;
+
+        // /chef-tools/ranking/:metric  →  15 metrics × 4 locales
+        const RANKING_METRICS: i64 = 15;
+        let count_ranking = RANKING_METRICS * LOCALE_MULTIPLIER;
+
+        // /chef-tools/fish-season/:month  →  12 months × 4 locales
+        let count_fish_season = 12 * LOCALE_MULTIPLIER;
+
+        // /seo/:slug  →  published intent pages (these are NOT locale-multiplied yet,
+        // each intent page has its own locale field)
         let count_intent = published;
 
-        // Total system pages (all indexable URLs)
-        let system_total = count_ingredients + count_states + count_nutrition + count_convert + count_intent;
+        // Static pages (~40) × 4 locales
+        const STATIC_PAGES: i64 = 40;
+        let count_static = STATIC_PAGES * LOCALE_MULTIPLIER;
+
+        // Total tracked system pages
+        let system_total = count_nutrition
+            + count_ingredient_profiles
+            + count_how_many
+            + count_states
+            + count_diet
+            + count_ranking
+            + count_fish_season
+            + count_static
+            + count_intent;
 
         // Google baseline from seo_settings
         let google_discovered: i64 = sqlx::query_scalar(
@@ -858,7 +872,20 @@ impl IntentPagesService {
         .await
         .unwrap_or(7192);
 
-        let indexing_gap = system_total - google_discovered;
+        // Coverage: how many of our system pages Google has discovered
+        let coverage_pct = if system_total > 0 {
+            (google_discovered as f64 / system_total as f64 * 100.0).min(100.0)
+        } else {
+            0.0
+        };
+
+        // New intent pages this week
+        let intent_this_week: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM intent_pages WHERE status = 'published' AND published_at >= NOW() - INTERVAL '7 days'"
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
 
         Ok(serde_json::json!({
             // Intent pages pipeline stats
@@ -874,16 +901,29 @@ impl IntentPagesService {
             "publish_limit_per_day": limit,
             "remaining_today": (limit - published_today).max(0),
 
-            // Site-wide SEO breakdown
+            // Site-wide SEO breakdown (matches sitemap.ts exactly)
             "seo": {
-                "ingredients": count_ingredients,
-                "states": count_states,
+                // Per-ingredient page families
+                "active_ingredients": count_active_ingredients,
                 "nutrition": count_nutrition,
-                "convert": count_convert,
+                "ingredient_profiles": count_ingredient_profiles,
+                "how_many": count_how_many,
+                "states": count_states,
+                // Taxonomy / static
+                "diet": count_diet,
+                "ranking": count_ranking,
+                "fish_season": count_fish_season,
+                "static_pages": count_static,
+                // New growth layer
                 "intent_pages": count_intent,
+                "intent_today": published_today,
+                "intent_this_week": intent_this_week,
+                // KPI totals
                 "system_total": system_total,
                 "google_discovered": google_discovered,
-                "indexing_gap": indexing_gap,
+                "coverage_pct": (coverage_pct * 10.0).round() / 10.0,
+                "untracked": (google_discovered - system_total).max(0),
+                "not_yet_indexed": (system_total - google_discovered).max(0),
             }
         }))
     }
