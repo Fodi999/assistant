@@ -1,7 +1,9 @@
 use crate::application::{
     ai_sous_chef::AiSousChefService,
     cms_service::CmsService,
+    intent_pages::IntentPagesService,
     public_nutrition::PublicNutritionService,
+    public_seo_content::PublicSeoContentService,
     recipe_v2_service::RecipeV2Service, // V2 with translations
     report::ReportService,
     AdminAuthService,
@@ -23,6 +25,7 @@ use crate::interfaces::http::{
     admin_auth,
     admin_catalog,
     admin_cms,
+    admin_intent_pages,
     admin_nutrition,
     admin_states,
     admin_users,
@@ -33,7 +36,9 @@ use crate::interfaces::http::{
     public::{
         cms as public_cms,
         ingredients::{get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, list_ingredients, list_ingredients_full},
+        intent_pages::{list_published_intent_pages, get_published_intent_page},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
+        seo_content::get_seo_content,
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe, tools_run, tools_catalog},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
@@ -90,6 +95,7 @@ pub fn create_router(
     admin_catalog_service: AdminCatalogService, // 🆕 Admin Catalog service
     admin_nutrition_service: AdminNutritionService, // 🆕 Nutrition editor
     r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
+    llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>, // 🆕 for public AI SEO content
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
 ) -> Router {
@@ -610,6 +616,83 @@ pub fn create_router(
         .route("/products-slugs",  get(get_all_slugs))
         .with_state(public_nutrition_svc);
 
+    // ── Public AI SEO Content route ───────────────────────────────────────────
+    let seo_content_svc = Arc::new(
+        PublicSeoContentService::new(
+            llm_adapter,
+            crate::infrastructure::persistence::AiCacheRepository::new(pool_for_public.clone()),
+        )
+    );
+    let public_seo_content_router = Router::new()
+        .route("/seo-content", get(get_seo_content))
+        .with_state(seo_content_svc.clone());
+
+    // ── Intent Pages (AI-generated pSEO pages) ───────────────────────────────
+    let intent_pages_svc = Arc::new(
+        IntentPagesService::new(pool_for_public.clone(), seo_content_svc)
+    );
+
+    // Admin intent pages routes (protected)
+    let admin_intent_pages_routes = Router::new()
+        .route("/generate", post(admin_intent_pages::generate_intent_page))
+        .route("/generate-batch", post(admin_intent_pages::generate_batch))
+        .route("/enqueue-bulk", post(admin_intent_pages::enqueue_bulk))
+        .route("/", get(admin_intent_pages::list_intent_pages))
+        .route("/stats", get(admin_intent_pages::intent_pages_stats))
+        .route("/settings", get(admin_intent_pages::get_settings).put(admin_intent_pages::update_settings))
+        .route("/scheduler/run", post(admin_intent_pages::run_scheduler))
+        .route("/:id", get(admin_intent_pages::get_intent_page))
+        .route("/:id", axum::routing::put(admin_intent_pages::update_intent_page))
+        .route("/:id/publish", post(admin_intent_pages::publish_intent_page))
+        .route("/:id/unpublish", post(admin_intent_pages::unpublish_intent_page))
+        .route("/:id/enqueue", post(admin_intent_pages::enqueue_intent_page))
+        .route("/:id/archive", post(admin_intent_pages::archive_intent_page))
+        .route("/:id", axum::routing::delete(admin_intent_pages::delete_intent_page))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
+        .with_state(intent_pages_svc.clone());
+
+    // Public intent pages routes (no auth)
+    let public_intent_pages_router = Router::new()
+        .route("/intent-pages", get(list_published_intent_pages))
+        .route("/intent-pages/:slug", get(get_published_intent_page))
+        .with_state(intent_pages_svc.clone());
+
+    // ── Background scheduler: publish queued pages every hour ────────────────
+    {
+        let svc = intent_pages_svc.clone();
+        tokio::spawn(async move {
+            // Wait 30s after startup before first check
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            tracing::info!("🕐 Intent pages scheduler started (checks every 1h)");
+
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                match svc.run_scheduled_publish().await {
+                    Ok(result) => {
+                        tracing::info!("🕐 Scheduler result: {}", result);
+                    }
+                    Err(e) => {
+                        tracing::error!("❌ Scheduler error: {}", e);
+                    }
+                }
+            }
+        });
+    }
+
     // ── Admin CMS routes (protected) ─────────────────────────────────────────
     let admin_cms_routes = Router::new()
         // About page
@@ -683,7 +766,9 @@ pub fn create_router(
         .merge(public_tools_router)
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
         .merge(public_cms_router)
-        .merge(public_nutrition_router);
+        .merge(public_nutrition_router)
+        .merge(public_seo_content_router) // 🆕 AI SEO content
+        .merge(public_intent_pages_router); // 🆕 Intent Pages pSEO
 
     // Combine all routes
     Router::new()
@@ -696,6 +781,7 @@ pub fn create_router(
         .nest("/api/admin/catalog/states", admin_states_routes)
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
+        .nest("/api/admin/intent-pages", admin_intent_pages_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete

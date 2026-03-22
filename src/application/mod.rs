@@ -4,6 +4,8 @@ pub mod admin_nutrition;
 pub mod assistant_service;
 pub mod ai_sous_chef; // AI Sous Chef — deterministic state generation
 pub mod public_nutrition;
+pub mod public_seo_content; // 🆕 AI SEO content for programmatic pages
+pub mod intent_pages;       // 🆕 Intent pages CRUD + batch + publish pipeline
 pub mod auth;
 pub mod catalog;
 pub mod cms_service;

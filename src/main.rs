@@ -213,7 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let recipe_ai_insights_service = Arc::new(
         restaurant_backend::application::RecipeAIInsightsService::new(
-            llm_adapter,
+            llm_adapter.clone(),
             Arc::new(repositories.recipe_ai_insights.clone()),
             Arc::new(repositories.recipe_v2.clone()),
         ),
@@ -244,6 +244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_catalog_service,
         admin_nutrition_service,
         r2_client,
+        llm_adapter,
         cors_origins,
         rate_limit_per_second,
     );
