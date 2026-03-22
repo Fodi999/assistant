@@ -827,6 +827,7 @@ pub async fn get_ingredients_states_map(
         FROM ingredient_states s
         JOIN catalog_ingredients ci ON ci.id = s.ingredient_id
         WHERE ci.is_active = true
+          AND COALESCE(ci.is_published, false) = true
           AND ci.slug IS NOT NULL AND ci.slug != ''
         ORDER BY ci.slug, s.state
         "#,
