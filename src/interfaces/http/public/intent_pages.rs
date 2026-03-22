@@ -3,6 +3,7 @@
 //! GET /public/intent-pages?locale=en              → list published
 //! GET /public/intent-pages/:slug?locale=en        → single published page
 //! GET /public/intent-pages/:slug/related?locale=en → related pages for internal linking
+//! GET /public/ingredients/:slug/intent-pages?locale=en → hub: all intent pages for ingredient
 
 use axum::{
     extract::{Path, Query, State},
@@ -45,3 +46,16 @@ pub async fn get_related_intent_pages(
     let pages = service.get_related(&slug, locale).await?;
     Ok(Json(pages))
 }
+
+/// GET /public/ingredients/:slug/intent-pages
+/// Returns all published intent pages for a given ingredient (for the hub page).
+pub async fn get_ingredient_intent_pages(
+    State(service): State<IntentPagesPublicState>,
+    Path(slug): Path<String>,
+    Query(q): Query<PublicSlugQuery>,
+) -> Result<Json<Vec<RelatedPage>>, AppError> {
+    let locale = q.locale.as_deref().unwrap_or("en");
+    let pages = service.list_for_ingredient(&slug, locale).await?;
+    Ok(Json(pages))
+}
+

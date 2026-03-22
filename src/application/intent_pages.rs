@@ -831,28 +831,69 @@ impl IntentPagesService {
 
     // ── Related pages (internal linking) ─────────────────────────────────────
 
-    /// Returns up to 5 related published pages for internal linking.
-    /// Priority: same entity_a (different intent) > same intent_type (different entity).
+    /// Returns up to 8 related published pages for internal linking.
+    /// Priority:
+    ///   0 — same entity_a (different intent) → cluster links
+    ///   1 — pages that reference THIS entity as entity_b (reverse links: A→B makes B→A)
+    ///   2 — same intent_type (different entity) → topical links
     pub async fn get_related(&self, slug: &str, locale: &str) -> AppResult<Vec<RelatedPage>> {
         let pages = sqlx::query_as::<_, RelatedPage>(
             r#"WITH current AS (
-                 SELECT entity_a, intent_type
+                 SELECT entity_a, entity_b, intent_type
                  FROM intent_pages
                  WHERE slug = $1 AND locale = $2 AND status = 'published'
                  LIMIT 1
                )
-               SELECT ip.title, ip.slug, ip.intent_type, ip.entity_a
+               SELECT DISTINCT ON (ip.slug) ip.title, ip.slug, ip.intent_type, ip.entity_a
                FROM intent_pages ip, current c
                WHERE ip.locale = $2
                  AND ip.status = 'published'
                  AND ip.slug != $1
-                 AND (ip.entity_a = c.entity_a OR ip.intent_type = c.intent_type)
+                 AND (
+                   ip.entity_a = c.entity_a
+                   OR (c.entity_a IS NOT NULL AND ip.entity_b = c.entity_a)
+                   OR (c.entity_b IS NOT NULL AND ip.entity_a = c.entity_b)
+                   OR ip.intent_type = c.intent_type
+                 )
                ORDER BY
-                 CASE WHEN ip.entity_a = c.entity_a THEN 0 ELSE 1 END,
+                 ip.slug,
+                 CASE
+                   WHEN ip.entity_a = c.entity_a THEN 0
+                   WHEN c.entity_a IS NOT NULL AND ip.entity_b = c.entity_a THEN 1
+                   WHEN c.entity_b IS NOT NULL AND ip.entity_a = c.entity_b THEN 1
+                   ELSE 2
+                 END,
                  ip.published_at DESC NULLS LAST
-               LIMIT 5"#,
+               LIMIT 8"#,
         )
         .bind(slug)
+        .bind(locale)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(pages)
+    }
+
+    /// Returns all published intent pages for a given ingredient (hub page).
+    /// Used by the ingredient page to show "Articles about this ingredient".
+    pub async fn list_for_ingredient(&self, entity_a: &str, locale: &str) -> AppResult<Vec<RelatedPage>> {
+        let pages = sqlx::query_as::<_, RelatedPage>(
+            r#"SELECT title, slug, intent_type, entity_a
+               FROM intent_pages
+               WHERE entity_a = $1
+                 AND locale = $2
+                 AND status = 'published'
+               ORDER BY
+                 CASE intent_type
+                   WHEN 'question' THEN 0
+                   WHEN 'goal' THEN 1
+                   WHEN 'comparison' THEN 2
+                   ELSE 3
+                 END,
+                 published_at DESC NULLS LAST
+               LIMIT 20"#,
+        )
+        .bind(entity_a)
         .bind(locale)
         .fetch_all(&self.pool)
         .await?;
