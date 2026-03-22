@@ -35,7 +35,7 @@ use crate::interfaces::http::{
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
         cms as public_cms,
-        ingredients::{get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, list_ingredients, list_ingredients_full},
+        ingredients::{autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, list_ingredients, list_ingredients_full},
         intent_pages::{list_published_intent_pages, get_published_intent_page},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
         seo_content::get_seo_content,
@@ -527,6 +527,7 @@ pub fn create_router(
     let public_ingredients_router = Router::new()
         .route("/ingredients", get(list_ingredients))
         .route("/ingredients-full", get(list_ingredients_full))
+        .route("/ingredients/autocomplete", get(autocomplete_ingredients))
         .route("/ingredients/:slug", get(get_ingredient_by_slug))
         .route("/ingredients/:slug/states", get(get_ingredient_states))
         .route("/ingredients/:slug/states/:state", get(get_ingredient_state))

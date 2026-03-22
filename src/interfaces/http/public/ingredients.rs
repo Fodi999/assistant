@@ -665,3 +665,139 @@ pub async fn get_ingredient_state(
         }))),
     }
 }
+
+// ── Autocomplete ──────────────────────────────────────────────────────────────
+
+/// GET /public/ingredients/autocomplete?q=lo&lang=ru&limit=10
+///
+/// Lightweight typeahead search: returns only slug + localised name + image.
+/// Minimum query: 2 characters.  Starts-with search (`ILIKE 'q%'`) first,
+/// falls back to contains (`ILIKE '%q%'`) so prefix hits come first.
+#[derive(Deserialize)]
+pub struct AutocompleteQuery {
+    pub q: Option<String>,
+    pub lang: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct AutocompleteItem {
+    pub slug: String,
+    pub name: String,       // localised display name
+    pub name_en: String,    // always English for entity_a in generation
+    pub image_url: Option<String>,
+    pub category: Option<String>, // localised category name
+}
+
+pub async fn autocomplete_ingredients(
+    State(pool): State<PgPool>,
+    Query(params): Query<AutocompleteQuery>,
+) -> Result<Json<Vec<AutocompleteItem>>, (StatusCode, Json<serde_json::Value>)> {
+    let q = params.q.unwrap_or_default();
+    let q = q.trim();
+
+    if q.chars().count() < 2 {
+        return Ok(Json(vec![]));
+    }
+
+    let lang = params
+        .lang
+        .as_deref()
+        .and_then(Language::from_code)
+        .unwrap_or_default();
+
+    let limit = params.limit.unwrap_or(10).clamp(1, 50);
+
+    // Column to display and sort by depends on requested language.
+    // But we ALWAYS search all 4 language columns so that e.g.
+    // typing "ло" finds "Лосось" (name_ru) even when lang=en.
+    let (name_col, cat_col) = match lang {
+        Language::Ru => ("ci.name_ru", "cc.name_ru"),
+        Language::Pl => ("ci.name_pl", "cc.name_pl"),
+        Language::Uk => ("ci.name_uk", "cc.name_uk"),
+        Language::En => ("ci.name_en", "cc.name_en"),
+    };
+
+    // $1 = prefix pattern  ('q%')
+    // $2 = contains pattern ('%q%')
+    // $3 = limit
+    //
+    // Priority ordering:
+    //   0 – display-lang prefix match  (best: "лос" → "Лосось" in ru)
+    //   1 – any-lang prefix match
+    //   2 – display-lang contains match
+    //   3 – any-lang contains match
+    let sql = format!(
+        r#"
+        SELECT
+            COALESCE(ci.slug, LOWER(REPLACE(ci.name_en, ' ', '-'))) AS slug,
+            {name_col}                          AS name,
+            ci.name_en,
+            ci.image_url,
+            {cat_col}                           AS category
+        FROM catalog_ingredients ci
+        LEFT JOIN catalog_categories cc ON cc.id = ci.category_id
+        WHERE COALESCE(ci.is_active, true) = true
+          AND (
+                -- search in ALL four language columns
+                ci.name_en ILIKE $2
+             OR ci.name_ru ILIKE $2
+             OR ci.name_pl ILIKE $2
+             OR ci.name_uk ILIKE $2
+             OR ci.slug    ILIKE $2
+          )
+        ORDER BY
+            CASE
+                WHEN {name_col} ILIKE $1 THEN 0          -- display-lang prefix
+                WHEN ci.name_en ILIKE $1
+                  OR ci.name_ru ILIKE $1
+                  OR ci.name_pl ILIKE $1
+                  OR ci.name_uk ILIKE $1 THEN 1           -- any-lang prefix
+                WHEN {name_col} ILIKE $2 THEN 2           -- display-lang contains
+                ELSE 3                                     -- any-lang contains
+            END,
+            {name_col} ASC
+        LIMIT $3
+        "#,
+        name_col = name_col,
+        cat_col = cat_col,
+    );
+
+    let prefix = format!("{}%", q);
+    let contains = format!("%{}%", q);
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        slug: String,
+        name: String,
+        name_en: String,
+        image_url: Option<String>,
+        category: Option<String>,
+    }
+
+    let rows: Vec<Row> = sqlx::query_as(&sql)
+        .bind(&prefix)
+        .bind(&contains)
+        .bind(limit)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
+
+    let items = rows
+        .into_iter()
+        .map(|r| AutocompleteItem {
+            slug: r.slug,
+            name: r.name,
+            name_en: r.name_en,
+            image_url: r.image_url,
+            category: r.category,
+        })
+        .collect();
+
+    Ok(Json(items))
+}
