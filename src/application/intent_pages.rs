@@ -309,8 +309,20 @@ impl IntentPagesService {
             self.seo_service.generate(&seo_req).await?
         };
 
-        // 5. Use predetermined slug or generate from title
+        // 5. Use predetermined slug, or AI-generated slug, or fallback
         let slug = predetermined_slug.unwrap_or_else(|| {
+            // Prefer AI-generated slug (semantic, always English)
+            if let Some(ref ai_slug) = content.slug {
+                let cleaned = ai_slug.trim().to_lowercase()
+                    .replace(' ', "-");
+                let cleaned: String = cleaned.chars()
+                    .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                    .collect();
+                let cleaned = cleaned.split('-').filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
+                if cleaned.len() >= 5 {
+                    return cleaned;
+                }
+            }
             generate_slug(&content.title, &req.intent_type, &req.entity_a, req.entity_b.as_deref())
         });
 

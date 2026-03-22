@@ -40,6 +40,9 @@ pub struct SeoContentResponse {
     pub description: String,
     pub answer: String,
     pub faq: Vec<SeoContentFaq>,
+    /// AI-generated SEO-friendly slug (always English, e.g. "is-artichoke-healthy")
+    #[serde(default)]
+    pub slug: Option<String>,
 }
 
 // ── Valid intent types ───────────────────────────────────────────────────────
@@ -233,6 +236,7 @@ Language: {locale}
 OUTPUT FORMAT (STRICT JSON):
 
 {{
+  "slug": "...",
   "title": "...",
   "description": "...",
   "answer": "...",
@@ -248,37 +252,49 @@ OUTPUT FORMAT (STRICT JSON):
 
 STRICT SEO RULES:
 
+0. SLUG (ALWAYS in English, 3-6 words separated by hyphens):
+- Must reflect the MAIN search intent, not just "intent-ingredient"
+- Use real search query keywords
+- Examples:
+  - question about artichoke health → "is-artichoke-healthy"
+  - question about salmon calories → "salmon-calories-nutrition"
+  - comparison salmon vs tuna → "salmon-vs-tuna-nutrition"
+  - goal: artichoke for skin → "artichoke-benefits-for-skin"
+- NEVER use generic slugs like "question-artichoke" or "goal-salmon"
+- ALWAYS English, even if content language is ru/pl/uk
+
 1. TITLE:
 - MUST be 50-60 characters (this is critical for Google SERP)
 - Include main keyword + a benefit/hook
-- Example (ru): "Полезен ли артишок для кожи? Польза, витамины и свойства"
-- Example (en): "Is Artichoke Good for Skin? Benefits, Vitamins & Facts"
+- Example (ru): "Полезен ли артишок для здоровья? Польза, калории и витамины"
+- Example (en): "Is Artichoke Healthy? Benefits, Calories & Nutrition"
 - DO NOT write titles shorter than 45 characters
 
 2. DESCRIPTION:
 - MUST be 120-155 characters (Google truncates at 155)
-- Include key data: calories, protein, vitamins
-- End with a CTA or hook
+- Start with ingredient + key data (calories, protein)
+- Include "Узнайте" / "Learn" / "Dowiedz się" — a search CTA
+- Example (ru): "Артишок — 60 калорий и 3 г белка на 100 г. Узнайте, чем он полезен, какие витамины содержит и как влияет на здоровье."
 - DO NOT write descriptions shorter than 120 characters
 
 3. ANSWER:
 - MUST be 400-800 characters (4-6 sentences)
-- First sentence: answer the question directly
-- Include specific numbers (calories per 100g, protein grams, key vitamins)
-- Include practical advice (how to use, when to eat, who benefits)
+- Sentence 1: answer the question directly
+- Sentences 2-3: specific numbers (calories per 100g, protein grams, key vitamins)
+- Sentence 4: practical advice (how to use, when to eat, portion size)
+- Sentence 5: who benefits most (a "Кому полезен" block, e.g. "для пищеварения, иммунитета, кожи")
 - End with a strong takeaway
 - Write naturally, like a chef explaining to a colleague
 
 4. FAQ:
 - MUST have exactly 4 questions
 - Real user questions from Google (People Also Ask)
-- Each answer: 2-3 sentences with specific data
-- Cover different angles: nutrition, cooking, health, daily use
-- Examples of good FAQ:
-  - "Можно ли есть X каждый день?"
-  - "Какие витамины содержит X?"
-  - "Помогает ли X для похудения?"
-  - "Как правильно готовить X?"
+- Each answer: 2-3 sentences with SPECIFIC data
+- Cover these 4 angles:
+  a) Daily use: "Можно ли есть X каждый день?" / "Can you eat X every day?"
+  b) Nutrition: "Сколько калорий в X?" / "How many calories in X?"
+  c) Health goal: "Помогает ли X для похудения?" / "Does X help with weight loss?"
+  d) Cooking: "Как лучше готовить X?" / "How to cook X?"
 
 ---
 
@@ -292,7 +308,8 @@ combo → Explain synergy, nutritional balance, recipe ideas
 ---
 
 LANGUAGE: {locale}
-- Write ONLY in {locale}
+- Title, description, answer, FAQ → write in {locale}
+- Slug → ALWAYS in English
 - Use natural phrases that REAL users search for in this language
 - DO NOT translate from English — write natively
 - Match the search intent in that language's culture
@@ -336,6 +353,7 @@ Language: {locale}
 OUTPUT FORMAT (STRICT JSON):
 
 {{
+  "slug": "...",
   "title": "...",
   "description": "...",
   "answer": "...",
@@ -351,6 +369,17 @@ OUTPUT FORMAT (STRICT JSON):
 
 STRICT SEO RULES:
 
+0. SLUG (ALWAYS in English, 3-6 words separated by hyphens):
+- Must reflect the search query intent
+- Use the same keywords as the search query (transliterated to English if needed)
+- Examples:
+  - "Is salmon healthy?" → "is-salmon-healthy"
+  - "калории лосось" → "salmon-calories-nutrition"
+  - "salmon vs tuna nutrition" → "salmon-vs-tuna-nutrition"
+  - "артишок для кожи" → "artichoke-benefits-for-skin"
+- NEVER use generic slugs like "question-artichoke" or "goal-salmon"
+- ALWAYS English, regardless of content language
+
 1. TITLE (50-60 characters, NEVER shorter):
 - Must closely match the search query
 - Add a benefit/hook after the main keyword
@@ -359,32 +388,33 @@ STRICT SEO RULES:
 - Example for "калории лосось": "Калорийность лосося: БЖУ на 100г, польза и сравнение"
 
 2. DESCRIPTION (120-155 characters, NEVER shorter than 120):
-- Concise snippet optimized for Google
-- Include key data point (calories, protein, vitamins)
-- End with a hook that makes user click
-- Example: "Лосось содержит 208 ккал, 20г белка и омега-3. Узнайте, как он влияет на здоровье и сколько можно есть в день."
+- Start with ingredient + key data (calories, protein)
+- Include "Узнайте" / "Learn" / "Dowiedz się" — a search CTA
+- Example: "Лосось — 208 ккал, 20г белка и омега-3. Узнайте, как он влияет на здоровье и сколько можно есть в день."
 
 3. ANSWER (400-800 characters, 4-6 sentences):
 - Sentence 1: Answer the search query DIRECTLY
-- Sentence 2-3: Include specific numbers (calories per 100g, protein, key vitamins)
+- Sentences 2-3: Specific numbers (calories per 100g, protein, key vitamins)
 - Sentence 4: Practical advice (how to cook, when to eat, portion size)
-- Sentence 5-6: Who benefits most, any warnings
+- Sentence 5: Who benefits most ("Кому полезен: для пищеварения, иммунитета, кожи")
+- Sentence 6: Strong takeaway
 - Write naturally like a chef explaining to a colleague
 - DO NOT use generic filler phrases
 
 4. FAQ (exactly 4 questions):
 - Related questions from Google "People Also Ask"
 - Each answer: 2-3 sentences with SPECIFIC data
-- Cover different angles:
-  a) Daily use question ("Можно ли есть X каждый день?")
-  b) Nutrition detail ("Какие витамины в X?")
-  c) Health goal ("Помогает ли X для похудения?")
-  d) Cooking/practical ("Как лучше готовить X?")
+- Cover these 4 angles:
+  a) Daily use: "Можно ли есть X каждый день?"
+  b) Nutrition: "Сколько калорий в X?"
+  c) Health goal: "Помогает ли X для похудения?"
+  d) Cooking: "Как лучше готовить X?"
 
 ---
 
 LANGUAGE: {locale}
-- Write ONLY in {locale}, think in {locale}
+- Title, description, answer, FAQ → write in {locale}
+- Slug → ALWAYS in English
 - Use phrases that REAL users type into Google in this language
 - DO NOT translate from English — write natively
 - Match cultural context of that language
