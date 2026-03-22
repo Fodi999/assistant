@@ -120,7 +120,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM (Fast model — cheap, ~$0.0003) ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 800, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 1200, "llama-3.3-70b-versatile")
             .await?;
 
         // ── 5. Parse JSON ──
@@ -191,7 +191,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 800, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 1200, "llama-3.3-70b-versatile")
             .await?;
 
         // ── 5. Parse ──
@@ -216,17 +216,9 @@ fn build_prompt(intent: &str, entity_a: &str, entity_b: Option<&str>, locale: &s
     };
 
     format!(
-        r#"You are an AI culinary and nutrition assistant.
+        r#"You are a professional culinary SEO writer (chef + nutritionist).
 
-Your task is to generate SHORT, FACTUAL, and USEFUL content for a SEO page.
-
-IMPORTANT RULES:
-- DO NOT write long articles
-- DO NOT use fluff or generic phrases
-- DO NOT repeat the same sentences
-- KEEP answers concise and data-driven
-- WRITE like a professional chef + nutrition expert
-- ALWAYS be helpful to a real user decision
+Generate a REAL, high-quality SEO page that ranks in Google.
 
 ---
 
@@ -245,78 +237,67 @@ OUTPUT FORMAT (STRICT JSON):
   "description": "...",
   "answer": "...",
   "faq": [
-    {{
-      "q": "...",
-      "a": "..."
-    }},
-    {{
-      "q": "...",
-      "a": "..."
-    }}
+    {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}}
   ]
 }}
 
 ---
 
-CONTENT RULES:
+STRICT SEO RULES:
 
 1. TITLE:
-- max 60 characters
-- match search intent exactly
+- MUST be 50-60 characters (this is critical for Google SERP)
+- Include main keyword + a benefit/hook
+- Example (ru): "Полезен ли артишок для кожи? Польза, витамины и свойства"
+- Example (en): "Is Artichoke Good for Skin? Benefits, Vitamins & Facts"
+- DO NOT write titles shorter than 45 characters
 
 2. DESCRIPTION:
-- max 140 characters
-- clear and practical
+- MUST be 120-155 characters (Google truncates at 155)
+- Include key data: calories, protein, vitamins
+- End with a CTA or hook
+- DO NOT write descriptions shorter than 120 characters
 
 3. ANSWER:
-- 2–3 sentences maximum
-- include:
-  - nutrition insight
-  - practical advice
-  - comparison if needed
+- MUST be 400-800 characters (4-6 sentences)
+- First sentence: answer the question directly
+- Include specific numbers (calories per 100g, protein grams, key vitamins)
+- Include practical advice (how to use, when to eat, who benefits)
+- End with a strong takeaway
+- Write naturally, like a chef explaining to a colleague
 
 4. FAQ:
-- 2 questions only
-- real user questions
-- short answers
+- MUST have exactly 4 questions
+- Real user questions from Google (People Also Ask)
+- Each answer: 2-3 sentences with specific data
+- Cover different angles: nutrition, cooking, health, daily use
+- Examples of good FAQ:
+  - "Можно ли есть X каждый день?"
+  - "Какие витамины содержит X?"
+  - "Помогает ли X для похудения?"
+  - "Как правильно готовить X?"
 
 ---
 
 INTENT LOGIC:
 
-If intent_type = "question":
-→ Answer directly (e.g. "Is salmon healthy?")
-→ Explain why (protein, fat, vitamins)
-
-If intent_type = "comparison":
-→ Compare both ingredients
-→ Highlight differences (protein, calories, fat)
-→ Give recommendation
-
-If intent_type = "goal":
-→ Focus on goal (weight loss, protein)
-→ Suggest best option
-
-If intent_type = "combo":
-→ Explain how ingredients work together
-→ Balance (protein/fat/carbs)
+question → Answer directly, explain why with data
+comparison → Compare both, highlight 3+ differences, give recommendation
+goal → Focus on the goal, suggest best approach with this ingredient
+combo → Explain synergy, nutritional balance, recipe ideas
 
 ---
 
-LANGUAGE RULES:
-
+LANGUAGE: {locale}
 - Write ONLY in {locale}
-- Adapt to natural search phrases in that language
-- DO NOT translate literally
-- Use natural wording used by real users
+- Use natural phrases that REAL users search for in this language
+- DO NOT translate from English — write natively
+- Match the search intent in that language's culture
 
----
-
-TONE:
-
-- expert but simple
-- chef + nutritionist
-- practical, not academic
+TONE: Expert chef + nutritionist. Practical, data-driven, confident.
 
 Return ONLY the JSON, no other text."#,
         intent = intent,
@@ -335,11 +316,11 @@ fn build_targeted_prompt(intent: &str, entity_a: &str, entity_b: Option<&str>, l
     };
 
     format!(
-        r#"You are an AI culinary and nutrition expert.
+        r#"You are a professional culinary SEO writer (chef + nutritionist).
 
 A user searched Google for: "{search_query}"
 
-Your task: create a SHORT, FACTUAL SEO page that answers this EXACT query.
+Create a HIGH-QUALITY SEO page that answers this EXACT query and ranks in Google.
 
 ---
 
@@ -360,38 +341,55 @@ OUTPUT FORMAT (STRICT JSON):
   "answer": "...",
   "faq": [
     {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}},
     {{"q": "...", "a": "..."}}
   ]
 }}
 
 ---
 
-RULES:
+STRICT SEO RULES:
 
-1. TITLE (max 60 chars):
+1. TITLE (50-60 characters, NEVER shorter):
 - Must closely match the search query
+- Add a benefit/hook after the main keyword
 - Natural, clickable in Google SERP
-- Example for "is salmon healthy": "Is Salmon Healthy? Nutrition Facts & Benefits"
+- Example for "is salmon healthy": "Is Salmon Healthy? Nutrition Facts, Benefits & Risks"
+- Example for "калории лосось": "Калорийность лосося: БЖУ на 100г, польза и сравнение"
 
-2. DESCRIPTION (max 140 chars):
-- Concise snippet for Google
-- Include key data point (calories, protein, etc.)
+2. DESCRIPTION (120-155 characters, NEVER shorter than 120):
+- Concise snippet optimized for Google
+- Include key data point (calories, protein, vitamins)
+- End with a hook that makes user click
+- Example: "Лосось содержит 208 ккал, 20г белка и омега-3. Узнайте, как он влияет на здоровье и сколько можно есть в день."
 
-3. ANSWER (2-3 sentences):
-- Answer the search query DIRECTLY in first sentence
-- Include specific numbers (calories per 100g, protein grams, vitamins)
-- End with practical advice
+3. ANSWER (400-800 characters, 4-6 sentences):
+- Sentence 1: Answer the search query DIRECTLY
+- Sentence 2-3: Include specific numbers (calories per 100g, protein, key vitamins)
+- Sentence 4: Practical advice (how to cook, when to eat, portion size)
+- Sentence 5-6: Who benefits most, any warnings
+- Write naturally like a chef explaining to a colleague
+- DO NOT use generic filler phrases
 
-4. FAQ (exactly 2):
-- Related questions a user would ask NEXT
-- Short, data-driven answers
-- NOT generic — specific to this ingredient
+4. FAQ (exactly 4 questions):
+- Related questions from Google "People Also Ask"
+- Each answer: 2-3 sentences with SPECIFIC data
+- Cover different angles:
+  a) Daily use question ("Можно ли есть X каждый день?")
+  b) Nutrition detail ("Какие витамины в X?")
+  c) Health goal ("Помогает ли X для похудения?")
+  d) Cooking/practical ("Как лучше готовить X?")
 
 ---
 
-LANGUAGE: Write ONLY in {locale}. Use natural search phrases in that language.
+LANGUAGE: {locale}
+- Write ONLY in {locale}, think in {locale}
+- Use phrases that REAL users type into Google in this language
+- DO NOT translate from English — write natively
+- Match cultural context of that language
 
-TONE: Expert chef + nutritionist. Practical, not academic. Data-driven.
+TONE: Expert chef + nutritionist. Data-driven, practical, confident. No fluff.
 
 Return ONLY the JSON, no other text."#,
         search_query = search_query,
