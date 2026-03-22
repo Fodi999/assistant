@@ -1063,6 +1063,12 @@ impl AdminCatalogService {
         //   - trg_cleanup_seasonality_sushi_off (sushi_grade → false cleanup)
         // DB = single source of truth. No dual-write.
 
+        // 🔄 If product is published, ping blog to refresh pages immediately
+        if updated_product.is_published {
+            let slug = updated_product.slug.clone();
+            tokio::spawn(revalidate_blog(slug));
+        }
+
         Ok(updated_product)
     }
 
@@ -1206,6 +1212,9 @@ impl AdminCatalogService {
 
     /// Delete product
     pub async fn delete_product(&self, id: Uuid) -> AppResult<()> {
+        // Fetch product before delete — need slug + published status for revalidation
+        let product = self.get_product_by_id(id).await.ok();
+
         // Soft delete - mark as inactive instead of deleting
         // This preserves relationships with inventory and other tables
         let result = sqlx::query(
@@ -1225,6 +1234,15 @@ impl AdminCatalogService {
         }
 
         tracing::info!("Product {} soft-deleted successfully", id);
+
+        // 🔄 If product was published, ping blog to remove from pages
+        if let Some(p) = product {
+            if p.is_published {
+                let slug = p.slug.clone();
+                tokio::spawn(revalidate_blog(slug));
+            }
+        }
+
         Ok(())
     }
 
