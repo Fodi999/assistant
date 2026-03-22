@@ -736,6 +736,54 @@ impl IntentPagesService {
         Ok(())
     }
 
+    // ── Regenerate (clear AI cache + delete + generate fresh) ────────────────
+
+    pub async fn regenerate(&self, id: Uuid) -> AppResult<IntentPage> {
+        let page = self.get_by_id(id).await?;
+
+        // 1. Clear AI cache so we get fresh content from LLM
+        let seo_req = SeoContentRequest {
+            intent_type: page.intent_type.clone(),
+            entity_a: page.entity_a.clone(),
+            entity_b: page.entity_b.clone(),
+            locale: page.locale.clone(),
+        };
+
+        // Invalidate both generic and all sub-intent caches for this entity
+        self.seo_service.invalidate_cache(&seo_req).await;
+
+        // Also try to figure out the sub_intent/search_query from the slug
+        // and invalidate that specific cache too
+        let search_query = sub_intent_to_query(
+            &page.slug,
+            &page.entity_a,
+            page.entity_b.as_deref(),
+        );
+        self.seo_service.invalidate_cache_with_query(&seo_req, &search_query).await;
+
+        // 2. Delete the page from DB
+        sqlx::query("DELETE FROM intent_pages WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        if page.status == "published" {
+            tokio::spawn(revalidate_blog(Some(page.entity_a.clone())));
+        }
+
+        tracing::info!("🔄 Regenerating intent page: '{}' ({}) — cache cleared", page.title, page.locale);
+
+        // 3. Generate fresh (will call LLM since cache is cleared)
+        let gen_req = GenerateRequest {
+            intent_type: page.intent_type,
+            entity_a: page.entity_a,
+            entity_b: page.entity_b,
+            locale: page.locale,
+            sub_intent: None,
+        };
+        self.generate(&gen_req).await
+    }
+
     // ── Public: list published ───────────────────────────────────────────────
 
     pub async fn list_published(&self, q: &PublicListQuery) -> AppResult<Vec<IntentPage>> {

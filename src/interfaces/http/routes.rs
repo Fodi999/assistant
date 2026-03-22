@@ -656,6 +656,7 @@ pub fn create_router(
         .route("/:id/enqueue", post(admin_intent_pages::enqueue_intent_page))
         .route("/:id/archive", post(admin_intent_pages::archive_intent_page))
         .route("/:id", axum::routing::delete(admin_intent_pages::delete_intent_page))
+        .route("/:id/regenerate", post(admin_intent_pages::regenerate_intent_page))
         .route("/:id/images/:key/upload-url", get(admin_intent_pages::get_image_upload_url))
         .route("/:id/images/:key", post(admin_intent_pages::save_image_url))
         .layer(middleware::from_fn_with_state(

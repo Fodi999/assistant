@@ -188,6 +188,17 @@ pub async fn delete_intent_page(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// POST /api/admin/intent-pages/:id/regenerate
+/// Clears AI cache + deletes page + generates fresh with new prompt
+pub async fn regenerate_intent_page(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<IntentPage>, AppError> {
+    let page = service.regenerate(id).await?;
+    Ok(Json(page))
+}
+
 /// POST /api/admin/intent-pages/publish-bulk
 pub async fn publish_bulk(
     _claims: AdminClaims,

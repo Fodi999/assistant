@@ -74,6 +74,42 @@ impl PublicSeoContentService {
         Self { llm_adapter, ai_cache }
     }
 
+    /// Invalidate AI cache for a specific entity so next generate() calls LLM fresh.
+    /// Deletes ALL cache entries matching "uc:seo_content:" prefix for this entity.
+    pub async fn invalidate_cache(&self, req: &SeoContentRequest) {
+        let intent = req.intent_type.to_lowercase();
+        let locale = req.locale.to_lowercase();
+        let entity_a = req.entity_a.trim().to_lowercase();
+        let entity_b = req.entity_b.as_deref().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+
+        // Invalidate generic prompt cache
+        let fingerprint = format!(
+            "seo_content:{}:{}:{}:{}",
+            intent, entity_a, entity_b.as_deref().unwrap_or(""), locale,
+        );
+        let cache_key = format!("uc:seo_content:{}", hash(&fingerprint));
+        let _ = self.ai_cache.delete(&cache_key).await;
+
+        tracing::info!("🗑️ SEO cache invalidated: {} / {} / {}", intent, entity_a, locale);
+    }
+
+    /// Invalidate AI cache for a specific entity+query (targeted sub-intents).
+    pub async fn invalidate_cache_with_query(&self, req: &SeoContentRequest, search_query: &str) {
+        let intent = req.intent_type.to_lowercase();
+        let locale = req.locale.to_lowercase();
+        let entity_a = req.entity_a.trim().to_lowercase();
+        let entity_b = req.entity_b.as_deref().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+
+        let fingerprint = format!(
+            "seo_content_q:{}:{}:{}:{}:{}",
+            intent, entity_a, entity_b.as_deref().unwrap_or(""), locale, search_query,
+        );
+        let cache_key = format!("uc:seo_content:{}", hash(&fingerprint));
+        let _ = self.ai_cache.delete(&cache_key).await;
+
+        tracing::info!("🗑️ SEO cache invalidated: '{}' / {}", search_query, locale);
+    }
+
     /// Generate SEO content for a programmatic page.
     ///
     /// Cached aggressively — same input always returns same content.
