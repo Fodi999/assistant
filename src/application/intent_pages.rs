@@ -227,6 +227,28 @@ pub struct UpdateSettingsRequest {
     pub publish_limit_per_day: i64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BulkActionRequest {
+    pub ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DuplicateGroup {
+    pub entity_a: String,
+    pub locale: String,
+    pub canonical_slug: String,
+    pub pages: Vec<DuplicateEntry>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DuplicateEntry {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub status: String,
+    pub is_canonical: bool,
+}
+
 // ── Service ──────────────────────────────────────────────────────────────────
 
 pub struct IntentPagesService {
@@ -989,9 +1011,216 @@ impl IntentPagesService {
             "limit": limit,
         }))
     }
+
+    // ── Find duplicate slugs ─────────────────────────────────────────────────
+    //
+    // Finds pages that semantically cover the same sub-intent but have
+    // different slug forms (e.g. "is almonds healthy" vs "are-almonds-healthy").
+
+    pub async fn find_duplicates(&self) -> AppResult<Vec<DuplicateGroup>> {
+        // Find pages where the normalised slug (lowercase, spaces→dashes,
+        // is→are for plurals) matches another page in the same locale.
+        let pages = sqlx::query_as::<_, IntentPage>(
+            r#"SELECT id, intent_type, entity_a, entity_b, locale,
+                      title, description, answer, faq, slug, status, priority,
+                      published_at::text, queued_at::text, created_at::text, updated_at::text
+               FROM intent_pages
+               ORDER BY entity_a, locale, created_at"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        // Group by (normalised_slug, locale)
+        let mut groups: std::collections::HashMap<(String, String), Vec<&IntentPage>> =
+            std::collections::HashMap::new();
+
+        for page in &pages {
+            let normalised = normalise_slug(&page.slug);
+            groups
+                .entry((normalised, page.locale.clone()))
+                .or_default()
+                .push(page);
+        }
+
+        // Only keep groups with 2+ entries (actual duplicates)
+        let mut duplicates: Vec<DuplicateGroup> = Vec::new();
+        for ((canonical_slug, locale), group_pages) in &groups {
+            if group_pages.len() < 2 {
+                continue;
+            }
+
+            let entries: Vec<DuplicateEntry> = group_pages
+                .iter()
+                .map(|p| {
+                    let is_canonical = p.slug == *canonical_slug;
+                    DuplicateEntry {
+                        id: p.id,
+                        slug: p.slug.clone(),
+                        title: p.title.clone(),
+                        status: p.status.clone(),
+                        is_canonical,
+                    }
+                })
+                .collect();
+
+            duplicates.push(DuplicateGroup {
+                entity_a: group_pages[0].entity_a.clone(),
+                locale: locale.clone(),
+                canonical_slug: canonical_slug.clone(),
+                pages: entries,
+            });
+        }
+
+        duplicates.sort_by(|a, b| a.entity_a.cmp(&b.entity_a).then(a.locale.cmp(&b.locale)));
+
+        tracing::info!("🔍 Found {} duplicate groups", duplicates.len());
+        Ok(duplicates)
+    }
+
+    // ── Cleanup duplicate slugs ──────────────────────────────────────────────
+    //
+    // For each duplicate group, keep the canonical slug page (or the oldest)
+    // and delete the rest. Returns count of deleted pages.
+
+    pub async fn cleanup_duplicate_slugs(&self) -> AppResult<serde_json::Value> {
+        let groups = self.find_duplicates().await?;
+        let mut deleted = 0i32;
+        let mut kept = 0i32;
+
+        for group in &groups {
+            // Prefer: canonical slug, then published, then oldest
+            let keep_id = group
+                .pages
+                .iter()
+                .find(|p| p.is_canonical)
+                .or_else(|| group.pages.iter().find(|p| p.status == "published"))
+                .unwrap_or(&group.pages[0])
+                .id;
+
+            for entry in &group.pages {
+                if entry.id == keep_id {
+                    // If the kept page has a non-canonical slug, fix it
+                    if entry.slug != group.canonical_slug {
+                        sqlx::query("UPDATE intent_pages SET slug = $1 WHERE id = $2")
+                            .bind(&group.canonical_slug)
+                            .bind(entry.id)
+                            .execute(&self.pool)
+                            .await?;
+                        tracing::info!("✏️ Fixed slug: '{}' → '{}'", entry.slug, group.canonical_slug);
+                    }
+                    kept += 1;
+                } else {
+                    sqlx::query("DELETE FROM intent_pages WHERE id = $1")
+                        .bind(entry.id)
+                        .execute(&self.pool)
+                        .await?;
+                    tracing::info!("🗑️ Deleted duplicate: '{}' ({})", entry.slug, entry.id);
+                    deleted += 1;
+                }
+            }
+        }
+
+        tracing::info!("🧹 Cleanup done: {} deleted, {} kept", deleted, kept);
+        Ok(serde_json::json!({
+            "groups": groups.len(),
+            "deleted": deleted,
+            "kept": kept,
+        }))
+    }
+
+    // ── Bulk publish ─────────────────────────────────────────────────────────
+
+    pub async fn bulk_publish(&self, ids: &[Uuid]) -> AppResult<serde_json::Value> {
+        let mut published = 0i32;
+        let mut skipped = 0i32;
+
+        for id in ids {
+            match self.publish(*id).await {
+                Ok(_) => published += 1,
+                Err(_) => skipped += 1,
+            }
+        }
+
+        tracing::info!("📢 Bulk publish: {} published, {} skipped", published, skipped);
+        Ok(serde_json::json!({
+            "published": published,
+            "skipped": skipped,
+        }))
+    }
+
+    // ── Bulk archive ─────────────────────────────────────────────────────────
+
+    pub async fn bulk_archive(&self, ids: &[Uuid]) -> AppResult<serde_json::Value> {
+        let mut archived = 0i32;
+        let mut skipped = 0i32;
+
+        for id in ids {
+            match self.archive(*id).await {
+                Ok(_) => archived += 1,
+                Err(_) => skipped += 1,
+            }
+        }
+
+        tracing::info!("📦 Bulk archive: {} archived, {} skipped", archived, skipped);
+        Ok(serde_json::json!({
+            "archived": archived,
+            "skipped": skipped,
+        }))
+    }
+
+    // ── Bulk delete ──────────────────────────────────────────────────────────
+
+    pub async fn bulk_delete(&self, ids: &[Uuid]) -> AppResult<serde_json::Value> {
+        let mut deleted = 0i32;
+        let mut skipped = 0i32;
+
+        for id in ids {
+            match self.delete(*id).await {
+                Ok(_) => deleted += 1,
+                Err(_) => skipped += 1,
+            }
+        }
+
+        tracing::info!("🗑️ Bulk delete: {} deleted, {} skipped", deleted, skipped);
+        Ok(serde_json::json!({
+            "deleted": deleted,
+            "skipped": skipped,
+        }))
+    }
 }
 
 // ── Slug generator ───────────────────────────────────────────────────────────
+
+/// Normalise any slug variant to its canonical form.
+/// "is almonds healthy" → "are-almonds-healthy"
+/// "IS-ALMONDS-HEALTHY" → "are-almonds-healthy"
+fn normalise_slug(slug: &str) -> String {
+    let s = slug
+        .trim()
+        .to_lowercase()
+        .replace(' ', "-");
+
+    // Clean up multiple dashes
+    let s = s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+
+    // Fix grammar: is- → are- for plural entities
+    // Extract entity from common patterns
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() >= 3 && parts[0] == "is" {
+        let entity = parts[1];
+        if looks_plural(entity) {
+            return format!("are-{}", parts[1..].join("-"));
+        }
+    }
+    if parts.len() >= 4 && parts[0] == "which" && parts[1] == "is" {
+        let entity = parts[3]; // "which-is-healthier-almonds-or-cashews"
+        if looks_plural(entity) {
+            return format!("which-are-{}", parts[2..].join("-"));
+        }
+    }
+
+    s
+}
 
 fn generate_slug(title: &str, intent: &str, entity_a: &str, entity_b: Option<&str>) -> String {
     // Try to slugify the title first

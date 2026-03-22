@@ -14,6 +14,11 @@
 //! POST   /api/admin/intent-pages/:id/enqueue       → draft → queued
 //! POST   /api/admin/intent-pages/:id/archive       → any → archived
 //! POST   /api/admin/intent-pages/enqueue-bulk      → bulk enqueue
+//! POST   /api/admin/intent-pages/publish-bulk      → bulk publish
+//! POST   /api/admin/intent-pages/archive-bulk      → bulk archive
+//! POST   /api/admin/intent-pages/delete-bulk       → bulk delete
+//! GET    /api/admin/intent-pages/duplicates        → find duplicate slugs
+//! POST   /api/admin/intent-pages/cleanup-slugs     → fix & remove duplicate slugs
 //! DELETE /api/admin/intent-pages/:id               → delete
 
 use axum::{
@@ -25,9 +30,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::application::intent_pages::{
-    BatchGenerateRequest, BatchResult, EnqueueBulkRequest, GenerateRequest,
-    IntentPage, IntentPagesService, ListQuery, UpdateIntentPageRequest,
-    UpdateSettingsRequest,
+    BatchGenerateRequest, BatchResult, BulkActionRequest, EnqueueBulkRequest,
+    GenerateRequest, IntentPage, IntentPagesService, ListQuery,
+    UpdateIntentPageRequest, UpdateSettingsRequest,
 };
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
@@ -181,4 +186,52 @@ pub async fn delete_intent_page(
 ) -> Result<StatusCode, AppError> {
     service.delete(id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /api/admin/intent-pages/publish-bulk
+pub async fn publish_bulk(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+    Json(req): Json<BulkActionRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.bulk_publish(&req.ids).await?;
+    Ok(Json(result))
+}
+
+/// POST /api/admin/intent-pages/archive-bulk
+pub async fn archive_bulk(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+    Json(req): Json<BulkActionRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.bulk_archive(&req.ids).await?;
+    Ok(Json(result))
+}
+
+/// POST /api/admin/intent-pages/delete-bulk
+pub async fn delete_bulk(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+    Json(req): Json<BulkActionRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.bulk_delete(&req.ids).await?;
+    Ok(Json(result))
+}
+
+/// GET /api/admin/intent-pages/duplicates
+pub async fn find_duplicates(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+) -> Result<Json<Vec<crate::application::intent_pages::DuplicateGroup>>, AppError> {
+    let groups = service.find_duplicates().await?;
+    Ok(Json(groups))
+}
+
+/// POST /api/admin/intent-pages/cleanup-slugs
+pub async fn cleanup_slugs(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.cleanup_duplicate_slugs().await?;
+    Ok(Json(result))
 }
