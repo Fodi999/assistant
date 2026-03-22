@@ -235,3 +235,19 @@ pub async fn cleanup_slugs(
     let result = service.cleanup_duplicate_slugs().await?;
     Ok(Json(result))
 }
+
+/// PUT /api/admin/intent-pages/google-discovered
+/// Body: { "count": 7192 }
+/// Updates the Google Search Console baseline used for indexing gap KPI.
+pub async fn set_google_discovered(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let count = body
+        .get("count")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| AppError::validation("Body must be { \"count\": <number> }"))?;
+    let result = service.set_google_discovered(count).await?;
+    Ok(Json(result))
+}

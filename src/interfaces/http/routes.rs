@@ -643,6 +643,7 @@ pub fn create_router(
         .route("/delete-bulk", post(admin_intent_pages::delete_bulk))
         .route("/duplicates", get(admin_intent_pages::find_duplicates))
         .route("/cleanup-slugs", post(admin_intent_pages::cleanup_slugs))
+        .route("/google-discovered", axum::routing::put(admin_intent_pages::set_google_discovered))
         .route("/", get(admin_intent_pages::list_intent_pages))
         .route("/stats", get(admin_intent_pages::intent_pages_stats))
         .route("/settings", get(admin_intent_pages::get_settings).put(admin_intent_pages::update_settings))

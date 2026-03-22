@@ -801,7 +801,67 @@ impl IntentPagesService {
         // Get daily limit
         let limit = self.get_publish_limit().await?;
 
+        // ── Site-wide SEO page breakdown ───────────────────────────────────────
+        // These are all public-facing pages Google can discover.
+
+        // /ingredients/:slug  →  one page per active ingredient
+        let count_ingredients: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM catalog_ingredients WHERE COALESCE(is_active, true) = true"
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+
+        // /ingredients/:slug/states/:state  →  ingredient × state combos
+        let count_states: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM ingredient_states"
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+
+        // /nutrition/:slug  →  products with nutrition data
+        let count_nutrition: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM products WHERE is_published = true"
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+
+        // /tools/:from_to/:slug  →  SEO convert pages (ingredient × unit pairs)
+        // Estimate: each active ingredient generates N unit-conversion pages.
+        // We count real seo-convert slugs stored in slug_aliases if available,
+        // fallback to formula: ingredients × avg units (9).
+        let count_convert_real: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM slug_aliases WHERE path LIKE '/tools/%/%'"
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+        let count_convert = if count_convert_real > 0 {
+            count_convert_real
+        } else {
+            count_ingredients * 9 // avg 9 unit-pairs per ingredient
+        };
+
+        // /seo/:slug  →  published intent pages
+        let count_intent = published;
+
+        // Total system pages (all indexable URLs)
+        let system_total = count_ingredients + count_states + count_nutrition + count_convert + count_intent;
+
+        // Google baseline from seo_settings
+        let google_discovered: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(value::bigint, 0) FROM seo_settings WHERE key = 'google_discovered_pages'"
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(7192);
+
+        let indexing_gap = system_total - google_discovered;
+
         Ok(serde_json::json!({
+            // Intent pages pipeline stats
             "total": total,
             "draft": draft,
             "queued": queued,
@@ -813,7 +873,32 @@ impl IntentPagesService {
             "published_today": published_today,
             "publish_limit_per_day": limit,
             "remaining_today": (limit - published_today).max(0),
+
+            // Site-wide SEO breakdown
+            "seo": {
+                "ingredients": count_ingredients,
+                "states": count_states,
+                "nutrition": count_nutrition,
+                "convert": count_convert,
+                "intent_pages": count_intent,
+                "system_total": system_total,
+                "google_discovered": google_discovered,
+                "indexing_gap": indexing_gap,
+            }
         }))
+    }
+
+    /// Update the google_discovered_pages baseline (from Google Search Console).
+    pub async fn set_google_discovered(&self, count: i64) -> AppResult<serde_json::Value> {
+        sqlx::query(
+            "INSERT INTO seo_settings (key, value) VALUES ('google_discovered_pages', $1)
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()"
+        )
+        .bind(count.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(serde_json::json!({ "google_discovered_pages": count }))
     }
 
     // ── Enqueue (draft → queued) ─────────────────────────────────────────────
