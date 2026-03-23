@@ -37,6 +37,7 @@ use crate::domain::tools::unit_converter as uc;
 
 use super::context::{CulinaryContext, Goal};
 use super::response::*;
+use super::recipe_builder;
 
 // ── DB row types ─────────────────────────────────────────────────────────────
 
@@ -738,6 +739,21 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         format!("ss-{:x}", ts)
     });
 
+    // ── v3 Step 6 — Recipe Builder: 3 dish variants ─────────────────────────
+    let variants = recipe_builder::build_variants(
+        ingredient_info.slug.as_str(),
+        ingredient_info.name.as_str(),
+        ingredient_info.image_url.as_deref(),
+        row.cal(),
+        row.prot(),
+        row.fat(),
+        row.fiber(),
+        typical_g,
+        &all_candidates,
+        balance,
+        lang,
+    );
+
     // ── 14. Compose response ─────────────────────────────────────────────────
     let timing_ms = start.elapsed().as_millis() as u64;
 
@@ -755,12 +771,13 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         confidence,
         next_actions,
         explain,
+        variants,
         session_id,
         meta: SmartMeta {
             timing_ms,
             cached: false,
             cache_key: ctx.cache_key(),
-            engine_version: "3.0.0".to_string(),
+            engine_version: "3.1.0".to_string(),
         },
     })
 }

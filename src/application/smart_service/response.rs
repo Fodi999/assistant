@@ -55,6 +55,9 @@ pub struct SmartResponse {
     /// Session ID for continuity (v3)
     pub session_id: String,
 
+    /// Recipe variants: 3 deterministic dish compositions (healthy / balanced / heavy)
+    pub variants: Vec<RecipeVariant>,
+
     /// Response metadata
     pub meta: SmartMeta,
 }
@@ -218,4 +221,68 @@ pub struct NextAction {
     pub reason: String,
     /// Priority: 1 = highest
     pub priority: u8,
+}
+
+// ── Recipe Builder: Dish-level Variants ──────────────────────────────────────
+
+/// Culinary role of an ingredient within a dish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IngredientRole {
+    /// Main protein / star of the dish
+    Base,
+    /// Grain, starch, vegetable accompaniment
+    Side,
+    /// Sauce, dressing, glaze
+    Sauce,
+    /// Herbs, spices, aromatics
+    Aromatic,
+    /// Oil, butter, rendered fat
+    Fat,
+}
+
+/// Detected dish archetype.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DishType {
+    Salad,
+    Bowl,
+    MainCourse,
+    SauceBased,
+}
+
+/// One of 3 deterministic dish variants (healthy / balanced / heavy).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecipeVariant {
+    /// Variant type: "healthy", "balanced", "heavy"
+    pub variant_type: String,
+    /// Detected dish archetype
+    pub dish_type: DishType,
+    /// Human-readable dish title, e.g. "Лёгкий лосось с овощами и лимоном"
+    pub title: String,
+    /// Ingredients in this variant with roles and portions
+    pub ingredients: Vec<VariantIngredient>,
+    /// Total estimated calories for the dish
+    pub total_calories: i32,
+    /// 0–100 score computed on the **new** variant balance (not the input balance)
+    pub score: u8,
+    /// Flavor balance score of the assembled variant (0–100)
+    pub balance_score: u8,
+    /// Short deterministic explanation (localized)
+    pub explanation: String,
+}
+
+/// An ingredient within a recipe variant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariantIngredient {
+    pub slug: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+    /// Culinary role in this dish
+    pub role: IngredientRole,
+    /// Portion in grams
+    pub grams: f64,
+    /// Calories contributed by this portion
+    pub calories: f64,
 }
