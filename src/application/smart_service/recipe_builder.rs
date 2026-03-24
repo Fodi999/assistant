@@ -61,13 +61,23 @@ pub fn build_variants(
         .filter(|c| c.nutrition.calories > 0.0 || c.nutrition.protein_g > 0.0)
         .filter(|c| !is_bad_combo(main_category, &c.slug, c.product_type.as_deref()))
         .filter(|c| !is_liquid_ingredient(&c.slug, c.product_type.as_deref()))
+        // Extra cross-check: reject candidates that conflict with each other
+        // (e.g. fish+fruit, raw meat+raw fish)
+        .filter(|c| !is_cross_conflict(main_slug, &c.slug))
         .collect();
 
-    // Classify all usable candidates by role
-    let classified: Vec<(&Candidate, IngredientRole)> = usable
-        .iter()
-        .map(|c| (*c, infer_role(c)))
-        .collect();
+    // If no usable candidates after filtering, inject hardcoded defaults
+    // so every variant always has a plausible dish.
+    let default_pool;
+    let classified: Vec<(&Candidate, IngredientRole)> = if usable.is_empty() {
+        default_pool = default_sides_for(main_slug, main_product_type);
+        default_pool
+            .iter()
+            .map(|c| (c, infer_role(c)))
+            .collect()
+    } else {
+        usable.iter().map(|c| (*c, infer_role(c))).collect()
+    };
 
     // Main ingredient info bundle
     let main_info = MainInfo {
@@ -314,6 +324,108 @@ fn is_liquid_ingredient(slug: &str, product_type: Option<&str>) -> bool {
         }
     }
     false
+}
+
+/// Additional slug-pair cross-conflict rules not covered by category logic.
+/// Used to block niche but clearly wrong pairs (fruit + alliums, etc.)
+fn is_cross_conflict(main_slug: &str, cand_slug: &str) -> bool {
+    let a = main_slug.to_lowercase();
+    let b = cand_slug.to_lowercase();
+
+    // Fruit + strong alliums/fish = ❌
+    let is_fruit = |s: &str| ["apple", "mango", "banana", "strawberr", "blueberr",
+        "raspberry", "peach", "pear", "plum", "grape", "melon", "watermelon",
+        "pineapple", "kiwi"].iter().any(|k| s.contains(k));
+    let is_allium = |s: &str| ["garlic", "onion", "shallot", "leek"].iter().any(|k| s.contains(k));
+    let is_raw_fish_slug = |s: &str| ["salmon", "tuna", "mackerel", "sardine",
+        "anchovy", "herring"].iter().any(|k| s.contains(k));
+
+    if is_fruit(&a) && is_allium(&b) { return true; }
+    if is_fruit(&b) && is_allium(&a) { return true; }
+
+    // Sweet fruit + raw fish (non-sushi context)
+    if is_fruit(&a) && is_raw_fish_slug(&b) { return true; }
+    if is_fruit(&b) && is_raw_fish_slug(&a) { return true; }
+
+    false
+}
+
+/// Hardcoded fallback sides for when all candidates get filtered out.
+/// Ensures every variant always has a minimal plausible dish structure.
+fn default_sides_for(main_slug: &str, main_product_type: Option<&str>) -> Vec<Candidate> {
+    let cat = product_type_category(main_product_type);
+    let slug_cat = slug_category(main_slug);
+    let effective_cat = if cat != FoodCategory::Other { cat } else { slug_cat };
+
+    let mut defaults: Vec<(&str, &str, IngredientRole, f64, f64, f64, f64, f64)> = match effective_cat {
+        // fish → lemon (aromatic) + rice (side) + olive-oil (fat)
+        FoodCategory::Fish => vec![
+            ("lemon",      "Lemon",      IngredientRole::Aromatic, 29.0,  1.1, 0.3, 2.8,  30.0),
+            ("rice",       "Rice",       IngredientRole::Side,     130.0, 2.7, 0.3, 0.4, 150.0),
+            ("olive-oil",  "Olive oil",  IngredientRole::Fat,      884.0, 0.0,100.0,0.0,  10.0),
+        ],
+        // meat/poultry → garlic (aromatic) + potato (side) + olive-oil (fat)
+        FoodCategory::Meat => vec![
+            ("garlic",     "Garlic",     IngredientRole::Aromatic,  149.0, 6.4, 0.5, 2.1,   5.0),
+            ("potato",     "Potato",     IngredientRole::Side,       77.0, 2.0, 0.1, 2.2, 150.0),
+            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
+        ],
+        // grain/pasta → tomato (side) + basil (aromatic) + olive-oil (fat)
+        FoodCategory::Grain => vec![
+            ("tomato",     "Tomato",     IngredientRole::Side,       18.0, 0.9, 0.2, 1.2, 120.0),
+            ("basil",      "Basil",      IngredientRole::Aromatic,   23.0, 3.2, 0.6, 1.6,   5.0),
+            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
+        ],
+        // vegetable → lemon (aromatic) + olive-oil (fat) + hummus (sauce)
+        FoodCategory::Vegetable => vec![
+            ("lemon",      "Lemon",      IngredientRole::Aromatic,   29.0, 1.1, 0.3, 2.8,  30.0),
+            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
+            ("hummus",     "Hummus",     IngredientRole::Sauce,      166.0, 7.9, 9.6, 6.0,  30.0),
+        ],
+        // legume → garlic (aromatic) + olive-oil (fat) + tomato (side)
+        FoodCategory::Legume => vec![
+            ("garlic",     "Garlic",     IngredientRole::Aromatic,  149.0, 6.4, 0.5, 2.1,   5.0),
+            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
+            ("tomato",     "Tomato",     IngredientRole::Side,       18.0, 0.9, 0.2, 1.2, 120.0),
+        ],
+        // default → lemon + olive-oil + garlic
+        _ => vec![
+            ("lemon",      "Lemon",      IngredientRole::Aromatic,   29.0, 1.1, 0.3, 2.8,  30.0),
+            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
+            ("garlic",     "Garlic",     IngredientRole::Aromatic,  149.0, 6.4, 0.5, 2.1,   5.0),
+        ],
+    };
+
+    // Remove any default that clashes with the main ingredient itself
+    defaults.retain(|(slug, _, _, _, _, _, _, _)| {
+        !is_cross_conflict(main_slug, slug)
+    });
+
+    defaults
+        .into_iter()
+        .map(|(slug, name, _role, cal, prot, fat, fiber, typical_g)| {
+            use crate::domain::tools::nutrition::NutritionBreakdown;
+            Candidate {
+                slug: slug.to_string(),
+                name: name.to_string(),
+                image_url: None,
+                pair_score: 5.0,
+                typical_g,
+                nutrition: NutritionBreakdown {
+                    calories: cal,
+                    protein_g: prot,
+                    fat_g: fat,
+                    carbs_g: 0.0,
+                    fiber_g: fiber,
+                    sugar_g: 0.0,
+                    salt_g: 0.0,
+                    sodium_mg: 0.0,
+                },
+                flavor: FlavorVector::zero(),
+                product_type: None,
+            }
+        })
+        .collect()
 }
 
 // ── Role-constrained assembly ────────────────────────────────────────────────
@@ -680,15 +792,45 @@ fn detect_dish_type(ingredients: &[VariantIngredient]) -> DishType {
     let has_fat = ingredients.iter().any(|i| i.role == IngredientRole::Fat);
     let total_cal: f64 = ingredients.iter().map(|i| i.calories).sum();
 
+    // Slug-based detection (more specific than role-based)
+    let slugs_contain = |keywords: &[&str]| {
+        ingredients.iter().any(|i| {
+            let s = i.slug.to_lowercase();
+            keywords.iter().any(|k| s.contains(k))
+        })
+    };
+
+    // Bowl: grain base detected
+    if slugs_contain(&["rice", "quinoa", "buckwheat", "bulgur", "couscous", "farro",
+                        "barley", "millet", "noodle", "soba", "udon", "ramen"]) {
+        return DishType::Bowl;
+    }
+
+    // Salad: leafy greens or raw-salad base
+    if slugs_contain(&["lettuce", "spinach", "arugula", "rocket", "kale", "cabbage",
+                        "watercress", "endive", "radicchio", "mixed-greens"]) {
+        return DishType::Salad;
+    }
+
+    // Sauce-based: explicit sauce + fat OR pasta with sauce
     if has_sauce && has_fat {
         return DishType::SauceBased;
     }
+    if has_sauce && slugs_contain(&["pasta", "spaghetti", "penne", "fettuccine",
+                                    "linguine", "rigatoni", "tagliatelle"]) {
+        return DishType::SauceBased;
+    }
+
+    // Fallback: calorie-light multi-side = Salad
     if total_cal < 350.0 && side_count >= 2 {
         return DishType::Salad;
     }
+
+    // Fallback: has sides but no sauce = Bowl
     if side_count >= 1 && !has_sauce {
         return DishType::Bowl;
     }
+
     DishType::MainCourse
 }
 
