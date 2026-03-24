@@ -1,0 +1,383 @@
+//! Culinary Rules — pre-filter + scoring boost for candidate pool.
+//!
+//! Sits between raw DB pairings and suggestion_engine:
+//!
+//!   DB → flavor → pairings → candidates
+//!                                ↓
+//!                      🔥 culinary_rules::apply()   ← HERE
+//!                                ↓
+//!                        suggestion_engine
+//!                                ↓
+//!                         recipe_builder
+//!
+//! Design principles:
+//! - No hard blocks — only penalties (score -= N) for bad pairings.
+//!   Hard blocks destroy valid edge-cases (salmon + cream sauce, tuna melt).
+//! - Category detection uses `product_type` field first (stable DB value),
+//!   then falls back to slug keyword matching as a safety net.
+//! - Safety fallback: if penalties reduce pool below MIN_POOL, return
+//!   the original candidates unchanged so recipe_builder always has material.
+//!
+//! Pure deterministic functions — no DB, no AI, no HTTP.
+//! One public function: `apply(main, candidates, extras) -> Vec<Candidate>`
+
+use crate::domain::tools::suggestion_engine::Candidate;
+
+/// Minimum number of candidates we must keep after filtering.
+/// If result drops below this, return original pool unchanged.
+const MIN_POOL: usize = 3;
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/// Apply culinary rules to a raw candidate pool:
+/// 1. Penalise bad pairings (not hard-block)
+/// 2. Penalise liquids that can't be dish sides
+/// 3. Boost contextually excellent pairings
+/// 4. Drop only candidates with score ≤ 0 after adjustments
+/// 5. Safety fallback: if too few remain, return original pool
+///
+/// `state` — cooking state of the main ingredient ("raw", "grilled", "baked", …).
+/// Affects whether salmon is treated as raw fish (raw/cured) or cooked fish.
+pub fn apply(
+    main: &str,
+    candidates: &[Candidate],
+    extras: &[String],
+    state: Option<&str>,
+) -> Vec<Candidate> {
+    let adjusted: Vec<Candidate> = candidates
+        .iter()
+        .map(|c| {
+            let mut c = c.clone();
+            apply_penalties(main, &mut c, state);
+            apply_boosts(main, &mut c, extras);
+            c.pair_score = c.pair_score.min(10.0).max(0.0);
+            c
+        })
+        .filter(|c| c.pair_score > 0.0)
+        .collect();
+
+    // Safety fallback: never starve recipe_builder of candidates
+    if adjusted.len() < MIN_POOL {
+        return candidates.to_vec();
+    }
+
+    adjusted
+}
+
+// ── Penalties (replace hard blocks) ─────────────────────────────────────────
+//
+// Penalties instead of removal because:
+//   salmon + cream = classic ✅  →  would be removed by hard fish+dairy block
+//   tuna melt      = classic ✅  →  same
+//   fish chowder   = classic ✅  →  same
+// A penalty keeps these but makes them rank lower than genuinely good pairs.
+
+fn apply_penalties(main: &str, c: &mut Candidate, state: Option<&str>) {
+    let m_slug = main.to_lowercase();
+    let c_slug = c.slug.to_lowercase();
+
+    // State-aware main category:
+    // salmon "raw" → RawFish (no acid fruit, no sweet fruit)
+    // salmon "grilled/baked/…" → Fish (normal cooked fish)
+    let is_cooked = matches!(
+        state.unwrap_or("raw"),
+        "grilled" | "baked" | "fried" | "steamed" | "boiled" | "roasted" | "smoked"
+    );
+    let m_cat = if is_cooked {
+        // Promote RawFish → Fish when cooked (cream sauce is fine with cooked salmon)
+        let raw_cat = category_of_slug(&m_slug, None);
+        if raw_cat == Cat::RawFish { Cat::Fish } else { raw_cat }
+    } else {
+        category_of_slug(&m_slug, None)
+    };
+    let c_cat = category_of_slug(&c_slug, c.product_type.as_deref());
+
+    // ── Culinary mismatch penalties ───────────────────────────────────────────
+
+    // Fish + dairy: mismatch in most contexts (-3)
+    // Exceptions: cream sauce, butter baste, fish chowder — still appear
+    // because -3 won't push a high-scoring candidate below zero.
+    if m_cat == Cat::Fish && c_cat == Cat::Dairy {
+        c.pair_score -= 3.0;
+    }
+    if m_cat == Cat::Dairy && c_cat == Cat::Fish {
+        c.pair_score -= 3.0;
+    }
+
+    // Fish + red meat: very niche (-4)
+    if m_cat == Cat::Fish && c_cat == Cat::RedMeat {
+        c.pair_score -= 4.0;
+    }
+    if m_cat == Cat::RedMeat && c_cat == Cat::Fish {
+        c.pair_score -= 4.0;
+    }
+
+    // Raw fish + sweet fruit: bad except ceviche (-3)
+    if m_cat == Cat::RawFish && c_cat == Cat::SweetFruit {
+        c.pair_score -= 3.0;
+    }
+    if m_cat == Cat::SweetFruit && c_cat == Cat::RawFish {
+        c.pair_score -= 3.0;
+    }
+
+    // Sweet fruit + strong alliums (-3)
+    if m_cat == Cat::SweetFruit && c_cat == Cat::Allium {
+        c.pair_score -= 3.0;
+    }
+    if m_cat == Cat::Allium && c_cat == Cat::SweetFruit {
+        c.pair_score -= 3.0;
+    }
+
+    // Liquid milk + high-acid fruit: curdles (-4)
+    if is_liquid_milk(&m_slug) && c_cat == Cat::HighAcidFruit {
+        c.pair_score -= 4.0;
+    }
+    if is_liquid_milk(&c_slug) && m_cat == Cat::HighAcidFruit {
+        c.pair_score -= 4.0;
+    }
+
+    // ── Liquid penalty — the main fix for "salmon + milk" ────────────────────
+    //
+    // Liquids (milk, broth, juice, water, stock) have calories and protein
+    // so they pass all nutrition filters — but they can't be dish sides.
+    // cream is excluded: it's a valid sauce/fat component.
+
+    if is_cooking_liquid(&c_slug) {
+        // Base liquid penalty: liquids are not dish components
+        c.pair_score -= 2.5;
+
+        // Extra context penalty: liquid is only acceptable when main is a grain
+        // (porridge, risotto, pasta) or dessert — everywhere else it's wrong
+        if m_cat != Cat::Grain {
+            c.pair_score -= 2.0;
+        }
+    }
+}
+
+// ── Boosts ───────────────────────────────────────────────────────────────────
+
+fn apply_boosts(main: &str, c: &mut Candidate, extras: &[String]) {
+    let m = main.to_lowercase();
+    let s = c.slug.to_lowercase();
+    let m_cat = category_of_slug(&m, None);
+
+    // Fish context
+    if m_cat == Cat::Fish || m_cat == Cat::RawFish {
+        if is_acid_slug(&s)  { c.pair_score += 2.0; } // lemon, lime, vinegar
+        if is_herb_slug(&s)  { c.pair_score += 1.5; } // dill, parsley, cilantro
+        if s.contains("rice") || s.contains("quinoa") { c.pair_score += 1.0; }
+    }
+
+    // Chicken
+    if m.contains("chicken") {
+        if s.contains("garlic")   { c.pair_score += 2.0; }
+        if s.contains("lemon")    { c.pair_score += 1.5; }
+        if s.contains("rosemary") || s.contains("thyme") { c.pair_score += 1.5; }
+        if s.contains("potato")   { c.pair_score += 1.0; }
+    }
+
+    // Beef / red meat
+    if m_cat == Cat::RedMeat {
+        if s.contains("garlic")   { c.pair_score += 2.0; }
+        if s.contains("rosemary") { c.pair_score += 1.5; }
+        if s.contains("mushroom") { c.pair_score += 1.5; } // umami synergy
+        if s.contains("potato")   { c.pair_score += 1.0; }
+        if s.contains("red-wine") { c.pair_score += 2.0; }
+    }
+
+    // Grain / pasta
+    if m_cat == Cat::Grain {
+        if s.contains("tomato")    { c.pair_score += 1.5; }
+        if s.contains("basil")     { c.pair_score += 1.5; }
+        if s.contains("olive-oil") { c.pair_score += 1.0; }
+        if s.contains("parmesan")  { c.pair_score += 1.0; }
+    }
+
+    // Vegetable
+    if m_cat == Cat::Vegetable {
+        if s.contains("lemon")     { c.pair_score += 1.5; }
+        if s.contains("olive-oil") { c.pair_score += 1.0; }
+        if s.contains("hummus")    { c.pair_score += 1.0; }
+    }
+
+    // Legume
+    if m_cat == Cat::Legume {
+        if s.contains("garlic")    { c.pair_score += 2.0; }
+        if s.contains("cumin")     { c.pair_score += 1.5; }
+        if s.contains("tomato")    { c.pair_score += 1.0; }
+        if s.contains("olive-oil") { c.pair_score += 1.0; }
+    }
+
+    // Cross-ingredient synergies from extras already in recipe
+    let has_extra = |keyword: &str| extras.iter().any(|e| e.to_lowercase().contains(keyword));
+
+    if has_extra("garlic") && is_herb_slug(&s)  { c.pair_score += 0.5; } // garlic+herbs = ✅
+    if has_extra("lemon")  && is_acid_slug(&s)  { c.pair_score -= 1.0; } // avoid double acid
+    if has_extra("olive-oil") && is_fat_slug(&s) { c.pair_score -= 1.5; } // avoid double fat
+}
+
+// ── Internal category enum ───────────────────────────────────────────────────
+//
+// Uses `product_type` (stable DB string) first, slug keywords as fallback.
+// This is the fix for the brittle s.contains("milk") pattern.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Cat {
+    Fish,
+    RawFish,
+    Dairy,
+    RedMeat,
+    Grain,
+    Vegetable,
+    Legume,
+    SweetFruit,
+    HighAcidFruit,
+    Allium,
+    Other,
+}
+
+/// Resolve category from product_type (DB field) first, slug keywords second.
+fn category_of_slug(slug: &str, product_type: Option<&str>) -> Cat {
+    // ── product_type wins (stable, i18n-safe) ────────────────────────────────
+    if let Some(pt) = product_type {
+        let pt = pt.to_lowercase();
+        match pt.as_str() {
+            "fish" | "seafood"           => return Cat::Fish,
+            "dairy" | "milk" | "cheese"  => return Cat::Dairy,
+            "meat" | "poultry"           => return Cat::RedMeat,
+            "grain" | "cereal" | "pasta" | "bread" => return Cat::Grain,
+            "vegetable" | "greens"       => return Cat::Vegetable,
+            "legume" | "beans"           => return Cat::Legume,
+            "fruit" | "berry"            => return Cat::SweetFruit,
+            _ => {}
+        }
+    }
+
+    // ── Slug keyword fallback ────────────────────────────────────────────────
+    let s = slug;
+
+    // Raw fish (subset of fish — typically served uncooked)
+    if ["salmon", "tuna", "mackerel", "sardine", "anchovy", "herring", "trout"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::RawFish;
+    }
+
+    // Cooked/generic fish
+    if ["cod", "shrimp", "prawn", "crab", "lobster", "sea-bass", "tilapia",
+        "halibut", "swordfish", "catfish", "squid", "octopus", "mussel",
+        "clam", "oyster", "scallop", "fish", "seafood"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::Fish;
+    }
+
+    // Dairy
+    if ["milk", "cheese", "yogurt", "kefir", "cream", "curd", "ricotta",
+        "mozzarella", "parmesan", "feta", "brie", "cheddar", "cottage",
+        "butter", "ghee", "smetana", "sour-cream"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::Dairy;
+    }
+
+    // Red meat
+    if ["beef", "pork", "lamb", "veal", "steak", "venison", "bison"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::RedMeat;
+    }
+
+    // High-acid fruits (curdlers)
+    if ["lemon", "lime", "orange", "grapefruit", "pineapple", "kiwi",
+        "strawberr", "raspberry", "tamarind"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::HighAcidFruit;
+    }
+
+    // Sweet fruits (allium conflict)
+    if ["apple", "mango", "banana", "blueberr", "peach", "pear", "plum",
+        "grape", "melon", "watermelon", "cherry", "apricot", "fig", "date"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::SweetFruit;
+    }
+
+    // Alliums
+    if ["garlic", "onion", "shallot", "leek", "chive", "scallion"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::Allium;
+    }
+
+    // Grain
+    if ["rice", "quinoa", "pasta", "spaghetti", "penne", "fettuccine", "noodle",
+        "buckwheat", "bulgur", "couscous", "farro", "barley", "oat", "wheat",
+        "bread", "flour", "semolina"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::Grain;
+    }
+
+    // Vegetable
+    if ["carrot", "broccoli", "zucchini", "eggplant", "pepper", "tomato",
+        "cucumber", "celery", "cauliflower", "asparagus", "beetroot", "pumpkin",
+        "squash", "cabbage", "lettuce", "spinach", "kale", "arugula", "corn",
+        "artichoke", "fennel"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::Vegetable;
+    }
+
+    // Legume
+    if ["lentil", "chickpea", "bean", "pea", "soy", "tofu", "edamame",
+        "hummus", "falafel", "dal"]
+        .iter().any(|k| s.contains(k))
+    {
+        return Cat::Legume;
+    }
+
+    Cat::Other
+}
+
+// ── Slug-only helpers (used only for boosts, not for category logic) ─────────
+
+/// True only for liquid milk variants — not cheese, yogurt, cream, butter.
+fn is_liquid_milk(s: &str) -> bool {
+    ["whole-milk", "skim-milk", "oat-milk", "almond-milk", "soy-milk",
+     "coconut-milk", "buttermilk", "milk"]
+    .iter().any(|k| s == *k || s.ends_with(k))
+}
+
+/// True for liquids that have calories/protein but cannot be dish components.
+/// cream/sour-cream/kefir are excluded — they are valid sauce/fat ingredients.
+fn is_cooking_liquid(s: &str) -> bool {
+    // Exact or suffix match for milk variants
+    if is_liquid_milk(s) {
+        return true;
+    }
+    // Other cooking liquids — broth, stock, juice, plain water
+    ["broth", "stock", "chicken-stock", "beef-stock", "vegetable-stock",
+     "chicken-broth", "beef-broth", "vegetable-broth",
+     "orange-juice", "apple-juice", "grape-juice", "juice",
+     "water"]
+    .iter().any(|k| s == *k || s.contains(k))
+}
+
+fn is_acid_slug(s: &str) -> bool {
+    ["lemon", "lime", "vinegar", "balsamic", "tamarind", "sumac"]
+    .iter().any(|k| s.contains(k))
+}
+
+fn is_herb_slug(s: &str) -> bool {
+    ["dill", "parsley", "cilantro", "basil", "rosemary", "thyme",
+     "oregano", "mint", "chive", "tarragon", "sage", "bay-leaf"]
+    .iter().any(|k| s.contains(k))
+}
+
+fn is_fat_slug(s: &str) -> bool {
+    ["olive-oil", "sunflower-oil", "coconut-oil", "sesame-oil", "avocado-oil",
+     "butter", "ghee", "lard", "oil"]
+    .iter().any(|k| s.contains(k))
+}

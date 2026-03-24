@@ -464,6 +464,14 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         })
         .collect();
 
+    // ── Culinary rules: filter forbidden pairs + boost contextual scores ──────
+    let candidates = super::culinary_rules::apply(
+        &ctx.ingredient,
+        &candidates,
+        &ctx.additional_ingredients,
+        ctx.state.as_deref(),
+    );
+
     // Suggestions will be computed after potential state adjustment (step 11c)
 
     // ── 9. Diagnostics (RuleEngine — only if we have 2+ ingredients) ─────────
