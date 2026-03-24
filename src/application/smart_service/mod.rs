@@ -25,6 +25,7 @@ pub mod pipeline;
 pub mod cache;
 pub mod service;
 pub mod recipe_builder;
+pub mod culinary_rules;
 
 pub use context::CulinaryContext;
 pub use response::SmartResponse;
