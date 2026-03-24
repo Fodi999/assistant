@@ -404,6 +404,7 @@ pub async fn recipe_analyze(
             },
             pair_score: r.avg_pair_score.unwrap_or(0.0),
             typical_g: 30.0, // default suggestion amount
+            product_type: None, // not loaded in this context; slug-based rules still apply
         }
     }).collect();
 

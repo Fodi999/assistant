@@ -27,6 +27,8 @@ pub struct Candidate {
     pub pair_score:  f64,
     /// Typical portion to add (grams)
     pub typical_g:   f64,
+    /// Product category (e.g. "fish", "dairy", "vegetable", "grain", "oil")
+    pub product_type: Option<String>,
 }
 
 // ── Output: suggestion ───────────────────────────────────────────────────────
@@ -241,6 +243,7 @@ mod tests {
             },
             pair_score: 8.5,
             typical_g: 15.0,
+            product_type: Some("oil".to_string()),
         }
     }
 
@@ -259,6 +262,7 @@ mod tests {
             },
             pair_score: 2.0,
             typical_g: 5.0,
+            product_type: Some("sweetener".to_string()),
         }
     }
 

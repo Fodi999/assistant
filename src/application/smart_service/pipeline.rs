@@ -360,8 +360,46 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         .map(|s| SeasonalityInfo { month: s.month, status: s.status, note: s.note })
         .collect();
 
-    // Candidates from pairings
+    // Candidates from pairings — hydrated with real nutrition + flavor + product_type
     let existing_slugs: Vec<String> = flavor_ingredients.iter().map(|fi| fi.slug.clone()).collect();
+
+    let pairing_slugs: Vec<String> = pairings_raw
+        .iter()
+        .filter_map(|p| p.slug.clone())
+        .filter(|s| !existing_slugs.contains(s))
+        .collect();
+
+    // BATCH: load catalog rows for all pairing slugs (nutrition + product_type)
+    let pairing_catalog_rows: Vec<CatalogNutritionRow> = if !pairing_slugs.is_empty() {
+        let sql = format!(
+            "SELECT {} FROM catalog_ingredients WHERE slug = ANY($1) AND COALESCE(is_active, true) = true",
+            CATALOG_NUTRITION_COLS
+        );
+        sqlx::query_as(&sql)
+            .bind(&pairing_slugs)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    // BATCH: load culinary properties for all pairing slugs
+    let pairing_culinary_rows: Vec<ExtraCulinaryRow> = if !pairing_slugs.is_empty() {
+        sqlx::query_as(
+            r#"SELECT p.slug,
+                      fcp.sweetness, fcp.acidity, fcp.bitterness, fcp.umami, fcp.aroma
+               FROM products p
+               JOIN food_culinary_properties fcp ON fcp.product_id = p.id
+               WHERE p.slug = ANY($1)"#,
+        )
+        .bind(&pairing_slugs)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        vec![]
+    };
 
     let candidates: Vec<Candidate> = pairings_raw
         .iter()
@@ -370,8 +408,46 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             !existing_slugs.contains(&s.to_string())
         })
         .map(|p| {
+            let slug = p.slug.clone().unwrap_or_default();
+
+            // Look up real nutrition from catalog
+            let cat = pairing_catalog_rows.iter().find(|r| r.slug.as_deref() == Some(&slug));
+            let (nutrition, typical_g, product_type) = if let Some(r) = cat {
+                (
+                    NutritionBreakdown {
+                        calories: r.cal(), protein_g: r.prot(), fat_g: r.fat(),
+                        carbs_g: r.carbs(), fiber_g: r.fiber(), sugar_g: r.sugar(),
+                        salt_g: 0.0, sodium_mg: 0.0,
+                    },
+                    r.typical_g().unwrap_or(50.0),
+                    r.product_type.clone(),
+                )
+            } else {
+                (
+                    NutritionBreakdown {
+                        calories: 0.0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+                        fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
+                    },
+                    50.0,
+                    None,
+                )
+            };
+
+            // Look up real flavor from culinary
+            let flavor = pairing_culinary_rows.iter()
+                .find(|ecr| ecr.slug == slug)
+                .map(|ecr| flavor_graph::flavor_from_culinary(
+                    ecr.sweetness.unwrap_or(0.0) as f64,
+                    ecr.acidity.unwrap_or(0.0) as f64,
+                    ecr.bitterness.unwrap_or(0.0) as f64,
+                    ecr.umami.unwrap_or(0.0) as f64,
+                    ecr.aroma.unwrap_or(0.0) as f64,
+                    nutrition.fat_g,
+                ))
+                .unwrap_or_else(FlavorVector::zero);
+
             Candidate {
-                slug: p.slug.clone().unwrap_or_default(),
+                slug,
                 name: match lang {
                     Language::Ru => p.name_ru.clone(),
                     Language::Pl => p.name_pl.clone(),
@@ -379,13 +455,11 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
                     Language::En => p.name_en.clone(),
                 },
                 image_url: p.image_url.clone(),
-                flavor: FlavorVector::zero(),
-                nutrition: NutritionBreakdown {
-                    calories: 0.0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
-                    fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
-                },
+                flavor,
+                nutrition,
                 pair_score: p.pair_score.unwrap_or(0.0) as f64,
-                typical_g: 50.0,
+                typical_g,
+                product_type,
             }
         })
         .collect();
@@ -654,6 +728,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
                     nutrition: fix_nutrition,
                     pair_score: 5.0,
                     typical_g: fix_row.typical_g().unwrap_or(30.0),
+                    product_type: fix_row.product_type.clone(),
                 });
             }
         }
@@ -749,6 +824,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         row.fat(),
         row.fiber(),
         typical_g,
+        row.product_type.as_deref(),
         &all_candidates,
         balance,
         lang,

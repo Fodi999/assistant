@@ -48,14 +48,19 @@ pub fn build_variants(
     main_fat_per_100g: f64,
     main_fiber_per_100g: f64,
     main_typical_g: f64,
+    main_product_type: Option<&str>,
     candidates: &[Candidate],
     balance: &FlavorBalance,
     lang: Language,
 ) -> Vec<RecipeVariant> {
-    // Filter out candidates without any nutrition data
+    let main_category = product_type_category(main_product_type);
+
+    // Filter out candidates without nutrition data AND bad combos with main
     let usable: Vec<&Candidate> = candidates
         .iter()
         .filter(|c| c.nutrition.calories > 0.0 || c.nutrition.protein_g > 0.0)
+        .filter(|c| !is_bad_combo(main_category, &c.slug, c.product_type.as_deref()))
+        .filter(|c| !is_liquid_ingredient(&c.slug, c.product_type.as_deref()))
         .collect();
 
     // Classify all usable candidates by role
@@ -120,11 +125,12 @@ impl<'a> MainInfo<'a> {
 
 // ── Role inference ───────────────────────────────────────────────────────────
 
-/// Classify a candidate into a culinary role using nutrition + flavor heuristics.
+/// Classify a candidate into a culinary role using nutrition + flavor + product_type heuristics.
 fn infer_role(c: &Candidate) -> IngredientRole {
     let n = &c.nutrition;
     let f = &c.flavor;
     let slug = c.slug.to_lowercase();
+    let pt = c.product_type.as_deref().unwrap_or("").to_lowercase();
 
     // 1. Fat detection
     if is_fat_slug(&slug) {
@@ -150,7 +156,15 @@ fn infer_role(c: &Candidate) -> IngredientRole {
         return IngredientRole::Aromatic;
     }
 
-    // 4. Side detection
+    // 4. Product-type-aware side detection
+    if pt == "vegetable" || pt == "greens" || pt == "grain"
+        || pt == "cereal" || pt == "pasta" || pt == "legume"
+        || pt == "beans" || pt == "bread"
+    {
+        return IngredientRole::Side;
+    }
+
+    // 5. Nutrition-based side detection
     if n.carbs_g > 15.0 && n.protein_g < 15.0 {
         return IngredientRole::Side;
     }
@@ -161,7 +175,7 @@ fn infer_role(c: &Candidate) -> IngredientRole {
         return IngredientRole::Side;
     }
 
-    // 5. Default: Side
+    // 6. Default: Side
     IngredientRole::Side
 }
 
@@ -193,6 +207,113 @@ fn is_aromatic_slug(slug: &str) -> bool {
         "lemongrass", "star-anise", "bay-leaf", "coriander",
     ];
     AROMATICS.iter().any(|k| slug.contains(k))
+}
+
+// ── Culinary rules — bad combo & liquid detection ────────────────────────────
+
+/// Broad food category derived from `product_type` or slug heuristics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FoodCategory {
+    Fish,
+    Dairy,
+    Meat,
+    Grain,
+    Vegetable,
+    Fruit,
+    Legume,
+    Other,
+}
+
+fn product_type_category(pt: Option<&str>) -> FoodCategory {
+    match pt.unwrap_or("").to_lowercase().as_str() {
+        "fish" | "seafood" => FoodCategory::Fish,
+        "dairy" | "milk" | "cheese" => FoodCategory::Dairy,
+        "meat" | "poultry" => FoodCategory::Meat,
+        "grain" | "cereal" | "pasta" | "bread" => FoodCategory::Grain,
+        "vegetable" | "greens" => FoodCategory::Vegetable,
+        "fruit" | "berry" => FoodCategory::Fruit,
+        "legume" | "beans" => FoodCategory::Legume,
+        _ => FoodCategory::Other,
+    }
+}
+
+fn slug_category(slug: &str) -> FoodCategory {
+    let s = slug.to_lowercase();
+    // Fish / seafood
+    if ["salmon", "tuna", "cod", "trout", "shrimp", "prawn", "crab",
+        "lobster", "mackerel", "sardine", "anchovy", "sea-bass",
+        "tilapia", "halibut", "swordfish", "catfish", "squid",
+        "octopus", "mussel", "clam", "oyster", "scallop", "fish"]
+        .iter().any(|k| s.contains(k)) {
+        return FoodCategory::Fish;
+    }
+    // Dairy
+    if ["milk", "cheese", "yogurt", "kefir", "cream", "curd", "ricotta",
+        "mozzarella", "parmesan", "feta", "brie", "cheddar", "cottage"]
+        .iter().any(|k| s.contains(k)) {
+        return FoodCategory::Dairy;
+    }
+    // Meat
+    if ["chicken", "beef", "pork", "lamb", "turkey", "duck", "veal",
+        "ham", "bacon", "sausage", "steak"]
+        .iter().any(|k| s.contains(k)) {
+        return FoodCategory::Meat;
+    }
+    FoodCategory::Other
+}
+
+/// Returns true if candidate is a bad culinary match for the main ingredient.
+fn is_bad_combo(main_cat: FoodCategory, cand_slug: &str, cand_pt: Option<&str>) -> bool {
+    let cand_cat = if cand_pt.is_some() {
+        product_type_category(cand_pt)
+    } else {
+        slug_category(cand_slug)
+    };
+
+    // Rule 1: Fish + Dairy = ❌ (both directions)
+    if main_cat == FoodCategory::Fish && cand_cat == FoodCategory::Dairy {
+        // Exception: parmesan & cream are sometimes OK, but safer to ban
+        return true;
+    }
+    if main_cat == FoodCategory::Dairy && cand_cat == FoodCategory::Fish {
+        return true;
+    }
+
+    // Rule 2: Fish + Meat = ❌ (surf-n-turf is very niche)
+    if main_cat == FoodCategory::Fish && cand_cat == FoodCategory::Meat {
+        return true;
+    }
+    if main_cat == FoodCategory::Meat && cand_cat == FoodCategory::Fish {
+        return true;
+    }
+
+    false
+}
+
+/// Returns true if the candidate is a liquid that shouldn't be a dish component.
+/// Milk, cream, juice, broth etc. can be used in cooking but not as a "side".
+fn is_liquid_ingredient(slug: &str, product_type: Option<&str>) -> bool {
+    let s = slug.to_lowercase();
+    // Explicit liquid slugs
+    let liquid_slugs = [
+        "milk", "whole-milk", "skim-milk", "oat-milk", "almond-milk",
+        "soy-milk", "coconut-milk", "cream", "heavy-cream",
+        "whipping-cream", "half-and-half", "buttermilk",
+        "orange-juice", "apple-juice", "grape-juice", "juice",
+        "broth", "stock", "chicken-broth", "beef-broth",
+        "vegetable-broth", "water",
+    ];
+    if liquid_slugs.iter().any(|k| s == *k || s.contains(k)) {
+        return true;
+    }
+    // product_type based
+    if let Some(pt) = product_type {
+        let pt_lower = pt.to_lowercase();
+        if pt_lower == "milk" || pt_lower == "liquid" || pt_lower == "beverage" || pt_lower == "juice" {
+            return true;
+        }
+    }
+    false
 }
 
 // ── Role-constrained assembly ────────────────────────────────────────────────
