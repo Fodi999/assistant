@@ -815,20 +815,68 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     });
 
     // ── v3 Step 6 — Recipe Builder: 3 dish variants ─────────────────────────
-    let variants = recipe_builder::build_variants(
-        ingredient_info.slug.as_str(),
-        ingredient_info.name.as_str(),
-        ingredient_info.image_url.as_deref(),
-        row.cal(),
-        row.prot(),
-        row.fat(),
-        row.fiber(),
-        typical_g,
-        row.product_type.as_deref(),
-        &all_candidates,
-        balance,
-        lang,
-    );
+    // MODE: if user provided additional_ingredients → ANALYZE (use only their recipe)
+    //       otherwise → BUILD (generate dish from pairings pool)
+    let is_analyze_mode = !ctx.additional_ingredients.is_empty();
+    let mode_label = if is_analyze_mode { "analyze" } else { "build" };
+
+    let variants = if is_analyze_mode {
+        // ANALYZE MODE: build Candidate objects from user's additional_ingredients only
+        let mut recipe_candidates: Vec<Candidate> = Vec::new();
+        for (i, extra_slug) in ctx.additional_ingredients.iter().enumerate() {
+            if let Some((extra_row, extra_flavor)) = additional_rows.get(i) {
+                recipe_candidates.push(Candidate {
+                    slug: extra_row.slug.clone().unwrap_or_else(|| extra_slug.clone()),
+                    name: extra_row.localized_name(lang).to_string(),
+                    image_url: extra_row.image_url.clone(),
+                    flavor: extra_flavor.clone(),
+                    nutrition: NutritionBreakdown {
+                        calories: extra_row.cal(),
+                        protein_g: extra_row.prot(),
+                        fat_g: extra_row.fat(),
+                        carbs_g: extra_row.carbs(),
+                        fiber_g: extra_row.fiber(),
+                        sugar_g: extra_row.sugar(),
+                        salt_g: 0.0,
+                        sodium_mg: 0.0,
+                    },
+                    pair_score: 10.0, // user chose these — max affinity
+                    typical_g: extra_row.typical_g().unwrap_or(50.0),
+                    product_type: extra_row.product_type.clone(),
+                });
+            }
+        }
+        recipe_builder::build_variants(
+            ingredient_info.slug.as_str(),
+            ingredient_info.name.as_str(),
+            ingredient_info.image_url.as_deref(),
+            row.cal(),
+            row.prot(),
+            row.fat(),
+            row.fiber(),
+            typical_g,
+            row.product_type.as_deref(),
+            &recipe_candidates,
+            balance,
+            lang,
+        )
+    } else {
+        // BUILD MODE: generate dish from pairing candidates pool
+        recipe_builder::build_variants(
+            ingredient_info.slug.as_str(),
+            ingredient_info.name.as_str(),
+            ingredient_info.image_url.as_deref(),
+            row.cal(),
+            row.prot(),
+            row.fat(),
+            row.fiber(),
+            typical_g,
+            row.product_type.as_deref(),
+            &all_candidates,
+            balance,
+            lang,
+        )
+    };
 
     // ── 14. Compose response ─────────────────────────────────────────────────
     let timing_ms = start.elapsed().as_millis() as u64;
@@ -848,12 +896,13 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         next_actions,
         explain,
         variants,
+        mode: mode_label.to_string(),
         session_id,
         meta: SmartMeta {
             timing_ms,
             cached: false,
             cache_key: ctx.cache_key(),
-            engine_version: "3.1.0".to_string(),
+            engine_version: "3.2.0".to_string(),
         },
     })
 }

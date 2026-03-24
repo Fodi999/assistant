@@ -58,6 +58,9 @@ pub struct SmartResponse {
     /// Recipe variants: 3 deterministic dish compositions (healthy / balanced / heavy)
     pub variants: Vec<RecipeVariant>,
 
+    /// Engine mode: "build" (single ingredient → generate dish) or "analyze" (user's recipe → analyze)
+    pub mode: String,
+
     /// Response metadata
     pub meta: SmartMeta,
 }
