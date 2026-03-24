@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.91-slim AS builder
+FROM rust:1.93-slim AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ COPY migrations ./migrations
 # Deterministic build with locked dependencies
 RUN cargo build --release --locked
 
-# Runtime stage - Ubuntu 24.04 has GLIBC 2.39 (required for Rust 1.91)
+# Runtime stage - Ubuntu 24.04 has GLIBC 2.39 (required for Rust 1.93)
 FROM ubuntu:24.04
 
 WORKDIR /app
