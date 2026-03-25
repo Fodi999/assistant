@@ -59,6 +59,15 @@ pub struct FromTextRequest {
     /// Dietary restriction: vegan, vegetarian, gluten_free, etc.
     #[serde(default)]
     pub diet: Option<String>,
+    /// Time budget: "quick", "medium", "long".
+    #[serde(default)]
+    pub cooking_time: Option<String>,
+    /// Price tier: "cheap", "medium", "premium".
+    #[serde(default)]
+    pub budget: Option<String>,
+    /// Cuisine family: "italian", "asian", "japanese", etc.
+    #[serde(default)]
+    pub cuisine: Option<String>,
     /// Language code: en, ru, uk, pl.
     #[serde(default = "default_lang")]
     pub lang: String,
@@ -119,6 +128,9 @@ pub async fn smart_from_text(
         goal: req.goal,
         meal_type: req.meal_type,
         diet: req.diet,
+        cooking_time: req.cooking_time,
+        budget: req.budget,
+        cuisine: req.cuisine,
         lang: req.lang,
         session_id: req.session_id,
     };

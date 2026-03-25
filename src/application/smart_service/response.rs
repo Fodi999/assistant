@@ -69,6 +69,18 @@ pub struct SmartResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diet: Option<String>,
 
+    /// Time budget context (if provided): "quick", "medium", "long"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cooking_time: Option<String>,
+
+    /// Price tier context (if provided): "cheap", "medium", "premium"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget: Option<String>,
+
+    /// Cuisine family context (if provided): "italian", "asian", "japanese", etc.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cuisine: Option<String>,
+
     /// Response metadata
     pub meta: SmartMeta,
 }

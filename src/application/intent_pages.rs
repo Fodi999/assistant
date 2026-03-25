@@ -70,7 +70,7 @@ const COMPARISON_SUB_INTENTS: &[&str] = &[
 ];
 
 // ── Recipe intent matrix ─────────────────────────────────────────────────────
-// Each combination of (goal, meal_type, diet) creates a unique recipe landing page.
+// Each combination of (goal, meal_type, diet, cooking_time, budget, cuisine) creates a unique recipe landing page.
 // These are NOT sub-intents; they are dimension values for the SmartService context.
 
 const RECIPE_GOALS: &[&str] = &[
@@ -86,6 +86,26 @@ const RECIPE_DIETS: &[Option<&str>] = &[
     Some("vegetarian"),
     Some("vegan"),
     Some("gluten_free"),
+];
+
+const RECIPE_COOKING_TIMES: &[Option<&str>] = &[
+    None,                // any time budget
+    Some("quick"),
+    Some("medium"),
+    Some("long"),
+];
+
+const RECIPE_BUDGETS: &[Option<&str>] = &[
+    None,                // any price tier
+    Some("cheap"),
+    Some("premium"),
+];
+
+const RECIPE_CUISINES: &[Option<&str>] = &[
+    None,                // universal
+    Some("italian"),
+    Some("asian"),
+    Some("mexican"),
 ];
 
 /// Heuristic: does this English ingredient name look plural?
@@ -177,6 +197,12 @@ pub struct IntentPage {
     pub meal_type: Option<String>,
     /// Dietary restriction context (recipe_intent pages only)
     pub diet: Option<String>,
+    /// Time budget context (recipe_intent pages only): "quick", "medium", "long"
+    pub cooking_time: Option<String>,
+    /// Price tier context (recipe_intent pages only): "cheap", "medium", "premium"
+    pub budget: Option<String>,
+    /// Cuisine family context (recipe_intent pages only): "italian", "asian", etc.
+    pub cuisine: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -193,6 +219,12 @@ pub struct GenerateRequest {
     pub meal_type: Option<String>,
     /// Dietary restriction (recipe_intent only): "vegan", "vegetarian", etc.
     pub diet: Option<String>,
+    /// Time budget (recipe_intent only): "quick", "medium", "long"
+    pub cooking_time: Option<String>,
+    /// Price tier (recipe_intent only): "cheap", "medium", "premium"
+    pub budget: Option<String>,
+    /// Cuisine family (recipe_intent only): "italian", "asian", etc.
+    pub cuisine: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -318,9 +350,15 @@ impl IntentPagesService {
     pub async fn generate(&self, req: &GenerateRequest) -> AppResult<IntentPage> {
         // 1. Determine slug upfront
         let predetermined_slug = if req.intent_type == "recipe_intent" {
-            // recipe_intent: deterministic slug from goal × meal_type × diet
+            // recipe_intent: deterministic slug from full context dimensions
             match (&req.goal, &req.meal_type) {
-                (Some(g), Some(m)) => Some(recipe_intent_slug(g, m, req.diet.as_deref())),
+                (Some(g), Some(m)) => Some(recipe_intent_slug(
+                    g, m,
+                    req.diet.as_deref(),
+                    req.cooking_time.as_deref(),
+                    req.budget.as_deref(),
+                    req.cuisine.as_deref(),
+                )),
                 _ => None,
             }
         } else {
@@ -336,7 +374,7 @@ impl IntentPagesService {
                 r#"SELECT id, intent_type, entity_a, entity_b, locale,
                           title, description, answer, faq, slug, status, priority, content_blocks,
                           published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet
+                         goal, meal_type, diet, cooking_time, budget, cuisine
                    FROM intent_pages
                    WHERE slug = $1 AND locale = $2"#,
             )
@@ -352,14 +390,16 @@ impl IntentPagesService {
 
         // 3. Build search query for AI
         let search_query = if req.intent_type == "recipe_intent" {
-            // Build a natural language query from the context dimensions
+            // Build a natural language query from all context dimensions
             let goal_label = req.goal.as_deref().unwrap_or("healthy").replace('_', " ");
             let meal_label = req.meal_type.as_deref().unwrap_or("meal").replace('_', " ");
-            let diet_label = req.diet.as_deref().map(|d| d.replace('_', " "));
-            Some(match diet_label {
-                Some(d) => format!("Best {} {} {} recipes", d, goal_label, meal_label),
-                None => format!("Best {} {} recipes", goal_label, meal_label),
-            })
+            let mut modifiers = Vec::new();
+            if let Some(d) = req.diet.as_deref() { modifiers.push(d.replace('_', " ")); }
+            if let Some(t) = req.cooking_time.as_deref() { modifiers.push(t.replace('_', " ")); }
+            if let Some(b) = req.budget.as_deref() { modifiers.push(b.replace('_', " ")); }
+            if let Some(c) = req.cuisine.as_deref() { modifiers.push(c.replace('_', " ")); }
+            let mods = if modifiers.is_empty() { String::new() } else { format!("{} ", modifiers.join(" ")) };
+            Some(format!("Best {}{} {} recipes", mods, goal_label, meal_label))
         } else {
             req.sub_intent.as_ref().map(|si| {
                 sub_intent_to_query(si, &req.entity_a, req.entity_b.as_deref())
@@ -402,13 +442,13 @@ impl IntentPagesService {
 
         let page = sqlx::query_as::<_, IntentPage>(
             r#"INSERT INTO intent_pages
-               (intent_type, entity_a, entity_b, locale, title, description, answer, faq, slug, status, content_blocks, goal, meal_type, diet)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11, $12, $13)
+               (intent_type, entity_a, entity_b, locale, title, description, answer, faq, slug, status, content_blocks, goal, meal_type, diet, cooking_time, budget, cuisine)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11, $12, $13, $14, $15, $16)
                ON CONFLICT (slug, locale) DO NOTHING
                RETURNING id, intent_type, entity_a, entity_b, locale,
                          title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet"#,
+                         goal, meal_type, diet, cooking_time, budget, cuisine"#,
         )
         .bind(&req.intent_type)
         .bind(&req.entity_a)
@@ -423,6 +463,9 @@ impl IntentPagesService {
         .bind(&req.goal)
         .bind(&req.meal_type)
         .bind(&req.diet)
+        .bind(&req.cooking_time)
+        .bind(&req.budget)
+        .bind(&req.cuisine)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::conflict("Intent page with this slug already exists"))?;
@@ -504,6 +547,9 @@ impl IntentPagesService {
                             goal: None,
                             meal_type: None,
                             diet: None,
+                            cooking_time: None,
+                            budget: None,
+                            cuisine: None,
                         };
 
                         match self.generate(&gen_req).await {
@@ -561,6 +607,9 @@ impl IntentPagesService {
                             goal: None,
                             meal_type: None,
                             diet: None,
+                            cooking_time: None,
+                            budget: None,
+                            cuisine: None,
                         };
 
                         match self.generate(&gen_req).await {
@@ -621,6 +670,9 @@ impl IntentPagesService {
                             goal: None,
                             meal_type: None,
                             diet: None,
+                            cooking_time: None,
+                            budget: None,
+                            cuisine: None,
                         };
 
                         match self.generate(&gen_req).await {
@@ -646,7 +698,7 @@ impl IntentPagesService {
             }
         }
 
-        // ── Phase 4: recipe_intent (goal × meal_type × diet matrix) ─────────
+        // ── Phase 4: recipe_intent (goal × meal × diet × time × budget × cuisine) ──
         if intent_types.iter().any(|t| t == "recipe_intent") {
             for goal in RECIPE_GOALS {
                 if count >= limit { break; }
@@ -654,51 +706,65 @@ impl IntentPagesService {
                     if count >= limit { break; }
                     for diet in RECIPE_DIETS {
                         if count >= limit { break; }
-                        let target_slug = recipe_intent_slug(goal, meal, *diet);
-
-                        for locale in &locales {
+                        for cooking_time in RECIPE_COOKING_TIMES {
                             if count >= limit { break; }
+                            for budget in RECIPE_BUDGETS {
+                                if count >= limit { break; }
+                                for cuisine in RECIPE_CUISINES {
+                                    if count >= limit { break; }
+                                    let target_slug = recipe_intent_slug(
+                                        goal, meal, *diet, *cooking_time, *budget, *cuisine,
+                                    );
 
-                            let exists: bool = sqlx::query_scalar(
-                                "SELECT EXISTS(SELECT 1 FROM intent_pages WHERE slug = $1 AND locale = $2)"
-                            )
-                            .bind(&target_slug)
-                            .bind(locale)
-                            .fetch_one(&self.pool)
-                            .await
-                            .unwrap_or(true);
+                                    for locale in &locales {
+                                        if count >= limit { break; }
 
-                            if exists { result.skipped += 1; continue; }
+                                        let exists: bool = sqlx::query_scalar(
+                                            "SELECT EXISTS(SELECT 1 FROM intent_pages WHERE slug = $1 AND locale = $2)"
+                                        )
+                                        .bind(&target_slug)
+                                        .bind(locale)
+                                        .fetch_one(&self.pool)
+                                        .await
+                                        .unwrap_or(true);
 
-                            let gen_req = GenerateRequest {
-                                intent_type: "recipe_intent".into(),
-                                entity_a: target_slug.clone(),
-                                entity_b: None,
-                                locale: locale.clone(),
-                                sub_intent: None,
-                                goal: Some(goal.to_string()),
-                                meal_type: Some(meal.to_string()),
-                                diet: diet.map(|d| d.to_string()),
-                            };
+                                        if exists { result.skipped += 1; continue; }
 
-                            match self.generate(&gen_req).await {
-                                Ok(page) => {
-                                    result.generated += 1;
-                                    result.details.push(format!("✅ {} / {} → '{}'",
-                                        target_slug, locale, page.title));
-                                    count += 1;
-                                    if auto_publish {
-                                        if let Ok(_) = self.publish(page.id).await {
-                                            result.published += 1;
+                                        let gen_req = GenerateRequest {
+                                            intent_type: "recipe_intent".into(),
+                                            entity_a: target_slug.clone(),
+                                            entity_b: None,
+                                            locale: locale.clone(),
+                                            sub_intent: None,
+                                            goal: Some(goal.to_string()),
+                                            meal_type: Some(meal.to_string()),
+                                            diet: diet.map(|d| d.to_string()),
+                                            cooking_time: cooking_time.map(|t| t.to_string()),
+                                            budget: budget.map(|b| b.to_string()),
+                                            cuisine: cuisine.map(|c| c.to_string()),
+                                        };
+
+                                        match self.generate(&gen_req).await {
+                                            Ok(page) => {
+                                                result.generated += 1;
+                                                result.details.push(format!("✅ {} / {} → '{}'",
+                                                    target_slug, locale, page.title));
+                                                count += 1;
+                                                if auto_publish {
+                                                    if let Ok(_) = self.publish(page.id).await {
+                                                        result.published += 1;
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                result.errors += 1;
+                                                result.details.push(format!("❌ {} / {} → {}", target_slug, locale, e));
+                                            }
                                         }
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                                     }
                                 }
-                                Err(e) => {
-                                    result.errors += 1;
-                                    result.details.push(format!("❌ {} / {} → {}", target_slug, locale, e));
-                                }
                             }
-                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                         }
                     }
                 }
@@ -723,7 +789,7 @@ impl IntentPagesService {
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
                       title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet
+                         goal, meal_type, diet, cooking_time, budget, cuisine
                FROM intent_pages
                WHERE ($1::text IS NULL OR status = $1)
                  AND ($2::text IS NULL OR locale = $2)
@@ -751,7 +817,7 @@ impl IntentPagesService {
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
                       title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet
+                         goal, meal_type, diet, cooking_time, budget, cuisine
                FROM intent_pages WHERE id = $1"#,
         )
             .bind(id)
@@ -778,7 +844,7 @@ impl IntentPagesService {
                RETURNING id, intent_type, entity_a, entity_b, locale,
                          title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet"#,
+                         goal, meal_type, diet, cooking_time, budget, cuisine"#,
         )
         .bind(&req.title)
         .bind(&req.description)
@@ -809,7 +875,7 @@ impl IntentPagesService {
                RETURNING id, intent_type, entity_a, entity_b, locale,
                          title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet"#,
+                         goal, meal_type, diet, cooking_time, budget, cuisine"#,
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -833,7 +899,7 @@ impl IntentPagesService {
                RETURNING id, intent_type, entity_a, entity_b, locale,
                          title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet"#,
+                         goal, meal_type, diet, cooking_time, budget, cuisine"#,
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -911,6 +977,9 @@ impl IntentPagesService {
             goal: page.goal,
             meal_type: page.meal_type,
             diet: page.diet,
+            cooking_time: page.cooking_time,
+            budget: page.budget,
+            cuisine: page.cuisine,
         };
         self.generate(&gen_req).await
     }
@@ -926,7 +995,7 @@ impl IntentPagesService {
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
                       title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet
+                         goal, meal_type, diet, cooking_time, budget, cuisine
                FROM intent_pages
                WHERE status = 'published'
                  AND locale = $1
@@ -951,7 +1020,7 @@ impl IntentPagesService {
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
                       title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet
+                         goal, meal_type, diet, cooking_time, budget, cuisine
                FROM intent_pages
                WHERE slug = $1 AND locale = $2 AND status = 'published'"#,
         )
@@ -1102,7 +1171,7 @@ impl IntentPagesService {
                RETURNING id, intent_type, entity_a, entity_b, locale,
                          title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet"#,
+                         goal, meal_type, diet, cooking_time, budget, cuisine"#,
         )
         .bind(&updated_blocks)
         .bind(page_id)
@@ -1323,7 +1392,7 @@ impl IntentPagesService {
                RETURNING id, intent_type, entity_a, entity_b, locale,
                          title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet"#,
+                         goal, meal_type, diet, cooking_time, budget, cuisine"#,
         )
         .bind(id)
         .fetch_one(&self.pool)
@@ -1375,7 +1444,7 @@ impl IntentPagesService {
                RETURNING id, intent_type, entity_a, entity_b, locale,
                          title, description, answer, faq, slug, status, priority, content_blocks,
                          published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet"#,
+                         goal, meal_type, diet, cooking_time, budget, cuisine"#,
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -1516,7 +1585,7 @@ impl IntentPagesService {
             r#"SELECT id, intent_type, entity_a, entity_b, locale,
                       title, description, answer, faq, slug, status, priority, content_blocks,
                       published_at::text, queued_at::text, created_at::text, updated_at::text,
-                         goal, meal_type, diet
+                         goal, meal_type, diet, cooking_time, budget, cuisine
                FROM intent_pages
                ORDER BY entity_a, locale, created_at"#,
         )
@@ -1756,12 +1825,32 @@ fn generate_slug(title: &str, intent: &str, entity_a: &str, entity_b: Option<&st
 }
 
 /// Build a deterministic slug for a recipe_intent page.
-/// e.g. "high-protein-dinner-vegan-recipes" or "keto-breakfast-recipes"
-fn recipe_intent_slug(goal: &str, meal_type: &str, diet: Option<&str>) -> String {
-    let goal_part = goal.replace('_', "-");
-    let meal_part = meal_type.replace('_', "-");
-    match diet {
-        Some(d) => format!("{}-{}-{}-recipes", goal_part, meal_part, d.replace('_', "-")),
-        None => format!("{}-{}-recipes", goal_part, meal_part),
+/// e.g. "high-protein-dinner-vegan-quick-cheap-italian-recipes"
+/// Only non-None dimensions appear in the slug.
+fn recipe_intent_slug(
+    goal: &str,
+    meal_type: &str,
+    diet: Option<&str>,
+    cooking_time: Option<&str>,
+    budget: Option<&str>,
+    cuisine: Option<&str>,
+) -> String {
+    let mut parts = vec![
+        goal.replace('_', "-"),
+        meal_type.replace('_', "-"),
+    ];
+    if let Some(d) = diet {
+        parts.push(d.replace('_', "-"));
     }
+    if let Some(t) = cooking_time {
+        parts.push(t.replace('_', "-"));
+    }
+    if let Some(b) = budget {
+        parts.push(b.replace('_', "-"));
+    }
+    if let Some(c) = cuisine {
+        parts.push(c.replace('_', "-"));
+    }
+    parts.push("recipes".to_string());
+    parts.join("-")
 }

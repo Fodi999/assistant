@@ -899,6 +899,9 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     } else {
         Some(diet_resolved.label().to_string())
     };
+    let cooking_time_label = ctx.resolved_cooking_time().map(|t| t.label().to_string());
+    let budget_label = ctx.resolved_budget().map(|b| b.label().to_string());
+    let cuisine_label = ctx.resolved_cuisine().map(|c| c.label().to_string());
 
     Ok(SmartResponse {
         ingredient: ingredient_info,
@@ -918,12 +921,15 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         mode: mode_label.to_string(),
         meal_type: meal_type_label,
         diet: diet_label,
+        cooking_time: cooking_time_label,
+        budget: budget_label,
+        cuisine: cuisine_label,
         session_id,
         meta: SmartMeta {
             timing_ms,
             cached: false,
             cache_key: ctx.cache_key(),
-            engine_version: "3.3.0".to_string(),
+            engine_version: "3.4.0".to_string(),
         },
     })
 }
