@@ -17,11 +17,14 @@
 //!   then falls back to slug keyword matching as a safety net.
 //! - Safety fallback: if penalties reduce pool below MIN_POOL, return
 //!   the original candidates unchanged so recipe_builder always has material.
+//! - meal_type + diet add contextual intelligence (breakfast → eggs boost,
+//!   vegan → filter meat/dairy, etc.)
 //!
 //! Pure deterministic functions — no DB, no AI, no HTTP.
-//! One public function: `apply(main, candidates, extras) -> Vec<Candidate>`
+//! One public function: `apply(main, candidates, extras, state, meal_type, diet) -> Vec<Candidate>`
 
 use crate::domain::tools::suggestion_engine::Candidate;
+use super::context::{MealType, Diet};
 
 /// Minimum number of candidates we must keep after filtering.
 /// If result drops below this, return original pool unchanged.
@@ -30,26 +33,34 @@ const MIN_POOL: usize = 3;
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /// Apply culinary rules to a raw candidate pool:
-/// 1. Penalise bad pairings (not hard-block)
-/// 2. Penalise liquids that can't be dish sides
-/// 3. Boost contextually excellent pairings
-/// 4. Drop only candidates with score ≤ 0 after adjustments
-/// 5. Safety fallback: if too few remain, return original pool
+/// 1. Filter by diet (hard constraint — remove incompatible)
+/// 2. Penalise bad pairings (not hard-block)
+/// 3. Penalise liquids that can't be dish sides
+/// 4. Boost contextually excellent pairings
+/// 5. Boost by meal_type context (breakfast → eggs/oats, dinner → protein)
+/// 6. Drop only candidates with score ≤ 0 after adjustments
+/// 7. Safety fallback: if too few remain, return original pool
 ///
 /// `state` — cooking state of the main ingredient ("raw", "grilled", "baked", …).
-/// Affects whether salmon is treated as raw fish (raw/cured) or cooked fish.
+/// `meal_type` — meal occasion (breakfast, lunch, dinner, snack, dessert).
+/// `diet` — dietary restriction (vegan, vegetarian, gluten_free, etc.).
 pub fn apply(
     main: &str,
     candidates: &[Candidate],
     extras: &[String],
     state: Option<&str>,
+    meal_type: Option<MealType>,
+    diet: Diet,
 ) -> Vec<Candidate> {
     let adjusted: Vec<Candidate> = candidates
         .iter()
+        // ── Diet hard filter (before scoring) ────────────────────────────────
+        .filter(|c| passes_diet_filter(c, diet))
         .map(|c| {
             let mut c = c.clone();
             apply_penalties(main, &mut c, state);
             apply_boosts(main, &mut c, extras);
+            apply_meal_type_boost(&mut c, meal_type);
             c.pair_score = c.pair_score.min(10.0).max(0.0);
             c
         })
@@ -380,4 +391,176 @@ fn is_fat_slug(s: &str) -> bool {
     ["olive-oil", "sunflower-oil", "coconut-oil", "sesame-oil", "avocado-oil",
      "butter", "ghee", "lard", "oil"]
     .iter().any(|k| s.contains(k))
+}
+
+// ── Diet filter (hard constraint) ────────────────────────────────────────────
+//
+// Unlike penalties, diet is a HARD FILTER — incompatible candidates are removed.
+// This runs BEFORE scoring so diet-incompatible items never appear.
+
+fn passes_diet_filter(c: &Candidate, diet: Diet) -> bool {
+    if diet == Diet::None {
+        return true;
+    }
+
+    let s = c.slug.to_lowercase();
+    let cat = category_of_slug(&s, c.product_type.as_deref());
+
+    match diet {
+        Diet::None => true,
+
+        Diet::Vegan => {
+            // No animal products at all
+            !matches!(cat, Cat::Fish | Cat::RawFish | Cat::Dairy | Cat::RedMeat)
+                && !is_animal_product(&s)
+        }
+
+        Diet::Vegetarian => {
+            // No meat/fish, dairy is OK
+            !matches!(cat, Cat::Fish | Cat::RawFish | Cat::RedMeat)
+                && !is_meat_slug(&s)
+        }
+
+        Diet::Pescatarian => {
+            // No red meat / poultry, fish + dairy OK
+            cat != Cat::RedMeat && !is_poultry_slug(&s)
+        }
+
+        Diet::GlutenFree => {
+            // No wheat, barley, rye, regular pasta, bread
+            !is_gluten_slug(&s)
+        }
+
+        Diet::DairyFree => {
+            cat != Cat::Dairy && !is_dairy_slug(&s)
+        }
+
+        Diet::Paleo => {
+            // No grains, no legumes, no dairy, no processed
+            !matches!(cat, Cat::Grain | Cat::Legume | Cat::Dairy)
+                && !is_processed_slug(&s)
+        }
+
+        Diet::Mediterranean => {
+            // Everything OK — Mediterranean is not restrictive, just preferential
+            // (boosts handled in apply_meal_type_boost)
+            true
+        }
+    }
+}
+
+fn is_animal_product(s: &str) -> bool {
+    ["egg", "honey", "chicken", "turkey", "duck", "goose"]
+    .iter().any(|k| s.contains(k))
+}
+
+fn is_meat_slug(s: &str) -> bool {
+    ["beef", "pork", "lamb", "veal", "steak", "chicken", "turkey",
+     "duck", "goose", "venison", "bison", "bacon", "ham", "sausage"]
+    .iter().any(|k| s.contains(k))
+}
+
+fn is_poultry_slug(s: &str) -> bool {
+    ["chicken", "turkey", "duck", "goose"]
+    .iter().any(|k| s.contains(k))
+}
+
+fn is_gluten_slug(s: &str) -> bool {
+    ["wheat", "barley", "rye", "spelt", "bread", "pasta", "spaghetti",
+     "penne", "fettuccine", "noodle", "flour", "couscous", "bulgur",
+     "semolina", "cracker", "tortilla"]
+    .iter().any(|k| s.contains(k))
+}
+
+fn is_dairy_slug(s: &str) -> bool {
+    ["milk", "cheese", "yogurt", "cream", "butter", "ghee", "curd",
+     "ricotta", "mozzarella", "parmesan", "feta", "brie", "cheddar",
+     "cottage", "smetana", "sour-cream", "kefir"]
+    .iter().any(|k| s.contains(k))
+}
+
+fn is_processed_slug(s: &str) -> bool {
+    ["sugar", "candy", "soda", "syrup", "corn-syrup", "margarine",
+     "sausage", "hot-dog", "chips", "cracker"]
+    .iter().any(|k| s.contains(k))
+}
+
+// ── Meal-type contextual boosts ──────────────────────────────────────────────
+//
+// These shift scores based on what meal the user is cooking.
+// Breakfast → eggs, oats, yogurt, toast, fruit boost.
+// Dinner → protein, heavy sides boost.
+// Snack → nuts, fruit, hummus boost.
+// Dessert → sweet, chocolate, cream boost.
+
+fn apply_meal_type_boost(c: &mut Candidate, meal_type: Option<MealType>) {
+    let meal = match meal_type {
+        Some(m) => m,
+        None => return, // no meal context — skip
+    };
+
+    let s = c.slug.to_lowercase();
+    let cat = category_of_slug(&s, c.product_type.as_deref());
+
+    match meal {
+        MealType::Breakfast => {
+            // Breakfast staples get a boost
+            if s.contains("egg")     { c.pair_score += 2.0; }
+            if s.contains("oat")     { c.pair_score += 2.0; }
+            if s.contains("yogurt")  { c.pair_score += 1.5; }
+            if s.contains("honey")   { c.pair_score += 1.0; }
+            if s.contains("banana")  { c.pair_score += 1.5; }
+            if s.contains("berr")    { c.pair_score += 1.0; } // strawberry, blueberry
+            if s.contains("toast") || s.contains("bread") { c.pair_score += 1.5; }
+            if s.contains("avocado") { c.pair_score += 1.5; }
+            // Penalize heavy dinner-style items at breakfast
+            if cat == Cat::RedMeat   { c.pair_score -= 2.0; }
+        }
+
+        MealType::Lunch => {
+            // Lunch: balanced, salad-friendly, grain sides
+            if cat == Cat::Vegetable { c.pair_score += 1.0; }
+            if cat == Cat::Grain     { c.pair_score += 1.0; }
+            if cat == Cat::Legume    { c.pair_score += 1.0; }
+            if s.contains("hummus")  { c.pair_score += 1.0; }
+        }
+
+        MealType::Dinner => {
+            // Dinner: protein-forward, hearty
+            if cat == Cat::RedMeat   { c.pair_score += 1.5; }
+            if cat == Cat::Fish      { c.pair_score += 1.0; }
+            if s.contains("potato")  { c.pair_score += 1.0; }
+            if s.contains("mushroom"){ c.pair_score += 1.0; }
+            if s.contains("garlic")  { c.pair_score += 0.5; }
+            if s.contains("wine")    { c.pair_score += 1.0; }
+        }
+
+        MealType::Snack => {
+            // Snack: light, portable, no heavy cooking
+            if s.contains("nut") || s.contains("almond") || s.contains("walnut") { c.pair_score += 2.0; }
+            if s.contains("hummus")  { c.pair_score += 1.5; }
+            if cat == Cat::SweetFruit || cat == Cat::HighAcidFruit { c.pair_score += 1.5; }
+            if s.contains("yogurt")  { c.pair_score += 1.0; }
+            if s.contains("cracker") || s.contains("bread") { c.pair_score += 1.0; }
+            // Penalize heavy items for snacks
+            if cat == Cat::RedMeat   { c.pair_score -= 2.0; }
+            if cat == Cat::Grain     { c.pair_score -= 1.0; }
+        }
+
+        MealType::Dessert => {
+            // Dessert: sweet, creamy, chocolate, berries
+            if s.contains("chocolate") { c.pair_score += 2.5; }
+            if s.contains("cream")   { c.pair_score += 2.0; }
+            if s.contains("sugar")   { c.pair_score += 1.0; }
+            if s.contains("vanilla") { c.pair_score += 1.5; }
+            if s.contains("honey")   { c.pair_score += 1.5; }
+            if s.contains("berr")    { c.pair_score += 1.5; } // strawberry, etc.
+            if s.contains("banana")  { c.pair_score += 1.0; }
+            if cat == Cat::SweetFruit { c.pair_score += 1.0; }
+            // Penalize savory items in dessert
+            if cat == Cat::Fish || cat == Cat::RawFish { c.pair_score -= 3.0; }
+            if cat == Cat::RedMeat   { c.pair_score -= 3.0; }
+            if cat == Cat::Allium    { c.pair_score -= 2.0; }
+        }
+    }
 }

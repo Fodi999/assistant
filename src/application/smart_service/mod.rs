@@ -28,5 +28,6 @@ pub mod recipe_builder;
 pub mod culinary_rules;
 
 pub use context::CulinaryContext;
+pub use context::{MealType, Diet};
 pub use response::SmartResponse;
 pub use service::SmartService;

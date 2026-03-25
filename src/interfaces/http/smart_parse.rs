@@ -53,6 +53,12 @@ pub struct FromTextRequest {
     /// Optional goal: balanced, high_protein, low_calorie, keto, etc.
     #[serde(default)]
     pub goal: Option<String>,
+    /// Meal occasion: breakfast, lunch, dinner, snack, dessert.
+    #[serde(default)]
+    pub meal_type: Option<String>,
+    /// Dietary restriction: vegan, vegetarian, gluten_free, etc.
+    #[serde(default)]
+    pub diet: Option<String>,
     /// Language code: en, ru, uk, pl.
     #[serde(default = "default_lang")]
     pub lang: String,
@@ -111,6 +117,8 @@ pub async fn smart_from_text(
         state: req.state,
         additional_ingredients: additional,
         goal: req.goal,
+        meal_type: req.meal_type,
+        diet: req.diet,
         lang: req.lang,
         session_id: req.session_id,
     };

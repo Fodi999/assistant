@@ -61,6 +61,14 @@ pub struct SmartResponse {
     /// Engine mode: "build" (single ingredient → generate dish) or "analyze" (user's recipe → analyze)
     pub mode: String,
 
+    /// Meal occasion context (if provided): "breakfast", "lunch", "dinner", "snack", "dessert"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meal_type: Option<String>,
+
+    /// Dietary restriction applied (if any): "vegan", "vegetarian", "gluten-free", etc.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diet: Option<String>,
+
     /// Response metadata
     pub meta: SmartMeta,
 }

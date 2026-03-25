@@ -470,6 +470,8 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         &candidates,
         &ctx.additional_ingredients,
         ctx.state.as_deref(),
+        ctx.resolved_meal_type(),
+        ctx.resolved_diet(),
     );
 
     // Suggestions will be computed after potential state adjustment (step 11c)
@@ -889,6 +891,15 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     // ── 14. Compose response ─────────────────────────────────────────────────
     let timing_ms = start.elapsed().as_millis() as u64;
 
+    // Resolve meal_type and diet for response (only include if user provided them)
+    let meal_type_label = ctx.resolved_meal_type().map(|m| m.label().to_string());
+    let diet_resolved = ctx.resolved_diet();
+    let diet_label = if diet_resolved == super::context::Diet::None {
+        None
+    } else {
+        Some(diet_resolved.label().to_string())
+    };
+
     Ok(SmartResponse {
         ingredient: ingredient_info,
         state: state_info,
@@ -905,12 +916,14 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         explain,
         variants,
         mode: mode_label.to_string(),
+        meal_type: meal_type_label,
+        diet: diet_label,
         session_id,
         meta: SmartMeta {
             timing_ms,
             cached: false,
             cache_key: ctx.cache_key(),
-            engine_version: "3.2.0".to_string(),
+            engine_version: "3.3.0".to_string(),
         },
     })
 }
