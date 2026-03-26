@@ -851,3 +851,123 @@ pub async fn get_ingredients_states_map(
 
     Ok(Json(serde_json::json!(map)))
 }
+
+// ── Sitemap data (single query, all quality filters built in) ─────────────────
+
+/// Sitemap-ready ingredient entry with quality flags.
+/// Frontend builds sitemap.xml from this — no additional filtering needed.
+#[derive(Debug, Serialize)]
+pub struct SitemapIngredient {
+    pub slug: String,
+    pub updated_at: String,
+    /// true if density_g_per_ml is set → how-many pages are valid
+    pub has_conversions: bool,
+    /// true if calories_per_100g is set → nutrition pages are valid
+    pub has_nutrition: bool,
+    /// List of actual processing states in DB (only these get sitemap URLs)
+    pub states: Vec<String>,
+}
+
+/// GET /public/ingredients-sitemap-data
+///
+/// Returns ALL published ingredients with quality flags + actual states.
+/// **Single query** — frontend builds sitemap.xml directly from this.
+///
+/// Quality rules (built into response, frontend just trusts them):
+/// - `has_conversions: true` → emit how-many pages for this ingredient
+/// - `has_nutrition: true` → emit nutrition/calorie pages
+/// - `states: [...]` → emit ONLY these state pages (no guessing)
+///
+/// This eliminates:
+/// - 404s from how-many pages without conversion data
+/// - 404s from state pages that don't exist
+/// - Thin/empty pages that hurt Google rankings
+pub async fn get_ingredients_sitemap_data(
+    State(pool): State<PgPool>,
+) -> Result<Json<Vec<SitemapIngredient>>, (StatusCode, Json<serde_json::Value>)> {
+    // 1. Fetch all published ingredients with quality flags
+    #[derive(sqlx::FromRow)]
+    struct IngRow {
+        slug: String,
+        updated_at: sqlx::types::time::OffsetDateTime,
+        has_conversions: bool,
+        has_nutrition: bool,
+    }
+
+    let ingredients: Vec<IngRow> = sqlx::query_as(
+        r#"
+        SELECT
+            ci.slug,
+            ci.updated_at,
+            (ci.density_g_per_ml IS NOT NULL) AS has_conversions,
+            (ci.calories_per_100g IS NOT NULL) AS has_nutrition
+        FROM catalog_ingredients ci
+        WHERE ci.is_active = true
+          AND COALESCE(ci.is_published, false) = true
+          AND ci.slug IS NOT NULL AND ci.slug != ''
+        ORDER BY ci.slug
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error fetching sitemap data: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Database error" })))
+    })?;
+
+    // 2. Fetch all states in one query
+    #[derive(sqlx::FromRow)]
+    struct StateRow {
+        slug: String,
+        state: String,
+    }
+
+    let state_rows: Vec<StateRow> = sqlx::query_as(
+        r#"
+        SELECT ci.slug, s.state::text AS state
+        FROM ingredient_states s
+        JOIN catalog_ingredients ci ON ci.id = s.ingredient_id
+        WHERE ci.is_active = true
+          AND COALESCE(ci.is_published, false) = true
+          AND ci.slug IS NOT NULL AND ci.slug != ''
+        ORDER BY ci.slug, s.state
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error fetching states for sitemap: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Database error" })))
+    })?;
+
+    // 3. Group states by slug
+    let mut states_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in state_rows {
+        states_map.entry(row.slug).or_default().push(row.state);
+    }
+
+    // 4. Merge into response
+    let result: Vec<SitemapIngredient> = ingredients
+        .into_iter()
+        .map(|ing| {
+            let states = states_map.remove(&ing.slug).unwrap_or_default();
+            SitemapIngredient {
+                slug: ing.slug,
+                updated_at: ing.updated_at.to_string(),
+                has_conversions: ing.has_conversions,
+                has_nutrition: ing.has_nutrition,
+                states,
+            }
+        })
+        .collect();
+
+    tracing::info!(
+        "📊 Sitemap data: {} ingredients, {} with conversions, {} with states",
+        result.len(),
+        result.iter().filter(|i| i.has_conversions).count(),
+        result.iter().filter(|i| !i.states.is_empty()).count(),
+    );
+
+    Ok(Json(result))
+}
