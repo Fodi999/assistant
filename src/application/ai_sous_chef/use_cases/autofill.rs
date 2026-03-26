@@ -29,7 +29,28 @@ impl AdminCatalogService {
 
         let name_en = product.name_en.clone();
         let name_ru = product.name_ru.clone().unwrap_or_default();
-        let product_type = product.product_type.clone();
+        let mut product_type = product.product_type.clone();
+
+        // ── Auto-fix product_type='other' using dictionary inference ──
+        if product_type == "other" {
+            let en_low = name_en.to_lowercase();
+            let ru_low = name_ru.to_lowercase();
+            if let Some(inferred) = product_dictionary::infer_product_type(&en_low, &ru_low) {
+                tracing::info!(
+                    "🔧 Auto-fix product_type: '{}' → '{}' for product {}",
+                    product_type, inferred, id
+                );
+                product_type = inferred.to_string();
+                // Persist the fix in DB so publish won't fail
+                let _ = sqlx::query(
+                    "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
+                )
+                .bind(&product_type)
+                .bind(id)
+                .execute(&self.pool)
+                .await;
+            }
+        }
 
         // ── Resolve correct names from dictionary ──
         // If not in dictionary → use ai_translate_and_save_pending
@@ -111,7 +132,8 @@ impl AdminCatalogService {
             .await?;
 
         // ── Log raw AI response for debugging nutrition pipeline ──
-        tracing::info!("🤖 AI autofill raw response for product {} ({}): {}", id, name_en, &raw[..raw.len().min(500)]);
+        let preview_end = raw.char_indices().nth(500).map(|(i, _)| i).unwrap_or(raw.len());
+        tracing::info!("🤖 AI autofill raw response for product {} ({}): {}", id, name_en, &raw[..preview_end]);
 
         // ── Parse JSON ──
         let mut result = parse_json_response(&raw)?;

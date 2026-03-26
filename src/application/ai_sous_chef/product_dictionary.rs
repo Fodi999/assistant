@@ -339,13 +339,14 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         "cucumber", "cabbage", "broccoli", "spinach", "lettuce", "celery",
         "zucchini", "eggplant", "corn", "peas", "beet", "radish", "turnip",
         "asparagus", "artichoke", "cauliflower", "kale", "leek", "mushroom",
-        "pumpkin", "squash", "sweet potato",
+        "pumpkin", "squash", "sweet potato", "olive", "caper",
     ];
     let veg_kw_ru = [
         "морковь", "картофель", "помидор", "лук", "чеснок", "перец",
         "огурец", "капуста", "брокколи", "шпинат", "салат", "сельдерей",
         "кабачок", "баклажан", "кукуруза", "горох", "свёкла", "редис",
         "спаржа", "артишок", "цветная капуста", "грибы", "тыква",
+        "оливк", "маслин", "каперс",
     ];
     if veg_kw.iter().any(|k| name_en_lower.contains(k))
         || veg_kw_ru.iter().any(|k| name_ru_lower.contains(k))

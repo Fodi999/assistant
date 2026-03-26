@@ -584,7 +584,8 @@ fn parse_response(raw: &str) -> AppResult<SeoContentResponse> {
     };
 
     serde_json::from_str::<SeoContentResponse>(json_str).map_err(|e| {
-        tracing::error!("Failed to parse AI SEO content response: {} | raw: {}", e, &raw[..raw.len().min(200)]);
+        let end = raw.char_indices().nth(200).map(|(i, _)| i).unwrap_or(raw.len());
+        tracing::error!("Failed to parse AI SEO content response: {} | raw: {}", e, &raw[..end]);
         AppError::internal("AI returned invalid JSON for SEO content")
     })
 }
