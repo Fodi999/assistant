@@ -311,6 +311,13 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         return Some("dairy");
     }
 
+    // Egg
+    if name_en_lower.contains("egg") && !name_en_lower.contains("eggplant")
+        || name_ru_lower.contains("яйц")
+    {
+        return Some("egg");
+    }
+
     // Fruit
     let fruit_kw = [
         "apple", "banana", "orange", "grape", "lemon", "lime", "mango",
@@ -331,6 +338,21 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         || fruit_kw_ru.iter().any(|k| name_ru_lower.contains(k))
     {
         return Some("fruit");
+    }
+
+    // Oil (MUST be checked BEFORE vegetable — "olive oil" contains "olive")
+    let oil_kw = ["olive oil", "sunflower oil", "coconut oil", "sesame oil",
+                   "canola oil", "vegetable oil", "avocado oil", "flaxseed oil",
+                   "rapeseed oil", "peanut oil", "corn oil", "grapeseed oil",
+                   "truffle oil", "walnut oil"];
+    let oil_kw_ru = ["оливковое масло", "подсолнечное масло", "кокосовое масло",
+                      "кунжутное масло", "рапсовое масло", "льняное масло",
+                      "растительное масло", "арахисовое масло", "кукурузное масло",
+                      "трюфельное масло"];
+    if oil_kw.iter().any(|k| name_en_lower.contains(k))
+        || oil_kw_ru.iter().any(|k| name_ru_lower.contains(k))
+    {
+        return Some("oil");
     }
 
     // Vegetable
@@ -420,15 +442,15 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         return Some("spice");
     }
 
-    // Oil
-    let oil_kw = ["olive oil", "sunflower oil", "coconut oil", "sesame oil",
-                   "canola oil", "vegetable oil", "avocado oil", "flaxseed oil"];
-    let oil_kw_ru = ["оливковое масло", "подсолнечное масло", "кокосовое масло",
-                      "кунжутное масло", "рапсовое масло", "льняное масло"];
-    if oil_kw.iter().any(|k| name_en_lower.contains(k))
-        || oil_kw_ru.iter().any(|k| name_ru_lower.contains(k))
+    // Sweetener / Condiment
+    let condiment_kw = ["honey", "sugar", "maple syrup", "soy sauce", "vinegar",
+                         "mustard", "ketchup", "mayonnaise", "hot sauce", "worcestershire"];
+    let condiment_kw_ru = ["мёд", "сахар", "кленовый сироп", "соевый соус", "уксус",
+                            "горчица", "кетчуп", "майонез"];
+    if condiment_kw.iter().any(|k| name_en_lower.contains(k))
+        || condiment_kw_ru.iter().any(|k| name_ru_lower.contains(k))
     {
-        return Some("oil");
+        return Some("condiment");
     }
 
     None // truly unknown

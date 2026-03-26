@@ -1257,10 +1257,31 @@ impl AdminCatalogService {
     pub async fn publish_product(&self, id: Uuid) -> AppResult<ProductResponse> {
         // 1. Fetch product to validate readiness
         let product = self.get_product_by_id(id).await?;
+        let mut product_type = product.product_type.clone();
+
+        // 1b. Auto-fix product_type='other' using dictionary inference
+        if product_type == "other" {
+            let en_low = product.name_en.to_lowercase();
+            let ru_low = product.name_ru.as_deref().unwrap_or("").to_lowercase();
+            if let Some(inferred) = crate::application::ai_sous_chef::product_dictionary::infer_product_type(&en_low, &ru_low) {
+                tracing::info!(
+                    "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}'",
+                    inferred, product.name_en
+                );
+                product_type = inferred.to_string();
+                let _ = sqlx::query(
+                    "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
+                )
+                .bind(&product_type)
+                .bind(id)
+                .execute(&self.pool)
+                .await;
+            }
+        }
 
         // 2. Validate minimum requirements for publication
         let mut errors = Vec::new();
-        if product.product_type == "other" {
+        if product_type == "other" {
             errors.push("product_type is 'other' — must be a specific type");
         }
         if product.calories_per_100g.is_none() {
