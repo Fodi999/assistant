@@ -332,6 +332,31 @@ pub struct ImageUploadResponse {
     pub public_url: String,
 }
 
+/// Lightweight sitemap entry (slug + locale + published_at) for Next.js sitemap.xml
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct SitemapEntry {
+    pub slug: String,
+    pub locale: String,
+    pub published_at: Option<String>,
+    pub intent_type: String,
+}
+
+/// SEO quality audit result for a single page
+#[derive(Debug, Serialize)]
+pub struct SeoAuditResult {
+    pub id: Uuid,
+    pub slug: String,
+    pub locale: String,
+    pub score: u8,          // 0-5
+    pub issues: Vec<String>,
+    pub title_len: usize,
+    pub desc_len: usize,
+    pub answer_len: usize,
+    pub faq_count: usize,
+    pub blocks_count: usize,
+    pub has_images: bool,
+}
+
 // ── Service ──────────────────────────────────────────────────────────────────
 
 pub struct IntentPagesService {
@@ -868,6 +893,19 @@ impl IntentPagesService {
     // ── Publish ──────────────────────────────────────────────────────────────
 
     pub async fn publish(&self, id: Uuid) -> AppResult<IntentPage> {
+        // 1. Load page first to validate quality
+        let current = self.get_by_id(id).await?;
+        let audit = audit_page(&current);
+
+        // Quality gate: score must be ≥3/5 to publish
+        if audit.score < 3 {
+            return Err(AppError::validation(&format!(
+                "Cannot publish: SEO quality score {}/5 (min 3). Issues: {}",
+                audit.score,
+                audit.issues.join(", ")
+            )));
+        }
+
         let page = sqlx::query_as::<_, IntentPage>(
             r#"UPDATE intent_pages
                SET status = 'published', published_at = NOW()
@@ -1101,6 +1139,91 @@ impl IntentPagesService {
         .await?;
 
         Ok(pages)
+    }
+
+    // ── Sitemap (lightweight, for Next.js sitemap.xml) ───────────────────────
+
+    /// Returns only slug + locale + published_at for ALL published intent pages.
+    /// Designed for sitemap.xml generation — no heavy content fields.
+    pub async fn sitemap(&self) -> AppResult<Vec<SitemapEntry>> {
+        let entries = sqlx::query_as::<_, SitemapEntry>(
+            r#"SELECT slug, locale, published_at::text, intent_type
+               FROM intent_pages
+               WHERE status = 'published'
+               ORDER BY published_at DESC"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(entries)
+    }
+
+    // ── SEO Audit ────────────────────────────────────────────────────────────
+
+    /// Audit ALL published pages for SEO quality issues.
+    /// Returns a list of pages with their score (0-5) and specific issues.
+    pub async fn seo_audit(&self) -> AppResult<Vec<SeoAuditResult>> {
+        let pages = sqlx::query_as::<_, IntentPage>(
+            r#"SELECT id, intent_type, entity_a, entity_b, locale,
+                      title, description, answer, faq, slug, status, priority, content_blocks,
+                      published_at::text, queued_at::text, created_at::text, updated_at::text,
+                      goal, meal_type, diet, cooking_time, budget, cuisine
+               FROM intent_pages
+               WHERE status = 'published'
+               ORDER BY published_at DESC"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let results: Vec<SeoAuditResult> = pages.iter().map(audit_page).collect();
+        Ok(results)
+    }
+
+    /// Unpublish all published pages that fail the quality gate (score < 3).
+    /// Returns the number of pages unpublished.
+    pub async fn cleanup_low_quality(&self) -> AppResult<serde_json::Value> {
+        let audit = self.seo_audit().await?;
+        let bad_pages: Vec<&SeoAuditResult> = audit.iter().filter(|a| a.score < 3).collect();
+        let bad_count = bad_pages.len();
+
+        if bad_count == 0 {
+            return Ok(serde_json::json!({
+                "unpublished": 0,
+                "message": "All published pages pass quality gate (≥3/5)"
+            }));
+        }
+
+        let bad_ids: Vec<Uuid> = bad_pages.iter().map(|a| a.id).collect();
+
+        let affected = sqlx::query(
+            "UPDATE intent_pages SET status = 'draft', published_at = NULL WHERE id = ANY($1)"
+        )
+        .bind(&bad_ids)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+
+        tracing::info!(
+            "🧹 SEO cleanup: unpublished {} low-quality pages (score < 3/5)",
+            affected
+        );
+
+        // Trigger sitemap revalidation
+        tokio::spawn(revalidate_blog(None));
+
+        let issues_summary: Vec<serde_json::Value> = bad_pages.iter().map(|a| {
+            serde_json::json!({
+                "slug": a.slug,
+                "locale": a.locale,
+                "score": a.score,
+                "issues": a.issues,
+            })
+        }).collect();
+
+        Ok(serde_json::json!({
+            "unpublished": affected,
+            "pages": issues_summary
+        }))
     }
 
     // ── Image upload for content_blocks ──────────────────────────────────────
@@ -1543,6 +1666,7 @@ impl IntentPagesService {
         }
 
         let mut published_count = 0i32;
+        let mut skipped_quality = 0i32;
         let mut errors = 0i32;
 
         for id in &queued_ids {
@@ -1552,8 +1676,18 @@ impl IntentPagesService {
                     tracing::info!("🚀 Scheduler published: '{}' ({})", page.title, page.locale);
                 }
                 Err(e) => {
-                    errors += 1;
-                    tracing::error!("❌ Scheduler publish failed for {}: {}", id, e);
+                    let err_msg = format!("{}", e);
+                    if err_msg.contains("SEO quality score") {
+                        // Quality gate failed → move back to draft (don't clog queue)
+                        let _ = sqlx::query(
+                            "UPDATE intent_pages SET status = 'draft', queued_at = NULL WHERE id = $1"
+                        ).bind(id).execute(&self.pool).await;
+                        skipped_quality += 1;
+                        tracing::warn!("⏭️ Scheduler skipped (low quality): {} — {}", id, err_msg);
+                    } else {
+                        errors += 1;
+                        tracing::error!("❌ Scheduler publish failed for {}: {}", id, e);
+                    }
                 }
             }
             // Small delay to avoid hammering revalidation
@@ -1561,12 +1695,13 @@ impl IntentPagesService {
         }
 
         tracing::info!(
-            "🕐 Scheduler done: {} published, {} errors (today total: {}/{})",
-            published_count, errors, published_today + published_count as i64, limit
+            "🕐 Scheduler done: {} published, {} skipped (low quality), {} errors (today total: {}/{})",
+            published_count, skipped_quality, errors, published_today + published_count as i64, limit
         );
 
         Ok(serde_json::json!({
             "published": published_count,
+            "skipped_quality": skipped_quality,
             "errors": errors,
             "published_today": published_today + published_count as i64,
             "limit": limit,
@@ -1853,4 +1988,91 @@ fn recipe_intent_slug(
     }
     parts.push("recipes".to_string());
     parts.join("-")
+}
+
+// ── SEO Quality Audit ────────────────────────────────────────────────────────
+
+/// Audit a single IntentPage for SEO quality.
+///
+/// Scoring (0-5):
+///   +1  title ≤ 60 chars
+///   +1  description 80–155 chars
+///   +1  answer ≥ 200 chars
+///   +1  FAQ ≥ 3 entries
+///   +1  content_blocks ≥ 10 blocks with ≥1 image
+fn audit_page(page: &IntentPage) -> SeoAuditResult {
+    let mut score: u8 = 0;
+    let mut issues = Vec::new();
+
+    let title_len = page.title.chars().count();
+    let desc_len = page.description.chars().count();
+    let answer_len = page.answer.chars().count();
+
+    let faq_count = page.faq.as_array().map(|a| a.len()).unwrap_or(0);
+
+    let blocks: Vec<serde_json::Value> = serde_json::from_value(page.content_blocks.clone())
+        .unwrap_or_default();
+    let blocks_count = blocks.len();
+    let has_images = blocks.iter().any(|b| {
+        b.get("type").and_then(|v| v.as_str()) == Some("image")
+            && b.get("src").and_then(|v| v.as_str()).map_or(false, |s| !s.is_empty())
+    });
+
+    // ── Title: ≤60 chars ──
+    if title_len > 0 && title_len <= 60 {
+        score += 1;
+    } else if title_len == 0 {
+        issues.push("title is empty".into());
+    } else {
+        issues.push(format!("title too long: {} chars (max 60)", title_len));
+    }
+
+    // ── Description: 80–155 chars ──
+    if desc_len >= 80 && desc_len <= 155 {
+        score += 1;
+    } else if desc_len < 80 {
+        issues.push(format!("description too short: {} chars (min 80)", desc_len));
+    } else {
+        issues.push(format!("description too long: {} chars (max 155)", desc_len));
+    }
+
+    // ── Answer: ≥200 chars ──
+    if answer_len >= 200 {
+        score += 1;
+    } else {
+        issues.push(format!("answer too short: {} chars (min 200)", answer_len));
+    }
+
+    // ── FAQ: ≥3 questions ──
+    if faq_count >= 3 {
+        score += 1;
+    } else {
+        issues.push(format!("only {} FAQ items (min 3)", faq_count));
+    }
+
+    // ── Content blocks: ≥10 with images ──
+    if blocks_count >= 10 && has_images {
+        score += 1;
+    } else {
+        if blocks_count < 10 {
+            issues.push(format!("only {} content blocks (min 10)", blocks_count));
+        }
+        if !has_images {
+            issues.push("no uploaded images in content blocks".into());
+        }
+    }
+
+    SeoAuditResult {
+        id: page.id,
+        slug: page.slug.clone(),
+        locale: page.locale.clone(),
+        score,
+        issues,
+        title_len,
+        desc_len,
+        answer_len,
+        faq_count,
+        blocks_count,
+        has_images,
+    }
 }

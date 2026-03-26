@@ -32,6 +32,7 @@ use uuid::Uuid;
 use crate::application::intent_pages::{
     BatchGenerateRequest, BatchResult, BulkActionRequest, EnqueueBulkRequest,
     GenerateRequest, ImageUploadResponse, IntentPage, IntentPagesService, ListQuery,
+    SeoAuditResult, SitemapEntry,
     UpdateIntentPageRequest, UpdateSettingsRequest,
 };
 use crate::domain::AdminClaims;
@@ -298,4 +299,38 @@ pub async fn save_image_url(
 ) -> Result<Json<IntentPage>, AppError> {
     let page = service.save_image_url(id, &key, req.image_url).await?;
     Ok(Json(page))
+}
+
+// ── SEO Quality Control ──────────────────────────────────────────────────────
+
+/// GET /api/admin/intent-pages/seo-audit
+/// Returns SEO quality audit for ALL published pages.
+pub async fn seo_audit(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+) -> Result<Json<Vec<SeoAuditResult>>, AppError> {
+    let results = service.seo_audit().await?;
+    Ok(Json(results))
+}
+
+/// POST /api/admin/intent-pages/cleanup-quality
+/// Unpublish all pages with SEO score < 3/5. Returns cleanup report.
+pub async fn cleanup_low_quality(
+    _claims: AdminClaims,
+    State(service): State<IntentPagesState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = service.cleanup_low_quality().await?;
+    Ok(Json(result))
+}
+
+// ── Sitemap (lightweight, for Next.js) ───────────────────────────────────────
+
+/// GET /public/intent-pages/sitemap
+/// Returns slug + locale + published_at for ALL published intent pages.
+/// No auth required — used by Next.js sitemap.xml generator.
+pub async fn intent_pages_sitemap(
+    State(service): State<IntentPagesState>,
+) -> Result<Json<Vec<SitemapEntry>>, AppError> {
+    let entries = service.sitemap().await?;
+    Ok(Json(entries))
 }
