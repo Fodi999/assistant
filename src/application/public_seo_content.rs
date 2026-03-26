@@ -46,6 +46,9 @@ pub struct SeoContentResponse {
     /// Structured article: heading / text / image blocks
     #[serde(default)]
     pub content_blocks: Vec<ContentBlock>,
+    /// Short OG/social description (≤100 chars) for social media previews
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub og_description: Option<String>,
 }
 
 /// A single content block inside a structured SEO article.
@@ -177,6 +180,9 @@ impl PublicSeoContentService {
         // ── 5. Parse JSON ──
         let response = parse_response(&raw)?;
 
+        // ── 5b. Enforce SEO limits (title ≤60, desc 120-155, etc.) ──
+        let response = enforce_seo_limits(response);
+
         // ── 6. Cache ──
         if let Ok(val) = serde_json::to_value(&response) {
             if let Err(e) = self.ai_cache.set(
@@ -247,6 +253,9 @@ impl PublicSeoContentService {
 
         // ── 5. Parse ──
         let response = parse_response(&raw)?;
+
+        // ── 5b. Enforce SEO limits ──
+        let response = enforce_seo_limits(response);
 
         // ── 6. Cache ──
         if let Ok(val) = serde_json::to_value(&response) {
@@ -366,11 +375,15 @@ STRICT SEO RULES:
   - UK: чи корисний артишок → "chi-korisnij-artishok"
 - NEVER use generic slugs like "question-artichoke" or "goal-salmon"
 
-1. TITLE (50-60 characters):
+1. TITLE (HARD LIMIT: 50-60 characters, NEVER exceed 60):
+- Count characters carefully. Google truncates at 60.
 - Include main keyword + benefit/hook
-- Example (ru): "Полезен ли артишок? Польза, калории и витамины"
+- Example (ru): "Артишок: польза, калории и витамины"
+- Example (en): "Olives: Nutrition, Benefits & Calories"
+- If over 60 chars → shorten. This is non-negotiable.
 
-2. DESCRIPTION (120-155 characters):
+2. DESCRIPTION (HARD LIMIT: 120-155 characters, NEVER exceed 155):
+- Count characters carefully. Google truncates at 155.
 - Start with ingredient + key data
 - Include CTA: "Узнайте" / "Learn" / "Dowiedz się"
 
@@ -519,11 +532,14 @@ STRICT SEO RULES:
 - Write the slug in the SAME language as the content
 - The system will auto-transliterate to Latin if needed
 
-1. TITLE (50-60 characters):
+1. TITLE (HARD LIMIT: 50-60 characters, NEVER exceed 60):
+- Count characters carefully. Google truncates at 60.
 - Must closely match the search query
 - Add a benefit/hook after the main keyword
+- If over 60 chars → shorten. This is non-negotiable.
 
-2. DESCRIPTION (120-155 characters):
+2. DESCRIPTION (HARD LIMIT: 120-155 characters, NEVER exceed 155):
+- Count characters carefully. Google truncates at 155.
 - Start with ingredient + key data
 - Include CTA: "Узнайте" / "Learn" / "Dowiedz się"
 
@@ -588,4 +604,98 @@ fn parse_response(raw: &str) -> AppResult<SeoContentResponse> {
         tracing::error!("Failed to parse AI SEO content response: {} | raw: {}", e, &raw[..end]);
         AppError::internal("AI returned invalid JSON for SEO content")
     })
+}
+
+// ── SEO post-processing ─────────────────────────────────────────────────────
+
+/// Maximum character limits per Google SEO best practices (2024-2026)
+const MAX_TITLE_CHARS: usize = 60;
+const MAX_DESCRIPTION_CHARS: usize = 155;
+const MAX_ANSWER_CHARS: usize = 800;
+const MAX_OG_DESCRIPTION_CHARS: usize = 100;
+
+/// Enforce SEO character limits on AI output.
+///
+/// Google truncates titles >60 chars and descriptions >155 chars.
+/// This function guarantees compliance even when AI ignores the prompt rules.
+fn enforce_seo_limits(mut resp: SeoContentResponse) -> SeoContentResponse {
+    // ── Title: hard cap at 60 chars ──
+    if resp.title.chars().count() > MAX_TITLE_CHARS {
+        resp.title = smart_truncate(&resp.title, MAX_TITLE_CHARS);
+        tracing::info!("✂️ SEO title truncated to {} chars", resp.title.chars().count());
+    }
+
+    // ── Description: 120-155 chars ──
+    let desc_len = resp.description.chars().count();
+    if desc_len > MAX_DESCRIPTION_CHARS {
+        resp.description = smart_truncate(&resp.description, MAX_DESCRIPTION_CHARS);
+        tracing::info!("✂️ SEO description truncated to {} chars", resp.description.chars().count());
+    }
+
+    // ── Answer: cap at 800 chars ──
+    if resp.answer.chars().count() > MAX_ANSWER_CHARS {
+        resp.answer = smart_truncate(&resp.answer, MAX_ANSWER_CHARS);
+    }
+
+    // ── OG description: derive from description if AI didn't provide one ──
+    if resp.og_description.is_none() || resp.og_description.as_deref().map_or(true, |s| s.trim().is_empty()) {
+        // Take first sentence of description, cap at 100 chars
+        let first_sentence = resp.description
+            .split_once(". ")
+            .map(|(s, _)| format!("{}.", s))
+            .unwrap_or_else(|| resp.description.clone());
+        resp.og_description = Some(smart_truncate(&first_sentence, MAX_OG_DESCRIPTION_CHARS));
+    }
+
+    // ── H1 from content_blocks: ensure exists and ≤60 chars ──
+    if let Some(blocks) = resp.content_blocks.first_mut() {
+        if let ContentBlock::Heading { level: 1, ref mut text } = blocks {
+            if text.chars().count() > MAX_TITLE_CHARS {
+                *text = smart_truncate(text, MAX_TITLE_CHARS);
+            }
+        }
+    }
+
+    // ── FAQ answers: cap each at 300 chars ──
+    for faq in &mut resp.faq {
+        if faq.a.chars().count() > 300 {
+            faq.a = smart_truncate(&faq.a, 300);
+        }
+    }
+
+    resp
+}
+
+/// Truncate a string to max_chars on a word boundary, adding "…" if truncated.
+/// Respects UTF-8 multi-byte characters.
+fn smart_truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+
+    // Reserve 1 char for "…"
+    let target = max_chars.saturating_sub(1);
+    let mut result = String::new();
+    let mut char_count = 0;
+    let mut last_space = 0;
+
+    for ch in s.chars() {
+        if char_count >= target {
+            break;
+        }
+        if ch == ' ' {
+            last_space = result.len();
+        }
+        result.push(ch);
+        char_count += 1;
+    }
+
+    // Cut at last word boundary if possible (avoid cutting mid-word)
+    if last_space > 0 && last_space > result.len() / 2 {
+        result.truncate(last_space);
+    }
+
+    // Remove trailing punctuation before ellipsis
+    let trimmed = result.trim_end_matches(|c: char| c == ',' || c == ';' || c == ':' || c == '-' || c == ' ');
+    format!("{}…", trimmed)
 }
