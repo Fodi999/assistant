@@ -72,6 +72,17 @@ pub struct LabComboSitemapEntry {
     pub meal_type: Option<String>,
 }
 
+/// Lightweight version for related combos (internal linking)
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct RelatedCombo {
+    pub slug: String,
+    pub title: String,
+    pub ingredients: Vec<String>,
+    pub goal: Option<String>,
+    pub meal_type: Option<String>,
+    pub image_url: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct GenerateComboRequest {
     /// Ingredient slugs (e.g. ["salmon", "rice", "avocado"])
@@ -98,6 +109,12 @@ pub struct ListCombosQuery {
 #[derive(Debug, Deserialize)]
 pub struct PublicComboSlugQuery {
     pub locale: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RelatedCombosQuery {
+    pub locale: Option<String>,
+    pub limit: Option<i64>,
 }
 
 /// Partial update for admin editing.
@@ -1200,6 +1217,44 @@ impl LabComboService {
         .await?;
 
         Ok(page)
+    }
+
+    // ── Public: related combos (for internal linking) ────────────────────
+
+    /// Find published combos that share at least 1 ingredient with the given slug.
+    /// Returns up to 6 lightweight entries for the "Related Combos" section.
+    pub async fn get_related_combos(
+        &self,
+        slug: &str,
+        locale: &str,
+        limit: i64,
+    ) -> AppResult<Vec<RelatedCombo>> {
+        let rows = sqlx::query_as::<_, RelatedCombo>(
+            r#"
+            WITH current AS (
+                SELECT id, ingredients FROM lab_combo_pages
+                WHERE slug = $1 AND locale = $2 AND status = 'published'
+                LIMIT 1
+            )
+            SELECT p.slug, p.title, p.ingredients, p.goal, p.meal_type, p.image_url
+            FROM lab_combo_pages p, current c
+            WHERE p.status = 'published'
+              AND p.locale = $2
+              AND p.id != c.id
+              AND p.ingredients && c.ingredients
+            ORDER BY array_length(
+                ARRAY(SELECT unnest(p.ingredients) INTERSECT SELECT unnest(c.ingredients)), 1
+            ) DESC, p.quality_score DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(slug)
+        .bind(locale)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows)
     }
 
     // ── Public: sitemap data ─────────────────────────────────────────────

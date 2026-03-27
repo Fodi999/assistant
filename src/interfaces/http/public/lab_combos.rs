@@ -1,6 +1,6 @@
 //! Public HTTP handlers for Lab Combo SEO pages.
 
-use crate::application::lab_combos::{LabComboPage, LabComboService, LabComboSitemapEntry, PublicComboSlugQuery};
+use crate::application::lab_combos::{LabComboPage, LabComboService, LabComboSitemapEntry, PublicComboSlugQuery, RelatedCombo, RelatedCombosQuery};
 use crate::shared::AppError;
 use axum::{
     extract::{Path, Query, State},
@@ -32,4 +32,18 @@ pub async fn get_lab_combo(
         .await?
         .ok_or_else(|| AppError::not_found("combo page not found"))?;
     Ok(Json(page))
+}
+
+/// GET /public/lab-combos/:slug/related?locale=en&limit=6
+///
+/// Related combos sharing at least 1 ingredient. For internal linking section.
+pub async fn get_related_combos(
+    State(svc): State<Arc<LabComboService>>,
+    Path(slug): Path<String>,
+    Query(query): Query<RelatedCombosQuery>,
+) -> Result<Json<Vec<RelatedCombo>>, AppError> {
+    let locale = query.locale.as_deref().unwrap_or("en");
+    let limit = query.limit.unwrap_or(6).min(12);
+    let combos = svc.get_related_combos(&slug, locale, limit).await?;
+    Ok(Json(combos))
 }
