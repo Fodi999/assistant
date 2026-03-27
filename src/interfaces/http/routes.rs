@@ -594,7 +594,7 @@ pub fn create_router(
 
     // ── 🆕 LabComboService (uses SmartService) ──────────────────────────────
     let lab_combo_service = Arc::new(
-        LabComboService::new(pool_for_public.clone(), smart_service.clone())
+        LabComboService::new(pool_for_public.clone(), smart_service.clone(), r2_client.clone())
     );
 
     let smart_router = Router::new()
@@ -705,6 +705,8 @@ pub fn create_router(
         .route("/:id", delete(admin_lab_combos::delete_combo))
         .route("/:id/publish", post(admin_lab_combos::publish_combo))
         .route("/:id/archive", post(admin_lab_combos::archive_combo))
+        .route("/:id/image-upload-url", get(admin_lab_combos::get_image_upload_url))
+        .route("/:id/image-url", axum::routing::put(admin_lab_combos::save_image_url))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,

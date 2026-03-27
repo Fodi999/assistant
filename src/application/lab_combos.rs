@@ -21,6 +21,7 @@
 //!   DELETE /api/admin/lab-combos/:id                → delete
 
 use crate::application::smart_service::{CulinaryContext, SmartService};
+use crate::infrastructure::R2Client;
 use crate::shared::{AppError, AppResult};
 use deunicode::deunicode;
 use serde::{Deserialize, Serialize};
@@ -874,11 +875,12 @@ fn quality_score(page: &LabComboPage) -> i16 {
 pub struct LabComboService {
     pool: PgPool,
     smart_service: Arc<SmartService>,
+    r2_client: R2Client,
 }
 
 impl LabComboService {
-    pub fn new(pool: PgPool, smart_service: Arc<SmartService>) -> Self {
-        Self { pool, smart_service }
+    pub fn new(pool: PgPool, smart_service: Arc<SmartService>, r2_client: R2Client) -> Self {
+        Self { pool, smart_service, r2_client }
     }
 
     // ── Generate (Admin) ─────────────────────────────────────────────────
@@ -1261,6 +1263,63 @@ impl LabComboService {
         }
 
         Ok(generated)
+    }
+
+    // ── Image upload (presigned URL flow) ────────────────────────────────
+
+    /// GET /api/admin/lab-combos/:id/image-upload-url?content_type=image/webp
+    /// Returns a presigned R2 upload URL + the resulting public URL.
+    pub async fn get_image_upload_url(
+        &self,
+        id: Uuid,
+        content_type: &str,
+    ) -> AppResult<crate::application::user::AvatarUploadResponse> {
+        // Verify combo exists
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM lab_combo_pages WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
+        if !exists {
+            return Err(AppError::not_found("Lab combo not found"));
+        }
+
+        let ext = if content_type.contains("jpeg") || content_type.contains("jpg") {
+            "jpg"
+        } else if content_type.contains("png") {
+            "png"
+        } else {
+            "webp"
+        };
+
+        let key = format!("assets/lab-combos/{}.{}", id, ext);
+        let upload_url = self.r2_client.generate_presigned_upload_url(&key, content_type).await?;
+        let public_url = self.r2_client.get_public_url(&key);
+
+        Ok(crate::application::user::AvatarUploadResponse { upload_url, public_url })
+    }
+
+    /// PUT /api/admin/lab-combos/:id/image-url
+    /// Saves the public URL after the frontend has uploaded the file to R2.
+    pub async fn save_image_url(&self, id: Uuid, image_url: String) -> AppResult<LabComboPage> {
+        let page = sqlx::query_as::<_, LabComboPage>(
+            r#"
+            UPDATE lab_combo_pages SET image_url = $1, updated_at = NOW()
+            WHERE id = $2
+            RETURNING id, slug, locale, ingredients,
+                goal, meal_type, diet, cooking_time, budget, cuisine,
+                title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips, image_url,
+                smart_response, faq, status, quality_score,
+                published_at::text, created_at::text, updated_at::text
+            "#,
+        )
+        .bind(&image_url)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Lab combo not found"))?;
+
+        Ok(page)
     }
 }
 

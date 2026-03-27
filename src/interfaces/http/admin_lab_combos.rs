@@ -100,3 +100,38 @@ pub async fn generate_popular(
         details: results,
     }))
 }
+
+// ── Image upload (presigned URL flow) ────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ImageUploadUrlQuery {
+    pub content_type: Option<String>,
+}
+
+/// GET /api/admin/lab-combos/:id/image-upload-url?content_type=image/webp
+pub async fn get_image_upload_url(
+    _claims: AdminClaims,
+    State(svc): State<Arc<LabComboService>>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<ImageUploadUrlQuery>,
+) -> Result<Json<crate::application::user::AvatarUploadResponse>, AppError> {
+    let content_type = q.content_type.unwrap_or_else(|| "image/webp".to_string());
+    let resp = svc.get_image_upload_url(id, &content_type).await?;
+    Ok(Json(resp))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaveImageUrlRequest {
+    pub image_url: String,
+}
+
+/// PUT /api/admin/lab-combos/:id/image-url
+pub async fn save_image_url(
+    _claims: AdminClaims,
+    State(svc): State<Arc<LabComboService>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SaveImageUrlRequest>,
+) -> Result<Json<LabComboPage>, AppError> {
+    let page = svc.save_image_url(id, req.image_url).await?;
+    Ok(Json(page))
+}
