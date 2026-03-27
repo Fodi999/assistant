@@ -98,6 +98,11 @@ pub struct GenerateComboRequest {
     pub cooking_time: Option<String>,
     pub budget: Option<String>,
     pub cuisine: Option<String>,
+    /// AI model override: "flash" (fast, default) or "pro" (smart, better quality).
+    /// "pro" = gemini-3.1-pro-preview — recommended for final SEO pages.
+    /// "flash" = gemini-3-flash-preview — good for drafts/testing.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -193,8 +198,8 @@ pub fn combo_slug(
 // ── SEO Metadata Generation ──────────────────────────────────────────────────
 
 /// Auto-generate SEO title from ingredients + context (≤ 60 chars).
-/// Recipe-oriented, always includes a number hint.
-/// Format: "Salmon Rice Bowl (28g Protein, 15 Min)"
+/// Recipe-oriented, always includes REAL protein + time.
+/// Format: "Salmon Rice Bowl (34g Protein, 15 Min)"
 fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<&str>, _locale: &str) -> String {
     let names = capitalize_words(&ingredients.join(" "));
     let meal = meal_type
@@ -208,13 +213,17 @@ fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<
         format!("{} {} Bowl", names, meal)
     };
 
-    // Add number hook in parentheses — AI enrichment will overwrite with real data,
-    // but template needs a good baseline for pages that fail AI enrichment.
-    let hook = match goal {
-        Some(g) if g.contains("protein") => "(High Protein, 15 Min)",
-        Some(g) if g.contains("loss") || g.contains("low_cal") => "(Low Cal, 20 Min)",
-        Some(g) if g.contains("keto") => "(Keto, 15 Min)",
-        _ => "(15 Min)",
+    // Calculate REAL protein from ingredients — never use generic "High Protein"
+    let est_protein = estimate_protein_from_ingredients(ingredients).round() as i64;
+
+    let hook = if est_protein > 5 {
+        match goal {
+            Some(g) if g.contains("loss") || g.contains("low_cal") => format!("({}g Protein, Low Cal)", est_protein),
+            Some(g) if g.contains("keto") => format!("({}g Protein, Keto)", est_protein),
+            _ => format!("({}g Protein, 15 Min)", est_protein),
+        }
+    } else {
+        "(15 Min)".to_string()
     };
 
     smart_truncate(&format!("{} {}", dish, hook), 60)
@@ -223,22 +232,32 @@ fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<
 /// Auto-generate SEO description (80–155 chars). Recipe-oriented.
 fn generate_description(ingredients: &[String], goal: Option<&str>, locale: &str) -> String {
     let names = ingredients.join(", ");
+    let est_protein = estimate_protein_from_ingredients(ingredients).round() as i64;
     let goal_text = goal
         .map(|g| format!(" for {}", g.replace('_', " ")))
         .unwrap_or_default();
 
+    let protein_hint = if est_protein > 5 {
+        format!(" {}g protein per serving.", est_protein)
+    } else {
+        String::new()
+    };
+
     let desc = match locale {
         "ru" => format!(
-            "Быстрый рецепт из {names}{goal_text}. Пошаговая инструкция, КБЖУ на порцию и советы шефа."
+            "Рецепт из {names}{goal_text} за 15 мин.{} Пошаговая инструкция и КБЖУ.",
+            if est_protein > 5 { format!(" {}г белка на порцию.", est_protein) } else { String::new() }
         ),
         "pl" => format!(
-            "Szybki przepis z {names}{goal_text}. Instrukcja krok po kroku, KBJU na porcję i wskazówki szefa."
+            "Przepis z {names}{goal_text} w 15 min.{} Instrukcja krok po kroku i KBJU.",
+            if est_protein > 5 { format!(" {}g białka na porcję.", est_protein) } else { String::new() }
         ),
         "uk" => format!(
-            "Швидкий рецепт з {names}{goal_text}. Покрокова інструкція, КБЖУ на порцію та поради шефа."
+            "Рецепт з {names}{goal_text} за 15 хв.{} Покрокова інструкція та КБЖУ.",
+            if est_protein > 5 { format!(" {}г білка на порцію.", est_protein) } else { String::new() }
         ),
         _ => format!(
-            "Quick recipe with {names}{goal_text}. Step-by-step instructions, macros per serving, and chef tips."
+            "Quick recipe with {names}{goal_text}.{protein_hint} Step-by-step instructions and macros."
         ),
     };
 
@@ -281,41 +300,39 @@ fn generate_h1(ingredients: &[String], goal: Option<&str>, meal_type: Option<&st
 }
 
 /// Auto-generate intro paragraph.
-/// RULE: First sentence = direct answer to user intent (numbers + benefit).
+/// RULE: First sentence = direct answer with REAL protein + calorie numbers.
 /// This targets Google featured snippets.
 fn generate_intro(ingredients: &[String], goal: Option<&str>, locale: &str) -> String {
     let names = ingredients.join(", ");
-    let goal_benefit = match goal {
-        Some(g) if g.contains("protein") => match locale {
-            "ru" => " с высоким содержанием белка",
-            "pl" => " z dużą ilością białka",
-            "uk" => " з високим вмістом білка",
-            _    => " packed with protein",
-        },
-        Some(g) if g.contains("loss") || g.contains("low_cal") => match locale {
-            "ru" => " для контроля калорий",
-            "pl" => " o niskiej kaloryczności",
-            "uk" => " для контролю калорій",
-            _    => " for calorie control",
-        },
-        _ => "",
+    let est_protein = estimate_protein_from_ingredients(ingredients).round() as i64;
+    let est_calories = estimate_calories_from_ingredients(ingredients).round() as i64;
+
+    let protein_text = if est_protein > 5 {
+        match locale {
+            "ru" => format!(" ~{}г белка,", est_protein),
+            "pl" => format!(" ~{}g białka,", est_protein),
+            "uk" => format!(" ~{}г білка,", est_protein),
+            _    => format!(" ~{}g protein,", est_protein),
+        }
+    } else {
+        String::new()
     };
 
     match locale {
         "ru" => format!(
-            "Это блюдо из {names}{goal_benefit} готовится за 15–20 минут. \
+            "Это блюдо из {names} содержит{protein_text} ~{est_calories} ккал на порцию и готовится за 15–20 минут. \
              Ниже — пошаговый рецепт с точными граммовками и КБЖУ на порцию.",
         ),
         "pl" => format!(
-            "To danie z {names}{goal_benefit} przygotujesz w 15–20 minut. \
+            "To danie z {names} zawiera{protein_text} ~{est_calories} kcal na porcję i przygotujesz je w 15–20 minut. \
              Poniżej — przepis krok po kroku z dokładnymi gramówkami i KBJU na porcję.",
         ),
         "uk" => format!(
-            "Ця страва з {names}{goal_benefit} готується за 15–20 хвилин. \
+            "Ця страва з {names} містить{protein_text} ~{est_calories} ккал на порцію і готується за 15–20 хвилин. \
              Нижче — покроковий рецепт із точними грамовками та КБЖУ на порцію.",
         ),
         _ => format!(
-            "This {names} dish{goal_benefit} is ready in 15–20 minutes. \
+            "This {names} dish delivers{protein_text} ~{est_calories} kcal per serving and is ready in 15–20 minutes. \
              Below: step-by-step recipe with exact portions and macros per serving.",
         ),
     }
@@ -1036,8 +1053,42 @@ impl LabComboService {
         };
 
         let smart_result = self.smart_service.get_smart_ingredient(ctx).await?;
-        let smart_json = serde_json::to_value(&smart_result)
+        let mut smart_json = serde_json::to_value(&smart_result)
             .map_err(|e| AppError::internal(format!("failed to serialize SmartResponse: {}", e)))?;
+
+        // ── NUTRITION SAFETY NET ─────────────────────────────────────────
+        // If SmartService returned protein = 0 (AI hallucination), override with calculated estimate.
+        // This is critical: "Salmon Rice Bowl — 0g protein" destroys SEO trust.
+        {
+            let est_protein = estimate_protein_from_ingredients(&ingredients);
+            let est_calories = estimate_calories_from_ingredients(&ingredients);
+
+            if let Some(nutrition) = smart_json.get_mut("nutrition") {
+                let current_protein = nutrition.get("protein").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let current_calories = nutrition.get("calories").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+                // Fix protein if 0 or unrealistically low (< 2g when we know there's protein)
+                if current_protein < 2.0 && est_protein > 5.0 {
+                    // Store per-100g (smart_response.nutrition is per 100g)
+                    let protein_per_100g = est_protein / 3.0; // serving is ~300g
+                    nutrition.as_object_mut().map(|n| {
+                        n.insert("protein".to_string(), serde_json::json!(protein_per_100g));
+                    });
+                    tracing::warn!("⚠️ SmartService returned protein={:.1}g — overriding with {:.1}g/100g (est serving: {:.0}g)",
+                        current_protein, protein_per_100g, est_protein);
+                }
+
+                // Fix calories if 0
+                if current_calories < 10.0 && est_calories > 50.0 {
+                    let calories_per_100g = est_calories / 3.0;
+                    nutrition.as_object_mut().map(|n| {
+                        n.insert("calories".to_string(), serde_json::json!(calories_per_100g));
+                    });
+                    tracing::warn!("⚠️ SmartService returned calories={:.0} — overriding with {:.0}/100g",
+                        current_calories, calories_per_100g);
+                }
+            }
+        }
 
         // Generate SEO metadata
         let title = generate_title(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale);
@@ -1107,17 +1158,24 @@ impl LabComboService {
         // ── AI Enrichment (async) ────────────────────────────────────────
         // Rewrite template-based SEO text into unique, compelling copy via Gemini.
         // Runs in background so generate returns fast; enriched fields appear on refresh.
+        // Model selection: "pro" → gemini-3.1-pro-preview (better quality), "flash" → gemini-3-flash-preview (faster)
+        let ai_model = match req.model.as_deref() {
+            Some("pro") | Some("gemini-3.1-pro-preview") => "gemini-3.1-pro-preview",
+            _ => "gemini-3-flash-preview",
+        };
         let pool_bg = self.pool.clone();
         let llm_bg = self.llm_adapter.clone();
         let ingredients_bg = ingredients.clone();
         let locale_bg = req.locale.clone();
         let goal_bg = req.goal.clone();
         let meal_type_bg = req.meal_type.clone();
+        let model_bg = ai_model.to_string();
         tokio::spawn(async move {
             if let Err(e) = enrich_seo_with_ai(
                 &pool_bg, &llm_bg, id,
                 &ingredients_bg, &locale_bg,
                 goal_bg.as_deref(), meal_type_bg.as_deref(),
+                &model_bg,
             ).await {
                 tracing::warn!("⚠️ AI enrichment failed for combo {}: {}", id, e);
             }
@@ -1448,6 +1506,7 @@ impl LabComboService {
                 cooking_time: None,
                 budget: None,
                 cuisine: None,
+                model: Some("pro".to_string()),
             }).await {
                 Ok(page) => generated.push(format!("✅ {} ({})", page.slug, page.locale)),
                 Err(e) => generated.push(format!("❌ {} — {}", slug, e)),
@@ -1562,6 +1621,114 @@ impl LabComboService {
     }
 }
 
+// ── Protein Safety Net ───────────────────────────────────────────────────────
+
+/// Known protein content per 100g for common ingredients.
+/// Used as a HARD FALLBACK when AI returns protein = 0g.
+/// This ensures we NEVER show "0g protein" for a salmon dish.
+fn known_protein_per_100g(ingredient: &str) -> f64 {
+    let name = ingredient.to_lowercase();
+    // Fish & seafood
+    if name.contains("salmon")  { return 20.0; }
+    if name.contains("tuna")    { return 23.0; }
+    if name.contains("cod")     { return 17.0; }
+    if name.contains("shrimp") || name.contains("prawn") { return 24.0; }
+    if name.contains("mackerel") { return 19.0; }
+    if name.contains("trout")   { return 20.0; }
+    if name.contains("sardine") { return 21.0; }
+    // Poultry & meat
+    if name.contains("chicken") { return 31.0; }
+    if name.contains("turkey")  { return 29.0; }
+    if name.contains("beef")    { return 26.0; }
+    if name.contains("pork")    { return 25.0; }
+    if name.contains("lamb")    { return 25.0; }
+    if name.contains("duck")    { return 19.0; }
+    // Eggs & dairy
+    if name.contains("egg")     { return 13.0; }
+    if name.contains("cheese")  { return 22.0; }
+    if name.contains("yogurt") || name.contains("yoghurt") { return 5.0; }
+    // Legumes & plant protein
+    if name.contains("tofu")    { return 8.0; }
+    if name.contains("tempeh")  { return 19.0; }
+    if name.contains("lentil")  { return 9.0; }
+    if name.contains("chickpea") { return 8.5; }
+    if name.contains("bean")    { return 8.0; }
+    // Grains
+    if name.contains("quinoa")  { return 4.4; }
+    if name.contains("rice")    { return 2.7; }
+    if name.contains("pasta") || name.contains("noodle") { return 5.0; }
+    if name.contains("oat")     { return 2.4; }
+    if name.contains("bread")   { return 9.0; }
+    // Vegetables & fruits (low protein)
+    if name.contains("avocado") { return 2.0; }
+    if name.contains("broccoli") { return 2.8; }
+    if name.contains("spinach") { return 2.9; }
+    if name.contains("potato")  { return 2.0; }
+    // Default: unknown vegetable/fruit
+    1.0
+}
+
+/// Default portion size (grams) for each ingredient type.
+fn default_portion_grams(ingredient: &str) -> f64 {
+    let name = ingredient.to_lowercase();
+    // Proteins: larger portions
+    if name.contains("salmon") || name.contains("tuna") || name.contains("chicken")
+        || name.contains("beef") || name.contains("pork") || name.contains("turkey")
+        || name.contains("lamb") || name.contains("cod") || name.contains("shrimp")
+        || name.contains("duck") || name.contains("trout") || name.contains("mackerel")
+    {
+        return 150.0;
+    }
+    // Eggs
+    if name.contains("egg") { return 100.0; } // ~2 eggs
+    // Grains/starches
+    if name.contains("rice") || name.contains("pasta") || name.contains("quinoa")
+        || name.contains("noodle") || name.contains("oat")
+    {
+        return 100.0; // cooked weight
+    }
+    // Avocado, cheese — smaller portions
+    if name.contains("avocado") { return 80.0; }
+    if name.contains("cheese")  { return 30.0; }
+    // Default vegetable/fruit
+    80.0
+}
+
+/// Estimate total protein for a dish from ingredient list.
+/// Returns estimated protein in grams for a single serving (~300g).
+fn estimate_protein_from_ingredients(ingredients: &[String]) -> f64 {
+    ingredients.iter().map(|ing| {
+        let protein_per_100g = known_protein_per_100g(ing);
+        let portion = default_portion_grams(ing);
+        protein_per_100g * portion / 100.0
+    }).sum()
+}
+
+/// Estimate total calories for a dish from ingredient list.
+fn estimate_calories_from_ingredients(ingredients: &[String]) -> f64 {
+    ingredients.iter().map(|ing| {
+        let name = ing.to_lowercase();
+        let kcal_per_100g =
+            if name.contains("salmon")  { 208.0 }
+            else if name.contains("chicken") { 165.0 }
+            else if name.contains("beef")    { 250.0 }
+            else if name.contains("rice")    { 130.0 }
+            else if name.contains("pasta") || name.contains("noodle") { 131.0 }
+            else if name.contains("avocado") { 160.0 }
+            else if name.contains("egg")     { 155.0 }
+            else if name.contains("quinoa")  { 120.0 }
+            else if name.contains("broccoli") { 34.0 }
+            else if name.contains("potato")  { 77.0 }
+            else if name.contains("tofu")    { 76.0 }
+            else if name.contains("tuna")    { 132.0 }
+            else if name.contains("shrimp") || name.contains("prawn") { 99.0 }
+            else if name.contains("cheese")  { 350.0 }
+            else { 50.0 }; // default veggie
+        let portion = default_portion_grams(ing);
+        kcal_per_100g * portion / 100.0
+    }).sum()
+}
+
 // ── AI SEO Enrichment ────────────────────────────────────────────────────────
 
 /// Rewrite template-based SEO text into unique, Gemini-generated copy.
@@ -1576,6 +1743,7 @@ async fn enrich_seo_with_ai(
     locale: &str,
     goal: Option<&str>,
     meal_type: Option<&str>,
+    model: &str,
 ) -> AppResult<()> {
     let names = ingredients.join(", ");
     let goal_text = goal.map(|g| g.replace('_', " ")).unwrap_or_default();
@@ -1588,15 +1756,45 @@ async fn enrich_seo_with_ai(
         _ => "English",
     };
 
-    let prompt = format!(
-        r#"You are a professional chef writing a recipe page for SEO.
+    // Pre-calculate realistic nutrition as a HARD HINT for the AI
+    let estimated_protein = estimate_protein_from_ingredients(ingredients);
+    let estimated_calories = estimate_calories_from_ingredients(ingredients);
 
+    // Build per-ingredient breakdown for the AI
+    let ingredient_breakdown: Vec<String> = ingredients.iter().map(|ing| {
+        let portion = default_portion_grams(ing);
+        let protein_100g = known_protein_per_100g(ing);
+        let protein_total = protein_100g * portion / 100.0;
+        format!("- {} ({}g serving) → {:.1}g protein ({}g/100g × {}g)", ing, portion, protein_total, protein_100g, portion)
+    }).collect();
+    let breakdown_text = ingredient_breakdown.join("\n");
+
+    let prompt = format!(
+        r#"You are a professional chef and nutritionist writing a recipe page for SEO.
+
+═══════════════════════════════════════
+📋 RECIPE INPUTS
+═══════════════════════════════════════
 Ingredients: {names}
 Goal: {goal_text}
 Meal: {meal_text}
 Language: {lang} (write ALL fields in {lang})
 
-Return ONLY valid JSON (no markdown fences, no extra text):
+═══════════════════════════════════════
+📊 PRE-CALCULATED NUTRITION (USE THESE NUMBERS)
+═══════════════════════════════════════
+The following values are calculated from USDA food composition data.
+You MUST use these numbers in title, intro, and why_it_works fields.
+DO NOT recalculate — use the values below:
+
+{breakdown_text}
+───────────────────────────────────────
+TOTAL PER SERVING: ~{estimated_protein:.0}g protein, ~{estimated_calories:.0} kcal
+───────────────────────────────────────
+
+═══════════════════════════════════════
+� OUTPUT FORMAT (return ONLY valid JSON)
+═══════════════════════════════════════
 {{
   "title": "...",
   "description": "...",
@@ -1612,122 +1810,71 @@ Return ONLY valid JSON (no markdown fences, no extra text):
 }}
 
 ═══════════════════════════════════════
-🔥 COOKING RULES (CRITICAL — follow exactly)
-═══════════════════════════════════════
-
-RAW-ONLY INGREDIENTS (NEVER cook these):
-- avocado → slice, fan out, or dice. NEVER pan-sear or heat avocado.
-- lettuce, arugula, spinach (when used as salad) → wash and arrange
-- cucumber → slice or dice
-- tomato → slice, dice, or leave raw (unless specifically grilling)
-- herbs (basil, cilantro, parsley, dill, mint) → chop and add at the end
-- lemon, lime → squeeze juice or slice as garnish
-
-MUST-COOK INGREDIENTS (always apply heat):
-- fish (salmon, tuna, cod, etc.) → pan-sear 4-5 min per side, bake 12-15 min at 200°C, or grill
-- chicken → pan-sear 6-7 min per side, or bake 20-25 min at 190°C
-- beef, pork → sear 3-4 min per side for medium
-- eggs → scramble 3 min, fry 4 min, or boil 7-10 min
-- shrimp → sauté 2-3 min per side until pink
-
-GRAINS & STARCHES (always boil/steam):
-- rice → boil in 2:1 water ratio for 12-15 min, rest 5 min covered
-- pasta → boil in salted water for 8-10 min
-- quinoa → boil in 2:1 water for 15 min
-- potato → boil 15-20 min or bake 40 min
-
-STEP ORDER (must follow this sequence):
-1. First: cook grains/starches (they take longest)
-2. Second: cook protein (fish, meat, eggs)
-3. Third: prepare raw ingredients (slice avocado, chop herbs)
-4. Last: assemble on plate and serve
-
-Each step MUST include:
-- specific ingredient name
-- weight in grams
-- cooking method (pan-sear, boil, slice, etc.)
-- time in minutes
-- temperature or heat level where relevant
-
-BAD examples (NEVER write like this):
-- "Prepare sides: Rice, Salmon" ← wrong: salmon is NOT a side, and "prepare" is vague
-- "Cook Avocado (136g). Pan-sear..." ← wrong: avocado is NEVER cooked
-- "Cook base ingredients" ← wrong: too generic, no specifics
-- "Season to taste" ← wrong: vague filler
-
-GOOD examples (write like this):
-- "Boil rice (100g) in 200ml water for 12 min. Remove from heat, cover, rest 5 min."
-- "Pan-sear salmon fillet (150g) over medium-high heat, 4-5 min per side until golden."
-- "Slice avocado (80g) into thin fans and arrange on plate."
-- "Chop fresh cilantro (5g) and scatter over the finished dish."
-
-═══════════════════════════════════════
-🔥 NUTRITION RULES (CRITICAL)
-═══════════════════════════════════════
-
-NEVER return protein = 0g. Calculate protein based on real food data:
-- Salmon: ~20g protein per 100g
-- Chicken breast: ~31g protein per 100g
-- Eggs (1 large): ~6g protein
-- Rice (cooked): ~2.7g protein per 100g
-- Avocado: ~2g protein per 100g
-- Tuna: ~23g protein per 100g
-- Shrimp: ~24g protein per 100g
-- Beef: ~26g protein per 100g
-- Tofu: ~8g protein per 100g
-
-For a dish with {names} (~300g serving), calculate REALISTIC total protein.
-Example: Salmon (150g) = 30g + Rice (100g) = 2.7g + Avocado (80g) = 1.6g = ~34g protein
-
-═══════════════════════════════════════
-🔥 FIELD RULES
+🔥 FIELD RULES (follow exactly)
 ═══════════════════════════════════════
 
 title (max 55 chars):
-- Format: "[Dish Name] ([Number]g Protein, [Number] Min)"
-- MUST end with parentheses containing REAL protein grams + cooking time
-- Calculate protein from ingredient weights above, do NOT use 0g
-- Examples: "Salmon Rice Bowl (34g Protein, 15 Min)", "Chicken Broccoli Dinner (38g Protein, 20 Min)"
-- NEVER use words: "analysis", "combo", "combination"
+- Format: "[Dish Name] ({estimated_protein:.0}g Protein, [N] Min)"
+- The protein number MUST be {estimated_protein:.0}g (pre-calculated above)
+- Example: "Salmon Rice Bowl ({estimated_protein:.0}g Protein, 15 Min)"
+- FORBIDDEN words: "analysis", "combo", "combination"
 
 description (120-150 chars):
-- Start with action verb: "Make", "Try", "Cook"
-- Include REAL protein number calculated from ingredients
-- Example: "Make this salmon rice bowl in 15 minutes. 34g protein per serving — perfect for post-workout."
+- Start with action verb: "Make", "Cook", "Try"
+- MUST include "{estimated_protein:.0}g protein" and cooking time
+- Example: "Cook this {meal_text} in 15 min. {estimated_protein:.0}g protein, {estimated_calories:.0} kcal per serving."
 
 h1 (40-70 chars):
-- Write as recipe name: "[Main Ingredient] [Side] [Dish Type] — [Key Benefit] Recipe"
-- Example: "Salmon Avocado Rice Bowl — High Protein Breakfast Recipe"
-- NEVER start with "Analysis:" or "Combo:"
+- Recipe name style: "[Ingredients] [Dish Type] — [Benefit] Recipe"
+- Example: "Salmon Avocado Rice Bowl — High Protein {meal_text} Recipe"
 
 intro (150-250 chars):
-- FIRST SENTENCE = direct answer with REAL numbers: "This [dish] delivers ~[N]g protein and is ready in [N] minutes."
-- Calculate protein from actual ingredient weights
-- Second sentence: one specific culinary or nutrition fact
-- NO filler: "delicious", "amazing", "perfect", "comprehensive"
+- FIRST SENTENCE must contain exact numbers: "This [dish] delivers ~{estimated_protein:.0}g protein and ~{estimated_calories:.0} kcal per serving, ready in [N] minutes."
+- Second sentence: one specific nutrition or culinary fact (omega-3, complex carbs, etc.)
+- FORBIDDEN fillers: "delicious", "amazing", "perfect", "comprehensive"
 
 why_it_works (200-400 chars):
-- Explain the ROLE of EACH ingredient:
-  * Protein source: "[ingredient] provides [N]g protein, rich in [specific nutrient like omega-3, leucine, etc.]"
-  * Carb source: "[ingredient] provides sustained energy via [complex carbs / resistant starch]"
-  * Fat source: "[ingredient] adds [N]g healthy monounsaturated fats for satiety"
-- Then explain flavor pairing: umami + acid, fat + crunch, etc.
-- NEVER write generic phrases like "Optimized for balanced..." or "This combination is great"
+- Explain EACH ingredient's specific role with numbers:
+  * Name the protein source: "[ingredient] provides [N]g protein + [nutrient: omega-3, leucine, iron, etc.]"
+  * Name the carb source: "[ingredient] delivers complex carbs for sustained energy"
+  * Name the fat/veggie source: "[ingredient] adds [N]g monounsaturated fats / fiber / vitamins"
+- End with flavor pairing logic: "umami from [X] meets [Y] for..."
+- NEVER write: "Optimized for balanced...", "This combination is great", "comprehensive"
 
 ═══════════════════════════════════════
-🔥 ABSOLUTE PROHIBITIONS
+🔥 COOKING STEPS RULES
 ═══════════════════════════════════════
 
-- NEVER cook avocado, lettuce, fresh herbs, cucumber
-- NEVER output protein = 0g when fish, meat, eggs, legumes, or tofu are present
-- NEVER use words: "analysis", "analyze", "combo", "combination", "comprehensive", "detailed"
-- NEVER write generic steps: "prepare ingredients", "cook to preference", "season to taste"
-- NEVER list protein (salmon/chicken/fish) as a "side" — it is ALWAYS the main
-- NEVER put the main protein in step 2+ if grains can cook simultaneously
-- Every number MUST be realistic, calculated from real food nutrition data"#
+STEP ORDER (must follow):
+1. Grains/starches first (they take longest)
+2. Protein second (fish, meat, eggs)
+3. Vegetables third (if any need cooking)
+4. Raw ingredients (slice avocado, chop herbs — NEVER cook)
+5. Assemble and serve
+
+RAW-ONLY (NEVER cook): avocado, lettuce, arugula, cucumber, tomato, herbs (basil, cilantro, parsley, dill, mint), lemon, lime
+MUST-COOK: salmon, tuna, chicken, beef, pork, eggs, shrimp, cod, turkey, lamb
+GRAINS (boil/steam): rice, pasta, quinoa, potato, oats
+
+Each step MUST include: ingredient name + weight (g) + method + time (min) + heat level
+
+BAD: "Prepare sides: Rice, Salmon" / "Cook Avocado" / "Season to taste"
+GOOD: "Boil rice (100g) in 200ml water for 12 min, rest 5 min covered."
+
+═══════════════════════════════════════
+🚫 ABSOLUTE PROHIBITIONS
+═══════════════════════════════════════
+- NEVER return protein = 0g (the correct value is {estimated_protein:.0}g)
+- NEVER cook avocado, lettuce, herbs, cucumber
+- NEVER use: "analysis", "combo", "combination", "comprehensive", "detailed"
+- NEVER write generic steps without specific grams and minutes
+- NEVER list fish/meat as a "side" — it is the MAIN protein"#
     );
 
-    let raw_response = llm.groq_raw_request_with_model(&prompt, 3000, "gemini-3-flash-preview").await?;
+    tracing::info!("🤖 AI enrichment for combo {} using model: {} (estimated protein: {:.0}g, calories: {:.0} kcal)",
+        combo_id, model, estimated_protein, estimated_calories);
+
+    let raw_response = llm.groq_raw_request_with_model(&prompt, 3000, model).await?;
 
     // Parse JSON from response (strip markdown fences if present)
     let cleaned = raw_response
@@ -1755,11 +1902,56 @@ why_it_works (200-400 chars):
             AppError::internal("AI enrichment parse error")
         })?;
 
-    let title = enriched.get("title").and_then(|v| v.as_str()).unwrap_or("").trim();
-    let description = enriched.get("description").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let mut title = enriched.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let mut description = enriched.get("description").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
     let h1 = enriched.get("h1").and_then(|v| v.as_str()).unwrap_or("").trim();
-    let intro = enriched.get("intro").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let mut intro = enriched.get("intro").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
     let why_it_works = enriched.get("why_it_works").and_then(|v| v.as_str()).unwrap_or("").trim();
+
+    // ── PROTEIN SAFETY NET ──────────────────────────────────────────────
+    // If AI returned title/intro without protein numbers, or with 0g — fix it.
+    // This is the HARD fallback that ensures we NEVER show "0g protein".
+    let est_protein = estimated_protein.round() as i64;
+    let est_calories = estimated_calories.round() as i64;
+
+    // Fix title: ensure it contains "(Xg Protein, N Min)"
+    if !title.contains("Protein") && !title.contains("protein") && !title.contains("белка") && !title.contains("białka") && !title.contains("білка") {
+        // Title is missing protein — append it
+        let time_hint = "15 Min";
+        let protein_hook = format!("({}g Protein, {})", est_protein, time_hint);
+        // Remove existing parenthetical if any
+        if let Some(paren_start) = title.rfind('(') {
+            title = title[..paren_start].trim().to_string();
+        }
+        title = smart_truncate(&format!("{} {}", title, protein_hook), 60);
+        tracing::warn!("⚠️ AI title missing protein for combo {} — injected {}g", combo_id, est_protein);
+    }
+
+    // Fix title: if it says "0g Protein" — replace with real value
+    if title.contains("0g Protein") || title.contains("0 g Protein") {
+        title = title.replace("0g Protein", &format!("{}g Protein", est_protein));
+        title = title.replace("0 g Protein", &format!("{}g Protein", est_protein));
+        tracing::warn!("⚠️ AI returned 0g protein in title for combo {} — fixed to {}g", combo_id, est_protein);
+    }
+
+    // Fix intro: if it mentions 0g or has no protein number
+    if intro.contains("~0g") || intro.contains("0g protein") || intro.contains("0 g protein") {
+        intro = intro.replace("~0g", &format!("~{}g", est_protein));
+        intro = intro.replace("0g protein", &format!("{}g protein", est_protein));
+        intro = intro.replace("0 g protein", &format!("{}g protein", est_protein));
+        tracing::warn!("⚠️ AI returned 0g protein in intro for combo {} — fixed to {}g", combo_id, est_protein);
+    }
+
+    // Fix description: ensure protein is mentioned
+    if !description.contains("protein") && !description.contains("белка") && !description.contains("białka") && !description.contains("білка") && est_protein > 5 {
+        description = format!("{}. {}g protein per serving.", description.trim_end_matches('.'), est_protein);
+        if description.len() > 155 {
+            description = description.chars().take(152).collect::<String>() + "...";
+        }
+    }
+
+    tracing::info!("✅ AI enrichment result — title: '{}', protein: {}g, calories: {} kcal, model: {}",
+        title, est_protein, est_calories, model);
 
     // AI-generated cooking steps (overwrite template steps)
     let ai_steps = enriched.get("how_to_cook").cloned();
