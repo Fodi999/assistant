@@ -49,6 +49,28 @@ impl GeminiService {
             .all(|c| c.is_ascii_alphanumeric() || c.is_whitespace() || c == '-' || c == '\'')
     }
 
+    /// Strip markdown code fences that Gemini 3 thinking models add around JSON.
+    /// Handles ```json\n...\n```, ```\n...\n```, and nested variations.
+    fn strip_markdown_fences(text: &str) -> String {
+        let trimmed = text.trim();
+        // Check for ```json or ``` prefix
+        let without_prefix = if trimmed.starts_with("```json") {
+            &trimmed[7..]  // skip "```json"
+        } else if trimmed.starts_with("```") {
+            &trimmed[3..]  // skip "```"
+        } else {
+            return trimmed.to_string();
+        };
+        // Strip trailing ```
+        let without_suffix = if without_prefix.trim_end().ends_with("```") {
+            let s = without_prefix.trim_end();
+            &s[..s.len() - 3]
+        } else {
+            without_prefix
+        };
+        without_suffix.trim().to_string()
+    }
+
     /// Normalize any-language input to English
     pub async fn normalize_to_english(&self, input: &str) -> Result<String, AppError> {
         let trimmed = input.trim();
@@ -76,7 +98,7 @@ Respond with ONLY valid JSON, no other text:
             ingredient_name
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 100);
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 300);
 
         tracing::info!("🔮 Gemini translation request for: {}", ingredient_name);
 
@@ -110,7 +132,7 @@ Text: {}"#,
             target_lang, text
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 500);
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 800);
 
         let content = self.send_with_retry(&body, 1).await?;
 
@@ -130,7 +152,7 @@ Text: {}"#,
             return Err(AppError::validation("Prompt too long for AI analysis"));
         }
 
-        let body = self.build_request(&self.smart_model, prompt, 0.3, 2000);
+        let body = self.build_request(&self.smart_model, prompt, 0.3, 4000);
 
         tracing::info!("🔮 Requesting recipe analysis from Gemini AI");
 
@@ -178,7 +200,7 @@ Rules:
             trimmed
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 150);
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 500);
 
         tracing::info!("🔮 Gemini unified processing for: {}", trimmed);
 
@@ -219,7 +241,7 @@ Pick the best match. Do not invent values."#,
             name_en
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 100);
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 300);
         let content = self.send_with_retry(&body, 1).await?;
         let classification: AiClassification = self.parse_json_response(&content)?;
 
@@ -347,25 +369,52 @@ Pick the best match. Do not invent values."#,
             })?
             .message
             .content
+            .as_deref()
+            .unwrap_or("")
             .trim()
             .to_string();
+
+        if content.is_empty() {
+            tracing::error!("❌ Gemini returned empty/null content (thinking model may need higher max_tokens)");
+            return Err(AppError::internal("Gemini returned empty response"));
+        }
+
+        // Gemini 3 thinking models often wrap JSON in ```json code blocks.
+        // Strip them at the source so every caller gets clean content.
+        let content = Self::strip_markdown_fences(&content);
 
         tracing::debug!("✅ Gemini response content: {} chars", content.len());
         Ok(content)
     }
 
-    /// Parse JSON from AI response with fallback extraction
+    /// Parse JSON from AI response with fallback extraction.
+    /// Handles Gemini 3's tendency to wrap JSON in ```json code blocks.
     fn parse_json_response<T: serde::de::DeserializeOwned>(
         &self,
         content: &str,
     ) -> Result<T, AppError> {
-        serde_json::from_str(content)
+        // Step 1: Strip markdown code fences (```json ... ``` or ``` ... ```)
+        let cleaned = if content.contains("```") {
+            content
+                .trim()
+                .strip_prefix("```json").or_else(|| content.trim().strip_prefix("```"))
+                .unwrap_or(content)
+                .trim()
+                .strip_suffix("```")
+                .unwrap_or(content)
+                .trim()
+        } else {
+            content.trim()
+        };
+
+        // Step 2: Try direct parse
+        serde_json::from_str(cleaned)
             .or_else(|_| {
-                // Fallback: extract JSON object from surrounding text
-                if let Some(start) = content.find('{') {
-                    if let Some(end) = content.rfind('}') {
-                        let json_str = &content[start..=end];
-                        tracing::debug!("Extracted JSON from response: {}", json_str);
+                // Step 3: Fallback — extract JSON object from surrounding text
+                if let Some(start) = cleaned.find('{') {
+                    if let Some(end) = cleaned.rfind('}') {
+                        let json_str = &cleaned[start..=end];
+                        tracing::debug!("Extracted JSON from response: {}…", &json_str[..json_str.len().min(200)]);
                         return serde_json::from_str(json_str);
                     }
                 }
@@ -376,7 +425,7 @@ Pick the best match. Do not invent values."#,
             })
             .map_err(|e| {
                 tracing::error!("Failed to parse AI JSON response: {}", e);
-                tracing::debug!("Raw response: {}", content);
+                tracing::debug!("Raw response: {}", &content[..content.len().min(500)]);
                 AppError::internal("Invalid AI response format")
             })
     }
@@ -412,7 +461,10 @@ struct GeminiChoice {
     message: GeminiMessage,
 }
 
+/// Gemini 3 thinking models may return `content: null` while including
+/// thought_signature in extra_content. We handle that gracefully.
 #[derive(Debug, Deserialize)]
 struct GeminiMessage {
-    content: String,
+    #[serde(default)]
+    content: Option<String>,
 }
