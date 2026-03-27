@@ -104,7 +104,7 @@ Rules:
 
         // ── Cache result ──
         if let Err(e) = self.ai_cache.set(
-            &cache_key, result.clone(), "groq", "llama-3.1-8b-instant", SEO_CACHE_TTL_DAYS
+            &cache_key, result.clone(), "gemini", "gemini-2.5-flash", SEO_CACHE_TTL_DAYS
         ).await {
             tracing::warn!("Failed to cache SEO result: {}", e);
         }

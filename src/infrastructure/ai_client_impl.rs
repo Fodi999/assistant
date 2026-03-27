@@ -22,20 +22,19 @@ impl AiClient for LlmAdapter {
     ) -> AppResult<String> {
         match quality {
             AiQuality::Fast => {
-                // Use 8b model via translate-level fast path
-                self.groq_raw_request_with_model(prompt, max_tokens, "llama-3.1-8b-instant").await
+                // Use flash model for speed
+                self.groq_raw_request_with_model(prompt, max_tokens, "gemini-2.5-flash").await
             }
             AiQuality::Balanced => {
-                // Default 70b model
+                // Default pro model
                 self.groq_raw_request(prompt, max_tokens).await
             }
             AiQuality::Best => {
-                // 70b with retry on failure
+                // Pro model with retry on failure
                 match self.groq_raw_request(prompt, max_tokens).await {
                     Ok(result) => Ok(result),
                     Err(_first_err) => {
                         tracing::warn!("🔄 AI Best quality: retrying after first failure");
-                        // Retry once
                         self.groq_raw_request(prompt, max_tokens).await
                     }
                 }

@@ -64,10 +64,11 @@ pub struct R2Config {
     pub public_url_base: String,
 }
 
-/// AI Services Configuration (Groq for translations)
+/// AI Services Configuration
 #[derive(Debug, Clone)]
 pub struct AiConfig {
     pub groq_api_key: String,
+    pub gemini_api_key: String,
 }
 
 /// Check if a secret value is insecure
@@ -152,6 +153,7 @@ impl Config {
             },
             ai: AiConfig {
                 groq_api_key: env::var("GROQ_API_KEY").unwrap_or_else(|_| "".to_string()),
+                gemini_api_key: env::var("GEMINI_API_KEY").unwrap_or_else(|_| "".to_string()),
             },
         })
     }

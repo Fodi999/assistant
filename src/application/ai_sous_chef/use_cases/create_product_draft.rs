@@ -231,8 +231,8 @@ impl AdminCatalogService {
                 .set(
                     &cache_key,
                     draft_json,
-                    "groq",
-                    "llama-3.3-70b-versatile",
+                    "gemini",
+                    "gemini-2.5-pro",
                     DRAFT_CACHE_TTL_DAYS,
                 )
                 .await;
@@ -247,7 +247,7 @@ impl AdminCatalogService {
         Ok(CreateDraftResponse {
             draft,
             raw_input: input,
-            model: "llama-3.3-70b-versatile".to_string(),
+            model: "gemini-2.5-pro".to_string(),
             cached: false,
             corrections,
         })

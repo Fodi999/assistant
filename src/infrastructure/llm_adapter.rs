@@ -1,4 +1,5 @@
-use crate::infrastructure::groq_service::{GroqService, UnifiedProductResponse, GroqTranslationResponse};
+use crate::infrastructure::gemini_service::GeminiService;
+use crate::infrastructure::groq_service::{UnifiedProductResponse, GroqTranslationResponse};
 use crate::infrastructure::persistence::{AiCacheRepository, AiUsageStatsRepository};
 use crate::domain::classification_rules::ClassificationRules;
 use crate::shared::AppError;
@@ -9,19 +10,19 @@ use std::time::Instant;
 
 #[derive(Clone)]
 pub struct LlmAdapter {
-    groq_service: Arc<GroqService>,
+    gemini_service: Arc<GeminiService>,
     cache_repo: Arc<AiCacheRepository>,
     usage_repo: Arc<AiUsageStatsRepository>,
 }
 
 impl LlmAdapter {
     pub fn new(
-        groq_service: Arc<GroqService>, 
+        gemini_service: Arc<GeminiService>, 
         cache_repo: Arc<AiCacheRepository>,
         usage_repo: Arc<AiUsageStatsRepository>,
     ) -> Self {
         Self {
-            groq_service,
+            gemini_service,
             cache_repo,
             usage_repo,
         }
@@ -29,8 +30,6 @@ impl LlmAdapter {
 
     /// Helper to log usage stats
     async fn log_usage(&self, endpoint: &str, duration_ms: i32) {
-        // In a real app, we'd extract tokens from the Groq response.
-        // For now, we log the duration and endpoint.
         let _ = self.usage_repo.log_usage(endpoint, 0, 0, 0, duration_ms).await;
     }
 
@@ -49,10 +48,9 @@ impl LlmAdapter {
         }
 
         let start = Instant::now();
-        // SLA: 3 seconds max for translation
         let response = timeout(
-            Duration::from_secs(3), 
-            self.groq_service.translate(ingredient_name)
+            Duration::from_secs(10), 
+            self.gemini_service.translate(ingredient_name)
         )
         .await
         .map_err(|_| AppError::internal("LLM Timeout: Translation took too long"))??;
@@ -61,7 +59,7 @@ impl LlmAdapter {
         self.log_usage("translate_all", duration_ms).await;
         
         let val = to_value(&response).map_err(|e| AppError::internal(e.to_string()))?;
-        self.cache_repo.set(&cache_key, val, "groq", "llama-3.1-8b-instant", 90).await?;
+        self.cache_repo.set(&cache_key, val, "gemini", "gemini-2.5-flash", 90).await?;
 
         Ok(response)
     }
@@ -77,12 +75,12 @@ impl LlmAdapter {
             tracing::info!("🚀 Rule Engine matched: {}", name);
             return Ok(UnifiedProductResponse {
                 name_en: name.to_string(),
-                name_pl: name.to_string(), // In a real app we might still want translations
+                name_pl: name.to_string(),
                 name_ru: name.to_string(), 
                 name_uk: name.to_string(),
                 category_slug: rule.category_slug,
                 unit: rule.unit,
-                confidence: 1.0, // Rule engine is 100% confident
+                confidence: 1.0,
             });
         }
 
@@ -95,14 +93,13 @@ impl LlmAdapter {
             }
         }
 
-        // 3. LLM (SLOWEST, costs money)
-        tracing::info!("🤖 LLM call for: {}", name);
+        // 3. LLM (Gemini)
+        tracing::info!("🔮 Gemini LLM call for: {}", name);
         let start = Instant::now();
         
-        // SLA: 4 seconds max for unified processing
         let response = timeout(
-            Duration::from_secs(4),
-            self.groq_service.process_unified(name)
+            Duration::from_secs(15),
+            self.gemini_service.process_unified(name)
         )
         .await
         .map_err(|_| AppError::internal("LLM Timeout: Unified processing took too long"))??;
@@ -110,9 +107,8 @@ impl LlmAdapter {
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage("process_unified", duration_ms).await;
 
-        // 4. Store in Cache (TTL: 90 days)
         let val = to_value(&response).map_err(|e| AppError::internal(e.to_string()))?;
-        self.cache_repo.set(&cache_key, val, "groq", "llama-3.1-8b-instant", 90).await?;
+        self.cache_repo.set(&cache_key, val, "gemini", "gemini-2.5-flash", 90).await?;
 
         Ok(response)
     }
@@ -129,10 +125,9 @@ impl LlmAdapter {
         }
 
         let start = Instant::now();
-        // SLA: 5 seconds max for long text translation
         let translated = timeout(
-            Duration::from_secs(5),
-            self.groq_service.translate_to_language(text, target_lang)
+            Duration::from_secs(15),
+            self.gemini_service.translate_to_language(text, target_lang)
         )
         .await
         .map_err(|_| AppError::internal("LLM Timeout: Text translation took too long"))??;
@@ -140,14 +135,13 @@ impl LlmAdapter {
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage("translate_to_language", duration_ms).await;
         
-        self.cache_repo.set(&cache_key, serde_json::Value::String(translated.clone()), "groq", "llama-3.1-8b-instant", 90).await?;
+        self.cache_repo.set(&cache_key, serde_json::Value::String(translated.clone()), "gemini", "gemini-2.5-flash", 90).await?;
 
         Ok(translated)
     }
 
     /// Analyze recipe (using cache)
     pub async fn analyze_recipe(&self, prompt: &str, recipe_id: &str) -> Result<String, AppError> {
-        // For recipe analysis, we use recipe_id as part of the key to avoid re-analyzing the same version
         let cache_key = format!("recipe_analysis:{}", recipe_id);
 
         if let Some(cached_val) = self.cache_repo.get(&cache_key).await? {
@@ -158,10 +152,9 @@ impl LlmAdapter {
         }
 
         let start = Instant::now();
-        // SLA: 10 seconds max for complex recipe analysis
         let analysis = timeout(
-            Duration::from_secs(10),
-            self.groq_service.analyze_recipe(prompt)
+            Duration::from_secs(30),
+            self.gemini_service.analyze_recipe(prompt)
         )
         .await
         .map_err(|_| AppError::internal("LLM Timeout: Recipe analysis took too long"))??;
@@ -169,19 +162,18 @@ impl LlmAdapter {
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage("analyze_recipe", duration_ms).await;
         
-        self.cache_repo.set(&cache_key, serde_json::Value::String(analysis.clone()), "groq", "llama-3.1-8b-instant", 30).await?;
+        self.cache_repo.set(&cache_key, serde_json::Value::String(analysis.clone()), "gemini", "gemini-2.5-pro", 30).await?;
         
         Ok(analysis)
     }
 
-    /// Raw Groq request — no cache, no rule engine.
+    /// Raw AI request — no cache, no rule engine.
     /// Used for one-off admin operations like AI autofill.
-    /// `max_tokens`: how many tokens to allow in response (use 3000 for full autofill).
     pub async fn groq_raw_request(&self, prompt: &str, max_tokens: u32) -> Result<String, AppError> {
-        self.groq_raw_request_with_model(prompt, max_tokens, "llama-3.3-70b-versatile").await
+        self.groq_raw_request_with_model(prompt, max_tokens, "gemini-2.5-pro").await
     }
 
-    /// Raw Groq request with explicit model selection.
+    /// Raw AI request with explicit model selection.
     /// Used by AiClient trait implementation for quality tiers.
     pub async fn groq_raw_request_with_model(
         &self,
@@ -196,13 +188,12 @@ impl LlmAdapter {
             "temperature": 0.1,
             "max_tokens": max_tokens,
         });
-        // Use 30s timeout — autofill is large, 70b model is slower
         let result = tokio::time::timeout(
-            Duration::from_secs(30),
-            self.groq_service.send_raw_request(&request_body),
+            Duration::from_secs(60),
+            self.gemini_service.send_raw_request(&request_body),
         )
         .await
-        .map_err(|_| AppError::internal(&format!("AI timeout (30s) for model {}", model)))?? ;
+        .map_err(|_| AppError::internal(&format!("AI timeout (60s) for model {}", model)))?? ;
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage(&format!("raw_{}", model), duration_ms).await;
         Ok(result)

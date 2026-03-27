@@ -287,7 +287,7 @@ Rules:
 
             // Cache the AI result
             let _ = self.ai_cache.set(
-                &cache_key, ai_result.clone(), "groq", "llama-3.3-70b-versatile", PAIRING_CACHE_TTL_DAYS
+                &cache_key, ai_result.clone(), "gemini", "gemini-2.5-pro", PAIRING_CACHE_TTL_DAYS
             ).await;
         }
 

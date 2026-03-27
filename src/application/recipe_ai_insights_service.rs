@@ -98,7 +98,7 @@ impl RecipeAIInsightsService {
                 ai_validation,
                 suggestions,
                 feasibility_score,
-                "llama-3.1-8b-instant",
+                "gemini-2.5-flash",
             )
             .await?;
 
