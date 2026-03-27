@@ -56,6 +56,20 @@ pub struct LabComboPage {
     pub detail_image_url: Option<String>,
     pub smart_response: serde_json::Value,
     pub faq: serde_json::Value,
+    // ── Pre-calculated nutrition (single source of truth) ────────────
+    pub total_weight_g: f32,
+    pub servings_count: i16,
+    pub calories_total: f32,
+    pub protein_total: f32,
+    pub fat_total: f32,
+    pub carbs_total: f32,
+    pub fiber_total: f32,
+    pub calories_per_serving: f32,
+    pub protein_per_serving: f32,
+    pub fat_per_serving: f32,
+    pub carbs_per_serving: f32,
+    pub fiber_per_serving: f32,
+    // ─────────────────────────────────────────────────────────────────
     pub status: String,
     pub quality_score: i16,
     pub published_at: Option<String>,
@@ -200,7 +214,7 @@ pub fn combo_slug(
 /// Auto-generate SEO title from ingredients + context (≤ 60 chars).
 /// Recipe-oriented, always includes REAL protein + time.
 /// Format: "Salmon Rice Bowl (34g Protein, 15 Min)"
-fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<&str>, _locale: &str) -> String {
+fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<&str>, _locale: &str, nt: &NutritionTotals) -> String {
     let names = capitalize_words(&ingredients.join(" "));
     let meal = meal_type
         .map(|m| capitalize_words(&m.replace('_', " ")))
@@ -213,8 +227,8 @@ fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<
         format!("{} {} Bowl", names, meal)
     };
 
-    // Calculate REAL protein from ingredients — never use generic "High Protein"
-    let est_protein = estimate_protein_from_ingredients(ingredients).round() as i64;
+    // Use pre-calculated protein from NutritionTotals (single source of truth)
+    let est_protein = nt.protein_per_serving.round() as i64;
 
     let hook = if est_protein > 5 {
         match goal {
@@ -230,9 +244,9 @@ fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<
 }
 
 /// Auto-generate SEO description (80–155 chars). Recipe-oriented.
-fn generate_description(ingredients: &[String], goal: Option<&str>, locale: &str) -> String {
+fn generate_description(ingredients: &[String], goal: Option<&str>, locale: &str, nt: &NutritionTotals) -> String {
     let names = ingredients.join(", ");
-    let est_protein = estimate_protein_from_ingredients(ingredients).round() as i64;
+    let est_protein = nt.protein_per_serving.round() as i64;
     let goal_text = goal
         .map(|g| format!(" for {}", g.replace('_', " ")))
         .unwrap_or_default();
@@ -302,10 +316,10 @@ fn generate_h1(ingredients: &[String], goal: Option<&str>, meal_type: Option<&st
 /// Auto-generate intro paragraph.
 /// RULE: First sentence = direct answer with REAL protein + calorie numbers.
 /// This targets Google featured snippets.
-fn generate_intro(ingredients: &[String], goal: Option<&str>, locale: &str) -> String {
+fn generate_intro(ingredients: &[String], goal: Option<&str>, locale: &str, nt: &NutritionTotals) -> String {
     let names = ingredients.join(", ");
-    let est_protein = estimate_protein_from_ingredients(ingredients).round() as i64;
-    let est_calories = estimate_calories_from_ingredients(ingredients).round() as i64;
+    let est_protein = nt.protein_per_serving.round() as i64;
+    let est_calories = nt.calories_per_serving.round() as i64;
 
     let protein_text = if est_protein > 5 {
         match locale {
@@ -343,18 +357,16 @@ fn generate_faq(
     ingredients: &[String],
     smart: &serde_json::Value,
     locale: &str,
+    nt: &NutritionTotals,
 ) -> serde_json::Value {
     let names = ingredients.join(", ");
     let mut faq = Vec::new();
 
-    // Q1: How many calories/protein per serving?
-    let nutrition = smart.get("nutrition");
-    if let Some(n) = nutrition {
-        let kcal = n.get("calories").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let prot = n.get("protein").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        // Estimate per-serving (roughly 300g portion)
-        let serving_kcal = kcal * 3.0;
-        let serving_prot = prot * 3.0;
+    // Q1: How many calories/protein per serving? — uses NutritionTotals (single source of truth)
+    {
+        let serving_kcal = nt.calories_per_serving.round() as i64;
+        let serving_prot = nt.protein_per_serving.round() as i64;
+        let serving_weight = nt.total_weight_g.round() as i64;
         let q = match locale {
             "ru" => format!("Сколько калорий и белка в блюде из {}?", names),
             "pl" => format!("Ile kalorii i białka ma danie z {}?", names),
@@ -362,10 +374,10 @@ fn generate_faq(
             _    => format!("How many calories and protein in a {} dish?", names),
         };
         let a = match locale {
-            "ru" => format!("Примерно {:.0} ккал и {:.0} г белка на порцию (~300 г).", serving_kcal, serving_prot),
-            "pl" => format!("Około {:.0} kcal i {:.0} g białka na porcję (~300 g).", serving_kcal, serving_prot),
-            "uk" => format!("Приблизно {:.0} ккал і {:.0} г білка на порцію (~300 г).", serving_kcal, serving_prot),
-            _    => format!("Approximately {:.0} kcal and {:.0}g protein per serving (~300g).", serving_kcal, serving_prot),
+            "ru" => format!("Примерно {} ккал и {} г белка на порцию (~{} г).", serving_kcal, serving_prot, serving_weight),
+            "pl" => format!("Około {} kcal i {} g białka na porcję (~{} g).", serving_kcal, serving_prot, serving_weight),
+            "uk" => format!("Приблизно {} ккал і {} г білка на порцію (~{} г).", serving_kcal, serving_prot, serving_weight),
+            _    => format!("Approximately {} kcal and {}g protein per serving (~{}g).", serving_kcal, serving_prot, serving_weight),
         };
         faq.push(serde_json::json!({ "question": q, "answer": a }));
     }
@@ -449,14 +461,14 @@ fn generate_why_it_works(
     smart: &serde_json::Value,
     goal: Option<&str>,
     locale: &str,
+    nt: &NutritionTotals,
 ) -> String {
     let names = ingredients.join(", ");
 
-    // Extract nutrition highlights
-    let nutrition = smart.get("nutrition");
-    let protein = nutrition.and_then(|n| n.get("protein")).and_then(|v| v.as_f64());
-    let calories = nutrition.and_then(|n| n.get("calories")).and_then(|v| v.as_f64());
-    let fiber = nutrition.and_then(|n| n.get("fiber")).and_then(|v| v.as_f64());
+    // Use pre-calculated nutrition (single source of truth)
+    let protein = nt.protein_per_serving;
+    let calories = nt.calories_per_serving;
+    let fiber = nt.fiber_per_serving;
 
     // Extract flavor balance
     let balance_score = smart
@@ -492,57 +504,47 @@ fn generate_why_it_works(
     // Build explanation parts
     let mut parts: Vec<String> = Vec::new();
 
-    // Part 1: Nutritional reason
+    // Part 1: Nutritional reason (uses pre-calculated per-serving values)
     match locale {
         "ru" => {
-            if let Some(p) = protein {
-                if p > 15.0 {
-                    parts.push(format!("Эта комбинация содержит {:.1} г белка на 100 г — отличный источник протеина", p));
-                } else {
-                    parts.push(format!("Комбинация {names} даёт {:.0} ккал на 100 г", calories.unwrap_or(0.0)));
-                }
+            if protein > 15.0 {
+                parts.push(format!("Эта комбинация содержит {:.0} г белка на порцию — отличный источник протеина", protein));
+            } else {
+                parts.push(format!("Комбинация {names} даёт {:.0} ккал на порцию", calories));
             }
         }
         "pl" => {
-            if let Some(p) = protein {
-                if p > 15.0 {
-                    parts.push(format!("Ta kombinacja zawiera {:.1} g białka na 100 g — świetne źródło proteiny", p));
-                } else {
-                    parts.push(format!("Kombinacja {names} dostarcza {:.0} kcal na 100 g", calories.unwrap_or(0.0)));
-                }
+            if protein > 15.0 {
+                parts.push(format!("Ta kombinacja zawiera {:.0} g białka na porcję — świetne źródło proteiny", protein));
+            } else {
+                parts.push(format!("Kombinacja {names} dostarcza {:.0} kcal na porcję", calories));
             }
         }
         "uk" => {
-            if let Some(p) = protein {
-                if p > 15.0 {
-                    parts.push(format!("Ця комбінація містить {:.1} г білка на 100 г — чудове джерело протеїну", p));
-                } else {
-                    parts.push(format!("Комбінація {names} дає {:.0} ккал на 100 г", calories.unwrap_or(0.0)));
-                }
+            if protein > 15.0 {
+                parts.push(format!("Ця комбінація містить {:.0} г білка на порцію — чудове джерело протеїну", protein));
+            } else {
+                parts.push(format!("Комбінація {names} дає {:.0} ккал на порцію", calories));
             }
         }
         _ => {
-            if let Some(p) = protein {
-                if p > 15.0 {
-                    parts.push(format!("This combination provides {:.1}g of protein per 100g — an excellent protein source", p));
-                } else {
-                    parts.push(format!("The combination of {names} delivers {:.0} kcal per 100g", calories.unwrap_or(0.0)));
-                }
+            if protein > 15.0 {
+                parts.push(format!("This combination provides {:.0}g of protein per serving — an excellent protein source", protein));
+            } else {
+                parts.push(format!("The combination of {names} delivers {:.0} kcal per serving", calories));
             }
         }
     }
 
     // Part 2: Fiber bonus
-    if let Some(f) = fiber {
-        if f > 3.0 {
-            let fiber_note = match locale {
-                "ru" => format!("Содержит {:.1} г клетчатки, что поддерживает пищеварение", f),
-                "pl" => format!("Zawiera {:.1} g błonnika, co wspiera trawienie", f),
-                "uk" => format!("Містить {:.1} г клітковини, що підтримує травлення", f),
-                _    => format!("Contains {:.1}g of fiber, supporting healthy digestion", f),
-            };
-            parts.push(fiber_note);
-        }
+    if fiber > 3.0 {
+        let fiber_note = match locale {
+            "ru" => format!("Содержит {:.1} г клетчатки, что поддерживает пищеварение", fiber),
+            "pl" => format!("Zawiera {:.1} g błonnika, co wspiera trawienie", fiber),
+            "uk" => format!("Містить {:.1} г клітковини, що підтримує травлення", fiber),
+            _    => format!("Contains {:.1}g of fiber, supporting healthy digestion", fiber),
+        };
+        parts.push(fiber_note);
     }
 
     // Part 3: Flavor balance
@@ -1056,31 +1058,31 @@ impl LabComboService {
         let mut smart_json = serde_json::to_value(&smart_result)
             .map_err(|e| AppError::internal(format!("failed to serialize SmartResponse: {}", e)))?;
 
+        // ── Calculate nutrition (Single Source of Truth) ──────────────────
+        let nt = calculate_nutrition(&ingredients);
+
         // ── NUTRITION SAFETY NET ─────────────────────────────────────────
         // If SmartService returned protein = 0 (AI hallucination), override with calculated estimate.
         // This is critical: "Salmon Rice Bowl — 0g protein" destroys SEO trust.
         {
-            let est_protein = estimate_protein_from_ingredients(&ingredients);
-            let est_calories = estimate_calories_from_ingredients(&ingredients);
-
             if let Some(nutrition) = smart_json.get_mut("nutrition") {
                 let current_protein = nutrition.get("protein").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let current_calories = nutrition.get("calories").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
                 // Fix protein if 0 or unrealistically low (< 2g when we know there's protein)
-                if current_protein < 2.0 && est_protein > 5.0 {
+                if current_protein < 2.0 && nt.protein_per_serving > 5.0 {
                     // Store per-100g (smart_response.nutrition is per 100g)
-                    let protein_per_100g = est_protein / 3.0; // serving is ~300g
+                    let protein_per_100g = nt.protein_per_serving / 3.0; // serving is ~300g
                     nutrition.as_object_mut().map(|n| {
                         n.insert("protein".to_string(), serde_json::json!(protein_per_100g));
                     });
                     tracing::warn!("⚠️ SmartService returned protein={:.1}g — overriding with {:.1}g/100g (est serving: {:.0}g)",
-                        current_protein, protein_per_100g, est_protein);
+                        current_protein, protein_per_100g, nt.protein_per_serving);
                 }
 
                 // Fix calories if 0
-                if current_calories < 10.0 && est_calories > 50.0 {
-                    let calories_per_100g = est_calories / 3.0;
+                if current_calories < 10.0 && nt.calories_per_serving > 50.0 {
+                    let calories_per_100g = nt.calories_per_serving / 3.0;
                     nutrition.as_object_mut().map(|n| {
                         n.insert("calories".to_string(), serde_json::json!(calories_per_100g));
                     });
@@ -1091,12 +1093,12 @@ impl LabComboService {
         }
 
         // Generate SEO metadata
-        let title = generate_title(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale);
-        let description = generate_description(&ingredients, req.goal.as_deref(), &req.locale);
+        let title = generate_title(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale, &nt);
+        let description = generate_description(&ingredients, req.goal.as_deref(), &req.locale, &nt);
         let h1 = generate_h1(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale);
-        let intro = generate_intro(&ingredients, req.goal.as_deref(), &req.locale);
-        let faq = generate_faq(&ingredients, &smart_json, &req.locale);
-        let why_it_works = generate_why_it_works(&ingredients, &smart_json, req.goal.as_deref(), &req.locale);
+        let intro = generate_intro(&ingredients, req.goal.as_deref(), &req.locale, &nt);
+        let faq = generate_faq(&ingredients, &smart_json, &req.locale, &nt);
+        let why_it_works = generate_why_it_works(&ingredients, &smart_json, req.goal.as_deref(), &req.locale, &nt);
         let how_to_cook = generate_how_to_cook(&ingredients, &smart_json, &req.locale);
         let optimization_tips = generate_optimization_tips(&smart_json, &req.locale);
 
@@ -1109,19 +1111,31 @@ impl LabComboService {
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips,
-                smart_response, faq, status
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status
             ) VALUES (
                 $1, $2, $3, $4,
                 $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14,
                 $15, $16, $17,
-                $18, $19, 'draft'
+                $18, $19,
+                $20, $21,
+                $22, $23, $24, $25, $26,
+                $27, $28, $29, $30, $31,
+                'draft'
             )
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
-                smart_response, faq, status, quality_score,
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
         )
@@ -1144,6 +1158,18 @@ impl LabComboService {
         .bind(&optimization_tips)
         .bind(&smart_json)
         .bind(&faq)
+        .bind(nt.total_weight_g as f32)
+        .bind(nt.servings_count)
+        .bind(nt.calories_total as f32)
+        .bind(nt.protein_total as f32)
+        .bind(nt.fat_total as f32)
+        .bind(nt.carbs_total as f32)
+        .bind(nt.fiber_total as f32)
+        .bind(nt.calories_per_serving as f32)
+        .bind(nt.protein_per_serving as f32)
+        .bind(nt.fat_per_serving as f32)
+        .bind(nt.carbs_per_serving as f32)
+        .bind(nt.fiber_per_serving as f32)
         .fetch_one(&self.pool)
         .await?;
 
@@ -1170,12 +1196,13 @@ impl LabComboService {
         let goal_bg = req.goal.clone();
         let meal_type_bg = req.meal_type.clone();
         let model_bg = ai_model.to_string();
+        let nt_bg = nt.clone();
         tokio::spawn(async move {
             if let Err(e) = enrich_seo_with_ai(
                 &pool_bg, &llm_bg, id,
                 &ingredients_bg, &locale_bg,
                 goal_bg.as_deref(), meal_type_bg.as_deref(),
-                &model_bg,
+                &model_bg, &nt_bg,
             ).await {
                 tracing::warn!("⚠️ AI enrichment failed for combo {}: {}", id, e);
             }
@@ -1198,7 +1225,11 @@ impl LabComboService {
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
-                smart_response, faq, status, quality_score,
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
         )
@@ -1222,7 +1253,11 @@ impl LabComboService {
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
-                smart_response, faq, status, quality_score,
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
         )
@@ -1269,7 +1304,11 @@ impl LabComboService {
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
-                smart_response, faq, status, quality_score,
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
         )
@@ -1312,7 +1351,11 @@ impl LabComboService {
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
-                smart_response, faq, status, quality_score,
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages
             WHERE ($1::text IS NULL OR status = $1)
@@ -1340,7 +1383,11 @@ impl LabComboService {
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
-                smart_response, faq, status, quality_score,
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages
             WHERE slug = $1 AND locale = $2 AND status = 'published'
@@ -1604,7 +1651,11 @@ impl LabComboService {
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
                 why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
-                smart_response, faq, status, quality_score,
+                smart_response, faq,
+                total_weight_g, servings_count,
+                calories_total, protein_total, fat_total, carbs_total, fiber_total,
+                calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
             column,
@@ -1621,51 +1672,77 @@ impl LabComboService {
     }
 }
 
-// ── Protein Safety Net ───────────────────────────────────────────────────────
+// ── Nutrition Calculator (Single Source of Truth) ────────────────────────────
 
-/// Known protein content per 100g for common ingredients.
-/// Used as a HARD FALLBACK when AI returns protein = 0g.
-/// This ensures we NEVER show "0g protein" for a salmon dish.
-fn known_protein_per_100g(ingredient: &str) -> f64 {
+/// Per-100g USDA-based nutrition data for common ingredients.
+/// (kcal, protein, fat, carbs, fiber)
+fn nutrition_per_100g(ingredient: &str) -> (f64, f64, f64, f64, f64) {
     let name = ingredient.to_lowercase();
+    // (kcal, protein, fat, carbs, fiber)
     // Fish & seafood
-    if name.contains("salmon")  { return 20.0; }
-    if name.contains("tuna")    { return 23.0; }
-    if name.contains("cod")     { return 17.0; }
-    if name.contains("shrimp") || name.contains("prawn") { return 24.0; }
-    if name.contains("mackerel") { return 19.0; }
-    if name.contains("trout")   { return 20.0; }
-    if name.contains("sardine") { return 21.0; }
+    if name.contains("salmon")   { return (208.0, 20.0, 13.0,  0.0, 0.0); }
+    if name.contains("tuna")     { return (132.0, 23.0,  5.0,  0.0, 0.0); }
+    if name.contains("cod")      { return ( 82.0, 17.0,  0.7,  0.0, 0.0); }
+    if name.contains("shrimp") || name.contains("prawn") { return ( 99.0, 24.0,  0.3,  0.2, 0.0); }
+    if name.contains("mackerel") { return (205.0, 19.0, 14.0,  0.0, 0.0); }
+    if name.contains("trout")    { return (148.0, 20.0,  7.0,  0.0, 0.0); }
+    if name.contains("sardine")  { return (208.0, 21.0, 11.0,  0.0, 0.0); }
     // Poultry & meat
-    if name.contains("chicken") { return 31.0; }
-    if name.contains("turkey")  { return 29.0; }
-    if name.contains("beef")    { return 26.0; }
-    if name.contains("pork")    { return 25.0; }
-    if name.contains("lamb")    { return 25.0; }
-    if name.contains("duck")    { return 19.0; }
+    if name.contains("chicken")  { return (165.0, 31.0,  3.6,  0.0, 0.0); }
+    if name.contains("turkey")   { return (157.0, 29.0,  3.2,  0.0, 0.0); }
+    if name.contains("beef")     { return (250.0, 26.0, 15.0,  0.0, 0.0); }
+    if name.contains("pork")     { return (242.0, 25.0, 14.0,  0.0, 0.0); }
+    if name.contains("lamb")     { return (258.0, 25.0, 17.0,  0.0, 0.0); }
+    if name.contains("duck")     { return (201.0, 19.0, 14.0,  0.0, 0.0); }
     // Eggs & dairy
-    if name.contains("egg")     { return 13.0; }
-    if name.contains("cheese")  { return 22.0; }
-    if name.contains("yogurt") || name.contains("yoghurt") { return 5.0; }
+    if name.contains("egg")      { return (155.0, 13.0, 11.0,  1.1, 0.0); }
+    if name.contains("cheese")   { return (350.0, 22.0, 28.0,  1.3, 0.0); }
+    if name.contains("yogurt") || name.contains("yoghurt") { return ( 59.0,  5.0,  0.4,  3.6, 0.0); }
     // Legumes & plant protein
-    if name.contains("tofu")    { return 8.0; }
-    if name.contains("tempeh")  { return 19.0; }
-    if name.contains("lentil")  { return 9.0; }
-    if name.contains("chickpea") { return 8.5; }
-    if name.contains("bean")    { return 8.0; }
-    // Grains
-    if name.contains("quinoa")  { return 4.4; }
-    if name.contains("rice")    { return 2.7; }
-    if name.contains("pasta") || name.contains("noodle") { return 5.0; }
-    if name.contains("oat")     { return 2.4; }
-    if name.contains("bread")   { return 9.0; }
-    // Vegetables & fruits (low protein)
-    if name.contains("avocado") { return 2.0; }
-    if name.contains("broccoli") { return 2.8; }
-    if name.contains("spinach") { return 2.9; }
-    if name.contains("potato")  { return 2.0; }
-    // Default: unknown vegetable/fruit
-    1.0
+    if name.contains("tofu")     { return ( 76.0,  8.0,  4.8,  1.9, 0.3); }
+    if name.contains("tempeh")   { return (193.0, 19.0, 11.0,  9.4, 0.0); }
+    if name.contains("lentil")   { return (116.0,  9.0,  0.4, 20.0, 7.9); }
+    if name.contains("chickpea") { return (164.0,  8.5,  2.6, 27.0, 7.6); }
+    if name.contains("bean")     { return (127.0,  8.0,  0.5, 22.0, 7.4); }
+    // Grains (cooked values)
+    if name.contains("quinoa")   { return (120.0,  4.4,  1.9, 21.0, 2.8); }
+    if name.contains("rice")     { return (130.0,  2.7,  0.3, 28.0, 0.4); }
+    if name.contains("pasta") || name.contains("noodle") { return (131.0,  5.0,  1.1, 25.0, 1.8); }
+    if name.contains("oat")      { return ( 68.0,  2.4,  1.4, 12.0, 1.7); }
+    if name.contains("bread")    { return (265.0,  9.0,  3.2, 49.0, 2.7); }
+    if name.contains("potato")   { return ( 77.0,  2.0,  0.1, 17.0, 2.2); }
+    // Vegetables
+    if name.contains("broccoli") { return ( 34.0,  2.8,  0.4,  7.0, 2.6); }
+    if name.contains("spinach")  { return ( 23.0,  2.9,  0.4,  3.6, 2.2); }
+    if name.contains("tomato")   { return ( 18.0,  0.9,  0.2,  3.9, 1.2); }
+    if name.contains("cucumber") { return ( 15.0,  0.7,  0.1,  3.6, 0.5); }
+    if name.contains("pepper") || name.contains("paprika") { return ( 31.0,  1.0,  0.3,  6.0, 2.1); }
+    if name.contains("onion")    { return ( 40.0,  1.1,  0.1,  9.3, 1.7); }
+    if name.contains("carrot")   { return ( 41.0,  0.9,  0.2,  9.6, 2.8); }
+    if name.contains("zucchini") || name.contains("courgette") { return ( 17.0,  1.2,  0.3,  3.1, 1.0); }
+    if name.contains("sweet-potato") || name.contains("sweet_potato") { return ( 86.0, 1.6, 0.1, 20.0, 3.0); }
+    if name.contains("mushroom") { return ( 22.0,  3.1,  0.3,  3.3, 1.0); }
+    if name.contains("asparagus") { return ( 20.0, 2.2, 0.1, 3.9, 2.1); }
+    if name.contains("cauliflower") { return ( 25.0, 1.9, 0.3, 5.0, 2.0); }
+    if name.contains("eggplant") || name.contains("aubergine") { return ( 25.0, 1.0, 0.2, 6.0, 3.0); }
+    if name.contains("kale")     { return ( 49.0,  4.3,  0.9,  8.8, 3.6); }
+    if name.contains("pea")      { return ( 81.0,  5.4,  0.4, 14.0, 5.1); }
+    if name.contains("corn")     { return ( 86.0,  3.3,  1.2, 19.0, 2.7); }
+    if name.contains("cabbage")  { return ( 25.0,  1.3,  0.1,  5.8, 2.5); }
+    if name.contains("lettuce") || name.contains("arugula") { return ( 15.0, 1.4, 0.2, 2.9, 1.3); }
+    // Fruits & fats
+    if name.contains("avocado")  { return (160.0,  2.0, 15.0,  9.0, 7.0); }
+    if name.contains("banana")   { return ( 89.0,  1.1,  0.3, 23.0, 2.6); }
+    if name.contains("apple")    { return ( 52.0,  0.3,  0.2, 14.0, 2.4); }
+    if name.contains("olive")    { return (115.0,  0.8, 11.0,  6.0, 3.2); }
+    if name.contains("coconut")  { return (354.0,  3.3, 33.0, 15.0, 9.0); }
+    // Nuts & seeds
+    if name.contains("almond")   { return (579.0, 21.0, 50.0, 22.0, 12.0); }
+    if name.contains("walnut")   { return (654.0, 15.0, 65.0, 14.0, 6.7); }
+    if name.contains("sesame") || name.contains("tahini") { return (573.0, 17.0, 50.0, 23.0, 12.0); }
+    if name.contains("peanut")   { return (567.0, 26.0, 49.0, 16.0, 8.5); }
+    // Default: unknown ingredient (moderate vegetable)
+    (35.0, 1.5, 0.3, 7.0, 2.0)
 }
 
 /// Default portion size (grams) for each ingredient type.
@@ -1680,53 +1757,106 @@ fn default_portion_grams(ingredient: &str) -> f64 {
         return 150.0;
     }
     // Eggs
-    if name.contains("egg") { return 100.0; } // ~2 eggs
-    // Grains/starches
+    if name.contains("egg") { return 100.0; }
+    // Grains/starches (cooked)
     if name.contains("rice") || name.contains("pasta") || name.contains("quinoa")
         || name.contains("noodle") || name.contains("oat")
     {
-        return 100.0; // cooked weight
+        return 100.0;
     }
-    // Avocado, cheese — smaller portions
+    if name.contains("potato") || name.contains("sweet-potato") { return 150.0; }
+    if name.contains("bread") { return 60.0; } // ~2 slices
+    // Avocado, cheese — smaller
     if name.contains("avocado") { return 80.0; }
     if name.contains("cheese")  { return 30.0; }
+    // Nuts/seeds — small portion
+    if name.contains("almond") || name.contains("walnut") || name.contains("peanut")
+        || name.contains("sesame") || name.contains("tahini")
+    {
+        return 20.0;
+    }
+    // Legumes
+    if name.contains("lentil") || name.contains("chickpea") || name.contains("bean")
+        || name.contains("tofu") || name.contains("tempeh")
+    {
+        return 120.0;
+    }
     // Default vegetable/fruit
     80.0
 }
 
-/// Estimate total protein for a dish from ingredient list.
-/// Returns estimated protein in grams for a single serving (~300g).
-fn estimate_protein_from_ingredients(ingredients: &[String]) -> f64 {
-    ingredients.iter().map(|ing| {
-        let protein_per_100g = known_protein_per_100g(ing);
-        let portion = default_portion_grams(ing);
-        protein_per_100g * portion / 100.0
-    }).sum()
+/// Pre-calculated nutrition totals for a combo.
+/// This is the SINGLE SOURCE OF TRUTH — all display reads from these values.
+#[derive(Debug, Clone)]
+struct NutritionTotals {
+    total_weight_g: f64,
+    servings_count: i16,
+    calories_total: f64,
+    protein_total: f64,
+    fat_total: f64,
+    carbs_total: f64,
+    fiber_total: f64,
+    calories_per_serving: f64,
+    protein_per_serving: f64,
+    fat_per_serving: f64,
+    carbs_per_serving: f64,
+    fiber_per_serving: f64,
+    /// Per-ingredient breakdown for the AI prompt
+    breakdown: Vec<String>,
 }
 
-/// Estimate total calories for a dish from ingredient list.
-fn estimate_calories_from_ingredients(ingredients: &[String]) -> f64 {
-    ingredients.iter().map(|ing| {
-        let name = ing.to_lowercase();
-        let kcal_per_100g =
-            if name.contains("salmon")  { 208.0 }
-            else if name.contains("chicken") { 165.0 }
-            else if name.contains("beef")    { 250.0 }
-            else if name.contains("rice")    { 130.0 }
-            else if name.contains("pasta") || name.contains("noodle") { 131.0 }
-            else if name.contains("avocado") { 160.0 }
-            else if name.contains("egg")     { 155.0 }
-            else if name.contains("quinoa")  { 120.0 }
-            else if name.contains("broccoli") { 34.0 }
-            else if name.contains("potato")  { 77.0 }
-            else if name.contains("tofu")    { 76.0 }
-            else if name.contains("tuna")    { 132.0 }
-            else if name.contains("shrimp") || name.contains("prawn") { 99.0 }
-            else if name.contains("cheese")  { 350.0 }
-            else { 50.0 }; // default veggie
+/// Calculate nutrition totals from ingredient list.
+/// Uses USDA-based lookup table × default portion sizes.
+/// Returns one authoritative NutritionTotals — used everywhere.
+fn calculate_nutrition(ingredients: &[String]) -> NutritionTotals {
+    let mut total_weight = 0.0_f64;
+    let mut total_kcal = 0.0_f64;
+    let mut total_protein = 0.0_f64;
+    let mut total_fat = 0.0_f64;
+    let mut total_carbs = 0.0_f64;
+    let mut total_fiber = 0.0_f64;
+    let mut breakdown = Vec::new();
+
+    for ing in ingredients {
+        let (kcal100, prot100, fat100, carbs100, fiber100) = nutrition_per_100g(ing);
         let portion = default_portion_grams(ing);
-        kcal_per_100g * portion / 100.0
-    }).sum()
+
+        let kcal = kcal100 * portion / 100.0;
+        let prot = prot100 * portion / 100.0;
+        let fat  = fat100  * portion / 100.0;
+        let carbs = carbs100 * portion / 100.0;
+        let fiber = fiber100 * portion / 100.0;
+
+        total_weight += portion;
+        total_kcal += kcal;
+        total_protein += prot;
+        total_fat += fat;
+        total_carbs += carbs;
+        total_fiber += fiber;
+
+        breakdown.push(format!(
+            "- {} ({}g): {:.0} kcal, {:.1}g protein, {:.1}g fat, {:.1}g carbs",
+            ing, portion, kcal, prot, fat, carbs
+        ));
+    }
+
+    // 1 serving = whole recipe (single portion)
+    let servings: i16 = 1;
+    NutritionTotals {
+        total_weight_g: total_weight,
+        servings_count: servings,
+        calories_total: total_kcal,
+        protein_total: total_protein,
+        fat_total: total_fat,
+        carbs_total: total_carbs,
+        fiber_total: total_fiber,
+        calories_per_serving: total_kcal,
+        protein_per_serving: total_protein,
+        fat_per_serving: total_fat,
+        carbs_per_serving: total_carbs,
+        fiber_per_serving: total_fiber,
+        breakdown,
+    }
 }
 
 // ── AI SEO Enrichment ────────────────────────────────────────────────────────
@@ -1744,6 +1874,7 @@ async fn enrich_seo_with_ai(
     goal: Option<&str>,
     meal_type: Option<&str>,
     model: &str,
+    nt: &NutritionTotals,
 ) -> AppResult<()> {
     let names = ingredients.join(", ");
     let goal_text = goal.map(|g| g.replace('_', " ")).unwrap_or_default();
@@ -1756,18 +1887,16 @@ async fn enrich_seo_with_ai(
         _ => "English",
     };
 
-    // Pre-calculate realistic nutrition as a HARD HINT for the AI
-    let estimated_protein = estimate_protein_from_ingredients(ingredients);
-    let estimated_calories = estimate_calories_from_ingredients(ingredients);
+    // Nutrition numbers are PRE-CALCULATED and stored in DB — inject as constants
+    let estimated_protein = nt.protein_per_serving;
+    let estimated_calories = nt.calories_per_serving;
+    let estimated_fat = nt.fat_per_serving;
+    let estimated_carbs = nt.carbs_per_serving;
+    let estimated_fiber = nt.fiber_per_serving;
+    let total_weight = nt.total_weight_g;
 
-    // Build per-ingredient breakdown for the AI
-    let ingredient_breakdown: Vec<String> = ingredients.iter().map(|ing| {
-        let portion = default_portion_grams(ing);
-        let protein_100g = known_protein_per_100g(ing);
-        let protein_total = protein_100g * portion / 100.0;
-        format!("- {} ({}g serving) → {:.1}g protein ({}g/100g × {}g)", ing, portion, protein_total, protein_100g, portion)
-    }).collect();
-    let breakdown_text = ingredient_breakdown.join("\n");
+    // Per-ingredient breakdown from NutritionTotals
+    let breakdown_text = nt.breakdown.join("\n");
 
     let prompt = format!(
         r#"You are a professional chef and nutritionist writing a recipe page for SEO.
@@ -1789,8 +1918,14 @@ DO NOT recalculate — use the values below:
 
 {breakdown_text}
 ───────────────────────────────────────
-TOTAL PER SERVING: ~{estimated_protein:.0}g protein, ~{estimated_calories:.0} kcal
+TOTAL PER SERVING (~{total_weight:.0}g):
+  Calories: ~{estimated_calories:.0} kcal
+  Protein:  ~{estimated_protein:.0}g
+  Fat:      ~{estimated_fat:.0}g
+  Carbs:    ~{estimated_carbs:.0}g
+  Fiber:    ~{estimated_fiber:.0}g
 ───────────────────────────────────────
+⚠️ These numbers are FINAL. Do NOT change them. Use them verbatim.
 
 ═══════════════════════════════════════
 � OUTPUT FORMAT (return ONLY valid JSON)
