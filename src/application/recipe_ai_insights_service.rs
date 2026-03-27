@@ -98,7 +98,7 @@ impl RecipeAIInsightsService {
                 ai_validation,
                 suggestions,
                 feasibility_score,
-                "gemini-2.5-flash",
+                "gemini-3-flash-preview",
             )
             .await?;
 

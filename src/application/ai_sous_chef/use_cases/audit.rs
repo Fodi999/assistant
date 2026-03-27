@@ -312,7 +312,7 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
                             // Cache the result
                             let cache_val = serde_json::to_value(&items).unwrap_or_default();
                             let _ = self.ai_cache.set(
-                                &cache_key, cache_val, "gemini", "gemini-2.5-pro", AUDIT_CACHE_TTL_DAYS
+                                &cache_key, cache_val, "gemini", "gemini-3.1-pro-preview", AUDIT_CACHE_TTL_DAYS
                             ).await;
                             ai_warnings = items;
                         }

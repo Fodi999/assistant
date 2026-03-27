@@ -59,7 +59,7 @@ impl LlmAdapter {
         self.log_usage("translate_all", duration_ms).await;
         
         let val = to_value(&response).map_err(|e| AppError::internal(e.to_string()))?;
-        self.cache_repo.set(&cache_key, val, "gemini", "gemini-2.5-flash", 90).await?;
+        self.cache_repo.set(&cache_key, val, "gemini", "gemini-3-flash-preview", 90).await?;
 
         Ok(response)
     }
@@ -108,7 +108,7 @@ impl LlmAdapter {
         self.log_usage("process_unified", duration_ms).await;
 
         let val = to_value(&response).map_err(|e| AppError::internal(e.to_string()))?;
-        self.cache_repo.set(&cache_key, val, "gemini", "gemini-2.5-flash", 90).await?;
+        self.cache_repo.set(&cache_key, val, "gemini", "gemini-3-flash-preview", 90).await?;
 
         Ok(response)
     }
@@ -135,7 +135,7 @@ impl LlmAdapter {
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage("translate_to_language", duration_ms).await;
         
-        self.cache_repo.set(&cache_key, serde_json::Value::String(translated.clone()), "gemini", "gemini-2.5-flash", 90).await?;
+        self.cache_repo.set(&cache_key, serde_json::Value::String(translated.clone()), "gemini", "gemini-3-flash-preview", 90).await?;
 
         Ok(translated)
     }
@@ -162,7 +162,7 @@ impl LlmAdapter {
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage("analyze_recipe", duration_ms).await;
         
-        self.cache_repo.set(&cache_key, serde_json::Value::String(analysis.clone()), "gemini", "gemini-2.5-pro", 30).await?;
+        self.cache_repo.set(&cache_key, serde_json::Value::String(analysis.clone()), "gemini", "gemini-3.1-pro-preview", 30).await?;
         
         Ok(analysis)
     }
@@ -170,7 +170,7 @@ impl LlmAdapter {
     /// Raw AI request — no cache, no rule engine.
     /// Used for one-off admin operations like AI autofill.
     pub async fn groq_raw_request(&self, prompt: &str, max_tokens: u32) -> Result<String, AppError> {
-        self.groq_raw_request_with_model(prompt, max_tokens, "gemini-2.5-pro").await
+        self.groq_raw_request_with_model(prompt, max_tokens, "gemini-3.1-pro-preview").await
     }
 
     /// Raw AI request with explicit model selection.

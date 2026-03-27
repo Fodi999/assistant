@@ -23,7 +23,7 @@ impl AiClient for LlmAdapter {
         match quality {
             AiQuality::Fast => {
                 // Use flash model for speed
-                self.groq_raw_request_with_model(prompt, max_tokens, "gemini-2.5-flash").await
+                self.groq_raw_request_with_model(prompt, max_tokens, "gemini-3-flash-preview").await
             }
             AiQuality::Balanced => {
                 // Default pro model

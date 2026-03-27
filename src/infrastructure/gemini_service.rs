@@ -33,8 +33,8 @@ impl GeminiService {
         Self {
             api_key,
             http_client,
-            fast_model: "gemini-2.5-flash".to_string(),
-            smart_model: "gemini-2.5-pro".to_string(),
+            fast_model: "gemini-3-flash-preview".to_string(),
+            smart_model: "gemini-3.1-pro-preview".to_string(),
         }
     }
 

@@ -232,7 +232,7 @@ impl AdminCatalogService {
                     &cache_key,
                     draft_json,
                     "gemini",
-                    "gemini-2.5-pro",
+                    "gemini-3.1-pro-preview",
                     DRAFT_CACHE_TTL_DAYS,
                 )
                 .await;
@@ -247,7 +247,7 @@ impl AdminCatalogService {
         Ok(CreateDraftResponse {
             draft,
             raw_input: input,
-            model: "gemini-2.5-pro".to_string(),
+            model: "gemini-3.1-pro-preview".to_string(),
             cached: false,
             corrections,
         })
