@@ -2,7 +2,7 @@ pub mod admin_auth;
 pub mod admin_catalog;
 pub mod admin_cms;
 pub mod admin_intent_pages; // 🆕 Intent pages admin handlers
-pub mod admin_lab_combos;   // 🆕 Lab combo SEO pages admin handlers
+pub mod admin_lab_combos;   // 🆕 Lab Combo admin handlers
 pub mod admin_nutrition;
 pub mod admin_states; // Ingredient processing states (AI Sous Chef)
 pub mod admin_users;

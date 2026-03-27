@@ -591,6 +591,12 @@ pub fn create_router(
     let smart_service = std::sync::Arc::new(
         crate::application::smart_service::SmartService::new(pool_for_smart)
     );
+
+    // ── 🆕 LabComboService (uses SmartService) ──────────────────────────────
+    let lab_combo_service = Arc::new(
+        LabComboService::new(pool_for_public.clone(), smart_service.clone())
+    );
+
     let smart_router = Router::new()
         .route("/smart/ingredient", post(smart_ingredient))
         .with_state(smart_service.clone());
@@ -605,7 +611,6 @@ pub fn create_router(
         .with_state(smart_parse_service.clone());
 
     // ── 🆕 SmartParse from-text — one-click text → full analysis ────────────
-    let smart_service_for_combos = smart_service.clone(); // Keep a ref for LabComboService
     let from_text_state = crate::interfaces::http::smart_parse::FromTextState {
         parse_service: smart_parse_service,
         smart_service,
@@ -691,19 +696,15 @@ pub fn create_router(
         .route("/ingredients/:slug/intent-pages", get(get_ingredient_intent_pages))
         .with_state(intent_pages_svc.clone());
 
-    // ── Lab Combo SEO Pages ──────────────────────────────────────────────────
-    let lab_combo_svc = Arc::new(
-        LabComboService::new(pool_for_public.clone(), smart_service_for_combos)
-    );
-
-    // Admin lab combos routes (protected)
-    let admin_lab_combos_routes = Router::new()
+    // ── Admin Lab Combo routes (protected) ───────────────────────────────────
+    let admin_lab_combo_routes = Router::new()
         .route("/generate", post(admin_lab_combos::generate_combo))
         .route("/generate-popular", post(admin_lab_combos::generate_popular))
         .route("/", get(admin_lab_combos::list_combos))
+        .route("/:id", axum::routing::patch(admin_lab_combos::update_combo))
+        .route("/:id", delete(admin_lab_combos::delete_combo))
         .route("/:id/publish", post(admin_lab_combos::publish_combo))
         .route("/:id/archive", post(admin_lab_combos::archive_combo))
-        .route("/:id", axum::routing::delete(admin_lab_combos::delete_combo).patch(admin_lab_combos::update_combo))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -718,13 +719,13 @@ pub fn create_router(
                 }
             })
         })
-        .with_state(lab_combo_svc.clone());
+        .with_state(lab_combo_service.clone());
 
-    // Public lab combos routes (no auth)
+    // Public lab combo routes (no auth)
     let public_lab_combos_router = Router::new()
         .route("/lab-combos/sitemap", get(lab_combos_sitemap))
         .route("/lab-combos/:slug", get(get_lab_combo))
-        .with_state(lab_combo_svc);
+        .with_state(lab_combo_service);
 
     // ── Background scheduler: publish queued pages every hour ────────────────
     {
@@ -839,7 +840,7 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
-        .nest("/api/admin/lab-combos", admin_lab_combos_routes)
+        .nest("/api/admin/lab-combos", admin_lab_combo_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete
