@@ -593,8 +593,9 @@ pub fn create_router(
     );
 
     // ── 🆕 LabComboService (uses SmartService) ──────────────────────────────
+    let llm_adapter_for_combos = llm_adapter.clone();
     let lab_combo_service = Arc::new(
-        LabComboService::new(pool_for_public.clone(), smart_service.clone(), r2_client.clone())
+        LabComboService::new(pool_for_public.clone(), smart_service.clone(), r2_client.clone(), llm_adapter_for_combos)
     );
 
     let smart_router = Router::new()

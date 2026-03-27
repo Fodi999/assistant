@@ -21,6 +21,7 @@
 //!   DELETE /api/admin/lab-combos/:id                → delete
 
 use crate::application::smart_service::{CulinaryContext, SmartService};
+use crate::infrastructure::llm_adapter::LlmAdapter;
 use crate::infrastructure::R2Client;
 use crate::shared::{AppError, AppResult};
 use deunicode::deunicode;
@@ -876,11 +877,12 @@ pub struct LabComboService {
     pool: PgPool,
     smart_service: Arc<SmartService>,
     r2_client: R2Client,
+    llm_adapter: Arc<LlmAdapter>,
 }
 
 impl LabComboService {
-    pub fn new(pool: PgPool, smart_service: Arc<SmartService>, r2_client: R2Client) -> Self {
-        Self { pool, smart_service, r2_client }
+    pub fn new(pool: PgPool, smart_service: Arc<SmartService>, r2_client: R2Client, llm_adapter: Arc<LlmAdapter>) -> Self {
+        Self { pool, smart_service, r2_client, llm_adapter }
     }
 
     // ── Generate (Admin) ─────────────────────────────────────────────────
@@ -1011,6 +1013,25 @@ impl LabComboService {
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+        // ── AI Enrichment (async) ────────────────────────────────────────
+        // Rewrite template-based SEO text into unique, compelling copy via Gemini.
+        // Runs in background so generate returns fast; enriched fields appear on refresh.
+        let pool_bg = self.pool.clone();
+        let llm_bg = self.llm_adapter.clone();
+        let ingredients_bg = ingredients.clone();
+        let locale_bg = req.locale.clone();
+        let goal_bg = req.goal.clone();
+        let meal_type_bg = req.meal_type.clone();
+        tokio::spawn(async move {
+            if let Err(e) = enrich_seo_with_ai(
+                &pool_bg, &llm_bg, id,
+                &ingredients_bg, &locale_bg,
+                goal_bg.as_deref(), meal_type_bg.as_deref(),
+            ).await {
+                tracing::warn!("⚠️ AI enrichment failed for combo {}: {}", id, e);
+            }
+        });
 
         Ok(page)
     }
@@ -1321,6 +1342,107 @@ impl LabComboService {
 
         Ok(page)
     }
+}
+
+// ── AI SEO Enrichment ────────────────────────────────────────────────────────
+
+/// Rewrite template-based SEO text into unique, Gemini-generated copy.
+/// Called asynchronously after combo creation. Updates DB in place.
+async fn enrich_seo_with_ai(
+    pool: &PgPool,
+    llm: &LlmAdapter,
+    combo_id: Uuid,
+    ingredients: &[String],
+    locale: &str,
+    goal: Option<&str>,
+    meal_type: Option<&str>,
+) -> AppResult<()> {
+    let names = ingredients.join(", ");
+    let goal_text = goal.map(|g| g.replace('_', " ")).unwrap_or_default();
+    let meal_text = meal_type.unwrap_or("");
+
+    let lang = match locale {
+        "ru" => "Russian",
+        "pl" => "Polish",
+        "uk" => "Ukrainian",
+        _ => "English",
+    };
+
+    let prompt = format!(
+        r#"You are an expert chef and SEO copywriter.
+Write UNIQUE, engaging SEO content for an ingredient combo page.
+
+Ingredients: {names}
+Goal: {goal_text}
+Meal type: {meal_text}
+Language: {lang} (write ALL fields in {lang})
+
+Return ONLY a JSON object with these fields:
+{{
+  "title": "SEO title, max 55 chars, include ingredients + goal, enticing",
+  "description": "Meta description, 120-150 chars, compelling, includes action verb",
+  "h1": "H1 heading, longer than title, includes key benefit",
+  "intro": "2-3 sentence intro paragraph (150-250 chars), unique angle on why this combo is special, chef-perspective writing style",
+  "why_it_works": "3-5 sentences (200-400 chars) explaining the science/culinary logic of why these ingredients work together. Mention specific nutrients, flavor pairings, textures. Professional chef tone."
+}}
+
+Critical: Write naturally as a professional chef, NOT like AI. Each field must be unique — never repeat the same phrases across fields. No generic filler."#
+    );
+
+    let raw_response = llm.groq_raw_request_with_model(&prompt, 2000, "gemini-3-flash-preview").await?;
+
+    // Parse JSON from response
+    let enriched: serde_json::Value = serde_json::from_str(&raw_response)
+        .or_else(|_| {
+            // Try to find JSON in the response
+            if let Some(start) = raw_response.find('{') {
+                if let Some(end) = raw_response.rfind('}') {
+                    return serde_json::from_str(&raw_response[start..=end]);
+                }
+            }
+            Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "No JSON found in AI response",
+            )))
+        })
+        .map_err(|e| {
+            tracing::warn!("Failed to parse AI enrichment response: {}", e);
+            AppError::internal("AI enrichment parse error")
+        })?;
+
+    let title = enriched.get("title").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let description = enriched.get("description").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let h1 = enriched.get("h1").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let intro = enriched.get("intro").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let why_it_works = enriched.get("why_it_works").and_then(|v| v.as_str()).unwrap_or("").trim();
+
+    // Only update non-empty fields
+    if title.is_empty() && description.is_empty() {
+        tracing::warn!("AI enrichment returned empty fields for combo {}", combo_id);
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"UPDATE lab_combo_pages SET
+            title = CASE WHEN $1 != '' THEN $1 ELSE title END,
+            description = CASE WHEN $2 != '' THEN $2 ELSE description END,
+            h1 = CASE WHEN $3 != '' THEN $3 ELSE h1 END,
+            intro = CASE WHEN $4 != '' THEN $4 ELSE intro END,
+            why_it_works = CASE WHEN $5 != '' THEN $5 ELSE why_it_works END,
+            updated_at = NOW()
+        WHERE id = $6"#,
+    )
+    .bind(title)
+    .bind(description)
+    .bind(h1)
+    .bind(intro)
+    .bind(why_it_works)
+    .bind(combo_id)
+    .execute(pool)
+    .await?;
+
+    tracing::info!("✅ AI-enriched SEO content for combo {}", combo_id);
+    Ok(())
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
