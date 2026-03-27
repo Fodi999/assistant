@@ -46,6 +46,10 @@ pub struct LabComboPage {
     pub description: String,
     pub h1: String,
     pub intro: String,
+    pub why_it_works: String,
+    pub how_to_cook: serde_json::Value,
+    pub optimization_tips: serde_json::Value,
+    pub image_url: Option<String>,
     pub smart_response: serde_json::Value,
     pub faq: serde_json::Value,
     pub status: String,
@@ -92,6 +96,17 @@ pub struct ListCombosQuery {
 #[derive(Debug, Deserialize)]
 pub struct PublicComboSlugQuery {
     pub locale: Option<String>,
+}
+
+/// Partial update for admin editing.
+#[derive(Debug, Deserialize)]
+pub struct UpdateComboRequest {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub h1: Option<String>,
+    pub intro: Option<String>,
+    pub why_it_works: Option<String>,
+    pub image_url: Option<String>,
 }
 
 // ── Slug Builder ─────────────────────────────────────────────────────────────
@@ -363,6 +378,460 @@ fn generate_faq(
     serde_json::json!(faq)
 }
 
+// ── "Why This Combo Works" Generator ─────────────────────────────────────────
+
+/// Generate a rich "why this combo works" paragraph from SmartResponse data.
+fn generate_why_it_works(
+    ingredients: &[String],
+    smart: &serde_json::Value,
+    goal: Option<&str>,
+    locale: &str,
+) -> String {
+    let names = ingredients.join(", ");
+
+    // Extract nutrition highlights
+    let nutrition = smart.get("nutrition");
+    let protein = nutrition.and_then(|n| n.get("protein")).and_then(|v| v.as_f64());
+    let calories = nutrition.and_then(|n| n.get("calories")).and_then(|v| v.as_f64());
+    let fiber = nutrition.and_then(|n| n.get("fiber")).and_then(|v| v.as_f64());
+
+    // Extract flavor balance
+    let balance_score = smart
+        .get("flavor_profile")
+        .and_then(|f| f.get("balance"))
+        .and_then(|b| b.get("score"))
+        .and_then(|v| v.as_f64());
+
+    // Extract dominant tastes
+    let dominant_tastes: Vec<String> = smart
+        .get("flavor_profile")
+        .and_then(|f| f.get("balance"))
+        .and_then(|b| b.get("dominant_tastes"))
+        .and_then(|dt| dt.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Extract variant info (what dish types are possible)
+    let variant_types: Vec<String> = smart
+        .get("variants")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.get("variant_type").and_then(|t| t.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Build explanation parts
+    let mut parts: Vec<String> = Vec::new();
+
+    // Part 1: Nutritional reason
+    match locale {
+        "ru" => {
+            if let Some(p) = protein {
+                if p > 15.0 {
+                    parts.push(format!("Эта комбинация содержит {:.1} г белка на 100 г — отличный источник протеина", p));
+                } else {
+                    parts.push(format!("Комбинация {names} даёт {:.0} ккал на 100 г", calories.unwrap_or(0.0)));
+                }
+            }
+        }
+        "pl" => {
+            if let Some(p) = protein {
+                if p > 15.0 {
+                    parts.push(format!("Ta kombinacja zawiera {:.1} g białka na 100 g — świetne źródło proteiny", p));
+                } else {
+                    parts.push(format!("Kombinacja {names} dostarcza {:.0} kcal na 100 g", calories.unwrap_or(0.0)));
+                }
+            }
+        }
+        "uk" => {
+            if let Some(p) = protein {
+                if p > 15.0 {
+                    parts.push(format!("Ця комбінація містить {:.1} г білка на 100 г — чудове джерело протеїну", p));
+                } else {
+                    parts.push(format!("Комбінація {names} дає {:.0} ккал на 100 г", calories.unwrap_or(0.0)));
+                }
+            }
+        }
+        _ => {
+            if let Some(p) = protein {
+                if p > 15.0 {
+                    parts.push(format!("This combination provides {:.1}g of protein per 100g — an excellent protein source", p));
+                } else {
+                    parts.push(format!("The combination of {names} delivers {:.0} kcal per 100g", calories.unwrap_or(0.0)));
+                }
+            }
+        }
+    }
+
+    // Part 2: Fiber bonus
+    if let Some(f) = fiber {
+        if f > 3.0 {
+            let fiber_note = match locale {
+                "ru" => format!("Содержит {:.1} г клетчатки, что поддерживает пищеварение", f),
+                "pl" => format!("Zawiera {:.1} g błonnika, co wspiera trawienie", f),
+                "uk" => format!("Містить {:.1} г клітковини, що підтримує травлення", f),
+                _    => format!("Contains {:.1}g of fiber, supporting healthy digestion", f),
+            };
+            parts.push(fiber_note);
+        }
+    }
+
+    // Part 3: Flavor balance
+    if let Some(score) = balance_score {
+        let tastes_str = if !dominant_tastes.is_empty() {
+            dominant_tastes.join(", ")
+        } else {
+            String::new()
+        };
+        let flavor_note = match locale {
+            "ru" => {
+                if tastes_str.is_empty() {
+                    format!("Баланс вкуса оценивается в {:.0}/100", score)
+                } else {
+                    format!("Доминирующие вкусы — {tastes_str}, баланс {:.0}/100", score)
+                }
+            }
+            "pl" => {
+                if tastes_str.is_empty() {
+                    format!("Balans smakowy oceniany na {:.0}/100", score)
+                } else {
+                    format!("Dominujące smaki — {tastes_str}, balans {:.0}/100", score)
+                }
+            }
+            "uk" => {
+                if tastes_str.is_empty() {
+                    format!("Баланс смаку оцінюється в {:.0}/100", score)
+                } else {
+                    format!("Домінуючі смаки — {tastes_str}, баланс {:.0}/100", score)
+                }
+            }
+            _ => {
+                if tastes_str.is_empty() {
+                    format!("Flavor balance scores {:.0}/100", score)
+                } else {
+                    format!("Dominant flavors are {tastes_str}, with a balance score of {:.0}/100", score)
+                }
+            }
+        };
+        parts.push(flavor_note);
+    }
+
+    // Part 4: Goal context
+    if let Some(g) = goal {
+        let goal_note = match locale {
+            "ru" => format!("Оптимизировано для цели: {}", g.replace('_', " ")),
+            "pl" => format!("Zoptymalizowane pod cel: {}", g.replace('_', " ")),
+            "uk" => format!("Оптимізовано для мети: {}", g.replace('_', " ")),
+            _    => format!("Optimized for {}", g.replace('_', " ")),
+        };
+        parts.push(goal_note);
+    }
+
+    // Part 5: Variant versatility
+    if !variant_types.is_empty() {
+        let types_str = variant_types.join(", ");
+        let versatility = match locale {
+            "ru" => format!("Подходит для разных стилей подачи: {types_str}"),
+            "pl" => format!("Pasuje do różnych stylów podania: {types_str}"),
+            "uk" => format!("Підходить для різних стилів подачі: {types_str}"),
+            _    => format!("Versatile enough for multiple serving styles: {types_str}"),
+        };
+        parts.push(versatility);
+    }
+
+    if parts.is_empty() {
+        return match locale {
+            "ru" => format!("Комбинация {names} — сбалансированный выбор с хорошим вкусовым профилем."),
+            "pl" => format!("Kombinacja {names} — zbalansowany wybór z dobrym profilem smakowym."),
+            "uk" => format!("Комбінація {names} — збалансований вибір із гарним смаковим профілем."),
+            _    => format!("The combination of {names} is a balanced choice with a good flavor profile."),
+        };
+    }
+
+    format!("{}.", parts.join(". "))
+}
+
+// ── "How to Cook" Generator ──────────────────────────────────────────────────
+
+/// Generate cooking steps from the SmartResponse variants data.
+fn generate_how_to_cook(
+    ingredients: &[String],
+    smart: &serde_json::Value,
+    locale: &str,
+) -> serde_json::Value {
+    let variants = smart.get("variants").and_then(|v| v.as_array());
+
+    // If we have variants, use the "balanced" one as the reference recipe
+    let reference_variant = variants.and_then(|vars| {
+        vars.iter()
+            .find(|v| v.get("variant_type").and_then(|t| t.as_str()) == Some("balanced"))
+            .or_else(|| vars.first())
+    });
+
+    let mut steps: Vec<serde_json::Value> = Vec::new();
+
+    if let Some(variant) = reference_variant {
+        let variant_ingredients = variant.get("ingredients").and_then(|i| i.as_array());
+
+        // Step 1: Prep
+        let prep_step = match locale {
+            "ru" => "Подготовьте все ингредиенты: вымойте, очистите и нарежьте по необходимости.".to_string(),
+            "pl" => "Przygotuj wszystkie składniki: umyj, obierz i pokrój w razie potrzeby.".to_string(),
+            "uk" => "Підготуйте всі інгредієнти: вимийте, очистіть та наріжте за потреби.".to_string(),
+            _    => "Prepare all ingredients: wash, peel, and cut as needed.".to_string(),
+        };
+        steps.push(serde_json::json!({
+            "step": 1,
+            "text": prep_step,
+            "time_minutes": 5
+        }));
+
+        // Group ingredients by role for cooking order
+        if let Some(vi) = variant_ingredients {
+            // Proteins/bases first
+            let bases: Vec<&serde_json::Value> = vi.iter()
+                .filter(|i| i.get("role").and_then(|r| r.as_str()) == Some("base"))
+                .collect();
+
+            // Sides
+            let sides: Vec<&serde_json::Value> = vi.iter()
+                .filter(|i| i.get("role").and_then(|r| r.as_str()) == Some("side"))
+                .collect();
+
+            // Aromatics
+            let aromatics: Vec<&serde_json::Value> = vi.iter()
+                .filter(|i| {
+                    let role = i.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                    role == "aromatic" || role == "fat" || role == "sauce"
+                })
+                .collect();
+
+            let mut step_num = 2;
+
+            // Cook base ingredients
+            if !bases.is_empty() {
+                let base_names: Vec<String> = bases.iter()
+                    .filter_map(|b| b.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .collect();
+                let base_grams: Vec<String> = bases.iter()
+                    .filter_map(|b| {
+                        let name = b.get("name").and_then(|n| n.as_str())?;
+                        let grams = b.get("grams").and_then(|g| g.as_f64())?;
+                        Some(format!("{name} ({grams:.0}g)"))
+                    })
+                    .collect();
+
+                let step_text = match locale {
+                    "ru" => format!("Приготовьте основу: {}. Обжарьте или отварите до готовности.", base_grams.join(", ")),
+                    "pl" => format!("Przygotuj bazę: {}. Usmaż lub ugotuj do gotowości.", base_grams.join(", ")),
+                    "uk" => format!("Приготуйте основу: {}. Обсмажте або зваріть до готовності.", base_grams.join(", ")),
+                    _    => format!("Cook the base: {}. Sear, grill or boil until done.", base_grams.join(", ")),
+                };
+                steps.push(serde_json::json!({
+                    "step": step_num,
+                    "text": step_text,
+                    "time_minutes": 10,
+                    "ingredients": base_names
+                }));
+                step_num += 1;
+            }
+
+            // Cook sides
+            if !sides.is_empty() {
+                let side_grams: Vec<String> = sides.iter()
+                    .filter_map(|s| {
+                        let name = s.get("name").and_then(|n| n.as_str())?;
+                        let grams = s.get("grams").and_then(|g| g.as_f64())?;
+                        Some(format!("{name} ({grams:.0}g)"))
+                    })
+                    .collect();
+
+                let step_text = match locale {
+                    "ru" => format!("Подготовьте гарнир: {}.", side_grams.join(", ")),
+                    "pl" => format!("Przygotuj dodatki: {}.", side_grams.join(", ")),
+                    "uk" => format!("Підготуйте гарнір: {}.", side_grams.join(", ")),
+                    _    => format!("Prepare sides: {}.", side_grams.join(", ")),
+                };
+                steps.push(serde_json::json!({
+                    "step": step_num,
+                    "text": step_text,
+                    "time_minutes": 8,
+                    "ingredients": sides.iter()
+                        .filter_map(|s| s.get("name").and_then(|n| n.as_str()).map(String::from))
+                        .collect::<Vec<_>>()
+                }));
+                step_num += 1;
+            }
+
+            // Add aromatics/sauces
+            if !aromatics.is_empty() {
+                let aro_names: Vec<String> = aromatics.iter()
+                    .filter_map(|a| a.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .collect();
+
+                let step_text = match locale {
+                    "ru" => format!("Добавьте ароматику и соус: {}.", aro_names.join(", ")),
+                    "pl" => format!("Dodaj aromaty i sos: {}.", aro_names.join(", ")),
+                    "uk" => format!("Додайте ароматику та соус: {}.", aro_names.join(", ")),
+                    _    => format!("Add aromatics and sauce: {}.", aro_names.join(", ")),
+                };
+                steps.push(serde_json::json!({
+                    "step": step_num,
+                    "text": step_text,
+                    "time_minutes": 3,
+                    "ingredients": aro_names
+                }));
+                step_num += 1;
+            }
+
+            // Final assembly
+            let total_cal = variant.get("total_calories").and_then(|c| c.as_i64()).unwrap_or(0);
+            let assemble = match locale {
+                "ru" => format!("Соберите блюдо: выложите на тарелку, подайте. Итого ~{total_cal} ккал."),
+                "pl" => format!("Złóż danie: ułóż na talerzu i podaj. Razem ~{total_cal} kcal."),
+                "uk" => format!("Зберіть страву: викладіть на тарілку, подайте. Разом ~{total_cal} ккал."),
+                _    => format!("Assemble the dish: plate up and serve. Total ~{total_cal} kcal."),
+            };
+            steps.push(serde_json::json!({
+                "step": step_num,
+                "text": assemble,
+                "time_minutes": 2
+            }));
+        }
+    }
+
+    // Fallback: generic steps if no variant data
+    if steps.is_empty() {
+        let names = ingredients.join(", ");
+        let s1 = match locale {
+            "ru" => format!("Подготовьте ингредиенты: {}.", names),
+            "pl" => format!("Przygotuj składniki: {}.", names),
+            "uk" => format!("Підготуйте інгредієнти: {}.", names),
+            _    => format!("Prepare your ingredients: {}.", names),
+        };
+        let s2 = match locale {
+            "ru" => "Нарежьте, смешайте и приготовьте по вкусу.".to_string(),
+            "pl" => "Pokrój, wymieszaj i gotuj według smaku.".to_string(),
+            "uk" => "Наріжте, змішайте та приготуйте за смаком.".to_string(),
+            _    => "Cut, mix, and cook to your preference.".to_string(),
+        };
+        let s3 = match locale {
+            "ru" => "Подайте тёплым.".to_string(),
+            "pl" => "Podaj na ciepło.".to_string(),
+            "uk" => "Подайте теплим.".to_string(),
+            _    => "Serve warm.".to_string(),
+        };
+        steps = vec![
+            serde_json::json!({ "step": 1, "text": s1, "time_minutes": 5 }),
+            serde_json::json!({ "step": 2, "text": s2, "time_minutes": 10 }),
+            serde_json::json!({ "step": 3, "text": s3, "time_minutes": 2 }),
+        ];
+    }
+
+    serde_json::json!(steps)
+}
+
+// ── Optimization Tips Generator ──────────────────────────────────────────────
+
+/// Generate optimization/adjustment tips from next_actions and diagnostics.
+fn generate_optimization_tips(
+    smart: &serde_json::Value,
+    locale: &str,
+) -> serde_json::Value {
+    let mut tips: Vec<serde_json::Value> = Vec::new();
+
+    // From next_actions
+    if let Some(actions) = smart.get("next_actions").and_then(|a| a.as_array()) {
+        for action in actions.iter().take(5) {
+            let action_type = action.get("type").and_then(|t| t.as_str()).unwrap_or("add");
+            let name = action.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let reason = action.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+            if name.is_empty() { continue; }
+
+            let icon = match action_type {
+                "add" => "➕",
+                "remove" => "➖",
+                "swap" => "🔄",
+                "adjust" => "⚙️",
+                _ => "💡",
+            };
+
+            tips.push(serde_json::json!({
+                "icon": icon,
+                "action": action_type,
+                "ingredient": name,
+                "tip": reason
+            }));
+        }
+    }
+
+    // From diagnostics issues
+    if let Some(diag) = smart.get("diagnostics") {
+        if let Some(issues) = diag.get("issues").and_then(|i| i.as_array()) {
+            for issue in issues.iter().take(3) {
+                let severity = issue.get("severity").and_then(|s| s.as_str()).unwrap_or("info");
+                let message = issue.get("message").and_then(|m| m.as_str()).unwrap_or("");
+                if message.is_empty() { continue; }
+
+                let icon = match severity {
+                    "critical" => "🔴",
+                    "warning" => "🟡",
+                    _ => "💡",
+                };
+
+                tips.push(serde_json::json!({
+                    "icon": icon,
+                    "action": "tip",
+                    "ingredient": "",
+                    "tip": message
+                }));
+            }
+        }
+    }
+
+    // Fallback generic tips if nothing from engine
+    if tips.is_empty() {
+        let generic = match locale {
+            "ru" => vec![
+                ("➕", "Добавьте оливковое масло для улучшения текстуры и усвоения жирорастворимых витаминов"),
+                ("➕", "Добавьте лимонный сок для яркости вкуса и лучшего усвоения железа"),
+                ("⚙️", "Контролируйте порцию — начните с рекомендованных граммов и корректируйте"),
+            ],
+            "pl" => vec![
+                ("➕", "Dodaj oliwę z oliwek dla lepszej tekstury i wchłaniania witamin rozpuszczalnych w tłuszczach"),
+                ("➕", "Dodaj sok z cytryny dla świeżości smaku i lepszego wchłaniania żelaza"),
+                ("⚙️", "Kontroluj porcję — zacznij od zalecanych gramów i dostosuj"),
+            ],
+            "uk" => vec![
+                ("➕", "Додайте оливкову олію для кращої текстури та засвоєння жиророзчинних вітамінів"),
+                ("➕", "Додайте лимонний сік для яскравості смаку та кращого засвоєння заліза"),
+                ("⚙️", "Контролюйте порцію — почніть із рекомендованих грамів та коригуйте"),
+            ],
+            _ => vec![
+                ("➕", "Add olive oil to improve mouthfeel and fat-soluble vitamin absorption"),
+                ("➕", "Add lemon juice for brightness and better iron absorption"),
+                ("⚙️", "Control portions — start with recommended grams and adjust to taste"),
+            ],
+        };
+        for (icon, tip) in generic {
+            tips.push(serde_json::json!({
+                "icon": icon,
+                "action": "tip",
+                "ingredient": "",
+                "tip": tip
+            }));
+        }
+    }
+
+    serde_json::json!(tips)
+}
+
 // ── Quality Scoring ──────────────────────────────────────────────────────────
 
 /// Score a lab combo page (0-5), similar to intent_pages audit.
@@ -385,20 +854,19 @@ fn quality_score(page: &LabComboPage) -> i16 {
         score += 1;
     }
 
-    // +1: smart_response has nutrition + flavor_profile
-    let has_nutrition = page.smart_response.get("nutrition").is_some();
-    let has_flavor = page.smart_response.get("flavor_profile").is_some();
-    if has_nutrition && has_flavor {
+    // +1: why_it_works ≥ 50 chars
+    if page.why_it_works.chars().count() >= 50 {
         score += 1;
     }
 
-    // +1: FAQ ≥ 3 entries
-    let faq_count = page.faq.as_array().map(|a| a.len()).unwrap_or(0);
-    if faq_count >= 3 {
+    // +1: how_to_cook ≥ 3 steps
+    let cook_steps = page.how_to_cook.as_array().map(|a| a.len()).unwrap_or(0);
+    if cook_steps >= 3 {
         score += 1;
     }
 
-    score
+    // Clamp to 5 max
+    score.min(5)
 }
 
 // ── Service ──────────────────────────────────────────────────────────────────
@@ -483,6 +951,9 @@ impl LabComboService {
         let h1 = generate_h1(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale);
         let intro = generate_intro(&ingredients, req.goal.as_deref(), &req.locale);
         let faq = generate_faq(&ingredients, &smart_json, &req.locale);
+        let why_it_works = generate_why_it_works(&ingredients, &smart_json, req.goal.as_deref(), &req.locale);
+        let how_to_cook = generate_how_to_cook(&ingredients, &smart_json, &req.locale);
+        let optimization_tips = generate_optimization_tips(&smart_json, &req.locale);
 
         let id = Uuid::new_v4();
 
@@ -492,16 +963,19 @@ impl LabComboService {
                 id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips,
                 smart_response, faq, status
             ) VALUES (
                 $1, $2, $3, $4,
                 $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14,
-                $15, $16, 'draft'
+                $15, $16, $17,
+                $18, $19, 'draft'
             )
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips, image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -520,6 +994,9 @@ impl LabComboService {
         .bind(&description)
         .bind(&h1)
         .bind(&intro)
+        .bind(&why_it_works)
+        .bind(&how_to_cook)
+        .bind(&optimization_tips)
         .bind(&smart_json)
         .bind(&faq)
         .fetch_one(&self.pool)
@@ -549,6 +1026,7 @@ impl LabComboService {
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips, image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -572,6 +1050,7 @@ impl LabComboService {
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips, image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -599,6 +1078,53 @@ impl LabComboService {
         Ok(())
     }
 
+    // ── Update (Admin) ───────────────────────────────────────────────────
+
+    pub async fn update(&self, id: Uuid, req: UpdateComboRequest) -> AppResult<LabComboPage> {
+        let page = sqlx::query_as::<_, LabComboPage>(
+            r#"
+            UPDATE lab_combo_pages SET
+                title = COALESCE($2, title),
+                description = COALESCE($3, description),
+                h1 = COALESCE($4, h1),
+                intro = COALESCE($5, intro),
+                why_it_works = COALESCE($6, why_it_works),
+                image_url = COALESCE($7, image_url),
+                updated_at = now()
+            WHERE id = $1
+            RETURNING id, slug, locale, ingredients,
+                goal, meal_type, diet, cooking_time, budget, cuisine,
+                title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips, image_url,
+                smart_response, faq, status, quality_score,
+                published_at::text, created_at::text, updated_at::text
+            "#,
+        )
+        .bind(id)
+        .bind(&req.title)
+        .bind(&req.description)
+        .bind(&req.h1)
+        .bind(&req.intro)
+        .bind(&req.why_it_works)
+        .bind(&req.image_url)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("combo page not found"))?;
+
+        // Recalculate quality score
+        let qs = quality_score(&page);
+        sqlx::query("UPDATE lab_combo_pages SET quality_score = $1 WHERE id = $2")
+            .bind(qs)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(LabComboPage {
+            quality_score: qs,
+            ..page
+        })
+    }
+
     // ── List (Admin) ─────────────────────────────────────────────────────
 
     pub async fn list(&self, query: ListCombosQuery) -> AppResult<Vec<LabComboPage>> {
@@ -610,6 +1136,7 @@ impl LabComboService {
             SELECT id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips, image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages
@@ -637,6 +1164,7 @@ impl LabComboService {
             SELECT id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
+                why_it_works, how_to_cook, optimization_tips, image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages

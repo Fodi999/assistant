@@ -703,7 +703,7 @@ pub fn create_router(
         .route("/", get(admin_lab_combos::list_combos))
         .route("/:id/publish", post(admin_lab_combos::publish_combo))
         .route("/:id/archive", post(admin_lab_combos::archive_combo))
-        .route("/:id", axum::routing::delete(admin_lab_combos::delete_combo))
+        .route("/:id", axum::routing::delete(admin_lab_combos::delete_combo).patch(admin_lab_combos::update_combo))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,

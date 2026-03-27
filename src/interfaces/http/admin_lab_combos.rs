@@ -1,7 +1,7 @@
 //! Admin HTTP handlers for Lab Combo SEO pages.
 
 use crate::application::lab_combos::{
-    GenerateComboRequest, LabComboPage, LabComboService, ListCombosQuery,
+    GenerateComboRequest, LabComboPage, LabComboService, ListCombosQuery, UpdateComboRequest,
 };
 use crate::domain::admin::AdminClaims;
 use crate::shared::AppError;
@@ -62,6 +62,17 @@ pub async fn delete_combo(
 ) -> Result<StatusCode, AppError> {
     svc.delete(id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// PATCH /api/admin/lab-combos/:id
+pub async fn update_combo(
+    _claims: AdminClaims,
+    State(svc): State<Arc<LabComboService>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateComboRequest>,
+) -> Result<Json<LabComboPage>, AppError> {
+    let page = svc.update(id, req).await?;
+    Ok(Json(page))
 }
 
 #[derive(Debug, Deserialize)]
