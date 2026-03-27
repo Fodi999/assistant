@@ -1424,8 +1424,8 @@ async fn enrich_seo_with_ai(
     };
 
     let prompt = format!(
-        r#"You are an expert chef and SEO copywriter.
-Write UNIQUE, engaging SEO content for an ingredient combo page.
+        r#"You are an expert chef and SEO copywriter who writes for Google featured snippets.
+Write UNIQUE, click-worthy SEO content for an ingredient combo page.
 
 Ingredients: {names}
 Goal: {goal_text}
@@ -1434,14 +1434,19 @@ Language: {lang} (write ALL fields in {lang})
 
 Return ONLY a JSON object with these fields:
 {{
-  "title": "SEO title, max 55 chars, include ingredients + goal, enticing",
-  "description": "Meta description, 120-150 chars, compelling, includes action verb",
-  "h1": "H1 heading, longer than title, includes key benefit",
-  "intro": "2-3 sentence intro paragraph (150-250 chars), unique angle on why this combo is special, chef-perspective writing style",
-  "why_it_works": "3-5 sentences (200-400 chars) explaining the science/culinary logic of why these ingredients work together. Mention specific nutrients, flavor pairings, textures. Professional chef tone."
+  "title": "SEO title, max 55 chars. Use HOOK FORMULA: [Ingredients] + [Benefit] + (number). Examples: 'Rice & Lentil Bowl — 22g Protein, 15 Min', 'Salmon Avocado Lunch: 30g Protein Ready Fast'. Always include a number (protein, time, or calories).",
+  "description": "Meta description, 120-150 chars. Start with action verb (Try, Discover, Make). Include a specific number. End with benefit.",
+  "h1": "H1 heading, 40-70 chars, longer than title. Include key benefit + ingredients. Can be a question or statement.",
+  "intro": "2-3 sentences (150-250 chars). Unique chef-perspective angle on why this combo is special. Mention a surprising fact or science insight. No generic filler.",
+  "why_it_works": "3-5 sentences (200-400 chars). Explain the culinary science: specific nutrients, amino acid complementarity, flavor pairings (umami + acid, etc.), texture contrasts. Professional chef tone."
 }}
 
-Critical: Write naturally as a professional chef, NOT like AI. Each field must be unique — never repeat the same phrases across fields. No generic filler."#
+Critical rules:
+1. Write naturally as a professional chef, NOT like AI
+2. Every field must be unique — never repeat phrases across fields
+3. Title MUST contain a number (grams of protein, minutes, calories)
+4. No generic words like "delicious", "amazing", "perfect"
+5. Be specific: name actual nutrients, cooking techniques, flavor compounds"#
     );
 
     let raw_response = llm.groq_raw_request_with_model(&prompt, 2000, "gemini-3-flash-preview").await?;
