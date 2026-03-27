@@ -623,98 +623,125 @@ fn generate_how_to_cook(
 
     let mut steps: Vec<serde_json::Value> = Vec::new();
 
+    // Raw-only ingredients that should NEVER be cooked
+    let raw_only = ["avocado", "lettuce", "arugula", "cucumber", "basil", "cilantro",
+                     "parsley", "dill", "mint", "lemon", "lime"];
+    // Grains/starches that need boiling
+    let grains = ["rice", "pasta", "quinoa", "bulgur", "couscous", "oats", "noodle", "noodles"];
+    // Proteins that must be cooked
+    let proteins = ["salmon", "chicken", "beef", "pork", "tuna", "cod", "shrimp", "prawn",
+                     "turkey", "lamb", "duck", "egg", "eggs", "tofu"];
+
     if let Some(variant) = reference_variant {
         let variant_ingredients = variant.get("ingredients").and_then(|i| i.as_array());
 
         if let Some(vi) = variant_ingredients {
-            // Group ingredients by role for cooking order
-            let bases: Vec<&serde_json::Value> = vi.iter()
-                .filter(|i| i.get("role").and_then(|r| r.as_str()) == Some("base"))
-                .collect();
-            let sides: Vec<&serde_json::Value> = vi.iter()
-                .filter(|i| i.get("role").and_then(|r| r.as_str()) == Some("side"))
-                .collect();
-            let aromatics: Vec<&serde_json::Value> = vi.iter()
-                .filter(|i| {
-                    let role = i.get("role").and_then(|r| r.as_str()).unwrap_or("");
-                    role == "aromatic" || role == "fat" || role == "sauce"
-                })
-                .collect();
+            // Classify ingredients by cooking method, NOT by variant role
+            let mut grain_items: Vec<(&str, f64)> = Vec::new();
+            let mut protein_items: Vec<(&str, f64)> = Vec::new();
+            let mut raw_items: Vec<(&str, f64)> = Vec::new();
+            let mut other_cook_items: Vec<(&str, f64)> = Vec::new();
+
+            for ing in vi.iter() {
+                let name = ing.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let grams = ing.get("grams").and_then(|g| g.as_f64()).unwrap_or(100.0);
+                let name_lower = name.to_lowercase();
+
+                if raw_only.iter().any(|r| name_lower.contains(r)) {
+                    raw_items.push((name, grams));
+                } else if grains.iter().any(|g| name_lower.contains(g)) {
+                    grain_items.push((name, grams));
+                } else if proteins.iter().any(|p| name_lower.contains(p)) {
+                    protein_items.push((name, grams));
+                } else {
+                    // Vegetables like broccoli, spinach (to cook), peppers, etc.
+                    other_cook_items.push((name, grams));
+                }
+            }
 
             let mut step_num = 1;
 
-            // Step 1: Cook base ingredients (protein/grains) with SPECIFIC instructions
-            if !bases.is_empty() {
-                let base_details: Vec<String> = bases.iter()
-                    .filter_map(|b| {
-                        let name = b.get("name").and_then(|n| n.as_str())?;
-                        let grams = b.get("grams").and_then(|g| g.as_f64())?;
-                        Some(format!("{name} ({grams:.0} g)"))
-                    })
+            // Step 1: Cook grains (they take longest — start first)
+            if !grain_items.is_empty() {
+                let details: Vec<String> = grain_items.iter()
+                    .map(|(name, grams)| format!("{name} ({grams:.0}g)"))
                     .collect();
-                let base_names: Vec<String> = bases.iter()
-                    .filter_map(|b| b.get("name").and_then(|n| n.as_str()).map(String::from))
-                    .collect();
-
                 let step_text = match locale {
-                    "ru" => format!("Приготовьте {}. Обжарьте на среднем огне 5–7 минут с каждой стороны или отварите до готовности.", base_details.join(", ")),
-                    "pl" => format!("Przygotuj {}. Usmaż na średnim ogniu 5–7 minut z każdej strony lub ugotuj do gotowości.", base_details.join(", ")),
-                    "uk" => format!("Приготуйте {}. Обсмажте на середньому вогні 5–7 хвилин з кожного боку або зваріть до готовності.", base_details.join(", ")),
-                    _    => format!("Cook {}. Pan-sear over medium heat 5–7 min per side, or boil until done.", base_details.join(", ")),
+                    "ru" => format!("Сварите {} в подсоленной воде (соотношение 2:1) 12–15 мин. Снимите с огня, накройте и оставьте на 5 мин.", details.join(", ")),
+                    "pl" => format!("Ugotuj {} w osolonej wodzie (proporcja 2:1) 12–15 min. Zdejmij z ognia, przykryj i zostaw na 5 min.", details.join(", ")),
+                    "uk" => format!("Зваріть {} у підсоленій воді (співвідношення 2:1) 12–15 хв. Зніміть з вогню, накрийте і залиште на 5 хв.", details.join(", ")),
+                    _    => format!("Boil {} in salted water (2:1 ratio) for 12–15 min. Remove from heat, cover, and let rest 5 min.", details.join(", ")),
                 };
                 steps.push(serde_json::json!({
                     "step": step_num,
                     "text": step_text,
-                    "time_minutes": 10,
-                    "ingredients": base_names
+                    "time_minutes": 15
                 }));
                 step_num += 1;
             }
 
-            // Step 2: Prepare sides (rice, vegetables, etc.)
-            if !sides.is_empty() {
-                let side_details: Vec<String> = sides.iter()
-                    .filter_map(|s| {
-                        let name = s.get("name").and_then(|n| n.as_str())?;
-                        let grams = s.get("grams").and_then(|g| g.as_f64())?;
-                        Some(format!("{name} ({grams:.0} g)"))
-                    })
+            // Step 2: Cook protein
+            if !protein_items.is_empty() {
+                let details: Vec<String> = protein_items.iter()
+                    .map(|(name, grams)| format!("{name} ({grams:.0}g)"))
                     .collect();
-
+                let name_lower = protein_items[0].0.to_lowercase();
+                let (method_en, method_ru, method_pl, method_uk, time) =
+                    if name_lower.contains("egg") {
+                        ("Fry eggs in a non-stick pan over medium heat", "Обжарьте яйца на сковороде с антипригарным покрытием на среднем огне", "Usmaż jajka na patelni z powłoką nieprzywierającą na średnim ogniu", "Обсмажте яйця на сковороді з антипригарним покриттям на середньому вогні", 4)
+                    } else if name_lower.contains("shrimp") || name_lower.contains("prawn") {
+                        ("Sauté shrimp in olive oil over high heat until pink", "Обжарьте креветки в оливковом масле на сильном огне до розового цвета", "Usmaż krewetki na oliwie z oliwek na dużym ogniu do różowego koloru", "Обсмажте креветки в оливковій олії на сильному вогні до рожевого кольору", 4)
+                    } else {
+                        ("Pan-sear over medium-high heat, 4–5 min per side until golden", "Обжарьте на среднем-сильном огне 4–5 мин с каждой стороны до золотистой корочки", "Usmaż na średnio-dużym ogniu 4–5 min z każdej strony do złotego koloru", "Обсмажте на середньо-сильному вогні 4–5 хв з кожного боку до золотистої скоринки", 10)
+                    };
                 let step_text = match locale {
-                    "ru" => format!("Подготовьте гарнир: {}. Нарежьте овощи и отварите крупы (10–12 мин).", side_details.join(", ")),
-                    "pl" => format!("Przygotuj dodatki: {}. Pokrój warzywa i ugotuj zboża (10–12 min).", side_details.join(", ")),
-                    "uk" => format!("Підготуйте гарнір: {}. Наріжте овочі та зваріть крупи (10–12 хв).", side_details.join(", ")),
-                    _    => format!("Prepare sides: {}. Slice vegetables and cook grains (10–12 min).", side_details.join(", ")),
+                    "ru" => format!("{} {}.", method_ru, details.join(", ")),
+                    "pl" => format!("{} {}.", method_pl, details.join(", ")),
+                    "uk" => format!("{} {}.", method_uk, details.join(", ")),
+                    _    => format!("{} {}.", method_en, details.join(", ")),
                 };
                 steps.push(serde_json::json!({
                     "step": step_num,
                     "text": step_text,
-                    "time_minutes": 12,
-                    "ingredients": sides.iter()
-                        .filter_map(|s| s.get("name").and_then(|n| n.as_str()).map(String::from))
-                        .collect::<Vec<_>>()
+                    "time_minutes": time
                 }));
                 step_num += 1;
             }
 
-            // Step 3: Add aromatics/sauces
-            if !aromatics.is_empty() {
-                let aro_names: Vec<String> = aromatics.iter()
-                    .filter_map(|a| a.get("name").and_then(|n| n.as_str()).map(String::from))
+            // Step 3: Cook other vegetables (if any)
+            if !other_cook_items.is_empty() {
+                let details: Vec<String> = other_cook_items.iter()
+                    .map(|(name, grams)| format!("{name} ({grams:.0}g)"))
                     .collect();
-
                 let step_text = match locale {
-                    "ru" => format!("Добавьте {}. Перемешайте и прогрейте 1–2 мин.", aro_names.join(", ")),
-                    "pl" => format!("Dodaj {}. Wymieszaj i podgrzewaj 1–2 min.", aro_names.join(", ")),
-                    "uk" => format!("Додайте {}. Перемішайте та прогрійте 1–2 хв.", aro_names.join(", ")),
-                    _    => format!("Add {}. Toss together and heat through for 1–2 min.", aro_names.join(", ")),
+                    "ru" => format!("Обжарьте {} на среднем огне 3–4 мин, помешивая.", details.join(", ")),
+                    "pl" => format!("Usmaż {} na średnim ogniu 3–4 min, mieszając.", details.join(", ")),
+                    "uk" => format!("Обсмажте {} на середньому вогні 3–4 хв, помішуючи.", details.join(", ")),
+                    _    => format!("Sauté {} over medium heat for 3–4 min, stirring.", details.join(", ")),
                 };
                 steps.push(serde_json::json!({
                     "step": step_num,
                     "text": step_text,
-                    "time_minutes": 2,
-                    "ingredients": aro_names
+                    "time_minutes": 4
+                }));
+                step_num += 1;
+            }
+
+            // Step 4: Prepare raw ingredients (slice, arrange — NO cooking)
+            if !raw_items.is_empty() {
+                let details: Vec<String> = raw_items.iter()
+                    .map(|(name, grams)| format!("{name} ({grams:.0}g)"))
+                    .collect();
+                let step_text = match locale {
+                    "ru" => format!("Нарежьте {} и выложите в тарелку.", details.join(", ")),
+                    "pl" => format!("Pokrój {} i ułóż na talerzu.", details.join(", ")),
+                    "uk" => format!("Наріжте {} та викладіть на тарілку.", details.join(", ")),
+                    _    => format!("Slice {} and arrange on the plate.", details.join(", ")),
+                };
+                steps.push(serde_json::json!({
+                    "step": step_num,
+                    "text": step_text,
+                    "time_minutes": 2
                 }));
                 step_num += 1;
             }
@@ -731,10 +758,10 @@ fn generate_how_to_cook(
                 .unwrap_or(0.0);
 
             let assemble = match locale {
-                "ru" => format!("Выложите на тарелку и подавайте. Порция: ~{total_cal} ккал, ~{total_prot:.0} г белка."),
-                "pl" => format!("Ułóż na talerzu i podaj. Porcja: ~{total_cal} kcal, ~{total_prot:.0} g białka."),
-                "uk" => format!("Викладіть на тарілку та подавайте. Порція: ~{total_cal} ккал, ~{total_prot:.0} г білка."),
-                _    => format!("Plate up and serve. Per serving: ~{total_cal} kcal, ~{total_prot:.0}g protein."),
+                "ru" => format!("Соберите блюдо: выложите все компоненты на тарелку и подавайте. Порция: ~{total_cal} ккал, ~{total_prot:.0} г белка."),
+                "pl" => format!("Złóż danie: ułóż wszystkie składniki na talerzu i podaj. Porcja: ~{total_cal} kcal, ~{total_prot:.0} g białka."),
+                "uk" => format!("Зберіть страву: викладіть усі компоненти на тарілку та подавайте. Порція: ~{total_cal} ккал, ~{total_prot:.0} г білка."),
+                _    => format!("Assemble: arrange all components on the plate and serve. Per serving: ~{total_cal} kcal, ~{total_prot:.0}g protein."),
             };
             steps.push(serde_json::json!({
                 "step": step_num,
@@ -744,32 +771,59 @@ fn generate_how_to_cook(
         }
     }
 
-    // Fallback: ingredient-specific steps if no variant data
+    // Fallback: ingredient-aware steps if no variant data
     if steps.is_empty() {
-        let names_list = ingredients.join(", ");
-        let s1 = match locale {
-            "ru" => format!("Подготовьте ингредиенты: {}. Вымойте и нарежьте.", names_list),
-            "pl" => format!("Przygotuj składniki: {}. Umyj i pokrój.", names_list),
-            "uk" => format!("Підготуйте інгредієнти: {}. Вимийте та наріжте.", names_list),
-            _    => format!("Prep your ingredients: {}. Wash and cut.", names_list),
+        let mut step_num = 1;
+        let mut fallback_steps: Vec<serde_json::Value> = Vec::new();
+
+        // Separate ingredients by type
+        let mut has_grain = false;
+        let mut has_protein = false;
+
+        for ing in ingredients {
+            let ing_lower = ing.to_lowercase();
+            if grains.iter().any(|g| ing_lower.contains(g)) && !has_grain {
+                has_grain = true;
+                let step_text = match locale {
+                    "ru" => format!("Сварите {} (100 г) в подсоленной воде 12–15 мин.", ing),
+                    "pl" => format!("Ugotuj {} (100 g) w osolonej wodzie 12–15 min.", ing),
+                    "uk" => format!("Зваріть {} (100 г) у підсоленій воді 12–15 хв.", ing),
+                    _    => format!("Boil {} (100g) in salted water for 12–15 min.", ing),
+                };
+                fallback_steps.push(serde_json::json!({ "step": step_num, "text": step_text, "time_minutes": 15 }));
+                step_num += 1;
+            } else if proteins.iter().any(|p| ing_lower.contains(p)) && !has_protein {
+                has_protein = true;
+                let step_text = match locale {
+                    "ru" => format!("Обжарьте {} (150 г) на среднем-сильном огне 4–5 мин с каждой стороны.", ing),
+                    "pl" => format!("Usmaż {} (150 g) na średnio-dużym ogniu 4–5 min z każdej strony.", ing),
+                    "uk" => format!("Обсмажте {} (150 г) на середньо-сильному вогні 4–5 хв з кожного боку.", ing),
+                    _    => format!("Pan-sear {} (150g) over medium-high heat, 4–5 min per side.", ing),
+                };
+                fallback_steps.push(serde_json::json!({ "step": step_num, "text": step_text, "time_minutes": 10 }));
+                step_num += 1;
+            } else if raw_only.iter().any(|r| ing_lower.contains(r)) {
+                let step_text = match locale {
+                    "ru" => format!("Нарежьте {} (80 г) и отложите.", ing),
+                    "pl" => format!("Pokrój {} (80 g) i odłóż.", ing),
+                    "uk" => format!("Наріжте {} (80 г) та відкладіть.", ing),
+                    _    => format!("Slice {} (80g) and set aside.", ing),
+                };
+                fallback_steps.push(serde_json::json!({ "step": step_num, "text": step_text, "time_minutes": 2 }));
+                step_num += 1;
+            }
+        }
+
+        // Final assemble step
+        let assemble = match locale {
+            "ru" => "Соберите блюдо: выложите все компоненты на тарелку и подавайте.".to_string(),
+            "pl" => "Złóż danie: ułóż wszystkie składniki na talerzu i podaj.".to_string(),
+            "uk" => "Зберіть страву: викладіть усі компоненти на тарілку та подавайте.".to_string(),
+            _    => "Assemble: arrange all components on the plate and serve.".to_string(),
         };
-        let s2 = match locale {
-            "ru" => "Обжарьте на среднем огне 7–10 минут, помешивая.".to_string(),
-            "pl" => "Usmaż na średnim ogniu 7–10 minut, mieszając.".to_string(),
-            "uk" => "Обсмажте на середньому вогні 7–10 хвилин, помішуючи.".to_string(),
-            _    => "Cook over medium heat for 7–10 minutes, stirring occasionally.".to_string(),
-        };
-        let s3 = match locale {
-            "ru" => "Выложите на тарелку и подавайте сразу.".to_string(),
-            "pl" => "Ułóż na talerzu i podaj od razu.".to_string(),
-            "uk" => "Викладіть на тарілку та подавайте одразу.".to_string(),
-            _    => "Plate up and serve immediately.".to_string(),
-        };
-        steps = vec![
-            serde_json::json!({ "step": 1, "text": s1, "time_minutes": 5 }),
-            serde_json::json!({ "step": 2, "text": s2, "time_minutes": 10 }),
-            serde_json::json!({ "step": 3, "text": s3, "time_minutes": 2 }),
-        ];
+        fallback_steps.push(serde_json::json!({ "step": step_num, "text": assemble, "time_minutes": 2 }));
+
+        steps = fallback_steps;
     }
 
     serde_json::json!(steps)
@@ -1557,54 +1611,120 @@ Return ONLY valid JSON (no markdown fences, no extra text):
   ]
 }}
 
-STRICT RULES for each field:
+═══════════════════════════════════════
+🔥 COOKING RULES (CRITICAL — follow exactly)
+═══════════════════════════════════════
+
+RAW-ONLY INGREDIENTS (NEVER cook these):
+- avocado → slice, fan out, or dice. NEVER pan-sear or heat avocado.
+- lettuce, arugula, spinach (when used as salad) → wash and arrange
+- cucumber → slice or dice
+- tomato → slice, dice, or leave raw (unless specifically grilling)
+- herbs (basil, cilantro, parsley, dill, mint) → chop and add at the end
+- lemon, lime → squeeze juice or slice as garnish
+
+MUST-COOK INGREDIENTS (always apply heat):
+- fish (salmon, tuna, cod, etc.) → pan-sear 4-5 min per side, bake 12-15 min at 200°C, or grill
+- chicken → pan-sear 6-7 min per side, or bake 20-25 min at 190°C
+- beef, pork → sear 3-4 min per side for medium
+- eggs → scramble 3 min, fry 4 min, or boil 7-10 min
+- shrimp → sauté 2-3 min per side until pink
+
+GRAINS & STARCHES (always boil/steam):
+- rice → boil in 2:1 water ratio for 12-15 min, rest 5 min covered
+- pasta → boil in salted water for 8-10 min
+- quinoa → boil in 2:1 water for 15 min
+- potato → boil 15-20 min or bake 40 min
+
+STEP ORDER (must follow this sequence):
+1. First: cook grains/starches (they take longest)
+2. Second: cook protein (fish, meat, eggs)
+3. Third: prepare raw ingredients (slice avocado, chop herbs)
+4. Last: assemble on plate and serve
+
+Each step MUST include:
+- specific ingredient name
+- weight in grams
+- cooking method (pan-sear, boil, slice, etc.)
+- time in minutes
+- temperature or heat level where relevant
+
+BAD examples (NEVER write like this):
+- "Prepare sides: Rice, Salmon" ← wrong: salmon is NOT a side, and "prepare" is vague
+- "Cook Avocado (136g). Pan-sear..." ← wrong: avocado is NEVER cooked
+- "Cook base ingredients" ← wrong: too generic, no specifics
+- "Season to taste" ← wrong: vague filler
+
+GOOD examples (write like this):
+- "Boil rice (100g) in 200ml water for 12 min. Remove from heat, cover, rest 5 min."
+- "Pan-sear salmon fillet (150g) over medium-high heat, 4-5 min per side until golden."
+- "Slice avocado (80g) into thin fans and arrange on plate."
+- "Chop fresh cilantro (5g) and scatter over the finished dish."
+
+═══════════════════════════════════════
+🔥 NUTRITION RULES (CRITICAL)
+═══════════════════════════════════════
+
+NEVER return protein = 0g. Calculate protein based on real food data:
+- Salmon: ~20g protein per 100g
+- Chicken breast: ~31g protein per 100g
+- Eggs (1 large): ~6g protein
+- Rice (cooked): ~2.7g protein per 100g
+- Avocado: ~2g protein per 100g
+- Tuna: ~23g protein per 100g
+- Shrimp: ~24g protein per 100g
+- Beef: ~26g protein per 100g
+- Tofu: ~8g protein per 100g
+
+For a dish with {names} (~300g serving), calculate REALISTIC total protein.
+Example: Salmon (150g) = 30g + Rice (100g) = 2.7g + Avocado (80g) = 1.6g = ~34g protein
+
+═══════════════════════════════════════
+🔥 FIELD RULES
+═══════════════════════════════════════
 
 title (max 55 chars):
 - Format: "[Dish Name] ([Number]g Protein, [Number] Min)"
-- MUST end with parentheses containing 2 numbers: protein + time
-- Examples: "Salmon Rice Bowl (28g Protein, 15 Min)", "Chicken Broccoli Dinner (32g Protein, 20 Min)"
-- NEVER use "analysis", "combo", "combination", "recipe" in title
-- NEVER use " | " or " — " as separator, use parentheses
+- MUST end with parentheses containing REAL protein grams + cooking time
+- Calculate protein from ingredient weights above, do NOT use 0g
+- Examples: "Salmon Rice Bowl (34g Protein, 15 Min)", "Chicken Broccoli Dinner (38g Protein, 20 Min)"
+- NEVER use words: "analysis", "combo", "combination"
 
 description (120-150 chars):
 - Start with action verb: "Make", "Try", "Cook"
-- Include one specific number
-- End with benefit for the reader
-- Example: "Make this salmon rice bowl in 15 minutes. 28g protein per serving — perfect for a post-workout meal."
+- Include REAL protein number calculated from ingredients
+- Example: "Make this salmon rice bowl in 15 minutes. 34g protein per serving — perfect for post-workout."
 
 h1 (40-70 chars):
-- Must be different from title, LONGER than title
-- Write as recipe name: "[Ingredients] [Dish Type] — [Key Benefit] Recipe"
-- Example: "Salmon Avocado Rice Bowl — Healthy Breakfast Recipe"
+- Write as recipe name: "[Main Ingredient] [Side] [Dish Type] — [Key Benefit] Recipe"
+- Example: "Salmon Avocado Rice Bowl — High Protein Breakfast Recipe"
 - NEVER start with "Analysis:" or "Combo:"
 
 intro (150-250 chars):
-- CRITICAL: First sentence = direct answer with numbers. Format: "This [dish] delivers ~[N]g protein and is ready in [N] minutes."
-- Second sentence adds ONE specific culinary fact (nutrient, technique, or flavor science)
-- This targets Google featured snippets — the first sentence MUST standalone as a complete answer
-- NO filler words: "delicious", "amazing", "perfect", "comprehensive"
-- Write as a real chef, not as AI
+- FIRST SENTENCE = direct answer with REAL numbers: "This [dish] delivers ~[N]g protein and is ready in [N] minutes."
+- Calculate protein from actual ingredient weights
+- Second sentence: one specific culinary or nutrition fact
+- NO filler: "delicious", "amazing", "perfect", "comprehensive"
 
 why_it_works (200-400 chars):
-- Explain CULINARY SCIENCE: which nutrient each ingredient provides
-- Name specific compounds: omega-3, leucine, beta-carotene, resistant starch
-- Explain flavor pairing logic: umami + acid, fat + crunch, sweet + salt
-- Professional chef tone, NOT marketing copy
+- Explain the ROLE of EACH ingredient:
+  * Protein source: "[ingredient] provides [N]g protein, rich in [specific nutrient like omega-3, leucine, etc.]"
+  * Carb source: "[ingredient] provides sustained energy via [complex carbs / resistant starch]"
+  * Fat source: "[ingredient] adds [N]g healthy monounsaturated fats for satiety"
+- Then explain flavor pairing: umami + acid, fat + crunch, etc.
+- NEVER write generic phrases like "Optimized for balanced..." or "This combination is great"
 
-how_to_cook (array of 3-5 steps):
-- Each step MUST be a concrete cooking action with time
-- Include exact grams from ingredients
-- BAD: "Prepare ingredients", "Cook base"
-- GOOD: "Pan-sear salmon fillet (150g) for 4-5 min per side over medium-high heat"
-- GOOD: "Cook rice (100g) in 200ml water for 12 min, then rest 5 min covered"
-- GOOD: "Slice avocado (80g) and fan out on plate"
+═══════════════════════════════════════
+🔥 ABSOLUTE PROHIBITIONS
+═══════════════════════════════════════
 
-ABSOLUTE PROHIBITIONS:
-- Do NOT use words: "analysis", "analyze", "combo", "combination", "comprehensive", "detailed"
-- Do NOT write generic phrases: "prepare ingredients", "cook to preference", "season to taste"
-- Every cooking step must specify: ingredient name, weight in grams, time in minutes, cooking method
-- Every number must be realistic (not 0.0g protein)
-- Title MUST have parentheses with (Xg Protein, Y Min) format"#
+- NEVER cook avocado, lettuce, fresh herbs, cucumber
+- NEVER output protein = 0g when fish, meat, eggs, legumes, or tofu are present
+- NEVER use words: "analysis", "analyze", "combo", "combination", "comprehensive", "detailed"
+- NEVER write generic steps: "prepare ingredients", "cook to preference", "season to taste"
+- NEVER list protein (salmon/chicken/fish) as a "side" — it is ALWAYS the main
+- NEVER put the main protein in step 2+ if grains can cook simultaneously
+- Every number MUST be realistic, calculated from real food nutrition data"#
     );
 
     let raw_response = llm.groq_raw_request_with_model(&prompt, 3000, "gemini-3-flash-preview").await?;
