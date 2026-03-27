@@ -47,3 +47,18 @@ pub async fn get_related_combos(
     let combos = svc.get_related_combos(&slug, locale, limit).await?;
     Ok(Json(combos))
 }
+
+/// GET /public/lab-combos/:slug/also-cook?locale=en&limit=4
+///
+/// "People also cook" — combos with the same goal/meal but different ingredients.
+/// Provides discovery-based internal linking (complement to related combos).
+pub async fn get_also_cook(
+    State(svc): State<Arc<LabComboService>>,
+    Path(slug): Path<String>,
+    Query(query): Query<RelatedCombosQuery>,
+) -> Result<Json<Vec<RelatedCombo>>, AppError> {
+    let locale = query.locale.as_deref().unwrap_or("en");
+    let limit = query.limit.unwrap_or(4).min(8);
+    let combos = svc.get_also_cook(&slug, locale, limit).await?;
+    Ok(Json(combos))
+}

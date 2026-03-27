@@ -39,7 +39,7 @@ use crate::interfaces::http::{
         cms as public_cms,
         ingredients::{autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, get_ingredients_states_map, get_ingredients_sitemap_data, list_ingredients, list_ingredients_full},
         intent_pages::{list_published_intent_pages, get_published_intent_page, get_related_intent_pages, get_ingredient_intent_pages},
-        lab_combos::{lab_combos_sitemap, get_lab_combo, get_related_combos},
+        lab_combos::{lab_combos_sitemap, get_lab_combo, get_related_combos, get_also_cook},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
         seo_content::get_seo_content,
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe, tools_run, tools_catalog},
@@ -708,6 +708,8 @@ pub fn create_router(
         .route("/:id/archive", post(admin_lab_combos::archive_combo))
         .route("/:id/image-upload-url", get(admin_lab_combos::get_image_upload_url))
         .route("/:id/image-url", axum::routing::put(admin_lab_combos::save_image_url))
+        .route("/:id/image-upload-url/:kind", get(admin_lab_combos::get_typed_image_upload_url))
+        .route("/:id/image-url/:kind", axum::routing::put(admin_lab_combos::save_typed_image_url))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -729,6 +731,7 @@ pub fn create_router(
         .route("/lab-combos/sitemap", get(lab_combos_sitemap))
         .route("/lab-combos/:slug", get(get_lab_combo))
         .route("/lab-combos/:slug/related", get(get_related_combos))
+        .route("/lab-combos/:slug/also-cook", get(get_also_cook))
         .with_state(lab_combo_service);
 
     // ── Background scheduler: publish queued pages every hour ────────────────

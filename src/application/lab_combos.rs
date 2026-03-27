@@ -52,6 +52,8 @@ pub struct LabComboPage {
     pub how_to_cook: serde_json::Value,
     pub optimization_tips: serde_json::Value,
     pub image_url: Option<String>,
+    pub process_image_url: Option<String>,
+    pub detail_image_url: Option<String>,
     pub smart_response: serde_json::Value,
     pub faq: serde_json::Value,
     pub status: String,
@@ -126,6 +128,8 @@ pub struct UpdateComboRequest {
     pub intro: Option<String>,
     pub why_it_works: Option<String>,
     pub image_url: Option<String>,
+    pub process_image_url: Option<String>,
+    pub detail_image_url: Option<String>,
 }
 
 // ── Slug Builder ─────────────────────────────────────────────────────────────
@@ -1011,7 +1015,7 @@ impl LabComboService {
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
-                why_it_works, how_to_cook, optimization_tips, image_url,
+                why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1081,7 +1085,7 @@ impl LabComboService {
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
-                why_it_works, how_to_cook, optimization_tips, image_url,
+                why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1105,7 +1109,7 @@ impl LabComboService {
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
-                why_it_works, how_to_cook, optimization_tips, image_url,
+                why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1145,12 +1149,14 @@ impl LabComboService {
                 intro = COALESCE($5, intro),
                 why_it_works = COALESCE($6, why_it_works),
                 image_url = COALESCE($7, image_url),
+                process_image_url = COALESCE($8, process_image_url),
+                detail_image_url = COALESCE($9, detail_image_url),
                 updated_at = now()
             WHERE id = $1
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
-                why_it_works, how_to_cook, optimization_tips, image_url,
+                why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1162,6 +1168,8 @@ impl LabComboService {
         .bind(&req.intro)
         .bind(&req.why_it_works)
         .bind(&req.image_url)
+        .bind(&req.process_image_url)
+        .bind(&req.detail_image_url)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::not_found("combo page not found"))?;
@@ -1191,7 +1199,7 @@ impl LabComboService {
             SELECT id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
-                why_it_works, how_to_cook, optimization_tips, image_url,
+                why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages
@@ -1219,7 +1227,7 @@ impl LabComboService {
             SELECT id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
-                why_it_works, how_to_cook, optimization_tips, image_url,
+                why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages
@@ -1260,6 +1268,45 @@ impl LabComboService {
             ORDER BY array_length(
                 ARRAY(SELECT unnest(p.ingredients) INTERSECT SELECT unnest(c.ingredients)), 1
             ) DESC, p.quality_score DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(slug)
+        .bind(locale)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    // ── Public: "People also cook" — discovery by same goal/meal, different ingredients
+
+    pub async fn get_also_cook(
+        &self,
+        slug: &str,
+        locale: &str,
+        limit: i64,
+    ) -> AppResult<Vec<RelatedCombo>> {
+        let rows = sqlx::query_as::<_, RelatedCombo>(
+            r#"
+            WITH current AS (
+                SELECT id, ingredients, goal, meal_type
+                FROM lab_combo_pages
+                WHERE slug = $1 AND locale = $2 AND status = 'published'
+                LIMIT 1
+            )
+            SELECT p.slug, p.title, p.ingredients, p.goal, p.meal_type, p.image_url
+            FROM lab_combo_pages p, current c
+            WHERE p.status = 'published'
+              AND p.locale = $2
+              AND p.id != c.id
+              AND (
+                  (p.goal IS NOT NULL AND p.goal = c.goal)
+                  OR (p.meal_type IS NOT NULL AND p.meal_type = c.meal_type)
+              )
+              AND NOT (p.ingredients && c.ingredients)
+            ORDER BY p.quality_score DESC, p.published_at DESC
             LIMIT $3
             "#,
         )
@@ -1392,23 +1439,70 @@ impl LabComboService {
     /// PUT /api/admin/lab-combos/:id/image-url
     /// Saves the public URL after the frontend has uploaded the file to R2.
     pub async fn save_image_url(&self, id: Uuid, image_url: String) -> AppResult<LabComboPage> {
-        let page = sqlx::query_as::<_, LabComboPage>(
+        self.save_typed_image_url(id, "hero", image_url).await
+    }
+
+    /// GET /api/admin/lab-combos/:id/image-upload-url/:kind?content_type=image/webp
+    /// Returns presigned URL for hero/process/detail image.
+    pub async fn get_typed_image_upload_url(
+        &self,
+        id: Uuid,
+        kind: &str,
+        content_type: &str,
+    ) -> AppResult<crate::application::user::AvatarUploadResponse> {
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM lab_combo_pages WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
+        if !exists {
+            return Err(AppError::not_found("Lab combo not found"));
+        }
+
+        let ext = if content_type.contains("jpeg") || content_type.contains("jpg") {
+            "jpg"
+        } else if content_type.contains("png") {
+            "png"
+        } else {
+            "webp"
+        };
+
+        let key = format!("assets/lab-combos/{}-{}.{}", id, kind, ext);
+        let upload_url = self.r2_client.generate_presigned_upload_url(&key, content_type).await?;
+        let public_url = self.r2_client.get_public_url(&key);
+
+        Ok(crate::application::user::AvatarUploadResponse { upload_url, public_url })
+    }
+
+    /// PUT /api/admin/lab-combos/:id/image-url/:kind
+    /// Saves URL for hero, process, or detail image.
+    pub async fn save_typed_image_url(&self, id: Uuid, kind: &str, url: String) -> AppResult<LabComboPage> {
+        let column = match kind {
+            "process" => "process_image_url",
+            "detail" => "detail_image_url",
+            _ => "image_url", // "hero" or default
+        };
+
+        // Dynamic column — safe because we whitelist above
+        let sql = format!(
             r#"
-            UPDATE lab_combo_pages SET image_url = $1, updated_at = NOW()
+            UPDATE lab_combo_pages SET {} = $1, updated_at = NOW()
             WHERE id = $2
             RETURNING id, slug, locale, ingredients,
                 goal, meal_type, diet, cooking_time, budget, cuisine,
                 title, description, h1, intro,
-                why_it_works, how_to_cook, optimization_tips, image_url,
+                why_it_works, how_to_cook, optimization_tips, image_url, process_image_url, detail_image_url,
                 smart_response, faq, status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
-        )
-        .bind(&image_url)
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::not_found("Lab combo not found"))?;
+            column,
+        );
+
+        let page = sqlx::query_as::<_, LabComboPage>(&sql)
+            .bind(&url)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::not_found("Lab combo not found"))?;
 
         Ok(page)
     }

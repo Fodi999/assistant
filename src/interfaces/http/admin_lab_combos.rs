@@ -135,3 +135,28 @@ pub async fn save_image_url(
     let page = svc.save_image_url(id, req.image_url).await?;
     Ok(Json(page))
 }
+
+/// GET /api/admin/lab-combos/:id/image-upload-url/:kind?content_type=image/webp
+/// kind = "hero" | "process" | "detail"
+pub async fn get_typed_image_upload_url(
+    _claims: AdminClaims,
+    State(svc): State<Arc<LabComboService>>,
+    Path((id, kind)): Path<(Uuid, String)>,
+    Query(q): Query<ImageUploadUrlQuery>,
+) -> Result<Json<crate::application::user::AvatarUploadResponse>, AppError> {
+    let content_type = q.content_type.unwrap_or_else(|| "image/webp".to_string());
+    let resp = svc.get_typed_image_upload_url(id, &kind, &content_type).await?;
+    Ok(Json(resp))
+}
+
+/// PUT /api/admin/lab-combos/:id/image-url/:kind
+/// kind = "hero" | "process" | "detail"
+pub async fn save_typed_image_url(
+    _claims: AdminClaims,
+    State(svc): State<Arc<LabComboService>>,
+    Path((id, kind)): Path<(Uuid, String)>,
+    Json(req): Json<SaveImageUrlRequest>,
+) -> Result<Json<LabComboPage>, AppError> {
+    let page = svc.save_typed_image_url(id, &kind, req.image_url).await?;
+    Ok(Json(page))
+}
