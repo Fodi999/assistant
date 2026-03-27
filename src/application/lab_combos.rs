@@ -190,43 +190,30 @@ pub fn combo_slug(
 
 /// Auto-generate SEO title from ingredients + context (≤ 60 chars).
 /// Recipe-oriented, always includes a number hint.
-fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<&str>, locale: &str) -> String {
+/// Format: "Salmon Rice Bowl (28g Protein, 15 Min)"
+fn generate_title(ingredients: &[String], goal: Option<&str>, meal_type: Option<&str>, _locale: &str) -> String {
     let names = capitalize_words(&ingredients.join(" "));
     let meal = meal_type
         .map(|m| capitalize_words(&m.replace('_', " ")))
         .unwrap_or_default();
 
-    // Build: "Salmon Rice Avocado Breakfast (High Protein)"
-    let goal_hint = match goal {
-        Some(g) if g.contains("protein") => match locale {
-            "ru" => " — белок",
-            "pl" => " — białko",
-            "uk" => " — білок",
-            _ => " — High Protein",
-        },
-        Some(g) if g.contains("loss") || g.contains("low_cal") => match locale {
-            "ru" => " — низкокал",
-            "pl" => " — niskokalorycznie",
-            "uk" => " — низькокал",
-            _ => " — Low Cal",
-        },
-        _ => "",
-    };
-
-    let suffix = match locale {
-        "ru" => " | Рецепт",
-        "pl" => " | Przepis",
-        "uk" => " | Рецепт",
-        _    => " | Recipe",
-    };
-
-    let base = if meal.is_empty() {
-        format!("{}{}", names, goal_hint)
+    // Build dish name
+    let dish = if meal.is_empty() {
+        names.clone()
     } else {
-        format!("{} {} Bowl{}", names, meal, goal_hint)
+        format!("{} {} Bowl", names, meal)
     };
 
-    smart_truncate(&format!("{}{}", base, suffix), 60)
+    // Add number hook in parentheses — AI enrichment will overwrite with real data,
+    // but template needs a good baseline for pages that fail AI enrichment.
+    let hook = match goal {
+        Some(g) if g.contains("protein") => "(High Protein, 15 Min)",
+        Some(g) if g.contains("loss") || g.contains("low_cal") => "(Low Cal, 20 Min)",
+        Some(g) if g.contains("keto") => "(Keto, 15 Min)",
+        _ => "(15 Min)",
+    };
+
+    smart_truncate(&format!("{} {}", dish, hook), 60)
 }
 
 /// Auto-generate SEO description (80–155 chars). Recipe-oriented.
@@ -289,29 +276,43 @@ fn generate_h1(ingredients: &[String], goal: Option<&str>, meal_type: Option<&st
     }
 }
 
-/// Auto-generate intro paragraph. Recipe-oriented, concise, solves the user intent.
+/// Auto-generate intro paragraph.
+/// RULE: First sentence = direct answer to user intent (numbers + benefit).
+/// This targets Google featured snippets.
 fn generate_intro(ingredients: &[String], goal: Option<&str>, locale: &str) -> String {
     let names = ingredients.join(", ");
-    let goal_text = goal
-        .map(|g| format!(", optimized for {}", g.replace('_', " ")))
-        .unwrap_or_default();
+    let goal_benefit = match goal {
+        Some(g) if g.contains("protein") => match locale {
+            "ru" => " с высоким содержанием белка",
+            "pl" => " z dużą ilością białka",
+            "uk" => " з високим вмістом білка",
+            _    => " packed with protein",
+        },
+        Some(g) if g.contains("loss") || g.contains("low_cal") => match locale {
+            "ru" => " для контроля калорий",
+            "pl" => " o niskiej kaloryczności",
+            "uk" => " для контролю калорій",
+            _    => " for calorie control",
+        },
+        _ => "",
+    };
 
     match locale {
         "ru" => format!(
-            "Этот рецепт из {names}{goal_text} — быстрый, сбалансированный и вкусный. \
-             Ниже: пошаговая инструкция, точные граммовки и КБЖУ на порцию.",
+            "Это блюдо из {names}{goal_benefit} готовится за 15–20 минут. \
+             Ниже — пошаговый рецепт с точными граммовками и КБЖУ на порцию.",
         ),
         "pl" => format!(
-            "Ten przepis z {names}{goal_text} — szybki, zbilansowany i smaczny. \
-             Poniżej: instrukcja krok po kroku, dokładne gramówki i KBJU na porcję.",
+            "To danie z {names}{goal_benefit} przygotujesz w 15–20 minut. \
+             Poniżej — przepis krok po kroku z dokładnymi gramówkami i KBJU na porcję.",
         ),
         "uk" => format!(
-            "Цей рецепт з {names}{goal_text} — швидкий, збалансований і смачний. \
-             Нижче: покрокова інструкція, точні грамовки та КБЖУ на порцію.",
+            "Ця страва з {names}{goal_benefit} готується за 15–20 хвилин. \
+             Нижче — покроковий рецепт із точними грамовками та КБЖУ на порцію.",
         ),
         _ => format!(
-            "This {names} recipe{goal_text} is quick, balanced, and flavorful. \
-             Below: step-by-step instructions, exact portions, and macros per serving.",
+            "This {names} dish{goal_benefit} is ready in 15–20 minutes. \
+             Below: step-by-step recipe with exact portions and macros per serving.",
         ),
     }
 }
@@ -1465,10 +1466,11 @@ Return ONLY valid JSON (no markdown fences, no extra text):
 STRICT RULES for each field:
 
 title (max 55 chars):
-- Format: "[Dish Name] — [Number] + [Benefit]"
-- MUST contain a number (protein grams, cooking time, or calories)
-- Examples: "Salmon Rice Bowl — 28g Protein, 15 Min", "Chicken Broccoli Dinner (32g Protein)"
-- NEVER use "analysis", "combo", "combination"
+- Format: "[Dish Name] ([Number]g Protein, [Number] Min)"
+- MUST end with parentheses containing 2 numbers: protein + time
+- Examples: "Salmon Rice Bowl (28g Protein, 15 Min)", "Chicken Broccoli Dinner (32g Protein, 20 Min)"
+- NEVER use "analysis", "combo", "combination", "recipe" in title
+- NEVER use " | " or " — " as separator, use parentheses
 
 description (120-150 chars):
 - Start with action verb: "Make", "Try", "Cook"
@@ -1477,21 +1479,22 @@ description (120-150 chars):
 - Example: "Make this salmon rice bowl in 15 minutes. 28g protein per serving — perfect for a post-workout meal."
 
 h1 (40-70 chars):
-- Must be different from title
+- Must be different from title, LONGER than title
 - Write as recipe name: "[Ingredients] [Dish Type] — [Key Benefit] Recipe"
 - Example: "Salmon Avocado Rice Bowl — Healthy Breakfast Recipe"
 - NEVER start with "Analysis:" or "Combo:"
 
 intro (150-250 chars):
-- First sentence answers the user's search intent directly
-- Second sentence adds a specific fact (nutrient, cooking technique, or flavor science)
-- NO filler words: "delicious", "amazing", "perfect"
-- Write as a real chef explaining a dish, not as AI
+- CRITICAL: First sentence = direct answer with numbers. Format: "This [dish] delivers ~[N]g protein and is ready in [N] minutes."
+- Second sentence adds ONE specific culinary fact (nutrient, technique, or flavor science)
+- This targets Google featured snippets — the first sentence MUST standalone as a complete answer
+- NO filler words: "delicious", "amazing", "perfect", "comprehensive"
+- Write as a real chef, not as AI
 
 why_it_works (200-400 chars):
 - Explain CULINARY SCIENCE: which nutrient each ingredient provides
-- Mention specific compounds: omega-3, amino acids, fiber types
-- Explain flavor pairing logic: umami + acid, fat + crunch
+- Name specific compounds: omega-3, leucine, beta-carotene, resistant starch
+- Explain flavor pairing logic: umami + acid, fat + crunch, sweet + salt
 - Professional chef tone, NOT marketing copy
 
 how_to_cook (array of 3-5 steps):
@@ -1506,7 +1509,8 @@ ABSOLUTE PROHIBITIONS:
 - Do NOT use words: "analysis", "analyze", "combo", "combination", "comprehensive", "detailed"
 - Do NOT write generic phrases: "prepare ingredients", "cook to preference", "season to taste"
 - Every cooking step must specify: ingredient name, weight in grams, time in minutes, cooking method
-- Every number must be realistic (not 0.0g protein)"#
+- Every number must be realistic (not 0.0g protein)
+- Title MUST have parentheses with (Xg Protein, Y Min) format"#
     );
 
     let raw_response = llm.groq_raw_request_with_model(&prompt, 3000, "gemini-3-flash-preview").await?;
