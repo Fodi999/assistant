@@ -172,9 +172,9 @@ impl PublicSeoContentService {
         // ── 3. Build prompt ──
         let prompt = build_prompt(&intent, &entity_a, entity_b.as_deref(), &locale);
 
-        // ── 4. Call LLM (Gemini Pro — high quality) ──
+        // ── 4. Call LLM (Gemini Flash — fast & cheap) ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 3200, "gemini-3.1-pro-preview")
+            .groq_raw_request_with_model(&prompt, 3200, "gemini-3-flash-preview")
             .await?;
 
         // ── 5. Parse JSON ──
@@ -189,7 +189,7 @@ impl PublicSeoContentService {
                 &cache_key,
                 val,
                 "gemini",
-                "gemini-3.1-pro-preview",
+                "gemini-3-flash-preview",
                 SEO_CONTENT_CACHE_TTL_DAYS,
             ).await {
                 tracing::warn!("Failed to cache SEO content: {}", e);
@@ -246,7 +246,7 @@ impl PublicSeoContentService {
         // ── 3. Build targeted prompt ──
         let prompt = build_targeted_prompt(&intent, &entity_a, entity_b.as_deref(), &locale, search_query);
 
-        // ── 4. Call LLM ──
+        // ── 4. Call LLM (Pro model — best quality for targeted pages) ──
         let raw = self.llm_adapter
             .groq_raw_request_with_model(&prompt, 3200, "gemini-3.1-pro-preview")
             .await?;
