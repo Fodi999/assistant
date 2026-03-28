@@ -446,6 +446,11 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
                 ))
                 .unwrap_or_else(FlavorVector::zero);
 
+            // Prefer catalog image (catalog_ingredients) over products image
+            let resolved_image = cat
+                .and_then(|r| r.image_url.clone())
+                .or_else(|| p.image_url.clone());
+
             Candidate {
                 slug,
                 name: match lang {
@@ -454,7 +459,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
                     Language::Uk => p.name_uk.clone(),
                     Language::En => p.name_en.clone(),
                 },
-                image_url: p.image_url.clone(),
+                image_url: resolved_image,
                 flavor,
                 nutrition,
                 pair_score: p.pair_score.unwrap_or(0.0) as f64,
