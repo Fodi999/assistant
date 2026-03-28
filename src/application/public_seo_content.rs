@@ -174,7 +174,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM (Gemini Flash — fast & cheap) ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 3200, "gemini-3-flash-preview")
+            .groq_raw_request_with_model(&prompt, 8000, "gemini-3-flash-preview")
             .await?;
 
         // ── 5. Parse JSON ──
@@ -248,7 +248,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM (Pro model — best quality for targeted pages) ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 3200, "gemini-3.1-pro-preview")
+            .groq_raw_request_with_model(&prompt, 8000, "gemini-3.1-pro-preview")
             .await?;
 
         // ── 5. Parse ──
