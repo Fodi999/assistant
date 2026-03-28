@@ -333,27 +333,6 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         balance: balance.clone(),
     };
 
-    // Pairings
-    let pairings: Vec<PairingInfo> = pairings_raw
-        .iter()
-        .map(|p| {
-            let name = match lang {
-                Language::Ru => &p.name_ru,
-                Language::Pl => &p.name_pl,
-                Language::Uk => &p.name_uk,
-                Language::En => &p.name_en,
-            };
-            PairingInfo {
-                slug: p.slug.clone().unwrap_or_default(),
-                name: name.clone(),
-                image_url: p.image_url.clone(),
-                pair_score: p.pair_score.unwrap_or(0.0) as f64,
-                flavor_score: p.flavor_score.map(|v| v as f64),
-                nutrition_score: p.nutrition_score.map(|v| v as f64),
-            }
-        })
-        .collect();
-
     // Seasonality
     let seasonality: Vec<SeasonalityInfo> = seasonality_rows
         .into_iter()
@@ -363,20 +342,26 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     // Candidates from pairings — hydrated with real nutrition + flavor + product_type
     let existing_slugs: Vec<String> = flavor_ingredients.iter().map(|fi| fi.slug.clone()).collect();
 
-    let pairing_slugs: Vec<String> = pairings_raw
+    // ALL pairing slugs — used for catalog image lookup + candidate building
+    let all_pairing_slugs: Vec<String> = pairings_raw
         .iter()
         .filter_map(|p| p.slug.clone())
+        .collect();
+    // Only non-existing slugs become candidates
+    let pairing_slugs: Vec<String> = all_pairing_slugs
+        .iter()
         .filter(|s| !existing_slugs.contains(s))
+        .cloned()
         .collect();
 
-    // BATCH: load catalog rows for all pairing slugs (nutrition + product_type)
-    let pairing_catalog_rows: Vec<CatalogNutritionRow> = if !pairing_slugs.is_empty() {
+    // BATCH: load catalog rows for ALL pairing slugs (images + nutrition + product_type)
+    let pairing_catalog_rows: Vec<CatalogNutritionRow> = if !all_pairing_slugs.is_empty() {
         let sql = format!(
             "SELECT {} FROM catalog_ingredients WHERE slug = ANY($1) AND COALESCE(is_active, true) = true",
             CATALOG_NUTRITION_COLS
         );
         sqlx::query_as(&sql)
-            .bind(&pairing_slugs)
+            .bind(&all_pairing_slugs)
             .fetch_all(pool)
             .await
             .unwrap_or_default()
@@ -400,6 +385,33 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     } else {
         vec![]
     };
+
+    // Pairings — built AFTER catalog rows so we can resolve images from catalog
+    let pairings: Vec<PairingInfo> = pairings_raw
+        .iter()
+        .map(|p| {
+            let slug = p.slug.clone().unwrap_or_default();
+            let name = match lang {
+                Language::Ru => &p.name_ru,
+                Language::Pl => &p.name_pl,
+                Language::Uk => &p.name_uk,
+                Language::En => &p.name_en,
+            };
+            // Prefer catalog image over products image
+            let resolved_image = pairing_catalog_rows.iter()
+                .find(|r| r.slug.as_deref() == Some(&slug))
+                .and_then(|r| r.image_url.clone())
+                .or_else(|| p.image_url.clone());
+            PairingInfo {
+                slug,
+                name: name.clone(),
+                image_url: resolved_image,
+                pair_score: p.pair_score.unwrap_or(0.0) as f64,
+                flavor_score: p.flavor_score.map(|v| v as f64),
+                nutrition_score: p.nutrition_score.map(|v| v as f64),
+            }
+        })
+        .collect();
 
     let candidates: Vec<Candidate> = pairings_raw
         .iter()
