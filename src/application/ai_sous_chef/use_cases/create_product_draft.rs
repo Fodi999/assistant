@@ -271,13 +271,14 @@ impl AdminCatalogService {
         // ── STEP 2: Dictionary lookup (ACTIVE only) ──
         let dict_entry = self.dictionary.find_by_en(&normalized).await.ok().flatten();
 
-        let (name_en, name_ru, name_pl, name_uk) = if let Some(ref d) = dict_entry {
+        let (name_en, name_ru, name_pl, name_uk, names_from_ai) = if let Some(ref d) = dict_entry {
             tracing::info!("📖 Dictionary hit: {} → RU:{}, PL:{}, UK:{}", d.name_en, d.name_ru, d.name_pl, d.name_uk);
             (
                 d.name_en.clone(),
                 d.name_ru.clone(),
                 d.name_pl.clone(),
                 d.name_uk.clone(),
+                false,
             )
         } else {
             // ══════════════════════════════════════════════════════════
@@ -287,12 +288,13 @@ impl AdminCatalogService {
             tracing::info!("📖 Dictionary miss for '{}' — requesting AI translation", &normalized);
             match self.ai_translate_and_save_pending(&normalized).await {
                 Ok((ru, pl, uk)) => {
+                    tracing::info!("🌍 AI translation success: RU:{}, PL:{}, UK:{}", ru, pl, uk);
                     // Return AI suggestions but they're NOT active in dictionary yet
-                    (normalized.clone(), ru, pl, uk)
+                    (normalized.clone(), ru, pl, uk, true)
                 }
                 Err(e) => {
                     tracing::warn!("AI name translation failed: {} — names will be empty", e);
-                    (normalized.clone(), String::new(), String::new(), String::new())
+                    (normalized.clone(), String::new(), String::new(), String::new(), true)
                 }
             }
         };
@@ -325,6 +327,7 @@ impl AdminCatalogService {
             density_g_per_ml: density,
             typical_portion_g: portion,
             shelf_life_days: shelf_life,
+            names_from_ai,
         }
     }
 
@@ -502,13 +505,20 @@ fn map_to_draft(
 
     let mut quality_warnings = Vec::new();
 
-    // Warn if dictionary had no names
+    // Warn about name quality
     if resolved.name_ru.is_empty() {
         quality_warnings.push(QualityWarning {
             field: "name_ru".into(),
             label_ru: "Название RU".into(),
             severity: "critical".into(),
-            message: "Нет в словаре — добавьте перевод вручную".into(),
+            message: "AI перевод не удался — добавьте перевод вручную".into(),
+        });
+    } else if resolved.names_from_ai {
+        quality_warnings.push(QualityWarning {
+            field: "name_ru".into(),
+            label_ru: "Название RU".into(),
+            severity: "warning".into(),
+            message: "AI перевод (pending в словаре) — проверьте перед сохранением".into(),
         });
     }
     if resolved.name_pl.is_empty() {
@@ -516,7 +526,14 @@ fn map_to_draft(
             field: "name_pl".into(),
             label_ru: "Название PL".into(),
             severity: "critical".into(),
-            message: "Нет в словаре — добавьте перевод вручную".into(),
+            message: "AI перевод не удался — добавьте перевод вручную".into(),
+        });
+    } else if resolved.names_from_ai {
+        quality_warnings.push(QualityWarning {
+            field: "name_pl".into(),
+            label_ru: "Название PL".into(),
+            severity: "warning".into(),
+            message: "AI перевод (pending в словаре) — проверьте перед сохранением".into(),
         });
     }
     if resolved.name_uk.is_empty() {
@@ -524,7 +541,14 @@ fn map_to_draft(
             field: "name_uk".into(),
             label_ru: "Название UK".into(),
             severity: "critical".into(),
-            message: "Нет в словаре — добавьте перевод вручную".into(),
+            message: "AI перевод не удался — добавьте перевод вручную".into(),
+        });
+    } else if resolved.names_from_ai {
+        quality_warnings.push(QualityWarning {
+            field: "name_uk".into(),
+            label_ru: "Название UK".into(),
+            severity: "warning".into(),
+            message: "AI перевод (pending в словаре) — проверьте перед сохранением".into(),
         });
     }
     if resolved.product_type == "other" {
@@ -550,9 +574,33 @@ fn map_to_draft(
         // ── From DICTIONARY (source of truth) ──
         names: DraftNames {
             en: DraftField::dict(resolved.name_en.clone()),
-            ru: DraftField::dict(resolved.name_ru.clone()),
-            pl: DraftField::dict(resolved.name_pl.clone()),
-            uk: DraftField::dict(resolved.name_uk.clone()),
+            ru: if resolved.names_from_ai {
+                if resolved.name_ru.is_empty() {
+                    DraftField { value: None, source: DataSource::Ai, confidence: FieldConfidence::Low }
+                } else {
+                    DraftField::ai(resolved.name_ru.clone(), FieldConfidence::Medium)
+                }
+            } else {
+                DraftField::dict(resolved.name_ru.clone())
+            },
+            pl: if resolved.names_from_ai {
+                if resolved.name_pl.is_empty() {
+                    DraftField { value: None, source: DataSource::Ai, confidence: FieldConfidence::Low }
+                } else {
+                    DraftField::ai(resolved.name_pl.clone(), FieldConfidence::Medium)
+                }
+            } else {
+                DraftField::dict(resolved.name_pl.clone())
+            },
+            uk: if resolved.names_from_ai {
+                if resolved.name_uk.is_empty() {
+                    DraftField { value: None, source: DataSource::Ai, confidence: FieldConfidence::Low }
+                } else {
+                    DraftField::ai(resolved.name_uk.clone(), FieldConfidence::Medium)
+                }
+            } else {
+                DraftField::dict(resolved.name_uk.clone())
+            },
         },
         product_type: DraftField::dict(resolved.product_type.clone()),
         unit: DraftField::dict(resolved.unit.clone()),

@@ -22,6 +22,8 @@ pub struct ResolvedProduct {
     pub density_g_per_ml: Option<f64>,
     pub typical_portion_g: Option<f64>,
     pub shelf_life_days: Option<i32>,
+    /// true = names came from AI translation (pending in dictionary), false = dictionary hit
+    pub names_from_ai: bool,
 }
 
 // ══════════════════════════════════════════════════════════════════════
