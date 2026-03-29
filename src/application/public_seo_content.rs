@@ -178,9 +178,11 @@ impl PublicSeoContentService {
         };
 
         // ── 4. Call LLM (Gemini Flash — fast & cheap) ──
+        tracing::info!("🤖 SEO AI call START: {} / {} / {} / model=gemini-3-flash-preview", intent, entity_a, locale);
         let raw = self.llm_adapter
             .groq_raw_request_with_model(&prompt, 8000, "gemini-3-flash-preview")
             .await?;
+        tracing::info!("🤖 SEO AI call END: {} / {} / {} — {} chars", intent, entity_a, locale, raw.len());
 
         // ── 5. Parse JSON ──
         let response = parse_response(&raw)?;
@@ -255,10 +257,15 @@ impl PublicSeoContentService {
             build_targeted_prompt(&intent, &entity_a, entity_b.as_deref(), &locale, search_query)
         };
 
-        // ── 4. Call LLM (Pro model — best quality for targeted pages) ──
+        // ── 4. Call LLM ──
+        // Measure pages use Flash (formulaic tables, fast enough).
+        // Other targeted pages use Pro (best quality for long-tail SEO).
+        let model = if intent == "measure" { "gemini-3-flash-preview" } else { "gemini-3.1-pro-preview" };
+        tracing::info!("🤖 SEO AI call START: '{}' / {} / model={}", search_query, locale, model);
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 8000, "gemini-3.1-pro-preview")
+            .groq_raw_request_with_model(&prompt, 8000, model)
             .await?;
+        tracing::info!("🤖 SEO AI call END: '{}' / {} — {} chars", search_query, locale, raw.len());
 
         // ── 5. Parse ──
         let response = parse_response(&raw)?;
@@ -268,7 +275,7 @@ impl PublicSeoContentService {
 
         // ── 6. Cache ──
         if let Ok(val) = serde_json::to_value(&response) {
-            let _ = self.ai_cache.set(&cache_key, val, "gemini", "gemini-3.1-pro-preview", SEO_CONTENT_CACHE_TTL_DAYS).await;
+            let _ = self.ai_cache.set(&cache_key, val, "gemini", model, SEO_CONTENT_CACHE_TTL_DAYS).await;
         }
 
         tracing::info!("✅ SEO content generated: '{}' / {} (cached 30d)", search_query, locale);

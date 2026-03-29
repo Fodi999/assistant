@@ -26,7 +26,7 @@ pub struct GeminiService {
 impl GeminiService {
     pub fn new(api_key: String) -> Self {
         let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30)) // Gemini can be slower than Groq on first call
+            .timeout(Duration::from_secs(120)) // SEO/measure prompts need 60-90s on Gemini
             .build()
             .expect("Failed to build HTTP client for Gemini");
 

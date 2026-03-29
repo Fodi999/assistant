@@ -189,11 +189,11 @@ impl LlmAdapter {
             "max_tokens": max_tokens,
         });
         let result = tokio::time::timeout(
-            Duration::from_secs(60),
+            Duration::from_secs(120),
             self.gemini_service.send_raw_request(&request_body),
         )
         .await
-        .map_err(|_| AppError::internal(&format!("AI timeout (60s) for model {}", model)))?? ;
+        .map_err(|_| AppError::internal(&format!("AI timeout (120s) for model {}", model)))?? ;
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage(&format!("raw_{}", model), duration_ms).await;
         Ok(result)
