@@ -2,7 +2,6 @@ use crate::application::{
     ai_sous_chef::AiSousChefService,
     cms_service::CmsService,
     intent_pages::IntentPagesService,
-    lab_combos::LabComboService,
     public_nutrition::PublicNutritionService,
     public_seo_content::PublicSeoContentService,
     recipe_v2_service::RecipeV2Service, // V2 with translations
@@ -27,7 +26,6 @@ use crate::interfaces::http::{
     admin_catalog,
     admin_cms,
     admin_intent_pages,
-    admin_lab_combos,
     admin_nutrition,
     admin_states,
     admin_users,
@@ -39,7 +37,6 @@ use crate::interfaces::http::{
         cms as public_cms,
         ingredients::{autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, get_ingredients_states_map, get_ingredients_sitemap_data, list_ingredients, list_ingredients_full},
         intent_pages::{list_published_intent_pages, get_published_intent_page, get_related_intent_pages, get_ingredient_intent_pages},
-        lab_combos::{lab_combos_sitemap, get_lab_combo, get_related_combos, get_also_cook},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
         seo_content::get_seo_content,
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe, tools_run, tools_catalog},
@@ -591,13 +588,6 @@ pub fn create_router(
     let smart_service = std::sync::Arc::new(
         crate::application::smart_service::SmartService::new(pool_for_smart)
     );
-
-    // ── 🆕 LabComboService (uses SmartService) ──────────────────────────────
-    let llm_adapter_for_combos = llm_adapter.clone();
-    let lab_combo_service = Arc::new(
-        LabComboService::new(pool_for_public.clone(), smart_service.clone(), r2_client.clone(), llm_adapter_for_combos)
-    );
-
     let smart_router = Router::new()
         .route("/smart/ingredient", post(smart_ingredient))
         .with_state(smart_service.clone());
@@ -697,43 +687,6 @@ pub fn create_router(
         .route("/ingredients/:slug/intent-pages", get(get_ingredient_intent_pages))
         .with_state(intent_pages_svc.clone());
 
-    // ── Admin Lab Combo routes (protected) ───────────────────────────────────
-    let admin_lab_combo_routes = Router::new()
-        .route("/generate", post(admin_lab_combos::generate_combo))
-        .route("/generate-popular", post(admin_lab_combos::generate_popular))
-        .route("/", get(admin_lab_combos::list_combos))
-        .route("/:id", axum::routing::patch(admin_lab_combos::update_combo))
-        .route("/:id", delete(admin_lab_combos::delete_combo))
-        .route("/:id/publish", post(admin_lab_combos::publish_combo))
-        .route("/:id/archive", post(admin_lab_combos::archive_combo))
-        .route("/:id/image-upload-url", get(admin_lab_combos::get_image_upload_url))
-        .route("/:id/image-url", axum::routing::put(admin_lab_combos::save_image_url))
-        .route("/:id/image-upload-url/:kind", get(admin_lab_combos::get_typed_image_upload_url))
-        .route("/:id/image-url/:kind", axum::routing::put(admin_lab_combos::save_typed_image_url))
-        .layer(middleware::from_fn_with_state(
-            admin_auth_service.clone(),
-            require_super_admin,
-        ))
-        .layer({
-            let svc = admin_auth_service.clone();
-            middleware::from_fn(move |mut req: Request, next: Next| {
-                let svc = svc.clone();
-                async move {
-                    req.extensions_mut().insert(svc);
-                    next.run(req).await
-                }
-            })
-        })
-        .with_state(lab_combo_service.clone());
-
-    // Public lab combo routes (no auth)
-    let public_lab_combos_router = Router::new()
-        .route("/lab-combos/sitemap", get(lab_combos_sitemap))
-        .route("/lab-combos/:slug", get(get_lab_combo))
-        .route("/lab-combos/:slug/related", get(get_related_combos))
-        .route("/lab-combos/:slug/also-cook", get(get_also_cook))
-        .with_state(lab_combo_service);
-
     // ── Background scheduler: publish queued pages every hour ────────────────
     {
         let svc = intent_pages_svc.clone();
@@ -832,8 +785,7 @@ pub fn create_router(
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
-        .merge(public_intent_pages_router) // 🆕 Intent Pages pSEO
-        .merge(public_lab_combos_router); // 🆕 Lab Combo SEO pages
+        .merge(public_intent_pages_router); // 🆕 Intent Pages pSEO
 
     // Combine all routes
     Router::new()
@@ -847,7 +799,6 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
-        .nest("/api/admin/lab-combos", admin_lab_combo_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete

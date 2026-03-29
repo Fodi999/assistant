@@ -4,7 +4,7 @@ use restaurant_backend::application::{
     TenantIngredientService, UserService,
 };
 use restaurant_backend::infrastructure::{
-    Config, GeminiService, LlmAdapter, JwtService, PasswordHasher, R2Client, Repositories,
+    Config, LlmAdapter, JwtService, PasswordHasher, R2Client, Repositories,
 };
 use restaurant_backend::interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
@@ -161,15 +161,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Create GeminiService for AI features (centralized)
-    let gemini_service = Arc::new(GeminiService::new(config.ai.gemini_api_key.clone()));
-    
-    // Create LLM Adapter (Rule Engine -> Cache -> Gemini)
+    let gemini_service = Arc::new(restaurant_backend::infrastructure::GeminiService::new(
+        config.ai.gemini_api_key.clone(),
+    ));
+
+    // Create LLM Adapter (Rule Engine -> Cache -> LLM)
     let llm_adapter = Arc::new(LlmAdapter::new(
-        gemini_service.clone(),
+        gemini_service,
         Arc::new(repositories.ai_cache.clone()),
         Arc::new(repositories.ai_usage_stats.clone()),
     ));
-    
+
     if config.ai.gemini_api_key.is_empty() {
         tracing::warn!("⚠️ GEMINI_API_KEY not set - AI-dependent features will not work");
     } else {
