@@ -50,7 +50,22 @@ pub struct SuggestProductsResponse {
 }
 
 impl AdminCatalogService {
-    /// AI предлагает 5 продуктов по запросу — для добавления в каталог
+    /// Быстрый запрос: список name_en всех активных продуктов (для exclude-листа)
+    /// Возвращает компактную строку: "Avocado, Chicken Breast, Turmeric, ..."
+    /// ~500 продуктов ≈ 2000 символов ≈ 500 токенов — дёшево!
+    async fn get_existing_product_names(&self) -> AppResult<String> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT name_en FROM catalog_ingredients WHERE is_active = true ORDER BY name_en"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let names: Vec<String> = rows.into_iter().map(|(n,)| n).collect();
+        tracing::info!("📋 Catalog has {} active products for exclude-list", names.len());
+        Ok(names.join(", "))
+    }
+
+    /// AI предлагает 5 продуктов по запросу — исключая то что уже есть в каталоге
     pub async fn ai_suggest_products(
         &self,
         req: SuggestProductsRequest,
@@ -63,8 +78,16 @@ impl AdminCatalogService {
             return Err(AppError::validation("Query too long (max 200 chars)"));
         }
 
-        // ── Cache check ──
-        let cache_key = format!("uc:suggest:v1:{}", sha256_short(&query.to_lowercase()));
+        // ── Загрузить существующие продукты (дёшево — только name_en) ──
+        let existing_names = self.get_existing_product_names().await?;
+
+        // ── Cache check (включаем кол-во продуктов в ключ — инвалидация при изменении каталога) ──
+        let product_count = existing_names.matches(',').count() + if existing_names.is_empty() { 0 } else { 1 };
+        let cache_key = format!(
+            "uc:suggest:v2:{}:n{}",
+            sha256_short(&query.to_lowercase()),
+            product_count,
+        );
         if let Ok(Some(cached)) = self.ai_cache.get(&cache_key).await {
             if let Ok(suggestions) = serde_json::from_value::<Vec<ProductSuggestion>>(cached) {
                 tracing::info!("📦 Suggest cache hit: {}", &query[..query.len().min(40)]);
@@ -72,7 +95,7 @@ impl AdminCatalogService {
             }
         }
 
-        let prompt = build_suggest_prompt(&query);
+        let prompt = build_suggest_prompt(&query, &existing_names);
         let raw = self
             .llm_adapter
             .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
@@ -92,9 +115,10 @@ impl AdminCatalogService {
         }
 
         tracing::info!(
-            "✅ AI suggested {} products for '{}'",
+            "✅ AI suggested {} products for '{}' (excluded {} existing)",
             suggestions.len(),
-            &query[..query.len().min(40)]
+            &query[..query.len().min(40)],
+            product_count,
         );
 
         Ok(SuggestProductsResponse { suggestions, query, cached: false })
@@ -103,16 +127,28 @@ impl AdminCatalogService {
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 
-fn build_suggest_prompt(query: &str) -> String {
+fn build_suggest_prompt(query: &str, existing_products: &str) -> String {
+    let exclude_block = if existing_products.is_empty() {
+        String::from("The catalog is currently empty — suggest any relevant products.")
+    } else {
+        format!(
+            "ALREADY IN CATALOG (DO NOT suggest these):\n{}\n\nYou MUST suggest products that are NOT in the list above.",
+            existing_products
+        )
+    };
+
     format!(
-        r#"You are a food catalog expert. An admin of a food ingredient catalog is looking to add new products.
+        r#"You are a food catalog expert. An admin of a food ingredient catalog is looking to add NEW products that are NOT yet in the catalog.
 
 Admin query: "{query}"
 
-Suggest exactly 5 specific food ingredients/products that match this query and would be valuable to add to a food catalog.
-Focus on products that are:
-- Real, specific ingredients (not dishes or meals)
-- Health-focused or interesting for cooking
+{exclude_block}
+
+Suggest exactly 5 specific food ingredients/products that:
+- Match the admin's query
+- Are NOT already in the catalog (see list above)
+- Are real, specific ingredients (not dishes or meals)
+- Are health-focused or interesting for cooking
 - Can be described with standard nutritional data
 
 Return ONLY valid JSON array with exactly 5 items:
@@ -132,6 +168,7 @@ product_type must be one of: vegetable, fruit, grain, legume, meat, poultry, fis
 
 Return ONLY the JSON array, no extra text."#,
         query = query,
+        exclude_block = exclude_block,
     )
 }
 
