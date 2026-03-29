@@ -198,7 +198,7 @@ impl AdminCatalogService {
         let prompt = build_slim_prompt(&resolved.name_en, &resolved.product_type);
         let raw = self
             .llm_adapter
-            .generate_with_quality(&prompt, 3000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 5000, AiQuality::Balanced)
             .await?;
         tracing::debug!("🤖 Raw AI draft response ({} chars): {}", raw.len(), &raw[..raw.len().min(300)]);
         let ai_json = parse_json_response(&raw)?;
