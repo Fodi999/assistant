@@ -127,8 +127,9 @@ impl AdminCatalogService {
         );
 
         // ── Call AI ──
+        // 8000 tokens: 4 descriptions (≈200 tokens each) + full nutrition JSON ≈ 2000 tokens total
         let raw = self.llm_adapter
-            .generate_with_quality(&prompt, 3000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 8000, AiQuality::Balanced)
             .await?;
 
         // ── Log raw AI response for debugging nutrition pipeline ──
@@ -215,22 +216,54 @@ fn hash_input(input: &str) -> String {
 }
 
 fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
-    serde_json::from_str(raw)
-        .or_else(|_| {
-            if let Some(start) = raw.find('{') {
-                if let Some(end) = raw.rfind('}') {
-                    return serde_json::from_str(&raw[start..=end]);
+    // 1. Try the full response first (happy path)
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+        return Ok(v);
+    }
+
+    // 2. Strip markdown code fences and retry
+    let stripped = raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(stripped) {
+        return Ok(v);
+    }
+
+    // 3. Find the JSON object boundaries
+    let start = stripped.find('{').ok_or_else(|| {
+        tracing::error!("Failed to parse AI response: no JSON object found");
+        AppError::internal("AI returned invalid JSON")
+    })?;
+    let json_candidate = &stripped[start..];
+
+    // 4. Walk backwards from the end to find the deepest valid closing brace
+    //    This handles truncated responses — we recover partial but valid JSON.
+    let bytes = json_candidate.as_bytes();
+    let mut end = bytes.len();
+    loop {
+        if end == 0 { break; }
+        // Find the last '}' at or before `end`
+        match json_candidate[..end].rfind('}') {
+            None => break,
+            Some(pos) => {
+                let candidate = &json_candidate[..=pos];
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(candidate) {
+                    tracing::warn!(
+                        "⚠️ AI response was truncated — recovered partial JSON ({}/{} bytes)",
+                        pos + 1, bytes.len()
+                    );
+                    return Ok(v);
                 }
+                end = pos; // try one level up
             }
-            Err(serde_json::Error::io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "No JSON found",
-            )))
-        })
-        .map_err(|e| {
-            tracing::error!("Failed to parse AI response: {}", e);
-            AppError::internal("AI returned invalid JSON")
-        })
+        }
+    }
+
+    tracing::error!("Failed to parse AI response after all recovery attempts");
+    Err(AppError::internal("AI returned invalid JSON"))
 }
 
 /// Build autofill prompt — AI only fills descriptions + nutrition + extended data.
