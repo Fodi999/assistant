@@ -265,25 +265,14 @@ Rules:
             );
 
             let raw = self.llm_adapter
-                .generate_with_quality(&prompt, 1000, AiQuality::Balanced)
+                .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
                 .await?;
 
-            ai_result = serde_json::from_str(&raw)
-                .or_else(|_| {
-                    if let Some(start) = raw.find('{') {
-                        if let Some(end) = raw.rfind('}') {
-                            return serde_json::from_str(&raw[start..=end]);
-                        }
-                    }
-                    Err(serde_json::Error::io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "No JSON found",
-                    )))
-                })
-                .map_err(|e| {
-                    tracing::error!("Failed to parse AI pairings: {}", e);
-                    AppError::internal("AI returned invalid JSON")
-                })?;
+            // Log raw AI response for debugging
+            let preview_end = raw.char_indices().nth(400).map(|(i, _)| i).unwrap_or(raw.len());
+            tracing::info!("🤖 AI pairings raw for {}: {}", name_en, &raw[..preview_end]);
+
+            ai_result = parse_pairing_json(&raw)?;
 
             // Cache the AI result
             let _ = self.ai_cache.set(
@@ -361,4 +350,68 @@ fn hash_input(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
     format!("{:x}", hasher.finalize())[..16].to_string()
+}
+
+/// Parse AI pairing JSON with markdown fence stripping and truncated recovery.
+fn parse_pairing_json(raw: &str) -> AppResult<serde_json::Value> {
+    // Step 1: Strip markdown code fences
+    let cleaned = if raw.contains("```") {
+        let trimmed = raw.trim();
+        let without_prefix = if trimmed.starts_with("```json") {
+            &trimmed[7..]
+        } else if trimmed.starts_with("```") {
+            &trimmed[3..]
+        } else {
+            trimmed
+        };
+        without_prefix
+            .trim()
+            .strip_suffix("```")
+            .unwrap_or(without_prefix)
+            .trim()
+    } else {
+        raw.trim()
+    };
+
+    // Step 2: Try direct parse
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(cleaned) {
+        return Ok(val);
+    }
+
+    // Step 3: Extract JSON from text
+    if let Some(start) = cleaned.find('{') {
+        if let Some(end) = cleaned.rfind('}') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&cleaned[start..=end]) {
+                return Ok(val);
+            }
+        }
+
+        // Step 4: Truncated JSON recovery
+        let fragment = &cleaned[start..];
+        let mut result = fragment.to_string();
+        // Close unclosed strings
+        if result.chars().filter(|&c| c == '"').count() % 2 != 0 {
+            result.push('"');
+        }
+        // Close unclosed arrays
+        let open_brackets = result.chars().filter(|&c| c == '[').count();
+        let close_brackets = result.chars().filter(|&c| c == ']').count();
+        for _ in close_brackets..open_brackets {
+            result.push(']');
+        }
+        // Close unclosed braces
+        let open_braces = result.chars().filter(|&c| c == '{').count();
+        let close_braces = result.chars().filter(|&c| c == '}').count();
+        for _ in close_braces..open_braces {
+            result.push('}');
+        }
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&result) {
+            tracing::warn!("⚠️ Pairings JSON was truncated — recovered partial response");
+            return Ok(val);
+        }
+    }
+
+    let preview = &raw[..raw.len().min(300)];
+    tracing::error!("Failed to parse AI pairings: No JSON found | raw: {}", preview);
+    Err(AppError::internal("AI returned invalid JSON"))
 }
