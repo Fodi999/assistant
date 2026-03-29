@@ -108,6 +108,10 @@ Rules:
             }
         };
 
+        // ── Log raw response for debugging ──
+        let preview_end = raw.char_indices().nth(400).map(|(i, _)| i).unwrap_or(raw.len());
+        tracing::info!("🤖 AI SEO raw response for {} ({}): {}", id, name_en, &raw[..preview_end]);
+
         // ── Parse JSON ──
         let result = parse_json_response(&raw)?;
 
@@ -131,11 +135,32 @@ fn hash_input(input: &str) -> String {
 }
 
 fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
-    serde_json::from_str(raw)
+    // Step 1: Strip markdown code fences (Gemini 3 thinking models add these)
+    let cleaned = if raw.contains("```") {
+        let trimmed = raw.trim();
+        let without_prefix = if trimmed.starts_with("```json") {
+            &trimmed[7..]
+        } else if trimmed.starts_with("```") {
+            &trimmed[3..]
+        } else {
+            trimmed
+        };
+        let without_suffix = without_prefix
+            .trim()
+            .strip_suffix("```")
+            .unwrap_or(without_prefix);
+        without_suffix.trim()
+    } else {
+        raw.trim()
+    };
+
+    // Step 2: Try direct parse
+    serde_json::from_str(cleaned)
         .or_else(|_| {
-            if let Some(start) = raw.find('{') {
-                if let Some(end) = raw.rfind('}') {
-                    return serde_json::from_str(&raw[start..=end]);
+            // Step 3: Extract JSON object from surrounding text
+            if let Some(start) = cleaned.find('{') {
+                if let Some(end) = cleaned.rfind('}') {
+                    return serde_json::from_str(&cleaned[start..=end]);
                 }
             }
             Err(serde_json::Error::io(std::io::Error::new(
@@ -144,7 +169,8 @@ fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
             )))
         })
         .map_err(|e| {
-            tracing::error!("Failed to parse AI SEO response: {}", e);
+            let preview = &raw[..raw.len().min(300)];
+            tracing::error!("Failed to parse AI SEO response: {} | raw preview: {}", e, preview);
             AppError::internal("AI returned invalid JSON")
         })
 }
