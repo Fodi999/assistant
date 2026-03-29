@@ -345,15 +345,30 @@ use crate::application::ai_sous_chef::use_cases::create_product_draft::{
 };
 
 /// POST /api/admin/catalog/ai/create-product-draft
-///
-/// AI generates a rich product draft from free-text input.
-/// NEVER saves to DB — returns a draft for admin review.
 pub async fn ai_create_product_draft(
     _claims: AdminClaims,
     State(service): State<AdminCatalogService>,
     Json(req): Json<CreateDraftRequest>,
 ) -> Result<Json<CreateDraftResponse>, AppError> {
     let response = service.ai_create_product_draft(req).await?;
+    Ok(Json(response))
+}
+
+// ── AI Suggest Products Endpoint ─────────────────────────────────────
+
+use crate::application::ai_sous_chef::use_cases::suggest_products::{
+    SuggestProductsRequest, SuggestProductsResponse,
+};
+
+/// POST /api/admin/catalog/ai/suggest-products
+///
+/// AI suggests 5 products that match the query, for the admin to pick from.
+pub async fn ai_suggest_products(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<SuggestProductsRequest>,
+) -> Result<Json<SuggestProductsResponse>, AppError> {
+    let response = service.ai_suggest_products(req).await?;
     Ok(Json(response))
 }
 
