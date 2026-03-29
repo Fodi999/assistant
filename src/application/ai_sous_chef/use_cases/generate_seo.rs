@@ -94,17 +94,26 @@ Rules:
             nutrition_str = nutrition_str,
         );
 
-        // ── Call AI via trait ──
-        let raw = self.llm_adapter
-            .generate_with_quality(&prompt, 800, AiQuality::Fast)
-            .await?;
+        // ── Call AI via trait (Balanced = gemini-3.1-pro-preview, more reliable) ──
+        let raw = match self.llm_adapter
+            .generate_with_quality(&prompt, 1500, AiQuality::Balanced)
+            .await
+        {
+            Ok(r) => r,
+            Err(first_err) => {
+                tracing::warn!("🔄 SEO first attempt failed: {}, retrying…", first_err);
+                self.llm_adapter
+                    .generate_with_quality(&prompt, 1500, AiQuality::Balanced)
+                    .await?
+            }
+        };
 
         // ── Parse JSON ──
         let result = parse_json_response(&raw)?;
 
         // ── Cache result ──
         if let Err(e) = self.ai_cache.set(
-            &cache_key, result.clone(), "gemini", "gemini-3-flash-preview", SEO_CACHE_TTL_DAYS
+            &cache_key, result.clone(), "gemini", "gemini-3.1-pro-preview", SEO_CACHE_TTL_DAYS
         ).await {
             tracing::warn!("Failed to cache SEO result: {}", e);
         }
