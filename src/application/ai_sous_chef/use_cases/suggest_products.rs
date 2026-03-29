@@ -1,43 +1,43 @@
-//! Use Case: AI Suggest Products — генерирует 5 вариантов продуктов которых нет в каталоге
+//! Use Case: AI Suggest Products
+//!
+//! Архитектура: AI → Rust filter → supplement → stop (max 3 попытки)
 //!
 //! Флоу:
-//! 1. Принять свободный ввод ("суперфуды", "экзотические фрукты", "протеин для спорта")
-//! 2. AI генерирует 5 конкретных продуктов которые подходят под запрос
-//! 3. Каждый вариант: name_en, короткое описание, product_type, почему стоит добавить
-//! 4. Фронтенд показывает карточки — администратор выбирает один
-//! 5. Выбранный вариант идёт в create_product_draft
+//! 1. Загрузить Set<slug> из БД — deterministic, бесплатно, быстро
+//! 2. AI генерирует ~10 кандидатов
+//! 3. Rust фильтрует дубли через is_duplicate() — без AI, без токенов
+//! 4. Если мало (<5) → догенерация: AI получает rejected + accepted списки
+//! 5. max_attempts = 3, если всё ещё мало → вернуть partial (лучше чем ничего)
 
 use crate::application::admin_catalog::AdminCatalogService;
 use crate::domain::ai_ports::{AiClient, AiQuality};
 use crate::shared::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+const TARGET: usize = 5;       // сколько нужно вернуть
+const MAX_ATTEMPTS: usize = 3; // лимит попыток
+
+// ── Public types ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct SuggestProductsRequest {
-    /// Свободный ввод на любом языке: "суперфуды", "экзотические орехи", "семена для ЗОЖ"
     pub query: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProductSuggestion {
-    /// Английское название (для последующего create_product_draft)
     pub name_en: String,
-    /// Название на русском для отображения
     #[serde(default)]
     pub name_ru: String,
-    /// Название на польском
     #[serde(default)]
     pub name_pl: String,
-    /// Emoji для карточки
     #[serde(default)]
     pub emoji: String,
-    /// Тип продукта (vegetable, fruit, supplement, nut_seed, ...)
     #[serde(default)]
     pub product_type: String,
-    /// Короткое описание почему стоит добавить (1 предложение, по-русски)
     #[serde(default)]
     pub why_add: String,
-    /// Примерные калории на 100г (для быстрого ориентира)
     #[serde(default)]
     pub calories_hint: Option<f64>,
 }
@@ -47,25 +47,60 @@ pub struct SuggestProductsResponse {
     pub suggestions: Vec<ProductSuggestion>,
     pub query: String,
     pub cached: bool,
+    /// Сколько попыток потребовалось AI (1-3)
+    pub attempts: usize,
 }
 
+// ── Deterministic duplicate checker (NO AI, NO tokens) ───────────────────────
+
+/// Нормализует название в slug для сравнения.
+/// "Chia Seeds" == "chia seeds" == "chia-seeds"
+fn normalize_slug(name: &str) -> String {
+    name.trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+/// Проверяет является ли кандидат дублём.
+/// Использует предзагруженный Set<slug> — O(1), 0 токенов.
+fn is_duplicate(name_en: &str, existing_slugs: &HashSet<String>) -> bool {
+    existing_slugs.contains(&normalize_slug(name_en))
+}
+
+/// Проверяет дубль внутри текущей сессии (уже принятые кандидаты)
+fn is_already_accepted(name_en: &str, accepted: &[ProductSuggestion]) -> bool {
+    let slug = normalize_slug(name_en);
+    accepted.iter().any(|a| normalize_slug(&a.name_en) == slug)
+}
+
+// ── Service impl ──────────────────────────────────────────────────────────────
+
 impl AdminCatalogService {
-    /// Быстрый запрос: список name_en всех активных продуктов (для exclude-листа)
-    /// Возвращает компактную строку: "Avocado, Chicken Breast, Turmeric, ..."
-    /// ~500 продуктов ≈ 2000 символов ≈ 500 токенов — дёшево!
-    async fn get_existing_product_names(&self) -> AppResult<String> {
+    /// Загружает Set<normalized_slug> всех активных продуктов из БД.
+    /// Дёшево: один SQL запрос, только name_en. 500 продуктов < 1мс.
+    async fn load_catalog_slugs(&self) -> AppResult<(HashSet<String>, usize)> {
         let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT name_en FROM catalog_ingredients WHERE is_active = true ORDER BY name_en"
+            "SELECT name_en FROM catalog_ingredients WHERE is_active = true",
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let names: Vec<String> = rows.into_iter().map(|(n,)| n).collect();
-        tracing::info!("📋 Catalog has {} active products for exclude-list", names.len());
-        Ok(names.join(", "))
+        let count = rows.len();
+        let slugs: HashSet<String> = rows
+            .into_iter()
+            .map(|(n,)| normalize_slug(&n))
+            .collect();
+
+        tracing::info!("📋 Catalog slugs loaded: {} products", count);
+        Ok((slugs, count))
     }
 
-    /// AI предлагает 5 продуктов по запросу — исключая то что уже есть в каталоге
+    /// Главный метод: AI → filter → supplement → max 3 попытки
     pub async fn ai_suggest_products(
         &self,
         req: SuggestProductsRequest,
@@ -78,185 +113,275 @@ impl AdminCatalogService {
             return Err(AppError::validation("Query too long (max 200 chars)"));
         }
 
-        // ── Загрузить существующие продукты (дёшево — только name_en) ──
-        let existing_names = self.get_existing_product_names().await?;
+        // ── 1. Загрузить БД slugs (deterministic, бесплатно) ──
+        let (catalog_slugs, catalog_count) = self.load_catalog_slugs().await?;
 
-        // ── Cache check (включаем кол-во продуктов в ключ — инвалидация при изменении каталога) ──
-        let product_count = existing_names.matches(',').count() + if existing_names.is_empty() { 0 } else { 1 };
+        // ── 2. Cache check ──
         let cache_key = format!(
-            "uc:suggest:v2:{}:n{}",
+            "uc:suggest:v3:{}:n{}",
             sha256_short(&query.to_lowercase()),
-            product_count,
+            catalog_count,
         );
         if let Ok(Some(cached)) = self.ai_cache.get(&cache_key).await {
             if let Ok(suggestions) = serde_json::from_value::<Vec<ProductSuggestion>>(cached) {
-                tracing::info!("📦 Suggest cache hit: {}", &query[..query.len().min(40)]);
-                return Ok(SuggestProductsResponse { suggestions, query, cached: true });
+                tracing::info!("📦 Suggest cache hit for '{}'", &query[..query.len().min(40)]);
+                return Ok(SuggestProductsResponse {
+                    suggestions,
+                    query,
+                    cached: true,
+                    attempts: 0,
+                });
             }
         }
 
-        let prompt = build_suggest_prompt(&query, &existing_names);
-        let raw = self
-            .llm_adapter
-            .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
-            .await?;
+        // ── 3. Основной цикл: AI → filter → supplement ──
+        let mut accepted: Vec<ProductSuggestion> = Vec::new();
+        let mut rejected_names: Vec<String> = Vec::new(); // для следующего промпта
+        let mut attempts = 0;
 
-        tracing::debug!("🤖 Suggest raw ({} chars): {}", raw.len(), &raw[..raw.len().min(300)]);
+        while accepted.len() < TARGET && attempts < MAX_ATTEMPTS {
+            attempts += 1;
+            let need = TARGET - accepted.len();
 
-        let suggestions = parse_suggestions(&raw)?;
+            tracing::info!(
+                "🤖 Attempt {}/{}: need {} more, have {}, rejected so far: {}",
+                attempts, MAX_ATTEMPTS, need, accepted.len(), rejected_names.len()
+            );
 
-        if suggestions.is_empty() {
-            return Err(AppError::internal("AI returned no suggestions"));
+            // Первый запрос: каталог целиком (только имена)
+            // Последующие: пустой (AI уже знает каталог, промпт короче)
+            let empty_set = HashSet::new();
+            let slugs_for_prompt = if attempts == 1 { &catalog_slugs } else { &empty_set };
+
+            let prompt = build_suggest_prompt(
+                &query,
+                slugs_for_prompt,
+                &accepted,
+                &rejected_names,
+                // Просим больше чем нужно — запас для фильтрации
+                need + 3,
+            );
+
+            let raw = self
+                .llm_adapter
+                .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
+                .await?;
+
+            let candidates = match try_parse_suggestions(&raw) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("⚠️ Attempt {} parse error: {}", attempts, e);
+                    break;
+                }
+            };
+
+            tracing::info!(
+                "   AI returned {} candidates, filtering...",
+                candidates.len()
+            );
+
+            // ── 4. Rust фильтрация — deterministic, 0 токенов ──
+            for candidate in candidates {
+                if candidate.name_en.trim().is_empty() {
+                    continue;
+                }
+
+                let dup_in_catalog = is_duplicate(&candidate.name_en, &catalog_slugs);
+                let dup_in_accepted = is_already_accepted(&candidate.name_en, &accepted);
+
+                if dup_in_catalog || dup_in_accepted {
+                    tracing::debug!(
+                        "   ❌ Rejected '{}' (catalog={}, session={})",
+                        candidate.name_en, dup_in_catalog, dup_in_accepted
+                    );
+                    rejected_names.push(candidate.name_en.clone());
+                } else {
+                    tracing::debug!("   ✅ Accepted '{}'", candidate.name_en);
+                    accepted.push(candidate);
+                    if accepted.len() >= TARGET {
+                        break;
+                    }
+                }
+            }
         }
 
-        // ── Cache 24h ──
+        // ── 5. Результат (partial если не хватило) ──
+        if accepted.is_empty() {
+            return Err(AppError::internal("AI could not suggest any new products"));
+        }
+
+        if accepted.len() < TARGET {
+            tracing::warn!(
+                "⚠️ Only {}/{} suggestions after {} attempts (partial result accepted)",
+                accepted.len(), TARGET, attempts
+            );
+        } else {
+            tracing::info!(
+                "✅ Got {}/{} suggestions in {} attempt(s), rejected {}",
+                accepted.len(), TARGET, attempts, rejected_names.len()
+            );
+        }
+
+        // ── 6. Cache ──
+        let suggestions = accepted[..accepted.len().min(TARGET)].to_vec();
         if let Ok(val) = serde_json::to_value(&suggestions) {
-            let _ = self.ai_cache.set(&cache_key, val, "gemini", "gemini-3.1-pro-preview", 1).await;
+            let _ = self
+                .ai_cache
+                .set(&cache_key, val, "gemini", "gemini-3.1-pro-preview", 1)
+                .await;
         }
 
-        tracing::info!(
-            "✅ AI suggested {} products for '{}' (excluded {} existing)",
-            suggestions.len(),
-            &query[..query.len().min(40)],
-            product_count,
-        );
-
-        Ok(SuggestProductsResponse { suggestions, query, cached: false })
+        Ok(SuggestProductsResponse {
+            suggestions,
+            query,
+            cached: false,
+            attempts,
+        })
     }
 }
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 
-fn build_suggest_prompt(query: &str, existing_products: &str) -> String {
-    let exclude_block = if existing_products.is_empty() {
-        String::from("The catalog is currently empty — suggest any relevant products.")
+fn build_suggest_prompt(
+    query: &str,
+    catalog_slugs: &HashSet<String>,        // только при attempt=1
+    accepted: &[ProductSuggestion],         // уже принятые в этой сессии
+    rejected: &[String],                    // отклонённые (дубли)
+    need: usize,
+) -> String {
+    // Блок уже принятых
+    let accepted_block = if accepted.is_empty() {
+        String::new()
     } else {
+        let names: Vec<&str> = accepted.iter().map(|a| a.name_en.as_str()).collect();
         format!(
-            "ALREADY IN CATALOG (DO NOT suggest these):\n{}\n\nYou MUST suggest products that are NOT in the list above.",
-            existing_products
+            "\nAlready accepted (DO NOT repeat):\n- {}\n",
+            names.join("\n- ")
         )
     };
 
+    // Блок отклонённых (дубли каталога или сессии)
+    let rejected_block = if rejected.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nAlready rejected as duplicates (DO NOT suggest again):\n- {}\n",
+            rejected.join("\n- ")
+        )
+    };
+
+    // Каталог передаём только в первом запросе (дорого при больших каталогах)
+    let catalog_block = if !catalog_slugs.is_empty() {
+        // Конвертируем slugs обратно в читаемый вид для AI
+        let names: Vec<String> = catalog_slugs
+            .iter()
+            .map(|s| s.replace('-', " "))
+            .collect();
+        let mut sorted = names;
+        sorted.sort();
+        format!(
+            "\nALREADY IN CATALOG (DO NOT suggest these — they exist):\n{}\n",
+            sorted.join(", ")
+        )
+    } else {
+        String::new()
+    };
+
     format!(
-        r#"You are a food catalog expert. An admin of a food ingredient catalog is looking to add NEW products that are NOT yet in the catalog.
+        r#"You are a food catalog expert. Suggest NEW ingredients for a food catalog.
 
 Admin query: "{query}"
+{catalog_block}{accepted_block}{rejected_block}
+Generate exactly {need} unique food ingredients that:
+- Match the query
+- Are NOT in any of the lists above
+- Are real specific ingredients (not dishes)
+- Have known nutritional data
 
-{exclude_block}
-
-Suggest exactly 5 specific food ingredients/products that:
-- Match the admin's query
-- Are NOT already in the catalog (see list above)
-- Are real, specific ingredients (not dishes or meals)
-- Are health-focused or interesting for cooking
-- Can be described with standard nutritional data
-
-Return ONLY valid JSON array with exactly 5 items:
+Return ONLY a valid JSON array with exactly {need} items:
 [
   {{
-    "name_en": "Chia Seeds",
-    "name_ru": "Семена чиа",
-    "name_pl": "Nasiona chia",
-    "emoji": "🌱",
-    "product_type": "nut_seed",
-    "why_add": "Богаты омега-3, клетчаткой и белком — популярный суперфуд",
-    "calories_hint": 486
+    "name_en": "Moringa Powder",
+    "name_ru": "Порошок моринги",
+    "name_pl": "Proszek moringa",
+    "emoji": "🌿",
+    "product_type": "supplement",
+    "why_add": "Суперфуд с высоким содержанием белка, витаминов и антиоксидантов",
+    "calories_hint": 205
   }}
 ]
 
-product_type must be one of: vegetable, fruit, grain, legume, meat, poultry, fish, seafood, dairy, egg, fat_oil, nut_seed, herb_spice, mushroom, beverage, sweetener, condiment, bakery, supplement
+product_type: vegetable|fruit|grain|legume|meat|poultry|fish|seafood|dairy|egg|fat_oil|nut_seed|herb_spice|mushroom|beverage|sweetener|condiment|bakery|supplement
 
-Return ONLY the JSON array, no extra text."#,
+Return ONLY the JSON array. No markdown, no explanations."#,
         query = query,
-        exclude_block = exclude_block,
+        catalog_block = catalog_block,
+        accepted_block = accepted_block,
+        rejected_block = rejected_block,
+        need = need,
     )
 }
 
-// ── Response parser ───────────────────────────────────────────────────────────
+// ── JSON parser ───────────────────────────────────────────────────────────────
 
-fn strip_markdown_fences(raw: &str) -> String {
-    let t = raw.trim();
-    let without_prefix = if t.starts_with("```json") {
-        &t[7..]
-    } else if t.starts_with("```") {
-        &t[3..]
-    } else {
-        t
+fn try_parse_suggestions(raw: &str) -> Result<Vec<ProductSuggestion>, String> {
+    let cleaned = {
+        let t = raw.trim();
+        let s = if t.starts_with("```json") {
+            &t[7..]
+        } else if t.starts_with("```") {
+            &t[3..]
+        } else {
+            t
+        };
+        let s = if s.trim_end().ends_with("```") {
+            let trimmed = s.trim_end();
+            &trimmed[..trimmed.len() - 3]
+        } else {
+            s
+        };
+        s.trim().to_string()
     };
-    let without_suffix = if without_prefix.trim_end().ends_with("```") {
-        let s = without_prefix.trim_end();
-        &s[..s.len() - 3]
-    } else {
-        without_prefix
-    };
-    without_suffix.trim().to_string()
-}
 
-fn parse_suggestions(raw: &str) -> AppResult<Vec<ProductSuggestion>> {
-    let cleaned = strip_markdown_fences(raw);
-
-    // 1) Try direct parse as array
-    if let Ok(suggestions) = serde_json::from_str::<Vec<ProductSuggestion>>(&cleaned) {
-        return Ok(suggestions);
+    // 1) Прямой парсинг
+    if let Ok(v) = serde_json::from_str::<Vec<ProductSuggestion>>(&cleaned) {
+        return Ok(v);
     }
 
-    // 2) Find [...] block
+    // 2) Найти [...] блок
     if let Some(start) = cleaned.find('[') {
         if let Some(end) = cleaned.rfind(']') {
-            if let Ok(suggestions) = serde_json::from_str::<Vec<ProductSuggestion>>(&cleaned[start..=end]) {
-                return Ok(suggestions);
+            if let Ok(v) = serde_json::from_str::<Vec<ProductSuggestion>>(&cleaned[start..=end]) {
+                return Ok(v);
             }
         }
 
-        // 3) JSON truncated — try to close it and parse partial results
-        //    Find the last complete object (ends with '}')
-        let array_body = &cleaned[start..];
-        if let Some(last_brace) = array_body.rfind('}') {
-            let partial = format!("{}]", &array_body[..=last_brace]);
-            if let Ok(suggestions) = serde_json::from_str::<Vec<ProductSuggestion>>(&partial) {
-                if !suggestions.is_empty() {
-                    tracing::warn!(
-                        "⚠️ Suggest JSON was truncated — recovered {} of 5 items",
-                        suggestions.len()
-                    );
-                    return Ok(suggestions);
+        // 3) Обрезанный JSON — закрыть массив после последнего }
+        let body = &cleaned[start..];
+        if let Some(last) = body.rfind('}') {
+            let partial = format!("{}]", &body[..=last]);
+            if let Ok(v) = serde_json::from_str::<Vec<ProductSuggestion>>(&partial) {
+                if !v.is_empty() {
+                    tracing::warn!("⚠️ JSON truncated, recovered {} items", v.len());
+                    return Ok(v);
                 }
-            }
-
-            // 4) Even that failed — try individual objects between { }
-            let mut items = Vec::new();
-            let mut search_from = 0;
-            let haystack = array_body;
-            while let Some(obj_start) = haystack[search_from..].find('{') {
-                let abs_start = search_from + obj_start;
-                if let Some(obj_end) = haystack[abs_start..].find('}') {
-                    let obj_str = &haystack[abs_start..=abs_start + obj_end];
-                    if let Ok(item) = serde_json::from_str::<ProductSuggestion>(obj_str) {
-                        items.push(item);
-                    }
-                    search_from = abs_start + obj_end + 1;
-                } else {
-                    break;
-                }
-            }
-            if !items.is_empty() {
-                tracing::warn!(
-                    "⚠️ Suggest JSON deeply broken — extracted {} items individually",
-                    items.len()
-                );
-                return Ok(items);
             }
         }
     }
 
-    tracing::error!("Failed to parse suggestions. Raw ({} chars): {}", raw.len(), &raw[..raw.len().min(500)]);
-    Err(AppError::internal("AI returned invalid suggestions format"))
+    Err(format!(
+        "Cannot parse JSON from {} chars: {}...",
+        raw.len(),
+        &raw[..raw.len().min(200)]
+    ))
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn sha256_short(input: &str) -> String {
     use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    let result = hasher.finalize();
-    format!("{:x}", result)[..16].to_string()
+    let mut h = Sha256::new();
+    h.update(input.as_bytes());
+    let r = h.finalize();
+    format!("{:x}", r)[..16].to_string()
 }
