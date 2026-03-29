@@ -198,8 +198,9 @@ impl AdminCatalogService {
         let prompt = build_slim_prompt(&resolved.name_en, &resolved.product_type);
         let raw = self
             .llm_adapter
-            .generate_with_quality(&prompt, 2000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 3000, AiQuality::Balanced)
             .await?;
+        tracing::debug!("🤖 Raw AI draft response ({} chars): {}", raw.len(), &raw[..raw.len().min(300)]);
         let ai_json = parse_json_response(&raw)?;
 
         // ══════════════════════════════════════════════════════════════
@@ -839,12 +840,35 @@ fn hash_input(input: &str) -> String {
     format!("{:x}", result)[..16].to_string()
 }
 
+fn strip_markdown_fences(text: &str) -> String {
+    let trimmed = text.trim();
+    let without_prefix = if trimmed.starts_with("```json") {
+        &trimmed[7..]
+    } else if trimmed.starts_with("```") {
+        &trimmed[3..]
+    } else {
+        return trimmed.to_string();
+    };
+    let without_suffix = if without_prefix.trim_end().ends_with("```") {
+        let s = without_prefix.trim_end();
+        &s[..s.len() - 3]
+    } else {
+        without_prefix
+    };
+    without_suffix.trim().to_string()
+}
+
 fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
-    serde_json::from_str(raw)
+    // Strip markdown code fences that Gemini thinking models add
+    let cleaned = strip_markdown_fences(raw);
+    let s = cleaned.as_str();
+
+    serde_json::from_str(s)
         .or_else(|_| {
-            if let Some(start) = raw.find('{') {
-                if let Some(end) = raw.rfind('}') {
-                    return serde_json::from_str(&raw[start..=end]);
+            // Fallback: extract first {...} block
+            if let Some(start) = s.find('{') {
+                if let Some(end) = s.rfind('}') {
+                    return serde_json::from_str(&s[start..=end]);
                 }
             }
             Err(serde_json::Error::io(std::io::Error::new(
@@ -854,6 +878,7 @@ fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
         })
         .map_err(|e| {
             tracing::error!("Failed to parse AI draft response: {}", e);
+            tracing::debug!("Raw response (first 500 chars): {}", &raw[..raw.len().min(500)]);
             AppError::internal("AI returned invalid JSON for draft")
         })
 }
