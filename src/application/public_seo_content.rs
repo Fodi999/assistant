@@ -62,7 +62,7 @@ pub enum ContentBlock {
 
 // ── Valid intent types ───────────────────────────────────────────────────────
 
-const VALID_INTENTS: &[&str] = &["question", "comparison", "goal", "combo"];
+const VALID_INTENTS: &[&str] = &["question", "comparison", "goal", "combo", "measure"];
 const VALID_LOCALES: &[&str] = &["en", "pl", "ru", "uk"];
 
 // ── Service ──────────────────────────────────────────────────────────────────
@@ -170,7 +170,12 @@ impl PublicSeoContentService {
         }
 
         // ── 3. Build prompt ──
-        let prompt = build_prompt(&intent, &entity_a, entity_b.as_deref(), &locale);
+        let prompt = if intent == "measure" {
+            // Measure intent without specific query — use generic measure prompt
+            build_measure_prompt(&entity_a, &locale, &format!("tablespoon {} grams", entity_a))
+        } else {
+            build_prompt(&intent, &entity_a, entity_b.as_deref(), &locale)
+        };
 
         // ── 4. Call LLM (Gemini Flash — fast & cheap) ──
         let raw = self.llm_adapter
@@ -244,7 +249,11 @@ impl PublicSeoContentService {
         }
 
         // ── 3. Build targeted prompt ──
-        let prompt = build_targeted_prompt(&intent, &entity_a, entity_b.as_deref(), &locale, search_query);
+        let prompt = if intent == "measure" {
+            build_measure_prompt(&entity_a, &locale, search_query)
+        } else {
+            build_targeted_prompt(&intent, &entity_a, entity_b.as_deref(), &locale, search_query)
+        };
 
         // ── 4. Call LLM (Pro model — best quality for targeted pages) ──
         let raw = self.llm_adapter
@@ -410,6 +419,7 @@ question → Answer directly, explain why with data
 comparison → Compare both, highlight 3+ differences, give recommendation
 goal → Focus on the goal, suggest best approach with this ingredient
 combo → Explain synergy, nutritional balance, recipe ideas
+measure → Precise weight/volume conversions, gram tables, measuring tips
 
 ---
 
@@ -569,6 +579,141 @@ Return ONLY the JSON, no other text."#,
         intent = intent,
         entity_a = entity_a,
         entity_b_line = entity_b_line,
+        locale = locale,
+    )
+}
+
+/// Build a specialised prompt for MEASURE intent — weight/volume conversion pages.
+///
+/// These pages answer queries like "tablespoon flour grams", "łyżka mąki ile gram",
+/// "стакан риса в граммах". Massive search volume, very specific answers.
+fn build_measure_prompt(entity_a: &str, locale: &str, search_query: &str) -> String {
+    format!(
+        r#"You are a professional culinary metrologist (chef who specializes in precise kitchen measurements).
+
+A user searched Google for: "{search_query}"
+
+Create a HIGH-QUALITY SEO page that answers this EXACT query about measuring "{entity_a}".
+
+---
+
+INPUT:
+Search Query: {search_query}
+Ingredient: {entity_a}
+Language: {locale}
+
+---
+
+CRITICAL: You MUST provide REAL, ACCURATE gram values for this specific ingredient.
+Different ingredients weigh differently in the same volume measure.
+For example: 1 tablespoon of flour ≈ 10g, but 1 tablespoon of honey ≈ 21g.
+
+Use your knowledge of ingredient densities. Be precise. Users rely on these numbers for cooking.
+
+---
+
+OUTPUT FORMAT (STRICT JSON):
+
+{{
+  "slug": "...",
+  "title": "...",
+  "description": "...",
+  "answer": "...",
+  "faq": [
+    {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}},
+    {{"q": "...", "a": "..."}}
+  ],
+  "content_blocks": [
+    {{"type": "heading", "level": 1, "text": "H1 — the measurement question"}},
+    {{"type": "text", "content": "2-3 sentences — direct answer with exact gram value"}},
+    {{"type": "image", "key": "hero", "alt": "{{{{ingredient}}}} in a measuring spoon/cup, precise measurement photo"}},
+    {{"type": "text", "content": "1-2 sentences — why exact measurement matters for this ingredient"}},
+    {{"type": "heading", "level": 2, "text": "Complete Conversion Table for {{{{ingredient}}}}"}},
+    {{"type": "text", "content": "Full conversion table in text form: 1 teaspoon = Xg, 1 tablespoon = Xg, 1 cup = Xg, 1 glass (250ml) = Xg. Include heaped vs level where relevant."}},
+    {{"type": "image", "key": "table", "alt": "{{{{ingredient}}}} weight conversion table: teaspoon, tablespoon, cup, glass in grams"}},
+    {{"type": "text", "content": "1-2 sentences — note about density variation (packed vs loose, sifted vs unsifted if applicable)"}},
+    {{"type": "heading", "level": 2, "text": "Nutrition per measure"}},
+    {{"type": "text", "content": "3-4 sentences: calories and macros per tablespoon/cup of this ingredient. Practical for recipe scaling."}},
+    {{"type": "image", "key": "nutrition", "alt": "{{{{ingredient}}}} calories and nutrition per tablespoon, cup, 100g"}},
+    {{"type": "text", "content": "1-2 sentences — daily recommended amount, portion guidance"}},
+    {{"type": "heading", "level": 2, "text": "Tips for precise measurement"}},
+    {{"type": "text", "content": "3-4 sentences: how to measure this ingredient correctly — level vs heaped spoon, scoop and level technique, when to use a scale instead"}},
+    {{"type": "image", "key": "tips", "alt": "how to correctly measure {{{{ingredient}}}}, kitchen tips for precise cooking"}},
+    {{"type": "text", "content": "1-2 sentences — pro tip from a chef about measuring this specific ingredient"}}
+  ]
+}}
+
+---
+
+STRICT RULES FOR CONTENT_BLOCKS:
+
+The article MUST follow this EXACT pattern (16 blocks):
+
+[H1] → [TEXT direct answer] → [IMAGE hero] → [TEXT why precision matters]
+→ [H2 Conversion Table] → [TEXT full table] → [IMAGE table] → [TEXT density notes]
+→ [H2 Nutrition per measure] → [TEXT] → [IMAGE nutrition] → [TEXT daily amount]
+→ [H2 Tips] → [TEXT] → [IMAGE tips] → [TEXT chef tip]
+
+EXACTLY 4 image blocks: hero, table, nutrition, tips.
+EXACTLY 4 heading blocks: 1x H1 + 3x H2.
+EXACTLY 8 text blocks.
+Total: 16 blocks.
+
+---
+
+STRICT SEO RULES:
+
+0. SLUG (in the CONTENT language, 3-6 words separated by hyphens):
+- Must reflect the measurement query
+- Examples:
+  - PL: "lyzka-maki-ile-gram"
+  - EN: "tablespoon-flour-grams"
+  - RU: "lozhka-muki-skolko-gramm"
+  - UK: "lozhka-boroshna-skilky-hram"
+
+1. TITLE (HARD LIMIT: 50-60 characters, NEVER exceed 60):
+- Must include the measurement + ingredient + "grams"
+- Examples:
+  - PL: "Łyżka mąki — ile to gram? Tabela przeliczników"
+  - EN: "Tablespoon of Flour in Grams — Full Conversion"
+  - RU: "Ложка муки — сколько грамм? Таблица мер"
+
+2. DESCRIPTION (HARD LIMIT: 120-155 characters):
+- Start with the direct answer (Xg), then mention the full table
+- Include CTA
+
+3. ANSWER (400-800 characters):
+- Sentence 1: EXACT gram value — "1 tablespoon of {entity_a} weighs approximately Xg"
+- Sentence 2: Teaspoon and cup equivalents
+- Sentence 3: Why this ingredient is different (density)
+- Sentence 4-5: Calories per tablespoon, practical cooking tip
+- Include REAL numbers. This is a reference page, not fluff.
+
+4. FAQ (exactly 4 questions):
+- a) "How many grams in a teaspoon of {entity_a}?"
+- b) "How many grams in a cup of {entity_a}?"
+- c) "How many calories in a tablespoon of {entity_a}?"
+- d) "How to measure {entity_a} without a scale?"
+- Each answer: 2-3 sentences with SPECIFIC gram values
+
+---
+
+LANGUAGE: {locale}
+- All content in {locale}. Write natively, DO NOT translate from English.
+- Slug in content language.
+- Use natural measurement phrases for this language:
+  - PL: łyżka, łyżeczka, szklanka, kubek
+  - RU: ложка, чайная ложка, стакан
+  - UK: ложка, чайна ложка, склянка
+  - EN: tablespoon, teaspoon, cup, glass
+
+TONE: Precise, practical, data-first. Like a culinary metrologist. Every number must be real.
+
+Return ONLY the JSON, no other text."#,
+        search_query = search_query,
+        entity_a = entity_a,
         locale = locale,
     )
 }
