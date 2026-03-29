@@ -95,15 +95,16 @@ Rules:
         );
 
         // ── Call AI via trait (Balanced = gemini-3.1-pro-preview, more reliable) ──
+        // 4000 tokens: thinking models use ~2000 tokens for reasoning, need ~500 for actual SEO JSON
         let raw = match self.llm_adapter
-            .generate_with_quality(&prompt, 1500, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
             .await
         {
             Ok(r) => r,
             Err(first_err) => {
                 tracing::warn!("🔄 SEO first attempt failed: {}, retrying…", first_err);
                 self.llm_adapter
-                    .generate_with_quality(&prompt, 1500, AiQuality::Balanced)
+                    .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
                     .await?
             }
         };
@@ -155,22 +156,52 @@ fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
     };
 
     // Step 2: Try direct parse
-    serde_json::from_str(cleaned)
-        .or_else(|_| {
-            // Step 3: Extract JSON object from surrounding text
-            if let Some(start) = cleaned.find('{') {
-                if let Some(end) = cleaned.rfind('}') {
-                    return serde_json::from_str(&cleaned[start..=end]);
-                }
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(cleaned) {
+        return Ok(val);
+    }
+
+    // Step 3: Extract JSON object from surrounding text
+    if let Some(start) = cleaned.find('{') {
+        if let Some(end) = cleaned.rfind('}') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&cleaned[start..=end]) {
+                return Ok(val);
             }
-            Err(serde_json::Error::io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "No JSON found",
-            )))
-        })
-        .map_err(|e| {
-            let preview = &raw[..raw.len().min(300)];
-            tracing::error!("Failed to parse AI SEO response: {} | raw preview: {}", e, preview);
-            AppError::internal("AI returned invalid JSON")
-        })
+        }
+
+        // Step 4: Truncated JSON recovery — close open strings and braces
+        let fragment = &cleaned[start..];
+        let recovered = recover_truncated_json(fragment);
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&recovered) {
+            tracing::warn!("⚠️ SEO JSON was truncated — recovered partial response");
+            return Ok(val);
+        }
+    }
+
+    let preview = &raw[..raw.len().min(300)];
+    tracing::error!("Failed to parse AI SEO response: No JSON found | raw preview: {}", preview);
+    Err(AppError::internal("AI returned invalid JSON"))
+}
+
+/// Attempt to recover truncated JSON by closing open strings and braces.
+/// Works for simple flat objects like SEO metadata.
+fn recover_truncated_json(fragment: &str) -> String {
+    let mut result = fragment.to_string();
+
+    // Count open/close braces
+    let open_braces = result.chars().filter(|&c| c == '{').count();
+    let close_braces = result.chars().filter(|&c| c == '}').count();
+
+    // If we're inside an unclosed string, close it
+    let quote_count = result.chars().filter(|&c| c == '"').count();
+    if quote_count % 2 != 0 {
+        // Truncated inside a string value — close it
+        result.push('"');
+    }
+
+    // Close any unclosed braces
+    for _ in close_braces..open_braces {
+        result.push('}');
+    }
+
+    result
 }
