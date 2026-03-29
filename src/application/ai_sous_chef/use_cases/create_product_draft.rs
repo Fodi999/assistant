@@ -363,8 +363,10 @@ Rules:
 
         let raw = self
             .llm_adapter
-            .generate_with_quality(&prompt, 200, AiQuality::Fast)
+            .generate_with_quality(&prompt, 500, AiQuality::Balanced)
             .await?;
+
+        tracing::info!("🌍 AI translate raw ({} chars): {}", raw.len(), &raw[..raw.len().min(200)]);
 
         let json = parse_json_response(&raw)?;
         let ru = json.get("ru").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
