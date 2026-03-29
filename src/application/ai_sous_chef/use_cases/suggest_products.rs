@@ -23,16 +23,22 @@ pub struct ProductSuggestion {
     /// Английское название (для последующего create_product_draft)
     pub name_en: String,
     /// Название на русском для отображения
+    #[serde(default)]
     pub name_ru: String,
     /// Название на польском
+    #[serde(default)]
     pub name_pl: String,
     /// Emoji для карточки
+    #[serde(default)]
     pub emoji: String,
     /// Тип продукта (vegetable, fruit, supplement, nut_seed, ...)
+    #[serde(default)]
     pub product_type: String,
     /// Короткое описание почему стоит добавить (1 предложение, по-русски)
+    #[serde(default)]
     pub why_add: String,
     /// Примерные калории на 100г (для быстрого ориентира)
+    #[serde(default)]
     pub calories_hint: Option<f64>,
 }
 
@@ -69,7 +75,7 @@ impl AdminCatalogService {
         let prompt = build_suggest_prompt(&query);
         let raw = self
             .llm_adapter
-            .generate_with_quality(&prompt, 2000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
             .await?;
 
         tracing::debug!("🤖 Suggest raw ({} chars): {}", raw.len(), &raw[..raw.len().min(300)]);
@@ -131,41 +137,82 @@ Return ONLY the JSON array, no extra text."#,
 
 // ── Response parser ───────────────────────────────────────────────────────────
 
-fn parse_suggestions(raw: &str) -> AppResult<Vec<ProductSuggestion>> {
-    // Strip markdown fences
-    let cleaned = {
-        let t = raw.trim();
-        let without_prefix = if t.starts_with("```json") {
-            &t[7..]
-        } else if t.starts_with("```") {
-            &t[3..]
-        } else {
-            t
-        };
-        let without_suffix = if without_prefix.trim_end().ends_with("```") {
-            let s = without_prefix.trim_end();
-            &s[..s.len() - 3]
-        } else {
-            without_prefix
-        };
-        without_suffix.trim().to_string()
+fn strip_markdown_fences(raw: &str) -> String {
+    let t = raw.trim();
+    let without_prefix = if t.starts_with("```json") {
+        &t[7..]
+    } else if t.starts_with("```") {
+        &t[3..]
+    } else {
+        t
     };
+    let without_suffix = if without_prefix.trim_end().ends_with("```") {
+        let s = without_prefix.trim_end();
+        &s[..s.len() - 3]
+    } else {
+        without_prefix
+    };
+    without_suffix.trim().to_string()
+}
 
-    // Try direct parse as array
+fn parse_suggestions(raw: &str) -> AppResult<Vec<ProductSuggestion>> {
+    let cleaned = strip_markdown_fences(raw);
+
+    // 1) Try direct parse as array
     if let Ok(suggestions) = serde_json::from_str::<Vec<ProductSuggestion>>(&cleaned) {
         return Ok(suggestions);
     }
 
-    // Fallback: find [...] block
+    // 2) Find [...] block
     if let Some(start) = cleaned.find('[') {
         if let Some(end) = cleaned.rfind(']') {
             if let Ok(suggestions) = serde_json::from_str::<Vec<ProductSuggestion>>(&cleaned[start..=end]) {
                 return Ok(suggestions);
             }
         }
+
+        // 3) JSON truncated — try to close it and parse partial results
+        //    Find the last complete object (ends with '}')
+        let array_body = &cleaned[start..];
+        if let Some(last_brace) = array_body.rfind('}') {
+            let partial = format!("{}]", &array_body[..=last_brace]);
+            if let Ok(suggestions) = serde_json::from_str::<Vec<ProductSuggestion>>(&partial) {
+                if !suggestions.is_empty() {
+                    tracing::warn!(
+                        "⚠️ Suggest JSON was truncated — recovered {} of 5 items",
+                        suggestions.len()
+                    );
+                    return Ok(suggestions);
+                }
+            }
+
+            // 4) Even that failed — try individual objects between { }
+            let mut items = Vec::new();
+            let mut search_from = 0;
+            let haystack = array_body;
+            while let Some(obj_start) = haystack[search_from..].find('{') {
+                let abs_start = search_from + obj_start;
+                if let Some(obj_end) = haystack[abs_start..].find('}') {
+                    let obj_str = &haystack[abs_start..=abs_start + obj_end];
+                    if let Ok(item) = serde_json::from_str::<ProductSuggestion>(obj_str) {
+                        items.push(item);
+                    }
+                    search_from = abs_start + obj_end + 1;
+                } else {
+                    break;
+                }
+            }
+            if !items.is_empty() {
+                tracing::warn!(
+                    "⚠️ Suggest JSON deeply broken — extracted {} items individually",
+                    items.len()
+                );
+                return Ok(items);
+            }
+        }
     }
 
-    tracing::error!("Failed to parse suggestions. Raw: {}", &raw[..raw.len().min(500)]);
+    tracing::error!("Failed to parse suggestions. Raw ({} chars): {}", raw.len(), &raw[..raw.len().min(500)]);
     Err(AppError::internal("AI returned invalid suggestions format"))
 }
 
