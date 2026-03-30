@@ -31,6 +31,7 @@ use crate::interfaces::http::{
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
+    cache_middleware::{cache_1d, cache_1h, cache_5m, cache_immutable},
     catalog::{get_categories, search_ingredients, CatalogState},
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
@@ -526,30 +527,65 @@ pub fn create_router(
     let chef_reference_routes = Router::new()
         .route("/public/chef-reference/convert", get(convert_units))
         .route("/public/chef-reference/ingredient", get(get_ingredient))
-        .route("/public/chef-reference/fish-season", get(fish_season));
+        .route("/public/chef-reference/fish-season", get(fish_season))
+        .layer(middleware::from_fn(cache_immutable));
 
     // New clean /public/* routes
-    let public_ingredients_router = Router::new()
+    //
+    // ── Cache strategy (saves 90%+ Neon CU) ─────────────────────────────
+    //   - List / sitemap / states-map → 1 day  (changes only on publish)
+    //   - Single ingredient / states  → 1 hour (updated rarely)
+    //   - Autocomplete                → 5 min  (frequent but cheap)
+    //   - Pure-computation tools      → 7 days (immutable)
+    //   - DB-backed tools             → 1 hour
+    //   - POST tools                  → no cache
+
+    // Ingredients: bulk list endpoints — cached 1 day
+    let ingredients_list_router = Router::new()
         .route("/ingredients", get(list_ingredients))
         .route("/ingredients-full", get(list_ingredients_full))
         .route("/ingredients-states-map", get(get_ingredients_states_map))
         .route("/ingredients-sitemap-data", get(get_ingredients_sitemap_data))
+        .with_state(pool_for_public.clone())
+        .layer(middleware::from_fn(cache_1d));
+
+    // Ingredients: autocomplete — cached 5 min
+    let ingredients_autocomplete_router = Router::new()
         .route("/ingredients/autocomplete", get(autocomplete_ingredients))
+        .with_state(pool_for_public.clone())
+        .layer(middleware::from_fn(cache_5m));
+
+    // Ingredients: per-slug detail — cached 1 hour
+    let ingredients_detail_router = Router::new()
         .route("/ingredients/:slug", get(get_ingredient_by_slug))
         .route("/ingredients/:slug/states", get(get_ingredient_states))
         .route("/ingredients/:slug/states/:state", get(get_ingredient_state))
-        .with_state(pool_for_public.clone());
+        .with_state(pool_for_public.clone())
+        .layer(middleware::from_fn(cache_1h));
 
-    let public_tools_router = Router::new()
+    let public_ingredients_router = Router::new()
+        .merge(ingredients_list_router)
+        .merge(ingredients_autocomplete_router)
+        .merge(ingredients_detail_router);
+
+    // Tools: pure computation — immutable cache (7 days, no DB)
+    let tools_immutable_router = Router::new()
         .route("/tools/convert", get(tools_convert))
+        .route("/tools/units", get(list_units))
+        .route("/tools/regions", get(list_regions))
+        .route("/tools/scale", get(scale_recipe))
+        .route("/tools/yield", get(yield_calc))
+        .route("/tools/measure-conversion", get(measure_conversion))
+        .with_state(pool_for_tools.clone())
+        .layer(middleware::from_fn(cache_immutable));
+
+    // Tools: DB-backed — cached 1 hour
+    let tools_cached_router = Router::new()
         .route("/tools/fish-season", get(tools_fish_season))
         .route("/tools/nutrition", get(nutrition))
         .route("/tools/ingredients", get(ingredients_db))
         .route("/tools/compare", get(compare_foods))
-        .route("/tools/units", get(list_units))
         .route("/tools/categories", get(list_categories))
-        .route("/tools/scale", get(scale_recipe))
-        .route("/tools/yield", get(yield_calc))
         .route("/tools/ingredient-equivalents", get(ingredient_equivalents))
         .route("/tools/food-cost", get(food_cost_calc))
         .route("/tools/ingredient-suggestions", get(ingredient_suggestions))
@@ -558,7 +594,6 @@ pub fn create_router(
         .route("/tools/ingredient-convert", get(ingredient_convert))
         // SEO alias: /tools/cup-to-grams/wheat-flour?value=1&lang=pl
         .route("/tools/:from_to/:slug", get(seo_ingredient_convert))
-        .route("/tools/measure-conversion", get(measure_conversion))
         .route("/tools/ingredient-measures", get(ingredient_measures))
         .route("/tools/fish-season-table", get(fish_season_table))
         // Universal seasonal calendar endpoints
@@ -572,13 +607,22 @@ pub fn create_router(
         // Search & advanced tools
         .route("/tools/product-search", get(product_search))
         .route("/tools/resolve-slug", get(resolve_slug))
-        .route("/tools/regions", get(list_regions))
+        .with_state(pool_for_tools.clone())
+        .layer(middleware::from_fn(cache_1h));
+
+    // Tools: POST endpoints — no cache (dynamic)
+    let tools_dynamic_router = Router::new()
         .route("/tools/recipe-nutrition", post(recipe_nutrition))
         .route("/tools/recipe-cost", post(recipe_cost))
         .route("/tools/recipe-analyze", post(recipe_analyze))
         .route("/tools/share-recipe", post(share_recipe))
         .route("/tools/shared-recipe/:slug", get(get_shared_recipe))
         .with_state(pool_for_tools);
+
+    let public_tools_router = Router::new()
+        .merge(tools_immutable_router)
+        .merge(tools_cached_router)
+        .merge(tools_dynamic_router);
 
     // ── 🆕 Culinary Intelligence Platform (RuleBot + Catalog) ────────────────
     let rulebot = std::sync::Arc::new(
@@ -622,6 +666,7 @@ pub fn create_router(
         .route("/diet/:flag",      get(get_diet_page))
         .route("/ranking/:metric", get(get_ranking_page))
         .route("/products-slugs",  get(get_all_slugs))
+        .layer(middleware::from_fn(cache_1h))
         .with_state(public_nutrition_svc);
 
     // ── Public AI SEO Content route ───────────────────────────────────────────
@@ -633,6 +678,7 @@ pub fn create_router(
     );
     let public_seo_content_router = Router::new()
         .route("/seo-content", get(get_seo_content))
+        .layer(middleware::from_fn(cache_1d))
         .with_state(seo_content_svc.clone());
 
     // ── Intent Pages (AI-generated pSEO pages) ───────────────────────────────
@@ -690,6 +736,7 @@ pub fn create_router(
         .route("/intent-pages/:slug", get(get_published_intent_page))
         .route("/intent-pages/:slug/related", get(get_related_intent_pages))
         .route("/ingredients/:slug/intent-pages", get(get_ingredient_intent_pages))
+        .layer(middleware::from_fn(cache_1h))
         .with_state(intent_pages_svc.clone());
 
     // ── Background scheduler: publish queued pages every hour ────────────────
@@ -781,6 +828,7 @@ pub fn create_router(
         .route("/articles-sitemap", get(public_cms::articles_sitemap))
         .route("/article-categories", get(public_cms::list_article_categories))
         .route("/stats", get(public_cms::public_stats))
+        .layer(middleware::from_fn(cache_1h))
         .with_state(cms_service);
 
     let public_router = Router::new()

@@ -7,6 +7,7 @@ pub mod admin_states; // Ingredient processing states (AI Sous Chef)
 pub mod admin_users;
 pub mod assistant;
 pub mod auth;
+pub mod cache_middleware; // 🆕 Cache-Control headers for public endpoints
 pub mod catalog;
 pub mod chef_reference_public;
 pub mod dish;

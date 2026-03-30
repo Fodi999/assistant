@@ -1,4 +1,5 @@
 pub mod ai_client_impl; // 🆕 AiClient trait implementation for LlmAdapter
+pub mod cache;          // 🆕 In-memory cache for public endpoints (saves Neon CU)
 pub mod config;
 pub mod gemini_service; // 🆕 Google Gemini AI (replaces Groq for generation)
 pub mod groq_service;   // Legacy — types re-exported by gemini_service
@@ -7,6 +8,7 @@ pub mod persistence;
 pub mod r2_client;
 pub mod security;
 
+pub use cache::AppCache;
 pub use config::*;
 pub use gemini_service::GeminiService;
 pub use groq_service::{GroqService, UnifiedProductResponse};

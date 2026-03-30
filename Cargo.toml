@@ -55,6 +55,9 @@ dotenvy = "0.15"
 # Rate limiting
 governor = "0.6"
 
+# In-memory cache (TTL, async, zero-alloc lookups)
+mini-moka = "0.10"
+
 # Utilities
 async-trait = "0.1"
 rand = "0.8"
