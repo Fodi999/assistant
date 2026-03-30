@@ -362,14 +362,14 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         "carrot", "potato", "tomato", "onion", "garlic", "pepper", "bell pepper",
         "cucumber", "cabbage", "broccoli", "spinach", "lettuce", "celery",
         "zucchini", "eggplant", "corn", "peas", "beet", "radish", "turnip",
-        "asparagus", "artichoke", "cauliflower", "kale", "leek", "mushroom",
+        "asparagus", "artichoke", "cauliflower", "kale", "leek",
         "pumpkin", "squash", "sweet potato", "olive", "caper",
     ];
     let veg_kw_ru = [
         "морковь", "картофель", "помидор", "лук", "чеснок", "перец",
         "огурец", "капуста", "брокколи", "шпинат", "салат", "сельдерей",
         "кабачок", "баклажан", "кукуруза", "горох", "свёкла", "редис",
-        "спаржа", "артишок", "цветная капуста", "грибы", "тыква",
+        "спаржа", "артишок", "цветная капуста", "тыква",
         "оливк", "маслин", "каперс",
     ];
     if veg_kw.iter().any(|k| name_en_lower.contains(k))
@@ -453,6 +453,37 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         || condiment_kw_ru.iter().any(|k| name_ru_lower.contains(k))
     {
         return Some("condiment");
+    }
+
+    // Beverage
+    let beverage_kw = [
+        "beer", "wine", "juice", "tea", "coffee", "cocoa", "lemonade",
+        "kombucha", "kvass", "cider", "sake", "mead", "smoothie",
+        "matcha", "espresso", "water",
+    ];
+    let beverage_kw_ru = [
+        "пиво", "вино", "сок", "чай", "кофе", "какао", "лимонад",
+        "комбуча", "квас", "сидр", "сакэ", "медовуха",
+    ];
+    if beverage_kw.iter().any(|k| name_en_lower.contains(k))
+        || beverage_kw_ru.iter().any(|k| name_ru_lower.contains(k))
+    {
+        return Some("beverage");
+    }
+
+    // Mushroom (before vegetable, so it doesn't get caught by veg "mushroom")
+    let mushroom_kw = [
+        "mushroom", "champignon", "shiitake", "portobello", "oyster mushroom",
+        "chanterelle", "porcini", "truffle", "enoki", "maitake", "morel",
+    ];
+    let mushroom_kw_ru = [
+        "гриб", "шампиньон", "шиитаке", "портобелло", "вёшенка",
+        "лисичк", "белый гриб", "трюфель", "опят", "маслят",
+    ];
+    if mushroom_kw.iter().any(|k| name_en_lower.contains(k))
+        || mushroom_kw_ru.iter().any(|k| name_ru_lower.contains(k))
+    {
+        return Some("mushroom");
     }
 
     None // truly unknown
