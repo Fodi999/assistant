@@ -94,17 +94,17 @@ Rules:
             nutrition_str = nutrition_str,
         );
 
-        // ── Call AI via trait (Balanced = gemini-3.1-pro-preview, more reliable) ──
-        // 4000 tokens: thinking models use ~2000 tokens for reasoning, need ~500 for actual SEO JSON
+        // ── Call AI via trait (Flash = gemini-3-flash-preview, cheap for decorative SEO text) ──
+        // 2000 tokens: SEO JSON is ~300 tokens, thinking overhead ~1000 tokens
         let raw = match self.llm_adapter
-            .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 2000, AiQuality::Fast)
             .await
         {
             Ok(r) => r,
             Err(first_err) => {
                 tracing::warn!("🔄 SEO first attempt failed: {}, retrying…", first_err);
                 self.llm_adapter
-                    .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
+                    .generate_with_quality(&prompt, 2000, AiQuality::Fast)
                     .await?
             }
         };
@@ -118,7 +118,7 @@ Rules:
 
         // ── Cache result ──
         if let Err(e) = self.ai_cache.set(
-            &cache_key, result.clone(), "gemini", "gemini-3.1-pro-preview", SEO_CACHE_TTL_DAYS
+            &cache_key, result.clone(), "gemini", "gemini-3-flash-preview", SEO_CACHE_TTL_DAYS
         ).await {
             tracing::warn!("Failed to cache SEO result: {}", e);
         }

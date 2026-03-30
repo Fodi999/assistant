@@ -265,7 +265,8 @@ Rules:
             );
 
             let raw = self.llm_adapter
-                .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
+                // Flash model: pairings are suggestions, not DB nutrition data
+                .generate_with_quality(&prompt, 2000, AiQuality::Fast)
                 .await?;
 
             // Log raw AI response for debugging
@@ -276,7 +277,7 @@ Rules:
 
             // Cache the AI result
             let _ = self.ai_cache.set(
-                &cache_key, ai_result.clone(), "gemini", "gemini-3.1-pro-preview", PAIRING_CACHE_TTL_DAYS
+                &cache_key, ai_result.clone(), "gemini", "gemini-3-flash-preview", PAIRING_CACHE_TTL_DAYS
             ).await;
         }
 

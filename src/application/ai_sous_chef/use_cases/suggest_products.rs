@@ -164,7 +164,8 @@ impl AdminCatalogService {
 
             let raw = self
                 .llm_adapter
-                .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
+                // Flash model: suggestions are decorative, not DB data
+                .generate_with_quality(&prompt, 2000, AiQuality::Fast)
                 .await?;
 
             let candidates = match try_parse_suggestions(&raw) {
@@ -227,7 +228,7 @@ impl AdminCatalogService {
         if let Ok(val) = serde_json::to_value(&suggestions) {
             let _ = self
                 .ai_cache
-                .set(&cache_key, val, "gemini", "gemini-3.1-pro-preview", 1)
+                .set(&cache_key, val, "gemini", "gemini-3-flash-preview", 1)
                 .await;
         }
 
