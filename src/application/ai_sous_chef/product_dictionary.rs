@@ -425,18 +425,22 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         return Some("nut");
     }
 
-    // Spice
+    // Spice (includes baking agents — they live in "Spices & Herbs" category)
     let spice_kw = [
         "cinnamon", "turmeric", "cumin", "paprika", "basil", "oregano",
         "thyme", "rosemary", "dill", "parsley", "bay leaf", "saffron",
         "cardamom", "clove", "nutmeg", "ginger", "vanilla", "coriander",
         "mint", "sage", "tarragon", "chili",
+        "baking powder", "baking soda", "yeast", "gelatin", "agar",
+        "cornstarch", "starch", "pectin",
     ];
     let spice_kw_ru = [
         "корица", "куркума", "тмин", "паприка", "базилик", "орегано",
         "тимьян", "розмарин", "укроп", "петрушка", "лавр", "шафран",
         "кардамон", "гвоздика", "мускатный", "имбирь", "ваниль", "кориандр",
         "мята", "шалфей", "эстрагон", "чили",
+        "разрыхлитель", "сода", "дрожжи", "желатин", "агар",
+        "крахмал", "пектин",
     ];
     if spice_kw.iter().any(|k| name_en_lower.contains(k))
         || spice_kw_ru.iter().any(|k| name_ru_lower.contains(k))

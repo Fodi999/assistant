@@ -79,16 +79,17 @@ fn product_type_to_category(product_type: &str) -> Option<&'static str> {
     match product_type.to_lowercase().as_str() {
         "fish" | "seafood" | "fish_and_seafood" => Some("Fish & Seafood"),
         "meat" | "poultry" | "meat_and_poultry" => Some("Meat & Poultry"),
-        "dairy" | "dairy_and_eggs" | "eggs" => Some("Dairy & Eggs"),
+        "dairy" | "dairy_and_eggs" | "eggs" | "egg" => Some("Dairy & Eggs"),
         "vegetable" | "vegetables" => Some("Vegetables"),
         "fruit" | "fruits" => Some("Fruits"),
-        "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => Some("Grains & Pasta"),
+        "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" | "bread" | "bakery" => Some("Grains & Pasta"),
         "legume" | "legumes" => Some("Legumes"),
-        "nut" | "nuts" | "seeds" => Some("Nuts & Seeds"),
-        "spice" | "spices" | "herb" | "herbs" | "seasoning" => Some("Spices & Herbs"),
-        "oil" | "oils" | "fat" | "fats" => Some("Oils & Fats"),
+        "nut" | "nuts" | "seeds" | "nut_seed" => Some("Nuts & Seeds"),
+        "spice" | "spices" | "herb" | "herbs" | "seasoning" | "baking" => Some("Spices & Herbs"),
+        "oil" | "oils" | "fat" | "fats" | "fat_oil" => Some("Oils & Fats"),
         "beverage" | "beverages" | "drink" => Some("Beverages"),
-        "mushroom" | "mushrooms" | "fungi" => Some("Vegetables"), // mushrooms → vegetables
+        "mushroom" | "mushrooms" | "fungi" => Some("Mushrooms"),
+        "condiment" | "sauce" | "sweetener" => Some("Condiments & Sauces"),
         _ => None, // "other" or anything unknown → rejected
     }
 }
@@ -98,27 +99,36 @@ fn product_type_to_category(product_type: &str) -> Option<&'static str> {
 fn normalize_product_type(raw: &str) -> AppResult<String> {
     let normalized = match raw.to_lowercase().as_str() {
         "fish" | "seafood" | "fish_and_seafood" => "seafood",
-        "meat" | "poultry" | "meat_and_poultry" => "meat",
-        "dairy" | "dairy_and_eggs" | "eggs" => "dairy",
+        "meat" | "meat_and_poultry" => "meat",
+        "poultry" => "poultry",
+        "dairy" | "dairy_and_eggs" => "dairy",
+        "egg" | "eggs" => "egg",
         "vegetable" | "vegetables" => "vegetable",
         "fruit" | "fruits" => "fruit",
         "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => "grain",
+        "bread" | "bakery" | "baking" => "bread",
         "legume" | "legumes" => "legume",
-        "nut" | "nuts" | "seeds" => "nut",
+        "nut" | "nuts" | "seeds" | "nut_seed" => "nut",
         "spice" | "spices" | "herb" | "herbs" | "seasoning" => "spice",
-        "oil" | "oils" | "fat" | "fats" => "oil",
+        "oil" | "oils" | "fat" | "fats" | "fat_oil" => "oil",
         "beverage" | "beverages" | "drink" => "beverage",
-        "mushroom" | "mushrooms" | "fungi" => "vegetable",
+        "mushroom" | "mushrooms" | "fungi" => "mushroom",
+        "condiment" | "condiments" => "condiment",
+        "sauce" | "sauces" => "sauce",
+        "sweetener" | "sweeteners" => "sweetener",
+        "supplement" | "supplements" => "other", // no DB category yet, allow as other
         "other" => {
             return Err(AppError::validation(
                 "product_type 'other' is not allowed. Every product must have a specific type \
-                 (e.g. seafood, meat, dairy, vegetable, fruit, grain, legume, nut, spice, oil, beverage)."
+                 (e.g. seafood, meat, poultry, dairy, egg, vegetable, fruit, grain, bread, \
+                 legume, nut, spice, oil, beverage, mushroom, condiment, sauce, sweetener)."
             ));
         }
         unknown => {
             return Err(AppError::validation(&format!(
-                "Unknown product_type '{}'. Allowed: seafood, meat, dairy, vegetable, fruit, \
-                 grain, legume, nut, spice, oil, beverage.",
+                "Unknown product_type '{}'. Allowed: seafood, meat, poultry, dairy, egg, \
+                 vegetable, fruit, grain, bread, legume, nut, spice, oil, beverage, \
+                 mushroom, condiment, sauce, sweetener.",
                 unknown
             )));
         }
