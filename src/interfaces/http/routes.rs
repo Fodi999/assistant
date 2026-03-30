@@ -98,6 +98,7 @@ pub fn create_router(
     admin_nutrition_service: AdminNutritionService, // 🆕 Nutrition editor
     r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
     llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>, // 🆕 for public AI SEO content
+    ingredient_cache: crate::infrastructure::IngredientCache, // 🆕 in-memory ingredient catalog for Sous-Chef
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
 ) -> Router {
@@ -841,9 +842,10 @@ pub fn create_router(
 
     // ── 🆕 Sous-Chef Planner (AI meal planning — single-shot) ────────────────
     let sous_chef_svc = Arc::new(
-        crate::application::sous_chef_planner::SousChefPlannerService::new(
+        crate::application::sous_chef::SousChefPlannerService::new(
             llm_adapter.clone(),
             crate::infrastructure::persistence::AiCacheRepository::new(pool_for_public.clone()),
+            ingredient_cache,
         )
     );
     let sous_chef_router = Router::new()

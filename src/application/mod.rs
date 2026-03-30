@@ -22,7 +22,7 @@ pub mod report;
 pub mod rulebot; // 🆕 RuleBot orchestrator — Culinary Intelligence Platform
 pub mod smart_parse; // 🆕 SmartParse — deterministic text → ingredient parser
 pub mod smart_service; // 🆕 SmartService — intelligent ingredient aggregator
-pub mod sous_chef_planner; // 🆕 Sous-Chef Planner — single-shot meal plan generator
+pub mod sous_chef; // 🆕 Sous-Chef Planner — DDD module (real data from catalog)
 pub mod tenant_ingredient;
 pub mod user;
 

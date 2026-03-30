@@ -14,7 +14,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::application::sous_chef_planner::{MealPlan, PlanRequest, SousChefPlannerService};
+use crate::application::sous_chef::{MealPlan, PlanRequest, SousChefPlannerService};
 use crate::infrastructure::cache::{self, AppCache};
 
 // ── POST /public/sous-chef/plan ───────────────────────────────────────────────
@@ -42,7 +42,7 @@ pub async fn generate_plan(
     // Check in-memory cache first (5 min)
     let lang = req.lang.as_deref().unwrap_or("en");
     let mem_key = format!("sous_chef:plan:{}:{}", 
-        crate::application::sous_chef_planner::normalize_for_cache(&query), lang);
+        crate::application::sous_chef::normalize_for_cache(&query), lang);
 
     if let Some(Extension(ref c)) = cache {
         if let Some(cached) = c.get(&mem_key) {
