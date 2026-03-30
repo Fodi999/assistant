@@ -448,15 +448,25 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         return Some("spice");
     }
 
-    // Sweetener / Condiment
+    // Sweetener / Condiment / Sweets
     let condiment_kw = ["honey", "sugar", "maple syrup", "soy sauce", "vinegar",
-                         "mustard", "ketchup", "mayonnaise", "hot sauce", "worcestershire"];
+                         "mustard", "ketchup", "mayonnaise", "hot sauce", "worcestershire",
+                         "chocolate", "cocoa bean", "molasses", "syrup", "stevia"];
     let condiment_kw_ru = ["мёд", "сахар", "кленовый сироп", "соевый соус", "уксус",
-                            "горчица", "кетчуп", "майонез"];
+                            "горчица", "кетчуп", "майонез", "шоколад", "патока", "сироп"];
     if condiment_kw.iter().any(|k| name_en_lower.contains(k))
         || condiment_kw_ru.iter().any(|k| name_ru_lower.contains(k))
     {
         return Some("condiment");
+    }
+
+    // Bakery / Bread
+    let bakery_kw = ["bread", "baguette", "bun", "croissant", "wrap", "tortilla", "pita", "bagel"];
+    let bakery_kw_ru = ["хлеб", "багет", "булочка", "круассан", "лепешка", "тортилья", "питак"];
+    if bakery_kw.iter().any(|k| name_en_lower.contains(k))
+        || bakery_kw_ru.iter().any(|k| name_ru_lower.contains(k))
+    {
+        return Some("bread");
     }
 
     // Beverage

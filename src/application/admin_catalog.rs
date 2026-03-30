@@ -113,7 +113,7 @@ fn normalize_product_type(raw: &str) -> AppResult<String> {
         "oil" | "oils" | "fat" | "fats" | "fat_oil" => "oil",
         "beverage" | "beverages" | "drink" => "beverage",
         "mushroom" | "mushrooms" | "fungi" => "mushroom",
-        "condiment" | "condiments" => "condiment",
+        "condiment" | "condiments" | "sweet" | "sweets" | "dessert" | "desserts" => "condiment",
         "sauce" | "sauces" => "sauce",
         "sweetener" | "sweeteners" => "sweetener",
         "supplement" | "supplements" => "other", // no DB category yet, allow as other
