@@ -2,6 +2,7 @@ use crate::application::{
     ai_sous_chef::AiSousChefService,
     cms_service::CmsService,
     intent_pages::IntentPagesService,
+    lab_combos::LabComboService,
     public_nutrition::PublicNutritionService,
     public_seo_content::PublicSeoContentService,
     recipe_v2_service::RecipeV2Service, // V2 with translations
@@ -26,6 +27,7 @@ use crate::interfaces::http::{
     admin_catalog,
     admin_cms,
     admin_intent_pages,
+    admin_lab_combos,
     admin_nutrition,
     admin_states,
     admin_users,
@@ -738,6 +740,43 @@ pub fn create_router(
         })
         .with_state(intent_pages_svc.clone());
 
+    // ── 🆕 Lab Combo SEO Pages ────────────────────────────────────────────────
+    let lab_combo_svc = Arc::new(
+        LabComboService::new(
+            pool_for_public.clone(),
+            Arc::new(crate::application::smart_service::SmartService::new(pool_for_public.clone())),
+            r2_client.clone(),
+            llm_adapter.clone(),
+        )
+    );
+    let admin_lab_combos_routes = Router::new()
+        .route("/", get(admin_lab_combos::list_combos))
+        .route("/generate", post(admin_lab_combos::generate_combo))
+        .route("/generate-popular", post(admin_lab_combos::generate_popular))
+        .route("/:id/publish", post(admin_lab_combos::publish_combo))
+        .route("/:id/archive", post(admin_lab_combos::archive_combo))
+        .route("/:id", axum::routing::delete(admin_lab_combos::delete_combo))
+        .route("/:id", axum::routing::patch(admin_lab_combos::update_combo))
+        .route("/:id/image-upload-url", get(admin_lab_combos::get_image_upload_url))
+        .route("/:id/image-url", axum::routing::put(admin_lab_combos::save_image_url))
+        .route("/:id/image-upload-url/:kind", get(admin_lab_combos::get_typed_image_upload_url))
+        .route("/:id/image-url/:kind", axum::routing::put(admin_lab_combos::save_typed_image_url))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
+        .with_state(lab_combo_svc);
+
     // Public intent pages routes (no auth)
     let public_intent_pages_router = Router::new()
         .route("/intent-pages", get(list_published_intent_pages))
@@ -879,6 +918,7 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
+        .nest("/api/admin/lab-combos", admin_lab_combos_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete
