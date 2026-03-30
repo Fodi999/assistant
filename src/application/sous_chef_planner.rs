@@ -45,9 +45,10 @@ pub struct MealVariant {
 /// Single ingredient in a recipe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MealIngredient {
-    pub name: String,   // localized
+    pub name: String,    // localized
     pub amount: String,  // "150г", "1 cup", etc.
     pub calories: u32,
+    pub image_url: Option<String>,
 }
 
 /// Full plan response.
@@ -157,6 +158,60 @@ fn build_cache_key(goal: Goal, lang: &str) -> String {
     format!("sous_chef:{}:{}", goal.slug(), lang)
 }
 
+// ── Ingredient image catalog ──────────────────────────────────────────────────
+// Maps lowercase keyword → catalog image URL.
+// Only ingredients that have real photos in the catalog are listed.
+
+fn ingredient_image(name: &str) -> Option<String> {
+    let n = name.to_lowercase();
+    let url: Option<&str> = if n.contains("лосось") || n.contains("łosoś") || n.contains("salmon") || n.contains("лосось") || n.contains("лосос") {
+        Some("https://cdn.dima-fomin.pl/ingredients/salmon.webp")
+    } else if n.contains("тунец") || n.contains("tuńczyk") || n.contains("tuna") || n.contains("тунець") {
+        Some("https://cdn.dima-fomin.pl/ingredients/tuna.webp")
+    } else if n.contains("треска") || n.contains("dorsz") || n.contains("cod") || n.contains("тріска") {
+        Some("https://cdn.dima-fomin.pl/ingredients/cod.webp")
+    } else if n.contains("сельдь") || n.contains("śledź") || n.contains("herring") || n.contains("оселедець") {
+        Some("https://cdn.dima-fomin.pl/ingredients/herring.webp")
+    } else if n.contains("скумбрия") || n.contains("makrela") || n.contains("mackerel") || n.contains("скумбрія") {
+        Some("https://cdn.dima-fomin.pl/ingredients/mackerel.webp")
+    } else if n.contains("форель") || n.contains("pstrąg") || n.contains("trout") {
+        Some("https://cdn.dima-fomin.pl/ingredients/trout.webp")
+    } else if n.contains("окунь") || n.contains("okoń") || n.contains("sea bass") || n.contains("сибас") {
+        Some("https://cdn.dima-fomin.pl/ingredients/sea-bass.webp")
+    } else if n.contains("карп") || n.contains("karp") || n.contains("carp") {
+        Some("https://cdn.dima-fomin.pl/ingredients/carp.webp")
+    } else if n.contains("креветк") || n.contains("krewetk") || n.contains("shrimp") || n.contains("prawn") {
+        Some("https://cdn.dima-fomin.pl/ingredients/shrimp.webp")
+    } else if n.contains("авокадо") || n.contains("awokado") || n.contains("avocado") {
+        Some("https://i.postimg.cc/KjfqhLX2/fodifood-single-whole-avocado-top-view-flat-lay-food-photograph-f701dbb9-1b31-4d0b-99ce-96f16a2c413d.png")
+    } else if n.contains("картофел") || n.contains("картопл") || n.contains("ziemniak") || n.contains("potato") || n.contains("батат") || n.contains("batat") || n.contains("sweet potato") {
+        Some("https://i.postimg.cc/x8dz4b9r/fodifood-single-whole-potato-top-view-flat-lay-food-photography-2d1571c0-5cbe-4c2c-bd13-b43968b3db68.png")
+    } else if n.contains("молоко") || n.contains("mleko") || n.contains("milk") || n.contains("молок") {
+        Some("https://i.postimg.cc/0QPm7B4H/fodifood_single_glass_bottle_filled_with_milk_one_liter_top_vie_8f61ce21_9e27_47e0_8da5_75da410bd79d.png")
+    } else {
+        None
+    };
+    url.map(|s| s.to_string())
+}
+
+/// Enrich all ingredients in variants with catalog images where available.
+fn enrich_images(mut variants: Vec<MealVariant>) -> Vec<MealVariant> {
+    for v in &mut variants {
+        for ing in &mut v.ingredients {
+            if ing.image_url.is_none() {
+                ing.image_url = ingredient_image(&ing.name);
+            }
+        }
+    }
+    variants
+}
+
+// ── Shorthand constructor ─────────────────────────────────────────────────────
+fn ing(name: &str, amount: &str, calories: u32) -> MealIngredient {
+    let image_url = ingredient_image(name);
+    MealIngredient { name: name.into(), amount: amount.into(), calories, image_url }
+}
+
 // ── Predefined meal templates (Rust — 0 cost) ────────────────────────────────
 // These are nutritionist-validated templates. Gemini only adds personality text.
 
@@ -169,9 +224,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "овсянка + банан + зелёный чай".into(),
                 calories: 320, protein_g: 10, fat_g: 6, carbs_g: 58,
                 ingredients: vec![
-                    MealIngredient { name: "Овсянка".into(), amount: "60г".into(), calories: 230 },
-                    MealIngredient { name: "Банан".into(), amount: "1 шт".into(), calories: 70 },
-                    MealIngredient { name: "Зелёный чай".into(), amount: "250мл".into(), calories: 2 },
+                    ing("Овсянка", "60г", 230),
+                    ing("Банан", "1 шт", 70),
+                    ing("Зелёный чай", "250мл", 2),
                 ],
             },
             MealVariant {
@@ -180,9 +235,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "курица + рис + овощи".into(),
                 calories: 480, protein_g: 35, fat_g: 10, carbs_g: 55,
                 ingredients: vec![
-                    MealIngredient { name: "Куриная грудка".into(), amount: "150г".into(), calories: 230 },
-                    MealIngredient { name: "Рис бурый".into(), amount: "80г".into(), calories: 180 },
-                    MealIngredient { name: "Овощи на пару".into(), amount: "150г".into(), calories: 50 },
+                    ing("Куриная грудка", "150г", 230),
+                    ing("Рис бурый", "80г", 180),
+                    ing("Овощи на пару", "150г", 50),
                 ],
             },
             MealVariant {
@@ -191,9 +246,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "лосось + киноа + авокадо".into(),
                 calories: 650, protein_g: 38, fat_g: 30, carbs_g: 52,
                 ingredients: vec![
-                    MealIngredient { name: "Лосось".into(), amount: "150г".into(), calories: 300 },
-                    MealIngredient { name: "Киноа".into(), amount: "80г".into(), calories: 200 },
-                    MealIngredient { name: "Авокадо".into(), amount: "½ шт".into(), calories: 120 },
+                    ing("Лосось", "150г", 300),
+                    ing("Киноа", "80г", 200),
+                    ing("Авокадо", "½ шт", 120),
                 ],
             },
         ],
@@ -204,9 +259,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "owsianka + banan + zielona herbata".into(),
                 calories: 320, protein_g: 10, fat_g: 6, carbs_g: 58,
                 ingredients: vec![
-                    MealIngredient { name: "Płatki owsiane".into(), amount: "60g".into(), calories: 230 },
-                    MealIngredient { name: "Banan".into(), amount: "1 szt".into(), calories: 70 },
-                    MealIngredient { name: "Herbata zielona".into(), amount: "250ml".into(), calories: 2 },
+                    ing("Płatki owsiane", "60g", 230),
+                    ing("Banan", "1 szt", 70),
+                    ing("Herbata zielona", "250ml", 2),
                 ],
             },
             MealVariant {
@@ -215,9 +270,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "kurczak + ryż + warzywa".into(),
                 calories: 480, protein_g: 35, fat_g: 10, carbs_g: 55,
                 ingredients: vec![
-                    MealIngredient { name: "Pierś z kurczaka".into(), amount: "150g".into(), calories: 230 },
-                    MealIngredient { name: "Ryż brązowy".into(), amount: "80g".into(), calories: 180 },
-                    MealIngredient { name: "Warzywa na parze".into(), amount: "150g".into(), calories: 50 },
+                    ing("Pierś z kurczaka", "150g", 230),
+                    ing("Ryż brązowy", "80g", 180),
+                    ing("Warzywa na parze", "150g", 50),
                 ],
             },
             MealVariant {
@@ -226,9 +281,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "łosoś + quinoa + awokado".into(),
                 calories: 650, protein_g: 38, fat_g: 30, carbs_g: 52,
                 ingredients: vec![
-                    MealIngredient { name: "Łosoś".into(), amount: "150g".into(), calories: 300 },
-                    MealIngredient { name: "Quinoa".into(), amount: "80g".into(), calories: 200 },
-                    MealIngredient { name: "Awokado".into(), amount: "½ szt".into(), calories: 120 },
+                    ing("Łosoś", "150g", 300),
+                    ing("Quinoa", "80g", 200),
+                    ing("Awokado", "½ szt", 120),
                 ],
             },
         ],
@@ -239,9 +294,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "вівсянка + банан + зелений чай".into(),
                 calories: 320, protein_g: 10, fat_g: 6, carbs_g: 58,
                 ingredients: vec![
-                    MealIngredient { name: "Вівсянка".into(), amount: "60г".into(), calories: 230 },
-                    MealIngredient { name: "Банан".into(), amount: "1 шт".into(), calories: 70 },
-                    MealIngredient { name: "Зелений чай".into(), amount: "250мл".into(), calories: 2 },
+                    ing("Вівсянка", "60г", 230),
+                    ing("Банан", "1 шт", 70),
+                    ing("Зелений чай", "250мл", 2),
                 ],
             },
             MealVariant {
@@ -250,9 +305,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "курка + рис + овочі".into(),
                 calories: 480, protein_g: 35, fat_g: 10, carbs_g: 55,
                 ingredients: vec![
-                    MealIngredient { name: "Куряче філе".into(), amount: "150г".into(), calories: 230 },
-                    MealIngredient { name: "Рис бурий".into(), amount: "80г".into(), calories: 180 },
-                    MealIngredient { name: "Овочі на парі".into(), amount: "150г".into(), calories: 50 },
+                    ing("Куряче філе", "150г", 230),
+                    ing("Рис бурий", "80г", 180),
+                    ing("Овочі на парі", "150г", 50),
                 ],
             },
             MealVariant {
@@ -261,9 +316,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "лосось + кіноа + авокадо".into(),
                 calories: 650, protein_g: 38, fat_g: 30, carbs_g: 52,
                 ingredients: vec![
-                    MealIngredient { name: "Лосось".into(), amount: "150г".into(), calories: 300 },
-                    MealIngredient { name: "Кіноа".into(), amount: "80г".into(), calories: 200 },
-                    MealIngredient { name: "Авокадо".into(), amount: "½ шт".into(), calories: 120 },
+                    ing("Лосось", "150г", 300),
+                    ing("Кіноа", "80г", 200),
+                    ing("Авокадо", "½ шт", 120),
                 ],
             },
         ],
@@ -274,9 +329,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "oatmeal + banana + green tea".into(),
                 calories: 320, protein_g: 10, fat_g: 6, carbs_g: 58,
                 ingredients: vec![
-                    MealIngredient { name: "Oatmeal".into(), amount: "60g".into(), calories: 230 },
-                    MealIngredient { name: "Banana".into(), amount: "1 pc".into(), calories: 70 },
-                    MealIngredient { name: "Green tea".into(), amount: "250ml".into(), calories: 2 },
+                    ing("Oatmeal", "60g", 230),
+                    ing("Banana", "1 pc", 70),
+                    ing("Green tea", "250ml", 2),
                 ],
             },
             MealVariant {
@@ -285,9 +340,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "chicken + rice + vegetables".into(),
                 calories: 480, protein_g: 35, fat_g: 10, carbs_g: 55,
                 ingredients: vec![
-                    MealIngredient { name: "Chicken breast".into(), amount: "150g".into(), calories: 230 },
-                    MealIngredient { name: "Brown rice".into(), amount: "80g".into(), calories: 180 },
-                    MealIngredient { name: "Steamed vegetables".into(), amount: "150g".into(), calories: 50 },
+                    ing("Chicken breast", "150g", 230),
+                    ing("Brown rice", "80g", 180),
+                    ing("Steamed vegetables", "150g", 50),
                 ],
             },
             MealVariant {
@@ -296,9 +351,9 @@ fn weight_loss_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "salmon + quinoa + avocado".into(),
                 calories: 650, protein_g: 38, fat_g: 30, carbs_g: 52,
                 ingredients: vec![
-                    MealIngredient { name: "Salmon".into(), amount: "150g".into(), calories: 300 },
-                    MealIngredient { name: "Quinoa".into(), amount: "80g".into(), calories: 200 },
-                    MealIngredient { name: "Avocado".into(), amount: "½ pc".into(), calories: 120 },
+                    ing("Salmon", "150g", 300),
+                    ing("Quinoa", "80g", 200),
+                    ing("Avocado", "½ pc", 120),
                 ],
             },
         ],
@@ -314,9 +369,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "творог + ягоды + орехи".into(),
                 calories: 350, protein_g: 30, fat_g: 12, carbs_g: 25,
                 ingredients: vec![
-                    MealIngredient { name: "Творог 5%".into(), amount: "200г".into(), calories: 220 },
-                    MealIngredient { name: "Ягоды".into(), amount: "100г".into(), calories: 50 },
-                    MealIngredient { name: "Грецкие орехи".into(), amount: "20г".into(), calories: 130 },
+                    ing("Творог 5%", "200г", 220),
+                    ing("Ягоды", "100г", 50),
+                    ing("Грецкие орехи", "20г", 130),
                 ],
             },
             MealVariant {
@@ -325,9 +380,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "индейка + гречка + брокколи".into(),
                 calories: 520, protein_g: 45, fat_g: 12, carbs_g: 48,
                 ingredients: vec![
-                    MealIngredient { name: "Индейка".into(), amount: "180г".into(), calories: 250 },
-                    MealIngredient { name: "Гречка".into(), amount: "80г".into(), calories: 200 },
-                    MealIngredient { name: "Брокколи".into(), amount: "120г".into(), calories: 40 },
+                    ing("Индейка", "180г", 250),
+                    ing("Гречка", "80г", 200),
+                    ing("Брокколи", "120г", 40),
                 ],
             },
             MealVariant {
@@ -336,9 +391,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "стейк + батат + шпинат".into(),
                 calories: 720, protein_g: 50, fat_g: 28, carbs_g: 55,
                 ingredients: vec![
-                    MealIngredient { name: "Говяжий стейк".into(), amount: "200г".into(), calories: 400 },
-                    MealIngredient { name: "Батат".into(), amount: "150г".into(), calories: 180 },
-                    MealIngredient { name: "Шпинат".into(), amount: "100г".into(), calories: 25 },
+                    ing("Говяжий стейк", "200г", 400),
+                    ing("Батат", "150г", 180),
+                    ing("Шпинат", "100г", 25),
                 ],
             },
         ],
@@ -349,9 +404,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "twaróg + jagody + orzechy".into(),
                 calories: 350, protein_g: 30, fat_g: 12, carbs_g: 25,
                 ingredients: vec![
-                    MealIngredient { name: "Twaróg".into(), amount: "200g".into(), calories: 220 },
-                    MealIngredient { name: "Jagody".into(), amount: "100g".into(), calories: 50 },
-                    MealIngredient { name: "Orzechy włoskie".into(), amount: "20g".into(), calories: 130 },
+                    ing("Twaróg", "200g", 220),
+                    ing("Jagody", "100g", 50),
+                    ing("Orzechy włoskie", "20g", 130),
                 ],
             },
             MealVariant {
@@ -360,9 +415,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "indyk + kasza gryczana + brokuły".into(),
                 calories: 520, protein_g: 45, fat_g: 12, carbs_g: 48,
                 ingredients: vec![
-                    MealIngredient { name: "Filet z indyka".into(), amount: "180g".into(), calories: 250 },
-                    MealIngredient { name: "Kasza gryczana".into(), amount: "80g".into(), calories: 200 },
-                    MealIngredient { name: "Brokuły".into(), amount: "120g".into(), calories: 40 },
+                    ing("Filet z indyka", "180g", 250),
+                    ing("Kasza gryczana", "80g", 200),
+                    ing("Brokuły", "120g", 40),
                 ],
             },
             MealVariant {
@@ -371,9 +426,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "stek wołowy + batat + szpinak".into(),
                 calories: 720, protein_g: 50, fat_g: 28, carbs_g: 55,
                 ingredients: vec![
-                    MealIngredient { name: "Stek wołowy".into(), amount: "200g".into(), calories: 400 },
-                    MealIngredient { name: "Batat".into(), amount: "150g".into(), calories: 180 },
-                    MealIngredient { name: "Szpinak".into(), amount: "100g".into(), calories: 25 },
+                    ing("Stek wołowy", "200g", 400),
+                    ing("Batat", "150g", 180),
+                    ing("Szpinak", "100g", 25),
                 ],
             },
         ],
@@ -384,9 +439,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "cottage cheese + berries + nuts".into(),
                 calories: 350, protein_g: 30, fat_g: 12, carbs_g: 25,
                 ingredients: vec![
-                    MealIngredient { name: "Cottage cheese".into(), amount: "200g".into(), calories: 220 },
-                    MealIngredient { name: "Mixed berries".into(), amount: "100g".into(), calories: 50 },
-                    MealIngredient { name: "Walnuts".into(), amount: "20g".into(), calories: 130 },
+                    ing("Cottage cheese", "200g", 220),
+                    ing("Mixed berries", "100g", 50),
+                    ing("Walnuts", "20g", 130),
                 ],
             },
             MealVariant {
@@ -395,9 +450,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "turkey + buckwheat + broccoli".into(),
                 calories: 520, protein_g: 45, fat_g: 12, carbs_g: 48,
                 ingredients: vec![
-                    MealIngredient { name: "Turkey breast".into(), amount: "180g".into(), calories: 250 },
-                    MealIngredient { name: "Buckwheat".into(), amount: "80g".into(), calories: 200 },
-                    MealIngredient { name: "Broccoli".into(), amount: "120g".into(), calories: 40 },
+                    ing("Turkey breast", "180g", 250),
+                    ing("Buckwheat", "80g", 200),
+                    ing("Broccoli", "120g", 40),
                 ],
             },
             MealVariant {
@@ -406,9 +461,9 @@ fn high_protein_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "beef steak + sweet potato + spinach".into(),
                 calories: 720, protein_g: 50, fat_g: 28, carbs_g: 55,
                 ingredients: vec![
-                    MealIngredient { name: "Beef steak".into(), amount: "200g".into(), calories: 400 },
-                    MealIngredient { name: "Sweet potato".into(), amount: "150g".into(), calories: 180 },
-                    MealIngredient { name: "Spinach".into(), amount: "100g".into(), calories: 25 },
+                    ing("Beef steak", "200g", 400),
+                    ing("Sweet potato", "150g", 180),
+                    ing("Spinach", "100g", 25),
                 ],
             },
         ],
@@ -424,9 +479,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "тост + арахисовая паста + банан".into(),
                 calories: 350, protein_g: 12, fat_g: 14, carbs_g: 44,
                 ingredients: vec![
-                    MealIngredient { name: "Цельнозерновой тост".into(), amount: "2 шт".into(), calories: 160 },
-                    MealIngredient { name: "Арахисовая паста".into(), amount: "20г".into(), calories: 120 },
-                    MealIngredient { name: "Банан".into(), amount: "1 шт".into(), calories: 70 },
+                    ing("Цельнозерновой тост", "2 шт", 160),
+                    ing("Арахисовая паста", "20г", 120),
+                    ing("Банан", "1 шт", 70),
                 ],
             },
             MealVariant {
@@ -435,9 +490,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "яичница + хлеб + помидор".into(),
                 calories: 420, protein_g: 22, fat_g: 20, carbs_g: 35,
                 ingredients: vec![
-                    MealIngredient { name: "Яйца".into(), amount: "2 шт".into(), calories: 180 },
-                    MealIngredient { name: "Хлеб ржаной".into(), amount: "2 ломтика".into(), calories: 160 },
-                    MealIngredient { name: "Помидор".into(), amount: "1 шт".into(), calories: 25 },
+                    ing("Яйца", "2 шт", 180),
+                    ing("Хлеб ржаной", "2 ломтика", 160),
+                    ing("Помидор", "1 шт", 25),
                 ],
             },
             MealVariant {
@@ -446,9 +501,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "сырники + сметана + мёд".into(),
                 calories: 550, protein_g: 25, fat_g: 20, carbs_g: 60,
                 ingredients: vec![
-                    MealIngredient { name: "Сырники".into(), amount: "3 шт".into(), calories: 350 },
-                    MealIngredient { name: "Сметана 15%".into(), amount: "30г".into(), calories: 50 },
-                    MealIngredient { name: "Мёд".into(), amount: "1 ч.л.".into(), calories: 30 },
+                    ing("Сырники", "3 шт", 350),
+                    ing("Сметана 15%", "30г", 50),
+                    ing("Мёд", "1 ч.л.", 30),
                 ],
             },
         ],
@@ -459,9 +514,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "tost + masło orzechowe + banan".into(),
                 calories: 350, protein_g: 12, fat_g: 14, carbs_g: 44,
                 ingredients: vec![
-                    MealIngredient { name: "Tost pełnoziarnisty".into(), amount: "2 szt".into(), calories: 160 },
-                    MealIngredient { name: "Masło orzechowe".into(), amount: "20g".into(), calories: 120 },
-                    MealIngredient { name: "Banan".into(), amount: "1 szt".into(), calories: 70 },
+                    ing("Tost pełnoziarnisty", "2 szt", 160),
+                    ing("Masło orzechowe", "20g", 120),
+                    ing("Banan", "1 szt", 70),
                 ],
             },
             MealVariant {
@@ -470,9 +525,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "jajecznica + chleb + pomidor".into(),
                 calories: 420, protein_g: 22, fat_g: 20, carbs_g: 35,
                 ingredients: vec![
-                    MealIngredient { name: "Jajka".into(), amount: "2 szt".into(), calories: 180 },
-                    MealIngredient { name: "Chleb żytni".into(), amount: "2 kromki".into(), calories: 160 },
-                    MealIngredient { name: "Pomidor".into(), amount: "1 szt".into(), calories: 25 },
+                    ing("Jajka", "2 szt", 180),
+                    ing("Chleb żytni", "2 kromki", 160),
+                    ing("Pomidor", "1 szt", 25),
                 ],
             },
             MealVariant {
@@ -481,9 +536,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "serniczki + śmietana + miód".into(),
                 calories: 550, protein_g: 25, fat_g: 20, carbs_g: 60,
                 ingredients: vec![
-                    MealIngredient { name: "Serniczki".into(), amount: "3 szt".into(), calories: 350 },
-                    MealIngredient { name: "Śmietana 15%".into(), amount: "30g".into(), calories: 50 },
-                    MealIngredient { name: "Miód".into(), amount: "1 łyżeczka".into(), calories: 30 },
+                    ing("Serniczki", "3 szt", 350),
+                    ing("Śmietana 15%", "30g", 50),
+                    ing("Miód", "1 łyżeczka", 30),
                 ],
             },
         ],
@@ -494,9 +549,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "toast + peanut butter + banana".into(),
                 calories: 350, protein_g: 12, fat_g: 14, carbs_g: 44,
                 ingredients: vec![
-                    MealIngredient { name: "Whole grain toast".into(), amount: "2 pcs".into(), calories: 160 },
-                    MealIngredient { name: "Peanut butter".into(), amount: "20g".into(), calories: 120 },
-                    MealIngredient { name: "Banana".into(), amount: "1 pc".into(), calories: 70 },
+                    ing("Whole grain toast", "2 pcs", 160),
+                    ing("Peanut butter", "20g", 120),
+                    ing("Banana", "1 pc", 70),
                 ],
             },
             MealVariant {
@@ -505,9 +560,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "scrambled eggs + bread + tomato".into(),
                 calories: 420, protein_g: 22, fat_g: 20, carbs_g: 35,
                 ingredients: vec![
-                    MealIngredient { name: "Eggs".into(), amount: "2 pcs".into(), calories: 180 },
-                    MealIngredient { name: "Rye bread".into(), amount: "2 slices".into(), calories: 160 },
-                    MealIngredient { name: "Tomato".into(), amount: "1 pc".into(), calories: 25 },
+                    ing("Eggs", "2 pcs", 180),
+                    ing("Rye bread", "2 slices", 160),
+                    ing("Tomato", "1 pc", 25),
                 ],
             },
             MealVariant {
@@ -516,9 +571,9 @@ fn quick_breakfast_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "pancakes + sour cream + honey".into(),
                 calories: 550, protein_g: 25, fat_g: 20, carbs_g: 60,
                 ingredients: vec![
-                    MealIngredient { name: "Cottage cheese pancakes".into(), amount: "3 pcs".into(), calories: 350 },
-                    MealIngredient { name: "Sour cream".into(), amount: "30g".into(), calories: 50 },
-                    MealIngredient { name: "Honey".into(), amount: "1 tsp".into(), calories: 30 },
+                    ing("Cottage cheese pancakes", "3 pcs", 350),
+                    ing("Sour cream", "30g", 50),
+                    ing("Honey", "1 tsp", 30),
                 ],
             },
         ],
@@ -535,10 +590,10 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "салат + тунец + оливковое масло".into(),
                 calories: 380, protein_g: 28, fat_g: 18, carbs_g: 22,
                 ingredients: vec![
-                    MealIngredient { name: "Тунец консервированный".into(), amount: "120г".into(), calories: 180 },
-                    MealIngredient { name: "Микс салат".into(), amount: "100г".into(), calories: 20 },
-                    MealIngredient { name: "Оливковое масло".into(), amount: "1 ст.л.".into(), calories: 120 },
-                    MealIngredient { name: "Помидоры черри".into(), amount: "100г".into(), calories: 30 },
+                    ing("Тунец консервированный", "120г", 180),
+                    ing("Микс салат", "100г", 20),
+                    ing("Оливковое масло", "1 ст.л.", 120),
+                    ing("Помидоры черри", "100г", 30),
                 ],
             },
             MealVariant {
@@ -547,9 +602,9 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "паста + куриный фарш + томатный соус".into(),
                 calories: 520, protein_g: 30, fat_g: 14, carbs_g: 65,
                 ingredients: vec![
-                    MealIngredient { name: "Паста".into(), amount: "100г".into(), calories: 250 },
-                    MealIngredient { name: "Куриный фарш".into(), amount: "120г".into(), calories: 180 },
-                    MealIngredient { name: "Томатный соус".into(), amount: "80г".into(), calories: 40 },
+                    ing("Паста", "100г", 250),
+                    ing("Куриный фарш", "120г", 180),
+                    ing("Томатный соус", "80г", 40),
                 ],
             },
             MealVariant {
@@ -558,9 +613,9 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "стейк + картофель + грибной соус".into(),
                 calories: 750, protein_g: 42, fat_g: 32, carbs_g: 60,
                 ingredients: vec![
-                    MealIngredient { name: "Стейк рибай".into(), amount: "200г".into(), calories: 420 },
-                    MealIngredient { name: "Картофель".into(), amount: "200г".into(), calories: 200 },
-                    MealIngredient { name: "Грибной соус".into(), amount: "50г".into(), calories: 80 },
+                    ing("Стейк рибай", "200г", 420),
+                    ing("Картофель", "200г", 200),
+                    ing("Грибной соус", "50г", 80),
                 ],
             },
         ],
@@ -571,10 +626,10 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "sałatka + tuńczyk + oliwa".into(),
                 calories: 380, protein_g: 28, fat_g: 18, carbs_g: 22,
                 ingredients: vec![
-                    MealIngredient { name: "Tuńczyk w puszce".into(), amount: "120g".into(), calories: 180 },
-                    MealIngredient { name: "Mix sałat".into(), amount: "100g".into(), calories: 20 },
-                    MealIngredient { name: "Oliwa z oliwek".into(), amount: "1 łyżka".into(), calories: 120 },
-                    MealIngredient { name: "Pomidorki koktajlowe".into(), amount: "100g".into(), calories: 30 },
+                    ing("Tuńczyk w puszce", "120g", 180),
+                    ing("Mix sałat", "100g", 20),
+                    ing("Oliwa z oliwek", "1 łyżka", 120),
+                    ing("Pomidorki koktajlowe", "100g", 30),
                 ],
             },
             MealVariant {
@@ -583,9 +638,9 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "makaron + mielony kurczak + sos pomidorowy".into(),
                 calories: 520, protein_g: 30, fat_g: 14, carbs_g: 65,
                 ingredients: vec![
-                    MealIngredient { name: "Makaron".into(), amount: "100g".into(), calories: 250 },
-                    MealIngredient { name: "Mielony kurczak".into(), amount: "120g".into(), calories: 180 },
-                    MealIngredient { name: "Sos pomidorowy".into(), amount: "80g".into(), calories: 40 },
+                    ing("Makaron", "100g", 250),
+                    ing("Mielony kurczak", "120g", 180),
+                    ing("Sos pomidorowy", "80g", 40),
                 ],
             },
             MealVariant {
@@ -594,9 +649,9 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "stek + ziemniaki + sos grzybowy".into(),
                 calories: 750, protein_g: 42, fat_g: 32, carbs_g: 60,
                 ingredients: vec![
-                    MealIngredient { name: "Stek wołowy".into(), amount: "200g".into(), calories: 420 },
-                    MealIngredient { name: "Ziemniaki".into(), amount: "200g".into(), calories: 200 },
-                    MealIngredient { name: "Sos grzybowy".into(), amount: "50g".into(), calories: 80 },
+                    ing("Stek wołowy", "200g", 420),
+                    ing("Ziemniaki", "200g", 200),
+                    ing("Sos grzybowy", "50g", 80),
                 ],
             },
         ],
@@ -607,10 +662,10 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "salad + tuna + olive oil".into(),
                 calories: 380, protein_g: 28, fat_g: 18, carbs_g: 22,
                 ingredients: vec![
-                    MealIngredient { name: "Canned tuna".into(), amount: "120g".into(), calories: 180 },
-                    MealIngredient { name: "Mixed greens".into(), amount: "100g".into(), calories: 20 },
-                    MealIngredient { name: "Olive oil".into(), amount: "1 tbsp".into(), calories: 120 },
-                    MealIngredient { name: "Cherry tomatoes".into(), amount: "100g".into(), calories: 30 },
+                    ing("Canned tuna", "120g", 180),
+                    ing("Mixed greens", "100g", 20),
+                    ing("Olive oil", "1 tbsp", 120),
+                    ing("Cherry tomatoes", "100g", 30),
                 ],
             },
             MealVariant {
@@ -619,9 +674,9 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "pasta + ground chicken + tomato sauce".into(),
                 calories: 520, protein_g: 30, fat_g: 14, carbs_g: 65,
                 ingredients: vec![
-                    MealIngredient { name: "Pasta".into(), amount: "100g".into(), calories: 250 },
-                    MealIngredient { name: "Ground chicken".into(), amount: "120g".into(), calories: 180 },
-                    MealIngredient { name: "Tomato sauce".into(), amount: "80g".into(), calories: 40 },
+                    ing("Pasta", "100g", 250),
+                    ing("Ground chicken", "120g", 180),
+                    ing("Tomato sauce", "80g", 40),
                 ],
             },
             MealVariant {
@@ -630,9 +685,9 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
                 short_description: "steak + potatoes + mushroom sauce".into(),
                 calories: 750, protein_g: 42, fat_g: 32, carbs_g: 60,
                 ingredients: vec![
-                    MealIngredient { name: "Ribeye steak".into(), amount: "200g".into(), calories: 420 },
-                    MealIngredient { name: "Potatoes".into(), amount: "200g".into(), calories: 200 },
-                    MealIngredient { name: "Mushroom sauce".into(), amount: "50g".into(), calories: 80 },
+                    ing("Ribeye steak", "200g", 420),
+                    ing("Potatoes", "200g", 200),
+                    ing("Mushroom sauce", "50g", 80),
                 ],
             },
         ],
@@ -640,12 +695,13 @@ fn generic_variants(lang: &str) -> Vec<MealVariant> {
 }
 
 fn get_variants(goal: Goal, lang: &str) -> Vec<MealVariant> {
-    match goal {
+    let variants = match goal {
         Goal::WeightLoss => weight_loss_variants(lang),
         Goal::HighProtein => high_protein_variants(lang),
         Goal::QuickBreakfast => quick_breakfast_variants(lang),
         Goal::FromIngredients | Goal::HealthyDay | Goal::Generic => generic_variants(lang),
-    }
+    };
+    enrich_images(variants)
 }
 
 // ── Gemini prompts (minimal — just personality text) ──────────────────────────
