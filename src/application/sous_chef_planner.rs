@@ -652,45 +652,71 @@ fn get_variants(goal: Goal, lang: &str) -> Vec<MealVariant> {
 
 fn build_gemini_prompt(goal: Goal, lang: &str, variants: &[MealVariant]) -> String {
     let lang_instruction = match lang {
-        "ru" => "Отвечай на русском языке.",
-        "pl" => "Odpowiadaj po polsku.",
-        "uk" => "Відповідай українською мовою.",
-        _ => "Answer in English.",
+        "ru" => "Отвечай на русском языке. Пиши как живой шеф — коротко, тепло, по делу. Не используй слова 'чатбот', 'ИИ', 'алгоритм'.",
+        "pl" => "Odpowiadaj po polsku. Pisz jak prawdziwy szef kuchni — krótko, ciepło, konkretnie.",
+        "uk" => "Відповідай українською. Пиши як живий шеф — коротко, тепло, по суті.",
+        _ => "Answer in English. Write like a real chef — short, warm, to the point.",
     };
 
-    let goal_desc = match goal {
-        Goal::WeightLoss => "calorie deficit / weight loss for 1 day",
-        Goal::HighProtein => "high protein meal plan",
-        Goal::QuickBreakfast => "quick and simple breakfast options",
-        Goal::FromIngredients => "meal from specific ingredients",
-        Goal::HealthyDay => "healthy balanced day",
-        Goal::Generic => "balanced meal plan for the day",
+    let (goal_desc, personalization_hint) = match goal {
+        Goal::WeightLoss => (
+            "calorie deficit / weight loss for 1 day",
+            "Tell them: take the light variant for deficit, balanced if they need energy for the day.",
+        ),
+        Goal::HighProtein => (
+            "high protein day — muscle building or active recovery",
+            "Tell them: rich variant post-workout, balanced on rest days.",
+        ),
+        Goal::QuickBreakfast => (
+            "quick breakfast in 5-15 minutes",
+            "Tell them: light if not hungry in the morning, balanced for an active day ahead.",
+        ),
+        Goal::FromIngredients => (
+            "meal from specific ingredients they have at home",
+            "Tell them: balanced is the safest bet, light if they want to avoid heaviness.",
+        ),
+        Goal::HealthyDay => (
+            "healthy balanced day — stable energy and nutrients",
+            "Tell them: balanced is the default hero here, light if they sit most of the day.",
+        ),
+        Goal::Generic => (
+            "balanced meal plan for the day",
+            "Tell them: balanced is the recommended choice, light for deficit, rich for an active day.",
+        ),
     };
 
     let variants_summary: String = variants.iter().map(|v| {
-        format!("- {} ({}): {} — {} kcal", v.emoji, v.title, v.short_description, v.calories)
+        format!("- {} {} ({}): {} — {} kcal, {}g protein, {}g fat, {}g carbs",
+            v.emoji, v.title, v.level, v.short_description, v.calories, v.protein_g, v.fat_g, v.carbs_g)
     }).collect::<Vec<_>>().join("\n");
 
     format!(
-        r#"You are a professional sous-chef with warm personality.
+        r#"You are a sous-chef who thinks, chooses and explains. You already looked at the task and built the plan.
 {lang_instruction}
 
-The user asked for: {goal_desc}
+User goal: {goal_desc}
 
-I already selected these 3 meal variants:
+You prepared these 3 variants:
 {variants_summary}
+
+Personalization hint: {personalization_hint}
 
 Generate EXACTLY this JSON (no markdown, no extra text):
 {{
-  "chef_intro": "2-3 sentences. Warm, professional. Acknowledge the goal. Say you prepared 3 options.",
-  "explanation": "2-3 sentences. Why this meal plan works nutritionally. Be specific about macros/calories.",
-  "motivation": "1-2 sentences. Realistic, no false promises. E.g. 'Following this plan consistently can help reduce ~200-400g per day (water + deficit).' Never promise specific kg loss."
+  "chef_intro": "2-3 sentences max. Start with 'Посмотрел задачу.' or equivalent. Briefly say what you made and WHY — light for deficit, balanced for energy, rich for taste/satiety. Sound like a person who thought it through, not a bot.",
+  "explanation": "2-3 sentences. Explain WHY this works in human terms — e.g. stable energy, no sugar spikes, protein keeps you full. Avoid 'scientifically proven'. Be conversational.",
+  "motivation": "1-2 sentences. Realistic, forward-looking. E.g. 'Придерживайся такого дня — и к вечеру почувствуешь лёгкость.' Never promise specific kg loss. No fake enthusiasm."
 }}
 
-Be concise. Maximum 3 sentences per field. Sound like a real chef, not a chatbot."#,
+Rules:
+- chef_intro MUST mention the 3 options with logic (why each exists)
+- explanation must feel human, not clinical
+- motivation must feel like a real person speaking, not a slogan
+- max 3 sentences per field"#,
         lang_instruction = lang_instruction,
         goal_desc = goal_desc,
         variants_summary = variants_summary,
+        personalization_hint = personalization_hint,
     )
 }
 
@@ -724,44 +750,48 @@ fn parse_gemini_response(raw: &str) -> Option<GeminiChefResponse> {
 
 fn fallback_intro(goal: Goal, lang: &str) -> String {
     match (goal, lang) {
-        (Goal::WeightLoss, "ru") => "Я понял задачу. Собрал тебе лёгкий день с дефицитом калорий, без перегрузки. Вот 3 варианта — выбирай по настроению.".into(),
-        (Goal::WeightLoss, "pl") => "Rozumiem cel. Przygotowałem lekki dzień z deficytem kalorycznym. Oto 3 opcje — wybierz według nastroju.".into(),
-        (Goal::WeightLoss, "uk") => "Я зрозумів задачу. Зібрав тобі легкий день з дефіцитом калорій. Ось 3 варіанти — обирай за настроєм.".into(),
-        (Goal::WeightLoss, _) => "Got it. I've put together a light day with a calorie deficit. Here are 3 options — pick by mood.".into(),
+        (Goal::WeightLoss, "ru") => "Посмотрел задачу. Сделал тебе день с дефицитом: лёгкий — если хочешь минус, сбалансированный — если нужна энергия, и сытный — если важен вкус. Выбирай по ощущениям.".into(),
+        (Goal::WeightLoss, "pl") => "Przejrzałem zadanie. Ułożyłem dzień z deficytem: lekki — jeśli chcesz chudnąć, zbilansowany — jeśli potrzebujesz energii, sycący — jeśli liczy się smak.".into(),
+        (Goal::WeightLoss, "uk") => "Подивився на задачу. Зробив тобі день з дефіцитом: легкий — якщо хочеш мінус, збалансований — якщо потрібна енергія, ситний — якщо важливий смак.".into(),
+        (Goal::WeightLoss, _) => "Looked at the task. Made you a deficit day: light for the minus, balanced if you need energy, rich if taste matters. Pick by feel.".into(),
 
-        (Goal::HighProtein, "ru") => "Понял — нужен белок. Вот 3 варианта с акцентом на протеин, от лёгкого до сытного.".into(),
-        (Goal::HighProtein, "pl") => "Rozumiem — potrzebujesz białka. Oto 3 opcje z naciskiem na protein.".into(),
-        (Goal::HighProtein, _) => "Got it — you need protein. Here are 3 options focused on high protein intake.".into(),
+        (Goal::HighProtein, "ru") => "Понял — нужен белок. Лёгкий вариант — в дни отдыха, сбалансированный — рабочий день, сытный — после тренировки. Всё с высоким протеином.".into(),
+        (Goal::HighProtein, "pl") => "Rozumiem — potrzebujesz białka. Lekki — na dni odpoczynku, zbilansowany — dzień roboczy, sycący — po treningu. Wszystko z wysokim białkiem.".into(),
+        (Goal::HighProtein, "uk") => "Зрозумів — потрібен білок. Легкий — у дні відпочинку, збалансований — робочий день, ситний — після тренування.".into(),
+        (Goal::HighProtein, _) => "Got it — you need protein. Light on rest days, balanced for a work day, rich after training. All high protein.".into(),
 
-        (Goal::QuickBreakfast, "ru") => "Быстрый завтрак? Легко. Вот 3 варианта — от 5 до 15 минут.".into(),
-        (Goal::QuickBreakfast, "pl") => "Szybkie śniadanie? Łatwo. Oto 3 opcje — od 5 do 15 minut.".into(),
-        (Goal::QuickBreakfast, _) => "Quick breakfast? Easy. Here are 3 options — 5 to 15 minutes each.".into(),
+        (Goal::QuickBreakfast, "ru") => "Быстрый завтрак — не проблема. Лёгкий если не голоден с утра, сбалансированный если впереди активный день, сытный если пропустил ужин.".into(),
+        (Goal::QuickBreakfast, "pl") => "Szybkie śniadanie — żaden problem. Lekkie jeśli rano nie jesteś głodny, zbilansowane przed aktywnym dniem, sycące jeśli pominąłeś kolację.".into(),
+        (Goal::QuickBreakfast, "uk") => "Швидкий сніданок — не проблема. Легкий якщо зранку не голодний, збалансований перед активним днем, ситний якщо пропустив вечерю.".into(),
+        (Goal::QuickBreakfast, _) => "Quick breakfast — no problem. Light if you're not hungry in the morning, balanced before an active day, rich if you skipped dinner.".into(),
 
-        (_, "ru") => "Собрал для тебя 3 варианта на день. Выбирай по настроению и аппетиту.".into(),
-        (_, "pl") => "Przygotowałem 3 opcje na dzień. Wybierz według nastroju i apetytu.".into(),
-        (_, "uk") => "Зібрав 3 варіанти на день. Обирай за настроєм та апетитом.".into(),
-        (_, _) => "I've prepared 3 options for the day. Pick whichever suits your mood and appetite.".into(),
+        (_, "ru") => "Посмотрел задачу. Сделал три варианта: лёгкий — для дефицита, сбалансированный — для стабильной энергии, сытный — для вкуса. Выбирай что ближе.".into(),
+        (_, "pl") => "Przejrzałem zadanie. Przygotowałem trzy opcje: lekką — dla deficytu, zbilansowaną — dla stabilnej energii, sycącą — dla smaku.".into(),
+        (_, "uk") => "Подивився на задачу. Зробив три варіанти: легкий — для дефіциту, збалансований — для стабільної енергії, ситний — для смаку.".into(),
+        (_, _) => "Looked at the task. Made three options: light for deficit, balanced for stable energy, rich for taste. Pick what fits.".into(),
     }
 }
 
 fn fallback_explanation(goal: Goal, lang: &str) -> String {
     match (goal, lang) {
-        (Goal::WeightLoss, "ru") => "Дефицит калорий создаёт условия для снижения веса. Баланс белка сохраняет мышцы. Без перегрузки сахара — стабильная энергия весь день.".into(),
-        (Goal::WeightLoss, "pl") => "Deficyt kaloryczny tworzy warunki do utraty wagi. Balans białka chroni mięśnie. Bez nadmiaru cukru — stabilna energia przez cały dzień.".into(),
-        (Goal::WeightLoss, _) => "Calorie deficit enables weight loss. Protein balance preserves muscle. No sugar overload means stable energy throughout the day.".into(),
+        (Goal::WeightLoss, "ru") => "Здесь баланс белка, жиров и углеводов — энергия будет стабильной, без скачков и переедания. Белок сохраняет мышцы даже при дефиците. Без лишнего сахара — никаких провалов к обеду.".into(),
+        (Goal::WeightLoss, "pl") => "Tutaj balans białka, tłuszczów i węglowodanów — energia stabilna, bez napadów głodu. Białko chroni mięśnie przy deficycie. Bez nadmiaru cukru — żadnych spadków energii.".into(),
+        (Goal::WeightLoss, "uk") => "Тут баланс білка, жирів і вуглеводів — енергія стабільна, без стрибків. Білок зберігає м'язи навіть при дефіциті. Без зайвого цукру — ніяких провалів до обіду.".into(),
+        (Goal::WeightLoss, _) => "Protein, fat and carbs are balanced here — stable energy, no hunger spikes. Protein preserves muscle even at deficit. No sugar overload means no afternoon crash.".into(),
 
-        (_, "ru") => "Сбалансированное сочетание белков, жиров и углеводов обеспечивает стабильную энергию и поддерживает обмен веществ.".into(),
-        (_, "pl") => "Zbilansowane połączenie białek, tłuszczów i węglowodanów zapewnia stabilną energię i wspiera metabolizm.".into(),
-        (_, _) => "A balanced combination of proteins, fats and carbs provides stable energy and supports metabolism.".into(),
+        (_, "ru") => "Здесь сочетание белков, жиров и углеводов подобрано так, чтобы энергия была стабильной без скачков. Ни тяжести, ни голода через час.".into(),
+        (_, "pl") => "Połączenie białek, tłuszczów i węglowodanów dobrane tak, by energia była stabilna. Ani ciężkości, ani głodu po godzinie.".into(),
+        (_, "uk") => "Поєднання білків, жирів і вуглеводів підібране так, щоб енергія була стабільною. Ні важкості, ні голоду через годину.".into(),
+        (_, _) => "Proteins, fats and carbs are balanced here for stable energy — no heaviness, no hunger an hour later.".into(),
     }
 }
 
 fn fallback_motivation(lang: &str) -> String {
     match lang {
-        "ru" => "Если придерживаться такого рациона регулярно, можно почувствовать результат уже через неделю. Главное — постоянство.".into(),
-        "pl" => "Trzymając się takiego planu regularnie, efekty poczujesz już po tygodniu. Kluczem jest konsekwencja.".into(),
-        "uk" => "Дотримуючись такого раціону регулярно, результат відчуєте вже за тиждень. Головне — послідовність.".into(),
-        _ => "Following this plan consistently, you'll feel the results within a week. Consistency is key.".into(),
+        "ru" => "Придерживайся такого дня — и к вечеру почувствуешь лёгкость. Не нужно ждать недели, чтобы понять, что это работает.".into(),
+        "pl" => "Trzymaj się takiego dnia — wieczorem poczujesz lekkość. Nie trzeba czekać tygodnia, żeby zobaczyć, że to działa.".into(),
+        "uk" => "Дотримуйся такого дня — і ввечері відчуєш легкість. Не потрібно чекати тижня, щоб зрозуміти, що це працює.".into(),
+        _ => "Stick to this day — by evening you'll feel lighter. You don't need to wait a week to know it's working.".into(),
     }
 }
 
