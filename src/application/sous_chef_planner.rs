@@ -878,6 +878,8 @@ impl SousChefPlannerService {
         if let Ok(Some(cached)) = self.ai_cache.get(&cache_key).await {
             if let Ok(mut plan) = serde_json::from_value::<MealPlan>(cached) {
                 plan.cached = true;
+                // Re-enrich images — old cache entries may have image_url: null
+                plan.variants = enrich_images(plan.variants);
                 tracing::info!("⚡ Sous-chef plan cache HIT: {}", cache_key);
                 return Ok(plan);
             }
