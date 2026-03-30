@@ -40,6 +40,7 @@ use crate::interfaces::http::{
         cms as public_cms,
         ingredients::{autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, get_ingredients_states_map, get_ingredients_sitemap_data, list_ingredients, list_ingredients_full},
         intent_pages::{list_published_intent_pages, get_published_intent_page, get_related_intent_pages, get_ingredient_intent_pages},
+        lab_combos as public_lab_combos,
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
         seo_content::get_seo_content,
         sous_chef::{generate_plan as sous_chef_plan, get_suggestions as sous_chef_suggestions},
@@ -775,7 +776,7 @@ pub fn create_router(
                 }
             })
         })
-        .with_state(lab_combo_svc);
+        .with_state(lab_combo_svc.clone());
 
     // Public intent pages routes (no auth)
     let public_intent_pages_router = Router::new()
@@ -894,6 +895,15 @@ pub fn create_router(
         .route("/sous-chef/suggestions", get(sous_chef_suggestions))
         .layer(middleware::from_fn(cache_1d));
 
+    // ── 🆕 Public Lab Combo pages ─────────────────────────────────────────────
+    let public_lab_combos_router = Router::new()
+        .route("/lab-combos/sitemap", get(public_lab_combos::lab_combos_sitemap))
+        .route("/lab-combos/:slug", get(public_lab_combos::get_lab_combo))
+        .route("/lab-combos/:slug/related", get(public_lab_combos::get_related_combos))
+        .route("/lab-combos/:slug/also-cook", get(public_lab_combos::get_also_cook))
+        .layer(middleware::from_fn(cache_1h))
+        .with_state(lab_combo_svc.clone());
+
     let public_router = Router::new()
         .merge(public_ingredients_router)
         .merge(public_tools_router)
@@ -904,6 +914,7 @@ pub fn create_router(
         .merge(public_intent_pages_router) // 🆕 Intent Pages pSEO
         .merge(sous_chef_router) // 🆕 Sous-Chef: POST /sous-chef/plan
         .merge(sous_chef_suggestions_router) // 🆕 Sous-Chef: GET /sous-chef/suggestions
+        .merge(public_lab_combos_router) // 🆕 Lab Combo SEO pages
         .layer(axum::Extension(app_cache)); // 🧠 In-memory cache for all public handlers
 
     // Combine all routes
