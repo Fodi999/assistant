@@ -139,6 +139,39 @@ impl AdminCatalogService {
         // ── Parse JSON ──
         let mut result = parse_json_response(&raw)?;
 
+        // ══════════════════════════════════════════════════════════════
+        // FALLBACK: AI sometimes puts nutrition in "macros" block
+        // instead of top-level fields. Pull them up if top-level is null.
+        // ══════════════════════════════════════════════════════════════
+        if let Some(obj) = result.as_object_mut() {
+            let macros = obj.get("macros").cloned();
+            if let Some(m) = macros.as_ref().and_then(|v| v.as_object()) {
+                // Map macros field names → top-level field names
+                let mappings: &[(&str, &str)] = &[
+                    ("calories_kcal", "calories_per_100g"),
+                    ("protein_g", "protein_per_100g"),
+                    ("fat_g", "fat_per_100g"),
+                    ("carbs_g", "carbs_per_100g"),
+                    ("fiber_g", "fiber_per_100g"),
+                    ("sugar_g", "sugar_per_100g"),
+                ];
+                for (macro_key, top_key) in mappings {
+                    let top_is_empty = obj.get(*top_key)
+                        .map(|v| v.is_null())
+                        .unwrap_or(true);
+                    if top_is_empty {
+                        if let Some(val) = m.get(*macro_key).filter(|v| v.is_number()) {
+                            tracing::info!(
+                                "📋 Fallback: {} = {} (pulled from macros.{})",
+                                top_key, val, macro_key
+                            );
+                            obj.insert((*top_key).to_string(), val.clone());
+                        }
+                    }
+                }
+            }
+        }
+
         // ── Log parsed nutrition values ──
         if let Some(obj) = result.as_object() {
             let cal = obj.get("calories_per_100g");
