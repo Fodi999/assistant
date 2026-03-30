@@ -40,6 +40,7 @@ use crate::interfaces::http::{
         intent_pages::{list_published_intent_pages, get_published_intent_page, get_related_intent_pages, get_ingredient_intent_pages},
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
         seo_content::get_seo_content,
+        sous_chef::{generate_plan as sous_chef_plan, get_suggestions as sous_chef_suggestions},
         tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe, tools_run, tools_catalog},
     },
     dish::{create_dish, list_dishes, recalculate_all_costs},
@@ -679,7 +680,7 @@ pub fn create_router(
     // ── Public AI SEO Content route ───────────────────────────────────────────
     let seo_content_svc = Arc::new(
         PublicSeoContentService::new(
-            llm_adapter,
+            llm_adapter.clone(),
             crate::infrastructure::persistence::AiCacheRepository::new(pool_for_public.clone()),
         )
     );
@@ -838,6 +839,20 @@ pub fn create_router(
         .layer(middleware::from_fn(cache_1h))
         .with_state(cms_service);
 
+    // ── 🆕 Sous-Chef Planner (AI meal planning — single-shot) ────────────────
+    let sous_chef_svc = Arc::new(
+        crate::application::sous_chef_planner::SousChefPlannerService::new(
+            llm_adapter.clone(),
+            crate::infrastructure::persistence::AiCacheRepository::new(pool_for_public.clone()),
+        )
+    );
+    let sous_chef_router = Router::new()
+        .route("/sous-chef/plan", post(sous_chef_plan))
+        .with_state(sous_chef_svc);
+    let sous_chef_suggestions_router = Router::new()
+        .route("/sous-chef/suggestions", get(sous_chef_suggestions))
+        .layer(middleware::from_fn(cache_1d));
+
     let public_router = Router::new()
         .merge(public_ingredients_router)
         .merge(public_tools_router)
@@ -846,6 +861,8 @@ pub fn create_router(
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
         .merge(public_intent_pages_router) // 🆕 Intent Pages pSEO
+        .merge(sous_chef_router) // 🆕 Sous-Chef: POST /sous-chef/plan
+        .merge(sous_chef_suggestions_router) // 🆕 Sous-Chef: GET /sous-chef/suggestions
         .layer(axum::Extension(app_cache)); // 🧠 In-memory cache for all public handlers
 
     // Combine all routes
