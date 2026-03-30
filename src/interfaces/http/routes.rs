@@ -103,6 +103,13 @@ pub fn create_router(
     // ── CORS: strict mode, never permissive ──
     let cors = build_strict_cors(allowed_origins);
 
+    // ── In-memory cache: shared across all public handlers ──
+    // 10k entries, 5 min TTL — auto-evicts stale data
+    let app_cache = crate::infrastructure::AppCache::default_production();
+    tracing::info!(
+        "🧠 In-memory cache initialized (max 10k entries, 5 min TTL)"
+    );
+
     // ── Rate Limiter for auth endpoints ──
     let auth_rate_limiter = build_rate_limiter(rate_limit_per_second);
 
@@ -838,7 +845,8 @@ pub fn create_router(
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
-        .merge(public_intent_pages_router); // 🆕 Intent Pages pSEO
+        .merge(public_intent_pages_router) // 🆕 Intent Pages pSEO
+        .layer(axum::Extension(app_cache)); // 🧠 In-memory cache for all public handlers
 
     // Combine all routes
     Router::new()
