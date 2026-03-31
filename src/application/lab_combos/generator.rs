@@ -214,6 +214,7 @@ pub async fn enrich_with_ai(
                     repo.update_seo_with_steps(
                         combo_id, "", "", "", "", "", &steps_json,
                     ).await?;
+                    repo.update_quality_score(combo_id, recipe.quality.score as i16).await?;
                     timer.success(recipe.quality.score, recipe.quality.confidence, fix_count);
                     return Ok(());
                 }
@@ -286,6 +287,9 @@ pub async fn enrich_with_ai(
             repo.update_seo_with_steps(
                 combo_id, &title, &description, &h1, &intro, &why_it_works, &steps_json,
             ).await?;
+
+            // Persist the recipe quality score (0-100) to the DB column
+            repo.update_quality_score(combo_id, recipe.quality.score as i16).await?;
 
             timer.success(recipe.quality.score, recipe.quality.confidence, fix_count);
             tracing::info!(
