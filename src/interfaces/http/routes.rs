@@ -753,6 +753,7 @@ pub fn create_router(
     let admin_lab_combos_routes = Router::new()
         .route("/", get(admin_lab_combos::list_combos))
         .route("/generate", post(admin_lab_combos::generate_combo))
+        .route("/generate-all-locales", post(admin_lab_combos::generate_all_locales))
         .route("/generate-popular", post(admin_lab_combos::generate_popular))
         .route("/:id/publish", post(admin_lab_combos::publish_combo))
         .route("/:id/archive", post(admin_lab_combos::archive_combo))

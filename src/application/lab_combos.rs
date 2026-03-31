@@ -1211,6 +1211,48 @@ impl LabComboService {
         Ok(page)
     }
 
+    // ── Generate for ALL locales (Admin — like ingredients) ──────────────
+
+    /// Generate a lab combo page for all 4 locales (en, pl, ru, uk) in one call.
+    /// Returns a vec of generated pages. Skips locales where the slug already exists.
+    pub async fn generate_all_locales(&self, req: GenerateComboRequest) -> AppResult<Vec<LabComboPage>> {
+        const LOCALES: [&str; 4] = ["en", "pl", "ru", "uk"];
+        let mut pages = Vec::new();
+
+        for locale in LOCALES {
+            let locale_req = GenerateComboRequest {
+                ingredients: req.ingredients.clone(),
+                locale: locale.to_string(),
+                goal: req.goal.clone(),
+                meal_type: req.meal_type.clone(),
+                diet: req.diet.clone(),
+                cooking_time: req.cooking_time.clone(),
+                budget: req.budget.clone(),
+                cuisine: req.cuisine.clone(),
+                model: req.model.clone(),
+            };
+
+            match self.generate(locale_req).await {
+                Ok(page) => {
+                    tracing::info!("✅ Generated lab combo [{}] locale={}", page.slug, locale);
+                    pages.push(page);
+                }
+                Err(e) => {
+                    // Skip if already exists, propagate other errors
+                    let msg = format!("{}", e);
+                    if msg.contains("already exists") {
+                        tracing::info!("⏭️ Lab combo already exists for locale={}, skipping", locale);
+                    } else {
+                        tracing::error!("❌ Failed to generate lab combo locale={}: {}", locale, e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Ok(pages)
+    }
+
     // ── Publish (Admin) ──────────────────────────────────────────────────
 
     pub async fn publish(&self, id: Uuid) -> AppResult<LabComboPage> {
@@ -1531,22 +1573,21 @@ impl LabComboService {
                 goal, meal, None, None, None, None,
             );
 
-            // Skip if already exists
-            let exists: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT id FROM lab_combo_pages WHERE slug = $1 AND locale = $2"
+            // Skip if already exists in ALL 4 locales
+            let count: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM lab_combo_pages WHERE slug = $1 AND locale IN ('en','pl','ru','uk')"
             )
                 .bind(&slug)
-                .bind(locale)
-                .fetch_optional(&self.pool)
+                .fetch_one(&self.pool)
                 .await?;
 
-            if exists.is_some() {
-                continue;
+            if count.0 >= 4 {
+                continue; // All 4 locales already exist
             }
 
-            match self.generate(GenerateComboRequest {
+            match self.generate_all_locales(GenerateComboRequest {
                 ingredients: ings.iter().map(|s| s.to_string()).collect(),
-                locale: locale.to_string(),
+                locale: "en".to_string(), // ignored — generate_all_locales iterates all 4
                 goal: goal.map(String::from),
                 meal_type: meal.map(String::from),
                 diet: None,
@@ -1555,7 +1596,10 @@ impl LabComboService {
                 cuisine: None,
                 model: Some("pro".to_string()),
             }).await {
-                Ok(page) => generated.push(format!("✅ {} ({})", page.slug, page.locale)),
+                Ok(pages) => {
+                    let locales: Vec<String> = pages.iter().map(|p| p.locale.clone()).collect();
+                    generated.push(format!("✅ {} [{}]", slug, locales.join(",")));
+                }
                 Err(e) => generated.push(format!("❌ {} — {}", slug, e)),
             }
         }
