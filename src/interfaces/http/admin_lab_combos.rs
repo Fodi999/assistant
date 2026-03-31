@@ -3,6 +3,8 @@
 use crate::application::lab_combos::{
     GenerateComboRequest, LabComboPage, LabComboService, ListCombosQuery, UpdateComboRequest,
 };
+use crate::application::lab_combos::dish_classifier::{classify_dish, DishProfile};
+use crate::application::lab_combos::metrics;
 use crate::domain::admin::AdminClaims;
 use crate::shared::AppError;
 use axum::{
@@ -183,4 +185,35 @@ pub async fn backfill_ingredients(
         "updated": count,
         "message": format!("Backfilled structured_ingredients for {} records", count)
     })))
+}
+
+// ── Dish Classification Preview ──────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ClassifyDishRequest {
+    pub dish_name: String,
+}
+
+/// POST /api/admin/lab-combos/classify-dish
+/// Returns DishProfile for a given dish name — instant, no DB/AI.
+/// Used by the admin UI to show a preview of the dish type classification.
+pub async fn classify_dish_handler(
+    _claims: AdminClaims,
+    Json(req): Json<ClassifyDishRequest>,
+) -> Result<Json<DishProfile>, AppError> {
+    if req.dish_name.trim().is_empty() {
+        return Err(AppError::validation("dish_name must not be empty"));
+    }
+    let profile = classify_dish(req.dish_name.trim());
+    Ok(Json(profile))
+}
+
+// ── Pipeline Metrics ─────────────────────────────────────────────────────────
+
+/// GET /api/admin/lab-combos/metrics
+/// Returns pipeline observability metrics (generation counts, latency, etc.)
+pub async fn pipeline_metrics(
+    _claims: AdminClaims,
+) -> Json<metrics::MetricsSnapshot> {
+    Json(metrics::global_metrics().snapshot())
 }
