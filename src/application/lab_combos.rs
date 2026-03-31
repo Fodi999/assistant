@@ -2168,20 +2168,21 @@ async fn enrich_seo_with_ai(
 ═══════════════════════════════════════
 Dish name: "{dn}"
 
-The dish name determines EVERYTHING about how the recipe is constructed:
-- COOKING TECHNIQUE: extracted from the name (e.g. "Жареный" → frying/wok, "Запечённый" → baking, "Тушёный" → braising)
-- STEP ORDER: technique dictates what comes first
-- DISH STYLE: the name implies cuisine, presentation, and plating
-- INGREDIENT ROLES: which ingredient is the star vs supporting
+YOU ARE COOKING THIS DISH. The name is your BLUEPRINT.
 
-RULES:
-- The dish name is the MAIN source of cooking logic
-- Ingredients are CONSTRAINTS (what you have), not the recipe itself
-- If the name says "Жареный рис" → rice is PRE-COOKED, then stir-fried in wok/pan
-- If the name says "Боул" → bowl assembly, no heavy cooking
-- If the name says "Салат" → raw prep, dressing
-- Do NOT invent ingredients not in the list
-- The title field should be based on this dish name (translated to {lang} if needed)
+EXTRACT FROM THE NAME:
+1. PRODUCT FORM: палочки → sticks, котлеты → patties, суп → soup, боул → bowl, салат → salad, запеканка → casserole
+2. COOKING TECHNIQUE: жареный → frying, запечённый → baking, тушёный → braising, варёный → boiling, на гриле → grilling
+3. EXPECTED TEXTURE: хрустящий → crispy outside, мягкий → soft inside, пышный → fluffy, густой → thick
+4. CUISINE STYLE: азиатский → Asian, средиземноморский → Mediterranean, домашний → home-style
+
+MANDATORY RULES:
+- If the name implies a FORM (палочки, котлеты, блинчики, шарики), you MUST have a "Формирование" step
+- If the name implies FRYING, you MUST heat oil and describe searing/frying with time and heat level
+- If the name implies BAKING, you MUST preheat oven and give temperature + time
+- If the name implies SOUP, you MUST have liquid base and simmering
+- The title field MUST be based on this dish name (translated to {lang} if needed)
+- NEVER generate a generic "bowl" recipe if the name says "палочки" or "котлеты"
 "#
         )
     } else {
@@ -2200,7 +2201,21 @@ RULES:
     let breakdown_text = nt.breakdown.join("\n");
 
     let prompt = format!(
-        r#"You are a professional chef and nutritionist writing a recipe page for SEO.
+        r#"You are a PROFESSIONAL CHEF who is ACTUALLY COOKING this dish in a real kitchen.
+You are NOT a text generator. You are a CHEF SIMULATOR.
+
+Your job:
+1. Read the dish name and ingredients
+2. MENTALLY COOK the dish step by step in your head
+3. Write down exactly what you did — with grams, temperatures, times, and textures
+
+If a dish name says "палочки" — you MUST form sticks from dough and fry them.
+If a dish name says "котлеты" — you MUST form patties and cook them.
+If a dish name says "суп" — you MUST simmer in liquid.
+If a dish name says "салат" — you MUST assemble raw/cooked components with dressing.
+If a dish name says "запеканка" — you MUST layer and bake in oven.
+
+THE RECIPE MUST PRODUCE THE DISH DESCRIBED IN THE NAME. NOT A BOWL. NOT A GENERIC PLATE.
 {dish_name_block}
 ═══════════════════════════════════════
 📋 RECIPE INPUTS
@@ -2261,8 +2276,8 @@ description (120-150 chars):
 - Example: "Cook this {meal_text} in 15 min. {estimated_protein:.0}g protein, {estimated_calories:.0} kcal per serving."
 
 h1 (40-70 chars):
-- Recipe name style: "[Ingredients] [Dish Type] — [Benefit] Recipe"
-- Example: "Salmon Avocado Rice Bowl — High Protein {meal_text} Recipe"
+- Recipe name style: "[Dish Name] — [Key Benefit] Recipe"
+- Example: "Homemade Cheese Sticks — High Protein Snack Recipe"
 
 intro (150-250 chars):
 - FIRST SENTENCE must contain exact numbers: "This [dish] delivers ~{estimated_protein:.0}g protein and ~{estimated_calories:.0} kcal per serving, ready in [N] minutes."
@@ -2270,45 +2285,79 @@ intro (150-250 chars):
 - FORBIDDEN fillers: "delicious", "amazing", "perfect", "comprehensive"
 
 why_it_works (200-400 chars):
-- Explain EACH ingredient's specific role with numbers:
-  * Name the protein source: "[ingredient] provides [N]g protein + [nutrient: omega-3, leucine, iron, etc.]"
-  * Name the carb source: "[ingredient] delivers complex carbs for sustained energy"
-  * Name the fat/veggie source: "[ingredient] adds [N]g monounsaturated fats / fiber / vitamins"
-- End with flavor pairing logic: "umami from [X] meets [Y] for..."
-- NEVER write: "Optimized for balanced...", "This combination is great", "comprehensive"
+- Explain EACH ingredient's specific role with numbers
+- End with flavor/texture pairing logic
+- NEVER write: "Optimized for balanced...", "comprehensive"
 
 ═══════════════════════════════════════
-🔥 COOKING STEPS RULES
+�‍🍳 COOKING STEPS — CHEF SIMULATOR MODE
 ═══════════════════════════════════════
 
-CRITICAL: Generate the recipe based on:
-1. DISH NAME (if provided) — the PRIMARY source of cooking logic
-   - The name tells you the TECHNIQUE (frying, baking, grilling, raw assembly)
-   - The name tells you the STYLE (bowl, salad, stir-fry, wrap, soup)
-   - Example: "Fried rice with salmon" → rice is PRE-COOKED then stir-fried, salmon is seared separately
-   - Example: "Salmon poke bowl" → salmon is RAW, rice is cold, just assembly
-   - Example: "Baked salmon with vegetables" → oven technique, 180°C, 20 min
-2. INGREDIENTS — these are the CONSTRAINTS (what you have to work with)
-   - Do NOT invent ingredients not in the list
-   - Do NOT omit any ingredient from the list
+Think like a chef. You are standing in the kitchen with these ingredients.
+You MUST produce the EXACT dish described in the name.
 
-DEFAULT STEP ORDER (use when no dish name provided):
-1. Grains/starches first (they take longest)
-2. Protein second (fish, meat, eggs)
-3. Vegetables third (if any need cooking)
-4. Raw ingredients (slice avocado, chop herbs — NEVER cook)
-5. Assemble and serve
+STEP STRUCTURE (adapt to the dish, use 3-6 steps):
+
+🔪 PREPARATION — mixing, kneading, marinating, beating, grating
+   "В миске взбейте яйца (150г), добавьте тёртый сыр (30г) и муку (80г). Замесите густое тесто."
+
+🖐️ FORMING (MANDATORY if name implies shape) — палочки, котлеты, шарики, блинчики, лепёшки
+   "Сформируйте из теста палочки длиной 8-10 см и толщиной 1.5 см."
+
+🔥 COOKING TECHNIQUE (MANDATORY) — frying, baking, boiling, grilling, steaming
+   "Разогрейте сковороду с маслом (15г) на среднем огне. Обжаривайте палочки 4-5 мин до золотистой корочки, переворачивая."
+
+🍽️ FINISHING & PLATING — describe the result texture
+   "Подавайте горячими. Снаружи — хрустящие, внутри — мягкие с расплавленным сыром."
+
+EACH STEP MUST INCLUDE:
+- WHAT you're doing (verb: взбейте, замесите, сформируйте, обжарьте, запеките)
+- WHICH ingredients with EXACT grams: "яйца (150г)"
+- HOW: temperature, heat level, technique
+- HOW LONG: time in minutes
+- EXPECTED RESULT: color, texture, consistency
+
+EXAMPLES OF GOOD STEPS:
+✅ "В миске взбейте яйца (150г), добавьте тёртый сыр (30г) и просеянную муку (80г). Замесите однородное густое тесто." (3 min)
+✅ "Сформируйте из теста небольшие палочки длиной 8-10 см." (2 min)
+✅ "Разогрейте сковороду с оливковым маслом (15г) на среднем огне. Обжаривайте палочки 4-5 минут до золотистой корочки, переворачивая." (5 min)
+✅ "Подавайте горячими. Снаружи — хрустящие, внутри — мягкие с тянущимся сыром." (1 min)
+
+EXAMPLES OF BAD STEPS (NEVER DO THIS):
+❌ "Prepare the ingredients" — too vague, no grams, no technique
+❌ "Cook everything together" — what? how? how long?
+❌ "Season to taste" — not a real step
+❌ "Serve in a bowl" — if the dish is "палочки", you serve sticks on a plate, not in a bowl
+❌ "Mix and cook" — no specifics at all
 
 RAW-ONLY (NEVER cook): avocado, lettuce, arugula, cucumber, tomato, herbs (basil, cilantro, parsley, dill, mint), lemon, lime
 MUST-COOK: salmon, tuna, chicken, beef, pork, eggs, shrimp, cod, turkey, lamb
 GRAINS (boil/steam): rice, pasta, quinoa, potato, oats
 
-Each step MUST include: ingredient name + weight (g) + method + time (min) + heat level
+═══════════════════════════════════════
+✅ SELF-VALIDATION (do this BEFORE outputting)
+═══════════════════════════════════════
+Before you output the JSON, verify:
 
-BAD: "Prepare sides: Rice, Salmon" / "Cook Avocado" / "Season to taste"
-BAD: "Generate a recipe from ingredients" (no technique!)
-GOOD: "Boil rice (100g) in 200ml water for 12 min, rest 5 min covered."
-GOOD: "Stir-fry cooked rice (100g) in wok with sesame oil over high heat for 3 min."
+1. DISH NAME MATCH: Does the recipe actually produce the dish described in the name?
+   - If name says "палочки" → do the steps form sticks? ✓/✗
+   - If name says "суп" → is there a liquid/broth base? ✓/✗
+   - If name says "жареный" → is there a frying step? ✓/✗
+
+2. TECHNIQUE EXISTS: Is there at least one real cooking technique (frying, baking, boiling, grilling)?
+   - NOT just "mix and serve"
+
+3. FORMING STEP: If the dish implies a physical form (sticks, patties, balls, pancakes), is there a forming step?
+
+4. RESULT DESCRIBED: Does the last step describe the expected texture/appearance?
+   - "Хрустящие снаружи, мягкие внутри" ✓
+   - "Подавайте" ✗ (too vague)
+
+5. ALL INGREDIENTS USED: Are all provided ingredients mentioned in the steps with grams?
+
+6. MINIMUM 3 STEPS: The recipe must have at least 3 meaningful steps.
+
+If ANY check fails → FIX the recipe before outputting.
 
 ═══════════════════════════════════════
 🚫 ABSOLUTE PROHIBITIONS
@@ -2318,7 +2367,10 @@ GOOD: "Stir-fry cooked rice (100g) in wok with sesame oil over high heat for 3 m
 - NEVER use: "analysis", "combo", "combination", "comprehensive", "detailed"
 - NEVER write generic steps without specific grams and minutes
 - NEVER list fish/meat as a "side" — it is the MAIN protein
-- NEVER ignore the dish name — it is your primary instruction"#
+- NEVER ignore the dish name — it is your primary instruction
+- NEVER generate a "bowl" recipe if the name says "палочки", "котлеты", "суп"
+- NEVER output fewer than 3 cooking steps
+- NEVER skip the forming step if the dish name implies a shape"#
     );
 
     tracing::info!("🤖 AI enrichment for combo {} using model: {} (estimated protein: {:.0}g, calories: {:.0} kcal)",
@@ -2404,7 +2456,141 @@ GOOD: "Stir-fry cooked rice (100g) in wok with sesame oil over high heat for 3 m
         title, est_protein, est_calories, model);
 
     // AI-generated cooking steps (overwrite template steps)
-    let ai_steps = enriched.get("how_to_cook").cloned();
+    let mut ai_steps = enriched.get("how_to_cook").cloned();
+
+    // ── RECIPE VALIDATION ───────────────────────────────────────────────
+    // Validate that cooking steps are real, not generic garbage.
+    // If validation fails → second pass auto-fix.
+    if let Some(ref steps_val) = ai_steps {
+        if let Some(steps_arr) = steps_val.as_array() {
+            let step_count = steps_arr.len();
+            let all_text: String = steps_arr.iter()
+                .filter_map(|s| s.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let all_text_lower = all_text.to_lowercase();
+
+            // Check 1: minimum 3 steps
+            let has_enough_steps = step_count >= 3;
+
+            // Check 2: steps mention at least some ingredients with grams
+            let has_grams = all_text.contains('г') || all_text.contains("g)") || all_text.contains("g ");
+
+            // Check 3: steps have a real cooking technique
+            let has_technique = all_text_lower.contains("обжар") || all_text_lower.contains("свар")
+                || all_text_lower.contains("запек") || all_text_lower.contains("тушит")
+                || all_text_lower.contains("разогре") || all_text_lower.contains("сковород")
+                || all_text_lower.contains("духовк") || all_text_lower.contains("кастрюл")
+                || all_text_lower.contains("fry") || all_text_lower.contains("boil")
+                || all_text_lower.contains("bake") || all_text_lower.contains("sear")
+                || all_text_lower.contains("sauté") || all_text_lower.contains("grill")
+                || all_text_lower.contains("heat") || all_text_lower.contains("pan")
+                || all_text_lower.contains("oven") || all_text_lower.contains("wok")
+                || all_text_lower.contains("simmer") || all_text_lower.contains("steam");
+
+            // Check 4: if dish_name implies a form, steps must mention forming
+            let needs_forming = dish_name.map(|dn| {
+                let dn_lower = dn.to_lowercase();
+                dn_lower.contains("палочк") || dn_lower.contains("котлет")
+                    || dn_lower.contains("шарик") || dn_lower.contains("блинч")
+                    || dn_lower.contains("лепёшк") || dn_lower.contains("stick")
+                    || dn_lower.contains("patties") || dn_lower.contains("balls")
+                    || dn_lower.contains("pancak") || dn_lower.contains("кнел")
+                    || dn_lower.contains("рулет") || dn_lower.contains("тефтел")
+            }).unwrap_or(false);
+
+            let has_forming = !needs_forming || all_text_lower.contains("сформируйте")
+                || all_text_lower.contains("формиру") || all_text_lower.contains("form")
+                || all_text_lower.contains("shape") || all_text_lower.contains("скатайте")
+                || all_text_lower.contains("вылеп") || all_text_lower.contains("раскатайте");
+
+            let is_valid = has_enough_steps && has_grams && has_technique && has_forming;
+
+            if !is_valid {
+                tracing::warn!(
+                    "⚠️ Recipe validation FAILED for combo {} — steps: {}, grams: {}, technique: {}, forming: {} (needs: {}). Attempting auto-fix...",
+                    combo_id, step_count, has_grams, has_technique, has_forming, needs_forming
+                );
+
+                // ── AUTO-FIX SECOND PASS ────────────────────────────────────
+                let fix_prompt = format!(
+                    r#"The following recipe has FAILED quality validation. Fix it.
+
+PROBLEMS FOUND:
+{}{}{}{}
+ORIGINAL RECIPE STEPS:
+{}
+
+DISH NAME: "{}"
+INGREDIENTS: {}
+LANGUAGE: {}
+
+RULES:
+- Minimum 3 steps
+- Each step MUST mention specific ingredients with grams in parentheses
+- There MUST be a real cooking technique (frying, baking, boiling, grilling)
+- If the dish name implies a shape (палочки, котлеты, шарики), add a FORMING step
+- Last step MUST describe the result texture (хрустящие, мягкие, пышные, etc.)
+- Write in {}
+
+Return ONLY a valid JSON array of cooking steps:
+[
+  {{"step": 1, "text": "...", "time_minutes": N}},
+  {{"step": 2, "text": "...", "time_minutes": N}},
+  ...
+]"#,
+                    if !has_enough_steps { "- NOT ENOUGH STEPS (need at least 3)\n" } else { "" },
+                    if !has_grams { "- STEPS DON'T MENTION INGREDIENT GRAMS\n" } else { "" },
+                    if !has_technique { "- NO REAL COOKING TECHNIQUE FOUND\n" } else { "" },
+                    if !has_forming { "- MISSING FORMING STEP (dish name implies a physical shape)\n" } else { "" },
+                    all_text,
+                    dish_name.unwrap_or("(not provided)"),
+                    names,
+                    lang,
+                    lang,
+                );
+
+                match llm.groq_raw_request_with_model(&fix_prompt, 2000, model).await {
+                    Ok(fix_response) => {
+                        let fix_cleaned = fix_response
+                            .trim()
+                            .trim_start_matches("```json")
+                            .trim_start_matches("```")
+                            .trim_end_matches("```")
+                            .trim();
+
+                        if let Ok(fixed_steps) = serde_json::from_str::<serde_json::Value>(fix_cleaned)
+                            .or_else(|_| {
+                                if let Some(start) = fix_response.find('[') {
+                                    if let Some(end) = fix_response.rfind(']') {
+                                        return serde_json::from_str(&fix_response[start..=end]);
+                                    }
+                                }
+                                Err(serde_json::Error::io(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData, "no JSON"
+                                )))
+                            })
+                        {
+                            if fixed_steps.is_array() && fixed_steps.as_array().unwrap().len() >= 3 {
+                                ai_steps = Some(fixed_steps);
+                                tracing::info!("✅ Auto-fix second pass SUCCESS for combo {} — steps fixed", combo_id);
+                            } else {
+                                tracing::warn!("⚠️ Auto-fix returned invalid steps for combo {} — keeping original", combo_id);
+                            }
+                        } else {
+                            tracing::warn!("⚠️ Auto-fix parse failed for combo {} — keeping original", combo_id);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("⚠️ Auto-fix request failed for combo {}: {} — keeping original", combo_id, e);
+                    }
+                }
+            } else {
+                tracing::info!("✅ Recipe validation PASSED for combo {} — steps: {}, technique: ✓, forming: {}",
+                    combo_id, step_count, if needs_forming { "✓ (required & found)" } else { "n/a" });
+            }
+        }
+    }
 
     // Only update non-empty fields
     if title.is_empty() && description.is_empty() {
