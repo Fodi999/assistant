@@ -50,6 +50,19 @@ impl ComboRepository {
         Ok(row.is_some())
     }
 
+    // ── Get by ID ───────────────────────────────────────────────────────
+
+    pub async fn get_by_id(&self, id: Uuid) -> AppResult<Option<LabComboPage>> {
+        let sql = format!(
+            r#"SELECT {FULL_COLUMNS} FROM lab_combo_pages WHERE id = $1"#
+        );
+        let page = sqlx::query_as::<_, LabComboPage>(&sql)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(page)
+    }
+
     // ── Insert ──────────────────────────────────────────────────────────
 
     #[allow(clippy::too_many_arguments)]

@@ -299,41 +299,41 @@ impl LabComboService {
         let qs = seo::quality_score(&page);
         self.repo.update_quality_score(id, qs).await?;
 
-        // ── AI Enrichment (async) ───────────────────────────────────────
+        // ── AI Enrichment (SYNCHRONOUS) ─────────────────────────────────
+        // We wait for AI to generate + validate the recipe before returning.
+        // This ensures the user NEVER sees template garbage — only AI-validated
+        // cooking steps that passed Recipe::new() domain invariants.
         let ai_model = match req.model.as_deref() {
             Some("pro") | Some("gemini-3.1-pro-preview") => "gemini-3.1-pro-preview",
             _ => "gemini-3-flash-preview",
         };
-        let pool_bg = self.repo.pool().clone();
-        let llm_bg = self.llm_adapter.clone();
-        let ingredients_bg = ingredients.clone();
-        let locale_bg = req.locale.clone();
-        let goal_bg = req.goal.clone();
-        let meal_type_bg = req.meal_type.clone();
-        let dish_name_bg = req.dish_name.clone();
-        let model_bg = ai_model.to_string();
-        let nt_bg = nt.clone();
-        tokio::spawn(async move {
-            let repo_bg = ComboRepository::new(pool_bg);
-            if let Err(e) = generator::enrich_with_ai(
-                &repo_bg,
-                &llm_bg,
-                id,
-                &ingredients_bg,
-                &locale_bg,
-                goal_bg.as_deref(),
-                meal_type_bg.as_deref(),
-                dish_name_bg.as_deref(),
-                &model_bg,
-                &nt_bg,
-            )
-            .await
-            {
-                tracing::warn!("⚠️ AI enrichment failed for combo {}: {}", id, e);
-            }
-        });
 
-        Ok(page)
+        match generator::enrich_with_ai(
+            &self.repo,
+            &self.llm_adapter,
+            id,
+            &ingredients,
+            &req.locale,
+            req.goal.as_deref(),
+            req.meal_type.as_deref(),
+            req.dish_name.as_deref(),
+            ai_model,
+            &nt,
+        )
+        .await
+        {
+            Ok(()) => {
+                tracing::info!("✅ AI enrichment completed synchronously for combo {}", id);
+            }
+            Err(e) => {
+                tracing::warn!("⚠️ AI enrichment failed for combo {}: {} — page saved with template steps", id, e);
+            }
+        }
+
+        // Re-read the page from DB to get AI-updated fields
+        let final_page = self.repo.get_by_id(id).await?.unwrap_or(page);
+
+        Ok(final_page)
     }
 
     // ── Generate for ALL locales ─────────────────────────────────────────
