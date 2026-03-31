@@ -1080,7 +1080,8 @@ impl LabComboService {
             )> = sqlx::query_as(
                 r#"SELECT slug, name_en, name_ru, name_pl, name_uk,
                           image_url, product_type,
-                          calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g
+                          calories_per_100g::REAL, protein_per_100g::REAL,
+                          fat_per_100g::REAL, carbs_per_100g::REAL
                    FROM catalog_ingredients
                    WHERE slug = $1 AND is_active = true
                    LIMIT 1"#,
