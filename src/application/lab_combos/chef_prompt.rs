@@ -8,8 +8,81 @@
 //   - Expected texture descriptors
 //   - Pre-calculated nutrition (not AI-guesswork)
 
-use super::dish_classifier::DishProfile;
+use super::dish_classifier::{DishProfile, DishType};
 use super::nutrition::NutritionTotals;
+
+/// Dish-type-specific cooking procedure instructions.
+/// These teach Gemini the EXACT cooking logic for each dish type
+/// so it doesn't generate generic "fry everything" nonsense.
+fn type_specific_instructions(dish_type: &DishType) -> &'static str {
+    match dish_type {
+        DishType::Sticks => r#"
+🔴 STICKS/NUGGETS PROCEDURE (MANDATORY):
+Step 1 (preparation): Cut the main ingredient into stick/finger shapes (~8cm × 2cm).
+Step 2 (preparation): Prepare BATTER STATION — three bowls:
+  - Bowl 1: flour (for dredging)
+  - Bowl 2: eggs beaten with a fork/whisk until smooth
+  - Bowl 3: breadcrumbs/flour (for coating) — optionally mix with spices
+Step 3 (forming): Coat each piece: flour → beaten egg → coating. Press firmly.
+Step 4 (cooking): Fry in hot oil (170-180°C) 3-4 min per side until golden crispy crust.
+Step 5 (finishing): Drain on paper towels. Serve hot — crispy outside, soft inside.
+
+CRITICAL: Eggs are for BATTER (beaten with whisk), NOT for frying as a dish.
+Cheese sticks = cheese cut into sticks → dredged in flour → dipped in beaten egg → coated → fried.
+NEVER just "fry eggs and cheese together" — that is NOT sticks."#,
+
+        DishType::Cutlets => r#"
+🔴 CUTLETS/PATTIES PROCEDURE (MANDATORY):
+Step 1 (preparation): Mince/grind the main protein. Add egg as binder, breadcrumbs for texture.
+Step 2 (forming): Shape mixture into flat round patties (~1.5cm thick). Coat in flour.
+Step 3 (cooking): Fry in oil over medium heat 4-5 min per side until golden.
+Step 4 (finishing): Serve hot with a crispy crust and juicy inside."#,
+
+        DishType::Pancakes => r#"
+🔴 PANCAKES/FRITTERS PROCEDURE (MANDATORY):
+Step 1 (preparation): Mix dry ingredients (flour, sugar, salt). Add wet (eggs, milk). Whisk until smooth batter.
+Step 2 (cooking): Heat pan with butter. Pour batter (60ml per pancake). Cook 2 min per side.
+Step 3 (finishing): Stack and serve warm with toppings."#,
+
+        DishType::Soup => r#"
+🔴 SOUP PROCEDURE (MANDATORY):
+Step 1 (preparation): Dice vegetables. Prepare protein.
+Step 2 (cooking): Sauté aromatics in oil. Add protein, cook 3-5 min.
+Step 3 (cooking): Add liquid (broth/water). Bring to boil, reduce to simmer 15-20 min.
+Step 4 (finishing): Season, serve hot in bowls."#,
+
+        DishType::Casserole => r#"
+🔴 CASSEROLE PROCEDURE (MANDATORY):
+Step 1 (preparation): Preheat oven to specific temperature (°C).
+Step 2 (preparation): Prepare filling — mix ingredients with sauce/binder.
+Step 3 (forming): Layer in baking dish. Top with cheese/breadcrumbs.
+Step 4 (cooking): Bake at specified °C for specified minutes.
+Step 5 (finishing): Let rest 5 min. Serve hot."#,
+
+        DishType::StirFry => r#"
+🔴 STIR-FRY PROCEDURE (MANDATORY):
+Step 1 (preparation): Cut all ingredients into thin strips/small pieces for fast cooking.
+Step 2 (cooking): Heat wok/pan until smoking. Add oil.
+Step 3 (cooking): Stir-fry protein first (2-3 min), remove. Stir-fry vegetables (2 min).
+Step 4 (finishing): Combine, add sauce, toss 30 sec. Serve immediately."#,
+
+        DishType::Omelette => r#"
+🔴 OMELETTE PROCEDURE (MANDATORY):
+Step 1 (preparation): Beat eggs with fork until frothy. Add salt, pepper, milk/cream.
+Step 2 (cooking): Heat butter in non-stick pan over medium-low heat.
+Step 3 (cooking): Pour eggs, cook 2-3 min. Add fillings on one half.
+Step 4 (finishing): Fold, slide onto plate. Serve immediately."#,
+
+        DishType::Salad => r#"
+🔴 SALAD PROCEDURE (MANDATORY):
+Step 1 (preparation): Wash and dry greens. Cut vegetables into bite-size pieces.
+Step 2 (preparation): Prepare dressing — mix oil, acid, seasonings.
+Step 3 (finishing): Toss all ingredients with dressing. Plate and garnish.
+DO NOT COOK any raw vegetables. This is an assembly dish."#,
+
+        _ => "", // Generic and other types — no special instructions
+    }
+}
 
 /// Build the complete chef prompt for Gemini.
 ///
@@ -77,6 +150,8 @@ MANDATORY:
 - {oven_rule}
 - Last step MUST describe: outside="{tex_out}", inside="{tex_in}", served {tex_temp}
 - NEVER generate a generic "bowl" recipe if the name says "{dn}"
+
+{type_specific_instructions}
 "#,
             type_label = profile.type_label,
             requires_forming = profile.requires_forming,
@@ -102,6 +177,7 @@ MANDATORY:
             } else {
                 "Oven not required"
             },
+            type_specific_instructions = type_specific_instructions(&profile.dish_type),
         )
     } else {
         String::new()
