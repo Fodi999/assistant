@@ -1007,7 +1007,7 @@ impl LabComboService {
 
             // Try exact slug match first
             let row: Option<(String,)> = sqlx::query_as(
-                "SELECT slug FROM catalog_ingredients WHERE slug = $1 AND deleted_at IS NULL LIMIT 1"
+                "SELECT slug FROM catalog_ingredients WHERE slug = $1 AND is_active = true LIMIT 1"
             )
                 .bind(&normalized)
                 .fetch_optional(&self.pool)
@@ -1021,7 +1021,7 @@ impl LabComboService {
             // Try match by name in any language (case-insensitive)
             let row: Option<(String,)> = sqlx::query_as(
                 r#"SELECT slug FROM catalog_ingredients
-                   WHERE deleted_at IS NULL
+                   WHERE is_active = true
                      AND (
                        LOWER(name_en) = $1
                        OR LOWER(name_ru) = $1
