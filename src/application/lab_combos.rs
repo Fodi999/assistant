@@ -114,6 +114,11 @@ pub struct GenerateComboRequest {
     pub cooking_time: Option<String>,
     pub budget: Option<String>,
     pub cuisine: Option<String>,
+    /// 🧠 Dish name — the primary logic driver for recipe generation.
+    /// Determines cooking technique, step order, and dish style.
+    /// Example: "Жареный рис с лососем в азиатском стиле"
+    #[serde(default)]
+    pub dish_name: Option<String>,
     /// AI model override: "flash" (fast, default) or "pro" (smart, better quality).
     /// "pro" = gemini-3.1-pro-preview — recommended for final SEO pages.
     /// "flash" = gemini-3-flash-preview — good for drafts/testing.
@@ -1277,9 +1282,20 @@ impl LabComboService {
         }
 
         // Generate SEO metadata
-        let title = generate_title(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale, &nt);
+        let title = if let Some(ref dn) = req.dish_name {
+            // If dish name provided, use it directly as the title base
+            let est_protein = nt.protein_per_serving.round() as i64;
+            smart_truncate(&format!("{} ({}g Protein, 15 Min)", dn, est_protein), 60)
+        } else {
+            generate_title(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale, &nt)
+        };
         let description = generate_description(&ingredients, req.goal.as_deref(), &req.locale, &nt);
-        let h1 = generate_h1(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale);
+        let h1 = if let Some(ref dn) = req.dish_name {
+            // Use dish name as the H1 base
+            smart_truncate(dn, 70)
+        } else {
+            generate_h1(&ingredients, req.goal.as_deref(), req.meal_type.as_deref(), &req.locale)
+        };
         let intro = generate_intro(&ingredients, req.goal.as_deref(), &req.locale, &nt);
         let faq = generate_faq(&ingredients, &smart_json, &req.locale, &nt);
         let why_it_works = generate_why_it_works(&ingredients, &smart_json, req.goal.as_deref(), &req.locale, &nt);
@@ -1386,6 +1402,7 @@ impl LabComboService {
         let locale_bg = req.locale.clone();
         let goal_bg = req.goal.clone();
         let meal_type_bg = req.meal_type.clone();
+        let dish_name_bg = req.dish_name.clone();
         let model_bg = ai_model.to_string();
         let nt_bg = nt.clone();
         tokio::spawn(async move {
@@ -1393,6 +1410,7 @@ impl LabComboService {
                 &pool_bg, &llm_bg, id,
                 &ingredients_bg, &locale_bg,
                 goal_bg.as_deref(), meal_type_bg.as_deref(),
+                dish_name_bg.as_deref(),
                 &model_bg, &nt_bg,
             ).await {
                 tracing::warn!("⚠️ AI enrichment failed for combo {}: {}", id, e);
@@ -1429,6 +1447,7 @@ impl LabComboService {
                 cooking_time: req.cooking_time.clone(),
                 budget: req.budget.clone(),
                 cuisine: req.cuisine.clone(),
+                dish_name: req.dish_name.clone(),
                 model: req.model.clone(),
             };
 
@@ -1799,6 +1818,7 @@ impl LabComboService {
                 cooking_time: None,
                 budget: None,
                 cuisine: None,
+                dish_name: None,
                 model: Some("pro".to_string()),
             }).await {
                 Ok(pages) => {
@@ -2115,6 +2135,7 @@ fn calculate_nutrition(ingredients: &[String]) -> NutritionTotals {
 /// Called asynchronously after combo creation. Updates DB in place.
 ///
 /// KEY RULES: Write as a RECIPE, not an analysis. Include real numbers.
+/// dish_name = primary logic driver: determines cooking technique and style.
 async fn enrich_seo_with_ai(
     pool: &PgPool,
     llm: &LlmAdapter,
@@ -2123,6 +2144,7 @@ async fn enrich_seo_with_ai(
     locale: &str,
     goal: Option<&str>,
     meal_type: Option<&str>,
+    dish_name: Option<&str>,
     model: &str,
     nt: &NutritionTotals,
 ) -> AppResult<()> {
@@ -2135,6 +2157,35 @@ async fn enrich_seo_with_ai(
         "pl" => "Polish",
         "uk" => "Ukrainian",
         _ => "English",
+    };
+
+    // Dish name logic block — this is the KEY prompt section
+    let dish_name_block = if let Some(dn) = dish_name {
+        format!(
+            r#"
+═══════════════════════════════════════
+🧠 DISH NAME (PRIMARY LOGIC DRIVER)
+═══════════════════════════════════════
+Dish name: "{dn}"
+
+The dish name determines EVERYTHING about how the recipe is constructed:
+- COOKING TECHNIQUE: extracted from the name (e.g. "Жареный" → frying/wok, "Запечённый" → baking, "Тушёный" → braising)
+- STEP ORDER: technique dictates what comes first
+- DISH STYLE: the name implies cuisine, presentation, and plating
+- INGREDIENT ROLES: which ingredient is the star vs supporting
+
+RULES:
+- The dish name is the MAIN source of cooking logic
+- Ingredients are CONSTRAINTS (what you have), not the recipe itself
+- If the name says "Жареный рис" → rice is PRE-COOKED, then stir-fried in wok/pan
+- If the name says "Боул" → bowl assembly, no heavy cooking
+- If the name says "Салат" → raw prep, dressing
+- Do NOT invent ingredients not in the list
+- The title field should be based on this dish name (translated to {lang} if needed)
+"#
+        )
+    } else {
+        String::new()
     };
 
     // Nutrition numbers are PRE-CALCULATED and stored in DB — inject as constants
@@ -2150,7 +2201,7 @@ async fn enrich_seo_with_ai(
 
     let prompt = format!(
         r#"You are a professional chef and nutritionist writing a recipe page for SEO.
-
+{dish_name_block}
 ═══════════════════════════════════════
 📋 RECIPE INPUTS
 ═══════════════════════════════════════
@@ -2230,7 +2281,18 @@ why_it_works (200-400 chars):
 🔥 COOKING STEPS RULES
 ═══════════════════════════════════════
 
-STEP ORDER (must follow):
+CRITICAL: Generate the recipe based on:
+1. DISH NAME (if provided) — the PRIMARY source of cooking logic
+   - The name tells you the TECHNIQUE (frying, baking, grilling, raw assembly)
+   - The name tells you the STYLE (bowl, salad, stir-fry, wrap, soup)
+   - Example: "Fried rice with salmon" → rice is PRE-COOKED then stir-fried, salmon is seared separately
+   - Example: "Salmon poke bowl" → salmon is RAW, rice is cold, just assembly
+   - Example: "Baked salmon with vegetables" → oven technique, 180°C, 20 min
+2. INGREDIENTS — these are the CONSTRAINTS (what you have to work with)
+   - Do NOT invent ingredients not in the list
+   - Do NOT omit any ingredient from the list
+
+DEFAULT STEP ORDER (use when no dish name provided):
 1. Grains/starches first (they take longest)
 2. Protein second (fish, meat, eggs)
 3. Vegetables third (if any need cooking)
@@ -2244,7 +2306,9 @@ GRAINS (boil/steam): rice, pasta, quinoa, potato, oats
 Each step MUST include: ingredient name + weight (g) + method + time (min) + heat level
 
 BAD: "Prepare sides: Rice, Salmon" / "Cook Avocado" / "Season to taste"
+BAD: "Generate a recipe from ingredients" (no technique!)
 GOOD: "Boil rice (100g) in 200ml water for 12 min, rest 5 min covered."
+GOOD: "Stir-fry cooked rice (100g) in wok with sesame oil over high heat for 3 min."
 
 ═══════════════════════════════════════
 🚫 ABSOLUTE PROHIBITIONS
@@ -2253,7 +2317,8 @@ GOOD: "Boil rice (100g) in 200ml water for 12 min, rest 5 min covered."
 - NEVER cook avocado, lettuce, herbs, cucumber
 - NEVER use: "analysis", "combo", "combination", "comprehensive", "detailed"
 - NEVER write generic steps without specific grams and minutes
-- NEVER list fish/meat as a "side" — it is the MAIN protein"#
+- NEVER list fish/meat as a "side" — it is the MAIN protein
+- NEVER ignore the dish name — it is your primary instruction"#
     );
 
     tracing::info!("🤖 AI enrichment for combo {} using model: {} (estimated protein: {:.0}g, calories: {:.0} kcal)",
