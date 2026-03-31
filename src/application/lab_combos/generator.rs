@@ -1,19 +1,19 @@
-// ─── RecipeGenerator — AI generation pipeline ───────────────────────────────
+// ─── RecipeGenerator — Split AI Pipeline ────────────────────────────────────
 //
-// Single responsibility: orchestrate AI recipe generation.
-// Uses DishClassifier + ChefPrompt + Recipe domain aggregate + Metrics.
+// KEY DESIGN: Two small focused AI calls instead of one big call.
+// The old approach requested ALL fields in one JSON → Gemini ran out of
+// output tokens → JSON truncated → parse error → fell back to garbage template.
 //
-// Pipeline:
+// NEW PIPELINE:
 //   1. Classify dish → DishProfile
-//   2. Build chef prompt (with constraints)
-//   3. Call Gemini
-//   4. Parse response → try Recipe::new() (invariants enforced!)
-//   5. If invariant fails → auto-fix second pass → Recipe::new() again
-//   6. Post-process SEO fields (protein safety net)
-//   7. Update DB via repository
+//   2. CALL 1: Generate cooking steps ONLY (JSON array, ~1500 tokens max)
+//   3. Validate steps → Recipe::new() → auto-fix if needed
+//   4. CALL 2: Generate SEO texts ONLY (JSON object, ~800 tokens max)
+//   5. Post-process SEO (protein safety net)
+//   6. Update DB with both results
 
 use crate::infrastructure::llm_adapter::LlmAdapter;
-use crate::shared::{AppError, AppResult};
+use crate::shared::AppResult;
 use uuid::Uuid;
 
 use super::chef_prompt;
@@ -25,16 +25,17 @@ use super::recipe_validator;
 use super::repository::ComboRepository;
 use super::seo::helpers::smart_truncate;
 
-/// Rewrite template-based SEO text into unique, Gemini-generated copy.
-/// Called asynchronously after combo creation. Updates DB in place.
+/// Enrich combo page with AI-generated cooking steps and SEO text.
+///
+/// Split into two focused AI calls to avoid Gemini output truncation.
 pub async fn enrich_with_ai(
     repo: &ComboRepository,
     llm: &LlmAdapter,
     combo_id: Uuid,
     ingredients: &[String],
     locale: &str,
-    goal: Option<&str>,
-    meal_type: Option<&str>,
+    _goal: Option<&str>,
+    _meal_type: Option<&str>,
     dish_name: Option<&str>,
     model: &str,
     nt: &NutritionTotals,
@@ -47,127 +48,139 @@ pub async fn enrich_with_ai(
         dish_classifier::classify_dish(&combined)
     };
 
-    let timer = GenerationTimer::start(
-        profile.type_label,
-        locale,
-        model,
-    );
+    let timer = GenerationTimer::start(profile.type_label, locale, model);
 
     tracing::info!(
         "🧠 Dish classified: type={}, forming={}, liquid={}, oven={}, techniques={:?}",
-        profile.dish_type,
-        profile.requires_forming,
-        profile.requires_liquid,
-        profile.requires_oven,
-        profile.allowed_techniques,
-    );
-
-    // ── Step 2: Build prompt ────────────────────────────────────────────
-    let prompt = chef_prompt::build_chef_prompt(
-        ingredients, locale, goal, meal_type, dish_name, &profile, nt,
+        profile.dish_type, profile.requires_forming, profile.requires_liquid,
+        profile.requires_oven, profile.allowed_techniques,
     );
 
     let estimated_protein = nt.protein_per_serving;
-    let estimated_calories = nt.calories_per_serving;
+    let _estimated_calories = nt.calories_per_serving;
 
-    tracing::info!(
-        "🤖 AI enrichment for combo {} using model: {} (type: {}, protein: {:.0}g, calories: {:.0} kcal, prompt_chars: {})",
-        combo_id, model, profile.dish_type, estimated_protein, estimated_calories, prompt.len()
+    // ── CALL 1: Cooking steps ───────────────────────────────────────────
+    let steps_prompt = chef_prompt::build_steps_prompt(
+        ingredients, locale, dish_name, &profile,
     );
 
-    // ── Step 3: Call Gemini ─────────────────────────────────────────────
-    // max_tokens=4096 — the prompt is large (type-specific instructions + nutrition),
-    // 3000 was causing truncated JSON responses (EOF errors).
+    tracing::info!(
+        "🔪 CALL 1 (steps) for combo {} — model: {}, prompt: {} chars",
+        combo_id, model, steps_prompt.len()
+    );
+
     metrics::record_ai_call(true, model);
-    let raw_response = match llm.groq_raw_request_with_model(&prompt, 4096, model).await {
+    let steps_raw = match llm.groq_raw_request_with_model(&steps_prompt, 2000, model).await {
         Ok(r) => {
-            tracing::info!(
-                "📥 AI response for combo {} — {} chars (model: {})",
-                combo_id, r.len(), model
-            );
+            tracing::info!("📥 Steps response: {} chars", r.len());
             r
         }
         Err(e) => {
             metrics::record_ai_call(false, model);
-            timer.failure(&format!("AI call failed: {}", e));
+            timer.failure(&format!("Steps AI call failed: {}", e));
             return Err(e);
         }
     };
 
-    let cleaned = raw_response
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+    let steps_value = parse_json_array(&steps_raw);
 
-    let parse_result: Result<serde_json::Value, _> = serde_json::from_str(cleaned)
-        .or_else(|_| {
-            if let Some(start) = raw_response.find('{') {
-                if let Some(end) = raw_response.rfind('}') {
-                    return serde_json::from_str(&raw_response[start..=end]);
+    let mut fix_count: u32 = 0;
+    let final_recipe: Option<Recipe> = match steps_value {
+        Some(val) => {
+            match Recipe::new(&val, &profile, ingredients) {
+                Ok(recipe) => {
+                    metrics::record_validation(true, profile.type_label, &[]);
+                    tracing::info!(
+                        "✅ Recipe PASSED for combo {} — score: {}, confidence: {:.2}, verdict: {}",
+                        combo_id, recipe.quality.score, recipe.quality.confidence, recipe.quality.verdict
+                    );
+                    Some(recipe)
+                }
+                Err(err) => {
+                    metrics::record_validation(false, profile.type_label, &err.violations);
+                    tracing::warn!(
+                        "⚠️ Recipe FAILED for combo {} — {:?}. Auto-fixing...",
+                        combo_id, err.violations,
+                    );
+                    fix_count = 1;
+                    let fixed = attempt_fix(
+                        llm, &err, &val, dish_name, ingredients, locale, &profile, model,
+                    ).await;
+                    if fixed.is_some() {
+                        metrics::record_fix_attempt(true, profile.type_label);
+                    } else {
+                        metrics::record_fix_attempt(false, profile.type_label);
+                    }
+                    fixed
                 }
             }
-            Err(serde_json::Error::io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "No JSON found in AI response",
-            )))
-        });
-
-    let enriched = match parse_result {
-        Ok(v) => v,
-        Err(e) => {
+        }
+        None => {
             tracing::warn!(
-                "Failed to parse AI enrichment response: {} — raw: {}",
-                e,
-                &raw_response[..raw_response.len().min(500)]
+                "⚠️ Steps JSON parse failed for combo {} — raw: {}",
+                combo_id, &steps_raw[..steps_raw.len().min(500)]
             );
-            timer.failure("JSON parse error");
-            return Err(AppError::internal("AI enrichment parse error"));
+            None
         }
     };
 
-    // ── Step 4: Extract + post-process fields ───────────────────────────
-    let mut title = enriched
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let mut description = enriched
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let h1 = enriched
-        .get("h1")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let mut intro = enriched
-        .get("intro")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let why_it_works = enriched
-        .get("why_it_works")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    // ── CALL 2: SEO texts ───────────────────────────────────────────────
+    let seo_prompt = chef_prompt::build_seo_prompt(
+        ingredients, locale, dish_name, nt,
+    );
 
-    // ── PROTEIN SAFETY NET ──────────────────────────────────────────────
+    tracing::info!(
+        "📝 CALL 2 (SEO) for combo {} — prompt: {} chars",
+        combo_id, seo_prompt.len()
+    );
+
+    metrics::record_ai_call(true, model);
+    let seo_raw = match llm.groq_raw_request_with_model(&seo_prompt, 1500, model).await {
+        Ok(r) => {
+            tracing::info!("📥 SEO response: {} chars", r.len());
+            r
+        }
+        Err(e) => {
+            metrics::record_ai_call(false, model);
+            tracing::warn!("⚠️ SEO AI call failed: {} — saving steps only", e);
+            // Even if SEO call fails, save steps if we have them
+            if let Some(recipe) = &final_recipe {
+                let steps_json = recipe.steps_json();
+                if steps_json.is_array() && !steps_json.as_array().unwrap().is_empty() {
+                    repo.update_seo_with_steps(
+                        combo_id, "", "", "", "", "", &steps_json,
+                    ).await?;
+                    timer.success(recipe.quality.score, recipe.quality.confidence, fix_count);
+                    return Ok(());
+                }
+            }
+            timer.failure(&format!("SEO AI call failed: {}", e));
+            return Err(e);
+        }
+    };
+
+    let seo_obj = parse_json_object(&seo_raw);
+
+    // ── Extract SEO fields ──────────────────────────────────────────────
+    let (mut title, mut description, h1, mut intro, why_it_works) = if let Some(obj) = &seo_obj {
+        (
+            obj.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            obj.get("description").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            obj.get("h1").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            obj.get("intro").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            obj.get("why_it_works").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+        )
+    } else {
+        tracing::warn!("⚠️ SEO JSON parse failed — raw: {}", &seo_raw[..seo_raw.len().min(500)]);
+        (String::new(), String::new(), String::new(), String::new(), String::new())
+    };
+
+    // ── Protein safety net ──────────────────────────────────────────────
     let est_protein = estimated_protein.round() as i64;
-    let _est_calories = estimated_calories.round() as i64;
 
-    if !title.contains("Protein")
-        && !title.contains("protein")
-        && !title.contains("белка")
-        && !title.contains("białka")
-        && !title.contains("білка")
+    if !title.is_empty()
+        && !title.contains("Protein") && !title.contains("protein")
+        && !title.contains("белка") && !title.contains("białka") && !title.contains("білка")
     {
         let protein_hook = format!("({}g Protein, 15 Min)", est_protein);
         if let Some(paren_start) = title.rfind('(') {
@@ -187,10 +200,9 @@ pub async fn enrich_with_ai(
         intro = intro.replace("0 g protein", &format!("{}g protein", est_protein));
     }
 
-    if !description.contains("protein")
-        && !description.contains("белка")
-        && !description.contains("białka")
-        && !description.contains("білка")
+    if !description.is_empty()
+        && !description.contains("protein") && !description.contains("белка")
+        && !description.contains("białka") && !description.contains("білка")
         && est_protein > 5
     {
         description = format!(
@@ -203,48 +215,7 @@ pub async fn enrich_with_ai(
         }
     }
 
-    // ── Step 5: Validate recipe via Domain Invariants ────────────────────
-    let mut fix_count: u32 = 0;
-    let mut final_recipe: Option<Recipe> = None;
-
-    if let Some(steps_val) = enriched.get("how_to_cook") {
-        match Recipe::new(steps_val, &profile, ingredients) {
-            Ok(recipe) => {
-                metrics::record_validation(true, profile.type_label, &[]);
-                tracing::info!(
-                    "✅ Recipe invariants PASSED for combo {} — score: {}, confidence: {:.2}, verdict: {}",
-                    combo_id, recipe.quality.score, recipe.quality.confidence, recipe.quality.verdict
-                );
-                final_recipe = Some(recipe);
-            }
-            Err(err) => {
-                metrics::record_validation(false, profile.type_label, &err.violations);
-                tracing::warn!(
-                    "⚠️ Recipe invariants FAILED for combo {} — {} violations: {:?}. Auto-fixing...",
-                    combo_id, err.violations.len(), err.violations,
-                );
-
-                // ── Auto-fix pass ───────────────────────────────────────
-                final_recipe = attempt_fix(
-                    llm, &err, steps_val, dish_name, ingredients, locale, &profile, model,
-                ).await;
-                fix_count = 1;
-
-                if final_recipe.is_some() {
-                    metrics::record_fix_attempt(true, profile.type_label);
-                } else {
-                    metrics::record_fix_attempt(false, profile.type_label);
-                }
-            }
-        }
-    }
-
-    // ── Step 6: Update DB ───────────────────────────────────────────────
-    if title.is_empty() && description.is_empty() {
-        timer.failure("empty AI response");
-        return Ok(());
-    }
-
+    // ── Update DB ───────────────────────────────────────────────────────
     if let Some(recipe) = &final_recipe {
         let steps_json = recipe.steps_json();
         if steps_json.is_array() && !steps_json.as_array().unwrap().is_empty() {
@@ -254,27 +225,95 @@ pub async fn enrich_with_ai(
 
             timer.success(recipe.quality.score, recipe.quality.confidence, fix_count);
             tracing::info!(
-                "✅ AI-enriched SEO + cooking steps for combo {} (quality: {}/100)",
+                "✅ AI-enriched steps + SEO for combo {} (quality: {}/100)",
                 combo_id, recipe.quality.score
             );
             return Ok(());
         }
     }
 
-    // Fallback: update only text fields
-    repo.update_seo_text(
-        combo_id, &title, &description, &h1, &intro, &why_it_works,
-    ).await?;
-
-    if let Some(recipe) = &final_recipe {
-        timer.success(recipe.quality.score, recipe.quality.confidence, fix_count);
+    // Fallback: only SEO texts (steps generation failed)
+    if !title.is_empty() || !description.is_empty() {
+        repo.update_seo_text(
+            combo_id, &title, &description, &h1, &intro, &why_it_works,
+        ).await?;
+        timer.success(50, 0.5, fix_count);
+        tracing::info!("✅ AI-enriched SEO only for combo {} (steps failed)", combo_id);
     } else {
-        timer.success(50, 0.5, fix_count); // partial success — text only
+        timer.failure("both calls produced empty results");
+        tracing::warn!("⚠️ AI enrichment produced nothing for combo {}", combo_id);
     }
 
-    tracing::info!("✅ AI-enriched SEO content for combo {}", combo_id);
     Ok(())
 }
+
+// ── JSON parsing helpers ────────────────────────────────────────────────────
+
+/// Parse a raw AI response as a JSON array (for cooking steps).
+fn parse_json_array(raw: &str) -> Option<serde_json::Value> {
+    let cleaned = raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    // Try direct parse
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(cleaned) {
+        if val.is_array() {
+            return Some(val);
+        }
+        // Maybe it's wrapped: {"how_to_cook": [...]}
+        if let Some(arr) = val.get("how_to_cook") {
+            if arr.is_array() {
+                return Some(arr.clone());
+            }
+        }
+    }
+
+    // Try extracting [...] from the response
+    if let Some(start) = raw.find('[') {
+        if let Some(end) = raw.rfind(']') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw[start..=end]) {
+                if val.is_array() {
+                    return Some(val);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Parse a raw AI response as a JSON object (for SEO fields).
+fn parse_json_object(raw: &str) -> Option<serde_json::Value> {
+    let cleaned = raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(cleaned) {
+        if val.is_object() {
+            return Some(val);
+        }
+    }
+
+    if let Some(start) = raw.find('{') {
+        if let Some(end) = raw.rfind('}') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw[start..=end]) {
+                if val.is_object() {
+                    return Some(val);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// ── Auto-fix pipeline ───────────────────────────────────────────────────────
 
 /// Attempt to auto-fix a recipe that failed invariant checks.
 async fn attempt_fix(
@@ -314,31 +353,13 @@ async fn attempt_fix(
         profile,
     );
 
+    tracing::info!("🔧 Auto-fix call — prompt: {} chars", fix_prompt.len());
+
     metrics::record_ai_call(true, model);
     match llm.groq_raw_request_with_model(&fix_prompt, 2000, model).await {
         Ok(fix_response) => {
-            let fix_cleaned = fix_response
-                .trim()
-                .trim_start_matches("```json")
-                .trim_start_matches("```")
-                .trim_end_matches("```")
-                .trim();
-
-            let fixed_value = serde_json::from_str::<serde_json::Value>(fix_cleaned)
-                .or_else(|_| {
-                    if let Some(start) = fix_response.find('[') {
-                        if let Some(end) = fix_response.rfind(']') {
-                            return serde_json::from_str(&fix_response[start..=end]);
-                        }
-                    }
-                    Err(serde_json::Error::io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "no JSON",
-                    )))
-                });
-
-            match fixed_value {
-                Ok(val) => {
+            match parse_json_array(&fix_response) {
+                Some(val) => {
                     match Recipe::new(&val, profile, ingredients) {
                         Ok(recipe) => {
                             tracing::info!(
@@ -348,16 +369,16 @@ async fn attempt_fix(
                             Some(recipe)
                         }
                         Err(fix_err) => {
-                            tracing::warn!(
-                                "⚠️ Auto-fix still invalid: {:?}",
-                                fix_err.violations
-                            );
+                            tracing::warn!("⚠️ Auto-fix still invalid: {:?}", fix_err.violations);
                             None
                         }
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("⚠️ Auto-fix JSON parse failed: {}", e);
+                None => {
+                    tracing::warn!(
+                        "⚠️ Auto-fix JSON parse failed — raw: {}",
+                        &fix_response[..fix_response.len().min(300)]
+                    );
                     None
                 }
             }
