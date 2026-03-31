@@ -25,6 +25,18 @@ use super::recipe_validator;
 use super::repository::ComboRepository;
 use super::seo::helpers::smart_truncate;
 
+/// Safe UTF-8 truncation for log output. Never panics on multi-byte chars.
+fn safe_preview(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Enrich combo page with AI-generated cooking steps and SEO text.
 ///
 /// Split into two focused AI calls to avoid Gemini output truncation.
@@ -118,7 +130,7 @@ pub async fn enrich_with_ai(
         None => {
             tracing::warn!(
                 "⚠️ Steps JSON parse failed for combo {} — raw: {}",
-                combo_id, &steps_raw[..steps_raw.len().min(500)]
+                combo_id, safe_preview(&steps_raw, 500)
             );
             None
         }
@@ -135,7 +147,8 @@ pub async fn enrich_with_ai(
     );
 
     metrics::record_ai_call(true, model);
-    let seo_raw = match llm.groq_raw_request_with_model(&seo_prompt, 1500, model).await {
+    // 2500 tokens — cyrillic text requires ~2-3 tokens per word vs ~1 for English
+    let seo_raw = match llm.groq_raw_request_with_model(&seo_prompt, 2500, model).await {
         Ok(r) => {
             tracing::info!("📥 SEO response: {} chars", r.len());
             r
@@ -171,7 +184,7 @@ pub async fn enrich_with_ai(
             obj.get("why_it_works").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
         )
     } else {
-        tracing::warn!("⚠️ SEO JSON parse failed — raw: {}", &seo_raw[..seo_raw.len().min(500)]);
+        tracing::warn!("⚠️ SEO JSON parse failed — raw: {}", safe_preview(&seo_raw, 500));
         (String::new(), String::new(), String::new(), String::new(), String::new())
     };
 
@@ -377,7 +390,7 @@ async fn attempt_fix(
                 None => {
                     tracing::warn!(
                         "⚠️ Auto-fix JSON parse failed — raw: {}",
-                        &fix_response[..fix_response.len().min(300)]
+                        safe_preview(&fix_response, 300)
                     );
                     None
                 }
