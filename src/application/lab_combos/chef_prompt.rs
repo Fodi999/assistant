@@ -229,8 +229,10 @@ TOTAL PER SERVING (~{total_weight:.0}g):
 ⚠️ These numbers are FINAL. Do NOT change them. Use them verbatim.
 
 ═══════════════════════════════════════
-📄 OUTPUT FORMAT (return ONLY valid JSON)
+📄 OUTPUT FORMAT (return ONLY valid JSON, NO markdown)
 ═══════════════════════════════════════
+⚠️ KEEP RESPONSE COMPACT. Each text field should be concise. Max ~2000 chars total.
+Return ONLY the JSON object below, nothing else:
 {{
   "title": "...",
   "description": "...",

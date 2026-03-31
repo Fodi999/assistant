@@ -71,14 +71,22 @@ pub async fn enrich_with_ai(
     let estimated_calories = nt.calories_per_serving;
 
     tracing::info!(
-        "🤖 AI enrichment for combo {} using model: {} (type: {}, protein: {:.0}g, calories: {:.0} kcal)",
-        combo_id, model, profile.dish_type, estimated_protein, estimated_calories
+        "🤖 AI enrichment for combo {} using model: {} (type: {}, protein: {:.0}g, calories: {:.0} kcal, prompt_chars: {})",
+        combo_id, model, profile.dish_type, estimated_protein, estimated_calories, prompt.len()
     );
 
     // ── Step 3: Call Gemini ─────────────────────────────────────────────
+    // max_tokens=4096 — the prompt is large (type-specific instructions + nutrition),
+    // 3000 was causing truncated JSON responses (EOF errors).
     metrics::record_ai_call(true, model);
-    let raw_response = match llm.groq_raw_request_with_model(&prompt, 3000, model).await {
-        Ok(r) => r,
+    let raw_response = match llm.groq_raw_request_with_model(&prompt, 4096, model).await {
+        Ok(r) => {
+            tracing::info!(
+                "📥 AI response for combo {} — {} chars (model: {})",
+                combo_id, r.len(), model
+            );
+            r
+        }
         Err(e) => {
             metrics::record_ai_call(false, model);
             timer.failure(&format!("AI call failed: {}", e));
