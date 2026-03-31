@@ -69,6 +69,8 @@ pub struct LabComboPage {
     pub fat_per_serving: f32,
     pub carbs_per_serving: f32,
     pub fiber_per_serving: f32,
+    // ── Structured ingredients (DB data, not AI) ─────────────────────
+    pub structured_ingredients: serde_json::Value,
     // ─────────────────────────────────────────────────────────────────
     pub status: String,
     pub quality_score: i16,
@@ -1048,6 +1050,94 @@ impl LabComboService {
         Ok(slugs)
     }
 
+    // ── Build structured ingredients from catalog DB ─────────────────────
+
+    /// Query catalog_ingredients for each slug, return a JSONB array:
+    /// [{ slug, name, grams, kcal, protein, fat, carbs, image_url, product_type }]
+    /// Name is localized. Grams come from default_portion_grams().
+    /// Falls back to hardcoded nutrition if slug not found in catalog.
+    async fn build_structured_ingredients(
+        &self,
+        slugs: &[String],
+        locale: &str,
+    ) -> AppResult<serde_json::Value> {
+        let mut items = Vec::new();
+
+        for slug in slugs {
+            // Query catalog_ingredients for this slug
+            let row: Option<(
+                String,                // slug
+                Option<String>,        // name_en
+                Option<String>,        // name_ru
+                Option<String>,        // name_pl
+                Option<String>,        // name_uk
+                Option<String>,        // image_url
+                Option<String>,        // product_type
+                Option<f32>,           // calories_per_100g
+                Option<f32>,           // protein_per_100g
+                Option<f32>,           // fat_per_100g
+                Option<f32>,           // carbs_per_100g
+            )> = sqlx::query_as(
+                r#"SELECT slug, name_en, name_ru, name_pl, name_uk,
+                          image_url, product_type,
+                          calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g
+                   FROM catalog_ingredients
+                   WHERE slug = $1 AND is_active = true
+                   LIMIT 1"#,
+            )
+            .bind(slug)
+            .fetch_optional(&self.pool)
+            .await?;
+
+            let portion = default_portion_grams(slug);
+
+            if let Some((s, name_en, name_ru, name_pl, name_uk, img, pt, cal100, prot100, fat100, carb100)) = row {
+                // Pick localized name
+                let name = match locale {
+                    "ru" => name_ru.as_deref().or(name_en.as_deref()).unwrap_or(&s),
+                    "pl" => name_pl.as_deref().or(name_en.as_deref()).unwrap_or(&s),
+                    "uk" => name_uk.as_deref().or(name_en.as_deref()).unwrap_or(&s),
+                    _    => name_en.as_deref().unwrap_or(&s),
+                };
+
+                let cal = cal100.unwrap_or(0.0) as f64;
+                let prot = prot100.unwrap_or(0.0) as f64;
+                let fat = fat100.unwrap_or(0.0) as f64;
+                let carb = carb100.unwrap_or(0.0) as f64;
+
+                items.push(serde_json::json!({
+                    "slug": s,
+                    "name": name,
+                    "grams": portion,
+                    "kcal": (cal * portion / 100.0).round(),
+                    "protein": ((prot * portion / 100.0) * 10.0).round() / 10.0,
+                    "fat": ((fat * portion / 100.0) * 10.0).round() / 10.0,
+                    "carbs": ((carb * portion / 100.0) * 10.0).round() / 10.0,
+                    "image_url": img,
+                    "product_type": pt,
+                }));
+            } else {
+                // Fallback: use hardcoded nutrition data
+                let (cal100, prot100, fat100, carb100, _fiber) = nutrition_per_100g(slug);
+                let name = capitalize_words(&slug.replace('-', " "));
+
+                items.push(serde_json::json!({
+                    "slug": slug,
+                    "name": name,
+                    "grams": portion,
+                    "kcal": (cal100 * portion / 100.0).round(),
+                    "protein": ((prot100 * portion / 100.0) * 10.0).round() / 10.0,
+                    "fat": ((fat100 * portion / 100.0) * 10.0).round() / 10.0,
+                    "carbs": ((carb100 * portion / 100.0) * 10.0).round() / 10.0,
+                    "image_url": null,
+                    "product_type": null,
+                }));
+            }
+        }
+
+        Ok(serde_json::json!(items))
+    }
+
     // ── Generate (Admin) ─────────────────────────────────────────────────
 
     /// Generate a lab combo page by calling SmartService and caching the response.
@@ -1156,6 +1246,9 @@ impl LabComboService {
         let how_to_cook = generate_how_to_cook(&ingredients, &smart_json, &req.locale);
         let optimization_tips = generate_optimization_tips(&smart_json, &req.locale);
 
+        // ── Build structured ingredients from catalog_ingredients DB ──────
+        let structured_ingredients = self.build_structured_ingredients(&ingredients, &req.locale).await?;
+
         let id = Uuid::new_v4();
 
         let page = sqlx::query_as::<_, LabComboPage>(
@@ -1169,6 +1262,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status
             ) VALUES (
                 $1, $2, $3, $4,
@@ -1179,6 +1273,7 @@ impl LabComboService {
                 $20, $21,
                 $22, $23, $24, $25, $26,
                 $27, $28, $29, $30, $31,
+                $32,
                 'draft'
             )
             RETURNING id, slug, locale, ingredients,
@@ -1189,6 +1284,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1224,6 +1320,7 @@ impl LabComboService {
         .bind(nt.fat_per_serving as f32)
         .bind(nt.carbs_per_serving as f32)
         .bind(nt.fiber_per_serving as f32)
+        .bind(&structured_ingredients)
         .fetch_one(&self.pool)
         .await?;
 
@@ -1334,6 +1431,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1362,6 +1460,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1413,6 +1512,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
@@ -1460,6 +1560,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages
@@ -1492,6 +1593,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             FROM lab_combo_pages
@@ -1762,6 +1864,7 @@ impl LabComboService {
                 total_weight_g, servings_count,
                 calories_total, protein_total, fat_total, carbs_total, fiber_total,
                 calories_per_serving, protein_per_serving, fat_per_serving, carbs_per_serving, fiber_per_serving,
+                structured_ingredients,
                 status, quality_score,
                 published_at::text, created_at::text, updated_at::text
             "#,
