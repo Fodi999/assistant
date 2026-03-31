@@ -171,3 +171,16 @@ pub async fn save_typed_image_url(
     let page = svc.save_typed_image_url(id, &kind, req.image_url).await?;
     Ok(Json(page))
 }
+
+/// POST /api/admin/lab-combos/backfill-ingredients
+/// Populate structured_ingredients for all existing records that have [].
+pub async fn backfill_ingredients(
+    _claims: AdminClaims,
+    State(svc): State<Arc<LabComboService>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let count = svc.backfill_structured_ingredients().await?;
+    Ok(Json(serde_json::json!({
+        "updated": count,
+        "message": format!("Backfilled structured_ingredients for {} records", count)
+    })))
+}

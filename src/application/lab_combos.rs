@@ -1138,6 +1138,45 @@ impl LabComboService {
         Ok(serde_json::json!(items))
     }
 
+    // ── Backfill structured_ingredients for existing records ────────────
+
+    /// Populate structured_ingredients for all lab_combo_pages that have an empty array.
+    /// This is needed because the field was added after initial records were created.
+    /// Returns the number of records updated.
+    pub async fn backfill_structured_ingredients(&self) -> AppResult<usize> {
+        // Fetch all pages with empty structured_ingredients
+        let rows: Vec<(uuid::Uuid, Vec<String>, String)> = sqlx::query_as(
+            r#"SELECT id, ingredients, locale
+               FROM lab_combo_pages
+               WHERE structured_ingredients = '[]'::jsonb
+               ORDER BY created_at DESC"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let total = rows.len();
+        tracing::info!("🔄 Backfilling structured_ingredients for {} records", total);
+
+        let mut updated = 0;
+        for (id, ingredients, locale) in rows {
+            let structured = self.build_structured_ingredients(&ingredients, &locale).await?;
+
+            sqlx::query(
+                "UPDATE lab_combo_pages SET structured_ingredients = $1, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(&structured)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+            updated += 1;
+            tracing::info!("  ✅ Backfilled {}/{} — id={}", updated, total, id);
+        }
+
+        tracing::info!("✅ Backfill complete: {}/{} records updated", updated, total);
+        Ok(updated)
+    }
+
     // ── Generate (Admin) ─────────────────────────────────────────────────
 
     /// Generate a lab combo page by calling SmartService and caching the response.

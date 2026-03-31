@@ -763,6 +763,7 @@ pub fn create_router(
         .route("/:id/image-url", axum::routing::put(admin_lab_combos::save_image_url))
         .route("/:id/image-upload-url/:kind", get(admin_lab_combos::get_typed_image_upload_url))
         .route("/:id/image-url/:kind", axum::routing::put(admin_lab_combos::save_typed_image_url))
+        .route("/backfill-ingredients", post(admin_lab_combos::backfill_ingredients))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
