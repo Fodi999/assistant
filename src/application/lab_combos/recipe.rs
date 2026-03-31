@@ -115,13 +115,16 @@ impl Recipe {
                     .and_then(|v| v.as_str())
                     .unwrap_or("cooking")
                     .to_string(),
+                // Accept both "text" and "description" fields from AI output
                 text: s
                     .get("text")
+                    .or_else(|| s.get("description"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
                 time_minutes: s
                     .get("time_minutes")
+                    .or_else(|| s.get("duration_minutes"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(5) as u32,
             })
@@ -348,6 +351,27 @@ impl Recipe {
 }
 
 // ── Quality Score Computation ───────────────────────────────────────────────
+//
+// Score = structure (0-40) + technique (0-30) + nutrition (0-20) + seo (0-10)
+//
+// - structure  : step count, step types, grams, forming/liquid/oven compliance
+// - technique  : allowed technique present, no forbidden, last step texture
+// - nutrition  : ingredient coverage in steps
+// - seo        : time data present, step type diversity
+//
+// Critical violations already blocked by Recipe::new(); compute_quality is only
+// called for recipes that PASSED the invariant checks.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityBreakdown {
+    pub structure:  u8,   // 0-40
+    pub technique:  u8,   // 0-30
+    pub nutrition:  u8,   // 0-20
+    pub seo:        u8,   // 0-10
+    pub total:      u8,   // 0-100
+    pub confidence: f32,
+    pub verdict:    &'static str,
+}
 
 fn compute_quality(
     steps: &[RecipeStep],
@@ -355,72 +379,114 @@ fn compute_quality(
     profile: &DishProfile,
     ingredients: &[String],
 ) -> RecipeQuality {
-    let mut score: f32 = 100.0;
-    let mut confidence: f32 = 1.0;
+    let all_text_lower: String = steps
+        .iter()
+        .map(|s| s.text.to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
 
-    // ── Penalties per issue severity ────────────────────────────────────
-    for issue in issues {
-        match issue.severity {
-            IssueSeverity::Critical => {
-                score -= 30.0; // shouldn't happen (we rejected above), but just in case
-                confidence -= 0.3;
-            }
-            IssueSeverity::Warning => {
-                score -= 10.0;
-                confidence -= 0.1;
-            }
-            IssueSeverity::Info => {
-                score -= 3.0;
-                confidence -= 0.02;
-            }
-        }
-    }
+    // ── STRUCTURE (0-40) ────────────────────────────────────────────────
+    // Base: 20 pts just for passing invariants
+    // +5  per extra step above min_steps (capped at +10)
+    // +5  if all steps have time_minutes > 0
+    // +5  if steps mention grams
+    let mut structure: f32 = 20.0;
 
-    // ── Bonus: extra steps (shows detail) ───────────────────────────────
     let extra_steps = steps.len().saturating_sub(profile.min_steps);
-    score += (extra_steps as f32 * 3.0).min(12.0);
+    structure += (extra_steps as f32 * 5.0).min(10.0);
 
-    // ── Bonus: all ingredients mentioned ────────────────────────────────
-    let all_text_lower: String = steps.iter().map(|s| s.text.to_lowercase()).collect::<Vec<_>>().join(" ");
-    let mentioned_count = ingredients.iter().filter(|ing| {
-        let lower = ing.to_lowercase();
-        all_text_lower.contains(&lower)
-            || all_text_lower.contains(&lower.replace('-', " "))
-    }).count();
-    let ingredient_coverage = if ingredients.is_empty() {
-        1.0
-    } else {
-        mentioned_count as f32 / ingredients.len() as f32
-    };
-    score += ingredient_coverage * 10.0;
-    confidence *= 0.5 + ingredient_coverage * 0.5;
+    let all_have_time = steps.iter().all(|s| s.time_minutes > 0);
+    if all_have_time { structure += 5.0; }
 
-    // ── Bonus: step types diversity (preparation, forming, cooking, finishing) ──
-    let unique_types: std::collections::HashSet<&str> = steps.iter().map(|s| s.step_type.as_str()).collect();
-    score += (unique_types.len() as f32 * 2.0).min(8.0);
+    let has_grams = all_text_lower.contains('г')
+        || all_text_lower.contains("g ")
+        || all_text_lower.contains("g)")
+        || all_text_lower.contains("гр")
+        || all_text_lower.contains("ml")
+        || all_text_lower.contains("мл");
+    if has_grams { structure += 5.0; }
 
-    // ── Bonus: time data present ────────────────────────────────────────
-    let steps_with_time = steps.iter().filter(|s| s.time_minutes > 0).count();
-    if steps_with_time == steps.len() {
-        score += 5.0;
+    // ── TECHNIQUE (0-30) ────────────────────────────────────────────────
+    // Base: 15 pts for passing allowed-technique invariant (already done)
+    // +8  if last step has texture/serving keyword
+    // +7  if no warnings about technique
+    let mut technique: f32 = 15.0;
+
+    if let Some(last) = steps.last() {
+        let last_lower = last.text.to_lowercase();
+        let has_texture = last_lower.contains("хрустящ") || last_lower.contains("мягк")
+            || last_lower.contains("золотист") || last_lower.contains("горяч")
+            || last_lower.contains("нежн") || last_lower.contains("сочн")
+            || last_lower.contains("crispy") || last_lower.contains("golden")
+            || last_lower.contains("tender") || last_lower.contains("hot")
+            || last_lower.contains("creamy") || last_lower.contains("подавайте")
+            || last_lower.contains("serve") || last_lower.contains("immediately")
+            || last_lower.contains("немедленно") || last_lower.contains("тарелк")
+            || last_lower.contains("plate") || last_lower.contains("garnish");
+        if has_texture { technique += 8.0; }
     }
 
-    // ── Clamp ───────────────────────────────────────────────────────────
-    let final_score = score.clamp(0.0, 100.0).round() as u8;
-    let final_confidence = confidence.clamp(0.0, 1.0);
+    let has_technique_warnings = issues.iter().any(|i| {
+        i.code == "NO_TEXTURE_DESC" || i.code == "NO_TECHNIQUE"
+    });
+    if !has_technique_warnings { technique += 7.0; }
 
-    let verdict = match final_score {
-        90..=100 => "excellent",
-        75..=89 => "good",
-        50..=74 => "acceptable",
-        25..=49 => "poor",
-        _ => "reject",
+    // ── NUTRITION (0-20) ────────────────────────────────────────────────
+    // Based on ingredient coverage in step text
+    // 0% coverage = 0 pts, 100% = 20 pts (linear)
+    let mentioned = if ingredients.is_empty() {
+        ingredients.len()
+    } else {
+        ingredients.iter().filter(|ing| {
+            let lower = ing.to_lowercase();
+            all_text_lower.contains(&lower)
+                || all_text_lower.contains(&lower.replace('-', " "))
+        }).count()
     };
+    let coverage = if ingredients.is_empty() {
+        1.0_f32
+    } else {
+        mentioned as f32 / ingredients.len() as f32
+    };
+    let nutrition: f32 = coverage * 20.0;
+
+    // ── SEO (0-10) ───────────────────────────────────────────────────────
+    // +4 step type diversity (preparation/cooking/finishing)
+    // +3 all steps have non-empty text > 30 chars
+    // +3 step count ≥ 3 (already guaranteed, so free pts)
+    let unique_types: std::collections::HashSet<&str> =
+        steps.iter().map(|s| s.step_type.as_str()).collect();
+    let type_pts = (unique_types.len() as f32 * 1.5).min(4.0);
+
+    let rich_steps = steps.iter().filter(|s| s.text.len() > 30).count();
+    let rich_pts = if rich_steps == steps.len() { 3.0 } else { rich_steps as f32 * 0.5 };
+
+    let seo: f32 = type_pts + rich_pts + 3.0;
+
+    // ── Confidence: only deduct for actual warnings ──────────────────────
+    let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count();
+    let confidence = (1.0_f32 - warning_count as f32 * 0.08).clamp(0.5, 1.0);
+
+    // ── Total ────────────────────────────────────────────────────────────
+    let total = (structure + technique + nutrition + seo).clamp(0.0, 100.0).round() as u8;
+
+    let verdict = match total {
+        90..=100 => "excellent",
+        75..=89  => "good",
+        50..=74  => "acceptable",
+        25..=49  => "poor",
+        _        => "reject",
+    };
+
+    tracing::debug!(
+        "📊 Quality breakdown — structure:{:.0}/40 technique:{:.0}/30 nutrition:{:.0}/20 seo:{:.0}/10 → total:{}/100 ({})",
+        structure, technique, nutrition, seo, total, verdict
+    );
 
     RecipeQuality {
-        score: final_score,
+        score: total,
         issues: issues.to_vec(),
-        confidence: final_confidence,
+        confidence,
         verdict,
     }
 }
