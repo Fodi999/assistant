@@ -84,7 +84,7 @@ pub async fn enrich_with_ai(
     metrics::record_ai_call(true, model);
     let steps_raw = match llm.groq_raw_request_with_model(&steps_prompt, 2000, model).await {
         Ok(r) => {
-            tracing::info!("📥 Steps response: {} chars", r.len());
+            tracing::info!("📥 Steps response: {} chars — preview: {}", r.len(), safe_preview(&r, 200));
             r
         }
         Err(e) => {
@@ -95,6 +95,43 @@ pub async fn enrich_with_ai(
     };
 
     let steps_value = parse_json_array(&steps_raw);
+
+    // ── Structural guard: validate skeleton compliance BEFORE Recipe::new() ──
+    // If AI returned fewer steps than skeleton requires, or skipped forming,
+    // we catch it here and trigger auto-fix immediately.
+    let steps_value = if let Some(val) = steps_value {
+        let arr = val.as_array();
+        let step_count = arr.map(|a| a.len()).unwrap_or(0);
+        let has_forming = arr.map(|a| {
+            a.iter().any(|s| s.get("type").and_then(|t| t.as_str()) == Some("forming"))
+        }).unwrap_or(false);
+
+        if step_count < profile.min_steps {
+            tracing::warn!(
+                "⚠️ Skeleton guard: got {} steps, need ≥{} for {} — triggering re-generation",
+                step_count, profile.min_steps, profile.type_label
+            );
+            None // force auto-fix path
+        } else if profile.requires_forming && !has_forming {
+            tracing::warn!(
+                "⚠️ Skeleton guard: forming required but missing in {} steps — triggering re-generation",
+                step_count
+            );
+            None // force auto-fix path
+        } else {
+            tracing::info!(
+                "✅ Skeleton guard OK: {} steps, forming_present={} for {}",
+                step_count, has_forming, profile.type_label
+            );
+            Some(val)
+        }
+    } else {
+        tracing::warn!(
+            "⚠️ Steps JSON parse failed for combo {} — FULL raw ({} chars): {}",
+            combo_id, steps_raw.len(), &steps_raw
+        );
+        None
+    };
 
     let mut fix_count: u32 = 0;
     let final_recipe: Option<Recipe> = match steps_value {
@@ -128,11 +165,25 @@ pub async fn enrich_with_ai(
             }
         }
         None => {
+            // Parse failed or skeleton guard rejected — attempt fix with a fresh call
             tracing::warn!(
-                "⚠️ Steps JSON parse failed for combo {} — raw: {}",
-                combo_id, safe_preview(&steps_raw, 500)
+                "⚠️ Steps rejected for combo {} — attempting forced re-generation",
+                combo_id,
             );
-            None
+            fix_count = 1;
+            let dummy_err = crate::application::lab_combos::recipe::RecipeInvariantError {
+                violations: vec!["parse_failed_or_skeleton_guard".to_string()],
+                raw_steps: serde_json::json!([]),
+            };
+            let fixed = attempt_fix(
+                llm, &dummy_err, &serde_json::json!([]), dish_name, ingredients, locale, &profile, model,
+            ).await;
+            if fixed.is_some() {
+                metrics::record_fix_attempt(true, profile.type_label);
+            } else {
+                metrics::record_fix_attempt(false, profile.type_label);
+            }
+            fixed
         }
     };
 
@@ -276,10 +327,12 @@ fn parse_json_array(raw: &str) -> Option<serde_json::Value> {
         if val.is_array() {
             return Some(val);
         }
-        // Maybe it's wrapped: {"how_to_cook": [...]}
-        if let Some(arr) = val.get("how_to_cook") {
-            if arr.is_array() {
-                return Some(arr.clone());
+        // Gemini sometimes wraps the array in an object with various keys
+        for key in &["how_to_cook", "steps", "cooking_steps", "recipe_steps", "instructions"] {
+            if let Some(arr) = val.get(key) {
+                if arr.is_array() {
+                    return Some(arr.clone());
+                }
             }
         }
     }
