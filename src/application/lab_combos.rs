@@ -994,6 +994,60 @@ impl LabComboService {
         Self { pool, smart_service, r2_client, llm_adapter }
     }
 
+    // ── Resolve ingredient names (any language) → English slugs ──────────
+
+    /// Accept ingredient names in any language (ru, pl, uk, en) or slugs,
+    /// and resolve them to canonical English slugs from catalog_ingredients.
+    /// Falls back to the input text (lowercased, spaces→dashes) if not found.
+    pub async fn resolve_ingredient_slugs(&self, inputs: &[String]) -> AppResult<Vec<String>> {
+        let mut slugs = Vec::with_capacity(inputs.len());
+
+        for input in inputs {
+            let normalized = input.trim().to_lowercase();
+
+            // Try exact slug match first
+            let row: Option<(String,)> = sqlx::query_as(
+                "SELECT slug FROM catalog_ingredients WHERE slug = $1 AND deleted_at IS NULL LIMIT 1"
+            )
+                .bind(&normalized)
+                .fetch_optional(&self.pool)
+                .await?;
+
+            if let Some((slug,)) = row {
+                slugs.push(slug);
+                continue;
+            }
+
+            // Try match by name in any language (case-insensitive)
+            let row: Option<(String,)> = sqlx::query_as(
+                r#"SELECT slug FROM catalog_ingredients
+                   WHERE deleted_at IS NULL
+                     AND (
+                       LOWER(name_en) = $1
+                       OR LOWER(name_ru) = $1
+                       OR LOWER(name_pl) = $1
+                       OR LOWER(name_uk) = $1
+                     )
+                   LIMIT 1"#
+            )
+                .bind(&normalized)
+                .fetch_optional(&self.pool)
+                .await?;
+
+            if let Some((slug,)) = row {
+                slugs.push(slug);
+                continue;
+            }
+
+            // Fallback: use input as slug (spaces → dashes)
+            let fallback = normalized.replace(' ', "-");
+            tracing::warn!("⚠️ Ingredient '{}' not found in catalog, using as slug: {}", input, fallback);
+            slugs.push(fallback);
+        }
+
+        Ok(slugs)
+    }
+
     // ── Generate (Admin) ─────────────────────────────────────────────────
 
     /// Generate a lab combo page by calling SmartService and caching the response.
@@ -1214,14 +1268,23 @@ impl LabComboService {
     // ── Generate for ALL locales (Admin — like ingredients) ──────────────
 
     /// Generate a lab combo page for all 4 locales (en, pl, ru, uk) in one call.
+    /// Accepts ingredient names in ANY language — auto-resolves to English slugs.
     /// Returns a vec of generated pages. Skips locales where the slug already exists.
     pub async fn generate_all_locales(&self, req: GenerateComboRequest) -> AppResult<Vec<LabComboPage>> {
         const LOCALES: [&str; 4] = ["en", "pl", "ru", "uk"];
+
+        // ── Step 1: Resolve ingredient names (any language) → English slugs
+        let resolved_slugs = self.resolve_ingredient_slugs(&req.ingredients).await?;
+        tracing::info!(
+            "🔄 Resolved ingredients: {:?} → {:?}",
+            req.ingredients, resolved_slugs
+        );
+
         let mut pages = Vec::new();
 
         for locale in LOCALES {
             let locale_req = GenerateComboRequest {
-                ingredients: req.ingredients.clone(),
+                ingredients: resolved_slugs.clone(),
                 locale: locale.to_string(),
                 goal: req.goal.clone(),
                 meal_type: req.meal_type.clone(),
