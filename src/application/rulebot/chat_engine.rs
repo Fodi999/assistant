@@ -175,16 +175,13 @@ impl ChatEngine {
         }).collect();
 
         // Use the top pick for text
-        let (top_p, top_tag, top_reason) = &products[0];
+        let (top_p, top_tag, _top_reason) = &products[0];
         let top_name = top_p.name(lang.code()).to_string();
         let top_highlight = pick_highlight(top_p, lang, goal);
         let text = format_healthy_text(&top_name, top_p, lang, &top_highlight, goal);
 
-        let combined_reason = if products.len() > 1 {
-            format!("{} (+{} more options)", top_reason, products.len() - 1)
-        } else {
-            top_reason.clone()
-        };
+        // Meaningful reason: macro summary, not score numbers
+        let combined_reason = format_macro_summary(top_p, lang, goal, products.len());
 
         // Suppress unused warning
         let _ = top_tag;
@@ -763,49 +760,163 @@ fn format_healthy_text(
     name: &str,
     p: &crate::infrastructure::ingredient_cache::IngredientData,
     lang: ChatLang,
-    highlight: &str,
+    _highlight: &str,
     goal: HealthGoal,
 ) -> String {
-    let goal_suffix = match goal {
-        HealthGoal::HighProtein => match lang {
-            ChatLang::Ru => " Отлично подходит для набора мышечной массы.",
-            ChatLang::En => " Great for building muscle.",
-            ChatLang::Pl => " Świetny do budowania masy mięśniowej.",
-            ChatLang::Uk => " Чудово підходить для набору м'язової маси.",
-        },
-        HealthGoal::LowCalorie => match lang {
-            ChatLang::Ru => " Хороший выбор для похудения.",
-            ChatLang::En => " Good choice for weight loss.",
-            ChatLang::Pl => " Dobry wybór na odchudzanie.",
-            ChatLang::Uk => " Хороший вибір для схуднення.",
-        },
-        HealthGoal::Balanced => "",
-    };
+    // Expert-style structured text: WHY this product + WHAT it does for the goal
+    let cal = p.calories_per_100g as i32;
+    let pro = p.protein_per_100g;
+    let fat = p.fat_per_100g;
+    let carb = p.carbs_per_100g;
+
+    // Build benefit bullets based on actual macros
+    let mut bullets_ru = Vec::new();
+    let mut bullets_en = Vec::new();
+    let mut bullets_pl = Vec::new();
+    let mut bullets_uk = Vec::new();
+
+    if pro >= 15.0 {
+        bullets_ru.push(format!("• много белка ({:.0}г) → держит сытость", pro));
+        bullets_en.push(format!("• high protein ({:.0}g) → keeps you full longer", pro));
+        bullets_pl.push(format!("• dużo białka ({:.0}g) → dłużej trzyma sytość", pro));
+        bullets_uk.push(format!("• багато білка ({:.0}г) → тримає ситість", pro));
+    }
+    if cal < 150 {
+        bullets_ru.push(format!("• мало калорий ({} ккал) → можно есть больше", cal));
+        bullets_en.push(format!("• low calories ({} kcal) → more food per day", cal));
+        bullets_pl.push(format!("• mało kalorii ({} kcal) → możesz jeść więcej", cal));
+        bullets_uk.push(format!("• мало калорій ({} ккал) → можна їсти більше", cal));
+    }
+    if carb < 5.0 {
+        bullets_ru.push("• почти нет углеводов → не скачет инсулин".into());
+        bullets_en.push("• near-zero carbs → stable insulin".into());
+        bullets_pl.push("• prawie zero węglowodanów → stabilna insulina".into());
+        bullets_uk.push("• майже нуль вуглеводів → стабільний інсулін".into());
+    } else if carb < 15.0 {
+        bullets_ru.push(format!("• мало углеводов ({:.0}г) → стабильный сахар в крови", carb));
+        bullets_en.push(format!("• low carbs ({:.0}g) → stable blood sugar", carb));
+        bullets_pl.push(format!("• mało węglowodanów ({:.0}g) → stabilny cukier", carb));
+        bullets_uk.push(format!("• мало вуглеводів ({:.0}г) → стабільний цукор", carb));
+    }
+    if fat < 3.0 {
+        bullets_ru.push("• минимум жира → чистый белок".into());
+        bullets_en.push("• minimal fat → clean protein source".into());
+        bullets_pl.push("• minimum tłuszczu → czyste białko".into());
+        bullets_uk.push("• мінімум жиру → чистий білок".into());
+    }
+
+    // If no bullets matched, add generic macro line
+    if bullets_ru.is_empty() {
+        bullets_ru.push(format!("• {} ккал · {:.0}г белка · {:.0}г жиров · {:.0}г углеводов", cal, pro, fat, carb));
+        bullets_en.push(format!("• {} kcal · {:.0}g protein · {:.0}g fat · {:.0}g carbs", cal, pro, fat, carb));
+        bullets_pl.push(format!("• {} kcal · {:.0}g białka · {:.0}g tłuszczu · {:.0}g węglowodanów", cal, pro, fat, carb));
+        bullets_uk.push(format!("• {} ккал · {:.0}г білка · {:.0}г жирів · {:.0}г вуглеводів", cal, pro, fat, carb));
+    }
+
+    // Goal-specific opening line (no "отличный выбор")
     match lang {
-        ChatLang::Ru => format!(
-            "🥗 **{}** — отличный выбор! ({}){}
-\nНа 100г: {} ккал · {:.1}г белка · {:.1}г жиров · {:.1}г углеводов",
-            name, highlight, goal_suffix,
-            p.calories_per_100g as i32, p.protein_per_100g, p.fat_per_100g, p.carbs_per_100g
-        ),
-        ChatLang::En => format!(
-            "🥗 **{}** — great choice! ({}){}
-\nPer 100g: {} kcal · {:.1}g protein · {:.1}g fat · {:.1}g carbs",
-            name, highlight, goal_suffix,
-            p.calories_per_100g as i32, p.protein_per_100g, p.fat_per_100g, p.carbs_per_100g
-        ),
-        ChatLang::Pl => format!(
-            "🥗 **{}** — świetny wybór! ({}){}
-\nNa 100g: {} kcal · {:.1}g białka · {:.1}g tłuszczu · {:.1}g węglowodanów",
-            name, highlight, goal_suffix,
-            p.calories_per_100g as i32, p.protein_per_100g, p.fat_per_100g, p.carbs_per_100g
-        ),
-        ChatLang::Uk => format!(
-            "🥗 **{}** — чудовий вибір! ({}){}
-\nНа 100г: {} ккал · {:.1}г білка · {:.1}г жирів · {:.1}г вуглеводів",
-            name, highlight, goal_suffix,
-            p.calories_per_100g as i32, p.protein_per_100g, p.fat_per_100g, p.carbs_per_100g
-        ),
+        ChatLang::Ru => {
+            let opener = match goal {
+                HealthGoal::LowCalorie  => format!("Для похудения **{}** — хороший вариант:", name),
+                HealthGoal::HighProtein => format!("Для набора массы **{}** — сильный выбор:", name),
+                HealthGoal::Balanced    => format!("**{}** — сбалансированный вариант:", name),
+            };
+            format!("{}\n{}", opener, bullets_ru.join("\n"))
+        }
+        ChatLang::En => {
+            let opener = match goal {
+                HealthGoal::LowCalorie  => format!("For weight loss, **{}** works well:", name),
+                HealthGoal::HighProtein => format!("For muscle gain, **{}** is a strong pick:", name),
+                HealthGoal::Balanced    => format!("**{}** — a balanced option:", name),
+            };
+            format!("{}\n{}", opener, bullets_en.join("\n"))
+        }
+        ChatLang::Pl => {
+            let opener = match goal {
+                HealthGoal::LowCalorie  => format!("Na odchudzanie **{}** — dobry wybór:", name),
+                HealthGoal::HighProtein => format!("Na masę **{}** — mocny wybór:", name),
+                HealthGoal::Balanced    => format!("**{}** — zbalansowana opcja:", name),
+            };
+            format!("{}\n{}", opener, bullets_pl.join("\n"))
+        }
+        ChatLang::Uk => {
+            let opener = match goal {
+                HealthGoal::LowCalorie  => format!("Для схуднення **{}** — хороший варіант:", name),
+                HealthGoal::HighProtein => format!("Для набору маси **{}** — сильний вибір:", name),
+                HealthGoal::Balanced    => format!("**{}** — збалансований варіант:", name),
+            };
+            format!("{}\n{}", opener, bullets_uk.join("\n"))
+        }
+    }
+}
+
+/// Meaningful macro summary for the "reason" field — no score numbers, just insight.
+fn format_macro_summary(
+    p: &crate::infrastructure::ingredient_cache::IngredientData,
+    lang: ChatLang,
+    goal: HealthGoal,
+    total_options: usize,
+) -> String {
+    let pro = p.protein_per_100g;
+    let fat = p.fat_per_100g;
+    let cal = p.calories_per_100g as i32;
+
+    // Classify macros
+    let pro_level = if pro >= 20.0 { "high" } else if pro >= 10.0 { "moderate" } else { "low" };
+    let fat_level = if fat >= 15.0 { "high" } else if fat >= 5.0 { "moderate" } else { "low" };
+
+    let extras = if total_options > 1 {
+        match lang {
+            ChatLang::Ru => format!(" · +{} вариантов ниже", total_options - 1),
+            ChatLang::En => format!(" · +{} more below", total_options - 1),
+            ChatLang::Pl => format!(" · +{} więcej poniżej", total_options - 1),
+            ChatLang::Uk => format!(" · +{} варіантів нижче", total_options - 1),
+        }
+    } else {
+        String::new()
+    };
+
+    match lang {
+        ChatLang::Ru => {
+            let pro_s = match pro_level { "high" => "белок высокий", "moderate" => "белок средний", _ => "белка мало" };
+            let fat_s = match fat_level { "high" => "жир высокий", "moderate" => "жир умеренный", _ => "жира минимум" };
+            let action = match goal {
+                HealthGoal::LowCalorie  => format!(" → {} ккал, можно улучшить", cal),
+                HealthGoal::HighProtein => format!(" → {:.0}г белка/100г, хороший старт", pro),
+                HealthGoal::Balanced    => " → баланс ОК".into(),
+            };
+            format!("{}, {}{}{}", pro_s, fat_s, action, extras)
+        }
+        ChatLang::En => {
+            let pro_s = match pro_level { "high" => "protein high", "moderate" => "protein moderate", _ => "protein low" };
+            let fat_s = match fat_level { "high" => "fat high", "moderate" => "fat moderate", _ => "fat minimal" };
+            let action = match goal {
+                HealthGoal::LowCalorie  => format!(" → {} kcal, room to improve", cal),
+                HealthGoal::HighProtein => format!(" → {:.0}g protein/100g, good start", pro),
+                HealthGoal::Balanced    => " → balance OK".into(),
+            };
+            format!("{}, {}{}{}", pro_s, fat_s, action, extras)
+        }
+        ChatLang::Pl => {
+            let pro_s = match pro_level { "high" => "białko wysokie", "moderate" => "białko średnie", _ => "białka mało" };
+            let fat_s = match fat_level { "high" => "tłuszcz wysoki", "moderate" => "tłuszcz umiarkowany", _ => "tłuszczu minimum" };
+            let action = match goal {
+                HealthGoal::LowCalorie  => format!(" → {} kcal, można poprawić", cal),
+                HealthGoal::HighProtein => format!(" → {:.0}g białka/100g, dobry start", pro),
+                HealthGoal::Balanced    => " → balans OK".into(),
+            };
+            format!("{}, {}{}{}", pro_s, fat_s, action, extras)
+        }
+        ChatLang::Uk => {
+            let pro_s = match pro_level { "high" => "білок високий", "moderate" => "білок середній", _ => "білка мало" };
+            let fat_s = match fat_level { "high" => "жир високий", "moderate" => "жир помірний", _ => "жиру мінімум" };
+            let action = match goal {
+                HealthGoal::LowCalorie  => format!(" → {} ккал, можна покращити", cal),
+                HealthGoal::HighProtein => format!(" → {:.0}г білка/100г, хороший старт", pro),
+                HealthGoal::Balanced    => " → баланс ОК".into(),
+            };
+            format!("{}, {}{}{}", pro_s, fat_s, action, extras)
+        }
     }
 }
 
@@ -1000,10 +1111,34 @@ fn detect_dish_keyword(text: &str) -> Option<&'static str> {
 // ── Suggestion & chef-tip builders ─────────────────────────────────────────────
 
 fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -> Vec<Suggestion> {
+    // "Plan" button has a hook with numbers — user sees the value BEFORE clicking
+    let plan_label = match lang {
+        ChatLang::Ru => match goal {
+            HealthGoal::LowCalorie  => "~1600 ккал · 100г белка → Собрать день".into(),
+            HealthGoal::HighProtein => "~2200 ккал · 160г белка → Собрать день".into(),
+            HealthGoal::Balanced    => "~1800 ккал · 120г белка → Собрать день".into(),
+        },
+        ChatLang::En => match goal {
+            HealthGoal::LowCalorie  => "~1600 kcal · 100g protein → Build my day".into(),
+            HealthGoal::HighProtein => "~2200 kcal · 160g protein → Build my day".into(),
+            HealthGoal::Balanced    => "~1800 kcal · 120g protein → Build my day".into(),
+        },
+        ChatLang::Pl => match goal {
+            HealthGoal::LowCalorie  => "~1600 kcal · 100g białka → Ułóż dzień".into(),
+            HealthGoal::HighProtein => "~2200 kcal · 160g białka → Ułóż dzień".into(),
+            HealthGoal::Balanced    => "~1800 kcal · 120g białka → Ułóż dzień".into(),
+        },
+        ChatLang::Uk => match goal {
+            HealthGoal::LowCalorie  => "~1600 ккал · 100г білка → Скласти день".into(),
+            HealthGoal::HighProtein => "~2200 ккал · 160г білка → Скласти день".into(),
+            HealthGoal::Balanced    => "~1800 ккал · 120г білка → Скласти день".into(),
+        },
+    };
+
     match lang {
         ChatLang::Ru => vec![
             Suggestion { label: format!("Рецепты с {}", top_name), query: format!("рецепт с {}", top_name), emoji: Some("📖") },
-            Suggestion { label: "Составь план на день".into(), query: "план питания на день".into(), emoji: Some("📋") },
+            Suggestion { label: plan_label, query: "план питания на день".into(), emoji: Some("📋") },
             Suggestion { label: "Ещё варианты".into(), query: match goal {
                 HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
                 HealthGoal::LowCalorie  => "ещё низкокалорийные продукты".into(),
@@ -1012,7 +1147,7 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
         ],
         ChatLang::En => vec![
             Suggestion { label: format!("Recipes with {}", top_name), query: format!("recipe with {}", top_name), emoji: Some("📖") },
-            Suggestion { label: "Make a day plan".into(), query: "meal plan for the day".into(), emoji: Some("📋") },
+            Suggestion { label: plan_label, query: "meal plan for the day".into(), emoji: Some("📋") },
             Suggestion { label: "More options".into(), query: match goal {
                 HealthGoal::HighProtein => "more high protein foods".into(),
                 HealthGoal::LowCalorie  => "more low calorie foods".into(),
@@ -1021,7 +1156,7 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
         ],
         ChatLang::Pl => vec![
             Suggestion { label: format!("Przepisy z {}", top_name), query: format!("przepis z {}", top_name), emoji: Some("📖") },
-            Suggestion { label: "Zrób plan dnia".into(), query: "plan posiłków na dzień".into(), emoji: Some("📋") },
+            Suggestion { label: plan_label, query: "plan posiłków na dzień".into(), emoji: Some("📋") },
             Suggestion { label: "Więcej opcji".into(), query: match goal {
                 HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
                 HealthGoal::LowCalorie  => "więcej niskokalorycznych produktów".into(),
@@ -1030,7 +1165,7 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
         ],
         ChatLang::Uk => vec![
             Suggestion { label: format!("Рецепти з {}", top_name), query: format!("рецепт з {}", top_name), emoji: Some("📖") },
-            Suggestion { label: "Склади план на день".into(), query: "план харчування на день".into(), emoji: Some("📋") },
+            Suggestion { label: plan_label, query: "план харчування на день".into(), emoji: Some("📋") },
             Suggestion { label: "Ще варіанти".into(), query: match goal {
                 HealthGoal::HighProtein => "ще високобілкові продукти".into(),
                 HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
@@ -1070,109 +1205,251 @@ fn pick_chef_tip(
     lang: ChatLang,
     goal: HealthGoal,
 ) -> String {
-    // Pick a tip based on product macros + goal
-    let high_protein = p.protein_per_100g >= 20.0;
-    let high_fat = p.fat_per_100g >= 15.0;
-    let low_cal = p.calories_per_100g < 80.0;
+    // Product-specific tips based on slug — always relevant to the product shown
+    let slug = p.slug.to_lowercase();
 
-    // Tip index rotation — so repeated calls get variety
+    // Tip index rotation for variety within a category
     let tip_seed = {
         use std::time::{SystemTime, UNIX_EPOCH};
         (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() / 10) as usize
     };
 
+    // ── Product-specific tip tables (4 langs) ──
+    // Each returns Option<&str> — if None, fall through to macro-based tips
+    let product_tip: Option<(&str, &str, &str, &str)> = if slug.contains("chicken") {
+        Some((
+            "Запекай курицу без кожи — минус ~120 ккал на порцию. Мясо останется сочным, если накрыть фольгой.",
+            "Bake chicken without skin — minus ~120 kcal per serving. Cover with foil to keep it juicy.",
+            "Piecz kurczaka bez skóry — minus ~120 kcal na porcję. Przykryj folią, żeby był soczysty.",
+            "Запікай курку без шкіри — мінус ~120 ккал на порцію. Накрий фольгою для соковитості.",
+        ))
+    } else if slug.contains("salmon") {
+        Some((
+            "Лосось на пару за 12 минут — сохраняет омега-3 и текстуру. Жарка разрушает до 30% жирных кислот.",
+            "Steam salmon for 12 min — preserves omega-3 and texture. Frying destroys up to 30% of fatty acids.",
+            "Łosoś na parze 12 min — zachowuje omega-3 i teksturę. Smażenie niszczy do 30% kwasów tłuszczowych.",
+            "Лосось на парі 12 хв — зберігає омега-3. Смаження руйнує до 30% жирних кислот.",
+        ))
+    } else if slug.contains("egg") {
+        Some((
+            "Варёное яйцо — 78 ккал. Жареное — 120+. Разница в масле, а не в яйце.",
+            "Boiled egg: 78 kcal. Fried: 120+. The difference is the oil, not the egg.",
+            "Jajko gotowane: 78 kcal. Smażone: 120+. Różnica w oleju, nie w jajku.",
+            "Варене яйце — 78 ккал. Смажене — 120+. Різниця в олії, а не в яйці.",
+        ))
+    } else if slug.contains("spinach") {
+        Some((
+            "Шпинат теряет 50% объёма при готовке — клади в 2 раза больше, чем кажется нужным.",
+            "Spinach loses 50% volume when cooked — use 2x more than you think you need.",
+            "Szpinak traci 50% objętości przy gotowaniu — daj 2x więcej niż ci się wydaje.",
+            "Шпинат втрачає 50% об'єму при готуванні — клади вдвічі більше.",
+        ))
+    } else if slug.contains("broccoli") {
+        Some((
+            "Брокколи на пару 5 мин — максимум витамина C. Если варить дольше — теряешь до 60%.",
+            "Steam broccoli for 5 min — maximum vitamin C. Boiling longer loses up to 60%.",
+            "Brokuły na parze 5 min — maks. witaminy C. Dłuższe gotowanie traci do 60%.",
+            "Броколі на парі 5 хв — максимум вітаміну C. Довше варити — мінус 60%.",
+        ))
+    } else if slug.contains("tuna") {
+        Some((
+            "Тунец из банки в собственном соку — 100 ккал. В масле — 200+. Всегда выбирай «в соку».",
+            "Canned tuna in water: 100 kcal. In oil: 200+. Always pick water-packed.",
+            "Tuńczyk w wodzie: 100 kcal. W oleju: 200+. Zawsze wybieraj w sosie własnym.",
+            "Тунець у власному соці — 100 ккал. В олії — 200+. Завжди обирай «у соці».",
+        ))
+    } else if slug.contains("almond") {
+        Some((
+            "Миндаль — 30г (горсть) = ~170 ккал. Легко переесть. Отмеряй порцию заранее.",
+            "Almonds — 30g (handful) = ~170 kcal. Easy to overeat. Pre-measure your portion.",
+            "Migdały — 30g (garść) = ~170 kcal. Łatwo zjeść za dużo. Odmierz porcję z góry.",
+            "Мигдаль — 30г (жменька) = ~170 ккал. Легко переїсти. Відміряй порцію заздалегідь.",
+        ))
+    } else if slug.contains("rice") {
+        Some((
+            "Охлаждённый рис содержит резистентный крахмал — меньше калорий усваивается. Приготовь заранее.",
+            "Cooled rice contains resistant starch — fewer calories absorbed. Cook it ahead.",
+            "Schłodzony ryż zawiera skrobię oporną — mniej kalorii się wchłania. Ugotuj wcześniej.",
+            "Охолоджений рис містить резистентний крохмаль — менше калорій засвоюється.",
+        ))
+    } else if slug.contains("beef") {
+        Some((
+            "Говядина: дай стейку отдохнуть 5 мин — соки перераспределятся, мясо будет нежнее на 40%.",
+            "Beef: let the steak rest 5 min — juices redistribute, 40% more tender.",
+            "Wołowina: daj stekowi odpocząć 5 min — soki się rozprowadzą, mięso o 40% delikatniejsze.",
+            "Яловичина: дай стейку відпочити 5 хв — соки розподіляться, м'ясо ніжніше на 40%.",
+        ))
+    } else if slug.contains("blueberr") {
+        Some((
+            "Замороженная черника сохраняет 95% антиоксидантов — не хуже свежей, а дешевле в 3 раза.",
+            "Frozen blueberries retain 95% of antioxidants — as good as fresh, 3x cheaper.",
+            "Mrożone jagody zachowują 95% antyoksydantów — tak dobre jak świeże, 3x tańsze.",
+            "Заморожена чорниця зберігає 95% антиоксидантів — не гірша за свіжу, а дешевша в 3 рази.",
+        ))
+    } else {
+        None
+    };
+
+    if let Some((ru, en, pl, uk)) = product_tip {
+        return match lang {
+            ChatLang::Ru => format!("💡 Шеф-совет: {}", ru),
+            ChatLang::En => format!("💡 Chef tip: {}", en),
+            ChatLang::Pl => format!("💡 Rada szefa: {}", pl),
+            ChatLang::Uk => format!("💡 Порада шефа: {}", uk),
+        };
+    }
+
+    // ── Fallback: macro-based tips when slug not recognized ──
+    let high_protein = p.protein_per_100g >= 20.0;
+    let low_cal = p.calories_per_100g < 80.0;
+    let high_fat = p.fat_per_100g >= 15.0;
+    let is_meat = p.protein_per_100g >= 18.0 && p.fat_per_100g >= 3.0;
+    let is_veggie = p.calories_per_100g < 50.0 && p.protein_per_100g < 5.0;
+
     match lang {
         ChatLang::Ru => {
-            let tips: Vec<&str> = match goal {
-                HealthGoal::HighProtein if high_protein => vec![
-                    "💡 Шеф-совет: готовь на пару — сохраняет до 95% белка, в отличие от жарки.",
-                    "💡 Шеф-совет: добавь лимонный сок — улучшает усвоение железа из белковых продуктов.",
-                    "💡 Шеф-совет: сочетай с киноа — получишь полный аминокислотный профиль.",
-                ],
-                HealthGoal::LowCalorie if low_cal => vec![
-                    "💡 Шеф-совет: запекай вместо жарки — экономишь ~80 ккал на порцию.",
-                    "💡 Шеф-совет: заправляй лимонным соком вместо масла — минус 100 ккал.",
-                    "💡 Шеф-совет: ешь медленнее — насыщение приходит через 20 минут.",
-                ],
-                HealthGoal::LowCalorie if high_fat => vec![
-                    "💡 Шеф-совет: этот продукт калорийный — используй в малых дозах как усилитель вкуса.",
-                ],
-                _ => vec![
-                    "💡 Шеф-совет: не переваривай овощи — аль-денте сохраняет витамины.",
-                    "💡 Шеф-совет: свежие специи (базилик, кинза) добавляй в конце — так ярче вкус.",
-                    "💡 Шеф-совет: дай мясу «отдохнуть» 5 мин после готовки — соки распределятся равномерно.",
-                ],
+            let tips: Vec<&str> = if is_meat {
+                vec![
+                    "Готовь мясо на решётке или в духовке — жир стечёт, минус ~100 ккал.",
+                    "Маринуй в лимонном соке + травы — вкуснее и мягче без масла.",
+                    "Дай мясу «отдохнуть» 5 мин после готовки — соки распределятся.",
+                ]
+            } else if is_veggie {
+                vec![
+                    "Овощи аль-денте сохраняют витамины. Не переваривай — 3-5 мин на пару достаточно.",
+                    "Заправляй лимонным соком вместо масла — минус 100 ккал, плюс витамин C.",
+                    "Запекай вместо варки — карамелизация даёт вкус без калорий.",
+                ]
+            } else if high_protein && matches!(goal, HealthGoal::HighProtein) {
+                vec![
+                    "Готовь на пару — сохраняет до 95% белка, в отличие от жарки.",
+                    "Сочетай с бобовыми — получишь полный аминокислотный профиль.",
+                ]
+            } else if high_fat {
+                vec![
+                    "Калорийный продукт — используй как усилитель вкуса, не как основу.",
+                    "Отмеряй порцию заранее — легко переесть на 200+ ккал.",
+                ]
+            } else if low_cal && matches!(goal, HealthGoal::LowCalorie) {
+                vec![
+                    "Запекай вместо жарки — экономишь ~80 ккал на порцию.",
+                    "Ешь медленнее — насыщение приходит через 20 минут.",
+                ]
+            } else {
+                vec![
+                    "Свежие специи (базилик, кинза) добавляй в конце — так ярче вкус.",
+                    "Пробуй новые способы готовки: пар, гриль, запекание — каждый раскрывает продукт по-разному.",
+                ]
             };
-            tips[tip_seed % tips.len()].to_string()
+            format!("💡 Шеф-совет: {}", tips[tip_seed % tips.len()])
         }
         ChatLang::En => {
-            let tips: Vec<&str> = match goal {
-                HealthGoal::HighProtein if high_protein => vec![
-                    "💡 Chef tip: steam instead of frying — preserves up to 95% of protein.",
-                    "💡 Chef tip: add lemon juice — improves iron absorption from protein foods.",
-                    "💡 Chef tip: pair with quinoa for a complete amino acid profile.",
-                ],
-                HealthGoal::LowCalorie if low_cal => vec![
-                    "💡 Chef tip: bake instead of frying — saves ~80 kcal per serving.",
-                    "💡 Chef tip: use lemon juice instead of oil dressing — minus 100 kcal.",
-                    "💡 Chef tip: eat slowly — fullness takes 20 minutes to kick in.",
-                ],
-                HealthGoal::LowCalorie if high_fat => vec![
-                    "💡 Chef tip: this product is calorie-dense — use small amounts as a flavor booster.",
-                ],
-                _ => vec![
-                    "💡 Chef tip: don't overcook veggies — al dente preserves vitamins.",
-                    "💡 Chef tip: add fresh herbs (basil, cilantro) at the end for brighter flavor.",
-                    "💡 Chef tip: let meat rest 5 min after cooking — juices redistribute evenly.",
-                ],
+            let tips: Vec<&str> = if is_meat {
+                vec![
+                    "Cook meat on a rack or in the oven — fat drips off, minus ~100 kcal.",
+                    "Marinate in lemon juice + herbs — tastier and tender without oil.",
+                    "Let meat rest 5 min after cooking — juices redistribute evenly.",
+                ]
+            } else if is_veggie {
+                vec![
+                    "Al dente veggies keep their vitamins. Don't overcook — 3-5 min steaming is enough.",
+                    "Use lemon juice instead of oil — minus 100 kcal, plus vitamin C.",
+                    "Roast instead of boiling — caramelization adds flavor without calories.",
+                ]
+            } else if high_protein && matches!(goal, HealthGoal::HighProtein) {
+                vec![
+                    "Steam instead of frying — preserves up to 95% of protein.",
+                    "Pair with legumes for a complete amino acid profile.",
+                ]
+            } else if high_fat {
+                vec![
+                    "Calorie-dense — use as a flavor booster, not the main course.",
+                    "Pre-measure your portion — easy to overeat by 200+ kcal.",
+                ]
+            } else if low_cal && matches!(goal, HealthGoal::LowCalorie) {
+                vec![
+                    "Bake instead of frying — saves ~80 kcal per serving.",
+                    "Eat slowly — fullness takes 20 minutes to kick in.",
+                ]
+            } else {
+                vec![
+                    "Add fresh herbs (basil, cilantro) at the end for brighter flavor.",
+                    "Try different cooking methods: steam, grill, roast — each reveals the product differently.",
+                ]
             };
-            tips[tip_seed % tips.len()].to_string()
+            format!("💡 Chef tip: {}", tips[tip_seed % tips.len()])
         }
         ChatLang::Pl => {
-            let tips: Vec<&str> = match goal {
-                HealthGoal::HighProtein if high_protein => vec![
-                    "💡 Rada szefa: gotuj na parze — zachowuje do 95% białka.",
-                    "💡 Rada szefa: dodaj sok z cytryny — poprawia wchłanianie żelaza.",
-                    "💡 Rada szefa: połącz z quinoa — pełny profil aminokwasów.",
-                ],
-                HealthGoal::LowCalorie if low_cal => vec![
-                    "💡 Rada szefa: piecz zamiast smażyć — oszczędzasz ~80 kcal na porcję.",
-                    "💡 Rada szefa: zamiast oleju użyj soku z cytryny — minus 100 kcal.",
-                    "💡 Rada szefa: jedz wolniej — sytość przychodzi po 20 minutach.",
-                ],
-                HealthGoal::LowCalorie if high_fat => vec![
-                    "💡 Rada szefa: ten produkt jest kaloryczny — używaj w małych ilościach.",
-                ],
-                _ => vec![
-                    "💡 Rada szefa: nie rozgotowuj warzyw — al dente zachowuje witaminy.",
-                    "💡 Rada szefa: świeże zioła (bazylia, kolendra) dodawaj na końcu.",
-                    "💡 Rada szefa: daj mięsu odpocząć 5 min — soki się rozprowadzą.",
-                ],
+            let tips: Vec<&str> = if is_meat {
+                vec![
+                    "Piecz mięso na ruszcie — tłuszcz ścieka, minus ~100 kcal.",
+                    "Marynuj w soku z cytryny + zioła — smaczniej i delikatniej bez oleju.",
+                    "Daj mięsu odpocząć 5 min — soki się rozprowadzą.",
+                ]
+            } else if is_veggie {
+                vec![
+                    "Warzywa al dente zachowują witaminy. Nie rozgotowuj — 3-5 min na parze wystarczy.",
+                    "Zamiast oleju — sok z cytryny — minus 100 kcal, plus witamina C.",
+                    "Piecz zamiast gotować — karmelizacja daje smak bez kalorii.",
+                ]
+            } else if high_protein && matches!(goal, HealthGoal::HighProtein) {
+                vec![
+                    "Gotuj na parze — zachowuje do 95% białka.",
+                    "Połącz z roślinami strączkowymi — pełny profil aminokwasów.",
+                ]
+            } else if high_fat {
+                vec![
+                    "Kaloryczny produkt — używaj jako wzmacniacz smaku, nie podstawę.",
+                    "Odmierz porcję z góry — łatwo zjeść za dużo.",
+                ]
+            } else if low_cal && matches!(goal, HealthGoal::LowCalorie) {
+                vec![
+                    "Piecz zamiast smażyć — oszczędzasz ~80 kcal na porcję.",
+                    "Jedz wolniej — sytość przychodzi po 20 minutach.",
+                ]
+            } else {
+                vec![
+                    "Świeże zioła (bazylia, kolendra) dodawaj na końcu — smak będzie żywszy.",
+                    "Wypróbuj różne metody: para, grill, pieczenie — każda wydobywa inny smak.",
+                ]
             };
-            tips[tip_seed % tips.len()].to_string()
+            format!("💡 Rada szefa: {}", tips[tip_seed % tips.len()])
         }
         ChatLang::Uk => {
-            let tips: Vec<&str> = match goal {
-                HealthGoal::HighProtein if high_protein => vec![
-                    "💡 Порада шефа: готуй на парі — зберігає до 95% білка.",
-                    "💡 Порада шефа: додай лимонний сік — покращує засвоєння заліза.",
-                    "💡 Порада шефа: поєднуй з кіноа — повний амінокислотний профіль.",
-                ],
-                HealthGoal::LowCalorie if low_cal => vec![
-                    "💡 Порада шефа: запікай замість смаження — економиш ~80 ккал.",
-                    "💡 Порада шефа: замість олії — лимонний сік, мінус 100 ккал.",
-                    "💡 Порада шефа: їж повільніше — ситість приходить через 20 хвилин.",
-                ],
-                HealthGoal::LowCalorie if high_fat => vec![
-                    "💡 Порада шефа: цей продукт калорійний — використовуй як підсилювач смаку.",
-                ],
-                _ => vec![
-                    "💡 Порада шефа: не перевар овочі — аль-денте зберігає вітаміни.",
-                    "💡 Порада шефа: свіжі спеції додавай в кінці — так яскравіший смак.",
-                    "💡 Порада шефа: дай м'ясу «відпочити» 5 хв — соки розподіляться.",
-                ],
+            let tips: Vec<&str> = if is_meat {
+                vec![
+                    "Готуй м'ясо на решітці — жир стече, мінус ~100 ккал.",
+                    "Маринуй в лимонному соці + трави — смачніше без олії.",
+                    "Дай м'ясу «відпочити» 5 хв — соки розподіляться.",
+                ]
+            } else if is_veggie {
+                vec![
+                    "Овочі аль-денте зберігають вітаміни. Не перевар — 3-5 хв на парі достатньо.",
+                    "Замість олії — лимонний сік — мінус 100 ккал, плюс вітамін C.",
+                    "Запікай замість варки — карамелізація дає смак без калорій.",
+                ]
+            } else if high_protein && matches!(goal, HealthGoal::HighProtein) {
+                vec![
+                    "Готуй на парі — зберігає до 95% білка.",
+                    "Поєднуй з бобовими — повний амінокислотний профіль.",
+                ]
+            } else if high_fat {
+                vec![
+                    "Калорійний продукт — використовуй як підсилювач смаку.",
+                    "Відміряй порцію заздалегідь — легко переїсти на 200+ ккал.",
+                ]
+            } else if low_cal && matches!(goal, HealthGoal::LowCalorie) {
+                vec![
+                    "Запікай замість смаження — економиш ~80 ккал на порцію.",
+                    "Їж повільніше — ситість приходить через 20 хвилин.",
+                ]
+            } else {
+                vec![
+                    "Свіжі спеції додавай в кінці — так яскравіший смак.",
+                    "Спробуй різні способи: пара, гриль, запікання — кожен розкриває продукт інакше.",
+                ]
             };
-            tips[tip_seed % tips.len()].to_string()
+            format!("💡 Порада шефа: {}", tips[tip_seed % tips.len()])
         }
     }
 }
