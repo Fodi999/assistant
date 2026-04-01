@@ -103,6 +103,12 @@ impl IngredientCache {
             .collect()
     }
 
+    /// Get ALL loaded ingredients as a Vec. O(n) clone — use for ranking/filtering.
+    pub async fn all(&self) -> Vec<IngredientData> {
+        let r = self.data.read().await;
+        r.values().cloned().collect()
+    }
+
     /// Get all loaded ingredients (for debugging).
     pub async fn len(&self) -> usize {
         self.data.read().await.len()

@@ -39,6 +39,7 @@ use crate::interfaces::http::{
     public::{
         cms as public_cms,
         ingredients::{autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, get_ingredients_states_map, get_ingredients_sitemap_data, list_ingredients, list_ingredients_full},
+        chat::chat_handler,   // 🧠 ChefOS Chat
         intent_pages::{list_published_intent_pages, get_published_intent_page, get_related_intent_pages, get_ingredient_intent_pages},
         lab_combos as public_lab_combos,
         nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
@@ -645,6 +646,17 @@ pub fn create_router(
         .route("/tools/catalog", get(tools_catalog))
         .with_state(rulebot);
 
+    // ── 🧠 ChefOS Chat Interface ──────────────────────────────────────────────
+    let chat_engine = std::sync::Arc::new(
+        crate::application::rulebot::chat_engine::ChatEngine::new(
+            std::sync::Arc::new(ingredient_cache.clone()),
+            llm_adapter.clone(),
+        )
+    );
+    let chat_router = Router::new()
+        .route("/chat", post(chat_handler))
+        .with_state(chat_engine);
+
     // ── 🆕 SmartService v2 ──────────────────────────────────────────────────
     let smart_service = std::sync::Arc::new(
         crate::application::smart_service::SmartService::new(pool_for_smart)
@@ -911,14 +923,15 @@ pub fn create_router(
     let public_router = Router::new()
         .merge(public_ingredients_router)
         .merge(public_tools_router)
-        .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
+        .merge(platform_router)           // 🆕 RuleBot: /tools/run + /tools/catalog
+        .merge(chat_router)               // 🧠 ChefOS Chat: POST /chat
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
         .merge(public_intent_pages_router) // 🆕 Intent Pages pSEO
-        .merge(sous_chef_router) // 🆕 Sous-Chef: POST /sous-chef/plan
+        .merge(sous_chef_router)          // 🆕 Sous-Chef: POST /sous-chef/plan
         .merge(sous_chef_suggestions_router) // 🆕 Sous-Chef: GET /sous-chef/suggestions
-        .merge(public_lab_combos_router) // 🆕 Lab Combo SEO pages
+        .merge(public_lab_combos_router)  // 🆕 Lab Combo SEO pages
         .layer(axum::Extension(app_cache)); // 🧠 In-memory cache for all public handlers
 
     // Combine all routes

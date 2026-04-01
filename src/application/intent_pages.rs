@@ -69,15 +69,6 @@ const COMPARISON_SUB_INTENTS: &[&str] = &[
     "which-is-healthier-{a}-or-{b}",
 ];
 
-const MEASURE_SUB_INTENTS: &[&str] = &[
-    "tablespoon-{a}-grams",
-    "teaspoon-{a}-grams",
-    "cup-{a}-grams",
-    "glass-{a}-grams",
-    "100g-{a}-calories",
-    "how-much-{a}-per-day",
-];
-
 // ── Recipe intent matrix ─────────────────────────────────────────────────────
 // Each combination of (goal, meal_type, diet, cooking_time, budget, cuisine) creates a unique recipe landing page.
 // These are NOT sub-intents; they are dimension values for the SmartService context.
@@ -732,67 +723,7 @@ impl IntentPagesService {
             }
         }
 
-        // ── Phase 4: measure sub-intents (6 per product — conversion pages) ──
-        if intent_types.iter().any(|t| t == "measure") {
-            for slug in &slugs {
-                if count >= limit { break; }
-
-                for sub in MEASURE_SUB_INTENTS {
-                    if count >= limit { break; }
-                    let target_slug = sub_intent_to_slug(sub, slug, None);
-
-                    for locale in &locales {
-                        if count >= limit { break; }
-
-                        let exists: bool = sqlx::query_scalar(
-                            "SELECT EXISTS(SELECT 1 FROM intent_pages WHERE slug = $1 AND locale = $2)"
-                        )
-                        .bind(&target_slug)
-                        .bind(locale)
-                        .fetch_one(&self.pool)
-                        .await
-                        .unwrap_or(true);
-
-                        if exists { result.skipped += 1; continue; }
-
-                        let gen_req = GenerateRequest {
-                            intent_type: "measure".into(),
-                            entity_a: slug.clone(),
-                            entity_b: None,
-                            locale: locale.clone(),
-                            sub_intent: Some(sub.to_string()),
-                            goal: None,
-                            meal_type: None,
-                            diet: None,
-                            cooking_time: None,
-                            budget: None,
-                            cuisine: None,
-                        };
-
-                        match self.generate(&gen_req).await {
-                            Ok(page) => {
-                                result.generated += 1;
-                                result.details.push(format!("✅ {} / {} → '{}'",
-                                    target_slug, locale, page.title));
-                                count += 1;
-                                if auto_publish {
-                                    if let Ok(_) = self.publish(page.id).await {
-                                        result.published += 1;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                result.errors += 1;
-                                result.details.push(format!("❌ {} / {} → {}", target_slug, locale, e));
-                            }
-                        }
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                    }
-                }
-            }
-        }
-
-        // ── Phase 5: recipe_intent (goal × meal × diet × time × budget × cuisine) ──
+        // ── Phase 4: recipe_intent (goal × meal × diet × time × budget × cuisine) ──
         if intent_types.iter().any(|t| t == "recipe_intent") {
             for goal in RECIPE_GOALS {
                 if count >= limit { break; }
