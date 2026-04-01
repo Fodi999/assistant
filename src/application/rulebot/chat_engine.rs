@@ -16,7 +16,7 @@ use crate::infrastructure::IngredientCache;
 use crate::infrastructure::llm_adapter::LlmAdapter;
 use crate::domain::tools::unit_converter as uc;
 use super::intent_router::{detect_language, parse_input, ChatLang, HealthModifier, Intent};
-use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard};
+use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, Suggestion};
 use super::session_context::SessionContext;
 
 // ── Health goal (maps from HealthModifier + input context) ────────────────────
@@ -189,7 +189,7 @@ impl ChatEngine {
         // Suppress unused warning
         let _ = top_tag;
 
-        ChatResponse::with_cards(
+        let mut resp = ChatResponse::with_cards(
             text,
             cards,
             Intent::HealthyProduct,
@@ -197,7 +197,15 @@ impl ChatEngine {
             combined_reason,
             lang,
             0,
-        )
+        );
+
+        // ── Suggestions (next-step actions) ──
+        resp.suggestions = build_healthy_suggestions(lang, goal, &top_name);
+
+        // ── Chef tip ──
+        resp.chef_tip = Some(pick_chef_tip(top_p, lang, goal));
+
+        resp
     }
 
     /// Scan ALL ingredients from cache, rank by weighted normalized score.
@@ -528,11 +536,11 @@ impl ChatEngine {
                 ChatLang::En => format!("🍽️ Today's idea: **{}**\n\n{}\n\nMain ingredient: {} ({} kcal/100g)", meal_name, description, ingredient_name, p.calories_per_100g as i32),
                 ChatLang::Pl | ChatLang::Uk => format!("🍽️ Pomysł na dziś: **{}**\n\n{}\n\nGłówny składnik: {} ({} kcal/100g)", meal_name, description, ingredient_name, p.calories_per_100g as i32),
             };
-            return ChatResponse::with_card(
+            let mut resp = ChatResponse::with_card(
                 text,
                 Card::Product(ProductCard {
                     slug: p.slug.clone(),
-                    name: ingredient_name,
+                    name: ingredient_name.clone(),
                     calories_per_100g: p.calories_per_100g,
                     protein_per_100g: p.protein_per_100g,
                     fat_per_100g: p.fat_per_100g,
@@ -545,6 +553,9 @@ impl ChatEngine {
                 lang,
                 0,
             );
+            resp.suggestions = build_meal_suggestions(lang, slug);
+            resp.chef_tip = Some(pick_chef_tip(&p, lang, goal));
+            return resp;
         }
 
         let text = match lang {
@@ -984,6 +995,186 @@ fn detect_dish_keyword(text: &str) -> Option<&'static str> {
         }
     }
     None
+}
+
+// ── Suggestion & chef-tip builders ─────────────────────────────────────────────
+
+fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -> Vec<Suggestion> {
+    match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: format!("Рецепты с {}", top_name), query: format!("рецепт с {}", top_name), emoji: Some("📖") },
+            Suggestion { label: "Составь план на день".into(), query: "план питания на день".into(), emoji: Some("📋") },
+            Suggestion { label: "Ещё варианты".into(), query: match goal {
+                HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
+                HealthGoal::LowCalorie  => "ещё низкокалорийные продукты".into(),
+                HealthGoal::Balanced    => "ещё полезные продукты".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: format!("Recipes with {}", top_name), query: format!("recipe with {}", top_name), emoji: Some("📖") },
+            Suggestion { label: "Make a day plan".into(), query: "meal plan for the day".into(), emoji: Some("📋") },
+            Suggestion { label: "More options".into(), query: match goal {
+                HealthGoal::HighProtein => "more high protein foods".into(),
+                HealthGoal::LowCalorie  => "more low calorie foods".into(),
+                HealthGoal::Balanced    => "more healthy food ideas".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::Pl => vec![
+            Suggestion { label: format!("Przepisy z {}", top_name), query: format!("przepis z {}", top_name), emoji: Some("📖") },
+            Suggestion { label: "Zrób plan dnia".into(), query: "plan posiłków na dzień".into(), emoji: Some("📋") },
+            Suggestion { label: "Więcej opcji".into(), query: match goal {
+                HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
+                HealthGoal::LowCalorie  => "więcej niskokalorycznych produktów".into(),
+                HealthGoal::Balanced    => "więcej zdrowych produktów".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::Uk => vec![
+            Suggestion { label: format!("Рецепти з {}", top_name), query: format!("рецепт з {}", top_name), emoji: Some("📖") },
+            Suggestion { label: "Склади план на день".into(), query: "план харчування на день".into(), emoji: Some("📋") },
+            Suggestion { label: "Ще варіанти".into(), query: match goal {
+                HealthGoal::HighProtein => "ще високобілкові продукти".into(),
+                HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
+                HealthGoal::Balanced    => "ще корисні продукти".into(),
+            }, emoji: Some("🔄") },
+        ],
+    }
+}
+
+fn build_meal_suggestions(lang: ChatLang, slug: &str) -> Vec<Suggestion> {
+    match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: "Покажи рецепт".into(), query: format!("рецепт с {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "Другая идея".into(), query: "что ещё приготовить".into(), emoji: Some("🔄") },
+            Suggestion { label: "Калории продукта".into(), query: format!("калории {}", slug), emoji: Some("📊") },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: "Show recipe".into(), query: format!("recipe with {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "Another idea".into(), query: "another meal idea".into(), emoji: Some("🔄") },
+            Suggestion { label: "Product calories".into(), query: format!("calories in {}", slug), emoji: Some("📊") },
+        ],
+        ChatLang::Pl => vec![
+            Suggestion { label: "Pokaż przepis".into(), query: format!("przepis z {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "Inny pomysł".into(), query: "inny pomysł na posiłek".into(), emoji: Some("🔄") },
+            Suggestion { label: "Kalorie produktu".into(), query: format!("kalorie {}", slug), emoji: Some("📊") },
+        ],
+        ChatLang::Uk => vec![
+            Suggestion { label: "Покажи рецепт".into(), query: format!("рецепт з {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "Інша ідея".into(), query: "що ще приготувати".into(), emoji: Some("🔄") },
+            Suggestion { label: "Калорії продукту".into(), query: format!("калорії {}", slug), emoji: Some("📊") },
+        ],
+    }
+}
+
+fn pick_chef_tip(
+    p: &crate::infrastructure::ingredient_cache::IngredientData,
+    lang: ChatLang,
+    goal: HealthGoal,
+) -> String {
+    // Pick a tip based on product macros + goal
+    let high_protein = p.protein_per_100g >= 20.0;
+    let high_fat = p.fat_per_100g >= 15.0;
+    let low_cal = p.calories_per_100g < 80.0;
+
+    // Tip index rotation — so repeated calls get variety
+    let tip_seed = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() / 10) as usize
+    };
+
+    match lang {
+        ChatLang::Ru => {
+            let tips: Vec<&str> = match goal {
+                HealthGoal::HighProtein if high_protein => vec![
+                    "💡 Шеф-совет: готовь на пару — сохраняет до 95% белка, в отличие от жарки.",
+                    "💡 Шеф-совет: добавь лимонный сок — улучшает усвоение железа из белковых продуктов.",
+                    "💡 Шеф-совет: сочетай с киноа — получишь полный аминокислотный профиль.",
+                ],
+                HealthGoal::LowCalorie if low_cal => vec![
+                    "💡 Шеф-совет: запекай вместо жарки — экономишь ~80 ккал на порцию.",
+                    "💡 Шеф-совет: заправляй лимонным соком вместо масла — минус 100 ккал.",
+                    "💡 Шеф-совет: ешь медленнее — насыщение приходит через 20 минут.",
+                ],
+                HealthGoal::LowCalorie if high_fat => vec![
+                    "💡 Шеф-совет: этот продукт калорийный — используй в малых дозах как усилитель вкуса.",
+                ],
+                _ => vec![
+                    "💡 Шеф-совет: не переваривай овощи — аль-денте сохраняет витамины.",
+                    "💡 Шеф-совет: свежие специи (базилик, кинза) добавляй в конце — так ярче вкус.",
+                    "💡 Шеф-совет: дай мясу «отдохнуть» 5 мин после готовки — соки распределятся равномерно.",
+                ],
+            };
+            tips[tip_seed % tips.len()].to_string()
+        }
+        ChatLang::En => {
+            let tips: Vec<&str> = match goal {
+                HealthGoal::HighProtein if high_protein => vec![
+                    "💡 Chef tip: steam instead of frying — preserves up to 95% of protein.",
+                    "💡 Chef tip: add lemon juice — improves iron absorption from protein foods.",
+                    "💡 Chef tip: pair with quinoa for a complete amino acid profile.",
+                ],
+                HealthGoal::LowCalorie if low_cal => vec![
+                    "💡 Chef tip: bake instead of frying — saves ~80 kcal per serving.",
+                    "💡 Chef tip: use lemon juice instead of oil dressing — minus 100 kcal.",
+                    "💡 Chef tip: eat slowly — fullness takes 20 minutes to kick in.",
+                ],
+                HealthGoal::LowCalorie if high_fat => vec![
+                    "💡 Chef tip: this product is calorie-dense — use small amounts as a flavor booster.",
+                ],
+                _ => vec![
+                    "💡 Chef tip: don't overcook veggies — al dente preserves vitamins.",
+                    "💡 Chef tip: add fresh herbs (basil, cilantro) at the end for brighter flavor.",
+                    "💡 Chef tip: let meat rest 5 min after cooking — juices redistribute evenly.",
+                ],
+            };
+            tips[tip_seed % tips.len()].to_string()
+        }
+        ChatLang::Pl => {
+            let tips: Vec<&str> = match goal {
+                HealthGoal::HighProtein if high_protein => vec![
+                    "💡 Rada szefa: gotuj na parze — zachowuje do 95% białka.",
+                    "💡 Rada szefa: dodaj sok z cytryny — poprawia wchłanianie żelaza.",
+                    "💡 Rada szefa: połącz z quinoa — pełny profil aminokwasów.",
+                ],
+                HealthGoal::LowCalorie if low_cal => vec![
+                    "💡 Rada szefa: piecz zamiast smażyć — oszczędzasz ~80 kcal na porcję.",
+                    "💡 Rada szefa: zamiast oleju użyj soku z cytryny — minus 100 kcal.",
+                    "💡 Rada szefa: jedz wolniej — sytość przychodzi po 20 minutach.",
+                ],
+                HealthGoal::LowCalorie if high_fat => vec![
+                    "💡 Rada szefa: ten produkt jest kaloryczny — używaj w małych ilościach.",
+                ],
+                _ => vec![
+                    "💡 Rada szefa: nie rozgotowuj warzyw — al dente zachowuje witaminy.",
+                    "💡 Rada szefa: świeże zioła (bazylia, kolendra) dodawaj na końcu.",
+                    "💡 Rada szefa: daj mięsu odpocząć 5 min — soki się rozprowadzą.",
+                ],
+            };
+            tips[tip_seed % tips.len()].to_string()
+        }
+        ChatLang::Uk => {
+            let tips: Vec<&str> = match goal {
+                HealthGoal::HighProtein if high_protein => vec![
+                    "💡 Порада шефа: готуй на парі — зберігає до 95% білка.",
+                    "💡 Порада шефа: додай лимонний сік — покращує засвоєння заліза.",
+                    "💡 Порада шефа: поєднуй з кіноа — повний амінокислотний профіль.",
+                ],
+                HealthGoal::LowCalorie if low_cal => vec![
+                    "💡 Порада шефа: запікай замість смаження — економиш ~80 ккал.",
+                    "💡 Порада шефа: замість олії — лимонний сік, мінус 100 ккал.",
+                    "💡 Порада шефа: їж повільніше — ситість приходить через 20 хвилин.",
+                ],
+                HealthGoal::LowCalorie if high_fat => vec![
+                    "💡 Порада шефа: цей продукт калорійний — використовуй як підсилювач смаку.",
+                ],
+                _ => vec![
+                    "💡 Порада шефа: не перевар овочі — аль-денте зберігає вітаміни.",
+                    "💡 Порада шефа: свіжі спеції додавай в кінці — так яскравіший смак.",
+                    "💡 Порада шефа: дай м'ясу «відпочити» 5 хв — соки розподіляться.",
+                ],
+            };
+            tips[tip_seed % tips.len()].to_string()
+        }
+    }
 }
 
 // needed for hour/day helpers

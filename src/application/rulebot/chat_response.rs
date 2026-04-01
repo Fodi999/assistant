@@ -25,17 +25,33 @@ pub struct ChatResponse {
     /// Primary detected intent (backward compat).
     pub intent: Intent,
     /// All detected intents — enables multi-intent responses.
-    /// Example: ["healthy_product", "quick"] for "что-то полезное и быстрое"
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub intents: Vec<Intent>,
     /// Explainability reason — WHY this product/result was chosen.
-    /// Example: "high protein — 31.0g/100g" | "low calorie — 33 kcal/100g"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Next-step action suggestions — "Zrób plan dnia", "Pokaż przepisy"
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub suggestions: Vec<Suggestion>,
+    /// Chef tip — cooking insight from the "chef mode".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chef_tip: Option<String>,
     /// Detected language.
     pub lang: ChatLang,
     /// Processing time in milliseconds.
     pub timing_ms: u64,
+}
+
+/// A follow-up action the user can tap (rendered as a button).
+#[derive(Debug, Serialize, Clone)]
+pub struct Suggestion {
+    /// Button label shown to user.
+    pub label: String,
+    /// The exact query to send when tapped.
+    pub query: String,
+    /// Optional emoji icon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<&'static str>,
 }
 
 impl ChatResponse {
@@ -47,6 +63,8 @@ impl ChatResponse {
             intent,
             intents: vec![],
             reason: None,
+            suggestions: vec![],
+            chef_tip: None,
             lang,
             timing_ms,
         }
@@ -66,6 +84,8 @@ impl ChatResponse {
             intent,
             intents: vec![],
             reason: None,
+            suggestions: vec![],
+            chef_tip: None,
             lang,
             timing_ms,
         }
@@ -87,6 +107,8 @@ impl ChatResponse {
             intent,
             intents,
             reason: Some(reason.into()),
+            suggestions: vec![],
+            chef_tip: None,
             lang,
             timing_ms,
         }
