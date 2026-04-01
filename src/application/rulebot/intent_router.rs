@@ -333,6 +333,7 @@ fn score_nutrition(text: &str) -> i32 {
 
 fn score_healthy(text: &str) -> i32 {
     let keywords: &[ScoredKeyword] = &[
+        // Direct healthy-food requests
         ("полезн",        3), ("healthy",        3), ("zdrow",          3),
         ("корисн",        3), ("superfood",      3),
         ("самый полезный",3), ("most nutritious",3),
@@ -341,6 +342,22 @@ fn score_healthy(text: &str) -> i32 {
         ("вітамін",       2), ("good for health",2), ("полезного",      2),
         ("антиоксидант",  1), ("antioxidant",    1), ("иммунитет",      1),
         ("immunity",      1), ("диет",           1), ("diet",           1),
+        // Goal phrases → HealthyProduct (these MUST produce cards, not LLM fallback)
+        ("похуд",         5), ("schudnąć",       5), ("lose weight",    5),
+        ("хочу похудеть", 5), ("chcę schudnąć",  5), ("want to lose",   5),
+        ("хочу схуднути", 5), ("сбросить вес",   5), ("скинуть вес",    5),
+        ("сушк",          4), ("сушит",          4), ("жиросжиган",     4),
+        ("для похудения", 5), ("на похудение",   5), ("на сушку",       4),
+        ("na odchudzanie",5), ("для зниження",   4), ("znizit ves",     4),
+        // Muscle / protein goals → also HealthyProduct
+        ("набрать мышц",  5), ("набор массы",    5), ("на массу",       5),
+        ("мышечн",        4), ("muscle",         4), ("на белок",       4),
+        ("nabrać masy",   5), ("на протеин",     4), ("protein goal",   4),
+        ("набрати масу",  5),
+        // Generic "что есть" / "что поесть" → HealthyProduct
+        ("что есть",      3), ("что поесть",     3), ("что съесть",     3),
+        ("co jeść",       3), ("co zjeść",       3), ("що їсти",        3),
+        ("що поїсти",     3), ("что кушать",     3),
     ];
     sum_scores(text, keywords)
 }
@@ -447,6 +464,16 @@ mod tests {
 
     #[test] fn season_ru()       { assert_eq!(detect_intent("когда сезон лосося"),      Intent::Seasonality); }
     #[test] fn season_en()       { assert_eq!(detect_intent("is salmon in season"),     Intent::Seasonality); }
+
+    // Goal phrases → must route to HealthyProduct (NOT Unknown/LLM)
+    #[test] fn goal_lose_weight_ru()  { assert_eq!(detect_intent("хочу похудеть"),         Intent::HealthyProduct); }
+    #[test] fn goal_lose_weight_pl()  { assert_eq!(detect_intent("chcę schudnąć"),         Intent::HealthyProduct); }
+    #[test] fn goal_lose_weight_en()  { assert_eq!(detect_intent("I want to lose weight"), Intent::HealthyProduct); }
+    #[test] fn goal_muscle_ru()       { assert_eq!(detect_intent("хочу набрать мышечную массу"), Intent::HealthyProduct); }
+    #[test] fn goal_na_massu_ru()     { assert_eq!(detect_intent("что есть на массу"),     Intent::HealthyProduct); }
+    #[test] fn goal_chto_est_ru()     { assert_eq!(detect_intent("что поесть"),             Intent::HealthyProduct); }
+    #[test] fn goal_chto_est_pl()     { assert_eq!(detect_intent("co zjeść"),               Intent::HealthyProduct); }
+    #[test] fn goal_sushka_ru()       { assert_eq!(detect_intent("питание на сушку"),       Intent::HealthyProduct); }
 
     #[test] fn unknown_garbage() { assert_eq!(detect_intent("asdfghjkl"),               Intent::Unknown); }
 
