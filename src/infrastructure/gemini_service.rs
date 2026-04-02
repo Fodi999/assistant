@@ -303,8 +303,21 @@ Pick the best match. Do not invent values."#,
         &self,
         request_body: &serde_json::Value,
     ) -> Result<String, AppError> {
+        // Pro (thinking) models need more time — chain-of-thought adds latency.
+        // Flash: ~10-20s, Pro: ~30-60s.
+        let timeout_secs = if request_body
+            .get("model")
+            .and_then(|m| m.as_str())
+            .map(|m| m.contains("pro"))
+            .unwrap_or(false)
+        {
+            90
+        } else {
+            45
+        };
+
         let result = tokio::time::timeout(
-            Duration::from_secs(30),
+            Duration::from_secs(timeout_secs),
             self.send_gemini_request_inner(request_body),
         )
         .await;
@@ -313,8 +326,8 @@ Pick the best match. Do not invent values."#,
             Ok(Ok(content)) => Ok(content),
             Ok(Err(e)) => Err(e),
             Err(_) => {
-                tracing::error!("🔮 Gemini request timeout (30s exceeded)");
-                Err(AppError::internal("Gemini API timeout"))
+                tracing::error!("🔮 Gemini request timeout ({}s exceeded)", timeout_secs);
+                Err(AppError::internal(&format!("Gemini API timeout ({}s)", timeout_secs)))
             }
         }
     }

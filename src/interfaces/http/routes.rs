@@ -771,6 +771,7 @@ pub fn create_router(
         .route("/:id/archive", post(admin_lab_combos::archive_combo))
         .route("/:id", axum::routing::delete(admin_lab_combos::delete_combo))
         .route("/:id", axum::routing::patch(admin_lab_combos::update_combo))
+        .route("/:id", get(admin_lab_combos::get_combo))
         .route("/:id/image-upload-url", get(admin_lab_combos::get_image_upload_url))
         .route("/:id/image-url", axum::routing::put(admin_lab_combos::save_image_url))
         .route("/:id/image-upload-url/:kind", get(admin_lab_combos::get_typed_image_upload_url))

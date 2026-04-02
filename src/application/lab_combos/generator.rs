@@ -81,8 +81,12 @@ pub async fn enrich_with_ai(
         combo_id, model, steps_prompt.len()
     );
 
+    // Thinking models (Pro) use internal chain-of-thought that consumes output tokens.
+    // Give them extra budget so the actual JSON isn't truncated.
+    let steps_max_tokens: u32 = if model.contains("pro") { 4000 } else { 2000 };
+
     metrics::record_ai_call(true, model);
-    let steps_raw = match llm.groq_raw_request_with_model(&steps_prompt, 2000, model).await {
+    let steps_raw = match llm.groq_raw_request_with_model(&steps_prompt, steps_max_tokens, model).await {
         Ok(r) => {
             tracing::info!("📥 Steps response: {} chars — preview: {}", r.len(), safe_preview(&r, 200));
             r
@@ -198,8 +202,10 @@ pub async fn enrich_with_ai(
     );
 
     metrics::record_ai_call(true, model);
+    // Same as steps: give thinking models extra budget for chain-of-thought
+    let seo_max_tokens: u32 = if model.contains("pro") { 4000 } else { 2500 };
     // 2500 tokens — cyrillic text requires ~2-3 tokens per word vs ~1 for English
-    let seo_raw = match llm.groq_raw_request_with_model(&seo_prompt, 2500, model).await {
+    let seo_raw = match llm.groq_raw_request_with_model(&seo_prompt, seo_max_tokens, model).await {
         Ok(r) => {
             tracing::info!("📥 SEO response: {} chars", r.len());
             r
@@ -425,8 +431,9 @@ async fn attempt_fix(
 
     tracing::info!("🔧 Auto-fix call — prompt: {} chars", fix_prompt.len());
 
+    let fix_max_tokens: u32 = if model.contains("pro") { 4000 } else { 2000 };
     metrics::record_ai_call(true, model);
-    match llm.groq_raw_request_with_model(&fix_prompt, 2000, model).await {
+    match llm.groq_raw_request_with_model(&fix_prompt, fix_max_tokens, model).await {
         Ok(fix_response) => {
             match parse_json_array(&fix_response) {
                 Some(val) => {

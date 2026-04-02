@@ -201,6 +201,14 @@ impl Recipe {
                 || all_lower.contains("котлет")
                 || all_lower.contains("шарик")
                 || all_lower.contains("лепёшк")
+                // PL: uformuj, formuj, ulepić, kulki, kotlety, paluszki
+                || all_lower.contains("uformuj") || all_lower.contains("formuj")
+                || all_lower.contains("kulki") || all_lower.contains("kotlety")
+                || all_lower.contains("paluszki") || all_lower.contains("ulepić")
+                // UK: сформуйте, формуйте, зліпіть, кульки, котлет, паличк
+                || all_lower.contains("сформуйте") || all_lower.contains("формуйте")
+                || all_lower.contains("зліпіть") || all_lower.contains("кульки")
+                || all_lower.contains("паличк")
                 || steps.iter().any(|s| s.step_type == "forming");
             if !has_forming {
                 critical_violations.push(format!(
@@ -228,7 +236,12 @@ impl Recipe {
                 || all_lower.contains("молок")
                 || all_lower.contains("milk")
                 || all_lower.contains("жидкост")
-                || all_lower.contains("liquid");
+                || all_lower.contains("liquid")
+                // PL: bulion, woda, mleko, płyn
+                || all_lower.contains("bulion") || all_lower.contains("woda")
+                || all_lower.contains("mleko") || all_lower.contains("płyn")
+                // UK: бульйон, вод, молок, рідин
+                || all_lower.contains("бульйон") || all_lower.contains("рідин");
             if !has_liquid {
                 critical_violations.push(format!(
                     "MISSING_LIQUID: '{}' requires liquid base",
@@ -496,39 +509,83 @@ fn compute_quality(
 fn technique_in_text(technique: &CookingTechnique, text: &str) -> bool {
     match technique {
         CookingTechnique::Fry => {
+            // RU: обжар*, жар*, сковород*
             text.contains("обжар") || text.contains("жар") || text.contains("сковород")
+                // EN: fry, sear, sauté, pan
                 || text.contains("fry") || text.contains("sear") || text.contains("sauté")
                 || text.contains("pan ")
+                // PL: smażyć, smażenie, patelni, podsmażyć
+                || text.contains("smaż") || text.contains("patelni") || text.contains("podsmaż")
+                // UK: смажити, смажте, обсмаж*, сковорід*
+                || text.contains("смаж") || text.contains("сковорід")
+                || text.contains("обсмаж")
         }
         CookingTechnique::DeepFry => {
             text.contains("фритюр") || text.contains("deep fry") || text.contains("deep-fry")
                 || text.contains("во фритюре") || (text.contains("масле") && text.contains("погру"))
+                // PL: głęboki tłuszcz, frytownic
+                || text.contains("frytownic") || text.contains("głębok")
+                // UK: фритюр, у фритюрі
+                || text.contains("у фритюрі")
         }
         CookingTechnique::Bake => {
-            text.contains("духовк") || text.contains("запек") || text.contains("bake")
-                || text.contains("oven") || text.contains("°c") || text.contains("°f")
-                || text.contains("градус")
+            // RU: духовк*, запек*
+            text.contains("духовк") || text.contains("запек")
+                // EN: bake, oven
+                || text.contains("bake") || text.contains("oven")
+                // Temperature markers (all languages)
+                || text.contains("°c") || text.contains("°f") || text.contains("градус")
+                // PL: piec, piekarnik, pieczenie, zapiekać, zapiekaj
+                || text.contains("piekarnik") || text.contains("zapiek") || text.contains("piecz")
+                || text.contains("pieczeni")
+                // UK: духовк*, духовці, запік*, запечі, запікай
+                || text.contains("духовці") || text.contains("запік") || text.contains("запечі")
+                || text.contains("запікай")
         }
         CookingTechnique::Boil => {
+            // RU: свар*, кипя*, варит*, кастрюл*, кипящ*
             text.contains("свар") || text.contains("кипя") || text.contains("варит")
-                || text.contains("boil") || text.contains("кастрюл") || text.contains("кипящ")
+                || text.contains("кастрюл") || text.contains("кипящ")
+                // EN
+                || text.contains("boil")
+                // PL: gotować, gotuj, zagotuj, garnek (pot)
+                || text.contains("gotuj") || text.contains("gotow") || text.contains("zagotuj")
+                || text.contains("garnek")
+                // UK: зварити, варіть, кип'ят*, каструл*
+                || text.contains("зварит") || text.contains("варіт") || text.contains("каструл")
         }
         CookingTechnique::Steam => {
             text.contains("пар") || text.contains("steam") || text.contains("на пару")
                 || text.contains("пароварк")
+                // PL: parować, na parze, parowar
+                || text.contains("parow") || text.contains("na parze") || text.contains("parowar")
+                // UK: на парі, пароварк*
+                || text.contains("на парі")
         }
         CookingTechnique::Grill => {
             text.contains("гриль") || text.contains("grill") || text.contains("на углях")
                 || text.contains("решётк") || text.contains("barbecue")
+                // PL: grilować, griluj, ruszt
+                || text.contains("grilluj") || text.contains("griluj") || text.contains("ruszt")
+                // UK: гриль, решітк*
+                || text.contains("решітк")
         }
         CookingTechnique::StirFry => {
             text.contains("вок") || text.contains("wok") || text.contains("стир-фрай")
                 || text.contains("stir-fry") || text.contains("stir fry")
                 || text.contains("быстро обжар") || text.contains("помешивая")
+                // PL: smażyć mieszając, szybko smażyć
+                || text.contains("mieszając")
+                // UK: швидко обсмаж*, помішуючи
+                || text.contains("помішуючи") || text.contains("швидко обсмаж")
         }
         CookingTechnique::Braise => {
             text.contains("тушит") || text.contains("тушен") || text.contains("braise")
                 || text.contains("на медленном") || text.contains("simmer")
+                // PL: dusić, duszenie, duszony
+                || text.contains("dusz") || text.contains("dusi")
+                // UK: тушкувати, тушкуй
+                || text.contains("тушкув") || text.contains("тушкуй")
         }
         CookingTechnique::RawAssembly => {
             // Raw assembly = dish assembled without heat (salads, bowls).
@@ -539,23 +596,41 @@ fn technique_in_text(technique: &CookingTechnique, text: &str) -> bool {
                 || text.contains("перемешайте") || text.contains("полейте")
                 || text.contains("assemble") || text.contains("arrange")
                 || text.contains("toss") || text.contains("mix")
-                || text.contains("нарежь") || text.contains("порвите");
+                || text.contains("нарежь") || text.contains("порвите")
+                // PL: pokrój, wymieszaj, ułóż
+                || text.contains("pokrój") || text.contains("wymieszaj") || text.contains("ułóż")
+                // UK: наріжте, змішайте, викладіть
+                || text.contains("наріжте") || text.contains("змішайте") || text.contains("викладіть");
             let heat_present = text.contains("обжар") || text.contains("свар")
                 || text.contains("запек") || text.contains("духовк") || text.contains("сковород")
                 || text.contains("жар") || text.contains("тушит") || text.contains("варит")
                 || text.contains("кипя") || text.contains("гриль") || text.contains("вок")
                 || text.contains("фритюр") || text.contains("пароварк")
                 || text.contains("fry") || text.contains("bake") || text.contains("boil")
-                || text.contains("grill") || text.contains("steam") || text.contains("braise");
+                || text.contains("grill") || text.contains("steam") || text.contains("braise")
+                // PL
+                || text.contains("smaż") || text.contains("patelni") || text.contains("piekarnik")
+                || text.contains("gotuj") || text.contains("dusz")
+                // UK
+                || text.contains("смаж") || text.contains("сковорід") || text.contains("духовці")
+                || text.contains("варіт") || text.contains("тушкув");
             assembly_verbs && !heat_present
         }
         CookingTechnique::Blend => {
             text.contains("блендер") || text.contains("blend") || text.contains("взбейте")
                 || text.contains("пюрир") || text.contains("измельч")
+                // PL: blender, zmiksuj
+                || text.contains("zmiksuj") || text.contains("mikser")
+                // UK: блендер, збийте, подрібн*
+                || text.contains("збийте") || text.contains("подрібн")
         }
         CookingTechnique::Simmer => {
             text.contains("томит") || text.contains("на медленном") || text.contains("simmer")
                 || text.contains("тушит") || text.contains("помешива")
+                // PL: na wolnym ogniu, gotować na małym
+                || text.contains("wolnym ogniu") || text.contains("na małym")
+                // UK: на повільному вогні, томити
+                || text.contains("повільному вогні") || text.contains("томит")
         }
     }
 }

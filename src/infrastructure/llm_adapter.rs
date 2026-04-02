@@ -182,9 +182,21 @@ impl LlmAdapter {
         model: &str,
     ) -> Result<String, AppError> {
         let start = Instant::now();
+
+        // Thinking models (Pro) sometimes leak chain-of-thought text into the output.
+        // A system message with strict "JSON only" instruction reduces this.
+        let messages = if model.contains("pro") {
+            serde_json::json!([
+                {"role": "system", "content": "You are a JSON API. Return ONLY valid JSON — no markdown, no explanations, no thinking, no commentary. If the user asks for an array, return [...]. If the user asks for an object, return {...}."},
+                {"role": "user", "content": prompt}
+            ])
+        } else {
+            serde_json::json!([{"role": "user", "content": prompt}])
+        };
+
         let request_body = serde_json::json!({
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "temperature": 0.1,
             "max_tokens": max_tokens,
         });

@@ -26,6 +26,16 @@ pub async fn generate_combo(
     Ok((StatusCode::CREATED, Json(page)))
 }
 
+/// GET /api/admin/lab-combos/:id
+pub async fn get_combo(
+    _claims: AdminClaims,
+    State(svc): State<Arc<LabComboService>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<LabComboPage>, AppError> {
+    let page = svc.get_by_id(id).await?;
+    Ok(Json(page))
+}
+
 /// POST /api/admin/lab-combos/generate-all-locales
 /// Generate a combo for all 4 locales (en, pl, ru, uk) in one call.
 pub async fn generate_all_locales(

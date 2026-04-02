@@ -388,6 +388,12 @@ impl LabComboService {
 
     // ── Delegated CRUD ──────────────────────────────────────────────────
 
+    pub async fn get_by_id(&self, id: Uuid) -> AppResult<LabComboPage> {
+        self.repo.get_by_id(id).await?.ok_or_else(|| {
+            AppError::not_found(format!("lab combo page {} not found", id))
+        })
+    }
+
     pub async fn publish(&self, id: Uuid) -> AppResult<LabComboPage> {
         self.repo.publish(id).await
     }
