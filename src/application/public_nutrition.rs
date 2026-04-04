@@ -203,12 +203,16 @@ pub struct RankingPageResponse {
 impl PublicNutritionService {
     // ── GET /public/nutrition/:slug ────────────────────────────────────────────
     pub async fn get_nutrition_page(&self, slug: &str) -> AppResult<NutritionPageResponse> {
-        // 1. Basic product info
+        // 1. Basic product info (with image fallback from catalog_ingredients)
         let basic: Option<ProductBasicPublicRow> = sqlx::query_as(
-            r#"SELECT id, slug, name_en, name_ru, name_pl, name_uk,
-                      product_type, unit, image_url, description_en,
-                      typical_portion_g, wild_farmed, water_type, sushi_grade
-               FROM products WHERE slug = $1"#,
+            r#"SELECT p.id, p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
+                      p.product_type, p.unit,
+                      COALESCE(p.image_url, ci.image_url) AS image_url,
+                      p.description_en,
+                      p.typical_portion_g, p.wild_farmed, p.water_type, p.sushi_grade
+               FROM products p
+               LEFT JOIN catalog_ingredients ci ON ci.id = p.id
+               WHERE p.slug = $1"#,
         )
         .bind(slug)
         .fetch_optional(&self.pool)
@@ -286,10 +290,12 @@ impl PublicNutritionService {
 
         // 9. Top-10 pairings (best pair_score)
         let pairings: Vec<PairingPublicRow> = sqlx::query_as(
-            r#"SELECT b.slug, b.name_en, b.name_ru, b.name_pl, b.name_uk, b.image_url,
+            r#"SELECT b.slug, b.name_en, b.name_ru, b.name_pl, b.name_uk,
+                      COALESCE(b.image_url, ci.image_url) AS image_url,
                       fp.pair_score, fp.flavor_score, fp.nutrition_score, fp.culinary_score
                FROM food_pairing fp
                JOIN products b ON b.id = fp.ingredient_b
+               LEFT JOIN catalog_ingredients ci ON ci.id = b.id
                WHERE fp.ingredient_a = $1
                ORDER BY fp.pair_score DESC NULLS LAST
                LIMIT 10"#,
@@ -359,15 +365,17 @@ impl PublicNutritionService {
             .unwrap_or(0)
         };
 
-        // Products with macros
+        // Products with macros — fallback to catalog_ingredients for image_url
         let products: Vec<DietProductRow> = if use_type {
             sqlx::query_as(&format!(
                 r#"SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
-                          p.product_type, p.image_url,
+                          p.product_type,
+                          COALESCE(p.image_url, ci.image_url) AS image_url,
                           m.calories_kcal, m.protein_g, m.fat_g, m.carbs_g
                    FROM products p
                    JOIN diet_flags df ON df.product_id = p.id
                    LEFT JOIN nutrition_macros m ON m.product_id = p.id
+                   LEFT JOIN catalog_ingredients ci ON ci.id = p.id
                    WHERE df.{col} = true AND p.product_type = $1
                    ORDER BY m.calories_kcal ASC NULLS LAST
                    LIMIT $2 OFFSET $3"#
@@ -381,11 +389,13 @@ impl PublicNutritionService {
         } else {
             sqlx::query_as(&format!(
                 r#"SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
-                          p.product_type, p.image_url,
+                          p.product_type,
+                          COALESCE(p.image_url, ci.image_url) AS image_url,
                           m.calories_kcal, m.protein_g, m.fat_g, m.carbs_g
                    FROM products p
                    JOIN diet_flags df ON df.product_id = p.id
                    LEFT JOIN nutrition_macros m ON m.product_id = p.id
+                   LEFT JOIN catalog_ingredients ci ON ci.id = p.id
                    WHERE df.{col} = true
                    ORDER BY m.calories_kcal ASC NULLS LAST
                    LIMIT $1 OFFSET $2"#
@@ -458,10 +468,12 @@ impl PublicNutritionService {
             sqlx::query_as(&format!(
                 r#"SELECT ROW_NUMBER() OVER (ORDER BY t.{col} {effective_order} NULLS LAST) AS rank,
                           p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
-                          p.product_type, p.image_url,
+                          p.product_type,
+                          COALESCE(p.image_url, ci.image_url) AS image_url,
                           t.{col} AS metric_value
                    FROM products p
                    JOIN {table} t ON t.product_id = p.id
+                   LEFT JOIN catalog_ingredients ci ON ci.id = p.id
                    WHERE t.{col} IS NOT NULL AND p.product_type = $1
                    ORDER BY t.{col} {effective_order} NULLS LAST
                    LIMIT $2"#
@@ -475,10 +487,12 @@ impl PublicNutritionService {
             sqlx::query_as(&format!(
                 r#"SELECT ROW_NUMBER() OVER (ORDER BY t.{col} {effective_order} NULLS LAST) AS rank,
                           p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
-                          p.product_type, p.image_url,
+                          p.product_type,
+                          COALESCE(p.image_url, ci.image_url) AS image_url,
                           t.{col} AS metric_value
                    FROM products p
                    JOIN {table} t ON t.product_id = p.id
+                   LEFT JOIN catalog_ingredients ci ON ci.id = p.id
                    WHERE t.{col} IS NOT NULL
                    ORDER BY t.{col} {effective_order} NULLS LAST
                    LIMIT $1"#
