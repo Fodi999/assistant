@@ -750,8 +750,9 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
 
     // ── v3 Step 1+11c: Goal-aware suggestions ────────────────────────────────
     // Run SuggestionEngine, then re-rank by goal
+    let diag_issues = raw_diag.as_ref().map(|d| d.issues.as_slice()).unwrap_or(&[]);
     let suggestion_result = suggestion_engine::suggest_ingredients(
-        balance, &all_candidates, &existing_slugs, 10, // fetch more, then re-rank
+        balance, &all_candidates, &existing_slugs, 10, diag_issues, // fetch more, then re-rank
     );
     let mut scored_suggestions: Vec<SuggestionInfo> = suggestion_result
         .suggestions

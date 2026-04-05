@@ -408,12 +408,34 @@ pub async fn recipe_analyze(
         }
     }).collect();
 
-    // ── 5. Run suggestion engine ──
+    let total_grams: f64 = domain_inputs.iter().map(|i| i.grams).sum();
+
+    // ── 5. Run Rule Engine diagnosis (BEFORE suggestions — so we can pass issues) ──
+    let rule_ctx = rule_engine::RecipeContext {
+        flavor: analysis.flavor.vector.clone(),
+        balance_score: analysis.flavor.balance_score,
+        total_calories: analysis.total_nutrition.calories,
+        protein_pct: analysis.macros.protein_pct,
+        fat_pct: analysis.macros.fat_pct,
+        carbs_pct: analysis.macros.carbs_pct,
+        fiber_g: analysis.total_nutrition.fiber_g,
+        sugar_g: analysis.total_nutrition.sugar_g,
+        total_grams,
+        ingredients: body.ingredients.iter().map(|inp| {
+            let pt = find_row(&inp.slug).and_then(|r| r.product_type.clone());
+            (inp.slug.clone(), inp.grams, pt)
+        }).collect(),
+        nutrition_score: analysis.nutrition_score,
+    };
+    let diagnosis = rule_engine::diagnose(&rule_ctx);
+
+    // ── 6. Run suggestion engine (with rule issues for global health scoring) ──
     let suggestion_result = suggestion_engine::suggest_ingredients(
         &analysis.flavor,
         &candidates,
         &slugs,
         5,
+        &diagnosis.issues,
     );
 
     let suggestions: Vec<SuggestionItem> = suggestion_result.suggestions.iter().map(|s| {
@@ -434,8 +456,7 @@ pub async fn recipe_analyze(
         }
     }).collect();
 
-    // ── 6. Compute flavor influence map ──
-    let total_grams: f64 = domain_inputs.iter().map(|i| i.grams).sum();
+    // ── 7. Compute flavor influence map ──
 
     // Weighted absolute values: flavor_dimension * (grams / total_grams)
     struct WeightedFlavor { slug: String, s: f64, a: f64, b: f64, u: f64, f: f64, ar: f64 }
@@ -481,25 +502,6 @@ pub async fn recipe_analyze(
             pct_aroma:       pct(w.ar, tar),
         }
     }).collect();
-
-    // ── 7. Run Rule Engine diagnosis ──
-    let rule_ctx = rule_engine::RecipeContext {
-        flavor: analysis.flavor.vector.clone(),
-        balance_score: analysis.flavor.balance_score,
-        total_calories: analysis.total_nutrition.calories,
-        protein_pct: analysis.macros.protein_pct,
-        fat_pct: analysis.macros.fat_pct,
-        carbs_pct: analysis.macros.carbs_pct,
-        fiber_g: analysis.total_nutrition.fiber_g,
-        sugar_g: analysis.total_nutrition.sugar_g,
-        total_grams,
-        ingredients: body.ingredients.iter().map(|inp| {
-            let pt = find_row(&inp.slug).and_then(|r| r.product_type.clone());
-            (inp.slug.clone(), inp.grams, pt)
-        }).collect(),
-        nutrition_score: analysis.nutrition_score,
-    };
-    let diagnosis = rule_engine::diagnose(&rule_ctx);
 
     // ── 8. Build response ──
     let fv = &analysis.flavor.vector;

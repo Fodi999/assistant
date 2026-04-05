@@ -6,10 +6,12 @@
 //! No DB, no HTTP — pure functions. The application layer fetches
 //! candidates from DB and passes them here for scoring.
 
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use crate::domain::tools::unit_converter as uc;
 use crate::domain::tools::flavor_graph::{FlavorVector, FlavorBalance};
 use crate::domain::tools::nutrition::NutritionBreakdown;
+use crate::domain::tools::rule_engine::RuleIssue;
 
 // ── Input: candidate ingredient ──────────────────────────────────────────────
 
@@ -60,24 +62,42 @@ pub struct SuggestionResult {
 
 /// How much each factor contributes to the final suggestion score.
 struct Weights {
-    /// How well the candidate fills flavor gaps (0–40 points)
+    /// How well the candidate fills flavor gaps (0–30 points)
     flavor_gap_fill: f64,
-    /// Pairing score with existing ingredients (0–30 points)
+    /// Pairing score with existing ingredients (0–20 points)
     pairing:         f64,
-    /// Nutritional improvement potential (0–20 points)
+    /// Nutritional improvement potential (0–15 points)
     nutrition:       f64,
-    /// Aromatic contribution (0–10 points)
+    /// Aromatic contribution (0–5 points)
     aroma:           f64,
+    /// Bonus for fixing rule_engine issues — health-level improvement (0–30 points)
+    rule_fix:        f64,
 }
 
 const WEIGHTS: Weights = Weights {
-    flavor_gap_fill: 40.0,
-    pairing:         30.0,
-    nutrition:       20.0,
-    aroma:           10.0,
+    flavor_gap_fill: 30.0,
+    pairing:         20.0,
+    nutrition:       15.0,
+    aroma:            5.0,
+    rule_fix:        30.0,
 };
 
 // ── Core suggestion function ─────────────────────────────────────────────────
+
+/// Build a slug→max_impact map from rule_engine issues.
+/// Each fix_slug gets the highest impact from any issue that references it.
+fn build_rule_fix_map(issues: &[RuleIssue]) -> HashMap<String, f64> {
+    let mut map: HashMap<String, f64> = HashMap::new();
+    for issue in issues {
+        if issue.severity == "info" { continue; }
+        let impact = issue.impact as f64;
+        for slug in &issue.fix_slugs {
+            let entry = map.entry(slug.clone()).or_insert(0.0);
+            if impact > *entry { *entry = impact; }
+        }
+    }
+    map
+}
 
 /// Score and rank candidate ingredients for a recipe.
 ///
@@ -86,16 +106,20 @@ const WEIGHTS: Weights = Weights {
 /// - `candidates`: potential ingredients to add
 /// - `existing_slugs`: slugs already in the recipe (to exclude)
 /// - `max_results`: how many suggestions to return
+/// - `issues`: active rule_engine issues (for global health-aware scoring)
 pub fn suggest_ingredients(
     balance: &FlavorBalance,
     candidates: &[Candidate],
     existing_slugs: &[String],
     max_results: usize,
+    issues: &[RuleIssue],
 ) -> SuggestionResult {
+    let rule_fix_map = build_rule_fix_map(issues);
+
     let mut suggestions: Vec<Suggestion> = candidates
         .iter()
         .filter(|c| !existing_slugs.contains(&c.slug))
-        .map(|c| score_candidate(balance, c))
+        .map(|c| score_candidate(balance, c, &rule_fix_map))
         .filter(|s| s.score > 10) // minimum threshold
         .collect();
 
@@ -110,37 +134,48 @@ pub fn suggest_ingredients(
 }
 
 /// Score a single candidate against the current recipe balance.
-fn score_candidate(balance: &FlavorBalance, candidate: &Candidate) -> Suggestion {
+fn score_candidate(balance: &FlavorBalance, candidate: &Candidate, rule_fix_map: &HashMap<String, f64>) -> Suggestion {
     let mut reasons = Vec::new();
     let mut fills_gaps = Vec::new();
     let mut score = 0.0;
 
-    // ── 1. Flavor gap filling (up to 40 points) ──
+    // ── 1. Flavor gap filling (up to 30 points) ──
     let gap_score = flavor_gap_score(balance, &candidate.flavor, &mut fills_gaps);
     score += gap_score * WEIGHTS.flavor_gap_fill;
     if !fills_gaps.is_empty() {
         reasons.push(format!("fills flavor gap: {}", fills_gaps.join(", ")));
     }
 
-    // ── 2. Pairing affinity (up to 30 points) ──
+    // ── 2. Pairing affinity (up to 20 points) ──
     let pair_norm = (candidate.pair_score / 10.0).clamp(0.0, 1.0);
     score += pair_norm * WEIGHTS.pairing;
     if candidate.pair_score > 6.0 {
         reasons.push(format!("strong pairing affinity ({:.1})", candidate.pair_score));
     }
 
-    // ── 3. Nutritional value (up to 20 points) ──
+    // ── 3. Nutritional value (up to 15 points) ──
     let nut_score = nutrition_bonus(&candidate.nutrition);
     score += nut_score * WEIGHTS.nutrition;
     if nut_score > 0.5 {
         reasons.push("adds nutritional value".to_string());
     }
 
-    // ── 4. Aroma contribution (up to 10 points) ──
+    // ── 4. Aroma contribution (up to 5 points) ──
     let aroma_norm = (candidate.flavor.aroma / 10.0).clamp(0.0, 1.0);
     score += aroma_norm * WEIGHTS.aroma;
     if candidate.flavor.aroma > 6.0 {
         reasons.push("aromatic boost".to_string());
+    }
+
+    // ── 5. Rule-fix bonus (up to 30 points) — GLOBAL health improvement ──
+    // If this candidate is a fix_slug for any active rule issue,
+    // it gets a big bonus proportional to the issue's impact.
+    if let Some(&impact) = rule_fix_map.get(&candidate.slug) {
+        // impact is 3..15; normalize to 0..1 where 15 → 1.0
+        let fix_norm = (impact / 15.0).clamp(0.0, 1.0);
+        score += fix_norm * WEIGHTS.rule_fix;
+        reasons.push("fixes recipe issue".to_string());
+        fills_gaps.push("health".to_string());
     }
 
     if reasons.is_empty() {
@@ -274,13 +309,14 @@ mod tests {
             &[olive_oil_candidate(), sugar_candidate()],
             &[],
             5,
+            &[], // no rule issues in basic test
         );
 
         assert!(!result.suggestions.is_empty(), "should have suggestions");
         let top = &result.suggestions[0];
         assert_eq!(top.slug, "olive-oil", "olive oil should be #1 for fat gap");
         assert!(top.fills_gaps.contains(&"fat".to_string()), "should fill fat gap");
-        assert!(top.score > 40, "olive oil score should be > 40, got {}", top.score);
+        assert!(top.score > 25, "olive oil score should be > 25, got {}", top.score);
     }
 
     #[test]
@@ -291,6 +327,7 @@ mod tests {
             &[olive_oil_candidate()],
             &["olive-oil".to_string()],
             5,
+            &[],
         );
         assert!(result.suggestions.is_empty(), "should exclude olive-oil");
     }
@@ -303,10 +340,53 @@ mod tests {
             &[olive_oil_candidate(), sugar_candidate()],
             &[],
             5,
+            &[],
         );
         let scores: Vec<(&str, u8)> = result.suggestions.iter().map(|s| (s.slug.as_str(), s.score)).collect();
         let oil_score = scores.iter().find(|(s, _)| *s == "olive-oil").map(|(_, sc)| *sc).unwrap_or(0);
         let sugar_score = scores.iter().find(|(s, _)| *s == "sugar").map(|(_, sc)| *sc).unwrap_or(0);
         assert!(oil_score > sugar_score, "olive oil ({}) should score higher than sugar ({})", oil_score, sugar_score);
+    }
+
+    #[test]
+    fn rule_fix_bonus_boosts_score() {
+        use crate::domain::tools::rule_engine::RuleIssue;
+
+        let balance = tomato_recipe_balance();
+
+        // Without rule issues — baseline score
+        let baseline = suggest_ingredients(
+            &balance, &[olive_oil_candidate()], &[], 5, &[],
+        );
+        let baseline_score = baseline.suggestions[0].score;
+
+        // With a rule issue that references olive-oil as fix_slug
+        let issues = vec![RuleIssue {
+            category: "structure".into(),
+            severity: "warning".into(),
+            rule: "missing_fat_source".into(),
+            title_key: "rules.missingFat".into(),
+            description_key: "rules.missingFatDesc".into(),
+            fix_slugs: vec!["olive-oil".into(), "butter".into()],
+            fix_keys: vec!["rules.fixAddFatSource".into()],
+            value: None,
+            threshold: None,
+            impact: 7,
+        }];
+
+        let boosted = suggest_ingredients(
+            &balance, &[olive_oil_candidate()], &[], 5, &issues,
+        );
+        let boosted_score = boosted.suggestions[0].score;
+
+        assert!(
+            boosted_score > baseline_score,
+            "rule-fix bonus should increase score: {} (baseline) vs {} (boosted)",
+            baseline_score, boosted_score
+        );
+        assert!(
+            boosted.suggestions[0].fills_gaps.contains(&"health".to_string()),
+            "should mark 'health' in fills_gaps"
+        );
     }
 }
