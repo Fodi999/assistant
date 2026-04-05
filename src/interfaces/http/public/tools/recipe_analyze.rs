@@ -18,6 +18,7 @@ use crate::domain::tools::nutrition::{self as nut, NutritionBreakdown};
 use crate::domain::tools::recipe_analyzer::{self, DietFlags, RecipeIngredientInput};
 use crate::domain::tools::suggestion_engine::{self, Candidate};
 use crate::domain::tools::unit_converter as uc;
+use crate::domain::tools::dish_context;
 use crate::domain::tools::rule_engine;
 
 // ── Request ──────────────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ pub struct RecipeAnalyzeResponse {
     pub score:       u8,
     pub flavor:      FlavorSummary,
     pub diet:        Vec<String>,
+    pub dish_type:   dish_context::DishType,
     pub suggestions: Vec<SuggestionItem>,
     pub ingredients: Vec<IngredientDetail>,
     pub flavor_contributions: Vec<FlavorContribution>,
@@ -178,6 +180,7 @@ struct CandidateRow {
     name_pl:       Option<String>,
     name_uk:       Option<String>,
     image_url:     Option<String>,
+    product_type:  Option<String>,
     calories_kcal: Option<f32>,
     protein_g:     Option<f32>,
     fat_g:         Option<f32>,
@@ -353,6 +356,7 @@ pub async fn recipe_analyze(
         pair_scores AS (
             SELECT p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
                    COALESCE(p.image_url, ci.image_url) AS image_url,
+                   p.product_type,
                    nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                    fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma,
                    AVG(fp.pair_score::float8) AS avg_pair_score
@@ -365,6 +369,7 @@ pub async fn recipe_analyze(
               AND p.slug != ALL($1)
             GROUP BY p.slug, p.name_en, p.name_ru, p.name_pl, p.name_uk,
                      COALESCE(p.image_url, ci.image_url),
+                     p.product_type,
                      nm.calories_kcal, nm.protein_g, nm.fat_g, nm.carbs_g, nm.fiber_g, nm.sugar_g,
                      fc.sweetness, fc.acidity, fc.bitterness, fc.umami, fc.aroma
             ORDER BY avg_pair_score DESC NULLS LAST
@@ -404,7 +409,7 @@ pub async fn recipe_analyze(
             },
             pair_score: r.avg_pair_score.unwrap_or(0.0),
             typical_g: 30.0, // default suggestion amount
-            product_type: None, // not loaded in this context; slug-based rules still apply
+            product_type: r.product_type.clone(),
         }
     }).collect();
 
@@ -429,13 +434,27 @@ pub async fn recipe_analyze(
     };
     let diagnosis = rule_engine::diagnose(&rule_ctx);
 
-    // ── 6. Run suggestion engine (with rule issues for global health scoring) ──
+    // ── 6. Classify dish type for food-context filtering ──
+    let sugar_cal_pct = if analysis.total_nutrition.calories > 0.0 {
+        (analysis.total_nutrition.sugar_g * 4.0 / analysis.total_nutrition.calories) * 100.0
+    } else {
+        0.0
+    };
+    let dish_type = dish_context::classify_dish(
+        &rule_ctx.ingredients,
+        sugar_cal_pct,
+        analysis.flavor.vector.sweetness as f64,
+        analysis.flavor.vector.umami as f64,
+    );
+
+    // ── 7. Run suggestion engine (with rule issues + dish type) ──
     let suggestion_result = suggestion_engine::suggest_ingredients(
         &analysis.flavor,
         &candidates,
         &slugs,
         5,
         &diagnosis.issues,
+        dish_type,
     );
 
     let suggestions: Vec<SuggestionItem> = suggestion_result.suggestions.iter().map(|s| {
@@ -546,6 +565,7 @@ pub async fn recipe_analyze(
             strong: analysis.flavor.strong_dimensions.iter().map(|d| d.dimension.clone()).collect(),
         },
         diet: analysis.diet_flags.active_labels().into_iter().map(|s| s.to_string()).collect(),
+        dish_type,
         suggestions,
         ingredients: ingredient_details,
         flavor_contributions,

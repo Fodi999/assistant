@@ -5,3 +5,4 @@ pub mod flavor_graph;
 pub mod recipe_analyzer;
 pub mod suggestion_engine;
 pub mod rule_engine;
+pub mod dish_context;

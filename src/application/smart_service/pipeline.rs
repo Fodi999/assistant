@@ -33,6 +33,7 @@ use crate::domain::tools::nutrition::{
 };
 use crate::domain::tools::suggestion_engine::{self, Candidate};
 use crate::domain::tools::rule_engine::{self, RecipeContext};
+use crate::domain::tools::dish_context;
 use crate::domain::tools::unit_converter as uc;
 
 use super::context::{CulinaryContext, Goal};
@@ -749,10 +750,44 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     }
 
     // ── v3 Step 1+11c: Goal-aware suggestions ────────────────────────────────
+    // Classify dish type for food-context filtering
+    let dish_ingredients: Vec<(String, f64, Option<String>)> = {
+        let mut v = vec![(ctx.ingredient.clone(), typical_g, row.product_type.clone())];
+        for (i, extra_slug) in ctx.additional_ingredients.iter().enumerate() {
+            if let Some((r, _)) = additional_rows.get(i) {
+                v.push((extra_slug.clone(), r.typical_g().unwrap_or(50.0), r.product_type.clone()));
+            }
+        }
+        v
+    };
+    let sugar_cal_pct_pipe = {
+        let total_cal: f64 = {
+            let mc = row.cal() * (typical_g / 100.0);
+            let ac: f64 = ctx.additional_ingredients.iter().enumerate().map(|(i, _)| {
+                additional_rows.get(i).map(|(r, _)| r.cal() * (r.typical_g().unwrap_or(50.0) / 100.0)).unwrap_or(0.0)
+            }).sum();
+            mc + ac
+        };
+        let total_sugar: f64 = {
+            let ms = row.sugar() * (typical_g / 100.0);
+            let as_: f64 = ctx.additional_ingredients.iter().enumerate().map(|(i, _)| {
+                additional_rows.get(i).map(|(r, _)| r.sugar() * (r.typical_g().unwrap_or(50.0) / 100.0)).unwrap_or(0.0)
+            }).sum();
+            ms + as_
+        };
+        if total_cal > 0.0 { (total_sugar * 4.0 / total_cal) * 100.0 } else { 0.0 }
+    };
+    let dish_type = dish_context::classify_dish(
+        &dish_ingredients,
+        sugar_cal_pct_pipe,
+        balance.vector.sweetness as f64,
+        balance.vector.umami as f64,
+    );
+
     // Run SuggestionEngine, then re-rank by goal
     let diag_issues = raw_diag.as_ref().map(|d| d.issues.as_slice()).unwrap_or(&[]);
     let suggestion_result = suggestion_engine::suggest_ingredients(
-        balance, &all_candidates, &existing_slugs, 10, diag_issues, // fetch more, then re-rank
+        balance, &all_candidates, &existing_slugs, 10, diag_issues, dish_type,
     );
     let mut scored_suggestions: Vec<SuggestionInfo> = suggestion_result
         .suggestions

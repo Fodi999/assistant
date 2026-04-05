@@ -12,6 +12,7 @@ use crate::domain::tools::unit_converter as uc;
 use crate::domain::tools::flavor_graph::{FlavorVector, FlavorBalance};
 use crate::domain::tools::nutrition::NutritionBreakdown;
 use crate::domain::tools::rule_engine::RuleIssue;
+use crate::domain::tools::dish_context::{self, DishType};
 
 // ── Input: candidate ingredient ──────────────────────────────────────────────
 
@@ -107,34 +108,62 @@ fn build_rule_fix_map(issues: &[RuleIssue]) -> HashMap<String, f64> {
 /// - `existing_slugs`: slugs already in the recipe (to exclude)
 /// - `max_results`: how many suggestions to return
 /// - `issues`: active rule_engine issues (for global health-aware scoring)
+/// - `dish_type`: classified dish type (Dessert/Savory/Neutral) for compatibility
 pub fn suggest_ingredients(
     balance: &FlavorBalance,
     candidates: &[Candidate],
     existing_slugs: &[String],
     max_results: usize,
     issues: &[RuleIssue],
+    dish_type: DishType,
 ) -> SuggestionResult {
     let rule_fix_map = build_rule_fix_map(issues);
 
     let mut suggestions: Vec<Suggestion> = candidates
         .iter()
         .filter(|c| !existing_slugs.contains(&c.slug))
-        .map(|c| score_candidate(balance, c, &rule_fix_map))
+        // Hard-filter: block incompatible ingredients (compatibility = 0.0)
+        .filter(|c| {
+            dish_context::compatibility_score(dish_type, c.product_type.as_deref()) > 0.0
+        })
+        .map(|c| score_candidate(balance, c, &rule_fix_map, dish_type))
         .filter(|s| s.score > 10) // minimum threshold
         .collect();
 
     // Sort by score descending
     suggestions.sort_by(|a, b| b.score.cmp(&a.score));
-    suggestions.truncate(max_results);
+
+    // ── Category dedup: max 1 suggestion per product_type ──
+    // Prevents "add chicken + salmon + eggs" (3 proteins).
+    // We use the candidate's product_type for dedup.
+    let mut category_counts: HashMap<String, usize> = HashMap::new();
+    let mut deduped: Vec<Suggestion> = Vec::new();
+
+    for s in suggestions {
+        // Look up the candidate's product_type
+        let pt = candidates.iter()
+            .find(|c| c.slug == s.slug)
+            .and_then(|c| c.product_type.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let count = category_counts.entry(pt).or_insert(0);
+        if *count < dish_context::MAX_PER_CATEGORY {
+            *count += 1;
+            deduped.push(s);
+        }
+        if deduped.len() >= max_results {
+            break;
+        }
+    }
 
     SuggestionResult {
         current_balance: balance.clone(),
-        suggestions,
+        suggestions: deduped,
     }
 }
 
 /// Score a single candidate against the current recipe balance.
-fn score_candidate(balance: &FlavorBalance, candidate: &Candidate, rule_fix_map: &HashMap<String, f64>) -> Suggestion {
+fn score_candidate(balance: &FlavorBalance, candidate: &Candidate, rule_fix_map: &HashMap<String, f64>, dish_type: DishType) -> Suggestion {
     let mut reasons = Vec::new();
     let mut fills_gaps = Vec::new();
     let mut score = 0.0;
@@ -177,6 +206,13 @@ fn score_candidate(balance: &FlavorBalance, candidate: &Candidate, rule_fix_map:
         reasons.push("fixes recipe issue".to_string());
         fills_gaps.push("health".to_string());
     }
+
+    // ── 6. Dish compatibility multiplier ──
+    // Soft penalty for ingredients that don't fit the dish type.
+    // E.g. salmon in a dessert → score × 0.0 (hard-filtered above),
+    //      fruit in savory → score × 0.3
+    let compat = dish_context::compatibility_score(dish_type, candidate.product_type.as_deref());
+    score *= compat;
 
     if reasons.is_empty() {
         reasons.push("general complement".to_string());
@@ -310,6 +346,7 @@ mod tests {
             &[],
             5,
             &[], // no rule issues in basic test
+            DishType::Savory,
         );
 
         assert!(!result.suggestions.is_empty(), "should have suggestions");
@@ -328,6 +365,7 @@ mod tests {
             &["olive-oil".to_string()],
             5,
             &[],
+            DishType::Savory,
         );
         assert!(result.suggestions.is_empty(), "should exclude olive-oil");
     }
@@ -341,6 +379,7 @@ mod tests {
             &[],
             5,
             &[],
+            DishType::Savory,
         );
         let scores: Vec<(&str, u8)> = result.suggestions.iter().map(|s| (s.slug.as_str(), s.score)).collect();
         let oil_score = scores.iter().find(|(s, _)| *s == "olive-oil").map(|(_, sc)| *sc).unwrap_or(0);
@@ -357,6 +396,7 @@ mod tests {
         // Without rule issues — baseline score
         let baseline = suggest_ingredients(
             &balance, &[olive_oil_candidate()], &[], 5, &[],
+            DishType::Savory,
         );
         let baseline_score = baseline.suggestions[0].score;
 
@@ -376,6 +416,7 @@ mod tests {
 
         let boosted = suggest_ingredients(
             &balance, &[olive_oil_candidate()], &[], 5, &issues,
+            DishType::Savory,
         );
         let boosted_score = boosted.suggestions[0].score;
 
@@ -388,5 +429,133 @@ mod tests {
             boosted.suggestions[0].fills_gaps.contains(&"health".to_string()),
             "should mark 'health' in fills_gaps"
         );
+    }
+
+    fn salmon_candidate() -> Candidate {
+        Candidate {
+            slug: "salmon".to_string(),
+            name: "Salmon".to_string(),
+            image_url: None,
+            flavor: FlavorVector {
+                sweetness: 0.5, acidity: 0.5, bitterness: 0.2,
+                umami: 7.0, fat: 6.0, aroma: 4.0,
+            },
+            nutrition: NutritionBreakdown {
+                calories: 208.0, protein_g: 20.0, fat_g: 13.0, carbs_g: 0.0,
+                fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
+            },
+            pair_score: 5.0,
+            typical_g: 100.0,
+            product_type: Some("fish".to_string()),
+        }
+    }
+
+    fn walnut_candidate() -> Candidate {
+        Candidate {
+            slug: "walnuts".to_string(),
+            name: "Walnuts".to_string(),
+            image_url: None,
+            flavor: FlavorVector {
+                sweetness: 1.0, acidity: 0.2, bitterness: 3.0,
+                umami: 1.0, fat: 7.0, aroma: 3.0,
+            },
+            nutrition: NutritionBreakdown {
+                calories: 654.0, protein_g: 15.0, fat_g: 65.0, carbs_g: 14.0,
+                fiber_g: 7.0, sugar_g: 3.0, salt_g: 0.0, sodium_mg: 0.0,
+            },
+            pair_score: 6.0,
+            typical_g: 20.0,
+            product_type: Some("nut".to_string()),
+        }
+    }
+
+    #[test]
+    fn salmon_blocked_in_dessert_context() {
+        let balance = tomato_recipe_balance(); // reuse balance, dish type matters
+        let result = suggest_ingredients(
+            &balance,
+            &[salmon_candidate(), walnut_candidate()],
+            &[],
+            5,
+            &[],
+            DishType::Dessert,
+        );
+        // Salmon (fish) should be hard-filtered out of dessert
+        let slugs: Vec<&str> = result.suggestions.iter().map(|s| s.slug.as_str()).collect();
+        assert!(!slugs.contains(&"salmon"), "salmon should NOT appear in dessert suggestions, got: {:?}", slugs);
+        // Walnuts (nut) should be fine in dessert
+        assert!(slugs.contains(&"walnuts"), "walnuts should appear in dessert suggestions");
+    }
+
+    #[test]
+    fn sugar_penalized_in_savory_context() {
+        let balance = tomato_recipe_balance();
+        let result = suggest_ingredients(
+            &balance,
+            &[olive_oil_candidate(), sugar_candidate()],
+            &[],
+            5,
+            &[],
+            DishType::Savory,
+        );
+        // Sugar (sweetener) should be heavily penalized in savory
+        if let Some(sugar_s) = result.suggestions.iter().find(|s| s.slug == "sugar") {
+            assert!(sugar_s.score < 5, "sugar score in savory should be very low, got {}", sugar_s.score);
+        }
+        // If sugar is even present, it should be last
+        if result.suggestions.len() > 1 {
+            assert_eq!(result.suggestions.last().unwrap().slug, "sugar",
+                "sugar should be last in savory context");
+        }
+    }
+
+    #[test]
+    fn max_one_per_category() {
+        let balance = tomato_recipe_balance();
+        let chicken = Candidate {
+            slug: "chicken-breast".to_string(),
+            name: "Chicken Breast".to_string(),
+            image_url: None,
+            flavor: FlavorVector {
+                sweetness: 0.3, acidity: 0.3, bitterness: 0.1,
+                umami: 5.0, fat: 2.0, aroma: 2.0,
+            },
+            nutrition: NutritionBreakdown {
+                calories: 165.0, protein_g: 31.0, fat_g: 3.6, carbs_g: 0.0,
+                fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
+            },
+            pair_score: 7.0,
+            typical_g: 100.0,
+            product_type: Some("meat".to_string()),
+        };
+        let beef = Candidate {
+            slug: "beef".to_string(),
+            name: "Beef".to_string(),
+            image_url: None,
+            flavor: FlavorVector {
+                sweetness: 0.3, acidity: 0.3, bitterness: 0.2,
+                umami: 6.0, fat: 5.0, aroma: 3.0,
+            },
+            nutrition: NutritionBreakdown {
+                calories: 250.0, protein_g: 26.0, fat_g: 15.0, carbs_g: 0.0,
+                fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
+            },
+            pair_score: 7.0,
+            typical_g: 100.0,
+            product_type: Some("meat".to_string()),
+        };
+        let result = suggest_ingredients(
+            &balance,
+            &[chicken, beef, olive_oil_candidate()],
+            &[],
+            5,
+            &[],
+            DishType::Savory,
+        );
+        // Should have max 1 meat suggestion
+        let meat_count = result.suggestions.iter()
+            .filter(|s| s.slug == "chicken-breast" || s.slug == "beef")
+            .count();
+        assert!(meat_count <= 1, "should have max 1 meat suggestion, got {}", meat_count);
     }
 }
