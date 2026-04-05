@@ -70,6 +70,8 @@ pub struct RecipeContext {
     pub sugar_g: f64,
     pub total_grams: f64,
     pub ingredients: Vec<(String, f64, Option<String>)>,
+    /// Nutrition quality score from nutrition::nutrition_score() (0–100)
+    pub nutrition_score: u8,
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -101,11 +103,24 @@ pub fn diagnose(ctx: &RecipeContext) -> RuleDiagnosis {
     let info_count     = issues.iter().filter(|i| i.severity == "info").count();
 
     let total_pen: f64 = issues.iter().map(|i| sev_penalty(&i.severity)).sum();
-    let health_score = ((100.0 - total_pen.min(80.0)).max(20.0)) as u8;
+    let rule_compliance = ((100.0 - total_pen.min(80.0)).max(20.0)) as f64;
+
+    // Composite health_score:  35% rule compliance + 35% nutrition + 30% flavor balance
+    // This prevents "93 health_score but 27 nutrition" paradox.
+    let nutrition = ctx.nutrition_score as f64;
+    let balance   = ctx.balance_score as f64;
+    let composite = rule_compliance * 0.35 + nutrition * 0.35 + balance * 0.30;
+    let health_score = composite.clamp(20.0, 100.0).round() as u8;
+
+    // Category scores: blend rule-based score with actual measured score
+    let flavor_rule    = cat_score(&issues, "flavor") as f64;
+    let nutrition_rule = cat_score(&issues, "nutrition") as f64;
 
     let category_scores = CategoryScores {
-        flavor:    cat_score(&issues, "flavor"),
-        nutrition: cat_score(&issues, "nutrition"),
+        // flavor: 50% rule-based + 50% actual balance_score
+        flavor:    ((flavor_rule * 0.5 + balance * 0.5).clamp(20.0, 100.0).round()) as u8,
+        // nutrition: 50% rule-based + 50% actual nutrition_score
+        nutrition: ((nutrition_rule * 0.5 + nutrition * 0.5).clamp(20.0, 100.0).round()) as u8,
         dominance: cat_score(&issues, "dominance"),
         structure: cat_score(&issues, "structure"),
     };

@@ -553,6 +553,10 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             sugar_g: total_sugar,
             total_grams,
             ingredients: rule_ingredients,
+            nutrition_score: nutrition::nutrition_score(
+                total_cal, total_prot, total_fat, total_carbs,
+                total_fiber, total_sugar, 0.0,
+            ),
         };
 
         Some(rule_engine::diagnose(&recipe_ctx))

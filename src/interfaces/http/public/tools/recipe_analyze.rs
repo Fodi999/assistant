@@ -497,6 +497,7 @@ pub async fn recipe_analyze(
             let pt = find_row(&inp.slug).and_then(|r| r.product_type.clone());
             (inp.slug.clone(), inp.grams, pt)
         }).collect(),
+        nutrition_score: analysis.nutrition_score,
     };
     let diagnosis = rule_engine::diagnose(&rule_ctx);
 
