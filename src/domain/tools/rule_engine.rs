@@ -98,6 +98,28 @@ pub fn diagnose(ctx: &RecipeContext) -> RuleDiagnosis {
     check_dominance_rules(ctx, &mut issues);
     check_structure_rules(ctx, &mut issues);
 
+    // ── Suppress contradictory rules ─────────────────────────────────────
+    // If nutrition says "reduce X", flavor/structure must NOT say "add X".
+    // The reduce-rule wins because macros are a hard constraint.
+    let has_rule = |r: &str| issues.iter().any(|i| i.rule == r);
+    let suppress: Vec<&str> = {
+        let mut v = Vec::new();
+        if has_rule("high_fat_ratio") {
+            v.push("low_fat");
+            v.push("missing_fat_source");
+        }
+        if has_rule("high_carbs") {
+            v.push("low_sweetness"); // adding sweetness = adding carbs
+        }
+        if has_rule("high_sugar") {
+            v.push("low_sweetness");
+        }
+        v
+    };
+    if !suppress.is_empty() {
+        issues.retain(|i| !suppress.contains(&i.rule.as_str()));
+    }
+
     let critical_count = issues.iter().filter(|i| i.severity == "critical").count();
     let warning_count  = issues.iter().filter(|i| i.severity == "warning").count();
     let info_count     = issues.iter().filter(|i| i.severity == "info").count();
@@ -399,5 +421,84 @@ fn check_structure_rules(ctx: &RecipeContext, issues: &mut Vec<RuleIssue>) {
             fix_keys: vec!["rules.fixAddAcidSource".into()],
             value: None, threshold: None, impact: 3,
         });
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ctx(fat_pct: f64, flavor_fat: f64) -> RecipeContext {
+        RecipeContext {
+            flavor: FlavorVector {
+                sweetness: 3.0, acidity: 3.0, bitterness: 1.0,
+                umami: 3.0, fat: flavor_fat, aroma: 3.0,
+            },
+            balance_score: 60,
+            total_calories: 500.0,
+            protein_pct: 20.0,
+            fat_pct,
+            carbs_pct: 100.0 - 20.0 - fat_pct,
+            fiber_g: 5.0,
+            sugar_g: 10.0,
+            total_grams: 300.0,
+            ingredients: vec![
+                ("chicken-breast".into(), 150.0, Some("meat".into())),
+                ("butter".into(), 50.0, Some("fat".into())),
+                ("rice".into(), 100.0, Some("grain".into())),
+            ],
+            nutrition_score: 50,
+        }
+    }
+
+    #[test]
+    fn no_contradiction_high_fat_and_low_fat() {
+        // fat_pct=50 → high_fat_ratio fires; flavor.fat=0.5 → low_fat would fire
+        // But contradiction suppression should remove low_fat.
+        let ctx = make_ctx(50.0, 0.5);
+        let diag = diagnose(&ctx);
+        let rules: Vec<&str> = diag.issues.iter().map(|i| i.rule.as_str()).collect();
+        assert!(rules.contains(&"high_fat_ratio"), "high_fat_ratio should fire");
+        assert!(!rules.contains(&"low_fat"), "low_fat must be suppressed when high_fat_ratio fires");
+        assert!(!rules.contains(&"missing_fat_source"), "missing_fat_source must be suppressed when high_fat_ratio fires");
+    }
+
+    #[test]
+    fn no_contradiction_high_sugar_and_low_sweetness() {
+        let ctx = RecipeContext {
+            flavor: FlavorVector {
+                sweetness: 0.3, acidity: 3.0, bitterness: 1.0,
+                umami: 3.0, fat: 3.0, aroma: 3.0,
+            },
+            balance_score: 60,
+            total_calories: 500.0,
+            protein_pct: 15.0,
+            fat_pct: 30.0,
+            carbs_pct: 55.0,
+            fiber_g: 5.0,
+            sugar_g: 50.0, // 50g sugar in 500kcal → 40% sugar cal → high_sugar
+            total_grams: 300.0,
+            ingredients: vec![
+                ("honey".into(), 100.0, Some("sweetener".into())),
+                ("oatmeal".into(), 200.0, Some("grain".into())),
+            ],
+            nutrition_score: 40,
+        };
+        let diag = diagnose(&ctx);
+        let rules: Vec<&str> = diag.issues.iter().map(|i| i.rule.as_str()).collect();
+        assert!(rules.contains(&"high_sugar"), "high_sugar should fire");
+        assert!(!rules.contains(&"low_sweetness"), "low_sweetness must be suppressed when high_sugar fires");
+    }
+
+    #[test]
+    fn low_fat_fires_when_no_high_fat_ratio() {
+        // fat_pct=25 → no high_fat_ratio; flavor.fat=0.5 → low_fat should fire normally
+        let ctx = make_ctx(25.0, 0.5);
+        let diag = diagnose(&ctx);
+        let rules: Vec<&str> = diag.issues.iter().map(|i| i.rule.as_str()).collect();
+        assert!(!rules.contains(&"high_fat_ratio"), "high_fat_ratio should NOT fire at 25%");
+        assert!(rules.contains(&"low_fat"), "low_fat should fire when not contradicted");
     }
 }
