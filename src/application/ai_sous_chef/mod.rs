@@ -55,6 +55,7 @@ pub struct DataQualityRow {
     pub id: Uuid,
     pub name_en: String,
     pub product_type: String,
+    pub is_published: bool,
     pub score: f64,
     pub filled: i64,
     pub total: i64,
@@ -101,6 +102,7 @@ struct DataQualityRaw {
     pub id: Uuid,
     pub name_en: String,
     pub product_type: String,
+    pub is_published: bool,
     // basic
     pub has_image: bool,
     pub has_name_ru: bool,
@@ -370,6 +372,7 @@ impl AiSousChefService {
                 ci.id,
                 ci.name_en,
                 COALESCE(ci.product_type, 'other') as product_type,
+                COALESCE(ci.is_published, false) as is_published,
                 -- basic
                 (ci.image_url IS NOT NULL AND ci.image_url != '') as has_image,
                 (ci.name_ru IS NOT NULL AND ci.name_ru != '') as has_name_ru,
@@ -611,6 +614,7 @@ impl AiSousChefService {
             id: r.id,
             name_en: r.name_en,
             product_type: r.product_type,
+            is_published: r.is_published,
             score,
             filled,
             total,
