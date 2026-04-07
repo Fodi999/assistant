@@ -383,6 +383,7 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
 
     // Vegetable
     let veg_kw = [
+        "vegetable", "vegetables", "mixed vegetables", "frozen vegetables",
         "carrot", "potato", "tomato", "onion", "garlic", "pepper", "bell pepper",
         "cucumber", "cabbage", "broccoli", "spinach", "lettuce", "celery",
         "zucchini", "eggplant", "corn", "peas", "beet", "radish", "turnip",
@@ -390,6 +391,7 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         "pumpkin", "squash", "sweet potato", "olive", "caper",
     ];
     let veg_kw_ru = [
+        "овощ", "овощи", "замороженные овощи",
         "морковь", "картофель", "помидор", "лук", "чеснок", "перец",
         "огурец", "капуста", "брокколи", "шпинат", "салат", "сельдерей",
         "кабачок", "баклажан", "кукуруза", "горох", "свёкла", "редис",

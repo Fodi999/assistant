@@ -1353,12 +1353,20 @@ impl AdminCatalogService {
                     Some("preserved")
                 } else if combined.contains("soup") || combined.contains("суп") || combined.contains("broth") || combined.contains("бульон") {
                     Some("condiment")
+                } else if combined.contains("vegetable") || combined.contains("овощ") {
+                    Some("vegetable")
+                } else if combined.contains("fruit") || combined.contains("фрукт") || combined.contains("ягод") || combined.contains("berry") {
+                    Some("fruit")
                 } else if combined.contains("salad") || combined.contains("салат") {
                     Some("vegetable")
                 } else if combined.contains("seed") || combined.contains("семен") || combined.contains("семеч") {
                     Some("nut")
                 } else if combined.contains("leaf") || combined.contains("лист") || combined.contains("herb") || combined.contains("зелен") {
                     Some("spice")
+                } else if combined.contains("meat") || combined.contains("мяс") || combined.contains("говяд") || combined.contains("свинин") {
+                    Some("meat")
+                } else if combined.contains("cheese") || combined.contains("сыр") || combined.contains("молок") || combined.contains("milk") || combined.contains("cream") || combined.contains("сливк") {
+                    Some("dairy")
                 } else {
                     None
                 };
