@@ -1273,9 +1273,12 @@ impl AdminCatalogService {
         if product_type == "other" {
             let en_low = product.name_en.to_lowercase();
             let ru_low = product.name_ru.as_deref().unwrap_or("").to_lowercase();
+            // Also try Polish and Ukrainian names
+            let pl_low = product.name_pl.as_deref().unwrap_or("").to_lowercase();
+
             if let Some(inferred) = crate::application::ai_sous_chef::product_dictionary::infer_product_type(&en_low, &ru_low) {
                 tracing::info!(
-                    "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}'",
+                    "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}' (dictionary)",
                     inferred, product.name_en
                 );
                 product_type = inferred.to_string();
@@ -1286,6 +1289,94 @@ impl AdminCatalogService {
                 .bind(id)
                 .execute(&self.pool)
                 .await;
+            }
+
+            // 1c. Fallback: infer from category name
+            if product_type == "other" {
+                let cat_name: Option<String> = sqlx::query_scalar(
+                    "SELECT name_en FROM categories WHERE id = $1"
+                )
+                .bind(product.category_id)
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None);
+
+                if let Some(cat) = cat_name {
+                    let cat_low = cat.to_lowercase();
+                    let inferred = match cat_low.as_str() {
+                        c if c.contains("fish")      => Some("fish"),
+                        c if c.contains("seafood")    => Some("seafood"),
+                        c if c.contains("meat")       => Some("meat"),
+                        c if c.contains("poultry") || c.contains("chicken") => Some("poultry"),
+                        c if c.contains("dairy") || c.contains("milk") => Some("dairy"),
+                        c if c.contains("vegetable")  => Some("vegetable"),
+                        c if c.contains("fruit")      => Some("fruit"),
+                        c if c.contains("grain") || c.contains("cereal") || c.contains("pasta") => Some("grain"),
+                        c if c.contains("legume") || c.contains("bean") => Some("legume"),
+                        c if c.contains("nut") || c.contains("seed") => Some("nut"),
+                        c if c.contains("spice") || c.contains("herb") => Some("spice"),
+                        c if c.contains("oil")        => Some("oil"),
+                        c if c.contains("beverage") || c.contains("drink") => Some("beverage"),
+                        c if c.contains("sauce") || c.contains("condiment") => Some("condiment"),
+                        c if c.contains("sweet") || c.contains("dessert") || c.contains("confection") => Some("condiment"),
+                        c if c.contains("bread") || c.contains("bakery") => Some("bread"),
+                        c if c.contains("preserv") || c.contains("canned") || c.contains("pickle") => Some("preserved"),
+                        c if c.contains("mushroom")   => Some("mushroom"),
+                        c if c.contains("egg")        => Some("egg"),
+                        _ => None,
+                    };
+
+                    if let Some(t) = inferred {
+                        tracing::info!(
+                            "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}' (from category '{}')",
+                            t, product.name_en, cat
+                        );
+                        product_type = t.to_string();
+                        let _ = sqlx::query(
+                            "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
+                        )
+                        .bind(&product_type)
+                        .bind(id)
+                        .execute(&self.pool)
+                        .await;
+                    }
+                }
+            }
+
+            // 1d. Last resort: use product name parts for a broader match
+            if product_type == "other" {
+                // Check combined name (en + ru + pl) for any partial hints
+                let combined = format!("{} {} {} {}", en_low, ru_low, pl_low,
+                    product.name_uk.as_deref().unwrap_or("").to_lowercase());
+
+                let broad_match = if combined.contains("pickle") || combined.contains("маринов") || combined.contains("солён") || combined.contains("квашен") {
+                    Some("preserved")
+                } else if combined.contains("soup") || combined.contains("суп") || combined.contains("broth") || combined.contains("бульон") {
+                    Some("condiment")
+                } else if combined.contains("salad") || combined.contains("салат") {
+                    Some("vegetable")
+                } else if combined.contains("seed") || combined.contains("семен") || combined.contains("семеч") {
+                    Some("nut")
+                } else if combined.contains("leaf") || combined.contains("лист") || combined.contains("herb") || combined.contains("зелен") {
+                    Some("spice")
+                } else {
+                    None
+                };
+
+                if let Some(t) = broad_match {
+                    tracing::info!(
+                        "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}' (broad match)",
+                        t, product.name_en
+                    );
+                    product_type = t.to_string();
+                    let _ = sqlx::query(
+                        "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
+                    )
+                    .bind(&product_type)
+                    .bind(id)
+                    .execute(&self.pool)
+                    .await;
+                }
             }
         }
 
