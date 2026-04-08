@@ -664,61 +664,114 @@ impl ChatEngine {
     // ── Internal helpers ─────────────────────────────────────────────────────
 
     /// Scan ingredient cache for any product slug/name mentioned in the input.
+    ///
+    /// Two-pass strategy:
+    ///   Pass 1: Stem-based keyword map — covers declensions (лосось/лососе/лососём)
+    ///   Pass 2: Full-cache scan — match any product whose name appears in the input
     async fn find_ingredient_in_text(
         &self,
         input: &str,
     ) -> Option<crate::infrastructure::ingredient_cache::IngredientData> {
         let text_lower = input.to_lowercase();
 
-        // Check common slugs by keyword
-        let slug_keywords: &[(&str, &str)] = &[
-            ("spinach", "шпинат"),
-            ("spinach", "spinach"),
-            ("salmon", "лосось"),
-            ("salmon", "salmon"),
-            ("chicken-breast", "курица"),
-            ("chicken-breast", "chicken"),
-            ("eggs", "яйцо"),
-            ("eggs", "яйца"),
-            ("eggs", "eggs"),
-            ("broccoli", "брокколи"),
-            ("broccoli", "broccoli"),
-            ("almonds", "миндаль"),
-            ("almonds", "almonds"),
-            ("blueberries", "черника"),
-            ("blueberries", "blueberries"),
-            ("tomatoes", "помидор"),
-            ("tomatoes", "tomato"),
-            ("potatoes", "картофель"),
-            ("potatoes", "картошк"),
-            ("potatoes", "potato"),
-            ("carrots", "морковь"),
-            ("carrots", "carrot"),
-            ("onion", "лук"),
-            ("onion", "onion"),
-            ("garlic", "чеснок"),
-            ("garlic", "garlic"),
-            ("rice", "рис"),
-            ("rice", "rice"),
-            ("beef", "говядина"),
-            ("beef", "beef"),
-            ("pork", "свинина"),
-            ("pork", "pork"),
-            ("milk", "молоко"),
-            ("milk", "milk"),
-            ("butter", "масло"),
-            ("butter", "butter"),
+        // ── Pass 1: Stem → slug mapping (covers word forms / declensions) ────
+        // Use word STEMS (shortest unambiguous root) instead of full words.
+        // "лосос" matches: лосось, лосося, лососе, лососём, лососи
+        // "куриц" matches: курица, курицы, курицу, курице, курицей
+        let stem_slugs: &[(&str, &str)] = &[
+            // Fish & seafood
+            ("лосос",    "salmon"),    ("salmon",    "salmon"),    ("łosoś",    "salmon"),    ("łosos",    "salmon"),
+            ("тунц",     "tuna"),      ("tuna",      "tuna"),      ("tuńczyk",  "tuna"),
+            ("треск",    "cod"),       ("cod",       "cod"),       ("dorsz",    "cod"),
+            ("форел",    "trout"),     ("trout",     "trout"),     ("pstrąg",   "trout"),
+            ("скумбри",  "mackerel"),  ("mackerel",  "mackerel"),  ("makrela",  "mackerel"),
+            ("сардин",   "sardines"),  ("sardine",   "sardines"),
+            ("креветк",  "shrimp"),    ("shrimp",    "shrimp"),    ("krewetk",  "shrimp"),
+            // Poultry & meat
+            ("куриц",    "chicken-breast"), ("курятин",  "chicken-breast"), ("chicken",  "chicken-breast"),
+            ("kurczak",  "chicken-breast"), ("курк",     "chicken-breast"),
+            ("индейк",   "turkey"),    ("turkey",    "turkey"),    ("indyk",    "turkey"),
+            ("говядин",  "beef"),      ("beef",      "beef"),      ("wołowin",  "beef"),
+            ("свинин",   "pork"),      ("pork",      "pork"),      ("wieprzow", "pork"),
+            // Eggs & dairy
+            ("яйц",     "eggs"),      ("яйк",      "eggs"),      ("egg",      "eggs"),      ("jajk",     "eggs"),
+            ("молок",    "milk"),      ("milk",      "milk"),      ("mlek",     "milk"),
+            ("масл",     "butter"),    ("butter",    "butter"),    ("masł",     "butter"),
+            ("сыр",      "cheese"),    ("cheese",    "cheese"),    ("ser ",     "cheese"),
+            ("творог",   "cottage-cheese"), ("cottage",  "cottage-cheese"), ("twaróg", "cottage-cheese"),
+            // Vegetables
+            ("шпинат",   "spinach"),   ("spinach",   "spinach"),   ("szpinak",  "spinach"),
+            ("брокколи", "broccoli"),  ("broccoli",  "broccoli"),  ("brokuł",   "broccoli"),
+            ("помидор",  "tomatoes"),  ("томат",     "tomatoes"),  ("tomato",   "tomatoes"),  ("pomidor",  "tomatoes"),
+            ("картофел", "potatoes"),  ("картошк",   "potatoes"),  ("potato",   "potatoes"),  ("ziemniak", "potatoes"),
+            ("морков",   "carrots"),   ("carrot",    "carrots"),   ("marchew",  "carrots"),   ("морквин",  "carrots"),
+            ("лук",      "onion"),     ("onion",     "onion"),     ("cebul",    "onion"),
+            ("чеснок",   "garlic"),    ("часник",    "garlic"),    ("garlic",   "garlic"),    ("czosn",    "garlic"),
+            ("огурц",    "cucumber"),  ("cucumber",  "cucumber"),  ("ogórek",   "cucumber"),  ("огірк",    "cucumber"),
+            ("капуст",   "cabbage"),   ("cabbage",   "cabbage"),   ("kapust",   "cabbage"),
+            ("перц",     "pepper"),    ("pepper",    "pepper"),    ("papryk",   "pepper"),
+            ("авокадо",  "avocado"),   ("avocado",   "avocado"),
+            ("батат",    "sweet-potato"), ("sweet potato", "sweet-potato"),
+            // Fruits & berries
+            ("яблок",    "apples"),    ("apple",     "apples"),    ("jabłk",    "apples"),
+            ("банан",    "bananas"),   ("banana",    "bananas"),
+            ("черник",   "blueberries"), ("blueberr", "blueberries"), ("borówk", "blueberries"),
+            ("клубник",  "strawberries"), ("strawberr", "strawberries"), ("truskawk", "strawberries"),
+            ("лимон",    "lemon"),     ("lemon",     "lemon"),     ("cytryn",   "lemon"),
+            // Nuts & seeds
+            ("миндал",   "almonds"),   ("almond",    "almonds"),   ("migdał",   "almonds"),
+            ("грецк",    "walnuts"),   ("walnut",    "walnuts"),   ("orzech włosk", "walnuts"),
+            ("орех",     "walnuts"),
+            ("фисташк",  "pistachios"), ("pistachio", "pistachios"),
+            // Grains & legumes
+            ("рис",      "rice"),      ("rice",      "rice"),      ("ryż",      "rice"),
+            ("гречк",    "buckwheat"), ("buckwheat", "buckwheat"), ("gryczana", "buckwheat"),
+            ("овсянк",   "oats"),      ("oat",       "oats"),      ("owsian",   "oats"),
+            ("чечевиц",  "lentils"),   ("lentil",    "lentils"),   ("soczewic", "lentils"),
+            ("киноа",    "quinoa"),    ("quinoa",    "quinoa"),
+            // Other
+            ("мёд",      "honey"),     ("мед",       "honey"),     ("honey",    "honey"),     ("miód",     "honey"),
         ];
 
-        for (slug, keyword) in slug_keywords {
-            if text_lower.contains(keyword) {
+        for (stem, slug) in stem_slugs {
+            if text_lower.contains(stem) {
                 if let Some(p) = self.ingredient_cache.get(slug).await {
                     return Some(p);
                 }
             }
         }
 
-        None
+        // ── Pass 2: Full-cache scan — fuzzy match by product names ───────────
+        // For products not in the stem map, check if any cached product's name
+        // (in any language) appears in the user input, or vice versa.
+        let all = self.ingredient_cache.all().await;
+
+        // Score each product: longer name match = higher confidence
+        let mut best: Option<(usize, crate::infrastructure::ingredient_cache::IngredientData)> = None;
+
+        for p in &all {
+            let names = [
+                p.name_en.to_lowercase(),
+                p.name_ru.to_lowercase(),
+                p.name_pl.to_lowercase(),
+                p.name_uk.to_lowercase(),
+                p.slug.replace('-', " "),
+            ];
+
+            for name in &names {
+                // Skip very short names that could false-match (e.g. "рис" in "рисунок")
+                if name.len() < 3 { continue; }
+
+                if text_lower.contains(name.as_str()) {
+                    let score = name.len();
+                    if best.as_ref().map_or(true, |(s, _)| score > *s) {
+                        best = Some((score, p.clone()));
+                    }
+                }
+            }
+        }
+
+        best.map(|(_, p)| p)
     }
 }
 
