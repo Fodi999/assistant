@@ -18,3 +18,4 @@ pub mod intent_router;    // 🧠 Score-based intent detection + multi-intent + 
 pub mod chat_response;    // 📦 Unified ChatResponse + Card types + reason/intents
 pub mod chat_engine;      // 🔥 ChefOS Chat — handle_chat() logic
 pub mod session_context;  // 🗂️  Per-session memory (client-side, stateless server)
+pub mod ai_brain;         // 🧠 Layer 2 — AI Brain with LLM tool-calling for complex queries

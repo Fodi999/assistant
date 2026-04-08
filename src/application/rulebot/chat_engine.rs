@@ -18,6 +18,7 @@ use crate::domain::tools::unit_converter as uc;
 use super::intent_router::{detect_language, parse_input, ChatLang, HealthModifier, Intent};
 use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, Suggestion};
 use super::session_context::SessionContext;
+use super::ai_brain::AiBrain;
 
 // ── Health goal (maps from HealthModifier + input context) ────────────────────
 
@@ -57,11 +58,13 @@ impl HealthGoal {
 pub struct ChatEngine {
     ingredient_cache: Arc<IngredientCache>,
     llm_adapter: Arc<LlmAdapter>,
+    ai_brain: AiBrain,
 }
 
 impl ChatEngine {
     pub fn new(ingredient_cache: Arc<IngredientCache>, llm_adapter: Arc<LlmAdapter>) -> Self {
-        Self { ingredient_cache, llm_adapter }
+        let ai_brain = AiBrain::new(Arc::clone(&ingredient_cache), Arc::clone(&llm_adapter));
+        Self { ingredient_cache, llm_adapter, ai_brain }
     }
 
     /// Main entry point — takes free-text + optional session context, returns ChatResponse.
@@ -125,7 +128,11 @@ impl ChatEngine {
             Intent::RecipeHelp     => self.handle_recipe(input, lang),
             Intent::MealIdea       => self.handle_meal_idea(lang, goal).await,
             Intent::ProductInfo    => self.handle_product_info(input, lang).await,
-            Intent::Unknown        => self.handle_fallback_llm(input, lang).await,
+            // ── Layer 2: AI Brain ── LLM with tool calling for complex queries
+            Intent::Unknown        => {
+                tracing::info!("🧠 Escalating to AI Brain (Layer 2) for: {:?}", &input[..input.len().min(60)]);
+                self.ai_brain.handle(input, lang, ctx).await
+            }
         };
 
         // Attach multi-intent list to response (frontend can use for multi-card UI)
@@ -624,7 +631,9 @@ impl ChatEngine {
         }
     }
 
-    /// LLM fallback for Unknown intent — constrained to culinary topics.
+    /// Legacy LLM fallback — replaced by AI Brain (Layer 2).
+    /// Kept as a safety fallback in case AI Brain is disabled.
+    #[allow(dead_code)]
     async fn handle_fallback_llm(&self, input: &str, lang: ChatLang) -> ChatResponse {
         let lang_name = match lang {
             ChatLang::Ru => "Russian",
