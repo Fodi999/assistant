@@ -112,9 +112,17 @@ impl ChatEngine {
 
     async fn handle_healthy_product(&self, input: &str, lang: ChatLang, goal: HealthGoal, ctx: &SessionContext) -> ChatResponse {
         // ── Step 1: Does the user mention a SPECIFIC product? ────────────
-        // "курица полезная" → show chicken card with health analysis
-        // "хочу похудеть"   → no specific product → generic top-3
         if let Some(product) = self.find_ingredient_in_text(input).await {
+            let already_seen = ctx.last_cards.contains(&product.slug)
+                || ctx.last_product_slug.as_deref() == Some(&product.slug);
+
+            if already_seen {
+                // Product was already shown → give a DIFFERENT angle
+                tracing::debug!("🔁 healthy_product: {} already seen → alternative response", product.slug);
+                let alternatives = self.select_top_products(goal, 2, &[product.slug.clone()]).await;
+                return rb::build_already_seen_product(&product, &alternatives, lang, goal);
+            }
+
             tracing::debug!("🎯 healthy_product: specific product found — {}", product.slug);
             return rb::build_specific_healthy_product(&product, lang, goal);
         }

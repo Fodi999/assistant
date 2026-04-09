@@ -374,6 +374,172 @@ pub fn meal_idea_text_only(meal_name: &str, description: &str, lang: ChatLang) -
     }
 }
 
+// ── Already-seen product (anti-duplicate) ────────────────────────────────────
+
+/// Text when user asks about a product they've already seen this session.
+/// Shows brief confirmation + pivots to alternatives.
+pub fn already_seen_text(
+    name: &str,
+    p: &IngredientData,
+    alternatives: &[(IngredientData, &'static str, String)],
+    lang: ChatLang,
+    goal: HealthGoal,
+) -> String {
+    let cal = p.calories_per_100g as i32;
+    let pro = p.protein_per_100g;
+
+    let alt_names: Vec<String> = alternatives.iter()
+        .map(|(a, _, _)| a.name(lang.code()).to_string())
+        .collect();
+    let alt_list = if alt_names.is_empty() {
+        String::new()
+    } else {
+        alt_names.join(", ")
+    };
+
+    match (lang, goal) {
+        (ChatLang::Ru, HealthGoal::LowCalorie) => {
+            let base = format!("✅ **{}** — отличный выбор для похудения ({} ккал, {:.0}г белка).", name, cal, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Чередуй с рыбой и овощами — разнообразие ускоряет результат.", base)
+            } else {
+                format!("{}\n\nА вот что ещё поможет:\n🔀 Попробуй чередовать с **{}** — разнообразие ускоряет результат.", base, alt_list)
+            }
+        }
+        (ChatLang::Ru, HealthGoal::HighProtein) => {
+            let base = format!("✅ **{}** — мощный источник белка ({:.0}г на 100г).", name, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Комбинируй с крупами для полного аминокислотного профиля.", base)
+            } else {
+                format!("{}\n\nДля разнообразия добавь:\n🔀 **{}** — другие сильные источники белка.", base, alt_list)
+            }
+        }
+        (ChatLang::Ru, HealthGoal::Balanced) => {
+            let base = format!("✅ **{}** — сбалансированный выбор ({} ккал, {:.0}г белка).", name, cal, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Разнообразь рацион — каждый продукт даёт свой набор микроэлементов.", base)
+            } else {
+                format!("{}\n\nДля полноценного рациона добавь:\n🔀 **{}** — хорошо дополняют друг друга.", base, alt_list)
+            }
+        }
+        (ChatLang::En, HealthGoal::LowCalorie) => {
+            let base = format!("✅ **{}** — great choice for weight loss ({} kcal, {:.0}g protein).", name, cal, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Rotate with fish and veggies — variety boosts results.", base)
+            } else {
+                format!("{}\n\nAlso consider:\n🔀 Try alternating with **{}** — variety boosts results.", base, alt_list)
+            }
+        }
+        (ChatLang::En, HealthGoal::HighProtein) => {
+            let base = format!("✅ **{}** — powerful protein source ({:.0}g per 100g).", name, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Pair with grains for a complete amino acid profile.", base)
+            } else {
+                format!("{}\n\nFor variety, add:\n🔀 **{}** — other strong protein sources.", base, alt_list)
+            }
+        }
+        (ChatLang::En, HealthGoal::Balanced) => {
+            let base = format!("✅ **{}** — balanced pick ({} kcal, {:.0}g protein).", name, cal, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Diversify your meals — each product brings unique micronutrients.", base)
+            } else {
+                format!("{}\n\nTo round out your diet:\n🔀 **{}** — they complement each other well.", base, alt_list)
+            }
+        }
+        (ChatLang::Pl, _) => {
+            let base = format!("✅ **{}** — dobry wybór ({} kcal, {:.0}g białka).", name, cal, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Urozmaicaj dietę — każdy produkt wnosi inne składniki.", base)
+            } else {
+                format!("{}\n\nDla urozmaicenia:\n🔀 **{}** — dobrze się uzupełniają.", base, alt_list)
+            }
+        }
+        (ChatLang::Uk, _) => {
+            let base = format!("✅ **{}** — хороший вибір ({} ккал, {:.0}г білка).", name, cal, pro);
+            if alt_list.is_empty() {
+                format!("{}\n\n💡 Урізноманітнюй раціон — кожен продукт дає свої мікроелементи.", base)
+            } else {
+                format!("{}\n\nДля різноманіття:\n🔀 **{}** — добре доповнюють один одного.", base, alt_list)
+            }
+        }
+    }
+}
+
+/// Explainability reason for "already seen" response.
+pub fn already_seen_reason(
+    name: &str,
+    alternatives: &[(IngredientData, &'static str, String)],
+    lang: ChatLang,
+    _goal: HealthGoal,
+) -> String {
+    let alt_count = alternatives.len();
+    match lang {
+        ChatLang::Ru => format!("{} уже показан → предлагаю {} альтернатив(ы)", name, alt_count),
+        ChatLang::En => format!("{} already shown → suggesting {} alternative(s)", name, alt_count),
+        ChatLang::Pl => format!("{} już pokazany → proponuję {} alternatyw(y)", name, alt_count),
+        ChatLang::Uk => format!("{} вже показано → пропоную {} альтернатив(и)", name, alt_count),
+    }
+}
+
+/// Chef tip for "already seen" — different tip from the first time.
+pub fn chef_tip_alternative(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String {
+    let slug = p.slug.to_lowercase();
+    let cal = p.calories_per_100g as i32;
+    let pro = p.protein_per_100g;
+
+    // Different tips from chef_tip() — focus on meal planning & combos
+    let tip: (&str, &str, &str, &str) = if slug.contains("chicken") {
+        (
+            "Курица + гречка + брокколи = идеальная тарелка: 40г белка, <500 ккал. Готовь batch на 3 дня.",
+            "Chicken + buckwheat + broccoli = perfect plate: 40g protein, <500 kcal. Meal prep for 3 days.",
+            "Kurczak + kasza gryczana + brokuły = idealny talerz: 40g białka, <500 kcal.",
+            "Курка + гречка + броколі = ідеальна тарілка: 40г білка, <500 ккал.",
+        )
+    } else if slug.contains("salmon") {
+        (
+            "Лосось + авокадо + рис = полный спектр: омега-3, клетчатка, сложные углеводы.",
+            "Salmon + avocado + rice = full spectrum: omega-3, fiber, complex carbs.",
+            "Łosoś + awokado + ryż = pełne spektrum: omega-3, błonnik, złożone węglowodany.",
+            "Лосось + авокадо + рис = повний спектр: омега-3, клітковина, складні вуглеводи.",
+        )
+    } else if slug.contains("egg") {
+        (
+            "Яйца + шпинат + тост = завтрак чемпиона: 25г белка, железо, клетчатка за 10 минут.",
+            "Eggs + spinach + toast = champion's breakfast: 25g protein, iron, fiber in 10 min.",
+            "Jajka + szpinak + tost = śniadanie mistrza: 25g białka, żelazo, błonnik w 10 min.",
+            "Яйця + шпинат + тост = сніданок чемпіона: 25г білка, залізо, клітковина за 10 хв.",
+        )
+    } else if pro >= 20.0 {
+        (
+            &format!("Высокобелковые продукты лучше распределять по дню: по 30г белка за приём — оптимально для усвоения."),
+            "Spread high-protein foods across meals: ~30g per meal is optimal for absorption.",
+            "Rozłóż białko na cały dzień: ~30g na posiłek — optymalnie dla wchłaniania.",
+            "Розподіляй білок по дню: ~30г на прийом — оптимально для засвоєння.",
+        )
+    } else if cal < 100 {
+        (
+            "Низкокалорийные продукты — основа объёма. Добавь белковый источник, чтобы не проголодаться.",
+            "Low-cal foods are great for volume. Add a protein source to stay full.",
+            "Niskokaloryczne produkty dają objętość. Dodaj źródło białka, żeby się najeść.",
+            "Низькокалорійні продукти — основа об'єму. Додай білок, щоб не проголодатися.",
+        )
+    } else {
+        (
+            "Разнообразие — ключ к полноценному питанию. Каждый продукт несёт свой набор витаминов.",
+            "Variety is key to complete nutrition. Each product brings its own vitamin set.",
+            "Różnorodność to klucz. Każdy produkt wnosi swój zestaw witamin.",
+            "Різноманіття — ключ до повноцінного харчування. Кожен продукт несе свої вітаміни.",
+        )
+    };
+
+    match lang {
+        ChatLang::Ru => format!("💡 Шеф-совет: {}", tip.0),
+        ChatLang::En => format!("💡 Chef tip: {}", tip.1),
+        ChatLang::Pl => format!("💡 Rada szefa: {}", tip.2),
+        ChatLang::Uk => format!("💡 Порада шефа: {}", tip.3),
+    }
+}
+
 // ── Product info fallback ────────────────────────────────────────────────────
 
 pub fn product_not_found(lang: ChatLang) -> &'static str {

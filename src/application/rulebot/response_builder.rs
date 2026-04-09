@@ -152,6 +152,63 @@ pub fn build_specific_healthy_product(
     resp
 }
 
+/// Build a response when the user asks about a product they've ALREADY seen.
+/// Instead of repeating the same card, show comparison with alternatives.
+/// "если есть курицу можно похудеть" (after already seeing chicken) →
+///   "Курица — хороший выбор ✅ А вот что ещё поможет: [alt1] [alt2]"
+pub fn build_already_seen_product(
+    p: &IngredientData,
+    alternatives: &[(IngredientData, &'static str, String)],
+    lang: ChatLang,
+    goal: HealthGoal,
+) -> ChatResponse {
+    let name = p.name(lang.code()).to_string();
+    let text = tpl::already_seen_text(&name, p, alternatives, lang, goal);
+
+    // Build cards: ALTERNATIVES only (not the product itself — already shown)
+    let mut cards: Vec<Card> = alternatives.iter().map(|(alt, reason_tag, _)| {
+        let alt_name = alt.name(lang.code()).to_string();
+        let hl = tpl::highlight(alt, lang, goal);
+        Card::Product(ProductCard {
+            slug: alt.slug.clone(),
+            name: alt_name,
+            calories_per_100g: alt.calories_per_100g,
+            protein_per_100g: alt.protein_per_100g,
+            fat_per_100g: alt.fat_per_100g,
+            carbs_per_100g: alt.carbs_per_100g,
+            image_url: alt.image_url.clone(),
+            highlight: Some(hl),
+            reason_tag: Some(reason_tag),
+        })
+    }).collect();
+
+    // If no alternatives found, still show the original product card
+    if cards.is_empty() {
+        let hl = tpl::highlight(p, lang, goal);
+        cards.push(Card::Product(ProductCard {
+            slug: p.slug.clone(),
+            name: name.clone(),
+            calories_per_100g: p.calories_per_100g,
+            protein_per_100g: p.protein_per_100g,
+            fat_per_100g: p.fat_per_100g,
+            carbs_per_100g: p.carbs_per_100g,
+            image_url: p.image_url.clone(),
+            highlight: Some(hl),
+            reason_tag: Some("specific"),
+        }));
+    }
+
+    let reason = tpl::already_seen_reason(&name, alternatives, lang, goal);
+
+    let mut resp = ChatResponse::with_cards(
+        text, cards, Intent::HealthyProduct, vec![], reason, lang, 0,
+    );
+
+    resp.suggestions = build_already_seen_suggestions(lang, goal, &name, &p.slug);
+    resp.chef_tip = Some(tpl::chef_tip_alternative(p, lang, goal));
+    resp
+}
+
 /// Build a conversion response.
 pub fn build_conversion(value: f64, from: String, to: String, result: f64, supported: bool, lang: ChatLang) -> ChatResponse {
     let text = tpl::conversion_text(value, &from, result, &to, supported, lang);
@@ -397,6 +454,48 @@ fn build_specific_suggestions(lang: ChatLang, goal: HealthGoal, name: &str, slug
             Suggestion { label: format!("Рецепти з {}", name), query: format!("рецепт з {}", slug), emoji: Some("📖") },
             Suggestion { label: format!("Детальніше про {}", name), query: format!("що таке {}", slug), emoji: Some("🔍") },
             Suggestion { label: "Схожі продукти".into(), query: match goal {
+                HealthGoal::HighProtein => "ще високобілкові продукти".into(),
+                HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
+                HealthGoal::Balanced    => "ще корисні продукти".into(),
+            }, emoji: Some("🔄") },
+        ],
+    }
+}
+
+/// Suggestions for "already seen" responses — focus on action + exploration.
+fn build_already_seen_suggestions(lang: ChatLang, goal: HealthGoal, name: &str, slug: &str) -> Vec<Suggestion> {
+    match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: format!("Рецепт с {}", name), query: format!("рецепт с {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "Собрать план на день".into(), query: "план питания на день".into(), emoji: Some("📋") },
+            Suggestion { label: "Другие продукты".into(), query: match goal {
+                HealthGoal::HighProtein => "что ещё высокобелкового".into(),
+                HealthGoal::LowCalorie  => "что ещё низкокалорийного".into(),
+                HealthGoal::Balanced    => "ещё полезные продукты".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: format!("Recipe with {}", name), query: format!("recipe with {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "Build meal plan".into(), query: "meal plan for the day".into(), emoji: Some("📋") },
+            Suggestion { label: "Other products".into(), query: match goal {
+                HealthGoal::HighProtein => "more high protein foods".into(),
+                HealthGoal::LowCalorie  => "more low calorie foods".into(),
+                HealthGoal::Balanced    => "more healthy foods".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::Pl => vec![
+            Suggestion { label: format!("Przepis z {}", name), query: format!("przepis z {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "Plan na dzień".into(), query: "plan posiłków na dzień".into(), emoji: Some("📋") },
+            Suggestion { label: "Inne produkty".into(), query: match goal {
+                HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
+                HealthGoal::LowCalorie  => "więcej niskokalorycznych produktów".into(),
+                HealthGoal::Balanced    => "więcej zdrowych produktów".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::Uk => vec![
+            Suggestion { label: format!("Рецепт з {}", name), query: format!("рецепт з {}", slug), emoji: Some("🍳") },
+            Suggestion { label: "План на день".into(), query: "план харчування на день".into(), emoji: Some("📋") },
+            Suggestion { label: "Інші продукти".into(), query: match goal {
                 HealthGoal::HighProtein => "ще високобілкові продукти".into(),
                 HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
                 HealthGoal::Balanced    => "ще корисні продукти".into(),
