@@ -110,7 +110,16 @@ impl ChatEngine {
         rb::build_greeting(lang)
     }
 
-    async fn handle_healthy_product(&self, _input: &str, lang: ChatLang, goal: HealthGoal, ctx: &SessionContext) -> ChatResponse {
+    async fn handle_healthy_product(&self, input: &str, lang: ChatLang, goal: HealthGoal, ctx: &SessionContext) -> ChatResponse {
+        // ── Step 1: Does the user mention a SPECIFIC product? ────────────
+        // "курица полезная" → show chicken card with health analysis
+        // "хочу похудеть"   → no specific product → generic top-3
+        if let Some(product) = self.find_ingredient_in_text(input).await {
+            tracing::debug!("🎯 healthy_product: specific product found — {}", product.slug);
+            return rb::build_specific_healthy_product(&product, lang, goal);
+        }
+
+        // ── Step 2: No specific product → generic top-N by goal ──────────
         let exclude = ctx.excluded_slugs();
         let products = self.select_top_products(goal, 3, exclude).await;
         rb::build_healthy_response(&products, lang, goal)

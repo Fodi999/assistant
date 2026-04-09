@@ -119,6 +119,39 @@ pub fn build_healthy_response(
     resp
 }
 
+/// Build a response for a SPECIFIC product mentioned in a healthy-intent query.
+/// "курица полезная" → 1 card for chicken with health analysis.
+pub fn build_specific_healthy_product(
+    p: &IngredientData,
+    lang: ChatLang,
+    goal: HealthGoal,
+) -> ChatResponse {
+    let name = p.name(lang.code()).to_string();
+    let hl = tpl::highlight(p, lang, goal);
+    let text = tpl::healthy_text(&name, p, lang, goal);
+    let reason = tpl::macro_summary(p, lang, goal, 1);
+
+    let card = Card::Product(ProductCard {
+        slug: p.slug.clone(),
+        name: name.clone(),
+        calories_per_100g: p.calories_per_100g,
+        protein_per_100g: p.protein_per_100g,
+        fat_per_100g: p.fat_per_100g,
+        carbs_per_100g: p.carbs_per_100g,
+        image_url: p.image_url.clone(),
+        highlight: Some(hl),
+        reason_tag: Some("specific"),
+    });
+
+    let mut resp = ChatResponse::with_cards(
+        text, vec![card], Intent::HealthyProduct, vec![], reason, lang, 0,
+    );
+
+    resp.suggestions = build_specific_suggestions(lang, goal, &name, &p.slug);
+    resp.chef_tip = Some(tpl::chef_tip(p, lang, goal));
+    resp
+}
+
 /// Build a conversion response.
 pub fn build_conversion(value: f64, from: String, to: String, result: f64, supported: bool, lang: ChatLang) -> ChatResponse {
     let text = tpl::conversion_text(value, &from, result, &to, supported, lang);
@@ -325,6 +358,49 @@ fn build_meal_suggestions(lang: ChatLang, slug: &str) -> Vec<Suggestion> {
             Suggestion { label: "Покажи рецепт".into(), query: format!("рецепт з {}", slug), emoji: Some("🍳") },
             Suggestion { label: "Інша ідея".into(), query: "що ще приготувати".into(), emoji: Some("🔄") },
             Suggestion { label: "Калорії продукту".into(), query: format!("калорії {}", slug), emoji: Some("📊") },
+        ],
+    }
+}
+
+/// Suggestions for a specific product mentioned in a healthy query.
+/// E.g. "курица полезная" → recipes, nutrition deep-dive, alternatives.
+fn build_specific_suggestions(lang: ChatLang, goal: HealthGoal, name: &str, slug: &str) -> Vec<Suggestion> {
+    match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: format!("Рецепты с {}", name), query: format!("рецепт с {}", slug), emoji: Some("📖") },
+            Suggestion { label: format!("Подробнее о {}", name), query: format!("что такое {}", slug), emoji: Some("🔍") },
+            Suggestion { label: "Похожие продукты".into(), query: match goal {
+                HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
+                HealthGoal::LowCalorie  => "ещё низкокалорийные продукты".into(),
+                HealthGoal::Balanced    => "ещё полезные продукты".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: format!("Recipes with {}", name), query: format!("recipe with {}", slug), emoji: Some("📖") },
+            Suggestion { label: format!("More about {}", name), query: format!("what is {}", slug), emoji: Some("🔍") },
+            Suggestion { label: "Similar products".into(), query: match goal {
+                HealthGoal::HighProtein => "more high protein foods".into(),
+                HealthGoal::LowCalorie  => "more low calorie foods".into(),
+                HealthGoal::Balanced    => "more healthy food ideas".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::Pl => vec![
+            Suggestion { label: format!("Przepisy z {}", name), query: format!("przepis z {}", slug), emoji: Some("📖") },
+            Suggestion { label: format!("Więcej o {}", name), query: format!("co to jest {}", slug), emoji: Some("🔍") },
+            Suggestion { label: "Podobne produkty".into(), query: match goal {
+                HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
+                HealthGoal::LowCalorie  => "więcej niskokalorycznych produktów".into(),
+                HealthGoal::Balanced    => "więcej zdrowych produktów".into(),
+            }, emoji: Some("🔄") },
+        ],
+        ChatLang::Uk => vec![
+            Suggestion { label: format!("Рецепти з {}", name), query: format!("рецепт з {}", slug), emoji: Some("📖") },
+            Suggestion { label: format!("Детальніше про {}", name), query: format!("що таке {}", slug), emoji: Some("🔍") },
+            Suggestion { label: "Схожі продукти".into(), query: match goal {
+                HealthGoal::HighProtein => "ще високобілкові продукти".into(),
+                HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
+                HealthGoal::Balanced    => "ще корисні продукти".into(),
+            }, emoji: Some("🔄") },
         ],
     }
 }
