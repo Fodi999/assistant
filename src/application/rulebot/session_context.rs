@@ -59,6 +59,11 @@ pub struct SessionContext {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub last_cards: Vec<String>,
 
+    /// Cumulative slugs shown across ALL turns this session — prevents repeats
+    /// when user keeps asking "ещё" / "more".  Capped at 30 to limit JSON size.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shown_slugs: Vec<String>,
+
     /// How many turns this session has had (for personalization and 80/20 exploration).
     #[serde(default)]
     pub turn_count: u32,
@@ -97,14 +102,30 @@ impl SessionContext {
                 self.last_modifier
             },
             last_goal: effective_goal,
-            last_cards: card_slugs,
+            last_cards: card_slugs.clone(),
+            shown_slugs: {
+                let mut all = self.shown_slugs.clone();
+                for s in card_slugs {
+                    if !all.contains(&s) {
+                        all.push(s);
+                    }
+                }
+                // Cap at 30 to keep JSON small
+                if all.len() > 30 { all.drain(..all.len() - 30); }
+                all
+            },
             turn_count: self.turn_count + 1,
         }
     }
 
     /// Slugs to exclude in "а что ещё?" follow-ups.
+    /// Returns cumulative shown_slugs (all products ever shown this session).
     pub fn excluded_slugs(&self) -> &[String] {
-        &self.last_cards
+        if self.shown_slugs.is_empty() {
+            &self.last_cards
+        } else {
+            &self.shown_slugs
+        }
     }
 
     /// Resolve follow-up: "а сколько в нём калорий?" — refers to last_product.

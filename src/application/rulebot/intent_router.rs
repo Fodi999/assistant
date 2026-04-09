@@ -224,6 +224,9 @@ pub fn detect_modifier(text: &str) -> HealthModifier {
         "сушиться", "сушка", "похудеть", "похудения", "для похудения",
         "диет", "сбросить вес", "lose weight", "weight loss", "cutting",
         "low calorie", "low cal", "mało kalorii", "odchudzanie", "schudnąć",
+        // Ukrainian
+        "схуднути", "схуднення", "для схуднення", "скинути вагу",
+        "худнути", "худіти", "на дієті",
     ];
     if low_calorie.iter().any(|kw| text.contains(kw)) {
         return HealthModifier::LowCalorie;
@@ -346,6 +349,8 @@ fn score_healthy(text: &str) -> i32 {
         ("похуд",         5), ("schudnąć",       5), ("lose weight",    5),
         ("хочу похудеть", 5), ("chcę schudnąć",  5), ("want to lose",   5),
         ("хочу схуднути", 5), ("сбросить вес",   5), ("скинуть вес",    5),
+        ("схуднути",      5), ("схуднення",      5), ("скинути вагу",   5),
+        ("худнути",       4), ("худіти",         4),
         ("сушк",          4), ("сушит",          4), ("жиросжиган",     4),
         ("для похудения", 5), ("на похудение",   5), ("на сушку",       4),
         ("na odchudzanie",5), ("для зниження",   4), ("znizit ves",     4),
@@ -358,6 +363,10 @@ fn score_healthy(text: &str) -> i32 {
         ("что есть",      3), ("что поесть",     3), ("что съесть",     3),
         ("co jeść",       3), ("co zjeść",       3), ("що їсти",        3),
         ("що поїсти",     3), ("что кушать",     3),
+        // "ещё" follow-up patterns → HealthyProduct
+        ("ещё полезн",    4), ("ещё низкокалор", 4), ("ещё высокобелк", 4),
+        ("ещё вариант",   3), ("more healthy",   3), ("więcej zdrow",   3),
+        ("ще корисн",     4), ("ще низькокалор", 4), ("ще високобілк",  4),
     ];
     sum_scores(text, keywords)
 }
@@ -394,9 +403,12 @@ fn score_meal_idea(text: &str) -> i32 {
         ("что приготовить",3), ("what to cook",  3), ("co ugotować",    3),
         ("що приготувати", 3), ("meal idea",     3), ("pomysł na",      3),
         ("dinner idea",   3), ("lunch idea",    3), ("breakfast idea", 3),
+        ("план питания",  4), ("meal plan",     4), ("план харчування",4),
+        ("plan posiłków", 4), ("рацион на день",4), ("plan dnia",      4),
         ("что поесть",    2), ("what to eat",   2), ("co zjeść",       2),
         ("що поїсти",     2), ("идея блюда",    2), ("ідея страви",    2),
         ("предложи блюдо",2), ("suggest a meal",2),
+        ("собрать день",  3), ("build my day",  3), ("ułóż dzień",     3),
         ("обед",          1), ("ужин",           1), ("завтрак",        1),
         ("lunch",         1), ("dinner",         1), ("breakfast",      1),
         ("obiad",         1), ("kolacja",        1), ("śniadanie",      1),

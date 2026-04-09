@@ -86,7 +86,7 @@ impl ChatEngine {
             Intent::NutritionInfo  => self.handle_nutrition(input, lang).await,
             Intent::Seasonality    => self.handle_seasonality(input, lang),
             Intent::RecipeHelp     => self.handle_recipe(input, lang),
-            Intent::MealIdea       => self.handle_meal_idea(lang, goal).await,
+            Intent::MealIdea       => self.handle_meal_idea(lang, goal, input).await,
             Intent::ProductInfo    => self.handle_product_info(input, lang).await,
             // ── Layer 2: AI Brain ── LLM with tool calling for complex queries
             Intent::Unknown        => {
@@ -148,10 +148,29 @@ impl ChatEngine {
         }
 
         // Filter valid + non-excluded products
-        let candidates: Vec<_> = all.into_iter()
+        let mut candidates: Vec<_> = all.into_iter()
             .filter(|p| (p.calories_per_100g > 0.0 || p.protein_per_100g > 0.0)
                 && !exclude_slugs.contains(&p.slug))
             .collect();
+
+        // ── Goal-specific hard filters ───────────────────────────────────
+        // LowCalorie: remove products >250 kcal/100g (nuts, grains, oils etc.)
+        // HighProtein: require at least 10g protein/100g
+        match goal {
+            HealthGoal::LowCalorie => {
+                candidates.retain(|p| p.calories_per_100g <= 250.0);
+            }
+            HealthGoal::HighProtein => {
+                let high_prot: Vec<_> = candidates.iter()
+                    .filter(|p| p.protein_per_100g >= 10.0)
+                    .cloned()
+                    .collect();
+                if !high_prot.is_empty() {
+                    candidates = high_prot;
+                }
+            }
+            HealthGoal::Balanced => {}
+        }
 
         if candidates.is_empty() {
             return vec![];
@@ -181,9 +200,9 @@ impl ChatEngine {
                 let density_bonus: f64 = if p.protein_per_100g > 15.0 && p.calories_per_100g < 200.0 { 0.1 } else { 0.0 };
 
                 let score: f64 = match goal {
-                    HealthGoal::HighProtein => 0.60 * np + 0.20 * (1.0 - nc) + 0.10 * nf + density_bonus,
-                    HealthGoal::LowCalorie  => 0.10 * np + 0.60 * (1.0 - nc) + 0.20 * nf + density_bonus,
-                    HealthGoal::Balanced    => 0.35 * np + 0.35 * (1.0 - nc) + 0.20 * nf + density_bonus,
+                    HealthGoal::HighProtein => 0.60 * np + 0.20 * (1.0 - nc) + 0.10 * (1.0 - nf) + density_bonus,
+                    HealthGoal::LowCalorie  => 0.15 * np + 0.55 * (1.0 - nc) + 0.20 * (1.0 - nf) + density_bonus,
+                    HealthGoal::Balanced    => 0.35 * np + 0.35 * (1.0 - nc) + 0.20 * (1.0 - nf) + density_bonus,
                 };
                 (score, p)
             })
@@ -314,7 +333,20 @@ impl ChatEngine {
         rb::build_recipe(dish, lang)
     }
 
-    async fn handle_meal_idea(&self, lang: ChatLang, goal: HealthGoal) -> ChatResponse {
+    async fn handle_meal_idea(&self, lang: ChatLang, goal: HealthGoal, input: &str) -> ChatResponse {
+        let text_lower = input.to_lowercase();
+        let is_meal_plan = text_lower.contains("план")
+            || text_lower.contains("plan")
+            || text_lower.contains("рацион")
+            || text_lower.contains("собрать день")
+            || text_lower.contains("build my day")
+            || text_lower.contains("ułóż dzień");
+
+        if is_meal_plan {
+            return self.handle_meal_plan(lang, goal).await;
+        }
+
+        // Single meal idea (original behavior)
         // Goal-aware meal tables — HighProtein/LowCalorie variants included
         let ideas_ru: &[(&str, &str, &str)] = match goal {
             HealthGoal::HighProtein => &[
@@ -387,6 +419,13 @@ impl ChatEngine {
         }
 
         rb::build_meal_idea_text_only(meal_name, description, lang)
+    }
+
+    /// Full day meal plan: breakfast + lunch + dinner with product cards.
+    async fn handle_meal_plan(&self, lang: ChatLang, goal: HealthGoal) -> ChatResponse {
+        // Pick 3 diverse products for breakfast/lunch/dinner
+        let products = self.select_top_products(goal, 3, &[]).await;
+        rb::build_meal_plan(&products, lang, goal)
     }
 
     fn handle_unknown_static(&self, lang: ChatLang) -> ChatResponse {

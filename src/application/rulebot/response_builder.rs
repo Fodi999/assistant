@@ -305,6 +305,70 @@ pub fn build_meal_idea_text_only(meal_name: &str, description: &str, lang: ChatL
     ChatResponse::text_only(text, Intent::MealIdea, lang, 0)
 }
 
+/// Build a full-day meal plan (breakfast + lunch + dinner) with product cards.
+pub fn build_meal_plan(
+    products: &[(IngredientData, &'static str, String)],
+    lang: ChatLang,
+    goal: HealthGoal,
+) -> ChatResponse {
+    if products.is_empty() {
+        return ChatResponse::text_only(tpl::healthy_fallback(lang), Intent::MealIdea, lang, 0);
+    }
+
+    let meal_labels: &[&str] = match lang {
+        ChatLang::Ru => &["🌅 Завтрак", "☀️ Обед", "🌙 Ужин"],
+        ChatLang::En => &["🌅 Breakfast", "☀️ Lunch", "🌙 Dinner"],
+        ChatLang::Pl => &["🌅 Śniadanie", "☀️ Obiad", "🌙 Kolacja"],
+        ChatLang::Uk => &["🌅 Сніданок", "☀️ Обід", "🌙 Вечеря"],
+    };
+
+    let cards: Vec<Card> = products.iter().map(|(p, reason_tag, _)| {
+        let name = p.name(lang.code()).to_string();
+        let hl = tpl::highlight(p, lang, goal);
+        Card::Product(ProductCard {
+            slug: p.slug.clone(),
+            name,
+            calories_per_100g: p.calories_per_100g,
+            protein_per_100g: p.protein_per_100g,
+            fat_per_100g: p.fat_per_100g,
+            carbs_per_100g: p.carbs_per_100g,
+            image_url: p.image_url.clone(),
+            highlight: Some(hl),
+            reason_tag: Some(reason_tag),
+        })
+    }).collect();
+
+    let text = tpl::meal_plan_text(products, meal_labels, lang, goal);
+    let total_cal: i32 = products.iter().map(|(p, _, _)| p.calories_per_100g as i32 * 2).sum(); // ~200g portions
+    let total_pro: f32 = products.iter().map(|(p, _, _)| p.protein_per_100g * 2.0).sum();
+    let reason = match lang {
+        ChatLang::Ru => format!("~{} ккал · {:.0}г белка за день (порции ~200г)", total_cal, total_pro),
+        ChatLang::En => format!("~{} kcal · {:.0}g protein per day (~200g portions)", total_cal, total_pro),
+        ChatLang::Pl => format!("~{} kcal · {:.0}g białka na dzień (porcje ~200g)", total_cal, total_pro),
+        ChatLang::Uk => format!("~{} ккал · {:.0}г білка за день (порції ~200г)", total_cal, total_pro),
+    };
+
+    let mut resp = ChatResponse::with_cards(
+        text, cards, Intent::MealIdea, vec![], reason, lang, 0,
+    );
+
+    resp.suggestions = match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: "Другой вариант плана".into(), query: "другой план питания".into(), emoji: Some("🔄") },
+            Suggestion { label: "Подробнее о завтраке".into(), query: format!("что такое {}", products.first().map(|(p,_,_)| p.slug.as_str()).unwrap_or("eggs")), emoji: Some("🔍") },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: "Another plan".into(), query: "another meal plan".into(), emoji: Some("🔄") },
+            Suggestion { label: "Breakfast details".into(), query: format!("what is {}", products.first().map(|(p,_,_)| p.slug.as_str()).unwrap_or("eggs")), emoji: Some("🔍") },
+        ],
+        _ => vec![
+            Suggestion { label: "Inny plan".into(), query: "inny plan posiłków".into(), emoji: Some("🔄") },
+        ],
+    };
+
+    resp
+}
+
 /// Build a product info response (from cache hit).
 pub fn build_product_info(p: &IngredientData, lang: ChatLang) -> ChatResponse {
     let name = p.name(lang.code()).to_string();

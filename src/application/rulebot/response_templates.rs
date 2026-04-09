@@ -374,6 +374,59 @@ pub fn meal_idea_text_only(meal_name: &str, description: &str, lang: ChatLang) -
     }
 }
 
+// ── Meal Plan (full day) ─────────────────────────────────────────────────────
+
+pub fn meal_plan_text(
+    products: &[(IngredientData, &'static str, String)],
+    meal_labels: &[&str],
+    lang: ChatLang,
+    goal: HealthGoal,
+) -> String {
+    let goal_label = match (lang, goal) {
+        (ChatLang::Ru, HealthGoal::LowCalorie)  => "для похудения",
+        (ChatLang::Ru, HealthGoal::HighProtein)  => "для набора массы",
+        (ChatLang::Ru, HealthGoal::Balanced)     => "сбалансированный",
+        (ChatLang::En, HealthGoal::LowCalorie)   => "for weight loss",
+        (ChatLang::En, HealthGoal::HighProtein)   => "for muscle gain",
+        (ChatLang::En, HealthGoal::Balanced)      => "balanced",
+        (ChatLang::Pl, HealthGoal::LowCalorie)   => "na odchudzanie",
+        (ChatLang::Pl, HealthGoal::HighProtein)   => "na masę",
+        (ChatLang::Pl, HealthGoal::Balanced)      => "zbalansowany",
+        (ChatLang::Uk, HealthGoal::LowCalorie)   => "для схуднення",
+        (ChatLang::Uk, HealthGoal::HighProtein)   => "для набору маси",
+        (ChatLang::Uk, HealthGoal::Balanced)      => "збалансований",
+    };
+
+    let header = match lang {
+        ChatLang::Ru => format!("📋 **План питания на день** ({})\n", goal_label),
+        ChatLang::En => format!("📋 **Daily Meal Plan** ({})\n", goal_label),
+        ChatLang::Pl => format!("📋 **Plan na dzień** ({})\n", goal_label),
+        ChatLang::Uk => format!("📋 **План на день** ({})\n", goal_label),
+    };
+
+    let mut lines = vec![header];
+    for (i, (p, _, _)) in products.iter().enumerate() {
+        let label = meal_labels.get(i).copied().unwrap_or("🍽️");
+        let name = p.name(lang.code());
+        let cal = p.calories_per_100g as i32;
+        let pro = p.protein_per_100g;
+        lines.push(format!("{}: **{}** — {} ккал · {:.0}г белка", label, name, cal * 2, pro * 2.0));
+    }
+
+    let total_cal: i32 = products.iter().map(|(p, _, _)| p.calories_per_100g as i32 * 2).sum();
+    let total_pro: f32 = products.iter().map(|(p, _, _)| p.protein_per_100g * 2.0).sum();
+
+    let footer = match lang {
+        ChatLang::Ru => format!("\n**Итого: ~{} ккал · {:.0}г белка** (порции ~200г)", total_cal, total_pro),
+        ChatLang::En => format!("\n**Total: ~{} kcal · {:.0}g protein** (~200g portions)", total_cal, total_pro),
+        ChatLang::Pl => format!("\n**Razem: ~{} kcal · {:.0}g białka** (porcje ~200g)", total_cal, total_pro),
+        ChatLang::Uk => format!("\n**Всього: ~{} ккал · {:.0}г білка** (порції ~200г)", total_cal, total_pro),
+    };
+    lines.push(footer);
+
+    lines.join("\n")
+}
+
 // ── Already-seen product (anti-duplicate) ────────────────────────────────────
 
 /// Text when user asks about a product they've already seen this session.
