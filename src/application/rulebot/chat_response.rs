@@ -36,6 +36,9 @@ pub struct ChatResponse {
     /// Chef tip — cooking insight from the "chef mode".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chef_tip: Option<String>,
+    /// Motivational message from the sous-chef coach.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coach_message: Option<String>,
     /// Detected language.
     pub lang: ChatLang,
     /// Processing time in milliseconds.
@@ -65,6 +68,7 @@ impl ChatResponse {
             reason: None,
             suggestions: vec![],
             chef_tip: None,
+            coach_message: None,
             lang,
             timing_ms,
         }
@@ -86,6 +90,7 @@ impl ChatResponse {
             reason: None,
             suggestions: vec![],
             chef_tip: None,
+            coach_message: None,
             lang,
             timing_ms,
         }
@@ -109,6 +114,7 @@ impl ChatResponse {
             reason: Some(reason.into()),
             suggestions: vec![],
             chef_tip: None,
+            coach_message: None,
             lang,
             timing_ms,
         }

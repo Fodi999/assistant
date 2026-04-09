@@ -27,6 +27,7 @@ use super::chat_response::ChatResponse;
 use super::session_context::SessionContext;
 use super::ai_brain::AiBrain;
 use super::response_builder::{self as rb, HealthGoal};
+use super::chef_coach;
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,9 @@ impl ChatEngine {
         if parsed.intents.len() > 1 {
             response.intents = parsed.intents;
         }
+
+        // ── Coach motivation ──────────────────────────────────────────────
+        response.coach_message = chef_coach::pick_message(ctx, goal, lang);
 
         response.timing_ms = start.elapsed().as_millis() as u64;
         response

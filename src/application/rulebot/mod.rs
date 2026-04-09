@@ -22,3 +22,4 @@ pub mod session_context;
 pub mod response_builder;
 pub mod response_templates;
 pub mod ai_brain;
+pub mod chef_coach;
