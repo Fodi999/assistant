@@ -223,6 +223,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("✅ Recipe V2 & AI Insights services initialized");
 
+
+    // Load IngredientCache for ChatEngine (in-memory, zero SQL at runtime)
+    let ingredient_cache = Arc::new(
+        restaurant_backend::infrastructure::IngredientCache::load(&repositories.pool)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("⚠️ IngredientCache failed to load: {} — chat will have empty catalog", e);
+                restaurant_backend::infrastructure::IngredientCache::empty()
+            })
+    );
+    tracing::info!("✅ IngredientCache initialized for ChatEngine");
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
     let rate_limit_per_second = config.server.rate_limit_per_second;
@@ -247,6 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_nutrition_service,
         r2_client,
         llm_adapter,
+        ingredient_cache,
         cors_origins,
         rate_limit_per_second,
     );

@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod cms;
 pub mod ingredients;
 pub mod intent_pages;
