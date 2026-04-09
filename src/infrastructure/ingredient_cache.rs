@@ -68,6 +68,13 @@ pub struct IngredientCache {
 }
 
 impl IngredientCache {
+    /// Create an empty cache (fallback if DB load fails — server still starts).
+    pub fn empty() -> Self {
+        Self {
+            data: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
     /// Load all active ingredients from DB into memory. Call once at startup.
     pub async fn load(pool: &PgPool) -> Result<Self, sqlx::Error> {
         let map = Self::fetch_all(pool).await?;
