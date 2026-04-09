@@ -6,13 +6,10 @@
 //! No DB, no HTTP — pure functions. The application layer fetches
 //! candidates from DB and passes them here for scoring.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use crate::domain::tools::unit_converter as uc;
 use crate::domain::tools::flavor_graph::{FlavorVector, FlavorBalance};
 use crate::domain::tools::nutrition::NutritionBreakdown;
-use crate::domain::tools::rule_engine::RuleIssue;
-use crate::domain::tools::dish_context::{self, DishType};
 
 // ── Input: candidate ingredient ──────────────────────────────────────────────
 
@@ -63,42 +60,24 @@ pub struct SuggestionResult {
 
 /// How much each factor contributes to the final suggestion score.
 struct Weights {
-    /// How well the candidate fills flavor gaps (0–30 points)
+    /// How well the candidate fills flavor gaps (0–40 points)
     flavor_gap_fill: f64,
-    /// Pairing score with existing ingredients (0–20 points)
+    /// Pairing score with existing ingredients (0–30 points)
     pairing:         f64,
-    /// Nutritional improvement potential (0–15 points)
+    /// Nutritional improvement potential (0–20 points)
     nutrition:       f64,
-    /// Aromatic contribution (0–5 points)
+    /// Aromatic contribution (0–10 points)
     aroma:           f64,
-    /// Bonus for fixing rule_engine issues — health-level improvement (0–30 points)
-    rule_fix:        f64,
 }
 
 const WEIGHTS: Weights = Weights {
-    flavor_gap_fill: 30.0,
-    pairing:         20.0,
-    nutrition:       15.0,
-    aroma:            5.0,
-    rule_fix:        30.0,
+    flavor_gap_fill: 40.0,
+    pairing:         30.0,
+    nutrition:       20.0,
+    aroma:           10.0,
 };
 
 // ── Core suggestion function ─────────────────────────────────────────────────
-
-/// Build a slug→max_impact map from rule_engine issues.
-/// Each fix_slug gets the highest impact from any issue that references it.
-fn build_rule_fix_map(issues: &[RuleIssue]) -> HashMap<String, f64> {
-    let mut map: HashMap<String, f64> = HashMap::new();
-    for issue in issues {
-        if issue.severity == "info" { continue; }
-        let impact = issue.impact as f64;
-        for slug in &issue.fix_slugs {
-            let entry = map.entry(slug.clone()).or_insert(0.0);
-            if impact > *entry { *entry = impact; }
-        }
-    }
-    map
-}
 
 /// Score and rank candidate ingredients for a recipe.
 ///
@@ -107,112 +86,62 @@ fn build_rule_fix_map(issues: &[RuleIssue]) -> HashMap<String, f64> {
 /// - `candidates`: potential ingredients to add
 /// - `existing_slugs`: slugs already in the recipe (to exclude)
 /// - `max_results`: how many suggestions to return
-/// - `issues`: active rule_engine issues (for global health-aware scoring)
-/// - `dish_type`: classified dish type (Dessert/Savory/Neutral) for compatibility
 pub fn suggest_ingredients(
     balance: &FlavorBalance,
     candidates: &[Candidate],
     existing_slugs: &[String],
     max_results: usize,
-    issues: &[RuleIssue],
-    dish_type: DishType,
 ) -> SuggestionResult {
-    let rule_fix_map = build_rule_fix_map(issues);
-
     let mut suggestions: Vec<Suggestion> = candidates
         .iter()
         .filter(|c| !existing_slugs.contains(&c.slug))
-        // Hard-filter: block incompatible ingredients (compatibility = 0.0)
-        .filter(|c| {
-            dish_context::compatibility_score(dish_type, c.product_type.as_deref()) > 0.0
-        })
-        .map(|c| score_candidate(balance, c, &rule_fix_map, dish_type))
+        .map(|c| score_candidate(balance, c))
         .filter(|s| s.score > 10) // minimum threshold
         .collect();
 
     // Sort by score descending
     suggestions.sort_by(|a, b| b.score.cmp(&a.score));
-
-    // ── Category dedup: max 1 suggestion per product_type ──
-    // Prevents "add chicken + salmon + eggs" (3 proteins).
-    // We use the candidate's product_type for dedup.
-    let mut category_counts: HashMap<String, usize> = HashMap::new();
-    let mut deduped: Vec<Suggestion> = Vec::new();
-
-    for s in suggestions {
-        // Look up the candidate's product_type
-        let pt = candidates.iter()
-            .find(|c| c.slug == s.slug)
-            .and_then(|c| c.product_type.clone())
-            .unwrap_or_else(|| "unknown".to_string());
-
-        let count = category_counts.entry(pt).or_insert(0);
-        if *count < dish_context::MAX_PER_CATEGORY {
-            *count += 1;
-            deduped.push(s);
-        }
-        if deduped.len() >= max_results {
-            break;
-        }
-    }
+    suggestions.truncate(max_results);
 
     SuggestionResult {
         current_balance: balance.clone(),
-        suggestions: deduped,
+        suggestions,
     }
 }
 
 /// Score a single candidate against the current recipe balance.
-fn score_candidate(balance: &FlavorBalance, candidate: &Candidate, rule_fix_map: &HashMap<String, f64>, dish_type: DishType) -> Suggestion {
+fn score_candidate(balance: &FlavorBalance, candidate: &Candidate) -> Suggestion {
     let mut reasons = Vec::new();
     let mut fills_gaps = Vec::new();
     let mut score = 0.0;
 
-    // ── 1. Flavor gap filling (up to 30 points) ──
+    // ── 1. Flavor gap filling (up to 40 points) ──
     let gap_score = flavor_gap_score(balance, &candidate.flavor, &mut fills_gaps);
     score += gap_score * WEIGHTS.flavor_gap_fill;
     if !fills_gaps.is_empty() {
         reasons.push(format!("fills flavor gap: {}", fills_gaps.join(", ")));
     }
 
-    // ── 2. Pairing affinity (up to 20 points) ──
+    // ── 2. Pairing affinity (up to 30 points) ──
     let pair_norm = (candidate.pair_score / 10.0).clamp(0.0, 1.0);
     score += pair_norm * WEIGHTS.pairing;
     if candidate.pair_score > 6.0 {
         reasons.push(format!("strong pairing affinity ({:.1})", candidate.pair_score));
     }
 
-    // ── 3. Nutritional value (up to 15 points) ──
+    // ── 3. Nutritional value (up to 20 points) ──
     let nut_score = nutrition_bonus(&candidate.nutrition);
     score += nut_score * WEIGHTS.nutrition;
     if nut_score > 0.5 {
         reasons.push("adds nutritional value".to_string());
     }
 
-    // ── 4. Aroma contribution (up to 5 points) ──
+    // ── 4. Aroma contribution (up to 10 points) ──
     let aroma_norm = (candidate.flavor.aroma / 10.0).clamp(0.0, 1.0);
     score += aroma_norm * WEIGHTS.aroma;
     if candidate.flavor.aroma > 6.0 {
         reasons.push("aromatic boost".to_string());
     }
-
-    // ── 5. Rule-fix bonus (up to 30 points) — GLOBAL health improvement ──
-    // If this candidate is a fix_slug for any active rule issue,
-    // it gets a big bonus proportional to the issue's impact.
-    if let Some(&impact) = rule_fix_map.get(&candidate.slug) {
-        // impact is 3..15; normalize to 0..1 where 15 → 1.0
-        let fix_norm = (impact / 15.0).clamp(0.0, 1.0);
-        score += fix_norm * WEIGHTS.rule_fix;
-        reasons.push("fixes recipe issue".to_string());
-        fills_gaps.push("health".to_string());
-    }
-
-    // ── 6. Dish compatibility multiplier ──
-    // Soft penalty for ingredients that don't fit the dish type.
-    // E.g. salmon in a dessert → score × 0.0 (hard-filtered above),
-    //      fruit in savory → score × 0.3
-    let compat = dish_context::compatibility_score(dish_type, candidate.product_type.as_deref());
-    score *= compat;
 
     if reasons.is_empty() {
         reasons.push("general complement".to_string());
@@ -345,15 +274,13 @@ mod tests {
             &[olive_oil_candidate(), sugar_candidate()],
             &[],
             5,
-            &[], // no rule issues in basic test
-            DishType::Savory,
         );
 
         assert!(!result.suggestions.is_empty(), "should have suggestions");
         let top = &result.suggestions[0];
         assert_eq!(top.slug, "olive-oil", "olive oil should be #1 for fat gap");
         assert!(top.fills_gaps.contains(&"fat".to_string()), "should fill fat gap");
-        assert!(top.score > 25, "olive oil score should be > 25, got {}", top.score);
+        assert!(top.score > 40, "olive oil score should be > 40, got {}", top.score);
     }
 
     #[test]
@@ -364,8 +291,6 @@ mod tests {
             &[olive_oil_candidate()],
             &["olive-oil".to_string()],
             5,
-            &[],
-            DishType::Savory,
         );
         assert!(result.suggestions.is_empty(), "should exclude olive-oil");
     }
@@ -378,184 +303,10 @@ mod tests {
             &[olive_oil_candidate(), sugar_candidate()],
             &[],
             5,
-            &[],
-            DishType::Savory,
         );
         let scores: Vec<(&str, u8)> = result.suggestions.iter().map(|s| (s.slug.as_str(), s.score)).collect();
         let oil_score = scores.iter().find(|(s, _)| *s == "olive-oil").map(|(_, sc)| *sc).unwrap_or(0);
         let sugar_score = scores.iter().find(|(s, _)| *s == "sugar").map(|(_, sc)| *sc).unwrap_or(0);
         assert!(oil_score > sugar_score, "olive oil ({}) should score higher than sugar ({})", oil_score, sugar_score);
-    }
-
-    #[test]
-    fn rule_fix_bonus_boosts_score() {
-        use crate::domain::tools::rule_engine::RuleIssue;
-
-        let balance = tomato_recipe_balance();
-
-        // Without rule issues — baseline score
-        let baseline = suggest_ingredients(
-            &balance, &[olive_oil_candidate()], &[], 5, &[],
-            DishType::Savory,
-        );
-        let baseline_score = baseline.suggestions[0].score;
-
-        // With a rule issue that references olive-oil as fix_slug
-        let issues = vec![RuleIssue {
-            category: "structure".into(),
-            severity: "warning".into(),
-            rule: "missing_fat_source".into(),
-            title_key: "rules.missingFat".into(),
-            description_key: "rules.missingFatDesc".into(),
-            fix_slugs: vec!["olive-oil".into(), "butter".into()],
-            fix_keys: vec!["rules.fixAddFatSource".into()],
-            value: None,
-            threshold: None,
-            impact: 7,
-        }];
-
-        let boosted = suggest_ingredients(
-            &balance, &[olive_oil_candidate()], &[], 5, &issues,
-            DishType::Savory,
-        );
-        let boosted_score = boosted.suggestions[0].score;
-
-        assert!(
-            boosted_score > baseline_score,
-            "rule-fix bonus should increase score: {} (baseline) vs {} (boosted)",
-            baseline_score, boosted_score
-        );
-        assert!(
-            boosted.suggestions[0].fills_gaps.contains(&"health".to_string()),
-            "should mark 'health' in fills_gaps"
-        );
-    }
-
-    fn salmon_candidate() -> Candidate {
-        Candidate {
-            slug: "salmon".to_string(),
-            name: "Salmon".to_string(),
-            image_url: None,
-            flavor: FlavorVector {
-                sweetness: 0.5, acidity: 0.5, bitterness: 0.2,
-                umami: 7.0, fat: 6.0, aroma: 4.0,
-            },
-            nutrition: NutritionBreakdown {
-                calories: 208.0, protein_g: 20.0, fat_g: 13.0, carbs_g: 0.0,
-                fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
-            },
-            pair_score: 5.0,
-            typical_g: 100.0,
-            product_type: Some("fish".to_string()),
-        }
-    }
-
-    fn walnut_candidate() -> Candidate {
-        Candidate {
-            slug: "walnuts".to_string(),
-            name: "Walnuts".to_string(),
-            image_url: None,
-            flavor: FlavorVector {
-                sweetness: 1.0, acidity: 0.2, bitterness: 3.0,
-                umami: 1.0, fat: 7.0, aroma: 3.0,
-            },
-            nutrition: NutritionBreakdown {
-                calories: 654.0, protein_g: 15.0, fat_g: 65.0, carbs_g: 14.0,
-                fiber_g: 7.0, sugar_g: 3.0, salt_g: 0.0, sodium_mg: 0.0,
-            },
-            pair_score: 6.0,
-            typical_g: 20.0,
-            product_type: Some("nut".to_string()),
-        }
-    }
-
-    #[test]
-    fn salmon_blocked_in_dessert_context() {
-        let balance = tomato_recipe_balance(); // reuse balance, dish type matters
-        let result = suggest_ingredients(
-            &balance,
-            &[salmon_candidate(), walnut_candidate()],
-            &[],
-            5,
-            &[],
-            DishType::Dessert,
-        );
-        // Salmon (fish) should be hard-filtered out of dessert
-        let slugs: Vec<&str> = result.suggestions.iter().map(|s| s.slug.as_str()).collect();
-        assert!(!slugs.contains(&"salmon"), "salmon should NOT appear in dessert suggestions, got: {:?}", slugs);
-        // Walnuts (nut) should be fine in dessert
-        assert!(slugs.contains(&"walnuts"), "walnuts should appear in dessert suggestions");
-    }
-
-    #[test]
-    fn sugar_penalized_in_savory_context() {
-        let balance = tomato_recipe_balance();
-        let result = suggest_ingredients(
-            &balance,
-            &[olive_oil_candidate(), sugar_candidate()],
-            &[],
-            5,
-            &[],
-            DishType::Savory,
-        );
-        // Sugar (sweetener) should be heavily penalized in savory
-        if let Some(sugar_s) = result.suggestions.iter().find(|s| s.slug == "sugar") {
-            assert!(sugar_s.score < 5, "sugar score in savory should be very low, got {}", sugar_s.score);
-        }
-        // If sugar is even present, it should be last
-        if result.suggestions.len() > 1 {
-            assert_eq!(result.suggestions.last().unwrap().slug, "sugar",
-                "sugar should be last in savory context");
-        }
-    }
-
-    #[test]
-    fn max_one_per_category() {
-        let balance = tomato_recipe_balance();
-        let chicken = Candidate {
-            slug: "chicken-breast".to_string(),
-            name: "Chicken Breast".to_string(),
-            image_url: None,
-            flavor: FlavorVector {
-                sweetness: 0.3, acidity: 0.3, bitterness: 0.1,
-                umami: 5.0, fat: 2.0, aroma: 2.0,
-            },
-            nutrition: NutritionBreakdown {
-                calories: 165.0, protein_g: 31.0, fat_g: 3.6, carbs_g: 0.0,
-                fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
-            },
-            pair_score: 7.0,
-            typical_g: 100.0,
-            product_type: Some("meat".to_string()),
-        };
-        let beef = Candidate {
-            slug: "beef".to_string(),
-            name: "Beef".to_string(),
-            image_url: None,
-            flavor: FlavorVector {
-                sweetness: 0.3, acidity: 0.3, bitterness: 0.2,
-                umami: 6.0, fat: 5.0, aroma: 3.0,
-            },
-            nutrition: NutritionBreakdown {
-                calories: 250.0, protein_g: 26.0, fat_g: 15.0, carbs_g: 0.0,
-                fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
-            },
-            pair_score: 7.0,
-            typical_g: 100.0,
-            product_type: Some("meat".to_string()),
-        };
-        let result = suggest_ingredients(
-            &balance,
-            &[chicken, beef, olive_oil_candidate()],
-            &[],
-            5,
-            &[],
-            DishType::Savory,
-        );
-        // Should have max 1 meat suggestion
-        let meat_count = result.suggestions.iter()
-            .filter(|s| s.slug == "chicken-breast" || s.slug == "beef")
-            .count();
-        assert!(meat_count <= 1, "should have max 1 meat suggestion, got {}", meat_count);
     }
 }

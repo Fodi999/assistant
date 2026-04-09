@@ -142,27 +142,19 @@ pub fn is_valid_ingredient_name(name: &str) -> bool {
 
 pub fn default_density(product_type: &str) -> Option<f64> {
     match product_type {
-        "fish"        => Some(1.05),
-        "seafood"     => Some(1.05),
-        "meat"        => Some(1.05),
-        "poultry"     => Some(1.05),
-        "dairy"       => Some(1.03),
-        "vegetable"   => Some(0.90),
-        "fruit"       => Some(0.95),
-        "grain"       => Some(0.75),
-        "legume"      => Some(0.80),
-        "nut"         => Some(0.65),
-        "spice"       => Some(0.55),
-        "oil"         => Some(0.92),
-        "beverage"    => Some(1.00),
-        "preserved"   => Some(1.00),
-        "seaweed"     => Some(0.30),
-        "dried_fruit" => Some(0.65),
-        "sauce"       => Some(1.05),
-        "mushroom"    => Some(0.85),
-        "egg"         => Some(1.03),
-        "condiment"   => Some(1.10),
-        "bread"       => Some(0.40),
+        "fish"    => Some(1.05),
+        "seafood" => Some(1.05),
+        "meat"    => Some(1.05),
+        "poultry" => Some(1.05),
+        "dairy"   => Some(1.03),
+        "vegetable" => Some(0.90),
+        "fruit"     => Some(0.95),
+        "grain"     => Some(0.75),
+        "legume"    => Some(0.80),
+        "nut"       => Some(0.65),
+        "spice"     => Some(0.55),
+        "oil"       => Some(0.92),
+        "beverage"  => Some(1.00),
         _ => None,
     }
 }
@@ -171,27 +163,19 @@ pub fn default_density(product_type: &str) -> Option<f64> {
 
 pub fn default_shelf_life(product_type: &str) -> Option<i32> {
     match product_type {
-        "fish"        => Some(3),
-        "seafood"     => Some(3),
-        "meat"        => Some(5),
-        "poultry"     => Some(3),
-        "dairy"       => Some(14),
-        "vegetable"   => Some(7),
-        "fruit"       => Some(7),
-        "grain"       => Some(365),
-        "legume"      => Some(365),
-        "nut"         => Some(180),
-        "spice"       => Some(730),
-        "oil"         => Some(365),
-        "beverage"    => Some(7),
-        "preserved"   => Some(365),
-        "seaweed"     => Some(365),
-        "dried_fruit" => Some(180),
-        "sauce"       => Some(30),
-        "mushroom"    => Some(5),
-        "egg"         => Some(21),
-        "condiment"   => Some(180),
-        "bread"       => Some(5),
+        "fish"      => Some(3),
+        "seafood"   => Some(3),
+        "meat"      => Some(5),
+        "poultry"   => Some(3),
+        "dairy"     => Some(14),
+        "vegetable" => Some(7),
+        "fruit"     => Some(7),
+        "grain"     => Some(365),
+        "legume"    => Some(365),
+        "nut"       => Some(180),
+        "spice"     => Some(730),
+        "oil"       => Some(365),
+        "beverage"  => Some(7),
         _ => None,
     }
 }
@@ -200,27 +184,19 @@ pub fn default_shelf_life(product_type: &str) -> Option<i32> {
 
 pub fn default_portion(product_type: &str) -> Option<f64> {
     match product_type {
-        "fish"        => Some(150.0),
-        "seafood"     => Some(150.0),
-        "meat"        => Some(150.0),
-        "poultry"     => Some(150.0),
-        "dairy"       => Some(200.0),
-        "vegetable"   => Some(150.0),
-        "fruit"       => Some(150.0),
-        "grain"       => Some(80.0),
-        "legume"      => Some(80.0),
-        "nut"         => Some(30.0),
-        "spice"       => Some(5.0),
-        "oil"         => Some(15.0),
-        "beverage"    => Some(250.0),
-        "preserved"   => Some(50.0),
-        "seaweed"     => Some(10.0),
-        "dried_fruit" => Some(30.0),
-        "sauce"       => Some(30.0),
-        "mushroom"    => Some(100.0),
-        "egg"         => Some(60.0),
-        "condiment"   => Some(15.0),
-        "bread"       => Some(50.0),
+        "fish"      => Some(150.0),
+        "seafood"   => Some(150.0),
+        "meat"      => Some(150.0),
+        "poultry"   => Some(150.0),
+        "dairy"     => Some(200.0),
+        "vegetable" => Some(150.0),
+        "fruit"     => Some(150.0),
+        "grain"     => Some(80.0),
+        "legume"    => Some(80.0),
+        "nut"       => Some(30.0),
+        "spice"     => Some(5.0),
+        "oil"       => Some(15.0),
+        "beverage"  => Some(250.0),
         _ => None,
     }
 }
@@ -383,19 +359,17 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
 
     // Vegetable
     let veg_kw = [
-        "vegetable", "vegetables", "mixed vegetables", "frozen vegetables",
         "carrot", "potato", "tomato", "onion", "garlic", "pepper", "bell pepper",
         "cucumber", "cabbage", "broccoli", "spinach", "lettuce", "celery",
         "zucchini", "eggplant", "corn", "peas", "beet", "radish", "turnip",
-        "asparagus", "artichoke", "cauliflower", "kale", "leek",
+        "asparagus", "artichoke", "cauliflower", "kale", "leek", "mushroom",
         "pumpkin", "squash", "sweet potato", "olive", "caper",
     ];
     let veg_kw_ru = [
-        "овощ", "овощи", "замороженные овощи",
         "морковь", "картофель", "помидор", "лук", "чеснок", "перец",
         "огурец", "капуста", "брокколи", "шпинат", "салат", "сельдерей",
         "кабачок", "баклажан", "кукуруза", "горох", "свёкла", "редис",
-        "спаржа", "артишок", "цветная капуста", "тыква",
+        "спаржа", "артишок", "цветная капуста", "грибы", "тыква",
         "оливк", "маслин", "каперс",
     ];
     if veg_kw.iter().any(|k| name_en_lower.contains(k))
@@ -451,22 +425,18 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         return Some("nut");
     }
 
-    // Spice (includes baking agents — they live in "Spices & Herbs" category)
+    // Spice
     let spice_kw = [
         "cinnamon", "turmeric", "cumin", "paprika", "basil", "oregano",
         "thyme", "rosemary", "dill", "parsley", "bay leaf", "saffron",
         "cardamom", "clove", "nutmeg", "ginger", "vanilla", "coriander",
         "mint", "sage", "tarragon", "chili",
-        "baking powder", "baking soda", "yeast", "gelatin", "agar",
-        "cornstarch", "starch", "pectin",
     ];
     let spice_kw_ru = [
         "корица", "куркума", "тмин", "паприка", "базилик", "орегано",
         "тимьян", "розмарин", "укроп", "петрушка", "лавр", "шафран",
         "кардамон", "гвоздика", "мускатный", "имбирь", "ваниль", "кориандр",
         "мята", "шалфей", "эстрагон", "чили",
-        "разрыхлитель", "сода", "дрожжи", "желатин", "агар",
-        "крахмал", "пектин",
     ];
     if spice_kw.iter().any(|k| name_en_lower.contains(k))
         || spice_kw_ru.iter().any(|k| name_ru_lower.contains(k))
@@ -474,125 +444,15 @@ pub fn infer_product_type(name_en_lower: &str, name_ru_lower: &str) -> Option<&'
         return Some("spice");
     }
 
-    // Sweetener / Condiment / Sweets
+    // Sweetener / Condiment
     let condiment_kw = ["honey", "sugar", "maple syrup", "soy sauce", "vinegar",
-                         "mustard", "ketchup", "mayonnaise", "hot sauce", "worcestershire",
-                         "chocolate", "cocoa bean", "molasses", "syrup", "stevia"];
+                         "mustard", "ketchup", "mayonnaise", "hot sauce", "worcestershire"];
     let condiment_kw_ru = ["мёд", "сахар", "кленовый сироп", "соевый соус", "уксус",
-                            "горчица", "кетчуп", "майонез", "шоколад", "патока", "сироп"];
+                            "горчица", "кетчуп", "майонез"];
     if condiment_kw.iter().any(|k| name_en_lower.contains(k))
         || condiment_kw_ru.iter().any(|k| name_ru_lower.contains(k))
     {
         return Some("condiment");
-    }
-
-    // Bakery / Bread
-    let bakery_kw = ["bread", "baguette", "bun", "croissant", "wrap", "tortilla", "pita", "bagel"];
-    let bakery_kw_ru = ["хлеб", "багет", "булочка", "круассан", "лепешка", "тортилья", "питак"];
-    if bakery_kw.iter().any(|k| name_en_lower.contains(k))
-        || bakery_kw_ru.iter().any(|k| name_ru_lower.contains(k))
-    {
-        return Some("bread");
-    }
-
-    // Beverage
-    let beverage_kw = [
-        "beer", "wine", "juice", "tea", "coffee", "cocoa", "lemonade",
-        "kombucha", "kvass", "cider", "sake", "mead", "smoothie",
-        "matcha", "espresso", "water",
-    ];
-    let beverage_kw_ru = [
-        "пиво", "вино", "сок", "чай", "кофе", "какао", "лимонад",
-        "комбуча", "квас", "сидр", "сакэ", "медовуха",
-    ];
-    if beverage_kw.iter().any(|k| name_en_lower.contains(k))
-        || beverage_kw_ru.iter().any(|k| name_ru_lower.contains(k))
-    {
-        return Some("beverage");
-    }
-
-    // Mushroom
-    let mushroom_kw = [
-        "mushroom", "champignon", "shiitake", "portobello", "oyster mushroom",
-        "chanterelle", "porcini", "truffle", "enoki", "maitake", "morel",
-    ];
-    let mushroom_kw_ru = [
-        "гриб", "шампиньон", "шиитаке", "портобелло", "вёшенка",
-        "лисичк", "белый гриб", "трюфель", "опят", "маслят",
-    ];
-    if mushroom_kw.iter().any(|k| name_en_lower.contains(k))
-        || mushroom_kw_ru.iter().any(|k| name_ru_lower.contains(k))
-    {
-        return Some("mushroom");
-    }
-
-    // Preserved / Pickled / Canned — маринованные, консервированные, квашеные
-    let preserved_kw = [
-        "pickle", "pickled", "fermented", "sauerkraut", "kimchi",
-        "canned", "preserved", "marinated", "dried tomato", "sun-dried",
-        "sundried", "jam", "jelly", "compote", "conserve",
-        "anchovy paste", "tomato paste", "tomato sauce", "pesto",
-        "hummus", "tahini", "miso", "natto",
-        "capers", "relish", "chutney", "salsa",
-    ];
-    let preserved_kw_ru = [
-        "маринован", "солён", "квашен", "консерв", "ферментирован",
-        "кимчи", "капуста квашеная", "огурцы маринованные", "маринад",
-        "паста томатная", "томатная паста", "аджика", "хумус", "тахини",
-        "мисо", "варенье", "джем", "компот", "повидло", "соленья",
-        "лечо", "аджик", "ткемали", "сацебели", "наршараб",
-    ];
-    if preserved_kw.iter().any(|k| name_en_lower.contains(k))
-        || preserved_kw_ru.iter().any(|k| name_ru_lower.contains(k))
-    {
-        return Some("preserved");
-    }
-
-    // Seaweed / Algae
-    let seaweed_kw = [
-        "seaweed", "nori", "wakame", "kelp", "dulse", "kombu", "spirulina",
-        "chlorella", "agar",
-    ];
-    let seaweed_kw_ru = [
-        "водоросль", "нори", "вакаме", "ламинария", "морская капуста",
-        "спирулина", "хлорелла",
-    ];
-    if seaweed_kw.iter().any(|k| name_en_lower.contains(k))
-        || seaweed_kw_ru.iter().any(|k| name_ru_lower.contains(k))
-    {
-        return Some("seaweed");
-    }
-
-    // Dried fruit
-    let dried_fruit_kw = [
-        "raisin", "dried cranberr", "dried apricot", "prune", "date",
-        "dried fig", "dried mango", "dried banana", "goji",
-        "dried fruit", "trail mix",
-    ];
-    let dried_fruit_kw_ru = [
-        "изюм", "курага", "чернослив", "финик", "сухофрукт",
-        "цукат", "вяленый", "вяленая", "сушёная клюква",
-    ];
-    if dried_fruit_kw.iter().any(|k| name_en_lower.contains(k))
-        || dried_fruit_kw_ru.iter().any(|k| name_ru_lower.contains(k))
-    {
-        return Some("dried_fruit");
-    }
-
-    // Sauce (ready-made sauces, not condiments)
-    let sauce_kw = [
-        "sauce", "dressing", "gravy", "aioli", "tzatziki",
-        "guacamole", "ranch", "bbq", "teriyaki", "hoisin",
-        "fish sauce", "oyster sauce", "sriracha", "tabasco",
-    ];
-    let sauce_kw_ru = [
-        "соус", "заправка", "подлива", "айоли", "дзадзики",
-        "гуакамоле", "терияки", "хойсин",
-    ];
-    if sauce_kw.iter().any(|k| name_en_lower.contains(k))
-        || sauce_kw_ru.iter().any(|k| name_ru_lower.contains(k))
-    {
-        return Some("sauce");
     }
 
     None // truly unknown

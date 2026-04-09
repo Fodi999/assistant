@@ -6,7 +6,6 @@ pub mod ai_sous_chef; // AI Sous Chef — deterministic state generation
 pub mod public_nutrition;
 pub mod public_seo_content; // 🆕 AI SEO content for programmatic pages
 pub mod intent_pages;       // 🆕 Intent pages CRUD + batch + publish pipeline
-pub mod lab_combos;         // 🆕 Lab Combo SEO pages
 pub mod auth;
 pub mod catalog;
 pub mod cms_service;
@@ -23,7 +22,6 @@ pub mod report;
 pub mod rulebot; // 🆕 RuleBot orchestrator — Culinary Intelligence Platform
 pub mod smart_parse; // 🆕 SmartParse — deterministic text → ingredient parser
 pub mod smart_service; // 🆕 SmartService — intelligent ingredient aggregator
-pub mod sous_chef; // 🆕 Sous-Chef Planner — DDD module (real data from catalog)
 pub mod tenant_ingredient;
 pub mod user;
 

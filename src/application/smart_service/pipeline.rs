@@ -543,6 +543,11 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             }
         }
 
+        let nut_score = nutrition::nutrition_score(
+            total_cal, total_prot, total_fat, total_carbs,
+            total_fiber, total_sugar, 0.0,
+        );
+
         let recipe_ctx = RecipeContext {
             flavor: balance.vector.clone(),
             balance_score: balance.balance_score,
@@ -554,10 +559,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
             sugar_g: total_sugar,
             total_grams,
             ingredients: rule_ingredients,
-            nutrition_score: nutrition::nutrition_score(
-                total_cal, total_prot, total_fat, total_carbs,
-                total_fiber, total_sugar, 0.0,
-            ),
+            nutrition_score: nut_score,
         };
 
         Some(rule_engine::diagnose(&recipe_ctx))
@@ -750,44 +752,49 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
     }
 
     // ── v3 Step 1+11c: Goal-aware suggestions ────────────────────────────────
-    // Classify dish type for food-context filtering
-    let dish_ingredients: Vec<(String, f64, Option<String>)> = {
+    // Run SuggestionEngine, then re-rank by goal
+    let diag_issues = raw_diag.as_ref().map(|d| d.issues.as_slice()).unwrap_or(&[]);
+
+    // Classify dish type for suggestion compatibility filtering
+    let sugar_ratio = {
+        let total_cal: f64 = flavor_ingredients.iter().map(|fi| {
+            let row_cal = if fi.slug == ctx.ingredient { row.cal() } else {
+                additional_rows.iter()
+                    .find(|(r, _)| r.slug.as_deref() == Some(&fi.slug))
+                    .map(|(r, _)| r.cal())
+                    .unwrap_or(0.0)
+            };
+            row_cal * (fi.grams / 100.0)
+        }).sum::<f64>().max(1.0);
+        let total_sugar_cal: f64 = flavor_ingredients.iter().map(|fi| {
+            let row_sugar = if fi.slug == ctx.ingredient { row.sugar() } else {
+                additional_rows.iter()
+                    .find(|(r, _)| r.slug.as_deref() == Some(&fi.slug))
+                    .map(|(r, _)| r.sugar())
+                    .unwrap_or(0.0)
+            };
+            row_sugar * (fi.grams / 100.0) * 4.0
+        }).sum::<f64>();
+        total_sugar_cal / total_cal * 100.0
+    };
+    let rule_ingredients_for_dish: Vec<(String, f64, Option<String>)> = {
         let mut v = vec![(ctx.ingredient.clone(), typical_g, row.product_type.clone())];
-        for (i, extra_slug) in ctx.additional_ingredients.iter().enumerate() {
+        for (i, slug) in ctx.additional_ingredients.iter().enumerate() {
             if let Some((r, _)) = additional_rows.get(i) {
-                v.push((extra_slug.clone(), r.typical_g().unwrap_or(50.0), r.product_type.clone()));
+                v.push((slug.clone(), r.typical_g().unwrap_or(50.0), r.product_type.clone()));
             }
         }
         v
     };
-    let sugar_cal_pct_pipe = {
-        let total_cal: f64 = {
-            let mc = row.cal() * (typical_g / 100.0);
-            let ac: f64 = ctx.additional_ingredients.iter().enumerate().map(|(i, _)| {
-                additional_rows.get(i).map(|(r, _)| r.cal() * (r.typical_g().unwrap_or(50.0) / 100.0)).unwrap_or(0.0)
-            }).sum();
-            mc + ac
-        };
-        let total_sugar: f64 = {
-            let ms = row.sugar() * (typical_g / 100.0);
-            let as_: f64 = ctx.additional_ingredients.iter().enumerate().map(|(i, _)| {
-                additional_rows.get(i).map(|(r, _)| r.sugar() * (r.typical_g().unwrap_or(50.0) / 100.0)).unwrap_or(0.0)
-            }).sum();
-            ms + as_
-        };
-        if total_cal > 0.0 { (total_sugar * 4.0 / total_cal) * 100.0 } else { 0.0 }
-    };
     let dish_type = dish_context::classify_dish(
-        &dish_ingredients,
-        sugar_cal_pct_pipe,
-        balance.vector.sweetness as f64,
-        balance.vector.umami as f64,
+        &rule_ingredients_for_dish,
+        sugar_ratio,
+        balance.vector.sweetness,
+        balance.vector.umami,
     );
 
-    // Run SuggestionEngine, then re-rank by goal
-    let diag_issues = raw_diag.as_ref().map(|d| d.issues.as_slice()).unwrap_or(&[]);
     let suggestion_result = suggestion_engine::suggest_ingredients(
-        balance, &all_candidates, &existing_slugs, 10, diag_issues, dish_type,
+        balance, &all_candidates, &existing_slugs, 10,
     );
     let mut scored_suggestions: Vec<SuggestionInfo> = suggestion_result
         .suggestions

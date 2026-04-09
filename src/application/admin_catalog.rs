@@ -79,17 +79,16 @@ fn product_type_to_category(product_type: &str) -> Option<&'static str> {
     match product_type.to_lowercase().as_str() {
         "fish" | "seafood" | "fish_and_seafood" => Some("Fish & Seafood"),
         "meat" | "poultry" | "meat_and_poultry" => Some("Meat & Poultry"),
-        "dairy" | "dairy_and_eggs" | "eggs" | "egg" => Some("Dairy & Eggs"),
+        "dairy" | "dairy_and_eggs" | "eggs" => Some("Dairy & Eggs"),
         "vegetable" | "vegetables" => Some("Vegetables"),
         "fruit" | "fruits" => Some("Fruits"),
-        "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" | "bread" | "bakery" => Some("Grains & Pasta"),
+        "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => Some("Grains & Pasta"),
         "legume" | "legumes" => Some("Legumes"),
-        "nut" | "nuts" | "seeds" | "nut_seed" => Some("Nuts & Seeds"),
-        "spice" | "spices" | "herb" | "herbs" | "seasoning" | "baking" => Some("Spices & Herbs"),
-        "oil" | "oils" | "fat" | "fats" | "fat_oil" => Some("Oils & Fats"),
+        "nut" | "nuts" | "seeds" => Some("Nuts & Seeds"),
+        "spice" | "spices" | "herb" | "herbs" | "seasoning" => Some("Spices & Herbs"),
+        "oil" | "oils" | "fat" | "fats" => Some("Oils & Fats"),
         "beverage" | "beverages" | "drink" => Some("Beverages"),
-        "mushroom" | "mushrooms" | "fungi" => Some("Mushrooms"),
-        "condiment" | "sauce" | "sweetener" => Some("Condiments & Sauces"),
+        "mushroom" | "mushrooms" | "fungi" => Some("Vegetables"), // mushrooms → vegetables
         _ => None, // "other" or anything unknown → rejected
     }
 }
@@ -99,36 +98,27 @@ fn product_type_to_category(product_type: &str) -> Option<&'static str> {
 fn normalize_product_type(raw: &str) -> AppResult<String> {
     let normalized = match raw.to_lowercase().as_str() {
         "fish" | "seafood" | "fish_and_seafood" => "seafood",
-        "meat" | "meat_and_poultry" => "meat",
-        "poultry" => "poultry",
-        "dairy" | "dairy_and_eggs" => "dairy",
-        "egg" | "eggs" => "egg",
+        "meat" | "poultry" | "meat_and_poultry" => "meat",
+        "dairy" | "dairy_and_eggs" | "eggs" => "dairy",
         "vegetable" | "vegetables" => "vegetable",
         "fruit" | "fruits" => "fruit",
         "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => "grain",
-        "bread" | "bakery" | "baking" => "bread",
         "legume" | "legumes" => "legume",
-        "nut" | "nuts" | "seeds" | "nut_seed" => "nut",
+        "nut" | "nuts" | "seeds" => "nut",
         "spice" | "spices" | "herb" | "herbs" | "seasoning" => "spice",
-        "oil" | "oils" | "fat" | "fats" | "fat_oil" => "oil",
+        "oil" | "oils" | "fat" | "fats" => "oil",
         "beverage" | "beverages" | "drink" => "beverage",
-        "mushroom" | "mushrooms" | "fungi" => "mushroom",
-        "condiment" | "condiments" | "sweet" | "sweets" | "dessert" | "desserts" => "condiment",
-        "sauce" | "sauces" => "sauce",
-        "sweetener" | "sweeteners" => "sweetener",
-        "supplement" | "supplements" => "other", // no DB category yet, allow as other
+        "mushroom" | "mushrooms" | "fungi" => "vegetable",
         "other" => {
             return Err(AppError::validation(
                 "product_type 'other' is not allowed. Every product must have a specific type \
-                 (e.g. seafood, meat, poultry, dairy, egg, vegetable, fruit, grain, bread, \
-                 legume, nut, spice, oil, beverage, mushroom, condiment, sauce, sweetener)."
+                 (e.g. seafood, meat, dairy, vegetable, fruit, grain, legume, nut, spice, oil, beverage)."
             ));
         }
         unknown => {
             return Err(AppError::validation(&format!(
-                "Unknown product_type '{}'. Allowed: seafood, meat, poultry, dairy, egg, \
-                 vegetable, fruit, grain, bread, legume, nut, spice, oil, beverage, \
-                 mushroom, condiment, sauce, sweetener.",
+                "Unknown product_type '{}'. Allowed: seafood, meat, dairy, vegetable, fruit, \
+                 grain, legume, nut, spice, oil, beverage.",
                 unknown
             )));
         }
@@ -1273,12 +1263,9 @@ impl AdminCatalogService {
         if product_type == "other" {
             let en_low = product.name_en.to_lowercase();
             let ru_low = product.name_ru.as_deref().unwrap_or("").to_lowercase();
-            // Also try Polish and Ukrainian names
-            let pl_low = product.name_pl.as_deref().unwrap_or("").to_lowercase();
-
             if let Some(inferred) = crate::application::ai_sous_chef::product_dictionary::infer_product_type(&en_low, &ru_low) {
                 tracing::info!(
-                    "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}' (dictionary)",
+                    "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}'",
                     inferred, product.name_en
                 );
                 product_type = inferred.to_string();
@@ -1289,102 +1276,6 @@ impl AdminCatalogService {
                 .bind(id)
                 .execute(&self.pool)
                 .await;
-            }
-
-            // 1c. Fallback: infer from category name
-            if product_type == "other" {
-                let cat_name: Option<String> = sqlx::query_scalar(
-                    "SELECT name_en FROM categories WHERE id = $1"
-                )
-                .bind(product.category_id)
-                .fetch_optional(&self.pool)
-                .await
-                .unwrap_or(None);
-
-                if let Some(cat) = cat_name {
-                    let cat_low = cat.to_lowercase();
-                    let inferred = match cat_low.as_str() {
-                        c if c.contains("fish")      => Some("fish"),
-                        c if c.contains("seafood")    => Some("seafood"),
-                        c if c.contains("meat")       => Some("meat"),
-                        c if c.contains("poultry") || c.contains("chicken") => Some("poultry"),
-                        c if c.contains("dairy") || c.contains("milk") => Some("dairy"),
-                        c if c.contains("vegetable")  => Some("vegetable"),
-                        c if c.contains("fruit")      => Some("fruit"),
-                        c if c.contains("grain") || c.contains("cereal") || c.contains("pasta") => Some("grain"),
-                        c if c.contains("legume") || c.contains("bean") => Some("legume"),
-                        c if c.contains("nut") || c.contains("seed") => Some("nut"),
-                        c if c.contains("spice") || c.contains("herb") => Some("spice"),
-                        c if c.contains("oil")        => Some("oil"),
-                        c if c.contains("beverage") || c.contains("drink") => Some("beverage"),
-                        c if c.contains("sauce") || c.contains("condiment") => Some("condiment"),
-                        c if c.contains("sweet") || c.contains("dessert") || c.contains("confection") => Some("condiment"),
-                        c if c.contains("bread") || c.contains("bakery") => Some("bread"),
-                        c if c.contains("preserv") || c.contains("canned") || c.contains("pickle") => Some("preserved"),
-                        c if c.contains("mushroom")   => Some("mushroom"),
-                        c if c.contains("egg")        => Some("egg"),
-                        _ => None,
-                    };
-
-                    if let Some(t) = inferred {
-                        tracing::info!(
-                            "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}' (from category '{}')",
-                            t, product.name_en, cat
-                        );
-                        product_type = t.to_string();
-                        let _ = sqlx::query(
-                            "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
-                        )
-                        .bind(&product_type)
-                        .bind(id)
-                        .execute(&self.pool)
-                        .await;
-                    }
-                }
-            }
-
-            // 1d. Last resort: use product name parts for a broader match
-            if product_type == "other" {
-                // Check combined name (en + ru + pl) for any partial hints
-                let combined = format!("{} {} {} {}", en_low, ru_low, pl_low,
-                    product.name_uk.as_deref().unwrap_or("").to_lowercase());
-
-                let broad_match = if combined.contains("pickle") || combined.contains("маринов") || combined.contains("солён") || combined.contains("квашен") {
-                    Some("preserved")
-                } else if combined.contains("soup") || combined.contains("суп") || combined.contains("broth") || combined.contains("бульон") {
-                    Some("condiment")
-                } else if combined.contains("vegetable") || combined.contains("овощ") {
-                    Some("vegetable")
-                } else if combined.contains("fruit") || combined.contains("фрукт") || combined.contains("ягод") || combined.contains("berry") {
-                    Some("fruit")
-                } else if combined.contains("salad") || combined.contains("салат") {
-                    Some("vegetable")
-                } else if combined.contains("seed") || combined.contains("семен") || combined.contains("семеч") {
-                    Some("nut")
-                } else if combined.contains("leaf") || combined.contains("лист") || combined.contains("herb") || combined.contains("зелен") {
-                    Some("spice")
-                } else if combined.contains("meat") || combined.contains("мяс") || combined.contains("говяд") || combined.contains("свинин") {
-                    Some("meat")
-                } else if combined.contains("cheese") || combined.contains("сыр") || combined.contains("молок") || combined.contains("milk") || combined.contains("cream") || combined.contains("сливк") {
-                    Some("dairy")
-                } else {
-                    None
-                };
-
-                if let Some(t) = broad_match {
-                    tracing::info!(
-                        "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}' (broad match)",
-                        t, product.name_en
-                    );
-                    product_type = t.to_string();
-                    let _ = sqlx::query(
-                        "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
-                    )
-                    .bind(&product_type)
-                    .bind(id)
-                    .execute(&self.pool)
-                    .await;
-                }
             }
         }
 

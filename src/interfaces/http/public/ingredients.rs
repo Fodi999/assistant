@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Json, Response},
 };
@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use crate::domain::catalog::{IngredientMeasures, IngredientNutrition, IngredientReference};
 use crate::domain::tools::unit_converter as uc;
-use crate::infrastructure::cache::{self, AppCache};
 use crate::infrastructure::persistence::catalog_ingredient_repository::find_ingredient_ref_by_slug;
 use crate::shared::i18n::{translate_allergens, translate_seasons};
 use crate::shared::language::Language;
@@ -41,7 +40,7 @@ fn parse_lang(s: &Option<String>) -> Language {
 
 // ── Response types ────────────────────────────────────────────────────────────
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct IngredientListItem {
     pub slug: String,
     pub name_en: String,
@@ -59,7 +58,7 @@ pub struct IngredientListItem {
     pub updated_at: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct ListResponse {
     pub items: Vec<IngredientListItem>,
     pub total: i64,
@@ -91,29 +90,10 @@ struct IngredientRow {
 ///
 /// Returns all active ingredients, optionally filtered by full-text search.
 /// Supports ?q= for searching across all language name columns and slug.
-///
-/// 🚀 In-memory cached: list without ?q= served from AppCache (0 DB).
 pub async fn list_ingredients(
     State(pool): State<PgPool>,
     Query(params): Query<ListQuery>,
-    cache: Option<Extension<AppCache>>,
 ) -> Result<Json<ListResponse>, (StatusCode, Json<serde_json::Value>)> {
-    // Cache: only for no-query (full list) — the hottest endpoint
-    let cache_key = if params.q.is_none() {
-        Some(cache::keys::ingredients_list())
-    } else {
-        None
-    };
-
-    // Try cache first
-    if let (Some(ref key), Some(Extension(ref c))) = (&cache_key, &cache) {
-        if let Some(cached) = c.get(key) {
-            tracing::debug!("⚡ Cache HIT: {}", key);
-            let resp: ListResponse = serde_json::from_value(cached).unwrap_or_else(|_| ListResponse { items: vec![], total: 0 });
-            return Ok(Json(resp));
-        }
-    }
-
     let rows: Vec<IngredientRow> = if let Some(q) = params.q.as_deref().filter(|s| !s.is_empty()) {
         let pattern = format!("%{}%", q.to_lowercase());
         sqlx::query_as(
@@ -198,22 +178,13 @@ pub async fn list_ingredients(
         })
         .collect();
 
-    let response = ListResponse { items, total };
-
-    // Store in cache
-    if let (Some(key), Some(Extension(c))) = (cache_key, cache) {
-        if let Ok(val) = serde_json::to_value(&response) {
-            c.set(key, val);
-        }
-    }
-
-    Ok(Json(response))
+    Ok(Json(ListResponse { items, total }))
 }
 
 // ── Full bulk endpoint (sitemap + SSG — eliminates N+1) ───────────────────────
 
 /// Response item with macros included — no need for per-slug detail fetch.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct IngredientFullItem {
     pub slug: String,
     pub name_en: String,
@@ -231,7 +202,7 @@ pub struct IngredientFullItem {
     pub updated_at: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct FullListResponse {
     pub items: Vec<IngredientFullItem>,
     pub total: i64,
@@ -260,24 +231,9 @@ struct FullRow {
 /// Returns ALL published ingredients with macros in a single query.
 /// Designed for sitemap generation and SSG — eliminates N+1 fetches.
 /// No limit by default (returns everything published).
-///
-/// 🚀 In-memory cached: 0 DB on repeat hits.
 pub async fn list_ingredients_full(
     State(pool): State<PgPool>,
-    cache: Option<Extension<AppCache>>,
 ) -> Result<Json<FullListResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let cache_key = cache::keys::ingredients_full();
-
-    // Try cache
-    if let Some(Extension(ref c)) = cache {
-        if let Some(cached) = c.get(&cache_key) {
-            tracing::debug!("⚡ Cache HIT: {}", cache_key);
-            if let Ok(resp) = serde_json::from_value::<FullListResponse>(cached) {
-                return Ok(Json(resp));
-            }
-        }
-    }
-
     let rows: Vec<FullRow> = sqlx::query_as(
         r#"
         SELECT
@@ -331,16 +287,7 @@ pub async fn list_ingredients_full(
         })
         .collect();
 
-    let response = FullListResponse { items, total };
-
-    // Store in cache
-    if let Some(Extension(c)) = cache {
-        if let Ok(val) = serde_json::to_value(&response) {
-            c.set(cache_key, val);
-        }
-    }
-
-    Ok(Json(response))
+    Ok(Json(FullListResponse { items, total }))
 }
 
 /// GET /public/ingredients/:slug?lang=pl
@@ -351,24 +298,13 @@ pub async fn list_ingredients_full(
 /// - description in the requested language (falls back to English)
 /// - seasons and allergens translated to the requested language
 ///
-/// 🚀 In-memory cached per slug+lang: 0 DB on repeat hits.
+/// Ideal for SEO ingredient pages: /pl/ingredients/salmon
 pub async fn get_ingredient_by_slug(
     State(pool): State<PgPool>,
     Path(slug): Path<String>,
     Query(params): Query<LangQuery>,
-    cache: Option<Extension<AppCache>>,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     let lang = parse_lang(&params.lang);
-    let lang_code = params.lang.as_deref().unwrap_or("en");
-    let cache_key = cache::keys::ingredient_by_slug(&slug, lang_code);
-
-    // Try cache
-    if let Some(Extension(ref c)) = cache {
-        if let Some(cached) = c.get(&cache_key) {
-            tracing::debug!("⚡ Cache HIT: {}", cache_key);
-            return Ok(Json(cached).into_response());
-        }
-    }
 
     let row = find_ingredient_ref_by_slug(&pool, &slug)
         .await
@@ -455,7 +391,7 @@ pub async fn get_ingredient_by_slug(
             let localized_seasons = translate_seasons(&r.seasons, lang);
             let localized_allergens = translate_allergens(&r.allergens, lang);
 
-            let result = IngredientReference {
+            Ok(Json(IngredientReference {
                 slug: r.slug.unwrap_or_default(),
                 name_en: r.name_en,
                 name_pl: r.name_pl,
@@ -481,16 +417,7 @@ pub async fn get_ingredient_by_slug(
                 og_title: r.og_title,
                 og_description: r.og_description,
                 og_image: r.og_image,
-            };
-
-            // Store in cache
-            if let Some(Extension(c)) = cache {
-                if let Ok(val) = serde_json::to_value(&result) {
-                    c.set(cache_key, val);
-                }
-            }
-
-            Ok(Json(result).into_response())
+            }).into_response())
         }
     }
 }
@@ -532,24 +459,11 @@ pub struct PublicStateRow {
 /// Returns all processing states for an ingredient (raw, boiled, fried, etc.)
 /// Each state includes recalculated nutrition, storage rules, and translations.
 /// Perfect for SEO pages: /ingredients/almonds/fried
-///
-/// 🚀 In-memory cached per slug.
 pub async fn get_ingredient_states(
     State(pool): State<PgPool>,
     Path(slug): Path<String>,
     Query(_params): Query<StateQuery>,
-    cache: Option<Extension<AppCache>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let cache_key = cache::keys::ingredient_states(&slug);
-
-    // Try cache
-    if let Some(Extension(ref c)) = cache {
-        if let Some(cached) = c.get(&cache_key) {
-            tracing::debug!("⚡ Cache HIT: {}", cache_key);
-            return Ok(Json(cached));
-        }
-    }
-
     // 1. Resolve slug → ingredient_id
     let ingredient: Option<(Uuid, String, String, String, String, String, Option<String>)> =
         sqlx::query_as(
@@ -621,7 +535,7 @@ pub async fn get_ingredient_states(
         )
     })?;
 
-    let result = serde_json::json!({
+    Ok(Json(serde_json::json!({
         "slug": resolved_slug,
         "ingredient_id": ingredient_id,
         "name_en": name_en,
@@ -631,38 +545,18 @@ pub async fn get_ingredient_states(
         "image_url": image_url,
         "states_count": states.len(),
         "states": states,
-    });
-
-    // Store in cache
-    if let Some(Extension(c)) = cache {
-        c.set(cache_key, result.clone());
-    }
-
-    Ok(Json(result))
+    })))
 }
 
 /// GET /public/ingredients/:slug/states/:state?lang=pl
 ///
 /// Returns ONE specific processing state for an ingredient.
 /// Perfect for individual SEO pages: /ingredients/almonds/fried
-///
-/// 🚀 In-memory cached per slug+state.
 pub async fn get_ingredient_state(
     State(pool): State<PgPool>,
     Path((slug, state)): Path<(String, String)>,
     Query(_params): Query<StateQuery>,
-    cache: Option<Extension<AppCache>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let cache_key = cache::keys::ingredient_state(&slug, &state);
-
-    // Try cache
-    if let Some(Extension(ref c)) = cache {
-        if let Some(cached) = c.get(&cache_key) {
-            tracing::debug!("⚡ Cache HIT: {}", cache_key);
-            return Ok(Json(cached));
-        }
-    }
-
     // 1. Resolve slug → ingredient
     let ingredient: Option<(Uuid, String, String, String, String, String, Option<String>)> =
         sqlx::query_as(
@@ -729,55 +623,46 @@ pub async fn get_ingredient_state(
                 "error": format!("State '{}' not found for ingredient '{}'", state, slug)
             })),
         )),
-        Some(s) => {
-            let result = serde_json::json!({
-                "slug": resolved_slug,
-                "ingredient_id": ingredient_id,
-                "name_en": name_en,
-                "name_pl": name_pl,
-                "name_ru": name_ru,
-                "name_uk": name_uk,
-                "image_url": image_url,
-                "state": s.state,
-                "state_type": s.state_type,
-                "cooking_method": s.cooking_method,
-                "glycemic_index": s.glycemic_index,
-                "name_suffix_en": s.name_suffix_en,
-                "name_suffix_pl": s.name_suffix_pl,
-                "name_suffix_ru": s.name_suffix_ru,
-                "name_suffix_uk": s.name_suffix_uk,
-                "nutrition": {
-                    "calories_per_100g": s.calories_per_100g,
-                    "protein_per_100g": s.protein_per_100g,
-                    "fat_per_100g": s.fat_per_100g,
-                    "carbs_per_100g": s.carbs_per_100g,
-                    "fiber_per_100g": s.fiber_per_100g,
-                    "water_percent": s.water_percent,
-                },
-                "cooking": {
-                    "weight_change_percent": s.weight_change_percent,
-                    "oil_absorption_g": s.oil_absorption_g,
-                    "water_loss_percent": s.water_loss_percent,
-                },
-                "storage": {
-                    "shelf_life_hours": s.shelf_life_hours,
-                    "storage_temp_c": s.storage_temp_c,
-                    "texture": s.texture,
-                },
-                "notes_en": s.notes_en,
-                "notes_pl": s.notes_pl,
-                "notes_ru": s.notes_ru,
-                "notes_uk": s.notes_uk,
-                "data_score": s.data_score,
-            });
-
-            // Store in cache
-            if let Some(Extension(c)) = cache {
-                c.set(cache_key, result.clone());
-            }
-
-            Ok(Json(result))
-        },
+        Some(s) => Ok(Json(serde_json::json!({
+            "slug": resolved_slug,
+            "ingredient_id": ingredient_id,
+            "name_en": name_en,
+            "name_pl": name_pl,
+            "name_ru": name_ru,
+            "name_uk": name_uk,
+            "image_url": image_url,
+            "state": s.state,
+            "state_type": s.state_type,
+            "cooking_method": s.cooking_method,
+            "glycemic_index": s.glycemic_index,
+            "name_suffix_en": s.name_suffix_en,
+            "name_suffix_pl": s.name_suffix_pl,
+            "name_suffix_ru": s.name_suffix_ru,
+            "name_suffix_uk": s.name_suffix_uk,
+            "nutrition": {
+                "calories_per_100g": s.calories_per_100g,
+                "protein_per_100g": s.protein_per_100g,
+                "fat_per_100g": s.fat_per_100g,
+                "carbs_per_100g": s.carbs_per_100g,
+                "fiber_per_100g": s.fiber_per_100g,
+                "water_percent": s.water_percent,
+            },
+            "cooking": {
+                "weight_change_percent": s.weight_change_percent,
+                "oil_absorption_g": s.oil_absorption_g,
+                "water_loss_percent": s.water_loss_percent,
+            },
+            "storage": {
+                "shelf_life_hours": s.shelf_life_hours,
+                "storage_temp_c": s.storage_temp_c,
+                "texture": s.texture,
+            },
+            "notes_en": s.notes_en,
+            "notes_pl": s.notes_pl,
+            "notes_ru": s.notes_ru,
+            "notes_uk": s.notes_uk,
+            "data_score": s.data_score,
+        }))),
     }
 }
 
@@ -927,21 +812,9 @@ pub async fn autocomplete_ingredients(
 /// Used by the sitemap to emit ONLY state URLs that actually exist, avoiding
 /// 404s for ingredients that haven't had states generated yet.
 /// Single query — O(1) instead of O(N) for the sitemap.
-/// 🚀 In-memory cached.
 pub async fn get_ingredients_states_map(
     State(pool): State<PgPool>,
-    cache: Option<Extension<AppCache>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let cache_key = cache::keys::ingredients_states_map();
-
-    // Try cache
-    if let Some(Extension(ref c)) = cache {
-        if let Some(cached) = c.get(&cache_key) {
-            tracing::debug!("⚡ Cache HIT: {}", cache_key);
-            return Ok(Json(cached));
-        }
-    }
-
     #[derive(sqlx::FromRow)]
     struct Row {
         slug: String,
@@ -976,21 +849,14 @@ pub async fn get_ingredients_states_map(
         map.entry(row.slug).or_default().push(row.state);
     }
 
-    let result = serde_json::json!(map);
-
-    // Store in cache
-    if let Some(Extension(c)) = cache {
-        c.set(cache_key, result.clone());
-    }
-
-    Ok(Json(result))
+    Ok(Json(serde_json::json!(map)))
 }
 
 // ── Sitemap data (single query, all quality filters built in) ─────────────────
 
 /// Sitemap-ready ingredient entry with quality flags.
 /// Frontend builds sitemap.xml from this — no additional filtering needed.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct SitemapIngredient {
     pub slug: String,
     pub updated_at: String,
@@ -1016,23 +882,9 @@ pub struct SitemapIngredient {
 /// - 404s from how-many pages without conversion data
 /// - 404s from state pages that don't exist
 /// - Thin/empty pages that hurt Google rankings
-/// 🚀 In-memory cached.
 pub async fn get_ingredients_sitemap_data(
     State(pool): State<PgPool>,
-    cache: Option<Extension<AppCache>>,
 ) -> Result<Json<Vec<SitemapIngredient>>, (StatusCode, Json<serde_json::Value>)> {
-    let cache_key = cache::keys::ingredients_sitemap();
-
-    // Try cache
-    if let Some(Extension(ref c)) = cache {
-        if let Some(cached) = c.get(&cache_key) {
-            tracing::debug!("⚡ Cache HIT: {}", cache_key);
-            if let Ok(resp) = serde_json::from_value::<Vec<SitemapIngredient>>(cached) {
-                return Ok(Json(resp));
-            }
-        }
-    }
-
     // 1. Fetch all published ingredients with quality flags
     #[derive(sqlx::FromRow)]
     struct IngRow {
@@ -1116,13 +968,6 @@ pub async fn get_ingredients_sitemap_data(
         result.iter().filter(|i| i.has_conversions).count(),
         result.iter().filter(|i| !i.states.is_empty()).count(),
     );
-
-    // Store in cache
-    if let Some(Extension(c)) = cache {
-        if let Ok(val) = serde_json::to_value(&result) {
-            c.set(cache_key, val);
-        }
-    }
 
     Ok(Json(result))
 }

@@ -2,13 +2,11 @@ pub mod admin_auth;
 pub mod admin_catalog;
 pub mod admin_cms;
 pub mod admin_intent_pages; // 🆕 Intent pages admin handlers
-pub mod admin_lab_combos;   // 🆕 Lab Combo SEO pages admin handlers
 pub mod admin_nutrition;
 pub mod admin_states; // Ingredient processing states (AI Sous Chef)
 pub mod admin_users;
 pub mod assistant;
 pub mod auth;
-pub mod cache_middleware; // 🆕 Cache-Control headers for public endpoints
 pub mod catalog;
 pub mod chef_reference_public;
 pub mod dish;

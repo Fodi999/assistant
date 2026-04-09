@@ -223,11 +223,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("✅ Recipe V2 & AI Insights services initialized");
 
-    // ── Load IngredientCache (in-memory, 1 SQL query at startup) ──────────
-    let ingredient_cache = restaurant_backend::infrastructure::IngredientCache::load(&repositories.pool)
-        .await
-        .expect("Failed to load IngredientCache from catalog_ingredients");
-
     // Clone CORS origins before moving config
     let cors_origins = config.cors.allowed_origins.clone();
     let rate_limit_per_second = config.server.rate_limit_per_second;
@@ -252,7 +247,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_nutrition_service,
         r2_client,
         llm_adapter,
-        ingredient_cache,
         cors_origins,
         rate_limit_per_second,
     );

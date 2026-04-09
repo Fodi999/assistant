@@ -361,10 +361,9 @@ Rules:
             name_en = name_en,
         );
 
-        // Flash model: translation is simple, no nutrition accuracy needed
         let raw = self
             .llm_adapter
-            .generate_with_quality(&prompt, 500, AiQuality::Fast)
+            .generate_with_quality(&prompt, 500, AiQuality::Balanced)
             .await?;
 
         tracing::info!("🌍 AI translate raw ({} chars): {}", raw.len(), &raw[..raw.len().min(200)]);

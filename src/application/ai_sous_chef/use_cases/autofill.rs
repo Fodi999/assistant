@@ -127,9 +127,8 @@ impl AdminCatalogService {
         );
 
         // ── Call AI ──
-        // 8000 tokens: 4 descriptions (≈200 tokens each) + full nutrition JSON ≈ 2000 tokens total
         let raw = self.llm_adapter
-            .generate_with_quality(&prompt, 8000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 3000, AiQuality::Balanced)
             .await?;
 
         // ── Log raw AI response for debugging nutrition pipeline ──
@@ -138,39 +137,6 @@ impl AdminCatalogService {
 
         // ── Parse JSON ──
         let mut result = parse_json_response(&raw)?;
-
-        // ══════════════════════════════════════════════════════════════
-        // FALLBACK: AI sometimes puts nutrition in "macros" block
-        // instead of top-level fields. Pull them up if top-level is null.
-        // ══════════════════════════════════════════════════════════════
-        if let Some(obj) = result.as_object_mut() {
-            let macros = obj.get("macros").cloned();
-            if let Some(m) = macros.as_ref().and_then(|v| v.as_object()) {
-                // Map macros field names → top-level field names
-                let mappings: &[(&str, &str)] = &[
-                    ("calories_kcal", "calories_per_100g"),
-                    ("protein_g", "protein_per_100g"),
-                    ("fat_g", "fat_per_100g"),
-                    ("carbs_g", "carbs_per_100g"),
-                    ("fiber_g", "fiber_per_100g"),
-                    ("sugar_g", "sugar_per_100g"),
-                ];
-                for (macro_key, top_key) in mappings {
-                    let top_is_empty = obj.get(*top_key)
-                        .map(|v| v.is_null())
-                        .unwrap_or(true);
-                    if top_is_empty {
-                        if let Some(val) = m.get(*macro_key).filter(|v| v.is_number()) {
-                            tracing::info!(
-                                "📋 Fallback: {} = {} (pulled from macros.{})",
-                                top_key, val, macro_key
-                            );
-                            obj.insert((*top_key).to_string(), val.clone());
-                        }
-                    }
-                }
-            }
-        }
 
         // ── Log parsed nutrition values ──
         if let Some(obj) = result.as_object() {
@@ -249,54 +215,22 @@ fn hash_input(input: &str) -> String {
 }
 
 fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
-    // 1. Try the full response first (happy path)
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
-        return Ok(v);
-    }
-
-    // 2. Strip markdown code fences and retry
-    let stripped = raw
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(stripped) {
-        return Ok(v);
-    }
-
-    // 3. Find the JSON object boundaries
-    let start = stripped.find('{').ok_or_else(|| {
-        tracing::error!("Failed to parse AI response: no JSON object found");
-        AppError::internal("AI returned invalid JSON")
-    })?;
-    let json_candidate = &stripped[start..];
-
-    // 4. Walk backwards from the end to find the deepest valid closing brace
-    //    This handles truncated responses — we recover partial but valid JSON.
-    let bytes = json_candidate.as_bytes();
-    let mut end = bytes.len();
-    loop {
-        if end == 0 { break; }
-        // Find the last '}' at or before `end`
-        match json_candidate[..end].rfind('}') {
-            None => break,
-            Some(pos) => {
-                let candidate = &json_candidate[..=pos];
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(candidate) {
-                    tracing::warn!(
-                        "⚠️ AI response was truncated — recovered partial JSON ({}/{} bytes)",
-                        pos + 1, bytes.len()
-                    );
-                    return Ok(v);
+    serde_json::from_str(raw)
+        .or_else(|_| {
+            if let Some(start) = raw.find('{') {
+                if let Some(end) = raw.rfind('}') {
+                    return serde_json::from_str(&raw[start..=end]);
                 }
-                end = pos; // try one level up
             }
-        }
-    }
-
-    tracing::error!("Failed to parse AI response after all recovery attempts");
-    Err(AppError::internal("AI returned invalid JSON"))
+            Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "No JSON found",
+            )))
+        })
+        .map_err(|e| {
+            tracing::error!("Failed to parse AI response: {}", e);
+            AppError::internal("AI returned invalid JSON")
+        })
 }
 
 /// Build autofill prompt — AI only fills descriptions + nutrition + extended data.
