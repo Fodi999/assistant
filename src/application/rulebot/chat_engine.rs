@@ -334,6 +334,12 @@ impl ChatEngine {
                 return rb::build_conversion_with_product(value, from, to, result, &pname, lang);
             }
 
+            // Check if this is a volume↔weight conversion without a product — ask "for what?"
+            let needs_density = is_volume_weight_pair(&from, &to);
+            if needs_density && product.is_none() {
+                return rb::build_conversion_ask_product(value, from, to, lang);
+            }
+
             // Fallback to standard unit conversion
             let result_raw = uc::convert_units(value, &from, &to);
             let supported = result_raw.is_some();
@@ -811,6 +817,14 @@ fn density_convert(value: f64, from: &str, to: &str, density: f32) -> Option<f64
         _ => return None,
     };
     Some(uc::display_round(result))
+}
+
+/// Check if the from/to pair involves volume↔weight (needs density).
+fn is_volume_weight_pair(from: &str, to: &str) -> bool {
+    let weight = ["g", "kg", "oz"];
+    let volume = ["ml", "l", "tbsp", "tsp", "cup"];
+    (weight.contains(&from) && volume.contains(&to))
+        || (volume.contains(&from) && weight.contains(&to))
 }
 
 // needed for hour/day helpers

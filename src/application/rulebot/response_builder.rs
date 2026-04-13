@@ -245,6 +245,43 @@ pub fn build_conversion_with_product(
     )
 }
 
+/// Build a "for which product?" response when g↔ml conversion needs density.
+pub fn build_conversion_ask_product(
+    value: f64,
+    from: String,
+    to: String,
+    lang: ChatLang,
+) -> ChatResponse {
+    let text = tpl::conversion_ask_product_text(value, &from, &to, lang);
+    let mut resp = ChatResponse::text_only(text, Intent::Conversion, lang, 0);
+    // Add quick-pick suggestions
+    resp.suggestions = match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: "💧 Вода".into(), query: format!("{} {} воды в {}", value, from, to), emoji: Some("💧") },
+            Suggestion { label: "🌾 Мука".into(), query: format!("{} {} муки в {}", value, from, to), emoji: Some("🌾") },
+            Suggestion { label: "🍚 Рис".into(), query: format!("{} {} риса в {}", value, from, to), emoji: Some("🍚") },
+            Suggestion { label: "🍯 Мёд".into(), query: format!("{} {} мёда в {}", value, from, to), emoji: Some("🍯") },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: "💧 Water".into(), query: format!("{} {} water in {}", value, from, to), emoji: Some("💧") },
+            Suggestion { label: "🌾 Flour".into(), query: format!("{} {} flour in {}", value, from, to), emoji: Some("🌾") },
+            Suggestion { label: "🍚 Rice".into(), query: format!("{} {} rice in {}", value, from, to), emoji: Some("🍚") },
+            Suggestion { label: "🍯 Honey".into(), query: format!("{} {} honey in {}", value, from, to), emoji: Some("🍯") },
+        ],
+        ChatLang::Pl => vec![
+            Suggestion { label: "💧 Woda".into(), query: format!("{} {} wody na {}", value, from, to), emoji: Some("💧") },
+            Suggestion { label: "🌾 Mąka".into(), query: format!("{} {} mąki na {}", value, from, to), emoji: Some("🌾") },
+            Suggestion { label: "🍚 Ryż".into(), query: format!("{} {} ryżu na {}", value, from, to), emoji: Some("🍚") },
+        ],
+        ChatLang::Uk => vec![
+            Suggestion { label: "💧 Вода".into(), query: format!("{} {} води в {}", value, from, to), emoji: Some("💧") },
+            Suggestion { label: "🌾 Борошно".into(), query: format!("{} {} борошна в {}", value, from, to), emoji: Some("🌾") },
+            Suggestion { label: "🍚 Рис".into(), query: format!("{} {} рису в {}", value, from, to), emoji: Some("🍚") },
+        ],
+    };
+    resp
+}
+
 /// Build a nutrition info response.
 pub fn build_nutrition(p: &IngredientData, lang: ChatLang) -> ChatResponse {
     let name = p.name(lang.code()).to_string();

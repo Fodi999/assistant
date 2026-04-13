@@ -19,15 +19,128 @@ pub struct MealCombo {
     pub protein: IngredientData,
     pub side: IngredientData,
     pub base: Option<IngredientData>,
-    /// Portion sizes in grams.
+    /// Portion sizes in grams (raw weight).
     pub protein_g: f32,
     pub side_g: f32,
     pub base_g: f32,
-    /// Total nutrition for the plate.
+    /// Cooked weight after cooking loss (yield).
+    pub protein_cooked_g: f32,
+    pub side_cooked_g: f32,
+    pub base_cooked_g: f32,
+    /// Total nutrition for the plate (based on raw weight).
     pub total_kcal: u32,
     pub total_protein: f32,
     pub total_fat: f32,
     pub total_carbs: f32,
+    /// Suggested cooking method per component.
+    pub protein_method: CookMethod,
+    pub side_method: CookMethod,
+    pub base_method: CookMethod,
+}
+
+/// Simple cooking method for meal combos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CookMethod {
+    Grill,
+    Bake,
+    Boil,
+    Steam,
+    Fry,
+    Raw,
+}
+
+impl CookMethod {
+    /// Yield factor: how much weight remains after cooking (0.0–1.0).
+    /// Based on USDA cooking yield factors.
+    pub fn yield_factor(&self, product_type: &str) -> f32 {
+        match (self, product_type) {
+            // Meat/fish lose 20–30% water
+            (CookMethod::Grill, "meat" | "fish" | "seafood") => 0.75,
+            (CookMethod::Bake, "meat" | "fish" | "seafood") => 0.80,
+            (CookMethod::Fry, "meat" | "fish" | "seafood") => 0.70,
+            (CookMethod::Boil, "meat" | "fish" | "seafood") => 0.78,
+            (CookMethod::Steam, "meat" | "fish" | "seafood") => 0.85,
+            // Vegetables lose 10–15%
+            (CookMethod::Steam, "vegetable" | "mushroom") => 0.90,
+            (CookMethod::Boil, "vegetable" | "mushroom") => 0.88,
+            (CookMethod::Grill, "vegetable" | "mushroom") => 0.85,
+            (CookMethod::Fry, "vegetable" | "mushroom") => 0.82,
+            (CookMethod::Bake, "vegetable" | "mushroom") => 0.87,
+            // Grains/legumes ABSORB water — yield > 1.0
+            (CookMethod::Boil, "grain" | "legume") => 2.20,
+            // Raw = no change
+            (CookMethod::Raw, _) => 1.0,
+            // Default
+            (_, _) => 0.85,
+        }
+    }
+
+    /// Pick the best cooking method for a product by role & goal.
+    pub fn for_ingredient(product_type: &str, role: &str, goal: HealthGoal) -> Self {
+        match role {
+            "protein" => match goal {
+                HealthGoal::LowCalorie => CookMethod::Grill,
+                HealthGoal::HighProtein => CookMethod::Bake,
+                HealthGoal::Balanced => CookMethod::Grill,
+            },
+            "side" => match goal {
+                HealthGoal::LowCalorie => CookMethod::Steam,
+                _ => CookMethod::Steam,
+            },
+            "base" => match product_type {
+                "grain" | "legume" => CookMethod::Boil,
+                _ => CookMethod::Boil,
+            },
+            _ => CookMethod::Raw,
+        }
+    }
+
+    /// Localized cooking verb.
+    pub fn verb(&self, lang: super::intent_router::ChatLang) -> &'static str {
+        use super::intent_router::ChatLang;
+        match (self, lang) {
+            (CookMethod::Grill, ChatLang::Ru) => "Обжарить на гриле",
+            (CookMethod::Grill, ChatLang::En) => "Grill",
+            (CookMethod::Grill, ChatLang::Pl) => "Grillować",
+            (CookMethod::Grill, ChatLang::Uk) => "Обсмажити на грилі",
+            (CookMethod::Bake, ChatLang::Ru) => "Запечь в духовке",
+            (CookMethod::Bake, ChatLang::En) => "Bake in oven",
+            (CookMethod::Bake, ChatLang::Pl) => "Zapiec w piekarniku",
+            (CookMethod::Bake, ChatLang::Uk) => "Запекти в духовці",
+            (CookMethod::Boil, ChatLang::Ru) => "Отварить",
+            (CookMethod::Boil, ChatLang::En) => "Boil",
+            (CookMethod::Boil, ChatLang::Pl) => "Ugotować",
+            (CookMethod::Boil, ChatLang::Uk) => "Зварити",
+            (CookMethod::Steam, ChatLang::Ru) => "Приготовить на пару",
+            (CookMethod::Steam, ChatLang::En) => "Steam",
+            (CookMethod::Steam, ChatLang::Pl) => "Gotować na parze",
+            (CookMethod::Steam, ChatLang::Uk) => "Приготувати на парі",
+            (CookMethod::Fry, ChatLang::Ru) => "Обжарить",
+            (CookMethod::Fry, ChatLang::En) => "Pan-fry",
+            (CookMethod::Fry, ChatLang::Pl) => "Usmażyć",
+            (CookMethod::Fry, ChatLang::Uk) => "Обсмажити",
+            (CookMethod::Raw, ChatLang::Ru) => "Подать свежим",
+            (CookMethod::Raw, ChatLang::En) => "Serve fresh",
+            (CookMethod::Raw, ChatLang::Pl) => "Podać świeże",
+            (CookMethod::Raw, ChatLang::Uk) => "Подати свіжим",
+        }
+    }
+
+    /// Cooking time estimate in minutes.
+    pub fn time_min(&self, product_type: &str) -> u32 {
+        match (self, product_type) {
+            (CookMethod::Grill, "meat") => 12,
+            (CookMethod::Grill, "fish" | "seafood") => 8,
+            (CookMethod::Bake, "meat") => 25,
+            (CookMethod::Bake, "fish" | "seafood") => 18,
+            (CookMethod::Boil, "grain" | "legume") => 15,
+            (CookMethod::Steam, "vegetable" | "mushroom") => 7,
+            (CookMethod::Boil, "vegetable") => 8,
+            (CookMethod::Fry, _) => 10,
+            (CookMethod::Raw, _) => 0,
+            (_, _) => 10,
+        }
+    }
 }
 
 impl MealCombo {
@@ -136,6 +249,15 @@ pub fn build_combo(
 
     let actual_base_g = if base.is_some() { base_g } else { 0.0 };
 
+    // ── Cooking methods & yield ───────────────────────────────────────
+    let protein_method = CookMethod::for_ingredient(&protein.product_type, "protein", goal);
+    let side_method = CookMethod::for_ingredient(&side.product_type, "side", goal);
+    let base_method = base.as_ref().map(|b| CookMethod::for_ingredient(&b.product_type, "base", goal)).unwrap_or(CookMethod::Raw);
+
+    let protein_cooked_g = (protein_g * protein_method.yield_factor(&protein.product_type)).round();
+    let side_cooked_g = (side_g * side_method.yield_factor(&side.product_type)).round();
+    let base_cooked_g = base.as_ref().map(|b| (actual_base_g * base_method.yield_factor(&b.product_type)).round()).unwrap_or(0.0);
+
     // ── Compute totals ────────────────────────────────────────────────
     let mut total_kcal = 0u32;
     let mut total_protein = 0.0_f32;
@@ -162,10 +284,16 @@ pub fn build_combo(
         protein_g,
         side_g,
         base_g: actual_base_g,
+        protein_cooked_g,
+        side_cooked_g,
+        base_cooked_g,
         total_kcal,
         total_protein,
         total_fat,
         total_carbs,
+        protein_method,
+        side_method,
+        base_method,
     })
 }
 
@@ -265,5 +393,57 @@ mod tests {
         // chicken 150g = 247.5 kcal, spinach 200g = 46 kcal → ~293
         assert!(combo.total_kcal > 250 && combo.total_kcal < 350,
             "expected ~293 kcal, got {}", combo.total_kcal);
+    }
+
+    // ── Cooking yield tests ──────────────────────────────────────────
+
+    #[test]
+    fn cooking_yield_meat_loses_weight() {
+        let pool = vec![
+            make_ingredient("chicken-breast", "meat", 165.0, 31.0, 3.6, 0.0),
+            make_ingredient("broccoli", "vegetable", 34.0, 2.8, 0.4, 7.0),
+            make_ingredient("rice", "grain", 110.0, 7.0, 0.9, 74.0),
+        ];
+        let combo = build_combo(&pool, HealthGoal::HighProtein, &[]).unwrap();
+        // Meat loses 20-25%: 200g raw → ~150-160g cooked
+        assert!(combo.protein_cooked_g < combo.protein_g,
+            "meat should lose weight: raw={}g cooked={}g", combo.protein_g, combo.protein_cooked_g);
+        assert!(combo.protein_cooked_g >= 140.0 && combo.protein_cooked_g <= 180.0,
+            "meat cooked weight should be ~150-160g, got {}", combo.protein_cooked_g);
+    }
+
+    #[test]
+    fn cooking_yield_grain_absorbs_water() {
+        let pool = vec![
+            make_ingredient("salmon", "fish", 208.0, 20.0, 13.0, 0.0),
+            make_ingredient("spinach", "vegetable", 23.0, 2.9, 0.4, 3.6),
+            make_ingredient("rice", "grain", 110.0, 7.0, 0.9, 74.0),
+        ];
+        let combo = build_combo(&pool, HealthGoal::Balanced, &[]).unwrap();
+        let base = combo.base.as_ref().expect("balanced should have base");
+        if base.product_type == "grain" {
+            // Grain absorbs water: 100g raw → ~220g cooked
+            assert!(combo.base_cooked_g > combo.base_g,
+                "grain should absorb water: raw={}g cooked={}g", combo.base_g, combo.base_cooked_g);
+        }
+    }
+
+    #[test]
+    fn cooking_method_matches_goal() {
+        let pool = vec![
+            make_ingredient("chicken-breast", "meat", 165.0, 31.0, 3.6, 0.0),
+            make_ingredient("broccoli", "vegetable", 34.0, 2.8, 0.4, 7.0),
+        ];
+        let combo = build_combo(&pool, HealthGoal::LowCalorie, &[]).unwrap();
+        // Low calorie → should grill protein, steam side
+        assert_eq!(combo.protein_method, CookMethod::Grill);
+        assert_eq!(combo.side_method, CookMethod::Steam);
+    }
+
+    #[test]
+    fn cook_method_has_time() {
+        assert!(CookMethod::Grill.time_min("meat") > 0);
+        assert!(CookMethod::Boil.time_min("grain") > 0);
+        assert_eq!(CookMethod::Raw.time_min("vegetable"), 0);
     }
 }

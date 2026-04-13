@@ -325,6 +325,28 @@ pub fn conversion_hint(lang: ChatLang) -> &'static str {
     }
 }
 
+/// "For which product?" prompt when g↔ml conversion needs density.
+pub fn conversion_ask_product_text(value: f64, from: &str, to: &str, lang: ChatLang) -> String {
+    match lang {
+        ChatLang::Ru => format!(
+            "⚖️ Для перевода {} {} → {} нужно знать продукт.\n\nРазные продукты весят по-разному:\n• 100 мл воды = 100г\n• 100 мл муки = 55г\n• 100 мл мёда = 142г\n\n**Для какого продукта?** 👇",
+            value, from, to
+        ),
+        ChatLang::En => format!(
+            "⚖️ To convert {} {} → {} I need to know the product.\n\nDifferent products have different densities:\n• 100ml water = 100g\n• 100ml flour = 55g\n• 100ml honey = 142g\n\n**Which product?** 👇",
+            value, from, to
+        ),
+        ChatLang::Pl => format!(
+            "⚖️ Aby przeliczyć {} {} → {} muszę znać produkt.\n\nRóżne produkty ważą inaczej:\n• 100 ml wody = 100g\n• 100 ml mąki = 55g\n• 100 ml miodu = 142g\n\n**Jaki produkt?** 👇",
+            value, from, to
+        ),
+        ChatLang::Uk => format!(
+            "⚖️ Для переведення {} {} → {} потрібно знати продукт.\n\nРізні продукти важать по-різному:\n• 100 мл води = 100г\n• 100 мл борошна = 55г\n• 100 мл меду = 142г\n\n**Для якого продукту?** 👇",
+            value, from, to
+        ),
+    }
+}
+
 // ── Nutrition hint ───────────────────────────────────────────────────────────
 
 pub fn nutrition_hint(lang: ChatLang) -> &'static str {
@@ -871,20 +893,77 @@ pub fn meal_combo_text(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> S
         }
     };
 
-    let portions = if combo.base.is_some() {
-        match lang {
-            ChatLang::Ru => format!("({}г + {}г + {}г)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
-            ChatLang::En => format!("({}g + {}g + {}g)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
-            ChatLang::Pl => format!("({}g + {}g + {}g)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
-            ChatLang::Uk => format!("({}г + {}г + {}г)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
+    // ── Portions with cooking yield ────────────────────────────────────
+    let yield_line = |raw: f32, cooked: f32, lang: ChatLang| -> String {
+        let raw_u = raw as u32;
+        let cooked_u = cooked as u32;
+        if (raw_u as i32 - cooked_u as i32).unsigned_abs() < 5 {
+            // No meaningful difference (e.g. raw salad)
+            match lang {
+                ChatLang::Ru | ChatLang::Uk => format!("{}г", raw_u),
+                _ => format!("{}g", raw_u),
+            }
+        } else {
+            match lang {
+                ChatLang::Ru => format!("{}г сырого → ≈{}г готового", raw_u, cooked_u),
+                ChatLang::En => format!("{}g raw → ≈{}g cooked", raw_u, cooked_u),
+                ChatLang::Pl => format!("{}g surowego → ≈{}g gotowego", raw_u, cooked_u),
+                ChatLang::Uk => format!("{}г сирого → ≈{}г готового", raw_u, cooked_u),
+            }
         }
+    };
+
+    let protein_portion = yield_line(combo.protein_g, combo.protein_cooked_g, lang);
+    let side_portion = yield_line(combo.side_g, combo.side_cooked_g, lang);
+    let base_portion_opt = combo.base.as_ref().map(|_| yield_line(combo.base_g, combo.base_cooked_g, lang));
+
+    let portions = if let Some(bp) = &base_portion_opt {
+        format!("({} + {} + {})", protein_portion, side_portion, bp)
     } else {
-        match lang {
-            ChatLang::Ru => format!("({}г + {}г)", combo.protein_g as u32, combo.side_g as u32),
-            ChatLang::En => format!("({}g + {}g)", combo.protein_g as u32, combo.side_g as u32),
-            ChatLang::Pl => format!("({}g + {}g)", combo.protein_g as u32, combo.side_g as u32),
-            ChatLang::Uk => format!("({}г + {}г)", combo.protein_g as u32, combo.side_g as u32),
+        format!("({} + {})", protein_portion, side_portion)
+    };
+
+    // ── Recipe steps ──────────────────────────────────────────────────
+    use super::meal_builder::CookMethod;
+    let how_to_label = match lang {
+        ChatLang::Ru => "👨‍🍳 Как приготовить:",
+        ChatLang::En => "👨‍🍳 How to cook:",
+        ChatLang::Pl => "👨‍🍳 Jak przygotować:",
+        ChatLang::Uk => "👨‍🍳 Як приготувати:",
+    };
+
+    let step = |num: u8, method: CookMethod, name: &str, ptype: &str, lang: ChatLang| -> String {
+        let time = method.time_min(ptype);
+        let verb = method.verb(lang);
+        if time > 0 {
+            match lang {
+                ChatLang::Ru => format!("{}. {} {} (~{} мин)", num, verb, name, time),
+                ChatLang::En => format!("{}. {} {} (~{} min)", num, verb, name, time),
+                ChatLang::Pl => format!("{}. {} {} (~{} min)", num, verb, name, time),
+                ChatLang::Uk => format!("{}. {} {} (~{} хв)", num, verb, name, time),
+            }
+        } else {
+            format!("{}. {} {}", num, verb, name)
         }
+    };
+
+    let mut steps = Vec::new();
+    steps.push(step(1, combo.protein_method, pname, &combo.protein.product_type, lang));
+    if let (Some(ref b), Some(bn)) = (&combo.base, bname.as_ref()) {
+        steps.push(step(2, combo.base_method, bn, &b.product_type, lang));
+    }
+    steps.push(step(steps.len() as u8 + 1, combo.side_method, sname, &combo.side.product_type, lang));
+
+    // Total cooking time
+    let total_time = combo.protein_method.time_min(&combo.protein.product_type)
+        .max(combo.side_method.time_min(&combo.side.product_type))
+        .max(combo.base.as_ref().map(|b| combo.base_method.time_min(&b.product_type)).unwrap_or(0));
+
+    let time_label = match lang {
+        ChatLang::Ru => format!("⏱ Общее время: ~{} мин", total_time),
+        ChatLang::En => format!("⏱ Total time: ~{} min", total_time),
+        ChatLang::Pl => format!("⏱ Łączny czas: ~{} min", total_time),
+        ChatLang::Uk => format!("⏱ Загальний час: ~{} хв", total_time),
     };
 
     let stats = match lang {
@@ -907,6 +986,7 @@ pub fn meal_combo_text(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> S
     };
 
     format!(
-        "🍽 {goal_label}\n\n{combo_parts} {portions}\n\n{stats}"
+        "🍽 {goal_label}\n\n{combo_parts} {portions}\n\n{how_to_label}\n{steps}\n\n{time_label}\n\n{stats}",
+        steps = steps.join("\n"),
     )
 }
