@@ -147,6 +147,8 @@ pub enum Card {
     Conversion(ConversionCard),
     /// Nutrition breakdown card.
     Nutrition(NutritionCard),
+    /// Tech-card / recipe card — full dish breakdown.
+    Recipe(RecipeCard),
 }
 
 /// Product card — name, nutrition, image.
@@ -188,4 +190,40 @@ pub struct NutritionCard {
     pub carbs_per_100g: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
+}
+
+/// Recipe/tech-card — full dish breakdown with gross/net calculations.
+#[derive(Debug, Serialize)]
+pub struct RecipeCard {
+    pub dish_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dish_name_local: Option<String>,
+    pub servings: u8,
+    pub ingredients: Vec<RecipeIngredientRow>,
+    pub total_output_g: f32,
+    pub total_kcal: u32,
+    pub total_protein: f32,
+    pub total_fat: f32,
+    pub total_carbs: f32,
+    pub per_serving_kcal: u32,
+    pub per_serving_protein: f32,
+    pub per_serving_fat: f32,
+    pub per_serving_carbs: f32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unresolved: Vec<String>,
+}
+
+/// Single ingredient row in a recipe card.
+#[derive(Debug, Serialize)]
+pub struct RecipeIngredientRow {
+    pub name: String,
+    pub slug: Option<String>,
+    pub state: String,
+    pub role: String,
+    pub gross_g: f32,
+    pub net_g: f32,
+    pub kcal: u32,
+    pub protein_g: f32,
+    pub fat_g: f32,
+    pub carbs_g: f32,
 }

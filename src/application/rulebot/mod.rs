@@ -21,4 +21,5 @@ pub mod response_templates;
 pub mod session_context;
 pub mod chef_coach;
 pub mod meal_builder;
+pub mod recipe_engine;
 pub mod ai_brain;

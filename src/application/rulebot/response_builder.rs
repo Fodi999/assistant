@@ -10,7 +10,7 @@
 //! ```
 
 use super::intent_router::{ChatLang, Intent};
-use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, Suggestion};
+use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, RecipeCard, RecipeIngredientRow, Suggestion};
 use super::response_templates as tpl;
 use super::meal_builder::MealCombo;
 use crate::infrastructure::ingredient_cache::IngredientData;
@@ -342,13 +342,82 @@ pub fn build_seasonality(product: Option<&str>, lang: ChatLang) -> ChatResponse 
     ChatResponse::text_only(text, Intent::Seasonality, lang, 0)
 }
 
-/// Build a recipe hint response.
+/// Build a recipe hint response (fallback when Gemini fails).
 pub fn build_recipe(dish: Option<&str>, lang: ChatLang) -> ChatResponse {
     let text = match dish {
         Some(name) => tpl::recipe_hint(name, lang),
         None => tpl::recipe_generic(lang).to_string(),
     };
     ChatResponse::text_only(text, Intent::RecipeHelp, lang, 0)
+}
+
+/// Build a full recipe/tech-card response from a resolved TechCard.
+pub fn build_recipe_card(
+    card: &super::recipe_engine::TechCard,
+    text: String,
+    lang: ChatLang,
+) -> ChatResponse {
+    let recipe_card = RecipeCard {
+        dish_name: card.dish_name.clone(),
+        dish_name_local: card.dish_name_local.clone(),
+        servings: card.servings,
+        ingredients: card.ingredients.iter().map(|ing| {
+            RecipeIngredientRow {
+                name: ing.product.as_ref()
+                    .map(|p| p.name(lang.code()).to_string())
+                    .unwrap_or_else(|| ing.slug_hint.clone()),
+                slug: ing.resolved_slug.clone(),
+                state: ing.state.clone(),
+                role: ing.role.clone(),
+                gross_g: ing.gross_g,
+                net_g: ing.cooked_net_g,
+                kcal: ing.kcal,
+                protein_g: ing.protein_g,
+                fat_g: ing.fat_g,
+                carbs_g: ing.carbs_g,
+            }
+        }).collect(),
+        total_output_g: card.total_output_g,
+        total_kcal: card.total_kcal,
+        total_protein: card.total_protein,
+        total_fat: card.total_fat,
+        total_carbs: card.total_carbs,
+        per_serving_kcal: card.per_serving_kcal,
+        per_serving_protein: card.per_serving_protein,
+        per_serving_fat: card.per_serving_fat,
+        per_serving_carbs: card.per_serving_carbs,
+        unresolved: card.unresolved.clone(),
+    };
+
+    let mut resp = ChatResponse::with_card(
+        text,
+        Card::Recipe(recipe_card),
+        Intent::RecipeHelp,
+        lang,
+        0,
+    );
+
+    // Suggest follow-ups
+    let suggestions = match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: "🔄 Другое блюдо".into(), query: "предложи рецепт".into(), emoji: None },
+            Suggestion { label: "🥗 План питания".into(), query: "составь план питания".into(), emoji: None },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: "🔄 Another dish".into(), query: "suggest a recipe".into(), emoji: None },
+            Suggestion { label: "🥗 Meal plan".into(), query: "build my meal plan".into(), emoji: None },
+        ],
+        ChatLang::Pl => vec![
+            Suggestion { label: "🔄 Inne danie".into(), query: "zaproponuj przepis".into(), emoji: None },
+            Suggestion { label: "🥗 Plan posiłków".into(), query: "ułóż plan posiłków".into(), emoji: None },
+        ],
+        ChatLang::Uk => vec![
+            Suggestion { label: "🔄 Інша страва".into(), query: "запропонуй рецепт".into(), emoji: None },
+            Suggestion { label: "🥗 План харчування".into(), query: "склади план харчування".into(), emoji: None },
+        ],
+    };
+    resp.suggestions = suggestions;
+    resp
 }
 
 /// Build a meal idea response (with product card).

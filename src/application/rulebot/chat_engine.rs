@@ -29,6 +29,7 @@ use super::ai_brain::AiBrain;
 use super::response_builder::{self as rb, HealthGoal};
 use super::chef_coach;
 use super::meal_builder;
+use super::recipe_engine;
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ impl ChatEngine {
             Intent::Conversion     => self.handle_conversion_with_density(input, lang).await,
             Intent::NutritionInfo  => self.handle_nutrition(input, lang).await,
             Intent::Seasonality    => self.handle_seasonality(input, lang),
-            Intent::RecipeHelp     => self.handle_recipe(input, lang),
+            Intent::RecipeHelp     => self.handle_recipe(input, lang).await,
             Intent::MealIdea       => self.handle_meal_idea(lang, goal, input, ctx).await,
             Intent::ProductInfo    => self.handle_product_info(input, lang).await,
             // ── Layer 2: AI Brain ── LLM with tool calling for complex queries
@@ -364,10 +365,40 @@ impl ChatEngine {
         rb::build_seasonality(product, lang)
     }
 
-    fn handle_recipe(&self, input: &str, lang: ChatLang) -> ChatResponse {
-        let text_lower = input.to_lowercase();
-        let dish = detect_dish_keyword(&text_lower);
-        rb::build_recipe(dish, lang)
+    async fn handle_recipe(&self, input: &str, lang: ChatLang) -> ChatResponse {
+        // ── Step 1: Ask Gemini for dish structure ────────────────────────────
+        match recipe_engine::ask_gemini_dish_schema(&self.llm_adapter, input, lang).await {
+            Ok(schema) => {
+                tracing::info!(
+                    "🍽 recipe_engine: dish={} items={}",
+                    schema.dish_name,
+                    schema.items.len()
+                );
+
+                // ── Step 2: Resolve ingredients against cache ────────────────
+                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema).await;
+
+                tracing::info!(
+                    "📊 tech_card: output={:.0}g kcal={} resolved={}/{} unresolved=[{}]",
+                    tech_card.total_output_g,
+                    tech_card.total_kcal,
+                    tech_card.ingredients.len() - tech_card.unresolved.len(),
+                    tech_card.ingredients.len(),
+                    tech_card.unresolved.join(", ")
+                );
+
+                // ── Step 3: Build text + card response ───────────────────────
+                let text = recipe_engine::format_recipe_text(&tech_card, lang);
+                rb::build_recipe_card(&tech_card, text, lang)
+            }
+            Err(e) => {
+                tracing::warn!("⚠️ recipe_engine failed: {} — falling back to static hint", e);
+                // Fallback: detect keyword and show static hint
+                let text_lower = input.to_lowercase();
+                let dish = detect_dish_keyword(&text_lower);
+                rb::build_recipe(dish, lang)
+            }
+        }
     }
 
     async fn handle_meal_idea(&self, lang: ChatLang, goal: HealthGoal, input: &str, ctx: &SessionContext) -> ChatResponse {
