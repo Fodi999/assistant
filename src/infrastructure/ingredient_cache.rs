@@ -26,6 +26,8 @@ pub struct IngredientData {
     pub fat_per_100g: f32,
     pub carbs_per_100g: f32,
     pub image_url: Option<String>,
+    /// DB `product_type`: seafood, vegetable, fruit, meat, grain, dairy, spice, herb, legume, nut, mushroom, oil, condiment, beverage, fish, other
+    pub product_type: String,
 }
 
 impl IngredientData {
@@ -56,6 +58,19 @@ impl IngredientData {
             "pl" => &self.name_pl,
             "uk" => &self.name_uk,
             _ => &self.name_en,
+        }
+    }
+
+    /// Meal role classification based on `product_type`.
+    /// Returns: "protein" | "side" | "base" | "other"
+    pub fn meal_role(&self) -> &'static str {
+        match self.product_type.as_str() {
+            "meat" | "fish" | "seafood" => "protein",
+            "dairy" if self.protein_per_100g >= 10.0 => "protein",  // cottage cheese, eggs
+            "legume" if self.protein_per_100g >= 15.0 => "protein", // chickpeas, lentils
+            "vegetable" | "mushroom" | "fruit" => "side",
+            "grain" | "legume" => "base",
+            _ => "other",
         }
     }
 }
@@ -133,7 +148,8 @@ impl IngredientCache {
                 COALESCE(protein_per_100g, 0)::REAL  as protein_per_100g,
                 COALESCE(fat_per_100g, 0)::REAL      as fat_per_100g,
                 COALESCE(carbs_per_100g, 0)::REAL    as carbs_per_100g,
-                image_url
+                image_url,
+                COALESCE(product_type, 'other')      as product_type
             FROM catalog_ingredients
             WHERE COALESCE(is_active, true) = true
               AND slug IS NOT NULL
@@ -159,6 +175,7 @@ impl IngredientCache {
                         fat_per_100g: row.fat_per_100g,
                         carbs_per_100g: row.carbs_per_100g,
                         image_url: row.image_url,
+                        product_type: row.product_type,
                     },
                 );
             }
@@ -179,4 +196,5 @@ struct IngredientRow {
     fat_per_100g: f32,
     carbs_per_100g: f32,
     image_url: Option<String>,
+    product_type: String,
 }

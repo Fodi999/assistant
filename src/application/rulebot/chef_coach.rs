@@ -10,7 +10,7 @@
 //!   - Multilingual: RU / EN / PL / UK
 //!
 //! Usage in chat_engine.rs:
-//! ```rust
+//! ```ignore
 //!   response.coach_message = chef_coach::pick_message(ctx, goal, lang);
 //! ```
 

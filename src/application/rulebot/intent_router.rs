@@ -6,7 +6,7 @@
 //!   - Context modifiers: "на массу" → HighProtein, "хочу сушиться" → LowCalorie
 //!   - Score threshold: min 2 pts to activate an intent
 //!
-//! ```
+//! ```text
 //! "что полезного поесть"        → [HealthyProduct]  score=5
 //! "200 грамм в ложках"          → [Conversion]      score=6
 //! "что поесть полезное быстрое" → [HealthyProduct, MealIdea]

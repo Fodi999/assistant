@@ -28,6 +28,7 @@ use super::session_context::SessionContext;
 use super::ai_brain::AiBrain;
 use super::response_builder::{self as rb, HealthGoal};
 use super::chef_coach;
+use super::meal_builder;
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ impl ChatEngine {
             Intent::NutritionInfo  => self.handle_nutrition(input, lang).await,
             Intent::Seasonality    => self.handle_seasonality(input, lang),
             Intent::RecipeHelp     => self.handle_recipe(input, lang),
-            Intent::MealIdea       => self.handle_meal_idea(lang, goal, input).await,
+            Intent::MealIdea       => self.handle_meal_idea(lang, goal, input, ctx).await,
             Intent::ProductInfo    => self.handle_product_info(input, lang).await,
             // ── Layer 2: AI Brain ── LLM with tool calling for complex queries
             Intent::Unknown        => {
@@ -337,7 +338,7 @@ impl ChatEngine {
         rb::build_recipe(dish, lang)
     }
 
-    async fn handle_meal_idea(&self, lang: ChatLang, goal: HealthGoal, input: &str) -> ChatResponse {
+    async fn handle_meal_idea(&self, lang: ChatLang, goal: HealthGoal, input: &str, ctx: &SessionContext) -> ChatResponse {
         let text_lower = input.to_lowercase();
         let is_meal_plan = text_lower.contains("план")
             || text_lower.contains("plan")
@@ -350,71 +351,59 @@ impl ChatEngine {
             return self.handle_meal_plan(lang, goal).await;
         }
 
-        // Single meal idea (original behavior)
-        // Goal-aware meal tables — HighProtein/LowCalorie variants included
+        // ── Dynamic Meal Combo (primary path) ────────────────────────────────
+        // Build a smart combo from live cache: protein + side [+ base]
+        let all = self.ingredient_cache.all().await;
+        let exclude = ctx.excluded_slugs();
+        if let Some(combo) = meal_builder::build_combo(&all, goal, exclude) {
+            tracing::info!(
+                "🍽 meal_combo: {} + {} [+ {}] → {}kcal {:.0}g protein",
+                combo.protein.slug,
+                combo.side.slug,
+                combo.base.as_ref().map(|b| b.slug.as_str()).unwrap_or("-"),
+                combo.total_kcal,
+                combo.total_protein,
+            );
+            return rb::build_meal_combo(&combo, lang, goal);
+        }
+
+        // ── Fallback: static meal idea tables ────────────────────────────────
+        tracing::debug!("⚠️ meal_builder returned None → static table fallback");
         let ideas_ru: &[(&str, &str, &str)] = match goal {
             HealthGoal::HighProtein => &[
-                ("Куриная грудка с киноа", "chicken-breast", "Высокобелковое блюдо: ~50г белка на порцию. Квиноа — полный аминокислотный профиль."),
-                ("Тунец с яйцами", "tuna", "Силовой завтрак. Тунец + яйца = ~40г белка за 10 минут готовки."),
-                ("Лосось с брокколи", "salmon", "Омега-3 + белок. Запекается 20 мин — идеально после тренировки."),
+                ("Куриная грудка с киноа", "chicken-breast", "Высокобелковое блюдо: ~50г белка на порцию."),
+                ("Тунец с яйцами", "tuna", "Силовой завтрак. Тунец + яйца = ~40г белка за 10 минут."),
+                ("Лосось с брокколи", "salmon", "Омега-3 + белок. Запекается 20 мин."),
             ],
             HealthGoal::LowCalorie => &[
-                ("Шпинатный салат", "spinach", "Всего ~25 ккал на 100г. Много железа и витамина K."),
-                ("Суп из брокколи", "broccoli", "Сытный и лёгкий — около 120 ккал на порцию."),
-                ("Греческий йогурт с ягодами", "blueberries", "Белок + клетчатка без лишних калорий."),
+                ("Шпинатный салат", "spinach", "Всего ~25 ккал на 100г."),
+                ("Суп из брокколи", "broccoli", "Сытный и лёгкий — около 120 ккал."),
             ],
             HealthGoal::Balanced => &[
-                ("Паста с курицей и шпинатом", "chicken-breast", "Быстрый и сытный ужин — готовится за 20 минут."),
-                ("Омлет с овощами", "eggs", "Идеальный завтрак. Яйца — белок и витамин D."),
-                ("Греческий салат", "broccoli", "Свежо, легко, вкусно — средиземноморская классика."),
-                ("Куриный суп", "chicken-breast", "Согревающий и питательный. Богат коллагеном."),
-                ("Запечённый лосось с овощами", "salmon", "Лосось богат омега-3. Готовится 20 мин."),
+                ("Паста с курицей и шпинатом", "chicken-breast", "Быстрый и сытный ужин."),
+                ("Омлет с овощами", "eggs", "Идеальный завтрак."),
+                ("Запечённый лосось с овощами", "salmon", "Лосось богат омега-3."),
             ],
         };
         let ideas_en: &[(&str, &str, &str)] = match goal {
             HealthGoal::HighProtein => &[
-                ("Chicken & Quinoa Bowl", "chicken-breast", "High-protein meal: ~50g protein per serving. Quinoa has a complete amino acid profile."),
-                ("Tuna & Egg Power Bowl", "tuna", "Strength breakfast: tuna + eggs = ~40g protein in 10 min."),
-                ("Baked Salmon with Broccoli", "salmon", "Omega-3 + protein. Bakes in 20 min — perfect post-workout."),
+                ("Chicken & Quinoa Bowl", "chicken-breast", "~50g protein per serving."),
+                ("Baked Salmon with Broccoli", "salmon", "Omega-3 + protein."),
             ],
             HealthGoal::LowCalorie => &[
-                ("Spinach Salad", "spinach", "Only ~25 kcal/100g. High iron and vitamin K."),
-                ("Broccoli Soup", "broccoli", "Filling and light — about 120 kcal per serving."),
-                ("Greek Yogurt with Berries", "blueberries", "Protein + fiber without excess calories."),
+                ("Spinach Salad", "spinach", "Only ~25 kcal/100g."),
+                ("Broccoli Soup", "broccoli", "Filling and light."),
             ],
             HealthGoal::Balanced => &[
-                ("Chicken & Spinach Pasta", "chicken-breast", "Quick and filling — ready in 20 minutes."),
-                ("Veggie Omelette", "eggs", "Perfect breakfast. Eggs: protein and vitamin D."),
-                ("Greek Salad", "broccoli", "Fresh, light, delicious — Mediterranean classic."),
-                ("Chicken Soup", "chicken-breast", "Warming and nutritious. Rich in collagen."),
-                ("Baked Salmon with Vegetables", "salmon", "Rich in omega-3. Ready in 20 min."),
-            ],
-        };
-        let ideas_pl: &[(&str, &str, &str)] = match goal {
-            HealthGoal::HighProtein => &[
-                ("Kurczak z quinoa", "chicken-breast", "Dużo białka: ~50g na porcję."),
-                ("Tuńczyk z jajkami", "tuna", "Śniadanie siłowe: tuńczyk + jajka = ~40g białka."),
-                ("Łosoś z brokułami", "salmon", "Omega-3 + białko. Pieczenie 20 min."),
-            ],
-            HealthGoal::LowCalorie => &[
-                ("Sałatka ze szpinaku", "spinach", "Tylko ~25 kcal/100g. Dużo żelaza."),
-                ("Zupa z brokułów", "broccoli", "Sycąca i lekka — ok. 120 kcal na porcję."),
-                ("Jogurt grecki z jagodami", "blueberries", "Białko + błonnik bez nadmiaru kalorii."),
-            ],
-            HealthGoal::Balanced => &[
-                ("Makaron z kurczakiem i szpinakiem", "chicken-breast", "Szybki i sycący — gotowy w 20 minut."),
-                ("Omlet z warzywami", "eggs", "Idealne śniadanie. Jajka: białko i witamina D."),
-                ("Sałatka grecka", "broccoli", "Świeżo i smacznie — śródziemnomorski klasyk."),
-                ("Zupa z kurczaka", "chicken-breast", "Rozgrzewająca. Bogata w kolagen."),
-                ("Pieczony łosoś z warzywami", "salmon", "Bogaty w omega-3. Pieczenie 20 min."),
+                ("Chicken & Spinach Pasta", "chicken-breast", "Ready in 20 minutes."),
+                ("Baked Salmon with Vegetables", "salmon", "Rich in omega-3."),
             ],
         };
 
         let hour = chrono::Utc::now().hour() as usize;
         let ideas = match lang {
-            ChatLang::Ru => ideas_ru,
-            ChatLang::En => ideas_en,
-            ChatLang::Pl | ChatLang::Uk => ideas_pl,
+            ChatLang::Ru | ChatLang::Uk => ideas_ru,
+            ChatLang::En | ChatLang::Pl => ideas_en,
         };
         let (meal_name, slug, description) = ideas[hour % ideas.len()];
 

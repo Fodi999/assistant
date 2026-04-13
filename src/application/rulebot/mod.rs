@@ -1,25 +1,24 @@
-//! RuleBot — the orchestrator + ChefOS chat engine.
+//! RuleBot — Culinary Intelligence Platform.
 //!
-//! Two entry points:
-//!   - `POST /public/tools/run`  → RuleBot orchestrator (tool dispatch)
-//!   - `POST /public/chat`       → ChatEngine (intent-based chat)
-//!
-//! ```json
-//! POST /public/tools/run
-//! {
-//!   "tool": "convert",
-//!   "params": { "value": 100, "from": "g", "to": "oz" }
-//! }
-//! ```
-//!
-//! Response is always wrapped in `ToolResponse<T>`.
+//! Modules:
+//!   - `orchestrator`       — routes `POST /public/tools/run` to engines
+//!   - `chat_engine`        — routing layer for `POST /public/chat`
+//!   - `chat_response`      — ChatResponse / Card / Suggestion types
+//!   - `intent_router`      — NLP intent detection + language + health modifier
+//!   - `response_builder`   — card assembly + suggestion generation
+//!   - `response_templates` — localized human-readable text
+//!   - `session_context`    — multi-turn session state
+//!   - `chef_coach`         — motivational sous-chef messages
+//!   - `meal_builder`       — dynamic meal combo assembler
+//!   - `ai_brain`           — Layer 2 LLM fallback with tool calling
 
 pub mod orchestrator;
-pub mod intent_router;
 pub mod chat_engine;
 pub mod chat_response;
-pub mod session_context;
+pub mod intent_router;
 pub mod response_builder;
 pub mod response_templates;
-pub mod ai_brain;
+pub mod session_context;
 pub mod chef_coach;
+pub mod meal_builder;
+pub mod ai_brain;

@@ -96,7 +96,7 @@ pub fn create_router(
     admin_nutrition_service: AdminNutritionService, // 🆕 Nutrition editor
     r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
     llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>, // 🆕 for public AI SEO content
-    ingredient_cache: Arc<crate::infrastructure::IngredientCache>, // 🆕 for ChatEngine
+    ingredient_cache: Arc<crate::infrastructure::IngredientCache>, // 🆕 for ChefOS Chat
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
 ) -> Router {
@@ -585,17 +585,17 @@ pub fn create_router(
         .route("/tools/catalog", get(tools_catalog))
         .with_state(rulebot);
 
-
-    // ── 🆕 ChefOS Chat Engine ───────────────────────────────────────────────
+    // ── 🆕 ChefOS Chat Engine (POST /public/chat) ───────────────────────────
     let chat_engine = Arc::new(
         crate::application::rulebot::chat_engine::ChatEngine::new(
-            ingredient_cache,
-            llm_adapter.clone(),
+            Arc::clone(&ingredient_cache),
+            Arc::clone(&llm_adapter),
         )
     );
     let chat_router = Router::new()
         .route("/chat", post(crate::interfaces::http::public::chat::chat_handler))
         .with_state(chat_engine);
+
     // ── 🆕 SmartService v2 ──────────────────────────────────────────────────
     let smart_service = std::sync::Arc::new(
         crate::application::smart_service::SmartService::new(pool_for_smart)
@@ -794,7 +794,7 @@ pub fn create_router(
         .merge(public_ingredients_router)
         .merge(public_tools_router)
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
-        .merge(chat_router)     // 🆕 ChefOS Chat: /chat
+        .merge(chat_router)     // 🆕 ChefOS: POST /chat
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content

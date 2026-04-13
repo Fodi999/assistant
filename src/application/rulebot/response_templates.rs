@@ -7,6 +7,7 @@
 
 use super::intent_router::ChatLang;
 use crate::infrastructure::ingredient_cache::IngredientData;
+use super::meal_builder::MealCombo;
 
 // Re-export HealthGoal so templates can use it
 pub use super::response_builder::HealthGoal;
@@ -788,4 +789,88 @@ pub fn chef_tip(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String 
         ChatLang::Pl => format!("💡 Rada szefa: {}", pl),
         ChatLang::Uk => format!("💡 Порада шефа: {}", uk),
     }
+}
+
+// ── Meal Combo ───────────────────────────────────────────────────────────────
+
+/// Localized text for a dynamically assembled meal combo.
+pub fn meal_combo_text(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> String {
+    let pname = match lang {
+        ChatLang::Ru => &combo.protein.name_ru,
+        ChatLang::En => &combo.protein.name_en,
+        ChatLang::Pl => &combo.protein.name_pl,
+        ChatLang::Uk => &combo.protein.name_uk,
+    };
+    let sname = match lang {
+        ChatLang::Ru => &combo.side.name_ru,
+        ChatLang::En => &combo.side.name_en,
+        ChatLang::Pl => &combo.side.name_pl,
+        ChatLang::Uk => &combo.side.name_uk,
+    };
+    let bname = combo.base.as_ref().map(|b| match lang {
+        ChatLang::Ru => &b.name_ru,
+        ChatLang::En => &b.name_en,
+        ChatLang::Pl => &b.name_pl,
+        ChatLang::Uk => &b.name_uk,
+    });
+
+    let goal_label = match (lang, goal) {
+        (ChatLang::Ru, HealthGoal::HighProtein) => "💪 Высокобелковый",
+        (ChatLang::Ru, HealthGoal::LowCalorie)  => "🥗 Низкокалорийный",
+        (ChatLang::Ru, HealthGoal::Balanced)     => "⚖️ Сбалансированный",
+        (ChatLang::En, HealthGoal::HighProtein) => "💪 High-Protein",
+        (ChatLang::En, HealthGoal::LowCalorie)  => "🥗 Low-Calorie",
+        (ChatLang::En, HealthGoal::Balanced)     => "⚖️ Balanced",
+        (ChatLang::Pl, HealthGoal::HighProtein) => "💪 Wysokobiałkowy",
+        (ChatLang::Pl, HealthGoal::LowCalorie)  => "🥗 Niskokaloryczny",
+        (ChatLang::Pl, HealthGoal::Balanced)     => "⚖️ Zbilansowany",
+        (ChatLang::Uk, HealthGoal::HighProtein) => "💪 Високобілковий",
+        (ChatLang::Uk, HealthGoal::LowCalorie)  => "🥗 Низькокалорійний",
+        (ChatLang::Uk, HealthGoal::Balanced)     => "⚖️ Збалансований",
+    };
+
+    let combo_parts = if let Some(bn) = bname {
+        format!("{} + {} + {}", pname, sname, bn)
+    } else {
+        format!("{} + {}", pname, sname)
+    };
+
+    let portions = if combo.base.is_some() {
+        match lang {
+            ChatLang::Ru => format!("({}г + {}г + {}г)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
+            ChatLang::En => format!("({}g + {}g + {}g)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
+            ChatLang::Pl => format!("({}g + {}g + {}g)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
+            ChatLang::Uk => format!("({}г + {}г + {}г)", combo.protein_g as u32, combo.side_g as u32, combo.base_g as u32),
+        }
+    } else {
+        match lang {
+            ChatLang::Ru => format!("({}г + {}г)", combo.protein_g as u32, combo.side_g as u32),
+            ChatLang::En => format!("({}g + {}g)", combo.protein_g as u32, combo.side_g as u32),
+            ChatLang::Pl => format!("({}g + {}g)", combo.protein_g as u32, combo.side_g as u32),
+            ChatLang::Uk => format!("({}г + {}г)", combo.protein_g as u32, combo.side_g as u32),
+        }
+    };
+
+    let stats = match lang {
+        ChatLang::Ru => format!(
+            "📊 {} ккал • белок {:.0}г • жиры {:.0}г • углеводы {:.0}г",
+            combo.total_kcal, combo.total_protein, combo.total_fat, combo.total_carbs
+        ),
+        ChatLang::En => format!(
+            "📊 {} kcal • protein {:.0}g • fat {:.0}g • carbs {:.0}g",
+            combo.total_kcal, combo.total_protein, combo.total_fat, combo.total_carbs
+        ),
+        ChatLang::Pl => format!(
+            "📊 {} kcal • białko {:.0}g • tłuszcze {:.0}g • węglowodany {:.0}g",
+            combo.total_kcal, combo.total_protein, combo.total_fat, combo.total_carbs
+        ),
+        ChatLang::Uk => format!(
+            "📊 {} ккал • білок {:.0}г • жири {:.0}г • вуглеводи {:.0}г",
+            combo.total_kcal, combo.total_protein, combo.total_fat, combo.total_carbs
+        ),
+    };
+
+    format!(
+        "🍽 {goal_label}\n\n{combo_parts} {portions}\n\n{stats}"
+    )
 }

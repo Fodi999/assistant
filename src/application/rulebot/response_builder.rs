@@ -12,11 +12,12 @@
 use super::intent_router::{ChatLang, Intent};
 use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, Suggestion};
 use super::response_templates as tpl;
+use super::meal_builder::MealCombo;
 use crate::infrastructure::ingredient_cache::IngredientData;
 
 // ── Health goal (re-exported for templates) ──────────────────────────────────
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthGoal {
     HighProtein,
     LowCalorie,
@@ -303,6 +304,101 @@ pub fn build_meal_idea(
 pub fn build_meal_idea_text_only(meal_name: &str, description: &str, lang: ChatLang) -> ChatResponse {
     let text = tpl::meal_idea_text_only(meal_name, description, lang);
     ChatResponse::text_only(text, Intent::MealIdea, lang, 0)
+}
+
+/// Build a dynamic meal combo response with multiple product cards.
+pub fn build_meal_combo(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> ChatResponse {
+    let text = tpl::meal_combo_text(combo, lang, goal);
+
+    // Build product cards for each ingredient in the combo
+    let mut cards: Vec<Card> = Vec::new();
+    let role_labels = match lang {
+        ChatLang::Ru => ["🥩 Белок", "🥦 Гарнир", "🍚 База"],
+        ChatLang::En => ["🥩 Protein", "🥦 Side", "🍚 Base"],
+        ChatLang::Pl => ["🥩 Białko", "🥦 Dodatek", "🍚 Baza"],
+        ChatLang::Uk => ["🥩 Білок", "🥦 Гарнір", "🍚 База"],
+    };
+
+    // Protein card
+    let pname = combo.protein.name(lang.code()).to_string();
+    cards.push(Card::Product(ProductCard {
+        slug: combo.protein.slug.clone(),
+        name: pname,
+        calories_per_100g: combo.protein.calories_per_100g,
+        protein_per_100g: combo.protein.protein_per_100g,
+        fat_per_100g: combo.protein.fat_per_100g,
+        carbs_per_100g: combo.protein.carbs_per_100g,
+        image_url: combo.protein.image_url.clone(),
+        highlight: Some(format!("{} · {}g", role_labels[0], combo.protein_g as u32)),
+        reason_tag: Some("meal-protein"),
+    }));
+
+    // Side card
+    let sname = combo.side.name(lang.code()).to_string();
+    cards.push(Card::Product(ProductCard {
+        slug: combo.side.slug.clone(),
+        name: sname,
+        calories_per_100g: combo.side.calories_per_100g,
+        protein_per_100g: combo.side.protein_per_100g,
+        fat_per_100g: combo.side.fat_per_100g,
+        carbs_per_100g: combo.side.carbs_per_100g,
+        image_url: combo.side.image_url.clone(),
+        highlight: Some(format!("{} · {}g", role_labels[1], combo.side_g as u32)),
+        reason_tag: Some("meal-side"),
+    }));
+
+    // Base card (optional)
+    if let Some(ref base) = combo.base {
+        let bname = base.name(lang.code()).to_string();
+        cards.push(Card::Product(ProductCard {
+            slug: base.slug.clone(),
+            name: bname,
+            calories_per_100g: base.calories_per_100g,
+            protein_per_100g: base.protein_per_100g,
+            fat_per_100g: base.fat_per_100g,
+            carbs_per_100g: base.carbs_per_100g,
+            image_url: base.image_url.clone(),
+            highlight: Some(format!("{} · {}g", role_labels[2], combo.base_g as u32)),
+            reason_tag: Some("meal-base"),
+        }));
+    }
+
+    let reason = match lang {
+        ChatLang::Ru => format!("{}ккал · {:.0}г белка", combo.total_kcal, combo.total_protein),
+        ChatLang::En => format!("{}kcal · {:.0}g protein", combo.total_kcal, combo.total_protein),
+        ChatLang::Pl => format!("{}kcal · {:.0}g białka", combo.total_kcal, combo.total_protein),
+        ChatLang::Uk => format!("{}ккал · {:.0}г білка", combo.total_kcal, combo.total_protein),
+    };
+
+    let mut resp = ChatResponse::with_cards(
+        text, cards, Intent::MealIdea, vec![], reason, lang, 0,
+    );
+
+    // Suggestions: try another combo, recipe with protein, details
+    resp.suggestions = match lang {
+        ChatLang::Ru => vec![
+            Suggestion { label: "🔄 Другой вариант".into(), query: "другое блюдо".into(), emoji: Some("🔄") },
+            Suggestion { label: format!("🍳 Рецепт с {}", combo.protein.name_ru), query: format!("рецепт с {}", combo.protein.slug), emoji: Some("🍳") },
+            Suggestion { label: "📋 План на день".into(), query: "план питания на день".into(), emoji: Some("📋") },
+        ],
+        ChatLang::En => vec![
+            Suggestion { label: "🔄 Another combo".into(), query: "another meal idea".into(), emoji: Some("🔄") },
+            Suggestion { label: format!("🍳 Recipe with {}", combo.protein.name_en), query: format!("recipe with {}", combo.protein.slug), emoji: Some("🍳") },
+            Suggestion { label: "📋 Full day plan".into(), query: "meal plan for the day".into(), emoji: Some("📋") },
+        ],
+        ChatLang::Pl => vec![
+            Suggestion { label: "🔄 Inny wariant".into(), query: "inny pomysł na posiłek".into(), emoji: Some("🔄") },
+            Suggestion { label: format!("🍳 Przepis z {}", combo.protein.name_pl), query: format!("przepis z {}", combo.protein.slug), emoji: Some("🍳") },
+            Suggestion { label: "📋 Plan na dzień".into(), query: "plan posiłków na dzień".into(), emoji: Some("📋") },
+        ],
+        ChatLang::Uk => vec![
+            Suggestion { label: "🔄 Інший варіант".into(), query: "інша страва".into(), emoji: Some("🔄") },
+            Suggestion { label: format!("🍳 Рецепт з {}", combo.protein.name_uk), query: format!("рецепт з {}", combo.protein.slug), emoji: Some("🍳") },
+            Suggestion { label: "📋 План на день".into(), query: "план харчування на день".into(), emoji: Some("📋") },
+        ],
+    };
+
+    resp
 }
 
 /// Build a full-day meal plan (breakfast + lunch + dinner) with product cards.
