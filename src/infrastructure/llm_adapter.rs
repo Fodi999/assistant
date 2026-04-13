@@ -198,7 +198,7 @@ impl LlmAdapter {
             "model": model,
             "messages": messages,
             "temperature": 0.1,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
         });
         let result = tokio::time::timeout(
             Duration::from_secs(120),

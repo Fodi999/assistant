@@ -275,7 +275,7 @@ Pick the best match. Do not invent values."#,
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
         })
     }
 
@@ -373,13 +373,24 @@ Pick the best match. Do not invent values."#,
             AppError::internal(&format!("Failed to parse Gemini response: {}", e))
         })?;
 
-        let content = data
+        let choice = data
             .choices
             .get(0)
             .ok_or_else(|| {
                 tracing::error!("❌ Gemini returned empty choices array");
                 AppError::internal("No response from Gemini")
-            })?
+            })?;
+
+        let finish_reason = choice.finish_reason.as_deref().unwrap_or("unknown");
+        if finish_reason == "length" {
+            tracing::warn!(
+                "⚠️ Gemini output truncated (finish_reason=length) model={} content_preview={}",
+                request_body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
+                choice.message.content.as_deref().unwrap_or("")[..choice.message.content.as_deref().unwrap_or("").len().min(120)].to_string()
+            );
+        }
+
+        let content = choice
             .message
             .content
             .as_deref()
@@ -388,7 +399,7 @@ Pick the best match. Do not invent values."#,
             .to_string();
 
         if content.is_empty() {
-            tracing::error!("❌ Gemini returned empty/null content (thinking model may need higher max_tokens)");
+            tracing::error!("❌ Gemini returned empty/null content (finish_reason={}, thinking model may need higher max_tokens)", finish_reason);
             return Err(AppError::internal("Gemini returned empty response"));
         }
 
@@ -472,6 +483,9 @@ struct GeminiResponse {
 #[derive(Debug, Deserialize)]
 struct GeminiChoice {
     message: GeminiMessage,
+    /// "stop", "length", "content_filter", etc.
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 /// Gemini 3 thinking models may return `content: null` while including

@@ -96,7 +96,7 @@ Example: {{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","p
     );
 
     let raw = llm
-        .groq_raw_request_with_model(&prompt, 200, "gemini-3-flash-preview")
+        .groq_raw_request_with_model(&prompt, 400, "gemini-3-flash-preview")
         .await
         .map_err(|e| format!("Gemini error: {e}"))?;
 
