@@ -324,7 +324,8 @@ fn score_nutrition(text: &str) -> i32 {
         ("калори",        3), ("calori",         3), ("ккал",           3),
         ("kcal",          3), ("калорій",        3),
         ("пищевая ценность", 3),
-        ("белок",         2), ("белки",          2), ("protein",        2),
+        ("белок",         2), ("белки",          2), ("белка",          2),
+        ("protein",       2),
         ("białk",         2), ("білок",          2), ("білки",          2),
         ("жиры",          2), ("жир",            2), ("fat",            2),
         ("tłuszcz",       2),
@@ -453,7 +454,48 @@ fn sum_scores(text: &str, keywords: &[ScoredKeyword]) -> i32 {
 /// Fixes:
 /// - "хочу на массу, что поесть?" → MealIdea (goal + action verb = meal, not product list)
 /// - "low calorie dinner for diet" → MealIdea (meal-time + diet = meal, not nutrition_info)
+/// - "где меньше всего белка" → Unknown/AI Brain (ranking query, not simple nutrition lookup)
 fn apply_context_boosts(text: &str, scores: &mut [(Intent, i32); 8]) {
+    // ── Comparative/ranking queries → suppress NutritionInfo, send to AI Brain ──
+    // Queries like "где меньше всего белка", "больше всего протеина",
+    // "самый калорийный", "least protein", "most calories" are RANKING queries.
+    // NutritionInfo handler can only show nutrition for ONE product — it can't
+    // search/sort the whole catalog. AI Brain can reason about this.
+    let has_comparative = text.contains("меньше всего") || text.contains("больше всего")
+        || text.contains("самый") || text.contains("самая") || text.contains("самое")
+        || text.contains("наименьш") || text.contains("наибольш")
+        || text.contains("наименее") || text.contains("наиболее")
+        || text.contains("минимум") || text.contains("максимум")
+        || text.contains("меньше") || text.contains("больше")
+        || text.contains("least") || text.contains("most")
+        || text.contains("lowest") || text.contains("highest")
+        || text.contains("minimum") || text.contains("maximum")
+        || text.contains("ranking") || text.contains("топ ") || text.contains("top ")
+        || text.contains("найменше") || text.contains("найбільше")  // Ukrainian
+        || text.contains("najmniej") || text.contains("najwięcej"); // Polish
+
+    let has_nutrient = text.contains("белк") || text.contains("белок")
+        || text.contains("калори") || text.contains("ккал")
+        || text.contains("жир") || text.contains("углевод")
+        || text.contains("protein") || text.contains("calori") || text.contains("kcal")
+        || text.contains("fat") || text.contains("carb")
+        || text.contains("білк") || text.contains("білок")  // Ukrainian
+        || text.contains("białk") || text.contains("tłuszcz") || text.contains("węglowodan"); // Polish
+
+    if has_comparative && has_nutrient {
+        for (intent, score) in scores.iter_mut() {
+            // Kill NutritionInfo — it can't handle ranking queries
+            if *intent == Intent::NutritionInfo {
+                *score = 0;
+            }
+            // Also suppress HealthyProduct unless it scored very high on its own
+            // (e.g. "похудеть" = 5 should still win)
+            if *intent == Intent::HealthyProduct && *score < 4 {
+                *score = 0;
+            }
+        }
+    }
+
     let has_goal = text.contains("на массу") || text.contains("похуд") || text.contains("сушк")
         || text.contains("диет") || text.contains("diet") || text.contains("muscle")
         || text.contains("lose weight") || text.contains("bulk") || text.contains("набрать")
@@ -580,5 +622,29 @@ mod tests {
     }
     #[test] fn goal_action_diet_lunch() {
         assert_eq!(detect_intent("diet lunch ideas"), Intent::MealIdea);
+    }
+
+    // ── Fix: Comparative/ranking queries → Unknown (AI Brain) ──
+    #[test] fn ranking_least_protein_ru() {
+        assert_eq!(detect_intent("где меньше всего белка"), Intent::Unknown);
+    }
+    #[test] fn ranking_most_protein_ru() {
+        assert_eq!(detect_intent("где больше всего белка"), Intent::Unknown);
+    }
+    #[test] fn ranking_least_calories_ru() {
+        assert_eq!(detect_intent("самый низкокалорийный продукт"), Intent::Unknown);
+    }
+    #[test] fn ranking_most_calories_en() {
+        assert_eq!(detect_intent("which product has the most calories"), Intent::Unknown);
+    }
+    #[test] fn ranking_least_fat_en() {
+        assert_eq!(detect_intent("lowest fat product"), Intent::Unknown);
+    }
+    #[test] fn ranking_top_protein_ru() {
+        assert_eq!(detect_intent("топ продуктов по белку"), Intent::Unknown);
+    }
+    // But simple nutrition lookup should still work
+    #[test] fn simple_nutrition_still_works() {
+        assert_eq!(detect_intent("сколько белка в курице"), Intent::NutritionInfo);
     }
 }
