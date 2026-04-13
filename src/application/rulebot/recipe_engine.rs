@@ -717,6 +717,21 @@ fn edible_yield_for(product_type: &str, slug: &str) -> f32 {
 
 fn round1(v: f32) -> f32 { (v * 10.0).round() / 10.0 }
 
+/// Human-friendly time: 89→" ⏱ ~1 ч 30 мин", 25→" ⏱ ~25 мин", 0→""
+fn fmt_time(min: u16) -> String {
+    if min == 0 { return String::new(); }
+    // Round to nearest 5
+    let rounded = ((min as f32 / 5.0).round() as u16).max(5);
+    if rounded < 60 {
+        format!(" ⏱ ~{} мин", rounded)
+    } else {
+        let h = rounded / 60;
+        let m = rounded % 60;
+        if m == 0 { format!(" ⏱ ~{} ч", h) }
+        else { format!(" ⏱ ~{} ч {} мин", h, m) }
+    }
+}
+
 // ── Text Formatting ──────────────────────────────────────────────────────────
 
 pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
@@ -727,7 +742,7 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
         .unwrap_or_else(|| card.dish_name_local.as_deref().unwrap_or(&card.dish_name));
 
     let total_time: u16 = card.steps.iter().filter_map(|s| s.time_min).sum();
-    let time_str = if total_time > 0 { format!(" ⏱ ~{} мин", total_time) } else { String::new() };
+    let time_str = fmt_time(total_time);
 
     let intro = match lang {
         ChatLang::Ru => format!(
