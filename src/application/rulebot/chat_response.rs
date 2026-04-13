@@ -198,8 +198,14 @@ pub struct RecipeCard {
     pub dish_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dish_name_local: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dish_type: Option<String>,
     pub servings: u8,
     pub ingredients: Vec<RecipeIngredientRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<RecipeStepRow>,
     pub total_output_g: f32,
     pub total_kcal: u32,
     pub total_protein: f32,
@@ -211,6 +217,15 @@ pub struct RecipeCard {
     pub per_serving_carbs: f32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<String>,
+}
+
+/// A cooking step in a recipe.
+#[derive(Debug, Serialize)]
+pub struct RecipeStepRow {
+    pub step: u8,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_min: Option<u16>,
 }
 
 /// Single ingredient row in a recipe card.

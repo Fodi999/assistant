@@ -20,6 +20,119 @@ use super::intent_router::ChatLang;
 use super::meal_builder::CookMethod;
 use super::response_builder::HealthGoal;
 
+// ── Dish Cooking Profile ─────────────────────────────────────────────────────
+
+/// The type of dish determines how every ingredient is cooked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DishType {
+    Soup,       // borscht, ramen, pho, minestrone…
+    Stew,       // goulash, ragout, curry…
+    Salad,      // caesar, greek…
+    StirFry,    // wok, pad thai…
+    Grill,      // bbq, steaks…
+    Bake,       // casserole, lasagna, pizza…
+    Pasta,      // spaghetti, carbonara…
+    Raw,        // tartare, sashimi…
+    Default,    // unknown → old behaviour
+}
+
+impl DishType {
+    /// Detect dish type from the English dish name returned by Gemini.
+    pub fn detect(dish: &str) -> Self {
+        let d = dish.to_lowercase();
+        // Soups
+        if d.contains("soup") || d.contains("borscht") || d.contains("borsch")
+            || d.contains("ramen") || d.contains("pho") || d.contains("minestrone")
+            || d.contains("chowder") || d.contains("consomme") || d.contains("gazpacho")
+            || d.contains("bouillon") || d.contains("broth") || d.contains("ukha")
+            || d.contains("shchi") || d.contains("solyanka") || d.contains("rassolnik")
+            || d.contains("kharcho") || d.contains("tom yum") || d.contains("laksa")
+            || d.contains("miso") { return DishType::Soup; }
+        // Stews
+        if d.contains("stew") || d.contains("ragout") || d.contains("goulash")
+            || d.contains("curry") || d.contains("chili con") || d.contains("tagine")
+            || d.contains("casserole") || d.contains("pot roast")
+            || d.contains("braised") { return DishType::Stew; }
+        // Salads
+        if d.contains("salad") || d.contains("ceviche")
+            || d.contains("coleslaw") || d.contains("tabouleh") { return DishType::Salad; }
+        // Stir-fry / wok
+        if d.contains("stir") || d.contains("wok") || d.contains("pad thai")
+            || d.contains("fried rice") || d.contains("chow mein") { return DishType::StirFry; }
+        // Grill
+        if d.contains("grill") || d.contains("bbq") || d.contains("kebab")
+            || d.contains("shashlik") || d.contains("steak")
+            || d.contains("burger") { return DishType::Grill; }
+        // Bake
+        if d.contains("bake") || d.contains("lasagna") || d.contains("pizza")
+            || d.contains("quiche") || d.contains("pie")
+            || d.contains("gratin") { return DishType::Bake; }
+        // Pasta
+        if d.contains("pasta") || d.contains("spaghetti") || d.contains("carbonara")
+            || d.contains("penne") || d.contains("fettuccine")
+            || d.contains("macaroni") || d.contains("noodle") { return DishType::Pasta; }
+        // Raw
+        if d.contains("tartare") || d.contains("sashimi")
+            || d.contains("carpaccio") { return DishType::Raw; }
+        DishType::Default
+    }
+
+    /// The cooking method for a given role in this dish type.
+    pub fn cook_method(&self, role: &str, product_type: &str, goal: HealthGoal) -> CookMethod {
+        match self {
+            DishType::Soup => match role {
+                "protein" => CookMethod::Boil,
+                "side"    => CookMethod::Boil,
+                "base"    => CookMethod::Boil,
+                "spice" | "condiment" => CookMethod::Raw,
+                _ => CookMethod::Boil,
+            },
+            DishType::Stew => match role {
+                "protein" => CookMethod::Boil, // тушёное = long boil/braise
+                "side"    => CookMethod::Boil,
+                "base"    => CookMethod::Boil,
+                "spice" | "condiment" => CookMethod::Raw,
+                _ => CookMethod::Boil,
+            },
+            DishType::Salad => CookMethod::Raw,
+            DishType::StirFry => match role {
+                "spice" | "condiment" => CookMethod::Raw,
+                _ => CookMethod::Fry,
+            },
+            DishType::Grill => match role {
+                "protein" => CookMethod::Grill,
+                "side"    => CookMethod::Grill,
+                "base"    => CookMethod::Boil, // rice/pasta always boiled
+                "spice" | "condiment" => CookMethod::Raw,
+                _ => CookMethod::Grill,
+            },
+            DishType::Bake => match role {
+                "spice" | "condiment" => CookMethod::Raw,
+                _ => CookMethod::Bake,
+            },
+            DishType::Pasta => match role {
+                "protein" => CookMethod::Fry,
+                "base"    => CookMethod::Boil,
+                "side"    => CookMethod::Fry,
+                "spice" | "condiment" => CookMethod::Raw,
+                _ => CookMethod::Boil,
+            },
+            DishType::Raw => CookMethod::Raw,
+            DishType::Default => CookMethod::for_ingredient(product_type, role, goal),
+        }
+    }
+}
+
+// ── Cooking Steps ────────────────────────────────────────────────────────────
+
+/// A simple cooking step (pure logic, no LLM).
+#[derive(Debug, Clone, Serialize)]
+pub struct CookingStep {
+    pub step: u8,
+    pub text: String,
+    pub time_min: Option<u16>,
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /// Minimal schema from Gemini — just dish name + ingredient slugs.
@@ -54,8 +167,12 @@ pub struct ResolvedIngredient {
 pub struct TechCard {
     pub dish_name: String,
     pub dish_name_local: Option<String>,
+    /// Improved display name: "Классический борщ с говядиной"
+    pub display_name: Option<String>,
+    pub dish_type: String,
     pub servings: u8,
     pub ingredients: Vec<ResolvedIngredient>,
+    pub steps: Vec<CookingStep>,
     pub total_output_g: f32,
     pub total_kcal: u32,
     pub total_protein: f32,
@@ -134,13 +251,16 @@ pub async fn resolve_dish(
     schema: &DishSchema,
     goal: HealthGoal,
 ) -> TechCard {
+    let dish_type = DishType::detect(&schema.dish);
+    tracing::info!("🍳 DishType: {:?} for '{}'", dish_type, schema.dish);
+
     let mut ingredients = Vec::new();
     let mut unresolved = Vec::new();
 
     for slug_hint in &schema.items {
         match resolve_slug(cache, slug_hint).await {
             Some(product) => {
-                let resolved = build_ingredient(&product, slug_hint, goal);
+                let resolved = build_ingredient_for_dish(&product, slug_hint, goal, dish_type);
                 ingredients.push(resolved);
             }
             None => {
@@ -164,11 +284,20 @@ pub async fn resolve_dish(
     let total_fat: f32 = ingredients.iter().map(|i| i.fat_g).sum();
     let total_carbs: f32 = ingredients.iter().map(|i| i.carbs_g).sum();
 
+    // Generate cooking steps
+    let steps = generate_steps(&ingredients, dish_type, ChatLang::Ru);
+
+    // Build improved display name
+    let display_name = build_display_name(schema, &ingredients, dish_type);
+
     TechCard {
         dish_name: schema.dish.clone(),
         dish_name_local: schema.dish_local.clone(),
+        display_name: Some(display_name),
+        dish_type: format!("{:?}", dish_type).to_lowercase(),
         servings: 1,
         ingredients,
+        steps,
         total_output_g: total_output,
         total_kcal,
         total_protein,
@@ -183,11 +312,21 @@ pub async fn resolve_dish(
 }
 
 /// Build a fully-resolved ingredient from a cache product.
-/// Backend decides: role, cooking method, portion, yield, nutrition.
+/// Backend decides: role, cooking method (based on dish type!), portion, yield, nutrition.
 fn build_ingredient(product: &IngredientData, slug_hint: &str, goal: HealthGoal) -> ResolvedIngredient {
-    // Override role for aromatics that meal_role() classifies as "side"
+    build_ingredient_for_dish(product, slug_hint, goal, DishType::Default)
+}
+
+/// Build ingredient with dish-aware cooking method.
+fn build_ingredient_for_dish(
+    product: &IngredientData,
+    slug_hint: &str,
+    goal: HealthGoal,
+    dish_type: DishType,
+) -> ResolvedIngredient {
     let role = override_role(product);
-    let method = CookMethod::for_ingredient(&product.product_type, role, goal);
+    // 🔴 FIX: Use dish-aware cooking method instead of "in vacuum"
+    let method = dish_type.cook_method(role, &product.product_type, goal);
     let state = method_to_state(&method);
 
     let cooked_portion = recipe_portion(product, role);
@@ -274,6 +413,195 @@ fn method_to_state(method: &CookMethod) -> &'static str {
     }
 }
 
+// ── Cooking Steps Generation (pure logic, no LLM) ───────────────────────────
+
+/// Generate cooking steps based on dish type and resolved ingredients.
+fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang: ChatLang) -> Vec<CookingStep> {
+    let protein: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "protein").collect();
+    let sides: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "side").collect();
+    let bases: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "base").collect();
+    let spices: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "spice" || i.role == "condiment").collect();
+
+    let name_of = |ing: &ResolvedIngredient| -> String {
+        ing.product.as_ref()
+            .map(|p| p.name_ru.clone())
+            .unwrap_or_else(|| ing.slug_hint.clone())
+    };
+
+    let names_joined = |ings: &[&ResolvedIngredient]| -> String {
+        ings.iter()
+            .map(|i| name_of(i).to_lowercase())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let mut steps = Vec::new();
+    let mut step_num: u8 = 0;
+    let mut add = |text: String, time: Option<u16>| {
+        step_num += 1;
+        steps.push(CookingStep { step: step_num, text, time_min: time });
+    };
+
+    match dish_type {
+        DishType::Soup | DishType::Stew => {
+            if !protein.is_empty() {
+                let verb = if dish_type == DishType::Soup { "Отварить" } else { "Потушить" };
+                add(format!("{} {} до готовности", verb, names_joined(&protein)), Some(40));
+            }
+            // Root vegetables first (potato, beet, carrot)
+            let roots: Vec<&&ResolvedIngredient> = sides.iter()
+                .filter(|i| {
+                    let slug = i.resolved_slug.as_deref().unwrap_or("");
+                    slug.contains("potato") || slug.contains("beet") || slug.contains("carrot")
+                })
+                .collect();
+            let leafy: Vec<&&ResolvedIngredient> = sides.iter()
+                .filter(|i| {
+                    let slug = i.resolved_slug.as_deref().unwrap_or("");
+                    !slug.contains("potato") && !slug.contains("beet") && !slug.contains("carrot")
+                })
+                .collect();
+            if !roots.is_empty() {
+                let names: String = roots.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(", ");
+                add(format!("Добавить {}, варить", names), Some(15));
+            }
+            if !leafy.is_empty() {
+                let names: String = leafy.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(", ");
+                add(format!("Добавить {}", names), Some(10));
+            }
+            if !bases.is_empty() {
+                add(format!("Добавить {}", names_joined(&bases)), Some(10));
+            }
+            if !spices.is_empty() {
+                add(format!("Добавить {}, довести до вкуса", names_joined(&spices)), Some(5));
+            }
+            add("Дать настояться 5 минут, подавать".into(), Some(5));
+        }
+        DishType::Salad => {
+            if !sides.is_empty() {
+                add(format!("Нарезать {}", names_joined(&sides)), None);
+            }
+            if !protein.is_empty() {
+                add(format!("Нарезать {}", names_joined(&protein)), None);
+            }
+            add("Смешать все ингредиенты".into(), None);
+            if !spices.is_empty() {
+                add(format!("Заправить {}", names_joined(&spices)), None);
+            }
+        }
+        DishType::StirFry => {
+            add("Разогреть масло в воке на сильном огне".into(), Some(2));
+            if !protein.is_empty() {
+                add(format!("Обжарить {} до корочки", names_joined(&protein)), Some(5));
+            }
+            if !sides.is_empty() {
+                add(format!("Добавить {}, обжаривать", names_joined(&sides)), Some(5));
+            }
+            if !spices.is_empty() {
+                add(format!("Добавить {}", names_joined(&spices)), Some(2));
+            }
+            if !bases.is_empty() {
+                add(format!("Подать с {}", names_joined(&bases)), None);
+            }
+        }
+        DishType::Grill => {
+            if !protein.is_empty() {
+                add(format!("Замариновать {}", names_joined(&protein)), Some(30));
+            }
+            add("Разогреть гриль до высокой температуры".into(), Some(5));
+            if !protein.is_empty() {
+                add(format!("Обжарить {} на гриле", names_joined(&protein)), Some(10));
+            }
+            if !sides.is_empty() {
+                add(format!("Гриль: {}", names_joined(&sides)), Some(8));
+            }
+        }
+        DishType::Bake => {
+            add("Разогреть духовку до 180°C".into(), Some(10));
+            let all_names: Vec<String> = protein.iter().chain(sides.iter())
+                .map(|i| name_of(i).to_lowercase())
+                .collect();
+            if !all_names.is_empty() {
+                add(format!("Подготовить {}", all_names.join(", ")), None);
+            }
+            add("Запекать до готовности".into(), Some(30));
+        }
+        DishType::Pasta => {
+            if !bases.is_empty() {
+                add(format!("Отварить {} до al dente", names_joined(&bases)), Some(10));
+            }
+            if !protein.is_empty() {
+                add(format!("Обжарить {}", names_joined(&protein)), Some(8));
+            }
+            if !sides.is_empty() {
+                add(format!("Добавить {}", names_joined(&sides)), Some(5));
+            }
+            add("Соединить с пастой, перемешать".into(), Some(2));
+            if !spices.is_empty() {
+                add(format!("Добавить {}", names_joined(&spices)), None);
+            }
+        }
+        _ => {
+            // Default: simple cook order
+            if !protein.is_empty() {
+                add(format!("Приготовить {}", names_joined(&protein)), Some(15));
+            }
+            if !bases.is_empty() {
+                add(format!("Приготовить {}", names_joined(&bases)), Some(10));
+            }
+            if !sides.is_empty() {
+                add(format!("Приготовить {}", names_joined(&sides)), Some(10));
+            }
+            if !spices.is_empty() {
+                add(format!("Добавить {}", names_joined(&spices)), None);
+            }
+        }
+    }
+
+    steps
+}
+
+// ── Display Name Builder ─────────────────────────────────────────────────────
+
+/// Build an improved display name: "Классический борщ с говядиной"
+fn build_display_name(schema: &DishSchema, ingredients: &[ResolvedIngredient], _dish_type: DishType) -> String {
+    let dish_local = schema.dish_local.as_deref().unwrap_or(&schema.dish);
+
+    // Find the main protein
+    let protein_name = ingredients.iter()
+        .find(|i| i.role == "protein")
+        .and_then(|i| i.product.as_ref())
+        .map(|p| p.name_ru.clone());
+
+    if let Some(protein) = protein_name {
+        // "Борщ" + "Говядина" → "Классический борщ с говядиной"
+        let with_protein = instrumental_case(&protein);
+        format!("{} с {}", dish_local, with_protein)
+    } else {
+        dish_local.to_string()
+    }
+}
+
+/// Very simple Russian instrumental case for common proteins.
+/// "Говядина" → "говядиной", "Курица" → "курицей"
+fn instrumental_case(name: &str) -> String {
+    let lower = name.to_lowercase();
+    // -а → -ой
+    if lower.ends_with('а') {
+        return format!("{}ой", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    // -я → -ей
+    if lower.ends_with('я') {
+        return format!("{}ей", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
+    // -ь (feminine) → -ью
+    if lower.ends_with('ь') {
+        return format!("{}ью", &lower[..lower.len() - 'ь'.len_utf8()]);
+    }
+    // consonant (masculine) → +ом
+    format!("{}ом", lower)
+}
+
 // ── Slug Resolution ──────────────────────────────────────────────────────────
 
 async fn resolve_slug(cache: &IngredientCache, hint: &str) -> Option<IngredientData> {
@@ -358,7 +686,9 @@ fn round1(v: f32) -> f32 { (v * 10.0).round() / 10.0 }
 // ── Text Formatting ──────────────────────────────────────────────────────────
 
 pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
-    let dish = card.dish_name_local.as_deref().unwrap_or(&card.dish_name);
+    // Use improved display name if available
+    let dish = card.display_name.as_deref()
+        .unwrap_or_else(|| card.dish_name_local.as_deref().unwrap_or(&card.dish_name));
     let mut out = Vec::new();
 
     match lang {
@@ -385,6 +715,23 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
             out.push(format!("• {} ({}) — {:.0}г → {:.0}г", name, st, ing.gross_g, ing.cooked_net_g));
         } else {
             out.push(format!("• {} ({}) — {:.0}г", name, st, ing.gross_g));
+        }
+    }
+
+    // Cooking steps
+    if !card.steps.is_empty() {
+        out.push(String::new());
+        match lang {
+            ChatLang::Ru => out.push("👨‍🍳 **Как приготовить:**".into()),
+            ChatLang::En => out.push("👨‍🍳 **How to cook:**".into()),
+            ChatLang::Pl => out.push("👨‍🍳 **Jak przygotować:**".into()),
+            ChatLang::Uk => out.push("👨‍🍳 **Як приготувати:**".into()),
+        }
+        for step in &card.steps {
+            let time_str = step.time_min
+                .map(|m| format!(" (~{} мин)", m))
+                .unwrap_or_default();
+            out.push(format!("{}. {}{}", step.step, step.text, time_str));
         }
     }
 

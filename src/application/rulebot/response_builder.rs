@@ -360,6 +360,8 @@ pub fn build_recipe_card(
     let recipe_card = RecipeCard {
         dish_name: card.dish_name.clone(),
         dish_name_local: card.dish_name_local.clone(),
+        display_name: card.display_name.clone(),
+        dish_type: Some(card.dish_type.clone()),
         servings: card.servings,
         ingredients: card.ingredients.iter().map(|ing| {
             RecipeIngredientRow {
@@ -375,6 +377,13 @@ pub fn build_recipe_card(
                 protein_g: ing.protein_g,
                 fat_g: ing.fat_g,
                 carbs_g: ing.carbs_g,
+            }
+        }).collect(),
+        steps: card.steps.iter().map(|s| {
+            super::chat_response::RecipeStepRow {
+                step: s.step,
+                text: s.text.clone(),
+                time_min: s.time_min,
             }
         }).collect(),
         total_output_g: card.total_output_g,
