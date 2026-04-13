@@ -103,7 +103,10 @@ impl ChatEngine {
         }
 
         // ── Coach motivation ──────────────────────────────────────────────
-        response.coach_message = chef_coach::pick_message(ctx, goal, lang);
+        // Skip coach on Greeting — the greeting text itself is the welcome message
+        if parsed.intent != Intent::Greeting {
+            response.coach_message = chef_coach::pick_message(ctx, goal, lang);
+        }
 
         response.timing_ms = start.elapsed().as_millis() as u64;
         response
