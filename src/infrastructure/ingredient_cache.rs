@@ -152,7 +152,7 @@ impl IngredientCache {
                 COALESCE(carbs_per_100g, 0)::REAL    as carbs_per_100g,
                 image_url,
                 COALESCE(product_type, 'other')      as product_type,
-                density_g_per_ml
+                density_g_per_ml::REAL               as density_g_per_ml
             FROM catalog_ingredients
             WHERE COALESCE(is_active, true) = true
               AND slug IS NOT NULL
