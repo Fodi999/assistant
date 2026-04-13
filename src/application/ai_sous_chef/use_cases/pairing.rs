@@ -265,8 +265,8 @@ Rules:
             );
 
             let raw = self.llm_adapter
-                // Flash model: pairings are suggestions, not DB nutrition data
-                .generate_with_quality(&prompt, 2000, AiQuality::Fast)
+                // Flash model: thinking uses ~80% of token budget
+                .generate_with_quality(&prompt, 8000, AiQuality::Fast)
                 .await?;
 
             // Log raw AI response for debugging

@@ -94,17 +94,17 @@ Rules:
             nutrition_str = nutrition_str,
         );
 
-        // ── Call AI via trait (Flash = gemini-3-flash-preview, cheap for decorative SEO text) ──
-        // 2000 tokens: SEO JSON is ~300 tokens, thinking overhead ~1000 tokens
+        // ── Call AI via trait (Flash = gemini-3-flash-preview) ──
+        // Thinking models use ~80% of token budget for chain-of-thought
         let raw = match self.llm_adapter
-            .generate_with_quality(&prompt, 2000, AiQuality::Fast)
+            .generate_with_quality(&prompt, 8000, AiQuality::Fast)
             .await
         {
             Ok(r) => r,
             Err(first_err) => {
                 tracing::warn!("🔄 SEO first attempt failed: {}, retrying…", first_err);
                 self.llm_adapter
-                    .generate_with_quality(&prompt, 2000, AiQuality::Fast)
+                    .generate_with_quality(&prompt, 8000, AiQuality::Fast)
                     .await?
             }
         };

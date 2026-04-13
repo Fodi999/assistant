@@ -363,7 +363,8 @@ Rules:
 
         let raw = self
             .llm_adapter
-            .generate_with_quality(&prompt, 500, AiQuality::Balanced)
+            // Thinking models need ~80% of tokens for chain-of-thought
+            .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
             .await?;
 
         tracing::info!("🌍 AI translate raw ({} chars): {}", raw.len(), &raw[..raw.len().min(200)]);

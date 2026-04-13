@@ -127,8 +127,9 @@ impl AdminCatalogService {
         );
 
         // ── Call AI ──
+        // Thinking models (Pro) use ~80% of tokens for chain-of-thought
         let raw = self.llm_adapter
-            .generate_with_quality(&prompt, 3000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 10000, AiQuality::Balanced)
             .await?;
 
         // ── Log raw AI response for debugging nutrition pipeline ──
@@ -195,7 +196,7 @@ impl AdminCatalogService {
 
         // ── Cache result ──
         if let Err(e) = self.ai_cache.set(
-            &cache_key, result.clone(), "gemini", "gemini-3-flash-preview", AUTOFILL_CACHE_TTL_DAYS
+            &cache_key, result.clone(), "groq", "llama-3.3-70b-versatile", AUTOFILL_CACHE_TTL_DAYS
         ).await {
             tracing::warn!("Failed to cache autofill result: {}", e);
         }

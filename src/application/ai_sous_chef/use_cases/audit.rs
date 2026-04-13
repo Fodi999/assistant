@@ -295,7 +295,7 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
                 );
 
                 match self.llm_adapter
-                    .generate_with_quality(&ai_prompt, 2000, AiQuality::Best)
+                    .generate_with_quality(&ai_prompt, 8000, AiQuality::Best)
                     .await
                 {
                     Ok(raw) => {

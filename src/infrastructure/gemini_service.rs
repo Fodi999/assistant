@@ -98,7 +98,9 @@ Respond with ONLY valid JSON, no other text:
             ingredient_name
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 300);
+        // Thinking models (gemini-3-flash) spend ~80% of max_tokens on chain-of-thought,
+        // so we need much higher limits than the expected output size.
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 2000);
 
         tracing::info!("🔮 Gemini translation request for: {}", ingredient_name);
 
@@ -132,7 +134,7 @@ Text: {}"#,
             target_lang, text
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 800);
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 2000);
 
         let content = self.send_with_retry(&body, 1).await?;
 
@@ -200,7 +202,7 @@ Rules:
             trimmed
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 500);
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 4000);
 
         tracing::info!("🔮 Gemini unified processing for: {}", trimmed);
 
@@ -241,7 +243,7 @@ Pick the best match. Do not invent values."#,
             name_en
         );
 
-        let body = self.build_request(&self.fast_model, &prompt, 0.0, 300);
+        let body = self.build_request(&self.fast_model, &prompt, 0.0, 2000);
         let content = self.send_with_retry(&body, 1).await?;
         let classification: AiClassification = self.parse_json_response(&content)?;
 

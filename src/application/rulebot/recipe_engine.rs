@@ -96,7 +96,8 @@ Example: {{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","p
     );
 
     let raw = llm
-        .groq_raw_request_with_model(&prompt, 400, "gemini-3-flash-preview")
+        // Thinking models use ~80% of max_tokens for chain-of-thought
+        .groq_raw_request_with_model(&prompt, 4000, "gemini-3-flash-preview")
         .await
         .map_err(|e| format!("Gemini error: {e}"))?;
 

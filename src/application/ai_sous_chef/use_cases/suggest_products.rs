@@ -164,8 +164,8 @@ impl AdminCatalogService {
 
             let raw = self
                 .llm_adapter
-                // Flash model: suggestions are decorative, not DB data
-                .generate_with_quality(&prompt, 2000, AiQuality::Fast)
+                // Flash model: thinking uses ~80% of token budget
+                .generate_with_quality(&prompt, 8000, AiQuality::Fast)
                 .await?;
 
             let candidates = match try_parse_suggestions(&raw) {
