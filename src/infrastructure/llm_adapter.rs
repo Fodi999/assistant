@@ -65,26 +65,15 @@ impl LlmAdapter {
     }
 
     /// Unified classification and translation for a product.
-    /// Order: Rule Engine -> Cache -> LLM
+    /// Order: Cache -> LLM (with optional Rule Engine hint for category/unit)
+    ///
+    /// Rule Engine provides category_slug + unit hints but NEVER translations.
+    /// Translations ALWAYS come from Cache or LLM.
     pub async fn process_unified(
         &self,
         name: &str,
     ) -> Result<UnifiedProductResponse, AppError> {
-        // 1. Rule Engine (FASTEST, 0 costs)
-        if let Some(rule) = ClassificationRules::try_classify(name) {
-            tracing::info!("🚀 Rule Engine matched: {}", name);
-            return Ok(UnifiedProductResponse {
-                name_en: name.to_string(),
-                name_pl: name.to_string(),
-                name_ru: name.to_string(), 
-                name_uk: name.to_string(),
-                category_slug: rule.category_slug,
-                unit: rule.unit,
-                confidence: 1.0,
-            });
-        }
-
-        // 2. Cache (FAST, low latency)
+        // 1. Cache (FAST, low latency)
         let cache_key = format!("product_unified:{}", name.to_lowercase().trim());
         if let Some(cached_val) = self.cache_repo.get(&cache_key).await? {
             if let Ok(response) = serde_json::from_value::<UnifiedProductResponse>(cached_val) {
@@ -93,16 +82,30 @@ impl LlmAdapter {
             }
         }
 
-        // 3. LLM (Gemini)
+        // 2. Rule Engine hint (category + unit only, NO translations)
+        let rule_hint = ClassificationRules::try_classify(name);
+        if rule_hint.is_some() {
+            tracing::info!("🚀 Rule Engine matched category/unit for: {}", name);
+        }
+
+        // 3. LLM (Gemini) — ALWAYS called for translations
         tracing::info!("🔮 Gemini LLM call for: {}", name);
         let start = Instant::now();
         
-        let response = timeout(
+        let mut response = timeout(
             Duration::from_secs(15),
             self.gemini_service.process_unified(name)
         )
         .await
         .map_err(|_| AppError::internal("LLM Timeout: Unified processing took too long"))??;
+
+        // Override category/unit with Rule Engine hints if available (more reliable)
+        if let Some(rule) = rule_hint {
+            tracing::info!("📏 Overriding AI category '{}' with rule '{}'", response.category_slug, rule.category_slug);
+            response.category_slug = rule.category_slug;
+            response.unit = rule.unit;
+            response.confidence = 1.0;
+        }
 
         let duration_ms = start.elapsed().as_millis() as i32;
         self.log_usage("process_unified", duration_ms).await;
