@@ -84,12 +84,15 @@ fn product_type_to_category(product_type: &str) -> Option<&'static str> {
         "fruit" | "fruits" => Some("Fruits"),
         "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => Some("Grains & Pasta"),
         "legume" | "legumes" => Some("Legumes"),
-        "nut" | "nuts" | "seeds" => Some("Nuts & Seeds"),
-        "spice" | "spices" | "herb" | "herbs" | "seasoning" => Some("Spices & Herbs"),
-        "oil" | "oils" | "fat" | "fats" => Some("Oils & Fats"),
+        "nut" | "nuts" | "seeds" | "nut_seed" => Some("Nuts & Seeds"),
+        "spice" | "spices" | "herb" | "herbs" | "herb_spice" | "seasoning" => Some("Spices & Herbs"),
+        "oil" | "oils" | "fat" | "fats" | "fat_oil" => Some("Oils & Fats"),
         "beverage" | "beverages" | "drink" => Some("Beverages"),
-        "mushroom" | "mushrooms" | "fungi" => Some("Vegetables"), // mushrooms → vegetables
-        _ => None, // "other" or anything unknown → rejected
+        "condiment" | "condiments" | "sauce" | "sauces" => Some("Condiments & Sauces"),
+        "bakery" | "baking" | "sweets" | "sweetener" => Some("Sweets & Baking"),
+        "supplement" | "supplements" | "superfood" => Some("Sweets & Baking"), // supplements → sweets & baking (closest)
+        "mushroom" | "mushrooms" | "fungi" => Some("Vegetables"),
+        _ => None,
     }
 }
 
@@ -104,21 +107,24 @@ fn normalize_product_type(raw: &str) -> AppResult<String> {
         "fruit" | "fruits" => "fruit",
         "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => "grain",
         "legume" | "legumes" => "legume",
-        "nut" | "nuts" | "seeds" => "nut",
-        "spice" | "spices" | "herb" | "herbs" | "seasoning" => "spice",
-        "oil" | "oils" | "fat" | "fats" => "oil",
+        "nut" | "nuts" | "seeds" | "nut_seed" => "nut",
+        "spice" | "spices" | "herb" | "herbs" | "herb_spice" | "seasoning" => "spice",
+        "oil" | "oils" | "fat" | "fats" | "fat_oil" => "oil",
         "beverage" | "beverages" | "drink" => "beverage",
+        "condiment" | "condiments" | "sauce" | "sauces" => "condiment",
+        "bakery" | "baking" | "sweets" | "sweetener" => "bakery",
+        "supplement" | "supplements" | "superfood" => "supplement",
         "mushroom" | "mushrooms" | "fungi" => "vegetable",
         "other" => {
             return Err(AppError::validation(
                 "product_type 'other' is not allowed. Every product must have a specific type \
-                 (e.g. seafood, meat, dairy, vegetable, fruit, grain, legume, nut, spice, oil, beverage)."
+                 (e.g. seafood, meat, dairy, vegetable, fruit, grain, legume, nut, spice, oil, beverage, condiment, bakery, supplement)."
             ));
         }
         unknown => {
             return Err(AppError::validation(&format!(
                 "Unknown product_type '{}'. Allowed: seafood, meat, dairy, vegetable, fruit, \
-                 grain, legume, nut, spice, oil, beverage.",
+                 grain, legume, nut, spice, oil, beverage, condiment, bakery, supplement.",
                 unknown
             )));
         }
