@@ -411,6 +411,14 @@ fn score_recipe(text: &str) -> i32 {
         // ── Imperative verbs (PL) ──
         ("ugotuj",        3), ("zrób",           3), ("usmaż",         3),
         ("upiecz",        3), ("przygotuj",      3),
+        // ── Goal-based recipe queries (from suggestions) ──
+        ("лёгкое блюдо",  3), ("лёгкий рецепт", 3), ("диетическ",    2),
+        ("легку страву",   3), ("легкий рецепт",  3),
+        ("light dish",     3), ("light recipe",   3),
+        ("lekkie danie",   3), ("lekki przepis",  3),
+        ("высокобелков",   2), ("high protein recipe", 3),
+        ("блюдо с ",       2), ("dish with ",     2), ("danie z ",      2),
+        ("страву з ",      2),
     ];
     sum_scores(text, keywords)
 }
@@ -552,6 +560,11 @@ mod tests {
     #[test] fn recipe_imperative_en2() { assert_eq!(detect_intent("make chicken stir fry"),      Intent::RecipeHelp); }
     #[test] fn recipe_imperative_pl()  { assert_eq!(detect_intent("ugotuj barszcz"),             Intent::RecipeHelp); }
     #[test] fn recipe_imperative_uk()  { assert_eq!(detect_intent("приготуй борщ з яловичиною"), Intent::RecipeHelp); }
+    // ── Goal-based recipe queries (from suggestion buttons) ──
+    #[test] fn recipe_goal_light_ru()  { assert_eq!(detect_intent("приготовь лёгкое блюдо с треска"), Intent::RecipeHelp); }
+    #[test] fn recipe_goal_diet_ru()   { assert_eq!(detect_intent("диетический рецепт борща"),       Intent::RecipeHelp); }
+    #[test] fn recipe_goal_light_en()  { assert_eq!(detect_intent("cook a light dish with cod"),     Intent::RecipeHelp); }
+    #[test] fn recipe_goal_light_uk()  { assert_eq!(detect_intent("приготуй легку страву з тріски"), Intent::RecipeHelp); }
 
     #[test] fn meal_ru()         { assert_eq!(detect_intent("что приготовить на ужин"), Intent::MealIdea); }
     #[test] fn meal_en()         { assert_eq!(detect_intent("dinner idea"),             Intent::MealIdea); }

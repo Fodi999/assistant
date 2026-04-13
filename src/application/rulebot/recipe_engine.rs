@@ -243,7 +243,7 @@ pub async fn resolve_dish(
     }
 
     // ── Auto-insert implicit ingredients (Liquid for soup, Oil for sauté) ──
-    auto_insert_implicit(&mut ingredients, dish_type, cache).await;
+    auto_insert_implicit(&mut ingredients, dish_type, cache, goal).await;
 
     let total_output: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
     let total_kcal: u32 = ingredients.iter().map(|i| i.kcal).sum();
@@ -254,8 +254,8 @@ pub async fn resolve_dish(
     // Generate cooking steps
     let steps = generate_steps(&ingredients, dish_type, ChatLang::Ru);
 
-    // Build improved display name
-    let display_name = build_display_name(schema, &ingredients, dish_type);
+    // Build improved display name (with goal prefix)
+    let display_name = build_display_name(schema, &ingredients, dish_type, goal);
 
     // ── Auto-portion: split into realistic servings (~300–400g each) ──
     let portion_target = match dish_type {
@@ -301,16 +301,16 @@ fn build_ingredient(product: &IngredientData, slug_hint: &str, goal: HealthGoal)
 fn build_ingredient_for_dish(
     product: &IngredientData,
     slug_hint: &str,
-    _goal: HealthGoal,
+    goal: HealthGoal,
     dish_type: DishType,
 ) -> ResolvedIngredient {
     let role = override_role(product);
     // DDD: cooking method resolved via rules (aromatics → Saute in soup, etc.)
-    let method = dish_type.cook_method(role, &product.slug, &product.product_type, _goal);
+    let method = dish_type.cook_method(role, &product.slug, &product.product_type, goal);
 
     let state = method_to_state(&method);
 
-    let cooked_portion = recipe_portion(product, role);
+    let cooked_portion = recipe_portion_goal(product, role, goal);
     let yield_factor = method.yield_factor(&product.product_type);
     let cleaned_net = cooked_portion / yield_factor;
     let edible = edible_yield_for(&product.product_type, &product.slug);
@@ -383,6 +383,27 @@ fn recipe_portion(product: &IngredientData, role: &str) -> f32 {
     }
 }
 
+/// Goal-aware portion: LowCalorie = less oil/meat, more veg.
+/// HighProtein = more protein, same oil. Balanced = default.
+fn recipe_portion_goal(product: &IngredientData, role: &str, goal: HealthGoal) -> f32 {
+    let base = recipe_portion(product, role);
+    match goal {
+        HealthGoal::LowCalorie => match role {
+            "oil"     => 5.0,        // 15g → 5g (минимум масла)
+            "protein" => base * 0.8, // 100g → 80g
+            "side"    => base * 1.2, // больше овощей
+            "condiment" => base * 0.5, // меньше соуса
+            _ => base,
+        },
+        HealthGoal::HighProtein => match role {
+            "protein" => base * 1.3, // 100g → 130g
+            "side"    => base * 0.8, // чуть меньше овощей
+            _ => base,
+        },
+        HealthGoal::Balanced => base,
+    }
+}
+
 fn method_to_state(method: &CookMethod) -> &'static str {
     match method {
         CookMethod::Grill => "grilled",
@@ -403,6 +424,7 @@ async fn auto_insert_implicit(
     ingredients: &mut Vec<ResolvedIngredient>,
     dish_type: DishType,
     cache: &IngredientCache,
+    goal: HealthGoal,
 ) {
     // Pre-compute flags before mutating the vec (borrow checker)
     let has_liquid = ingredients.iter().any(|i| i.role == "liquid");
@@ -433,9 +455,12 @@ async fn auto_insert_implicit(
 
     // ── Sauté dishes: add cooking oil if none present ───────────────────
     if has_saute && !has_oil && !has_oil_slug {
+        let portion = match goal {
+            HealthGoal::LowCalorie => 5.0_f32,  // minimal oil for diet
+            _ => 15.0_f32,                       // 15g = ~1 tbsp
+        };
         // Try to resolve from cache for accurate nutrition
         if let Some(oil) = resolve_slug(cache, "sunflower-oil").await {
-            let portion = 15.0_f32; // 15g = ~1 tbsp
             ingredients.push(ResolvedIngredient {
                 product: Some(oil.clone()),
                 slug_hint: "sunflower-oil".into(),
@@ -452,16 +477,17 @@ async fn auto_insert_implicit(
             });
         } else {
             // Fallback: generic oil entry with estimated nutrition
+            let fallback_kcal = (portion * 9.0) as u32; // ~9 kcal/g for oil
             ingredients.push(ResolvedIngredient {
                 product: None,
                 slug_hint: "sunflower-oil".into(),
                 resolved_slug: Some("sunflower-oil".into()),
                 state: "raw".into(),
                 role: "oil".into(),
-                gross_g: 15.0,
-                cleaned_net_g: 15.0,
-                cooked_net_g: 15.0,
-                kcal: 135, protein_g: 0.0, fat_g: 15.0, carbs_g: 0.0,
+                gross_g: portion,
+                cleaned_net_g: portion,
+                cooked_net_g: portion,
+                kcal: fallback_kcal, protein_g: 0.0, fat_g: portion, carbs_g: 0.0,
             });
         }
     }
@@ -575,28 +601,47 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
 
 // ── Display Name Builder ─────────────────────────────────────────────────────
 
-/// Build an improved display name: "Классический борщ с говядиной"
-fn build_display_name(schema: &DishSchema, ingredients: &[ResolvedIngredient], _dish_type: DishType) -> String {
+/// Build an improved display name with goal prefix:
+/// LowCalorie → "Диетический борщ с говядиной"
+/// HighProtein → "Высокобелковый борщ с говядиной"
+/// Balanced → "Борщ с говядиной"
+fn build_display_name(schema: &DishSchema, ingredients: &[ResolvedIngredient], _dish_type: DishType, goal: HealthGoal) -> String {
     let dish_local = schema.dish_local.as_deref().unwrap_or(&schema.dish);
 
-    // If Gemini already included the protein in the name, don't add again
-    let dish_lower = dish_local.to_lowercase();
-    if dish_lower.contains(" с ") || dish_lower.contains(" with ") {
-        return dish_local.to_string();
+    // Base name with protein
+    let base_name = {
+        let dish_lower = dish_local.to_lowercase();
+        if dish_lower.contains(" с ") || dish_lower.contains(" with ") {
+            dish_local.to_string()
+        } else {
+            let protein_name = ingredients.iter()
+                .find(|i| i.role == "protein")
+                .and_then(|i| i.product.as_ref())
+                .map(|p| p.name_ru.clone());
+
+            if let Some(protein) = protein_name {
+                let with_protein = instrumental_case(&protein);
+                format!("{} с {}", dish_local, with_protein)
+            } else {
+                dish_local.to_string()
+            }
+        }
+    };
+
+    // Goal prefix
+    match goal {
+        HealthGoal::LowCalorie  => format!("Лёгкий {}", lowercase_first(&base_name)),
+        HealthGoal::HighProtein => format!("Высокобелковый {}", lowercase_first(&base_name)),
+        HealthGoal::Balanced    => base_name,
     }
+}
 
-    // Find the main protein
-    let protein_name = ingredients.iter()
-        .find(|i| i.role == "protein")
-        .and_then(|i| i.product.as_ref())
-        .map(|p| p.name_ru.clone());
-
-    if let Some(protein) = protein_name {
-        // "Борщ" + "Говядина" → "Борщ с говядиной"
-        let with_protein = instrumental_case(&protein);
-        format!("{} с {}", dish_local, with_protein)
-    } else {
-        dish_local.to_string()
+/// Lowercase first char: "Борщ" → "борщ" (for prefix composition)
+fn lowercase_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_lowercase().to_string() + chars.as_str(),
+        None => String::new(),
     }
 }
 

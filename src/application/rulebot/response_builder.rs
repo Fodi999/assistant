@@ -685,7 +685,7 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
 
     match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: format!("Рецепты с {}", top_name), query: format!("рецепт с {}", top_name), emoji: Some("📖") },
+            Suggestion { label: format!("🍲 Лёгкий рецепт с {}", top_name), query: format!("приготовь лёгкое блюдо с {}", top_name), emoji: Some("🍲") },
             Suggestion { label: plan_label, query: "план питания на день".into(), emoji: Some("📋") },
             Suggestion { label: "Ещё варианты".into(), query: match goal {
                 HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
@@ -694,7 +694,7 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
             }, emoji: Some("🔄") },
         ],
         ChatLang::En => vec![
-            Suggestion { label: format!("Recipes with {}", top_name), query: format!("recipe with {}", top_name), emoji: Some("📖") },
+            Suggestion { label: format!("🍲 Light recipe with {}", top_name), query: format!("cook a light dish with {}", top_name), emoji: Some("🍲") },
             Suggestion { label: plan_label, query: "meal plan for the day".into(), emoji: Some("📋") },
             Suggestion { label: "More options".into(), query: match goal {
                 HealthGoal::HighProtein => "more high protein foods".into(),
@@ -703,7 +703,7 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
             }, emoji: Some("🔄") },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: format!("Przepisy z {}", top_name), query: format!("przepis z {}", top_name), emoji: Some("📖") },
+            Suggestion { label: format!("🍲 Lekki przepis z {}", top_name), query: format!("ugotuj lekkie danie z {}", top_name), emoji: Some("🍲") },
             Suggestion { label: plan_label, query: "plan posiłków na dzień".into(), emoji: Some("📋") },
             Suggestion { label: "Więcej opcji".into(), query: match goal {
                 HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
@@ -712,7 +712,7 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
             }, emoji: Some("🔄") },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: format!("Рецепти з {}", top_name), query: format!("рецепт з {}", top_name), emoji: Some("📖") },
+            Suggestion { label: format!("🍲 Легкий рецепт з {}", top_name), query: format!("приготуй легку страву з {}", top_name), emoji: Some("🍲") },
             Suggestion { label: plan_label, query: "план харчування на день".into(), emoji: Some("📋") },
             Suggestion { label: "Ще варіанти".into(), query: match goal {
                 HealthGoal::HighProtein => "ще високобілкові продукти".into(),
