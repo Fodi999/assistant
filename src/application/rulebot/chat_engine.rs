@@ -84,7 +84,7 @@ impl ChatEngine {
         let mut response = match parsed.intent {
             Intent::Greeting       => self.handle_greeting(lang),
             Intent::HealthyProduct => self.handle_healthy_product(input, lang, goal, ctx).await,
-            Intent::Conversion     => self.handle_conversion(input, lang),
+            Intent::Conversion     => self.handle_conversion_with_density(input, lang).await,
             Intent::NutritionInfo  => self.handle_nutrition(input, lang).await,
             Intent::Seasonality    => self.handle_seasonality(input, lang),
             Intent::RecipeHelp     => self.handle_recipe(input, lang),
@@ -318,6 +318,32 @@ impl ChatEngine {
         }
     }
 
+    /// Density-aware conversion: "100г лосося в мл" uses product's density_g_per_ml
+    async fn handle_conversion_with_density(&self, input: &str, lang: ChatLang) -> ChatResponse {
+        // Try to find a product mentioned in the conversion request
+        let product = self.find_ingredient_in_text(input).await;
+
+        if let Some((value, from, to)) = extract_conversion(input) {
+            // If converting between g ↔ ml (or tbsp/cup) and product has density → use it
+            let density_result = product.as_ref().and_then(|p| p.density_g_per_ml).and_then(|density| {
+                density_convert(value, &from, &to, density)
+            });
+
+            if let Some(result) = density_result {
+                let pname = product.as_ref().map(|p| p.name(lang.code()).to_string()).unwrap_or_default();
+                return rb::build_conversion_with_product(value, from, to, result, &pname, lang);
+            }
+
+            // Fallback to standard unit conversion
+            let result_raw = uc::convert_units(value, &from, &to);
+            let supported = result_raw.is_some();
+            let result = uc::display_round(result_raw.unwrap_or(0.0));
+            rb::build_conversion(value, from, to, result, supported, lang)
+        } else {
+            rb::build_conversion_hint(lang)
+        }
+    }
+
     async fn handle_nutrition(&self, input: &str, lang: ChatLang) -> ChatResponse {
         if let Some(p) = self.find_ingredient_in_text(input).await {
             rb::build_nutrition(&p, lang)
@@ -414,10 +440,97 @@ impl ChatEngine {
         rb::build_meal_idea_text_only(meal_name, description, lang)
     }
 
-    /// Full day meal plan: breakfast + lunch + dinner with product cards.
+    /// Full day meal plan: breakfast + lunch + dinner with diverse product cards.
+    /// Enforces different product categories per meal slot.
     async fn handle_meal_plan(&self, lang: ChatLang, goal: HealthGoal) -> ChatResponse {
-        // Pick 3 diverse products for breakfast/lunch/dinner
-        let products = self.select_top_products(goal, 3, &[]).await;
+        let all = self.ingredient_cache.all().await;
+        if all.is_empty() {
+            return rb::build_meal_plan(&[], lang, goal);
+        }
+
+        // Define preferred protein categories per meal slot for maximum diversity
+        let breakfast_types = ["dairy", "legume", "grain"];
+        let lunch_types = ["fish", "seafood"];
+        let dinner_types = ["meat"];
+
+        let find_for_types = |preferred: &[&str], exclude_slugs: &[String]| -> Option<crate::infrastructure::ingredient_cache::IngredientData> {
+            let mut candidates: Vec<_> = all.iter()
+                .filter(|p| {
+                    !exclude_slugs.contains(&p.slug)
+                    && (p.calories_per_100g > 0.0 || p.protein_per_100g > 0.0)
+                    && preferred.iter().any(|t| p.product_type == *t)
+                    && !matches!(p.product_type.as_str(), "spice" | "herb" | "condiment" | "oil" | "beverage" | "other")
+                })
+                .collect();
+
+            if candidates.is_empty() {
+                // Fallback: any protein-role product not yet used
+                candidates = all.iter()
+                    .filter(|p| {
+                        !exclude_slugs.contains(&p.slug)
+                        && p.protein_per_100g >= 5.0
+                        && !matches!(p.product_type.as_str(), "spice" | "herb" | "condiment" | "oil" | "beverage" | "other")
+                    })
+                    .collect();
+            }
+
+            if candidates.is_empty() { return None; }
+
+            // Score by goal
+            candidates.sort_by(|a, b| {
+                let score_a = match goal {
+                    HealthGoal::HighProtein => a.protein_per_100g as f64 * 2.0 - a.fat_per_100g as f64 * 0.3,
+                    HealthGoal::LowCalorie => (300.0 - a.calories_per_100g as f64) * 0.05 + a.protein_per_100g as f64 * 0.5,
+                    HealthGoal::Balanced => a.protein_per_100g as f64 + (200.0 - a.calories_per_100g as f64) * 0.02,
+                };
+                let score_b = match goal {
+                    HealthGoal::HighProtein => b.protein_per_100g as f64 * 2.0 - b.fat_per_100g as f64 * 0.3,
+                    HealthGoal::LowCalorie => (300.0 - b.calories_per_100g as f64) * 0.05 + b.protein_per_100g as f64 * 0.5,
+                    HealthGoal::Balanced => b.protein_per_100g as f64 + (200.0 - b.calories_per_100g as f64) * 0.02,
+                };
+                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // 80/20 exploration: pick from top 3
+            let explore_idx = {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                (secs % 3) as usize
+            };
+            let idx = explore_idx.min(candidates.len() - 1);
+            Some(candidates[idx].clone())
+        };
+
+        let mut used_slugs: Vec<String> = Vec::new();
+        let mut products = Vec::new();
+
+        // Breakfast
+        if let Some(p) = find_for_types(&breakfast_types, &used_slugs) {
+            let reason = format!("breakfast pick ({})", p.product_type);
+            used_slugs.push(p.slug.clone());
+            products.push((p, "balanced" as &'static str, reason));
+        }
+
+        // Lunch
+        if let Some(p) = find_for_types(&lunch_types, &used_slugs) {
+            let reason = format!("lunch pick ({})", p.product_type);
+            used_slugs.push(p.slug.clone());
+            products.push((p, "balanced" as &'static str, reason));
+        }
+
+        // Dinner
+        if let Some(p) = find_for_types(&dinner_types, &used_slugs) {
+            let reason = format!("dinner pick ({})", p.product_type);
+            used_slugs.push(p.slug.clone());
+            products.push((p, "balanced" as &'static str, reason));
+        }
+
+        // Fallback: if any slot missed, fill with top products
+        if products.len() < 3 {
+            let extra = self.select_top_products(goal, 3 - products.len(), &used_slugs).await;
+            products.extend(extra);
+        }
+
         rb::build_meal_plan(&products, lang, goal)
     }
 
@@ -670,6 +783,34 @@ fn detect_dish_keyword(text: &str) -> Option<&'static str> {
         }
     }
     None
+}
+
+/// Density-based g ↔ ml conversion for a specific product.
+/// 1 tbsp ≈ 15 ml, 1 cup ≈ 240 ml, 1 tsp ≈ 5 ml.
+fn density_convert(value: f64, from: &str, to: &str, density: f32) -> Option<f64> {
+    let d = density as f64;
+    // Convert everything to grams first, then to target
+    let grams = match from {
+        "g"    => value,
+        "kg"   => value * 1000.0,
+        "ml"   => value * d,
+        "l"    => value * 1000.0 * d,
+        "tbsp" => value * 15.0 * d,
+        "tsp"  => value * 5.0 * d,
+        "cup"  => value * 240.0 * d,
+        _ => return None,
+    };
+    let result = match to {
+        "g"    => grams,
+        "kg"   => grams / 1000.0,
+        "ml"   => grams / d,
+        "l"    => grams / (1000.0 * d),
+        "tbsp" => grams / (15.0 * d),
+        "tsp"  => grams / (5.0 * d),
+        "cup"  => grams / (240.0 * d),
+        _ => return None,
+    };
+    Some(uc::display_round(result))
 }
 
 // needed for hour/day helpers

@@ -28,6 +28,8 @@ pub struct IngredientData {
     pub image_url: Option<String>,
     /// DB `product_type`: seafood, vegetable, fruit, meat, grain, dairy, spice, herb, legume, nut, mushroom, oil, condiment, beverage, fish, other
     pub product_type: String,
+    /// Density for unit conversion: grams per 1 ml (e.g. water=1.0, honey=1.42, flour=0.55)
+    pub density_g_per_ml: Option<f32>,
 }
 
 impl IngredientData {
@@ -149,7 +151,8 @@ impl IngredientCache {
                 COALESCE(fat_per_100g, 0)::REAL      as fat_per_100g,
                 COALESCE(carbs_per_100g, 0)::REAL    as carbs_per_100g,
                 image_url,
-                COALESCE(product_type, 'other')      as product_type
+                COALESCE(product_type, 'other')      as product_type,
+                density_g_per_ml
             FROM catalog_ingredients
             WHERE COALESCE(is_active, true) = true
               AND slug IS NOT NULL
@@ -176,6 +179,7 @@ impl IngredientCache {
                         carbs_per_100g: row.carbs_per_100g,
                         image_url: row.image_url,
                         product_type: row.product_type,
+                        density_g_per_ml: row.density_g_per_ml,
                     },
                 );
             }
@@ -197,4 +201,5 @@ struct IngredientRow {
     carbs_per_100g: f32,
     image_url: Option<String>,
     product_type: String,
+    density_g_per_ml: Option<f32>,
 }

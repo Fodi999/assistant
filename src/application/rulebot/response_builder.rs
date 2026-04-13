@@ -226,6 +226,25 @@ pub fn build_conversion_hint(lang: ChatLang) -> ChatResponse {
     ChatResponse::text_only(tpl::conversion_hint(lang), Intent::Conversion, lang, 0)
 }
 
+/// Build a density-based conversion response that mentions the product.
+pub fn build_conversion_with_product(
+    value: f64,
+    from: String,
+    to: String,
+    result: f64,
+    product_name: &str,
+    lang: ChatLang,
+) -> ChatResponse {
+    let text = tpl::conversion_with_product_text(value, &from, result, &to, product_name, lang);
+    ChatResponse::with_card(
+        text,
+        Card::Conversion(ConversionCard { value, from, to, result, supported: true }),
+        Intent::Conversion,
+        lang,
+        0,
+    )
+}
+
 /// Build a nutrition info response.
 pub fn build_nutrition(p: &IngredientData, lang: ChatLang) -> ChatResponse {
     let name = p.name(lang.code()).to_string();

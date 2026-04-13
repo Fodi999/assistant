@@ -86,12 +86,28 @@ pub fn healthy_text(name: &str, p: &IngredientData, lang: ChatLang, goal: Health
             ChatLang::Uk => format!("• мало вуглеводів ({:.0}г) → стабільний цукор", carb),
         });
     }
-    if fat < 3.0 {
+    if fat < 3.0 && pro > carb {
+        // Low fat AND protein dominates carbs → truly a clean protein source
         bullets.push(match lang {
             ChatLang::Ru => "• минимум жира → чистый белок".into(),
             ChatLang::En => "• minimal fat → clean protein source".into(),
             ChatLang::Pl => "• minimum tłuszczu → czyste białko".into(),
             ChatLang::Uk => "• мінімум жиру → чистий білок".into(),
+        });
+    } else if fat < 3.0 && carb > 30.0 {
+        // Low fat BUT high carbs (rice, pasta, oats) → carb source, not protein
+        bullets.push(match lang {
+            ChatLang::Ru => format!("• минимум жира, источник сложных углеводов ({:.0}г)", carb),
+            ChatLang::En => format!("• minimal fat, complex carb source ({:.0}g)", carb),
+            ChatLang::Pl => format!("• minimum tłuszczu, źródło węglowodanów złożonych ({:.0}g)", carb),
+            ChatLang::Uk => format!("• мінімум жиру, джерело складних вуглеводів ({:.0}г)", carb),
+        });
+    } else if fat < 3.0 {
+        bullets.push(match lang {
+            ChatLang::Ru => "• минимум жира → лёгкий продукт".into(),
+            ChatLang::En => "• minimal fat → light product".into(),
+            ChatLang::Pl => "• minimum tłuszczu → lekki produkt".into(),
+            ChatLang::Uk => "• мінімум жиру → легкий продукт".into(),
         });
     }
 
@@ -288,6 +304,16 @@ pub fn conversion_text(value: f64, from: &str, result: f64, to: &str, supported:
         };
     }
     format!("✅ {} {} = **{} {}**", value, from, result, to)
+}
+
+/// Conversion text with product context (density-based).
+pub fn conversion_with_product_text(value: f64, from: &str, result: f64, to: &str, product_name: &str, lang: ChatLang) -> String {
+    match lang {
+        ChatLang::Ru => format!("✅ {} {} **{}** = **{} {}**\n(расчёт по плотности продукта)", value, from, product_name, result, to),
+        ChatLang::En => format!("✅ {} {} of **{}** = **{} {}**\n(calculated using product density)", value, from, product_name, result, to),
+        ChatLang::Pl => format!("✅ {} {} **{}** = **{} {}**\n(obliczone na podstawie gęstości produktu)", value, from, product_name, result, to),
+        ChatLang::Uk => format!("✅ {} {} **{}** = **{} {}**\n(розрахунок за щільністю продукту)", value, from, product_name, result, to),
+    }
 }
 
 pub fn conversion_hint(lang: ChatLang) -> &'static str {
@@ -830,9 +856,19 @@ pub fn meal_combo_text(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> S
     };
 
     let combo_parts = if let Some(bn) = bname {
-        format!("{} + {} + {}", pname, sname, bn)
+        match lang {
+            ChatLang::Ru => format!("{} с {} и {}", pname, sname, bn),
+            ChatLang::En => format!("{} with {} and {}", pname, sname, bn),
+            ChatLang::Pl => format!("{} z {} i {}", pname, sname, bn),
+            ChatLang::Uk => format!("{} з {} та {}", pname, sname, bn),
+        }
     } else {
-        format!("{} + {}", pname, sname)
+        match lang {
+            ChatLang::Ru => format!("{} с {}", pname, sname),
+            ChatLang::En => format!("{} with {}", pname, sname),
+            ChatLang::Pl => format!("{} z {}", pname, sname),
+            ChatLang::Uk => format!("{} з {}", pname, sname),
+        }
     };
 
     let portions = if combo.base.is_some() {

@@ -144,7 +144,7 @@ pub fn detect_intent(input: &str) -> Intent {
 pub fn detect_intent_scored(input: &str) -> IntentScore {
     const MIN_THRESHOLD: i32 = 2;
     let text = input.to_lowercase();
-    let scores: [(Intent, i32); 8] = [
+    let mut scores: [(Intent, i32); 8] = [
         (Intent::Greeting,       score_greeting(&text)),
         (Intent::Conversion,     score_conversion(&text)),
         (Intent::NutritionInfo,  score_nutrition(&text)),
@@ -154,6 +154,7 @@ pub fn detect_intent_scored(input: &str) -> IntentScore {
         (Intent::RecipeHelp,     score_recipe(&text)),
         (Intent::MealIdea,       score_meal_idea(&text)),
     ];
+    apply_context_boosts(&text, &mut scores);
     let best = scores.iter().max_by_key(|(_, s)| *s).unwrap();
     if best.1 >= MIN_THRESHOLD {
         IntentScore { intent: best.0, score: best.1 }
@@ -171,7 +172,7 @@ pub fn parse_input(input: &str) -> ParsedInput {
 
     let text = input.to_lowercase();
 
-    let all_scores: [(Intent, i32); 8] = [
+    let mut all_scores: [(Intent, i32); 8] = [
         (Intent::Greeting,       score_greeting(&text)),
         (Intent::Conversion,     score_conversion(&text)),
         (Intent::NutritionInfo,  score_nutrition(&text)),
@@ -181,6 +182,8 @@ pub fn parse_input(input: &str) -> ParsedInput {
         (Intent::RecipeHelp,     score_recipe(&text)),
         (Intent::MealIdea,       score_meal_idea(&text)),
     ];
+
+    apply_context_boosts(&text, &mut all_scores);
 
     // Best (primary)
     let best = all_scores.iter().max_by_key(|(_, s)| *s).unwrap();
@@ -445,6 +448,54 @@ fn sum_scores(text: &str, keywords: &[ScoredKeyword]) -> i32 {
         .sum()
 }
 
+/// Context-aware score adjustments applied AFTER all individual scorers run.
+///
+/// Fixes:
+/// - "хочу на массу, что поесть?" → MealIdea (goal + action verb = meal, not product list)
+/// - "low calorie dinner for diet" → MealIdea (meal-time + diet = meal, not nutrition_info)
+fn apply_context_boosts(text: &str, scores: &mut [(Intent, i32); 8]) {
+    let has_goal = text.contains("на массу") || text.contains("похуд") || text.contains("сушк")
+        || text.contains("диет") || text.contains("diet") || text.contains("muscle")
+        || text.contains("lose weight") || text.contains("bulk") || text.contains("набрать")
+        || text.contains("high protein") || text.contains("low calorie") || text.contains("low cal")
+        || text.contains("schudnąć") || text.contains("na masę") || text.contains("схуднути")
+        || text.contains("на білок") || text.contains("на белок");
+
+    let has_action_verb = text.contains("поесть") || text.contains("приготовить") || text.contains("готовить")
+        || text.contains("cook") || text.contains("eat") || text.contains("make")
+        || text.contains("zjeść") || text.contains("ugotować") || text.contains("поїсти")
+        || text.contains("приготувати") || text.contains("съесть") || text.contains("кушать");
+
+    let has_meal_time = text.contains("ужин") || text.contains("обед") || text.contains("завтрак")
+        || text.contains("dinner") || text.contains("lunch") || text.contains("breakfast")
+        || text.contains("kolacja") || text.contains("obiad") || text.contains("śniadanie")
+        || text.contains("вечеря") || text.contains("обід") || text.contains("сніданок");
+
+    // Boost MealIdea when goal + action verb or goal + meal time
+    if has_goal && (has_action_verb || has_meal_time) {
+        for (intent, score) in scores.iter_mut() {
+            if *intent == Intent::MealIdea {
+                *score += 5;
+            }
+            // When the user clearly wants a meal (goal + action/time),
+            // penalize HealthyProduct to avoid it stealing the intent
+            if *intent == Intent::HealthyProduct && *score > 0 {
+                *score = (*score - 3).max(0);
+            }
+        }
+    }
+
+    // Boost MealIdea when meal time + diet/goal words (e.g. "low calorie dinner for diet")
+    if has_meal_time && has_goal {
+        // Also penalize nutrition_info when user clearly wants a meal suggestion
+        for (intent, score) in scores.iter_mut() {
+            if *intent == Intent::NutritionInfo && *score > 0 {
+                *score = (*score - 2).max(0);
+            }
+        }
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -511,5 +562,23 @@ mod tests {
     // Single weak word below threshold → Unknown
     #[test] fn score_threshold() {
         assert_eq!(detect_intent("xyz abc def"), Intent::Unknown);
+    }
+
+    // ── Fix 2 & 3: Context boost tests ──────────────────────────────────
+    // Goal + action verb → MealIdea (not HealthyProduct)
+    #[test] fn goal_action_meal_ru() {
+        assert_eq!(detect_intent("хочу на массу, что приготовить?"), Intent::MealIdea);
+    }
+    #[test] fn goal_action_meal_en() {
+        assert_eq!(detect_intent("low calorie dinner for diet"), Intent::MealIdea);
+    }
+    #[test] fn goal_action_eat_ru() {
+        assert_eq!(detect_intent("хочу похудеть, что поесть на ужин?"), Intent::MealIdea);
+    }
+    #[test] fn goal_action_muscle_en() {
+        assert_eq!(detect_intent("high protein meal for dinner"), Intent::MealIdea);
+    }
+    #[test] fn goal_action_diet_lunch() {
+        assert_eq!(detect_intent("diet lunch ideas"), Intent::MealIdea);
     }
 }
