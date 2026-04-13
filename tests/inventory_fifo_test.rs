@@ -331,4 +331,29 @@ async fn test_inventory_fifo_full_suite() {
     assert_eq!(b_stock.remaining_quantity.value(), 20.0);
 
     println!("🚀 ALL INVENTORY TESTS PASSED!");
+
+    // ==========================================
+    // 🧹 CLEANUP: Remove all test data from DB
+    // ==========================================
+    for tid in &[tenant_id.as_uuid(), tenant_b_id.as_uuid()] {
+        sqlx::query("DELETE FROM inventory_movements WHERE batch_id IN (SELECT id FROM inventory_batches WHERE tenant_id = $1)")
+            .bind(tid)
+            .execute(&pool).await.ok();
+        sqlx::query("DELETE FROM inventory_batches WHERE tenant_id = $1")
+            .bind(tid)
+            .execute(&pool).await.ok();
+        sqlx::query("DELETE FROM users WHERE tenant_id = $1")
+            .bind(tid)
+            .execute(&pool).await.ok();
+        sqlx::query("DELETE FROM tenants WHERE id = $1")
+            .bind(tid)
+            .execute(&pool).await.ok();
+    }
+    sqlx::query("DELETE FROM catalog_ingredients WHERE category_id = $1")
+        .bind(category_id)
+        .execute(&pool).await.ok();
+    sqlx::query("DELETE FROM catalog_categories WHERE id = $1")
+        .bind(category_id)
+        .execute(&pool).await.ok();
+    println!("🧹 Test data cleaned up");
 }
