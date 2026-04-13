@@ -275,6 +275,7 @@ Pick the best match. Do not invent values."#,
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
+            "max_tokens": max_tokens,
             "max_completion_tokens": max_tokens,
         })
     }
@@ -383,10 +384,12 @@ Pick the best match. Do not invent values."#,
 
         let finish_reason = choice.finish_reason.as_deref().unwrap_or("unknown");
         if finish_reason == "length" {
+            let preview = choice.message.content.as_deref().unwrap_or("");
+            let safe_end = preview.char_indices().nth(120).map(|(i, _)| i).unwrap_or(preview.len());
             tracing::warn!(
                 "⚠️ Gemini output truncated (finish_reason=length) model={} content_preview={}",
                 request_body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
-                choice.message.content.as_deref().unwrap_or("")[..choice.message.content.as_deref().unwrap_or("").len().min(120)].to_string()
+                &preview[..safe_end]
             );
         }
 
