@@ -29,15 +29,15 @@ pub fn pick_message(
     let explored = ctx.shown_slugs.len();
 
     // ── Frequency control ─────────────────────────────────────────────────
-    // Show coach message on turns: 1, 3, 5, 8, 12, 17, ...
-    // i.e. first turn always, then every 2-3 turns, spacing out over time
+    // Show coach message on turns: 3, 5, 8, 12, 17, ...
+    // Turns 0–2 are silent: the frontend auto-greeting already welcomes the
+    // user, so a coach "Рад видеть тебя!" on the first real query is redundant.
     let should_show = match turn {
-        0 | 1 => true,                      // Welcome motivation
-        2 => false,                          // Skip — let them explore
-        3 | 4 => turn == 3,                  // Show at turn 3
-        5..=7 => turn == 5,                  // Show at turn 5
-        8..=11 => turn == 8,                 // Show at turn 8
-        12..=16 => turn == 12,               // Show at turn 12
+        0..=2 => false,                      // Silent — frontend auto-greets
+        3 | 4 => turn == 3,                  // First coach tip
+        5..=7 => turn == 5,                  // Building habits
+        8..=11 => turn == 8,                 // Deeper engagement
+        12..=16 => turn == 12,               // Advanced tips
         _ => turn % 5 == 0,                  // Every 5th turn after
     };
 
@@ -201,18 +201,23 @@ mod tests {
 
     #[test]
     fn first_turn_always_shows() {
-        let ctx = SessionContext::new();
+        // Coach first activates on turn 3 (turns 0–2 are silent because
+        // the frontend auto-greeting already welcomes the user)
+        let mut ctx = SessionContext::new();
+        ctx.turn_count = 3;
         let msg = pick_message(&ctx, HealthGoal::LowCalorie, ChatLang::Ru);
         assert!(msg.is_some());
         assert!(msg.unwrap().contains("Шеф-коуч"));
     }
 
     #[test]
-    fn turn_2_is_silent() {
-        let mut ctx = SessionContext::new();
-        ctx.turn_count = 2;
-        let msg = pick_message(&ctx, HealthGoal::LowCalorie, ChatLang::Ru);
-        assert!(msg.is_none());
+    fn turns_0_1_2_are_silent() {
+        for turn in 0..=2 {
+            let mut ctx = SessionContext::new();
+            ctx.turn_count = turn;
+            let msg = pick_message(&ctx, HealthGoal::LowCalorie, ChatLang::Ru);
+            assert!(msg.is_none(), "turn {} should be silent", turn);
+        }
     }
 
     #[test]
@@ -250,7 +255,8 @@ mod tests {
 
     #[test]
     fn multilingual() {
-        let ctx = SessionContext::new();
+        let mut ctx = SessionContext::new();
+        ctx.turn_count = 3;
         let ru = pick_message(&ctx, HealthGoal::Balanced, ChatLang::Ru).unwrap();
         let en = pick_message(&ctx, HealthGoal::Balanced, ChatLang::En).unwrap();
         assert!(ru.contains("Шеф-коуч"));

@@ -51,6 +51,33 @@ impl HealthGoal {
 
 // ── Builders ─────────────────────────────────────────────────────────────────
 
+/// Realistic portion size (grams) based on product type.
+/// Used in meal plan to avoid absurd "200g bacon" or "200g cheese" calculations.
+pub fn portion_grams(p: &IngredientData) -> f32 {
+    match p.product_type.as_str() {
+        // Proteins: standard serving 150g
+        "meat" | "poultry" | "fish" | "seafood" => 150.0,
+        // Eggs: ~2 eggs = 120g
+        "eggs" => 120.0,
+        // Dairy: cheese 50g, cottage cheese 150g, milk 200ml
+        "dairy" => {
+            if p.calories_per_100g > 250.0 { 50.0 }   // hard cheese, butter
+            else if p.calories_per_100g > 150.0 { 100.0 } // cottage cheese, yogurt
+            else { 200.0 }                              // milk, kefir
+        }
+        // Grains & legumes: dry weight ~80g (cooked ~200g)
+        "grain" | "legume" => 80.0,
+        // Vegetables: generous 200g
+        "vegetable" | "leafy_green" => 200.0,
+        // Fruits: 150g
+        "fruit" | "berry" => 150.0,
+        // Nuts & seeds: small 30g handful
+        "nut" | "seed" => 30.0,
+        // Default
+        _ => 150.0,
+    }
+}
+
 pub fn build_greeting(lang: ChatLang) -> ChatResponse {
     ChatResponse::text_only(tpl::greeting(lang), Intent::Greeting, lang, 0)
 }
@@ -491,13 +518,21 @@ pub fn build_meal_plan(
     }).collect();
 
     let text = tpl::meal_plan_text(products, meal_labels, lang, goal);
-    let total_cal: i32 = products.iter().map(|(p, _, _)| p.calories_per_100g as i32 * 2).sum(); // ~200g portions
-    let total_pro: f32 = products.iter().map(|(p, _, _)| p.protein_per_100g * 2.0).sum();
+
+    // Use realistic portions per product type (not blanket 200g)
+    let total_cal: i32 = products.iter().map(|(p, _, _)| {
+        let g = portion_grams(p);
+        (p.calories_per_100g * g / 100.0) as i32
+    }).sum();
+    let total_pro: f32 = products.iter().map(|(p, _, _)| {
+        let g = portion_grams(p);
+        p.protein_per_100g * g / 100.0
+    }).sum();
     let reason = match lang {
-        ChatLang::Ru => format!("~{} ккал · {:.0}г белка за день (порции ~200г)", total_cal, total_pro),
-        ChatLang::En => format!("~{} kcal · {:.0}g protein per day (~200g portions)", total_cal, total_pro),
-        ChatLang::Pl => format!("~{} kcal · {:.0}g białka na dzień (porcje ~200g)", total_cal, total_pro),
-        ChatLang::Uk => format!("~{} ккал · {:.0}г білка за день (порції ~200г)", total_cal, total_pro),
+        ChatLang::Ru => format!("~{} ккал · {:.0}г белка за день", total_cal, total_pro),
+        ChatLang::En => format!("~{} kcal · {:.0}g protein per day", total_cal, total_pro),
+        ChatLang::Pl => format!("~{} kcal · {:.0}g białka na dzień", total_cal, total_pro),
+        ChatLang::Uk => format!("~{} ккал · {:.0}г білка за день", total_cal, total_pro),
     };
 
     let mut resp = ChatResponse::with_cards(

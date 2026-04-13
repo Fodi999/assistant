@@ -103,10 +103,7 @@ impl ChatEngine {
         }
 
         // ── Coach motivation ──────────────────────────────────────────────
-        // Skip coach on Greeting — the greeting text itself is the welcome message
-        if parsed.intent != Intent::Greeting {
-            response.coach_message = chef_coach::pick_message(ctx, goal, lang);
-        }
+        response.coach_message = chef_coach::pick_message(ctx, goal, lang);
 
         response.timing_ms = start.elapsed().as_millis() as u64;
         response
@@ -458,26 +455,37 @@ impl ChatEngine {
         }
 
         // Define preferred protein categories per meal slot for maximum diversity
-        let breakfast_types = ["dairy", "legume", "grain"];
-        let lunch_types = ["fish", "seafood"];
-        let dinner_types = ["meat"];
+        let breakfast_types = ["dairy", "legume", "grain", "eggs"];
+        let lunch_types = ["fish", "seafood", "poultry"];
+        let dinner_types = ["meat", "poultry", "fish"];
+
+        // ── Calorie caps per goal (per 100g) ────────────────────────────────
+        // Prevents absurd picks like bacon (541 kcal) or cheese (374 kcal)
+        // in a "balanced" or "low calorie" plan.
+        let max_cal_per_100g: f32 = match goal {
+            HealthGoal::LowCalorie  => 200.0,
+            HealthGoal::Balanced    => 300.0,
+            HealthGoal::HighProtein => 500.0,
+        };
 
         let find_for_types = |preferred: &[&str], exclude_slugs: &[String]| -> Option<crate::infrastructure::ingredient_cache::IngredientData> {
             let mut candidates: Vec<_> = all.iter()
                 .filter(|p| {
                     !exclude_slugs.contains(&p.slug)
                     && (p.calories_per_100g > 0.0 || p.protein_per_100g > 0.0)
+                    && p.calories_per_100g <= max_cal_per_100g
                     && preferred.iter().any(|t| p.product_type == *t)
                     && !matches!(p.product_type.as_str(), "spice" | "herb" | "condiment" | "oil" | "beverage" | "other")
                 })
                 .collect();
 
             if candidates.is_empty() {
-                // Fallback: any protein-role product not yet used
+                // Fallback: any protein-role product not yet used (with calorie cap)
                 candidates = all.iter()
                     .filter(|p| {
                         !exclude_slugs.contains(&p.slug)
                         && p.protein_per_100g >= 5.0
+                        && p.calories_per_100g <= max_cal_per_100g
                         && !matches!(p.product_type.as_str(), "spice" | "herb" | "condiment" | "oil" | "beverage" | "other")
                     })
                     .collect();
@@ -485,19 +493,26 @@ impl ChatEngine {
 
             if candidates.is_empty() { return None; }
 
-            // Score by goal
+            // Score by goal — stronger calorie penalty for Balanced
             candidates.sort_by(|a, b| {
-                let score_a = match goal {
-                    HealthGoal::HighProtein => a.protein_per_100g as f64 * 2.0 - a.fat_per_100g as f64 * 0.3,
-                    HealthGoal::LowCalorie => (300.0 - a.calories_per_100g as f64) * 0.05 + a.protein_per_100g as f64 * 0.5,
-                    HealthGoal::Balanced => a.protein_per_100g as f64 + (200.0 - a.calories_per_100g as f64) * 0.02,
+                let score = |p: &crate::infrastructure::ingredient_cache::IngredientData| -> f64 {
+                    match goal {
+                        HealthGoal::HighProtein => {
+                            p.protein_per_100g as f64 * 2.0 - p.fat_per_100g as f64 * 0.3
+                        }
+                        HealthGoal::LowCalorie => {
+                            (300.0 - p.calories_per_100g as f64) * 0.05
+                            + p.protein_per_100g as f64 * 0.5
+                        }
+                        HealthGoal::Balanced => {
+                            // Reward protein, strongly penalize high calorie & fat
+                            p.protein_per_100g as f64 * 1.5
+                            - p.calories_per_100g as f64 * 0.02
+                            - p.fat_per_100g as f64 * 0.3
+                        }
+                    }
                 };
-                let score_b = match goal {
-                    HealthGoal::HighProtein => b.protein_per_100g as f64 * 2.0 - b.fat_per_100g as f64 * 0.3,
-                    HealthGoal::LowCalorie => (300.0 - b.calories_per_100g as f64) * 0.05 + b.protein_per_100g as f64 * 0.5,
-                    HealthGoal::Balanced => b.protein_per_100g as f64 + (200.0 - b.calories_per_100g as f64) * 0.02,
-                };
-                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+                score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal)
             });
 
             // 80/20 exploration: pick from top 3

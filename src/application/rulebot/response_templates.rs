@@ -11,6 +11,7 @@ use super::meal_builder::MealCombo;
 
 // Re-export HealthGoal so templates can use it
 pub use super::response_builder::HealthGoal;
+use super::response_builder::portion_grams;
 
 // ── Greeting ─────────────────────────────────────────────────────────────────
 
@@ -457,19 +458,27 @@ pub fn meal_plan_text(
     for (i, (p, _, _)) in products.iter().enumerate() {
         let label = meal_labels.get(i).copied().unwrap_or("🍽️");
         let name = p.name(lang.code());
-        let cal = p.calories_per_100g as i32;
-        let pro = p.protein_per_100g;
-        lines.push(format!("{}: **{}** — {} ккал · {:.0}г белка", label, name, cal * 2, pro * 2.0));
+        let g = portion_grams(p);
+        let cal = (p.calories_per_100g * g / 100.0) as i32;
+        let pro = p.protein_per_100g * g / 100.0;
+        let portion_label = format!("{:.0}г", g);
+        lines.push(format!("{}: **{}** ({}) — {} ккал · {:.0}г белка", label, name, portion_label, cal, pro));
     }
 
-    let total_cal: i32 = products.iter().map(|(p, _, _)| p.calories_per_100g as i32 * 2).sum();
-    let total_pro: f32 = products.iter().map(|(p, _, _)| p.protein_per_100g * 2.0).sum();
+    let total_cal: i32 = products.iter().map(|(p, _, _)| {
+        let g = portion_grams(p);
+        (p.calories_per_100g * g / 100.0) as i32
+    }).sum();
+    let total_pro: f32 = products.iter().map(|(p, _, _)| {
+        let g = portion_grams(p);
+        p.protein_per_100g * g / 100.0
+    }).sum();
 
     let footer = match lang {
-        ChatLang::Ru => format!("\n**Итого: ~{} ккал · {:.0}г белка** (порции ~200г)", total_cal, total_pro),
-        ChatLang::En => format!("\n**Total: ~{} kcal · {:.0}g protein** (~200g portions)", total_cal, total_pro),
-        ChatLang::Pl => format!("\n**Razem: ~{} kcal · {:.0}g białka** (porcje ~200g)", total_cal, total_pro),
-        ChatLang::Uk => format!("\n**Всього: ~{} ккал · {:.0}г білка** (порції ~200г)", total_cal, total_pro),
+        ChatLang::Ru => format!("\n**Итого: ~{} ккал · {:.0}г белка**", total_cal, total_pro),
+        ChatLang::En => format!("\n**Total: ~{} kcal · {:.0}g protein**", total_cal, total_pro),
+        ChatLang::Pl => format!("\n**Razem: ~{} kcal · {:.0}g białka**", total_cal, total_pro),
+        ChatLang::Uk => format!("\n**Всього: ~{} ккал · {:.0}г білка**", total_cal, total_pro),
     };
     lines.push(footer);
 
