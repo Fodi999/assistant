@@ -257,12 +257,24 @@ pub async fn resolve_dish(
     // Build improved display name
     let display_name = build_display_name(schema, &ingredients, dish_type);
 
+    // ── Auto-portion: split into realistic servings (~300–400g each) ──
+    let portion_target = match dish_type {
+        DishType::Soup | DishType::Stew => 350.0_f32,
+        DishType::Salad | DishType::Raw    => 250.0,
+        _                                   => 300.0,
+    };
+    let servings = ((total_output / portion_target).round() as u8).max(1);
+    let per_kcal = (total_kcal as f32 / servings as f32).round() as u32;
+    let per_prot = round1(total_protein / servings as f32);
+    let per_fat  = round1(total_fat / servings as f32);
+    let per_carb = round1(total_carbs / servings as f32);
+
     TechCard {
         dish_name: schema.dish.clone(),
         dish_name_local: schema.dish_local.clone(),
         display_name: Some(display_name),
         dish_type: format!("{:?}", dish_type).to_lowercase(),
-        servings: 1,
+        servings,
         ingredients,
         steps,
         total_output_g: total_output,
@@ -270,10 +282,10 @@ pub async fn resolve_dish(
         total_protein,
         total_fat,
         total_carbs,
-        per_serving_kcal: total_kcal,
-        per_serving_protein: round1(total_protein),
-        per_serving_fat: round1(total_fat),
-        per_serving_carbs: round1(total_carbs),
+        per_serving_kcal: per_kcal,
+        per_serving_protein: per_prot,
+        per_serving_fat: per_fat,
+        per_serving_carbs: per_carb,
         unresolved,
     }
 }
@@ -708,108 +720,48 @@ fn round1(v: f32) -> f32 { (v * 10.0).round() / 10.0 }
 // ── Text Formatting ──────────────────────────────────────────────────────────
 
 pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
-    // Use improved display name if available
+    // ── Minimal text — the card UI is the main content ──
+    // Only emit a short intro line + unresolved warnings.
+    // All ingredients, steps, КБЖУ are rendered by the frontend RecipeCard.
     let dish = card.display_name.as_deref()
         .unwrap_or_else(|| card.dish_name_local.as_deref().unwrap_or(&card.dish_name));
-    let mut out = Vec::new();
 
-    match lang {
-        ChatLang::Ru => out.push(format!("🍽 **{}** (1 порция)\n", dish)),
-        ChatLang::En => out.push(format!("🍽 **{}** (1 serving)\n", dish)),
-        ChatLang::Pl => out.push(format!("🍽 **{}** (1 porcja)\n", dish)),
-        ChatLang::Uk => out.push(format!("🍽 **{}** (1 порція)\n", dish)),
-    }
+    let total_time: u16 = card.steps.iter().filter_map(|s| s.time_min).sum();
+    let time_str = if total_time > 0 { format!(" ⏱ ~{} мин", total_time) } else { String::new() };
 
-    match lang {
-        ChatLang::Ru => out.push("📋 **Ингредиенты:**".into()),
-        ChatLang::En => out.push("📋 **Ingredients:**".into()),
-        ChatLang::Pl => out.push("📋 **Składniki:**".into()),
-        ChatLang::Uk => out.push("📋 **Інгредієнти:**".into()),
-    }
+    let intro = match lang {
+        ChatLang::Ru => format!(
+            "🍽 **{}** — {} порц. • ~{:.0}г •{} {} ккал на порцию",
+            dish, card.servings, card.total_output_g / card.servings as f32,
+            time_str, card.per_serving_kcal,
+        ),
+        ChatLang::En => format!(
+            "🍽 **{}** — {} serv. • ~{:.0}g •{} {} kcal/serv",
+            dish, card.servings, card.total_output_g / card.servings as f32,
+            time_str, card.per_serving_kcal,
+        ),
+        ChatLang::Pl => format!(
+            "🍽 **{}** — {} porcji • ~{:.0}g •{} {} kcal/porcja",
+            dish, card.servings, card.total_output_g / card.servings as f32,
+            time_str, card.per_serving_kcal,
+        ),
+        ChatLang::Uk => format!(
+            "🍽 **{}** — {} порц. • ~{:.0}г •{} {} ккал/порція",
+            dish, card.servings, card.total_output_g / card.servings as f32,
+            time_str, card.per_serving_kcal,
+        ),
+    };
 
-    for ing in &card.ingredients {
-        // Special rendering for implicit water/broth
-        if ing.role == "liquid" {
-            let liquid_name = match lang {
-                ChatLang::Ru => "Вода",
-                ChatLang::En => "Water",
-                ChatLang::Pl => "Woda",
-                ChatLang::Uk => "Вода",
-            };
-            out.push(format!("• {} — {:.0}мл", liquid_name, ing.gross_g));
-            continue;
-        }
-        let name = ing.product.as_ref()
-            .map(|p| p.name(lang.code()).to_string())
-            .unwrap_or_else(|| ing.slug_hint.clone());
-        // For Russian: gender-aware state labels ("варёная" for fem, "варёный" for masc)
-        let st: String = if lang == ChatLang::Ru {
-            let name_ru = ing.product.as_ref().map(|p| p.name_ru.as_str()).unwrap_or("");
-            state_label_ru(&ing.state, name_ru)
-        } else {
-            state_label(&ing.state, lang).to_string()
-        };
-
-        if (ing.gross_g - ing.cooked_net_g).abs() > 2.0 {
-            out.push(format!("• {} ({}) — {:.0}г → {:.0}г", name, st, ing.gross_g, ing.cooked_net_g));
-        } else {
-            out.push(format!("• {} ({}) — {:.0}г", name, st, ing.gross_g));
-        }
-    }
-
-    // Cooking steps
-    if !card.steps.is_empty() {
-        out.push(String::new());
-        match lang {
-            ChatLang::Ru => out.push("👨‍🍳 **Как приготовить:**".into()),
-            ChatLang::En => out.push("👨‍🍳 **How to cook:**".into()),
-            ChatLang::Pl => out.push("👨‍🍳 **Jak przygotować:**".into()),
-            ChatLang::Uk => out.push("👨‍🍳 **Як приготувати:**".into()),
-        }
-        for step in &card.steps {
-            let time_str = step.time_min
-                .map(|m| format!(" (~{} мин)", m))
-                .unwrap_or_default();
-            out.push(format!("{}. {}{}", step.step, step.text, time_str));
-        }
-    }
-
-    out.push(String::new());
-    match lang {
-        ChatLang::Ru => {
-            out.push(format!("📊 **Выход:** {:.0}г", card.total_output_g));
-            out.push(format!("🔥 **КБЖУ:** {} ккал • Б {:.0}г • Ж {:.0}г • У {:.0}г",
-                card.per_serving_kcal, card.per_serving_protein,
-                card.per_serving_fat, card.per_serving_carbs));
-        }
-        ChatLang::En => {
-            out.push(format!("📊 **Output:** {:.0}g", card.total_output_g));
-            out.push(format!("🔥 **CPFC:** {} kcal • P {:.0}g • F {:.0}g • C {:.0}g",
-                card.per_serving_kcal, card.per_serving_protein,
-                card.per_serving_fat, card.per_serving_carbs));
-        }
-        ChatLang::Pl => {
-            out.push(format!("📊 **Wydajność:** {:.0}g", card.total_output_g));
-            out.push(format!("🔥 **KBWT:** {} kcal • B {:.0}g • T {:.0}g • W {:.0}g",
-                card.per_serving_kcal, card.per_serving_protein,
-                card.per_serving_fat, card.per_serving_carbs));
-        }
-        ChatLang::Uk => {
-            out.push(format!("📊 **Вихід:** {:.0}г", card.total_output_g));
-            out.push(format!("🔥 **КБЖВ:** {} ккал • Б {:.0}г • Ж {:.0}г • В {:.0}г",
-                card.per_serving_kcal, card.per_serving_protein,
-                card.per_serving_fat, card.per_serving_carbs));
-        }
-    }
+    let mut out = vec![intro];
 
     if !card.unresolved.is_empty() {
-        out.push(String::new());
-        match lang {
-            ChatLang::Ru => out.push(format!("⚠️ Не в базе: {}", card.unresolved.join(", "))),
-            ChatLang::En => out.push(format!("⚠️ Not in DB: {}", card.unresolved.join(", "))),
-            ChatLang::Pl => out.push(format!("⚠️ Brak w bazie: {}", card.unresolved.join(", "))),
-            ChatLang::Uk => out.push(format!("⚠️ Нема в базі: {}", card.unresolved.join(", "))),
-        }
+        let warn = match lang {
+            ChatLang::Ru => format!("⚠️ Не в базе: {}", card.unresolved.join(", ")),
+            ChatLang::En => format!("⚠️ Not in DB: {}", card.unresolved.join(", ")),
+            ChatLang::Pl => format!("⚠️ Brak w bazie: {}", card.unresolved.join(", ")),
+            ChatLang::Uk => format!("⚠️ Нема в базі: {}", card.unresolved.join(", ")),
+        };
+        out.push(warn);
     }
 
     out.join("\n")
