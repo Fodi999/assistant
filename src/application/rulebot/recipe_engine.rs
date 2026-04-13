@@ -242,6 +242,9 @@ pub async fn resolve_dish(
         }
     }
 
+    // ── Auto-insert implicit ingredients (Liquid for soup, Oil for sauté) ──
+    auto_insert_implicit(&mut ingredients, dish_type, cache).await;
+
     let total_output: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
     let total_kcal: u32 = ingredients.iter().map(|i| i.kcal).sum();
     let total_protein: f32 = ingredients.iter().map(|i| i.protein_g).sum();
@@ -380,6 +383,78 @@ fn method_to_state(method: &CookMethod) -> &'static str {
     }
 }
 
+// ── Auto-insert Implicit Ingredients ─────────────────────────────────────────
+
+/// Automatically add implicit ingredients that a recipe logically needs but
+/// Gemini doesn't include (water for soup, oil for sauté).
+async fn auto_insert_implicit(
+    ingredients: &mut Vec<ResolvedIngredient>,
+    dish_type: DishType,
+    cache: &IngredientCache,
+) {
+    // Pre-compute flags before mutating the vec (borrow checker)
+    let has_liquid = ingredients.iter().any(|i| i.role == "liquid");
+    let has_oil = ingredients.iter().any(|i| i.role == "oil");
+    let has_oil_slug = ingredients.iter().any(|i| {
+        i.resolved_slug.as_deref() == Some("sunflower-oil")
+            || i.resolved_slug.as_deref() == Some("olive-oil")
+            || i.slug_hint == "sunflower-oil"
+            || i.slug_hint == "olive-oil"
+    });
+    let has_saute = ingredients.iter().any(|i| i.state == "sauteed");
+
+    // ── Soup/Stew: add water (300ml per serving) if no liquid ───────────
+    if matches!(dish_type, DishType::Soup | DishType::Stew) && !has_liquid {
+        // Water is 0 kcal, but adds to total output volume
+        ingredients.push(ResolvedIngredient {
+            product: None,
+            slug_hint: "water".into(),
+            resolved_slug: Some("water".into()),
+            state: "boiled".into(),
+            role: "liquid".into(),
+            gross_g: 300.0,
+            cleaned_net_g: 300.0,
+            cooked_net_g: 300.0,
+            kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+        });
+    }
+
+    // ── Sauté dishes: add cooking oil if none present ───────────────────
+    if has_saute && !has_oil && !has_oil_slug {
+        // Try to resolve from cache for accurate nutrition
+        if let Some(oil) = resolve_slug(cache, "sunflower-oil").await {
+            let portion = 15.0_f32; // 15g = ~1 tbsp
+            ingredients.push(ResolvedIngredient {
+                product: Some(oil.clone()),
+                slug_hint: "sunflower-oil".into(),
+                resolved_slug: Some(oil.slug.clone()),
+                state: "raw".into(),
+                role: "oil".into(),
+                gross_g: portion,
+                cleaned_net_g: portion,
+                cooked_net_g: portion,
+                kcal: oil.kcal_for(portion),
+                protein_g: oil.protein_for(portion),
+                fat_g: oil.fat_for(portion),
+                carbs_g: oil.carbs_for(portion),
+            });
+        } else {
+            // Fallback: generic oil entry with estimated nutrition
+            ingredients.push(ResolvedIngredient {
+                product: None,
+                slug_hint: "sunflower-oil".into(),
+                resolved_slug: Some("sunflower-oil".into()),
+                state: "raw".into(),
+                role: "oil".into(),
+                gross_g: 15.0,
+                cleaned_net_g: 15.0,
+                cooked_net_g: 15.0,
+                kcal: 135, protein_g: 0.0, fat_g: 15.0, carbs_g: 0.0,
+            });
+        }
+    }
+}
+
 // ── Cooking Steps Generation (pure logic, no LLM) ───────────────────────────
 
 /// Generate cooking steps driven by DishRule (DDD: rules as data).
@@ -432,7 +507,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
             | StepType::GrillProtein | StepType::MarinateProtein
             | StepType::SauteAromatics | StepType::AddRoots | StepType::AddVegetables
             | StepType::AddAromatics | StepType::BoilBase | StepType::AddBase
-            | StepType::AddSpices | StepType::ChopAll | StepType::Dress
+            | StepType::AddLiquid | StepType::AddSpices | StepType::ChopAll | StepType::Dress
         );
 
         if needs_ingredients && matching.is_empty() {
@@ -653,6 +728,17 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
     }
 
     for ing in &card.ingredients {
+        // Special rendering for implicit water/broth
+        if ing.role == "liquid" {
+            let liquid_name = match lang {
+                ChatLang::Ru => "Вода",
+                ChatLang::En => "Water",
+                ChatLang::Pl => "Woda",
+                ChatLang::Uk => "Вода",
+            };
+            out.push(format!("• {} — {:.0}мл", liquid_name, ing.gross_g));
+            continue;
+        }
         let name = ing.product.as_ref()
             .map(|p| p.name(lang.code()).to_string())
             .unwrap_or_else(|| ing.slug_hint.clone());
@@ -769,10 +855,26 @@ fn state_label_ru(state: &str, name_ru: &str) -> String {
 }
 
 /// Guess Russian grammatical gender from the nominative form.
-/// -а/-я → feminine, -о/-е → neuter, else → masculine
+/// -а/-я → feminine, -о/-е → neuter, else → masculine.
+/// Special case: some food words ending in -ь are feminine (морковь, фасоль…).
 fn ru_gender(name: &str) -> char {
     let lower = name.to_lowercase();
     let lower = lower.trim();
+
+    // Words ending in -ь need special handling: could be masc or fem
+    if lower.ends_with('ь') {
+        // Feminine food nouns ending in -ь
+        const FEM_SOFT: &[&str] = &[
+            "морковь", "фасоль", "соль", "ваниль", "зелень",
+            "форель", "печень", "стручковая фасоль",
+        ];
+        for w in FEM_SOFT {
+            if lower == *w { return 'f'; }
+        }
+        // Default for -ь: masculine (картофель, имбирь, миндаль, щавель…)
+        return 'm';
+    }
+
     if lower.ends_with('а') || lower.ends_with('я') { 'f' }
     else if lower.ends_with('о') || lower.ends_with('е') || lower.ends_with('ё') { 'n' }
     else { 'm' }
@@ -909,5 +1011,30 @@ mod tests {
         let raw = "Sure!\n```json\n{\"dish\":\"x\",\"items\":[]}\n```\nDone.";
         let j = extract_json(raw).unwrap();
         assert!(j.starts_with('{') && j.ends_with('}'));
+    }
+
+    #[test]
+    fn ru_gender_feminine_soft_sign() {
+        // Морковь, фасоль — feminine, ending in -ь
+        assert_eq!(ru_gender("Морковь"), 'f');
+        assert_eq!(ru_gender("Фасоль"), 'f');
+        assert_eq!(ru_gender("Форель"), 'f');
+        assert_eq!(ru_gender("Печень"), 'f');
+        // Картофель, имбирь — masculine, ending in -ь
+        assert_eq!(ru_gender("Картофель"), 'm');
+        assert_eq!(ru_gender("Имбирь"), 'm');
+    }
+
+    #[test]
+    fn state_label_morkov_feminine() {
+        let label = state_label_ru("sauteed", "Морковь");
+        assert_eq!(label, "пассерованная");
+    }
+
+    #[test]
+    fn state_label_kartoshka_feminine() {
+        // Картошка ends in -а → feminine
+        let label = state_label_ru("boiled", "Картошка");
+        assert_eq!(label, "варёная");
     }
 }

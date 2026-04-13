@@ -41,6 +41,7 @@ impl IngredientRole {
             "spice" => IngredientRole::Spice,
             "oil" => IngredientRole::Oil,
             "condiment" => IngredientRole::Condiment,
+            "liquid" => IngredientRole::Liquid,
             _ => IngredientRole::Vegetable,
         }
     }
@@ -76,6 +77,7 @@ pub enum StepType {
     AddAromatics,     // "Добавить зажарку в суп"
     BoilBase,         // "Отварить рис/пасту"
     AddBase,          // "Добавить крупу"
+    AddLiquid,        // "Залить водой, довести до кипения"
     AddSpices,        // "Добавить специи, довести до вкуса"
     Combine,          // "Соединить всё" / "Смешать"
     Rest,             // "Дать настояться 5 минут, подавать"
@@ -194,6 +196,7 @@ fn soup_rule() -> DishRule {
         ],
         steps: vec![
             StepRule { step: BoilProtein,     roles: vec![Protein],   time_min: Some(40) },
+            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
             StepRule { step: SauteAromatics,  roles: vec![Aromatic],  time_min: Some(7) },
             StepRule { step: AddRoots,        roles: vec![Vegetable], time_min: Some(15) },
             StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(10) },
@@ -233,6 +236,7 @@ fn stew_rule() -> DishRule {
         ],
         steps: vec![
             StepRule { step: BraiseProtein,   roles: vec![Protein],   time_min: Some(45) },
+            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
             StepRule { step: SauteAromatics,  roles: vec![Aromatic],  time_min: Some(7) },
             StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(20) },
             StepRule { step: AddAromatics,    roles: vec![Aromatic],  time_min: Some(2) },
@@ -479,9 +483,10 @@ pub fn step_text(step: StepType, names: &str) -> String {
         StepType::SauteAromatics  => format!("Сделать зажарку: спассеровать {} на масле до золотистости", names),
         StepType::AddRoots        => format!("Добавить {}, варить", names),
         StepType::AddVegetables   => format!("Добавить {}", names),
-        StepType::AddAromatics    => "Добавить зажарку".to_string(),
+        StepType::AddAromatics    => "Добавить зажарку в суп, перемешать".to_string(),
         StepType::BoilBase        => format!("Отварить {} до готовности", names),
         StepType::AddBase         => format!("Добавить {}", names),
+        StepType::AddLiquid       => "Залить водой, довести до кипения".to_string(),
         StepType::AddSpices       => format!("Добавить {}, довести до вкуса", names),
         StepType::Combine         => "Соединить все ингредиенты, перемешать".to_string(),
         StepType::Rest            => "Дать настояться 5 минут, подавать".to_string(),
