@@ -19,6 +19,7 @@ use crate::infrastructure::llm_adapter::LlmAdapter;
 use super::intent_router::ChatLang;
 use super::meal_builder::CookMethod;
 use super::response_builder::HealthGoal;
+use super::cooking_rules::{self, IngredientRole, DishRule, StepType};
 
 // ── Dish Cooking Profile ─────────────────────────────────────────────────────
 
@@ -78,48 +79,11 @@ impl DishType {
     }
 
     /// The cooking method for a given role in this dish type.
-    pub fn cook_method(&self, role: &str, product_type: &str, goal: HealthGoal) -> CookMethod {
-        match self {
-            DishType::Soup => match role {
-                "protein" => CookMethod::Boil,
-                "side"    => CookMethod::Boil,
-                "base"    => CookMethod::Boil,
-                "spice" | "condiment" => CookMethod::Raw,
-                _ => CookMethod::Boil,
-            },
-            DishType::Stew => match role {
-                "protein" => CookMethod::Boil, // тушёное = long boil/braise
-                "side"    => CookMethod::Boil,
-                "base"    => CookMethod::Boil,
-                "spice" | "condiment" => CookMethod::Raw,
-                _ => CookMethod::Boil,
-            },
-            DishType::Salad => CookMethod::Raw,
-            DishType::StirFry => match role {
-                "spice" | "condiment" => CookMethod::Raw,
-                _ => CookMethod::Fry,
-            },
-            DishType::Grill => match role {
-                "protein" => CookMethod::Grill,
-                "side"    => CookMethod::Grill,
-                "base"    => CookMethod::Boil, // rice/pasta always boiled
-                "spice" | "condiment" => CookMethod::Raw,
-                _ => CookMethod::Grill,
-            },
-            DishType::Bake => match role {
-                "spice" | "condiment" => CookMethod::Raw,
-                _ => CookMethod::Bake,
-            },
-            DishType::Pasta => match role {
-                "protein" => CookMethod::Fry,
-                "base"    => CookMethod::Boil,
-                "side"    => CookMethod::Fry,
-                "spice" | "condiment" => CookMethod::Raw,
-                _ => CookMethod::Boil,
-            },
-            DishType::Raw => CookMethod::Raw,
-            DishType::Default => CookMethod::for_ingredient(product_type, role, goal),
-        }
+    /// Delegates to cooking_rules for DDD rule lookup.
+    pub fn cook_method(&self, role: &str, slug: &str, _product_type: &str, _goal: HealthGoal) -> CookMethod {
+        let rule = cooking_rules::load_rule(*self);
+        let ingredient_role = IngredientRole::from_str_role(role, slug);
+        cooking_rules::method_for_role(&rule, ingredient_role)
     }
 }
 
@@ -318,23 +282,16 @@ fn build_ingredient(product: &IngredientData, slug_hint: &str, goal: HealthGoal)
 }
 
 /// Build ingredient with dish-aware cooking method.
+/// Uses DDD cooking_rules to determine method by (dish_type, role, slug).
 fn build_ingredient_for_dish(
     product: &IngredientData,
     slug_hint: &str,
-    goal: HealthGoal,
+    _goal: HealthGoal,
     dish_type: DishType,
 ) -> ResolvedIngredient {
     let role = override_role(product);
-    // 🔴 FIX: Use dish-aware cooking method instead of "in vacuum"
-    let mut method = dish_type.cook_method(role, &product.product_type, goal);
-
-    // 🔴 Soup/Stew aromatics: onion & carrot → Saute (зажарка)
-    if matches!(dish_type, DishType::Soup | DishType::Stew) && role == "side" {
-        let slug = product.slug.as_str();
-        if slug.contains("onion") || slug.contains("carrot") {
-            method = CookMethod::Saute;
-        }
-    }
+    // DDD: cooking method resolved via rules (aromatics → Saute in soup, etc.)
+    let method = dish_type.cook_method(role, &product.slug, &product.product_type, _goal);
 
     let state = method_to_state(&method);
 
@@ -425,26 +382,37 @@ fn method_to_state(method: &CookMethod) -> &'static str {
 
 // ── Cooking Steps Generation (pure logic, no LLM) ───────────────────────────
 
-/// Generate cooking steps based on dish type and resolved ingredients.
+/// Generate cooking steps driven by DishRule (DDD: rules as data).
+/// Iterates the rule's step sequence; for each step, collects matching ingredients,
+/// skips the step if no ingredients match, otherwise generates text.
 fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang: ChatLang) -> Vec<CookingStep> {
-    let protein: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "protein").collect();
-    let sides: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "side").collect();
-    let bases: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "base").collect();
-    let spices: Vec<&ResolvedIngredient> = ingredients.iter().filter(|i| i.role == "spice" || i.role == "condiment").collect();
+    let rule = cooking_rules::load_rule(dish_type);
 
+    // ── Classify ingredients by DDD role ─────────────────────────────────
+    let classify = |ing: &ResolvedIngredient| -> IngredientRole {
+        let slug = ing.resolved_slug.as_deref().unwrap_or(&ing.slug_hint);
+        IngredientRole::from_str_role(&ing.role, slug)
+    };
+
+    let by_role = |target: IngredientRole| -> Vec<&ResolvedIngredient> {
+        ingredients.iter().filter(|i| classify(i) == target).collect()
+    };
+
+    // Helper: accusative case name
     let name_of = |ing: &ResolvedIngredient| -> String {
         ing.product.as_ref()
             .map(|p| accusative_case(&p.name_ru))
             .unwrap_or_else(|| ing.slug_hint.clone())
     };
 
-    let names_joined = |ings: &[&ResolvedIngredient]| -> String {
+    let names_of = |ings: &[&ResolvedIngredient], sep: &str| -> String {
         ings.iter()
             .map(|i| name_of(i).to_lowercase())
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(sep)
     };
 
+    // ── Walk the rule's step sequence ────────────────────────────────────
     let mut steps = Vec::new();
     let mut step_num: u8 = 0;
     let mut add = |text: String, time: Option<u16>| {
@@ -452,137 +420,67 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
         steps.push(CookingStep { step: step_num, text, time_min: time });
     };
 
-    match dish_type {
-        DishType::Soup | DishType::Stew => {
-            if !protein.is_empty() {
-                let verb = if dish_type == DishType::Soup { "Отварить" } else { "Потушить" };
-                add(format!("{} {} до готовности", verb, names_joined(&protein)), Some(40));
-            }
-            // Separate aromatics (onion, carrot → зажарка) from other sides
-            let aromatics: Vec<&ResolvedIngredient> = sides.iter()
-                .filter(|i| i.state == "sauteed")
-                .copied()
-                .collect();
-            // Зажарка: sauté aromatics first
-            if !aromatics.is_empty() {
-                let names: String = aromatics.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(" и ");
-                add(format!("Сделать зажарку: спассеровать {} на масле до золотистости", names), Some(7));
-            }
-            // Root vegetables (potato, beet — not carrot which is in зажарка)
-            let roots: Vec<&ResolvedIngredient> = sides.iter()
-                .filter(|i| i.state != "sauteed")
+    for step_rule in &rule.steps {
+        // Collect ingredients that match ANY of the step's roles
+        let matching: Vec<&ResolvedIngredient> = step_rule.roles.iter()
+            .flat_map(|r| by_role(*r))
+            .collect();
+
+        // For steps that need ingredients: skip if none
+        let needs_ingredients = matches!(step_rule.step,
+            StepType::BoilProtein | StepType::BraiseProtein | StepType::SearProtein
+            | StepType::GrillProtein | StepType::MarinateProtein
+            | StepType::SauteAromatics | StepType::AddRoots | StepType::AddVegetables
+            | StepType::AddAromatics | StepType::BoilBase | StepType::AddBase
+            | StepType::AddSpices | StepType::ChopAll | StepType::Dress
+        );
+
+        if needs_ingredients && matching.is_empty() {
+            continue;
+        }
+
+        // Special handling for AddRoots: split vegetables into root vs leafy
+        if step_rule.step == StepType::AddRoots {
+            let roots: Vec<&ResolvedIngredient> = matching.iter()
                 .filter(|i| {
                     let slug = i.resolved_slug.as_deref().unwrap_or("");
-                    slug.contains("potato") || slug.contains("beet")
-                })
-                .copied()
-                .collect();
-            let leafy: Vec<&ResolvedIngredient> = sides.iter()
-                .filter(|i| i.state != "sauteed")
-                .filter(|i| {
-                    let slug = i.resolved_slug.as_deref().unwrap_or("");
-                    !slug.contains("potato") && !slug.contains("beet")
+                    cooking_rules::is_root_vegetable(slug)
                 })
                 .copied()
                 .collect();
             if !roots.is_empty() {
-                let names: String = roots.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(", ");
-                add(format!("Добавить {}, варить", names), Some(15));
+                let names = names_of(&roots, ", ");
+                add(cooking_rules::step_text(StepType::AddRoots, &names), step_rule.time_min);
             }
-            if !leafy.is_empty() {
-                let names: String = leafy.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(", ");
-                add(format!("Добавить {}", names), Some(10));
-            }
-            if !aromatics.is_empty() {
-                add("Добавить зажарку в суп".into(), Some(2));
-            }
-            if !bases.is_empty() {
-                add(format!("Добавить {}", names_joined(&bases)), Some(10));
-            }
-            if !spices.is_empty() {
-                add(format!("Добавить {}, довести до вкуса", names_joined(&spices)), Some(5));
-            }
-            add("Дать настояться 5 минут, подавать".into(), Some(5));
+            continue;
         }
-        DishType::Salad => {
-            if !sides.is_empty() {
-                add(format!("Нарезать {}", names_joined(&sides)), None);
-            }
-            if !protein.is_empty() {
-                add(format!("Нарезать {}", names_joined(&protein)), None);
-            }
-            add("Смешать все ингредиенты".into(), None);
-            if !spices.is_empty() {
-                add(format!("Заправить {}", names_joined(&spices)), None);
-            }
-        }
-        DishType::StirFry => {
-            add("Разогреть масло в воке на сильном огне".into(), Some(2));
-            if !protein.is_empty() {
-                add(format!("Обжарить {} до корочки", names_joined(&protein)), Some(5));
-            }
-            if !sides.is_empty() {
-                add(format!("Добавить {}, обжаривать", names_joined(&sides)), Some(5));
-            }
-            if !spices.is_empty() {
-                add(format!("Добавить {}", names_joined(&spices)), Some(2));
-            }
-            if !bases.is_empty() {
-                add(format!("Подать с {}", names_joined(&bases)), None);
-            }
-        }
-        DishType::Grill => {
-            if !protein.is_empty() {
-                add(format!("Замариновать {}", names_joined(&protein)), Some(30));
-            }
-            add("Разогреть гриль до высокой температуры".into(), Some(5));
-            if !protein.is_empty() {
-                add(format!("Обжарить {} на гриле", names_joined(&protein)), Some(10));
-            }
-            if !sides.is_empty() {
-                add(format!("Гриль: {}", names_joined(&sides)), Some(8));
-            }
-        }
-        DishType::Bake => {
-            add("Разогреть духовку до 180°C".into(), Some(10));
-            let all_names: Vec<String> = protein.iter().chain(sides.iter())
-                .map(|i| name_of(i).to_lowercase())
+
+        // Special handling for AddVegetables in soup/stew: only non-root vegetables
+        if step_rule.step == StepType::AddVegetables
+            && matches!(dish_type, DishType::Soup | DishType::Stew)
+        {
+            let leafy: Vec<&ResolvedIngredient> = matching.iter()
+                .filter(|i| {
+                    let slug = i.resolved_slug.as_deref().unwrap_or("");
+                    !cooking_rules::is_root_vegetable(slug)
+                })
+                .copied()
                 .collect();
-            if !all_names.is_empty() {
-                add(format!("Подготовить {}", all_names.join(", ")), None);
+            if !leafy.is_empty() {
+                let names = names_of(&leafy, ", ");
+                add(cooking_rules::step_text(StepType::AddVegetables, &names), step_rule.time_min);
             }
-            add("Запекать до готовности".into(), Some(30));
+            continue;
         }
-        DishType::Pasta => {
-            if !bases.is_empty() {
-                add(format!("Отварить {} до al dente", names_joined(&bases)), Some(10));
-            }
-            if !protein.is_empty() {
-                add(format!("Обжарить {}", names_joined(&protein)), Some(8));
-            }
-            if !sides.is_empty() {
-                add(format!("Добавить {}", names_joined(&sides)), Some(5));
-            }
-            add("Соединить с пастой, перемешать".into(), Some(2));
-            if !spices.is_empty() {
-                add(format!("Добавить {}", names_joined(&spices)), None);
-            }
-        }
-        _ => {
-            // Default: simple cook order
-            if !protein.is_empty() {
-                add(format!("Приготовить {}", names_joined(&protein)), Some(15));
-            }
-            if !bases.is_empty() {
-                add(format!("Приготовить {}", names_joined(&bases)), Some(10));
-            }
-            if !sides.is_empty() {
-                add(format!("Приготовить {}", names_joined(&sides)), Some(10));
-            }
-            if !spices.is_empty() {
-                add(format!("Добавить {}", names_joined(&spices)), None);
-            }
-        }
+
+        // SauteAromatics: join with " и " (not ", ")
+        let names = if step_rule.step == StepType::SauteAromatics {
+            names_of(&matching, " и ")
+        } else {
+            names_of(&matching, ", ")
+        };
+
+        add(cooking_rules::step_text(step_rule.step, &names), step_rule.time_min);
     }
 
     steps
