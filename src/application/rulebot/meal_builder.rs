@@ -46,6 +46,7 @@ pub enum CookMethod {
     Boil,
     Steam,
     Fry,
+    Saute,  // зажарка: onion+carrot sautéed in oil before adding to soup
     Raw,
 }
 
@@ -66,6 +67,9 @@ impl CookMethod {
             (CookMethod::Grill, "vegetable" | "mushroom") => 0.85,
             (CookMethod::Fry, "vegetable" | "mushroom") => 0.82,
             (CookMethod::Bake, "vegetable" | "mushroom") => 0.87,
+            // Sauté — similar to fry, slightly less loss
+            (CookMethod::Saute, "vegetable" | "mushroom") => 0.80,
+            (CookMethod::Saute, _) => 0.82,
             // Grains/legumes ABSORB water — yield > 1.0
             (CookMethod::Boil, "grain" | "legume") => 2.20,
             // Raw = no change
@@ -119,6 +123,10 @@ impl CookMethod {
             (CookMethod::Fry, ChatLang::En) => "Pan-fry",
             (CookMethod::Fry, ChatLang::Pl) => "Usmażyć",
             (CookMethod::Fry, ChatLang::Uk) => "Обсмажити",
+            (CookMethod::Saute, ChatLang::Ru) => "Спассеровать",
+            (CookMethod::Saute, ChatLang::En) => "Sauté",
+            (CookMethod::Saute, ChatLang::Pl) => "Podsmażyć",
+            (CookMethod::Saute, ChatLang::Uk) => "Спасерувати",
             (CookMethod::Raw, ChatLang::Ru) => "Подать свежим",
             (CookMethod::Raw, ChatLang::En) => "Serve fresh",
             (CookMethod::Raw, ChatLang::Pl) => "Podać świeże",
@@ -137,6 +145,7 @@ impl CookMethod {
             (CookMethod::Steam, "vegetable" | "mushroom") => 7,
             (CookMethod::Boil, "vegetable") => 8,
             (CookMethod::Fry, _) => 10,
+            (CookMethod::Saute, _) => 7,
             (CookMethod::Raw, _) => 0,
             (_, _) => 10,
         }

@@ -326,7 +326,16 @@ fn build_ingredient_for_dish(
 ) -> ResolvedIngredient {
     let role = override_role(product);
     // 🔴 FIX: Use dish-aware cooking method instead of "in vacuum"
-    let method = dish_type.cook_method(role, &product.product_type, goal);
+    let mut method = dish_type.cook_method(role, &product.product_type, goal);
+
+    // 🔴 Soup/Stew aromatics: onion & carrot → Saute (зажарка)
+    if matches!(dish_type, DishType::Soup | DishType::Stew) && role == "side" {
+        let slug = product.slug.as_str();
+        if slug.contains("onion") || slug.contains("carrot") {
+            method = CookMethod::Saute;
+        }
+    }
+
     let state = method_to_state(&method);
 
     let cooked_portion = recipe_portion(product, role);
@@ -409,6 +418,7 @@ fn method_to_state(method: &CookMethod) -> &'static str {
         CookMethod::Boil => "boiled",
         CookMethod::Steam => "steamed",
         CookMethod::Fry => "fried",
+        CookMethod::Saute => "sauteed",
         CookMethod::Raw => "raw",
     }
 }
@@ -424,7 +434,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
 
     let name_of = |ing: &ResolvedIngredient| -> String {
         ing.product.as_ref()
-            .map(|p| p.name_ru.clone())
+            .map(|p| accusative_case(&p.name_ru))
             .unwrap_or_else(|| ing.slug_hint.clone())
     };
 
@@ -448,18 +458,32 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
                 let verb = if dish_type == DishType::Soup { "Отварить" } else { "Потушить" };
                 add(format!("{} {} до готовности", verb, names_joined(&protein)), Some(40));
             }
-            // Root vegetables first (potato, beet, carrot)
-            let roots: Vec<&&ResolvedIngredient> = sides.iter()
-                .filter(|i| {
-                    let slug = i.resolved_slug.as_deref().unwrap_or("");
-                    slug.contains("potato") || slug.contains("beet") || slug.contains("carrot")
-                })
+            // Separate aromatics (onion, carrot → зажарка) from other sides
+            let aromatics: Vec<&ResolvedIngredient> = sides.iter()
+                .filter(|i| i.state == "sauteed")
+                .copied()
                 .collect();
-            let leafy: Vec<&&ResolvedIngredient> = sides.iter()
+            // Зажарка: sauté aromatics first
+            if !aromatics.is_empty() {
+                let names: String = aromatics.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(" и ");
+                add(format!("Сделать зажарку: спассеровать {} на масле до золотистости", names), Some(7));
+            }
+            // Root vegetables (potato, beet — not carrot which is in зажарка)
+            let roots: Vec<&ResolvedIngredient> = sides.iter()
+                .filter(|i| i.state != "sauteed")
                 .filter(|i| {
                     let slug = i.resolved_slug.as_deref().unwrap_or("");
-                    !slug.contains("potato") && !slug.contains("beet") && !slug.contains("carrot")
+                    slug.contains("potato") || slug.contains("beet")
                 })
+                .copied()
+                .collect();
+            let leafy: Vec<&ResolvedIngredient> = sides.iter()
+                .filter(|i| i.state != "sauteed")
+                .filter(|i| {
+                    let slug = i.resolved_slug.as_deref().unwrap_or("");
+                    !slug.contains("potato") && !slug.contains("beet")
+                })
+                .copied()
                 .collect();
             if !roots.is_empty() {
                 let names: String = roots.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(", ");
@@ -468,6 +492,9 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
             if !leafy.is_empty() {
                 let names: String = leafy.iter().map(|i| name_of(i).to_lowercase()).collect::<Vec<_>>().join(", ");
                 add(format!("Добавить {}", names), Some(10));
+            }
+            if !aromatics.is_empty() {
+                add("Добавить зажарку в суп".into(), Some(2));
             }
             if !bases.is_empty() {
                 add(format!("Добавить {}", names_joined(&bases)), Some(10));
@@ -600,6 +627,22 @@ fn instrumental_case(name: &str) -> String {
     }
     // consonant (masculine) → +ом
     format!("{}ом", lower)
+}
+
+/// Russian accusative case for recipe steps.
+/// "Говядина" → "говядину", "Морковь" → "морковь", "Картофель" → "картофель"
+fn accusative_case(name: &str) -> String {
+    let lower = name.to_lowercase();
+    // -а → -у (feminine: говядина→говядину, свекла→свеклу, капуста→капусту)
+    if lower.ends_with('а') {
+        return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    // -я → -ю (feminine: курица uses -а not -я, but: свинья→свинью)
+    if lower.ends_with('я') {
+        return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
+    // -ь, -й, consonant: accusative = nominative for inanimate (морковь, лук, помидор, чеснок)
+    lower
 }
 
 // ── Slug Resolution ──────────────────────────────────────────────────────────
@@ -784,6 +827,8 @@ fn state_label<'a>(state: &'a str, lang: ChatLang) -> &'a str {
         ("boiled", ChatLang::Pl) => "gotowany", ("boiled", ChatLang::Uk) => "варений",
         ("fried", ChatLang::Ru) => "жареный", ("fried", ChatLang::En) => "fried",
         ("fried", ChatLang::Pl) => "smażony", ("fried", ChatLang::Uk) => "смажений",
+        ("sauteed", ChatLang::Ru) => "пассерованный", ("sauteed", ChatLang::En) => "sautéed",
+        ("sauteed", ChatLang::Pl) => "podsmażony", ("sauteed", ChatLang::Uk) => "спасерований",
         ("baked", ChatLang::Ru) => "запечённый", ("baked", ChatLang::En) => "baked",
         ("baked", ChatLang::Pl) => "pieczony", ("baked", ChatLang::Uk) => "запечений",
         ("grilled", ChatLang::Ru) => "гриль", ("grilled", ChatLang::En) => "grilled",
