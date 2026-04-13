@@ -213,6 +213,11 @@ pub fn create_router(
             "/ai/create-product-draft",
             post(admin_catalog::ai_create_product_draft),
         )
+        // AI Suggest Products — AI suggests 5 products to add
+        .route(
+            "/ai/suggest-products",
+            post(admin_catalog::ai_suggest_products),
+        )
         // Dictionary admin — review AI translations
         .route(
             "/dictionary",

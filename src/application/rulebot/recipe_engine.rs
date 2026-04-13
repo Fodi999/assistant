@@ -184,7 +184,8 @@ pub async fn resolve_dish(
 /// Build a fully-resolved ingredient from a cache product.
 /// Backend decides: role, cooking method, portion, yield, nutrition.
 fn build_ingredient(product: &IngredientData, slug_hint: &str, goal: HealthGoal) -> ResolvedIngredient {
-    let role = product.meal_role();
+    // Override role for aromatics that meal_role() classifies as "side"
+    let role = override_role(product);
     let method = CookMethod::for_ingredient(&product.product_type, role, goal);
     let state = method_to_state(&method);
 
@@ -210,6 +211,31 @@ fn build_ingredient(product: &IngredientData, slug_hint: &str, goal: HealthGoal)
     }
 }
 
+/// Aromatics, oils, condiments that meal_role() misclassifies as "side".
+/// Returns the corrected role.
+fn override_role<'a>(product: &IngredientData) -> &'static str {
+    // Slug-level overrides for aromatic "vegetables"
+    let slug = product.slug.as_str();
+    match slug {
+        "garlic" | "ginger" | "chili" | "chili-pepper" | "horseradish"
+        | "turmeric" | "lemongrass" | "shallot" => return "spice",
+        "salt" | "pepper" | "cumin" | "paprika" | "cinnamon" | "nutmeg"
+        | "coriander" | "bay-leaf" | "saffron" | "vanilla" => return "spice",
+        "olive-oil" | "sunflower-oil" | "butter" | "ghee" | "coconut-oil"
+        | "sesame-oil" => return "oil",
+        "soy-sauce" | "vinegar" | "mustard" | "ketchup" | "mayo"
+        | "tomato-paste" | "fish-sauce" | "worcestershire" => return "condiment",
+        _ => {}
+    }
+    // product_type-level overrides
+    match product.product_type.as_str() {
+        "oil" | "fat" => "oil",
+        "spice" | "herb" | "seasoning" => "spice",
+        "condiment" | "sauce" => "condiment",
+        _ => product.meal_role(),
+    }
+}
+
 /// Recipe-specific portion (grams of cooked food on plate).
 /// Smaller than standalone meal — this is one ingredient in a dish.
 fn recipe_portion(product: &IngredientData, role: &str) -> f32 {
@@ -229,11 +255,10 @@ fn recipe_portion(product: &IngredientData, role: &str) -> f32 {
             "fruit" => 40.0,
             _ => 50.0,
         },
-        _ => {
-            if product.product_type == "oil" || product.product_type == "condiment" { 15.0 }
-            else if product.product_type == "spice" || product.product_type == "herb" { 5.0 }
-            else { 30.0 }
-        }
+        "spice" => 5.0,
+        "oil" => 15.0,
+        "condiment" => 15.0,
+        _ => 30.0,
     }
 }
 
@@ -264,9 +289,18 @@ async fn resolve_slug(cache: &IngredientCache, hint: &str) -> Option<IngredientD
 
     // 3. Common rewrites
     let rewrites: &[(&str, &str)] = &[
+        ("beet", "beetroot"),
         ("chicken", "chicken-breast"),
         ("tomato-paste", "tomato"),
         ("sour-cream", "cream"),
+        ("bell-pepper", "pepper"),
+        ("green-onion", "onion"),
+        ("spring-onion", "onion"),
+        ("scallion", "onion"),
+        ("cilantro", "coriander"),
+        ("cornstarch", "corn"),
+        ("stock", "chicken-breast"),
+        ("broth", "chicken-breast"),
     ];
     for (from, to) in rewrites {
         if h.contains(from) {
@@ -523,7 +557,21 @@ mod tests {
             fat_per_100g: 100.0, carbs_per_100g: 0.0, image_url: None,
             product_type: "oil".into(), density_g_per_ml: None,
         };
-        assert_eq!(recipe_portion(&oil, "other"), 15.0);
+        assert_eq!(recipe_portion(&oil, "oil"), 15.0);
+    }
+
+    #[test]
+    fn garlic_is_spice_not_side() {
+        let garlic = IngredientData {
+            slug: "garlic".into(), name_en: "Garlic".into(),
+            name_ru: "Чеснок".into(), name_pl: "Czosnek".into(), name_uk: "Часник".into(),
+            calories_per_100g: 149.0, protein_per_100g: 6.4,
+            fat_per_100g: 0.5, carbs_per_100g: 33.0, image_url: None,
+            product_type: "vegetable".into(), density_g_per_ml: None,
+        };
+        let resolved = build_ingredient(&garlic, "garlic", HealthGoal::Balanced);
+        assert_eq!(resolved.role, "spice", "garlic should be spice, not {}", resolved.role);
+        assert_eq!(resolved.cooked_net_g, 5.0, "garlic should be 5g, not {}", resolved.cooked_net_g);
     }
 
     #[test]
