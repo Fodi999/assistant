@@ -594,6 +594,12 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
 fn build_display_name(schema: &DishSchema, ingredients: &[ResolvedIngredient], _dish_type: DishType) -> String {
     let dish_local = schema.dish_local.as_deref().unwrap_or(&schema.dish);
 
+    // If Gemini already included the protein in the name, don't add again
+    let dish_lower = dish_local.to_lowercase();
+    if dish_lower.contains(" с ") || dish_lower.contains(" with ") {
+        return dish_local.to_string();
+    }
+
     // Find the main protein
     let protein_name = ingredients.iter()
         .find(|i| i.role == "protein")
@@ -601,7 +607,7 @@ fn build_display_name(schema: &DishSchema, ingredients: &[ResolvedIngredient], _
         .map(|p| p.name_ru.clone());
 
     if let Some(protein) = protein_name {
-        // "Борщ" + "Говядина" → "Классический борщ с говядиной"
+        // "Борщ" + "Говядина" → "Борщ с говядиной"
         let with_protein = instrumental_case(&protein);
         format!("{} с {}", dish_local, with_protein)
     } else {
@@ -752,7 +758,13 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
         let name = ing.product.as_ref()
             .map(|p| p.name(lang.code()).to_string())
             .unwrap_or_else(|| ing.slug_hint.clone());
-        let st = state_label(&ing.state, lang);
+        // For Russian: gender-aware state labels ("варёная" for fem, "варёный" for masc)
+        let st: String = if lang == ChatLang::Ru {
+            let name_ru = ing.product.as_ref().map(|p| p.name_ru.as_str()).unwrap_or("");
+            state_label_ru(&ing.state, name_ru)
+        } else {
+            state_label(&ing.state, lang).to_string()
+        };
 
         if (ing.gross_g - ing.cooked_net_g).abs() > 2.0 {
             out.push(format!("• {} ({}) — {:.0}г → {:.0}г", name, st, ing.gross_g, ing.cooked_net_g));
@@ -839,6 +851,33 @@ fn state_label<'a>(state: &'a str, lang: ChatLang) -> &'a str {
         ("smoked", ChatLang::Pl) => "wędzony", ("smoked", ChatLang::Uk) => "копчений",
         _ => state,
     }
+}
+
+/// Russian state label with gender agreement.
+/// "Свекла" (fem) → "варёная", "Лук" (masc) → "пассерованный", "Молоко" (neut) → "варёное"
+fn state_label_ru(state: &str, name_ru: &str) -> String {
+    let gender = ru_gender(name_ru);
+    match state {
+        "raw" => match gender { 'f' => "сырая", 'n' => "сырое", _ => "сырой" }.into(),
+        "boiled" => match gender { 'f' => "варёная", 'n' => "варёное", _ => "варёный" }.into(),
+        "fried" => match gender { 'f' => "жареная", 'n' => "жареное", _ => "жареный" }.into(),
+        "sauteed" => match gender { 'f' => "пассерованная", 'n' => "пассерованное", _ => "пассерованный" }.into(),
+        "baked" => match gender { 'f' => "запечённая", 'n' => "запечённое", _ => "запечённый" }.into(),
+        "grilled" => "гриль".into(),
+        "steamed" => "на пару".into(),
+        "smoked" => match gender { 'f' => "копчёная", 'n' => "копчёное", _ => "копчёный" }.into(),
+        _ => state.into(),
+    }
+}
+
+/// Guess Russian grammatical gender from the nominative form.
+/// -а/-я → feminine, -о/-е → neuter, else → masculine
+fn ru_gender(name: &str) -> char {
+    let lower = name.to_lowercase();
+    let lower = lower.trim();
+    if lower.ends_with('а') || lower.ends_with('я') { 'f' }
+    else if lower.ends_with('о') || lower.ends_with('е') || lower.ends_with('ё') { 'n' }
+    else { 'm' }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
