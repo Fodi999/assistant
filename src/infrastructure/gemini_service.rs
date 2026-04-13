@@ -276,7 +276,6 @@ Pick the best match. Do not invent values."#,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "max_completion_tokens": max_tokens,
         })
     }
 
