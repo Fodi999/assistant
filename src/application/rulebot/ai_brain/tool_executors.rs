@@ -273,7 +273,7 @@ RULES:
         lang = lang.code(),
     );
 
-    let text = match llm_adapter.groq_raw_request_with_model(&plan_prompt, 600, "llama-3.3-70b-versatile").await {
+    let text = match llm_adapter.groq_raw_request_with_model(&plan_prompt, 600, "gemini-3-flash-preview").await {
         Ok(t) => t,
         Err(_) => match lang {
             ChatLang::Ru => "Не удалось создать план. Попробуй ещё раз.".to_string(),
@@ -316,7 +316,7 @@ If the tool found nothing, answer from your culinary knowledge."#,
         user_query, tool_result, lang.code()
     );
 
-    match llm_adapter.groq_raw_request_with_model(&prompt, 300, "llama-3.3-70b-versatile").await {
+    match llm_adapter.groq_raw_request_with_model(&prompt, 300, "gemini-3-flash-preview").await {
         Ok(text) => text,
         Err(_) => fallback_text(lang).to_string(),
     }
@@ -343,7 +343,7 @@ pub(crate) async fn fallback_response(
         input, lang_name
     );
 
-    let text = match llm_adapter.groq_raw_request_with_model(&prompt, 300, "llama-3.3-70b-versatile").await {
+    let text = match llm_adapter.groq_raw_request_with_model(&prompt, 300, "gemini-3-flash-preview").await {
         Ok(t) => t,
         Err(_) => fallback_text(lang).to_string(),
     };

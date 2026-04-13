@@ -32,15 +32,15 @@ pub trait AiClient: Send + Sync {
 /// AI quality tier — controls model selection & cost
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiQuality {
-    /// Fast & cheap: llama-3.1-8b-instant (~$0.0003/call)
+    /// Fast & cheap: gemini-3-flash-preview
     /// Good for: translations, simple classification
     Fast,
 
-    /// Balanced: llama-3.3-70b-versatile (~$0.001/call)
-    /// Good for: autofill, SEO, pairings
+    /// Balanced: gemini-3-flash-preview
+    /// Good for: autofill, SEO, pairings, chat AI brain
     Balanced,
 
-    /// Best: 70b + structured retry on parse failure
+    /// Best: gemini-3.1-pro-preview + structured retry on parse failure
     /// Good for: audit, complex analysis
     Best,
 }

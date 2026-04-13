@@ -174,7 +174,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM (Fast model — cheap) ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 3200, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 3200, "gemini-3-flash-preview")
             .await?;
 
         // ── 5. Parse JSON ──
@@ -188,8 +188,8 @@ impl PublicSeoContentService {
             if let Err(e) = self.ai_cache.set(
                 &cache_key,
                 val,
-                "groq",
-                "llama-3.3-70b-versatile",
+                "gemini",
+                "gemini-3-flash-preview",
                 SEO_CONTENT_CACHE_TTL_DAYS,
             ).await {
                 tracing::warn!("Failed to cache SEO content: {}", e);
@@ -248,7 +248,7 @@ impl PublicSeoContentService {
 
         // ── 4. Call LLM ──
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 3200, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 3200, "gemini-3-flash-preview")
             .await?;
 
         // ── 5. Parse ──
@@ -259,7 +259,7 @@ impl PublicSeoContentService {
 
         // ── 6. Cache ──
         if let Ok(val) = serde_json::to_value(&response) {
-            let _ = self.ai_cache.set(&cache_key, val, "groq", "llama-3.3-70b-versatile", SEO_CONTENT_CACHE_TTL_DAYS).await;
+            let _ = self.ai_cache.set(&cache_key, val, "gemini", "gemini-3-flash-preview", SEO_CONTENT_CACHE_TTL_DAYS).await;
         }
 
         tracing::info!("✅ SEO content generated: '{}' / {} (cached 30d)", search_query, locale);

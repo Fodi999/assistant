@@ -195,7 +195,7 @@ impl AdminCatalogService {
 
         // ── Cache result ──
         if let Err(e) = self.ai_cache.set(
-            &cache_key, result.clone(), "groq", "llama-3.3-70b-versatile", AUTOFILL_CACHE_TTL_DAYS
+            &cache_key, result.clone(), "gemini", "gemini-3-flash-preview", AUTOFILL_CACHE_TTL_DAYS
         ).await {
             tracing::warn!("Failed to cache autofill result: {}", e);
         }

@@ -56,7 +56,7 @@ impl SousChefPlannerService {
 
         let (chef_intro, explanation, motivation) = match self
             .llm
-            .groq_raw_request_with_model(&prompt, 800, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 800, "gemini-3-flash-preview")
             .await
         {
             Ok(raw) => match parse_gemini_response(&raw) {
@@ -96,7 +96,7 @@ impl SousChefPlannerService {
         if let Ok(val) = serde_json::to_value(&plan) {
             if let Err(e) = self
                 .ai_cache
-                .set(&cache_key, val, "groq", "llama-3.3-70b-versatile", CACHE_TTL_DAYS)
+                .set(&cache_key, val, "gemini", "gemini-3-flash-preview", CACHE_TTL_DAYS)
                 .await
             {
                 tracing::warn!("Failed to cache sous-chef plan: {}", e);

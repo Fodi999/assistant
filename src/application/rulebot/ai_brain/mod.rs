@@ -15,8 +15,8 @@
 //!   - response_helpers — text formatting, suggestions, fallback messages
 //!   - parsing          — JSON extraction from raw LLM output
 //!
-//! Cost: ~$0.001-0.003 per request (Groq llama-3.3-70b = practically free)
-//! Latency: ~200-500ms (Groq is fast)
+//! Cost: ~$0.001-0.003 per request (Gemini Flash)
+//! Latency: ~200-500ms
 
 mod tool_types;
 mod off_topic_gate;
@@ -188,7 +188,7 @@ OUTPUT FORMAT (strict JSON, no other text):
         );
 
         let raw = self.llm_adapter
-            .groq_raw_request_with_model(&prompt, 500, "llama-3.3-70b-versatile")
+            .groq_raw_request_with_model(&prompt, 500, "gemini-3-flash-preview")
             .await
             .map_err(|e| format!("LLM error: {}", e))?;
 
