@@ -153,6 +153,15 @@ pub struct TechCard {
     pub per_serving_fat: f32,
     pub per_serving_carbs: f32,
     pub unresolved: Vec<String>,
+    // ── Dish context (v2) ──
+    /// "easy" | "medium" | "hard"
+    pub complexity: String,
+    /// "balanced" | "high_protein" | "low_calorie"
+    pub goal: String,
+    /// Allergen/intolerance flags present in the dish, e.g. ["gluten", "lactose", "nuts"]
+    pub allergens: Vec<String>,
+    /// Diet tags, e.g. ["vegetarian", "vegan", "pescatarian"]
+    pub tags: Vec<String>,
 }
 
 // ── Gemini call (minimal — 50-100 tokens) ────────────────────────────────────
@@ -347,6 +356,16 @@ pub async fn resolve_dish(
     // Build improved display name (with goal prefix)
     let display_name = build_display_name(schema, &ingredients, dish_type, goal, lang);
 
+    // ── 5b. Dish context: complexity, goal label, allergens, tags ────────
+    let complexity = compute_complexity(&steps);
+    let goal_label = match goal {
+        HealthGoal::HighProtein => "high_protein",
+        HealthGoal::LowCalorie  => "low_calorie",
+        HealthGoal::Balanced    => "balanced",
+    }.to_string();
+    let allergens = detect_allergens(&ingredients);
+    let tags = detect_diet_tags(&ingredients);
+
     // ── 6. Auto-portion: split into realistic servings (~300–400g each) ──
     let portion_target = match dish_type {
         DishType::Soup | DishType::Stew => 350.0_f32,
@@ -378,7 +397,140 @@ pub async fn resolve_dish(
         per_serving_fat: per_fat,
         per_serving_carbs: per_carb,
         unresolved,
+        complexity,
+        goal: goal_label,
+        allergens,
+        tags,
     }
+}
+
+// ── Dish context helpers ─────────────────────────────────────────────────────
+
+/// Complexity: easy (<= 4 steps && <= 20 min), hard (>= 8 steps || >= 60 min), else medium.
+fn compute_complexity(steps: &[CookingStep]) -> String {
+    let total_min: u16 = steps.iter().filter_map(|s| s.time_min).sum();
+    let n = steps.len();
+    if n <= 4 && total_min <= 20 {
+        "easy".into()
+    } else if n >= 8 || total_min >= 60 {
+        "hard".into()
+    } else {
+        "medium".into()
+    }
+}
+
+/// Detect allergens/intolerances from ingredient product_types and slugs.
+fn detect_allergens(ingredients: &[ResolvedIngredient]) -> Vec<String> {
+    let mut flags = Vec::new();
+
+    let has = |f: &dyn Fn(&ResolvedIngredient) -> bool| ingredients.iter().any(f);
+
+    // Gluten: wheat, flour, pasta, bread, barley, rye, oats
+    if has(&|i| {
+        let s = i.slug_hint.to_lowercase();
+        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
+        s.contains("wheat") || s.contains("flour") || s.contains("pasta")
+            || s.contains("bread") || s.contains("barley") || s.contains("rye")
+            || s.contains("oat") || s.contains("spaghetti") || s.contains("noodle")
+            || s.contains("couscous") || s.contains("semolina")
+            || (pt == "grain" && !s.contains("rice") && !s.contains("corn") && !s.contains("buckwheat") && !s.contains("quinoa"))
+    }) {
+        flags.push("gluten".into());
+    }
+
+    // Lactose: dairy products
+    if has(&|i| {
+        let s = i.slug_hint.to_lowercase();
+        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
+        pt == "dairy" || s.contains("milk") || s.contains("cream") || s.contains("cheese")
+            || s.contains("butter") || s.contains("yogurt") || s.contains("kefir")
+            || s.contains("sour-cream") || s.contains("smetana")
+    }) {
+        flags.push("lactose".into());
+    }
+
+    // Nuts
+    if has(&|i| {
+        let s = i.slug_hint.to_lowercase();
+        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
+        pt == "nut" || s.contains("almond") || s.contains("walnut") || s.contains("cashew")
+            || s.contains("peanut") || s.contains("hazelnut") || s.contains("pecan")
+            || s.contains("pistachio") || s.contains("macadamia") || s.contains("pine-nut")
+    }) {
+        flags.push("nuts".into());
+    }
+
+    // Eggs
+    if has(&|i| {
+        let s = i.slug_hint.to_lowercase();
+        s.contains("egg")
+    }) {
+        flags.push("eggs".into());
+    }
+
+    // Fish
+    if has(&|i| {
+        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
+        pt == "fish"
+    }) {
+        flags.push("fish".into());
+    }
+
+    // Shellfish / Seafood
+    if has(&|i| {
+        let s = i.slug_hint.to_lowercase();
+        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
+        pt == "seafood" || s.contains("shrimp") || s.contains("prawn") || s.contains("crab")
+            || s.contains("lobster") || s.contains("mussel") || s.contains("oyster")
+            || s.contains("squid") || s.contains("octopus") || s.contains("clam")
+    }) {
+        flags.push("shellfish".into());
+    }
+
+    // Soy
+    if has(&|i| {
+        let s = i.slug_hint.to_lowercase();
+        s.contains("soy") || s.contains("tofu") || s.contains("edamame") || s.contains("tempeh")
+    }) {
+        flags.push("soy".into());
+    }
+
+    flags
+}
+
+/// Detect diet tags: vegan, vegetarian, pescatarian, etc.
+fn detect_diet_tags(ingredients: &[ResolvedIngredient]) -> Vec<String> {
+    let mut tags = Vec::new();
+
+    let types: Vec<&str> = ingredients
+        .iter()
+        .filter_map(|i| i.product.as_ref().map(|p| p.product_type.as_str()))
+        .collect();
+
+    let slugs: Vec<String> = ingredients.iter().map(|i| i.slug_hint.to_lowercase()).collect();
+
+    let has_meat = types.iter().any(|t| *t == "meat");
+    let has_fish = types.iter().any(|t| *t == "fish");
+    let has_seafood = types.iter().any(|t| *t == "seafood");
+    let has_dairy = types.iter().any(|t| *t == "dairy");
+    let has_eggs = slugs.iter().any(|s| s.contains("egg"));
+
+    if !has_meat && !has_fish && !has_seafood && !has_dairy && !has_eggs {
+        tags.push("vegan".into());
+        tags.push("vegetarian".into());
+    } else if !has_meat && !has_fish && !has_seafood {
+        tags.push("vegetarian".into());
+    } else if !has_meat && (has_fish || has_seafood) {
+        tags.push("pescatarian".into());
+    }
+
+    // High-protein: > 25g protein per serving
+    // (this is checked later in response, but we have the data)
+
+    // Low-carb: < 20g carbs per serving
+    // We don't have per-serving here, computed after, so skip
+
+    tags
 }
 
 /// Build a fully-resolved ingredient from a cache product.

@@ -221,6 +221,17 @@ pub struct RecipeCard {
     pub per_serving_carbs: f32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<String>,
+    // ── Dish context (v2) ──
+    /// "easy" | "medium" | "hard"
+    pub complexity: String,
+    /// "balanced" | "high_protein" | "low_calorie"
+    pub goal: String,
+    /// Allergens/intolerances present: ["gluten", "lactose", "nuts", "eggs", "fish", "shellfish", "soy"]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub allergens: Vec<String>,
+    /// Diet tags: ["vegan", "vegetarian", "pescatarian"]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 /// A cooking step in a recipe.

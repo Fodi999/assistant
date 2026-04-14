@@ -434,6 +434,10 @@ pub fn build_recipe_card(
         per_serving_fat: card.per_serving_fat,
         per_serving_carbs: card.per_serving_carbs,
         unresolved: card.unresolved.clone(),
+        complexity: card.complexity.clone(),
+        goal: card.goal.clone(),
+        allergens: card.allergens.clone(),
+        tags: card.tags.clone(),
     };
 
     let mut resp = ChatResponse::with_card(
