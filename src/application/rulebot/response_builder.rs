@@ -24,14 +24,31 @@ pub enum HealthGoal {
     Balanced,
 }
 
-use super::intent_router::HealthModifier;
+use super::goal_modifier::HealthModifier;
 
 impl HealthGoal {
+    /// Map expanded HealthModifier → core HealthGoal (3 variants).
+    ///
+    /// ```text
+    /// HighProtein  → HighProtein
+    /// LowCalorie   → LowCalorie
+    /// LowCarb      → LowCalorie  (keto/low-carb is calorie-aware)
+    /// HighFiber    → LowCalorie  (fiber = diet-adjacent)
+    /// ComfortFood  → Balanced    (hearty = no restriction)
+    /// Quick        → Balanced    (speed ≠ nutrition goal)
+    /// Budget       → Balanced    (price ≠ nutrition goal)
+    /// None         → fallback on input text
+    /// ```
     pub fn from_modifier(modifier: HealthModifier, input: &str) -> Self {
         match modifier {
             HealthModifier::HighProtein => Self::HighProtein,
             HealthModifier::LowCalorie  => Self::LowCalorie,
-            _ => {
+            HealthModifier::LowCarb     => Self::LowCalorie,
+            HealthModifier::HighFiber   => Self::LowCalorie,
+            HealthModifier::ComfortFood => Self::Balanced,
+            HealthModifier::Quick       => Self::Balanced,
+            HealthModifier::Budget      => Self::Balanced,
+            HealthModifier::None => {
                 let t = input.to_lowercase();
                 if t.contains("белок") || t.contains("протеин") || t.contains("мышц")
                     || t.contains("protein") || t.contains("muscle") || t.contains("białk")
@@ -40,6 +57,8 @@ impl HealthGoal {
                 } else if t.contains("похуд") || t.contains("диет") || t.contains("diet")
                     || t.contains("lose weight") || t.contains("slim") || t.contains("сушк")
                     || t.contains("лёгк") || t.contains("легк") || t.contains("light")
+                    || t.contains("кето") || t.contains("keto") || t.contains("low carb")
+                    || t.contains("клетчатк") || t.contains("fiber")
                 {
                     Self::LowCalorie
                 } else {
