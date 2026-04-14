@@ -230,6 +230,12 @@ pub struct RecipeStepRow {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_min: Option<u16>,
+    /// Cooking temperature in °C
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temp_c: Option<u16>,
+    /// Localized chef tip for this step
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tip: Option<String>,
 }
 
 /// Single ingredient row in a recipe card.

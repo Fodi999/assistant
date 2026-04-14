@@ -118,6 +118,20 @@ pub struct StepRule {
     pub step: StepType,
     pub roles: Vec<IngredientRole>,
     pub time_min: Option<u16>,
+    /// Cooking temperature in °C (sear=200, bake=180, simmer=90, etc.)
+    pub temp_c: Option<u16>,
+    /// Short chef tip key (resolved to localized text in step_text)
+    pub tip: Option<&'static str>,
+}
+
+/// Shorthand to create a StepRule without temp/tip (most steps).
+fn sr(step: StepType, roles: Vec<IngredientRole>, time_min: Option<u16>) -> StepRule {
+    StepRule { step, roles, time_min, temp_c: None, tip: None }
+}
+
+/// Shorthand to create a StepRule with temperature.
+fn sr_t(step: StepType, roles: Vec<IngredientRole>, time_min: Option<u16>, temp_c: u16, tip: Option<&'static str>) -> StepRule {
+    StepRule { step, roles, time_min, temp_c: Some(temp_c), tip }
 }
 
 /// Constraint key for dish-level limits.
@@ -210,15 +224,15 @@ fn soup_rule() -> DishRule {
         ],
         steps: vec![
             // CORRECT order: protein → aromatics → liquid → roots → leafy → base → spice
-            StepRule { step: BoilProtein,     roles: vec![Protein],   time_min: Some(40) },
-            StepRule { step: SauteAromatics,  roles: vec![Aromatic],  time_min: Some(7) },
-            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
-            StepRule { step: AddRoots,        roles: vec![Vegetable], time_min: Some(15) },
-            StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(10) },
-            StepRule { step: AddAromatics,    roles: vec![Aromatic],  time_min: Some(2) },
-            StepRule { step: AddBase,         roles: vec![Base],      time_min: Some(10) },
-            StepRule { step: AddSpices,       roles: vec![Spice, Condiment], time_min: Some(5) },
-            StepRule { step: Rest,            roles: vec![],          time_min: Some(5) },
+            sr_t(BoilProtein,     vec![Protein],   Some(40), 100, Some("foam")),
+            sr_t(SauteAromatics,  vec![Aromatic],  Some(7),  160, Some("golden")),
+            sr(AddLiquid,       vec![Liquid],    Some(5)),
+            sr(AddRoots,        vec![Vegetable], Some(15)),
+            sr(AddVegetables,   vec![Vegetable], Some(10)),
+            sr(AddAromatics,    vec![Aromatic],  Some(2)),
+            sr(AddBase,         vec![Base],      Some(10)),
+            sr(AddSpices,       vec![Spice, Condiment], Some(5)),
+            sr(Rest,            vec![],          Some(5)),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::RequiresLiquid,  value: 1.0 },
@@ -257,14 +271,14 @@ fn stew_rule() -> DishRule {
             MethodRule { role: Condiment, method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: BraiseProtein,   roles: vec![Protein],   time_min: Some(45) },
-            StepRule { step: SauteAromatics,  roles: vec![Aromatic],  time_min: Some(7) },
-            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
-            StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(20) },
-            StepRule { step: AddAromatics,    roles: vec![Aromatic],  time_min: Some(2) },
-            StepRule { step: AddBase,         roles: vec![Base],      time_min: Some(10) },
-            StepRule { step: AddSpices,       roles: vec![Spice, Condiment], time_min: Some(5) },
-            StepRule { step: Rest,            roles: vec![],          time_min: Some(5) },
+            sr_t(BraiseProtein,   vec![Protein],   Some(45), 160, Some("sear_first")),
+            sr_t(SauteAromatics,  vec![Aromatic],  Some(7),  150, Some("golden")),
+            sr(AddLiquid,       vec![Liquid],    Some(5)),
+            sr(AddVegetables,   vec![Vegetable], Some(20)),
+            sr(AddAromatics,    vec![Aromatic],  Some(2)),
+            sr(AddBase,         vec![Base],      Some(10)),
+            sr(AddSpices,       vec![Spice, Condiment], Some(5)),
+            sr(Rest,            vec![],          Some(5)),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::RequiresLiquid,   value: 1.0 },
@@ -297,9 +311,9 @@ fn salad_rule() -> DishRule {
             MethodRule { role: Condiment, method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: ChopAll,    roles: vec![Vegetable, Protein], time_min: None },
-            StepRule { step: Combine,    roles: vec![],                   time_min: None },
-            StepRule { step: Dress,      roles: vec![Spice, Condiment, Oil], time_min: None },
+            sr(ChopAll,    vec![Vegetable, Protein], None),
+            sr(Combine,    vec![],                   None),
+            sr(Dress,      vec![Spice, Condiment, Oil], None),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::MaxOilGrams,        value: 20.0 },
@@ -332,11 +346,11 @@ fn stir_fry_rule() -> DishRule {
             MethodRule { role: Condiment, method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: PreheatWok,    roles: vec![Oil],       time_min: Some(2) },
-            StepRule { step: SearProtein,   roles: vec![Protein],   time_min: Some(5) },
-            StepRule { step: AddVegetables, roles: vec![Vegetable], time_min: Some(5) },
-            StepRule { step: AddSpices,     roles: vec![Spice, Condiment], time_min: Some(2) },
-            StepRule { step: AddBase,       roles: vec![Base],      time_min: None },
+            sr_t(PreheatWok,    vec![Oil],       Some(2), 230, Some("smoking")),
+            sr_t(SearProtein,   vec![Protein],   Some(5), 200, Some("no_move")),
+            sr(AddVegetables, vec![Vegetable], Some(5)),
+            sr(AddSpices,     vec![Spice, Condiment], Some(2)),
+            sr(AddBase,       vec![Base],      None),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::MaxFatPercent, value: 25.0 },
@@ -367,11 +381,11 @@ fn grill_rule() -> DishRule {
             MethodRule { role: Oil,       method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: MarinateProtein, roles: vec![Protein],   time_min: Some(30) },
-            StepRule { step: PreheatGrill,    roles: vec![],          time_min: Some(5) },
-            StepRule { step: GrillProtein,    roles: vec![Protein],   time_min: Some(10) },
-            StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(8) },
-            StepRule { step: BoilBase,        roles: vec![Base],      time_min: Some(10) },
+            sr(MarinateProtein, vec![Protein],   Some(30)),
+            sr_t(PreheatGrill,    vec![],          Some(5), 220, None),
+            sr_t(GrillProtein,    vec![Protein],   Some(10), 220, Some("rest_after")),
+            sr(AddVegetables,   vec![Vegetable], Some(8)),
+            sr(BoilBase,        vec![Base],      Some(10)),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::MinProteinPerServing, value: 25.0 },
@@ -402,9 +416,9 @@ fn bake_rule() -> DishRule {
             MethodRule { role: Oil,       method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: PreheatOven,     roles: vec![],                 time_min: Some(10) },
-            StepRule { step: ChopAll,         roles: vec![Protein, Vegetable], time_min: None },
-            StepRule { step: BakeAll,         roles: vec![],                 time_min: Some(30) },
+            sr_t(PreheatOven,     vec![],                 Some(10), 180, None),
+            sr(ChopAll,         vec![Protein, Vegetable], None),
+            sr_t(BakeAll,         vec![],                 Some(30), 180, Some("check_color")),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::MaxOilGrams, value: 15.0 },
@@ -436,11 +450,11 @@ fn pasta_rule() -> DishRule {
             MethodRule { role: Condiment, method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: BoilBase,        roles: vec![Base],      time_min: Some(10) },
-            StepRule { step: SearProtein,     roles: vec![Protein],   time_min: Some(8) },
-            StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(5) },
-            StepRule { step: Combine,         roles: vec![],          time_min: Some(2) },
-            StepRule { step: AddSpices,       roles: vec![Spice, Condiment], time_min: None },
+            sr_t(BoilBase,        vec![Base],      Some(10), 100, Some("al_dente")),
+            sr_t(SearProtein,     vec![Protein],   Some(8),  180, None),
+            sr(AddVegetables,   vec![Vegetable], Some(5)),
+            sr(Combine,         vec![],          Some(2)),
+            sr(AddSpices,       vec![Spice, Condiment], None),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::MinProteinPerServing, value: 15.0 },
@@ -469,9 +483,9 @@ fn raw_rule() -> DishRule {
             MethodRule { role: Oil,       method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: ChopAll,    roles: vec![Protein, Vegetable], time_min: None },
-            StepRule { step: Dress,      roles: vec![Spice, Oil],         time_min: None },
-            StepRule { step: ServeFresh,  roles: vec![],                   time_min: None },
+            sr(ChopAll,    vec![Protein, Vegetable], None),
+            sr(Dress,      vec![Spice, Oil],         None),
+            sr(ServeFresh,  vec![],                   None),
         ],
         constraints: vec![
             ConstraintRule { key: ConstraintKey::MaxOilGrams,       value: 10.0 },
@@ -504,10 +518,10 @@ fn default_rule() -> DishRule {
             MethodRule { role: Condiment, method: CookMethod::Raw },
         ],
         steps: vec![
-            StepRule { step: SearProtein,     roles: vec![Protein],   time_min: Some(15) },
-            StepRule { step: BoilBase,        roles: vec![Base],      time_min: Some(10) },
-            StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(10) },
-            StepRule { step: AddSpices,       roles: vec![Spice, Condiment], time_min: None },
+            sr_t(SearProtein,     vec![Protein],   Some(15), 180, None),
+            sr(BoilBase,        vec![Base],      Some(10)),
+            sr(AddVegetables,   vec![Vegetable], Some(10)),
+            sr(AddSpices,       vec![Spice, Condiment], None),
         ],
         constraints: vec![],
     }

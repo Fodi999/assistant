@@ -416,6 +416,8 @@ pub fn build_recipe_card(
                 step: s.step,
                 text: s.text.clone(),
                 time_min: s.time_min,
+                temp_c: s.temp_c,
+                tip: s.tip.clone(),
             }
         }).collect(),
         total_output_g: card.total_output_g,

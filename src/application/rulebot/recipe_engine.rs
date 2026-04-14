@@ -96,6 +96,10 @@ pub struct CookingStep {
     pub step: u8,
     pub text: String,
     pub time_min: Option<u16>,
+    /// Cooking temperature in °C if relevant (sear=200, bake=180, etc.)
+    pub temp_c: Option<u16>,
+    /// Short chef tip for this step (localized)
+    pub tip: Option<String>,
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -649,9 +653,51 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
     // ── Walk the rule's step sequence ────────────────────────────────────
     let mut steps = Vec::new();
     let mut step_num: u8 = 0;
-    let mut add = |text: String, time: Option<u16>| {
+
+    // Localized chef tips
+    let tip_text = |key: &str| -> Option<String> {
+        let t = match (key, lang) {
+            ("foam", ChatLang::Ru) => "Снимайте пену для прозрачного бульона",
+            ("foam", ChatLang::En) => "Skim foam for a clear broth",
+            ("foam", ChatLang::Pl) => "Zbieraj pianę dla przejrzystego bulionu",
+            ("foam", ChatLang::Uk) => "Знімайте піну для прозорого бульйону",
+            ("golden", ChatLang::Ru) => "До золотистого цвета, не пережаривайте",
+            ("golden", ChatLang::En) => "Until golden, don't over-brown",
+            ("golden", ChatLang::Pl) => "Do złotego koloru, nie przypalaj",
+            ("golden", ChatLang::Uk) => "До золотистого кольору, не пересмажуйте",
+            ("sear_first", ChatLang::Ru) => "Обжарьте мясо до корочки перед тушением",
+            ("sear_first", ChatLang::En) => "Sear meat before braising for depth",
+            ("sear_first", ChatLang::Pl) => "Obsmaż mięso przed duszeniem",
+            ("sear_first", ChatLang::Uk) => "Обсмажте м'ясо перед тушкуванням",
+            ("smoking", ChatLang::Ru) => "Масло должно слегка дымиться",
+            ("smoking", ChatLang::En) => "Oil should be lightly smoking",
+            ("smoking", ChatLang::Pl) => "Olej powinien się lekko dymić",
+            ("smoking", ChatLang::Uk) => "Олія повинна ледь димитися",
+            ("no_move", ChatLang::Ru) => "Не двигайте — дайте корочке сформироваться",
+            ("no_move", ChatLang::En) => "Don't move — let the crust form",
+            ("no_move", ChatLang::Pl) => "Nie ruszaj — pozwól się zrumienić",
+            ("no_move", ChatLang::Uk) => "Не рухайте — дайте скоринці сформуватись",
+            ("rest_after", ChatLang::Ru) => "Дайте отдохнуть 5 мин перед нарезкой",
+            ("rest_after", ChatLang::En) => "Rest 5 min before cutting",
+            ("rest_after", ChatLang::Pl) => "Odczekaj 5 min przed krojeniem",
+            ("rest_after", ChatLang::Uk) => "Дайте відпочити 5 хв перед нарізкою",
+            ("al_dente", ChatLang::Ru) => "Al dente — варите на 1 мин меньше",
+            ("al_dente", ChatLang::En) => "Al dente — cook 1 min less than package",
+            ("al_dente", ChatLang::Pl) => "Al dente — gotuj 1 min krócej",
+            ("al_dente", ChatLang::Uk) => "Al dente — варіть на 1 хв менше",
+            ("check_color", ChatLang::Ru) => "Проверяйте готовность по цвету корочки",
+            ("check_color", ChatLang::En) => "Check doneness by crust color",
+            ("check_color", ChatLang::Pl) => "Sprawdzaj gotowość po kolorze skórki",
+            ("check_color", ChatLang::Uk) => "Перевіряйте готовність за кольором скоринки",
+            _ => return None,
+        };
+        Some(t.to_string())
+    };
+
+    let mut add = |text: String, time: Option<u16>, temp_c: Option<u16>, tip_key: Option<&str>| {
         step_num += 1;
-        steps.push(CookingStep { step: step_num, text, time_min: time });
+        let tip = tip_key.and_then(|k| tip_text(k));
+        steps.push(CookingStep { step: step_num, text, time_min: time, temp_c, tip });
     };
 
     for step_rule in &rule.steps {
@@ -684,7 +730,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
                 .collect();
             if !roots.is_empty() {
                 let names = names_of(&roots, ", ");
-                add(cooking_rules::step_text(StepType::AddRoots, &names, lang_code), step_rule.time_min);
+                add(cooking_rules::step_text(StepType::AddRoots, &names, lang_code), step_rule.time_min, step_rule.temp_c, step_rule.tip);
             }
             continue;
         }
@@ -702,7 +748,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
                 .collect();
             if !leafy.is_empty() {
                 let names = names_of(&leafy, ", ");
-                add(cooking_rules::step_text(StepType::AddVegetables, &names, lang_code), step_rule.time_min);
+                add(cooking_rules::step_text(StepType::AddVegetables, &names, lang_code), step_rule.time_min, step_rule.temp_c, step_rule.tip);
             }
             continue;
         }
@@ -715,7 +761,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
             _                        => names_of(&matching, ", "),
         };
 
-        add(cooking_rules::step_text(step_rule.step, &names, lang_code), step_rule.time_min);
+        add(cooking_rules::step_text(step_rule.step, &names, lang_code), step_rule.time_min, step_rule.temp_c, step_rule.tip);
     }
 
     steps
