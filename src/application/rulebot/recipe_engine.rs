@@ -597,7 +597,8 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
     };
 
     // Helper: pick ingredient name by language + apply grammar
-    let name_of = |ing: &ResolvedIngredient| -> String {
+    // `case` controls Russian declension: accusative for most steps, instrumental for Dress
+    let name_of_case = |ing: &ResolvedIngredient, case: &str| -> String {
         ing.product.as_ref()
             .map(|p| {
                 let raw = match lang {
@@ -606,13 +607,19 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
                     ChatLang::Uk => &p.name_uk,
                     ChatLang::Ru => &p.name_ru,
                 };
-                // Russian needs accusative case; others use nominative as-is
                 match lang {
-                    ChatLang::Ru => accusative_case(raw),
+                    ChatLang::Ru => match case {
+                        "instr" => instrumental_phrase(raw),
+                        _       => accusative_phrase(raw),
+                    },
                     _ => raw.to_lowercase(),
                 }
             })
             .unwrap_or_else(|| ing.slug_hint.clone())
+    };
+
+    let name_of = |ing: &ResolvedIngredient| -> String {
+        name_of_case(ing, "acc")
     };
 
     let sep = match lang {
@@ -625,6 +632,13 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
     let names_of = |ings: &[&ResolvedIngredient], join: &str| -> String {
         ings.iter()
             .map(|i| name_of(i))
+            .collect::<Vec<_>>()
+            .join(join)
+    };
+
+    let names_of_case = |ings: &[&ResolvedIngredient], join: &str, case: &str| -> String {
+        ings.iter()
+            .map(|i| name_of_case(i, case))
             .collect::<Vec<_>>()
             .join(join)
     };
@@ -691,10 +705,11 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
         }
 
         // SauteAromatics: join with localized "and" (not ", ")
-        let names = if step_rule.step == StepType::SauteAromatics {
-            names_of(&matching, sep)
-        } else {
-            names_of(&matching, ", ")
+        // Dress: use instrumental case ("заправить майонезом", not "заправить майонез")
+        let names = match step_rule.step {
+            StepType::SauteAromatics => names_of(&matching, sep),
+            StepType::Dress          => names_of_case(&matching, ", ", "instr"),
+            _                        => names_of(&matching, ", "),
         };
 
         add(cooking_rules::step_text(step_rule.step, &names, lang_code), step_rule.time_min);
@@ -776,60 +791,127 @@ fn lowercase_first(s: &str) -> String {
     }
 }
 
-/// Very simple Russian instrumental case for common proteins.
-/// "Говядина" → "говядиной", "Курица" → "курицей"
-fn instrumental_case(name: &str) -> String {
-    let lower = name.to_lowercase();
-    // -а → -ой
+/// Russian instrumental case for a single word.
+/// Handles adjectives (-ая→-ой, -ые→-ыми, -ый→-ым) and nouns (-а→-ой, -о→-ом, etc.)
+fn instrumental_word(word: &str) -> String {
+    let lower = word.to_lowercase();
+    // ── Adjective endings (check BEFORE nouns) ──
+    if lower.ends_with("ая") {
+        return format!("{}ой", &lower[..lower.len() - "ая".len()]);
+    }
+    if lower.ends_with("яя") {
+        return format!("{}ей", &lower[..lower.len() - "яя".len()]);
+    }
+    if lower.ends_with("ое") || lower.ends_with("ее") {
+        return format!("{}ым", &lower[..lower.len() - "ое".len()]);
+    }
+    if lower.ends_with("ые") {
+        return format!("{}ыми", &lower[..lower.len() - "ые".len()]);
+    }
+    if lower.ends_with("ие") {
+        return format!("{}ими", &lower[..lower.len() - "ие".len()]);
+    }
+    if lower.ends_with("ый") || lower.ends_with("ой") {
+        return format!("{}ым", &lower[..lower.len() - "ый".len()]);
+    }
+    if lower.ends_with("ий") {
+        return format!("{}им", &lower[..lower.len() - "ий".len()]);
+    }
+    // ── Noun endings ──
+    // Neuter plural in -а (яйца) → -ами (яйцами)
+    if is_neuter_plural_a(&lower) {
+        return format!("{}ми", lower);  // яйца→яйцами
+    }
     if lower.ends_with('а') {
         return format!("{}ой", &lower[..lower.len() - 'а'.len_utf8()]);
     }
-    // -я → -ей
     if lower.ends_with('я') {
         return format!("{}ей", &lower[..lower.len() - 'я'.len_utf8()]);
     }
-    // -ь (feminine) → -ью
+    if lower.ends_with('о') {
+        return format!("{}ом", &lower[..lower.len() - 'о'.len_utf8()]);
+    }
     if lower.ends_with('ь') {
         return format!("{}ью", &lower[..lower.len() - 'ь'.len_utf8()]);
     }
-    // consonant (masculine) → +ом
+    // -ец → -цем (перец→перцем)
+    if lower.ends_with("ец") {
+        return format!("{}цем", &lower[..lower.len() - "ец".len()]);
+    }
     format!("{}ом", lower)
 }
 
-/// Very simple Ukrainian instrumental case for common proteins.
-/// "Яловичина" → "яловичиною", "Курка" → "куркою"
-fn instrumental_case_uk(name: &str) -> String {
-    let lower = name.to_lowercase();
-    // -а → -ою
-    if lower.ends_with('а') {
-        return format!("{}ою", &lower[..lower.len() - 'а'.len_utf8()]);
+/// Russian accusative case for a single word.
+/// Adjectives: -ая→-ую. Nouns: -а→-у, -я→-ю, inanimate unchanged.
+fn accusative_word(word: &str) -> String {
+    let lower = word.to_lowercase();
+    // ── Adjective ending: -ая → -ую (пшеничная→пшеничную) ──
+    if lower.ends_with("ая") {
+        return format!("{}ую", &lower[..lower.len() - "ая".len()]);
     }
-    // -я → -ею
-    if lower.ends_with('я') {
-        return format!("{}ею", &lower[..lower.len() - 'я'.len_utf8()]);
+    if lower.ends_with("яя") {
+        return format!("{}юю", &lower[..lower.len() - "яя".len()]);
     }
-    // -ь → -ю
-    if lower.ends_with('ь') {
-        return format!("{}ю", &lower[..lower.len() - 'ь'.len_utf8()]);
+    // Other adj endings (-ое/-ые/-ий/-ый) → unchanged for inanimate
+    // ── Neuter plural in -а (яйца, яблока) → unchanged (inanimate) ──
+    if is_neuter_plural_a(&lower) {
+        return lower;
     }
-    // consonant (masculine) → +ом
-    format!("{}ом", lower)
-}
-
-/// Russian accusative case for recipe steps.
-/// "Говядина" → "говядину", "Морковь" → "морковь", "Картофель" → "картофель"
-fn accusative_case(name: &str) -> String {
-    let lower = name.to_lowercase();
-    // -а → -у (feminine: говядина→говядину, свекла→свеклу, капуста→капусту)
+    // ── Noun endings ──
     if lower.ends_with('а') {
         return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]);
     }
-    // -я → -ю (feminine: курица uses -а not -я, but: свинья→свинью)
     if lower.ends_with('я') {
         return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]);
     }
-    // -ь, -й, consonant: accusative = nominative for inanimate (морковь, лук, помидор, чеснок)
+    // Inanimate: acc = nom (морковь, лук, чеснок, яйцо, масло, перец)
     lower
+}
+
+/// Neuter plural nouns ending in -а that should NOT get -у in accusative.
+/// "яйца" (egg-pl), "яблока" (apple-pl neuter form in compound names)
+fn is_neuter_plural_a(word: &str) -> bool {
+    matches!(word, "яйца" | "яблока" | "молока" | "масла")
+}
+
+/// Apply Russian accusative case to a compound name (word by word).
+/// "Пшеничная мука" → "пшеничную муку"
+/// "Куриные яйца" → "куриные яйца" (inanimate → unchanged)
+fn accusative_phrase(name: &str) -> String {
+    name.split_whitespace()
+        .map(|w| accusative_word(w))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Apply Russian instrumental case to a compound name (word by word).
+/// "Майонез" → "майонезом", "Подсолнечное масло" → "подсолнечным маслом"
+fn instrumental_phrase(name: &str) -> String {
+    name.split_whitespace()
+        .map(|w| instrumental_word(w))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Russian instrumental case for display name (protein in "борщ с говядиной").
+fn instrumental_case(name: &str) -> String {
+    instrumental_phrase(name)
+}
+
+/// Ukrainian instrumental case for display name.
+/// "Яловичина" → "яловичиною", "Курка" → "куркою"
+fn instrumental_case_uk(name: &str) -> String {
+    let lower = name.to_lowercase();
+    if lower.ends_with('а') {
+        return format!("{}ою", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    if lower.ends_with('я') {
+        return format!("{}ею", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
+    if lower.ends_with('ь') {
+        return format!("{}ю", &lower[..lower.len() - 'ь'.len_utf8()]);
+    }
+    format!("{}ом", lower)
 }
 
 // ── Slug Resolution ──────────────────────────────────────────────────────────
@@ -1199,5 +1281,59 @@ mod tests {
         // Картошка ends in -а → feminine
         let label = state_label_ru("boiled", "Картошка");
         assert_eq!(label, "варёная");
+    }
+
+    // ═══ Russian Grammar: compound names ═════════════════════════════════
+
+    #[test]
+    fn accusative_simple_nouns() {
+        assert_eq!(accusative_word("Говядина"), "говядину");
+        assert_eq!(accusative_word("Свинина"), "свинину");
+        assert_eq!(accusative_word("Мука"), "муку");
+        assert_eq!(accusative_word("Морковь"), "морковь");  // inanimate
+        assert_eq!(accusative_word("Лук"), "лук");          // inanimate
+        assert_eq!(accusative_word("Чеснок"), "чеснок");    // inanimate
+    }
+
+    #[test]
+    fn accusative_adjective_aya() {
+        // -ая → -ую
+        assert_eq!(accusative_word("Пшеничная"), "пшеничную");
+        assert_eq!(accusative_word("Каменная"), "каменную");
+    }
+
+    #[test]
+    fn accusative_compound_names() {
+        assert_eq!(accusative_phrase("Пшеничная мука"), "пшеничную муку");
+        assert_eq!(accusative_phrase("Соль каменная"), "соль каменную");  // adj after noun
+        assert_eq!(accusative_phrase("Куриные яйца"), "куриные яйца");   // inanimate pl → unchanged
+        assert_eq!(accusative_phrase("Чёрный перец"), "чёрный перец");    // inanimate m → unchanged
+        assert_eq!(accusative_phrase("Говядина"), "говядину");
+    }
+
+    #[test]
+    fn instrumental_simple_nouns() {
+        assert_eq!(instrumental_word("Говядина"), "говядиной");
+        assert_eq!(instrumental_word("Майонез"), "майонезом");
+        assert_eq!(instrumental_word("Масло"), "маслом");
+        assert_eq!(instrumental_word("Морковь"), "морковью");
+        assert_eq!(instrumental_word("Перец"), "перцем");
+    }
+
+    #[test]
+    fn instrumental_adjectives() {
+        assert_eq!(instrumental_word("Подсолнечное"), "подсолнечным");
+        assert_eq!(instrumental_word("Куриные"), "куриными");
+        assert_eq!(instrumental_word("Чёрный"), "чёрным");
+        assert_eq!(instrumental_word("Пшеничная"), "пшеничной");
+    }
+
+    #[test]
+    fn instrumental_compound_names() {
+        assert_eq!(instrumental_phrase("Подсолнечное масло"), "подсолнечным маслом");
+        assert_eq!(instrumental_phrase("Майонез"), "майонезом");
+        assert_eq!(instrumental_phrase("Говядина"), "говядиной");
+        assert_eq!(instrumental_phrase("Чёрный перец"), "чёрным перцем");
+        assert_eq!(instrumental_phrase("Куриные яйца"), "куриными яйцами");
     }
 }
