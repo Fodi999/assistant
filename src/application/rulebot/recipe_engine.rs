@@ -1207,6 +1207,17 @@ async fn resolve_slug(cache: &IngredientCache, hint: &str) -> Option<IngredientD
         ("celery-root", "celery"),
         ("celeriac", "celery"),
         ("water", "mineral-water"),
+        ("leek", "onion"),
+        ("rock-salt", "salt"),
+        ("sea-salt", "salt"),
+        ("kosher-salt", "salt"),
+        ("bay-leaf", "basil"),
+        ("bay-leaves", "basil"),
+        ("peppercorn", "black-pepper"),
+        ("allspice", "black-pepper"),
+        ("noodle", "pasta"),
+        ("vermicelli", "pasta"),
+        ("bouillon", "chicken-breast"),
     ];
     for (from, to) in rewrites {
         if h.contains(from) {
