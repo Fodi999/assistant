@@ -191,7 +191,8 @@ pub async fn ask_gemini_dish_schema(
     let prompt = format!(
         r#"Identify the dish. Return ONLY JSON, no other text.
 dish = English name. dish_local = name in {lang}. items = ingredient slugs (English, max 8).
-Use only realistic, classic ingredients for this dish. No exotic or random items.{goal_hint}
+Use only realistic, classic ingredients for this dish. No exotic or random items.
+NEVER mix dessert ingredients (ice-cream, chocolate, candy, jam) with savory dishes (soup, stew, grill, pasta).{goal_hint}
 If unknown: {{"dish":"unknown","items":[]}}
 
 User: "{input}"
@@ -761,7 +762,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
     };
 
     // Helper: pick ingredient name by language + apply grammar
-    // `case` controls Russian declension: accusative for most steps, instrumental for Dress
+    // `case` controls declension: accusative for most steps, instrumental for Dress
     let name_of_case = |ing: &ResolvedIngredient, case: &str| -> String {
         ing.product.as_ref()
             .map(|p| {
@@ -776,7 +777,15 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
                         "instr" => instrumental_phrase(raw),
                         _       => accusative_phrase(raw),
                     },
-                    _ => raw.to_lowercase(),
+                    ChatLang::Pl => match case {
+                        "instr" => instrumental_phrase_pl(raw),
+                        _       => accusative_phrase_pl(raw),
+                    },
+                    ChatLang::Uk => match case {
+                        "instr" => instrumental_phrase_uk(raw),
+                        _       => accusative_phrase_uk(raw),
+                    },
+                    ChatLang::En => raw.to_lowercase(),
                 }
             })
             .unwrap_or_else(|| ing.slug_hint.clone())
@@ -810,6 +819,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
     // ── Walk the rule's step sequence ────────────────────────────────────
     let mut steps = Vec::new();
     let mut step_num: u8 = 0;
+    let mut had_saute = false; // Track if SauteAromatics was emitted
 
     // Localized chef tips
     let tip_text = |key: &str| -> Option<String> {
@@ -912,9 +922,20 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
 
         // SauteAromatics: join with localized "and" (not ", ")
         // Dress: use instrumental case ("заправить майонезом", not "заправить майонез")
+        // AddAromatics: only emit if we previously had a SauteAromatics step
         let names = match step_rule.step {
-            StepType::SauteAromatics => names_of(&matching, sep),
+            StepType::SauteAromatics => {
+                had_saute = true;
+                names_of(&matching, sep)
+            },
             StepType::Dress          => names_of_case(&matching, ", ", "instr"),
+            StepType::AddAromatics   => {
+                if !had_saute {
+                    // No sauté step → skip phantom "zasmażka" / "зажарка"
+                    continue;
+                }
+                String::new() // text comes from step_text, not names
+            },
             _                        => names_of(&matching, ", "),
         };
 
@@ -1122,20 +1143,58 @@ fn instrumental_case_uk(name: &str) -> String {
 
 /// Polish instrumental case for display name (narzędnik).
 /// Used in "z [czym]": "z kurczakiem", "z wołowiną", "z łososiem".
-/// Handles common Polish food noun endings.
+/// For compound names like "Pierś z kurczaka" → simplify to "kurczakiem"
+/// (take the last noun and decline it — more natural).
 fn instrumental_case_pl(name: &str) -> String {
     let lower = name.to_lowercase();
 
-    // Multi-word: apply to each word (adj + noun: "Pierś z kurczaka" → "piersią z kurczaka")
     let words: Vec<&str> = lower.split_whitespace().collect();
+
+    // Compound "X z Y" → decline Y (the actual protein): "Pierś z kurczaka" → "kurczakiem"
+    if words.len() >= 3 && words.contains(&"z") {
+        let z_pos = words.iter().position(|w| *w == "z").unwrap();
+        if z_pos + 1 < words.len() {
+            // Take the noun after "z" and convert from genitive to instrumental
+            // "kurczaka" (gen) → "kurczakiem" (instr)
+            let gen_noun = words[z_pos + 1];
+            return genitive_to_instrumental_pl(gen_noun);
+        }
+    }
+
+    // Multi-word without "z": decline first word only
     if words.len() > 1 {
-        // For compound Polish names like "Pierś z kurczaka" — just decline the first word
-        // and keep the rest (the prepositional phrase stays in genitive)
         let first = instrumental_word_pl(words[0]);
         return format!("{} {}", first, words[1..].join(" "));
     }
 
     instrumental_word_pl(&lower)
+}
+
+/// Convert Polish genitive noun to instrumental (for display names).
+/// "kurczaka" (gen of kurczak) → "kurczakiem" (instr)
+/// "wołowiny" (gen of wołowina) → "wołowiną" (instr)
+fn genitive_to_instrumental_pl(gen: &str) -> String {
+    let w = gen.to_lowercase();
+    // Genitive -a → masculine noun: stem + -em/iem/kiem
+    // kurczaka → kurczak → kurczakiem
+    if w.ends_with('a') {
+        let stem = &w[..w.len() - 'a'.len_utf8()];
+        // Reconstruct nominative and apply instrumental
+        return instrumental_word_pl(stem);
+    }
+    // Genitive -y/-i → feminine noun: stem + -ą
+    // wołowiny → wołowina → wołowiną
+    if w.ends_with('y') {
+        let stem = &w[..w.len() - 'y'.len_utf8()];
+        return format!("{}ą", stem); // wołowin + ą = wołowiną
+    }
+    if w.ends_with('i') {
+        let stem = &w[..w.len() - 'i'.len_utf8()];
+        // Could be -ni → -nią, -ci → -cią
+        return format!("{}ią", stem);
+    }
+    // Fallback
+    instrumental_word_pl(&w)
 }
 
 /// Polish instrumental case for a single word.
@@ -1177,6 +1236,96 @@ fn instrumental_word_pl(word: &str) -> String {
     }
     // Default masculine: +em
     format!("{}em", w)
+}
+
+// ── Polish Accusative (Biernik) ──────────────────────────────────────────────
+
+/// Polish accusative for a single word (biernik).
+/// "Dodać [co?]": pomidor→pomidor (inanimate masc), śmietana→śmietanę, cebula→cebulę
+/// Polish accusative rules:
+///   - Feminine -a → -ę:  śmietana→śmietanę, cebula→cebulę, marchew doesn't end in -a
+///   - Inanimate masculine → nominative: pomidor→pomidor, czosnek→czosnek
+///   - Neuter -o → -o (unchanged): masło→masło
+///   - Adjective -a → -ą: podsmażona → podsmażoną (fem adj acc)
+///   - Adjective masc/neut → unchanged (inanimate)
+fn accusative_word_pl(word: &str) -> String {
+    let w = word.to_lowercase();
+
+    // Feminine adjective: -na → -ną, -wa → -wą, -ża → -żą, etc. (adj ending in -a)
+    // These are long feminine adj endings — check for consonant + a pattern
+    // But simplification: all -a endings in Polish food context are either adj fem or noun fem
+    // For feminine noun/adj: -a → -ę
+    if w.ends_with('a') {
+        return format!("{}ę", &w[..w.len() - 'a'.len_utf8()]);
+    }
+
+    // Inanimate masculine / neuter -o / -e → unchanged
+    // marchew, pieprz, czosnek, pomidor, makaron — all unchanged in accusative
+    w
+}
+
+/// Polish accusative for a compound name (word by word).
+/// "Pierś z kurczaka" → "pierś z kurczaka" (unchanged — pierś is fem but already correct form)
+/// "Śmietana" → "śmietanę"
+fn accusative_phrase_pl(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let words: Vec<&str> = lower.split_whitespace().collect();
+
+    if words.len() == 1 {
+        return accusative_word_pl(words[0]);
+    }
+
+    // Compound: "Pierś z kurczaka" — first word gets accusative, rest keeps genitive/prepositional
+    // "Olej słonecznikowy" — olej (inanimate masc) unchanged, adj matches
+    // For "X z Y" pattern: decline X, keep rest
+    if words.len() >= 3 && words[1] == "z" {
+        let first = accusative_word_pl(words[0]);
+        return format!("{} {}", first, words[1..].join(" "));
+    }
+
+    // For "adj + noun": decline both (adj agrees with noun)
+    // "Masło klarowane" → "masło klarowane" (neuter unchanged)
+    // "Śmietana kwaśna" → "śmietanę kwaśną" (both fem → -ę/-ą)
+    words.iter()
+        .map(|w| accusative_word_pl(w))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Polish instrumental for compound names (narzędnik) — step context.
+fn instrumental_phrase_pl(name: &str) -> String {
+    instrumental_case_pl(name)
+}
+
+// ── Ukrainian Accusative (Знахідний) ─────────────────────────────────────────
+
+/// Ukrainian accusative for a single word.
+/// Rules similar to Russian: fem -а→-у, -я→-ю; inanimate masc/neut → nom
+fn accusative_word_uk(word: &str) -> String {
+    let lower = word.to_lowercase();
+
+    // Feminine adjective: -а → -у
+    if lower.ends_with('а') {
+        return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    if lower.ends_with('я') {
+        return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
+    // Inanimate → unchanged
+    lower
+}
+
+/// Ukrainian accusative for a compound name.
+fn accusative_phrase_uk(name: &str) -> String {
+    name.split_whitespace()
+        .map(|w| accusative_word_uk(w))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Ukrainian instrumental for compound names.
+fn instrumental_phrase_uk(name: &str) -> String {
+    instrumental_case_uk(name)
 }
 
 // ── Slug Resolution ──────────────────────────────────────────────────────────
