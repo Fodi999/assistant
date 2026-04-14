@@ -1,6 +1,7 @@
--- Add plain Water and Celery to catalog_ingredients
+-- Add plain Water, Celery, and Sour cream to catalog_ingredients
 -- Fixes: unresolved "water" in auto_insert_implicit, unresolved "celery" from Gemini
 -- Date: 2026-04-14
+-- Fix: include category_id (NOT NULL constraint)
 
 -- ── Water (plain) ────────────────────────────────────────────────────────────
 INSERT INTO catalog_ingredients (
@@ -8,6 +9,7 @@ INSERT INTO catalog_ingredients (
     slug,
     default_unit, default_shelf_life_days,
     allergens, calories_per_100g, seasons,
+    category_id,
     product_type,
     protein_per_100g, fat_per_100g, carbs_per_100g,
     density_g_per_ml,
@@ -17,6 +19,7 @@ INSERT INTO catalog_ingredients (
     'water',
     'liter', 365,
     ARRAY[]::allergen_type[], 0, ARRAY['AllYear']::season_type[],
+    (SELECT id FROM catalog_categories WHERE name_en = 'Beverages'),
     'beverage',
     0.0, 0.0, 0.0,
     1.0,
@@ -40,6 +43,7 @@ INSERT INTO catalog_ingredients (
     slug,
     default_unit, default_shelf_life_days,
     allergens, calories_per_100g, seasons,
+    category_id,
     product_type,
     protein_per_100g, fat_per_100g, carbs_per_100g,
     density_g_per_ml,
@@ -49,6 +53,7 @@ INSERT INTO catalog_ingredients (
     'celery',
     'piece', 14,
     ARRAY['Celery']::allergen_type[], 14, ARRAY['AllYear']::season_type[],
+    (SELECT id FROM catalog_categories WHERE name_en = 'Vegetables'),
     'vegetable',
     0.7, 0.2, 3.0,
     NULL,
@@ -72,6 +77,7 @@ INSERT INTO catalog_ingredients (
     slug,
     default_unit, default_shelf_life_days,
     allergens, calories_per_100g, seasons,
+    category_id,
     product_type,
     protein_per_100g, fat_per_100g, carbs_per_100g,
     density_g_per_ml,
@@ -81,6 +87,7 @@ INSERT INTO catalog_ingredients (
     'sour-cream',
     'gram', 14,
     ARRAY['Milk']::allergen_type[], 193, ARRAY['AllYear']::season_type[],
+    (SELECT id FROM catalog_categories WHERE name_en = 'Dairy & Eggs'),
     'dairy',
     2.4, 19.0, 3.4,
     1.05,
