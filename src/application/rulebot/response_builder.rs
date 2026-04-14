@@ -39,6 +39,7 @@ impl HealthGoal {
                     Self::HighProtein
                 } else if t.contains("похуд") || t.contains("диет") || t.contains("diet")
                     || t.contains("lose weight") || t.contains("slim") || t.contains("сушк")
+                    || t.contains("лёгк") || t.contains("легк") || t.contains("light")
                 {
                     Self::LowCalorie
                 } else {

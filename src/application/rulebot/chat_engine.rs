@@ -367,7 +367,7 @@ impl ChatEngine {
 
     async fn handle_recipe(&self, input: &str, lang: ChatLang, goal: HealthGoal) -> ChatResponse {
         // ── Step 1: Ask Gemini for dish name + ingredient list (50-100 tokens) ──
-        match recipe_engine::ask_gemini_dish_schema(&self.llm_adapter, input, lang).await {
+        match recipe_engine::ask_gemini_dish_schema(&self.llm_adapter, input, lang, goal).await {
             Ok(schema) => {
                 tracing::info!(
                     "🍽 recipe_engine: dish={} items=[{}]",

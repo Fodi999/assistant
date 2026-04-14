@@ -156,6 +156,7 @@ pub async fn ask_gemini_dish_schema(
     llm: &LlmAdapter,
     user_input: &str,
     lang: ChatLang,
+    goal: HealthGoal,
 ) -> Result<DishSchema, String> {
     let lang_label = match lang {
         ChatLang::Ru => "Russian",
@@ -164,9 +165,16 @@ pub async fn ask_gemini_dish_schema(
         ChatLang::Uk => "Ukrainian",
     };
 
+    let goal_hint = match goal {
+        HealthGoal::LowCalorie  => "\nThis is a LOW-CALORIE / DIET version. Pick lean ingredients: vegetables, lean fish/poultry, skip heavy sauces and fatty items. No cherry, no cream, no sugar.",
+        HealthGoal::HighProtein => "\nThis is a HIGH-PROTEIN version. Prefer protein-rich ingredients: chicken breast, beef, eggs, legumes.",
+        HealthGoal::Balanced    => "",
+    };
+
     let prompt = format!(
         r#"Identify the dish. Return ONLY JSON, no other text.
 dish = English name. dish_local = name in {lang}. items = ingredient slugs (English, max 8).
+Use only realistic, classic ingredients for this dish. No exotic or random items.{goal_hint}
 If unknown: {{"dish":"unknown","items":[]}}
 
 User: "{input}"
@@ -174,6 +182,7 @@ User: "{input}"
 Example: {{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","potato","carrot","onion","beef","garlic","tomato-paste"]}}"#,
         input = user_input,
         lang = lang_label,
+        goal_hint = goal_hint,
     );
 
     let raw = llm

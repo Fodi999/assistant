@@ -227,6 +227,8 @@ pub fn detect_modifier(text: &str) -> HealthModifier {
         "сушиться", "сушка", "похудеть", "похудения", "для похудения",
         "диет", "сбросить вес", "lose weight", "weight loss", "cutting",
         "low calorie", "low cal", "mało kalorii", "odchudzanie", "schudnąć",
+        // "лёгкое блюдо", "лёгкий рецепт", "light dish"
+        "лёгк", "легк", "light",
         // Ukrainian
         "схуднути", "схуднення", "для схуднення", "скинути вагу",
         "худнути", "худіти", "на дієті",
@@ -619,4 +621,12 @@ mod tests {
     #[test] fn goal_action_diet_lunch() {
         assert_eq!(detect_intent("diet lunch ideas"), Intent::MealIdea);
     }
+
+    // ── Modifier detection: "лёгкое" → LowCalorie ──
+    #[test] fn modifier_light_ru()     { assert_eq!(detect_modifier("приготовь лёгкое блюдо с треска"), HealthModifier::LowCalorie); }
+    #[test] fn modifier_light_en()     { assert_eq!(detect_modifier("cook a light dish with cod"),      HealthModifier::LowCalorie); }
+    #[test] fn modifier_light_uk()     { assert_eq!(detect_modifier("легку страву з тріски"),           HealthModifier::LowCalorie); }
+    #[test] fn modifier_diet_ru()      { assert_eq!(detect_modifier("хочу похудеть"),                   HealthModifier::LowCalorie); }
+    #[test] fn modifier_mass_ru()      { assert_eq!(detect_modifier("что есть на массу"),               HealthModifier::HighProtein); }
+    #[test] fn modifier_balanced()     { assert_eq!(detect_modifier("приготовь борщ"),                  HealthModifier::None); }
 }
