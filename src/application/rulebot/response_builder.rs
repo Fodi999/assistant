@@ -401,7 +401,7 @@ pub fn build_recipe_card(
                     .map(|p| p.name(lang.code()).to_string())
                     .unwrap_or_else(|| ing.slug_hint.clone()),
                 slug: ing.resolved_slug.clone(),
-                state: ing.state.clone(),
+                state: super::recipe_engine::state_label(&ing.state, lang).to_string(),
                 role: ing.role.clone(),
                 gross_g: ing.gross_g,
                 net_g: ing.cooked_net_g,

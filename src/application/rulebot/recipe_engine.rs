@@ -330,8 +330,9 @@ pub async fn resolve_dish(
         let has_liquid = ingredients.iter().any(|i| i.role == "liquid");
         let snap_has_water = snapshots.iter().any(|s| s.slug == "water" && s.role == IngredientRole::Liquid);
         if snap_has_water && !has_liquid {
+            let water_product = resolve_slug(cache, "water").await;
             ingredients.push(ResolvedIngredient {
-                product: None,
+                product: water_product,
                 slug_hint: "water".into(),
                 resolved_slug: Some("water".into()),
                 state: "boiled".into(),
@@ -682,9 +683,10 @@ async fn auto_insert_implicit(
 
     // ── Soup/Stew: add water (300ml per serving) if no liquid ───────────
     if matches!(dish_type, DishType::Soup | DishType::Stew) && !has_liquid {
-        // Water is 0 kcal, but adds to total output volume
+        // Try to resolve from cache for localized name
+        let water_product = resolve_slug(cache, "water").await;
         ingredients.push(ResolvedIngredient {
-            product: None,
+            product: water_product,
             slug_hint: "water".into(),
             resolved_slug: Some("water".into()),
             state: "boiled".into(),
@@ -950,7 +952,7 @@ fn build_display_name(
             .map(|p| match lang {
                 ChatLang::Ru => instrumental_case(&p.name_ru),
                 ChatLang::En => p.name_en.to_lowercase(),
-                ChatLang::Pl => p.name_pl.to_lowercase(),
+                ChatLang::Pl => instrumental_case_pl(&p.name_pl),
                 ChatLang::Uk => instrumental_case_uk(&p.name_uk),
             });
 
@@ -1115,6 +1117,65 @@ fn instrumental_case_uk(name: &str) -> String {
     format!("{}ом", lower)
 }
 
+/// Polish instrumental case for display name (narzędnik).
+/// Used in "z [czym]": "z kurczakiem", "z wołowiną", "z łososiem".
+/// Handles common Polish food noun endings.
+fn instrumental_case_pl(name: &str) -> String {
+    let lower = name.to_lowercase();
+
+    // Multi-word: apply to each word (adj + noun: "Pierś z kurczaka" → "piersią z kurczaka")
+    let words: Vec<&str> = lower.split_whitespace().collect();
+    if words.len() > 1 {
+        // For compound Polish names like "Pierś z kurczaka" — just decline the first word
+        // and keep the rest (the prepositional phrase stays in genitive)
+        let first = instrumental_word_pl(words[0]);
+        return format!("{} {}", first, words[1..].join(" "));
+    }
+
+    instrumental_word_pl(&lower)
+}
+
+/// Polish instrumental case for a single word.
+fn instrumental_word_pl(word: &str) -> String {
+    let w = word.to_lowercase();
+
+    // ── Adjective endings ──
+    // -y → -ym (surowy → surowym) — masc adj
+    // -i → -im (drobiowy → drobiowym — but -i is rare)
+    // -a → -ą (gotowana → gotowaną) — fem adj
+    // -e → -ym (świeże → świeżym) — neut adj
+
+    // ── Noun endings (food-specific) ──
+    // Special irregulars first
+    if w == "kurczak" { return "kurczakiem".into(); }
+    if w == "łosoś"  { return "łososiem".into(); }
+    if w == "dorsz"   { return "dorszem".into(); }
+
+    // Feminine -a → -ą: wołowina → wołowiną, cielęcina → cielęciną
+    if w.ends_with('a') {
+        return format!("{}ą", &w[..w.len() - 'a'.len_utf8()]);
+    }
+    // Feminine -ść → -ścią: pierś → piersią (but pierś ends in ś not ść)
+    // Soft consonant ś/ń/ć/ź → +ą sometimes, but for food:
+    if w.ends_with("ś") {
+        return format!("{}ią", w);   // pierś → piersią
+    }
+    // Neuter -o → -em: mięso → mięsem (rare in display name context)
+    if w.ends_with('o') {
+        return format!("{}em", &w[..w.len() - 'o'.len_utf8()]);
+    }
+    // Masculine hard consonant → -em: kurczak → kurczakiem, dorsz → dorszem
+    // Masculine -ek → -kiem: kurczak is matched above; indyk → indykiem
+    if w.ends_with("ek") {
+        return format!("{}kiem", &w[..w.len() - "ek".len()]);
+    }
+    if w.ends_with("ak") {
+        return format!("{}iem", w);   // kurczak → kurczakiem (handled above), but general
+    }
+    // Default masculine: +em
+    format!("{}em", w)
+}
+
 // ── Slug Resolution ──────────────────────────────────────────────────────────
 
 async fn resolve_slug(cache: &IngredientCache, hint: &str) -> Option<IngredientData> {
@@ -1143,6 +1204,9 @@ async fn resolve_slug(cache: &IngredientCache, hint: &str) -> Option<IngredientD
         ("cornstarch", "corn"),
         ("stock", "chicken-breast"),
         ("broth", "chicken-breast"),
+        ("celery-root", "celery"),
+        ("celeriac", "celery"),
+        ("water", "mineral-water"),
     ];
     for (from, to) in rewrites {
         if h.contains(from) {
@@ -1261,7 +1325,7 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
     out.join("\n")
 }
 
-fn state_label<'a>(state: &'a str, lang: ChatLang) -> &'a str {
+pub fn state_label<'a>(state: &'a str, lang: ChatLang) -> &'a str {
     match (state, lang) {
         ("raw", ChatLang::Ru) => "сырой", ("raw", ChatLang::En) => "raw",
         ("raw", ChatLang::Pl) => "surowy", ("raw", ChatLang::Uk) => "сирий",
