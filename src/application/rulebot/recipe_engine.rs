@@ -139,6 +139,7 @@ pub struct TechCard {
     pub ingredients: Vec<ResolvedIngredient>,
     pub steps: Vec<CookingStep>,
     pub total_output_g: f32,
+    pub total_gross_g: f32,
     pub total_kcal: u32,
     pub total_protein: f32,
     pub total_fat: f32,
@@ -329,6 +330,7 @@ pub async fn resolve_dish(
     }
 
     // ── 4. Compute totals ───────────────────────────────────────────────
+    let total_gross: f32 = ingredients.iter().map(|i| i.gross_g).sum();
     let total_output: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
     let total_kcal: u32 = ingredients.iter().map(|i| i.kcal).sum();
     let total_protein: f32 = ingredients.iter().map(|i| i.protein_g).sum();
@@ -362,6 +364,7 @@ pub async fn resolve_dish(
         ingredients,
         steps,
         total_output_g: total_output,
+        total_gross_g: total_gross,
         total_kcal,
         total_protein,
         total_fat,

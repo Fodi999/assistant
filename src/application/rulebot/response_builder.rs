@@ -377,6 +377,18 @@ pub fn build_recipe_card(
     text: String,
     lang: ChatLang,
 ) -> ChatResponse {
+    let total_loss = card.total_gross_g - card.total_output_g;
+    let loss_pct = if card.total_gross_g > 0.0 {
+        (total_loss / card.total_gross_g * 100.0).round()
+    } else {
+        0.0
+    };
+    let kcal_100 = if card.total_output_g > 0.0 {
+        (card.total_kcal as f32 / card.total_output_g * 100.0).round()
+    } else {
+        0.0
+    };
+
     let recipe_card = RecipeCard {
         dish_name: card.dish_name.clone(),
         dish_name_local: card.dish_name_local.clone(),
@@ -407,6 +419,10 @@ pub fn build_recipe_card(
             }
         }).collect(),
         total_output_g: card.total_output_g,
+        total_gross_g: card.total_gross_g,
+        total_loss_g: total_loss,
+        loss_percent: loss_pct,
+        kcal_per_100g: kcal_100,
         total_kcal: card.total_kcal,
         total_protein: card.total_protein,
         total_fat: card.total_fat,

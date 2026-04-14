@@ -207,6 +207,10 @@ pub struct RecipeCard {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<RecipeStepRow>,
     pub total_output_g: f32,
+    pub total_gross_g: f32,
+    pub total_loss_g: f32,
+    pub loss_percent: f32,
+    pub kcal_per_100g: f32,
     pub total_kcal: u32,
     pub total_protein: f32,
     pub total_fat: f32,
