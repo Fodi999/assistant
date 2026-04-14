@@ -153,6 +153,8 @@ pub struct TechCard {
     pub per_serving_fat: f32,
     pub per_serving_carbs: f32,
     pub unresolved: Vec<String>,
+    /// Ingredients removed by food pairing filter, e.g. [("ice-cream", "banned in Soup")]
+    pub removed_ingredients: Vec<(String, String)>,
     // ── Dish context (v2) ──
     /// "easy" | "medium" | "hard"
     pub complexity: String,
@@ -398,6 +400,7 @@ pub async fn resolve_dish(
         per_serving_fat: per_fat,
         per_serving_carbs: per_carb,
         unresolved,
+        removed_ingredients: removed,
         complexity,
         goal: goal_label,
         allergens,

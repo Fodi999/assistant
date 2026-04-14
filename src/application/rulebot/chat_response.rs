@@ -221,6 +221,9 @@ pub struct RecipeCard {
     pub per_serving_carbs: f32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<String>,
+    /// Ingredients removed by food pairing (slug, reason)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub removed_ingredients: Vec<RemovedIngredient>,
     // ── Dish context (v2) ──
     /// "easy" | "medium" | "hard"
     pub complexity: String,
@@ -262,4 +265,11 @@ pub struct RecipeIngredientRow {
     pub protein_g: f32,
     pub fat_g: f32,
     pub carbs_g: f32,
+}
+
+/// An ingredient removed by the food pairing filter.
+#[derive(Debug, Serialize)]
+pub struct RemovedIngredient {
+    pub slug: String,
+    pub reason: String,
 }
