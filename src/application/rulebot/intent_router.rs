@@ -30,6 +30,20 @@ pub use super::goal_modifier::detect_modifier;
 // Import keyword data tables
 use super::intent_keywords as kw;
 
+// ── Dialog Context (minimal, passed by caller) ───────────────────────────────
+
+/// Minimal context from previous turn — passed into `parse_input_with_context`.
+/// Keeps intent_router free from session_context dependency (DDD boundary).
+#[derive(Debug, Clone, Default)]
+pub struct DialogContext {
+    /// What was the previous turn's intent?
+    pub last_intent: Option<Intent>,
+    /// Remembered goal modifier (e.g. HighProtein from "на массу")
+    pub last_modifier: Option<HealthModifier>,
+    /// How many turns into the session (0 = first turn)
+    pub turn_count: u32,
+}
+
 // ── Intent Enum ──────────────────────────────────────────────────────────────
 
 /// Detected user intent from free-text input.
@@ -165,6 +179,170 @@ pub fn parse_input(input: &str) -> ParsedInput {
         intent: primary,
         intents,
         modifier,
+    }
+}
+
+/// Context-aware parse: uses dialog history to resolve ambiguous/short inputs.
+///
+/// This is the MAIN entry point for ChatEngine. It handles:
+///
+/// 1. **Follow-up "ещё"** — "ещё" / "more" / "другое" → repeat `last_intent`
+/// 2. **Short recipe refs** — "а борщ?" / "а с курицей?" when last = RecipeHelp → RecipeHelp
+/// 3. **Confirmation** — "давай" / "да" / "ok" after HealthyProduct → repeat intent
+/// 4. **Context continuity** — short ambiguous input inherits last_intent if no strong signal
+/// 5. **Modifier → intent boost** — LowCalorie modifier boosts RecipeHelp/HealthyProduct
+///
+/// ```text
+/// Turn 1: "хочу похудеть"       → HealthyProduct
+/// Turn 2: "ещё"                  → HealthyProduct (from context)
+/// Turn 3: "приготовь лёгкое"     → RecipeHelp (keywords)
+/// Turn 4: "а борщ?"              → RecipeHelp (short + context)
+/// Turn 5: "давай"                → RecipeHelp (confirmation + context)
+/// ```
+pub fn parse_input_with_context(input: &str, ctx: &DialogContext) -> ParsedInput {
+    const MIN_THRESHOLD: i32 = 2;
+    const SECONDARY_THRESHOLD: i32 = 2;
+
+    let text = input.to_lowercase();
+    let word_count = text.split_whitespace().count();
+
+    // ── 1. Follow-up "ещё" / "more" / "другое" ─────────────────────────
+    if let Some(last) = ctx.last_intent {
+        if is_followup_more(&text) && last != Intent::Greeting && last != Intent::Unknown {
+            tracing::debug!("🔄 follow-up 'more': repeating {:?}", last);
+            return ParsedInput {
+                intent: last,
+                intents: vec![last],
+                modifier: detect_modifier(&text),
+            };
+        }
+    }
+
+    // ── 2. Confirmation "давай" / "да" / "ok" ───────────────────────────
+    if let Some(last) = ctx.last_intent {
+        if is_confirmation(&text) && word_count <= 3 && last != Intent::Greeting {
+            tracing::debug!("✅ confirmation: repeating {:?}", last);
+            return ParsedInput {
+                intent: last,
+                intents: vec![last],
+                modifier: detect_modifier(&text),
+            };
+        }
+    }
+
+    // ── 3. Regular scoring ──────────────────────────────────────────────
+    let mut all_scores = score_all_intents(&text);
+    apply_context_boosts(&text, &mut all_scores);
+
+    // ── 4. Context boosts ───────────────────────────────────────────────
+
+    // 4a. Short recipe references: "а борщ?", "а с курицей?" → RecipeHelp
+    if let Some(Intent::RecipeHelp) = ctx.last_intent {
+        if is_short_recipe_ref(&text) {
+            for (intent, score) in all_scores.iter_mut() {
+                if *intent == Intent::RecipeHelp {
+                    *score += 5;
+                }
+            }
+        }
+    }
+
+    // 4b. Short ambiguous input (1-2 words, no strong signal) → inherit last intent
+    if word_count <= 2 && ctx.turn_count > 0 {
+        let best_score = all_scores.iter().map(|(_, s)| *s).max().unwrap_or(0);
+        if best_score < MIN_THRESHOLD {
+            if let Some(last) = ctx.last_intent {
+                if last != Intent::Greeting && last != Intent::Unknown {
+                    tracing::debug!("📎 short input '{}' → inheriting {:?}", text, last);
+                    for (intent, score) in all_scores.iter_mut() {
+                        if *intent == last {
+                            *score += 3;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4c. Modifier → intent affinity boost
+    // If user has an active goal modifier, slightly boost relevant intents
+    let effective_modifier = detect_modifier(&text);
+    let active_modifier = if effective_modifier != HealthModifier::None {
+        effective_modifier
+    } else {
+        ctx.last_modifier.unwrap_or(HealthModifier::None)
+    };
+
+    if active_modifier != HealthModifier::None {
+        apply_modifier_boost(active_modifier, &mut all_scores);
+    }
+
+    // ── 5. Resolve ──────────────────────────────────────────────────────
+    let best = all_scores.iter().max_by_key(|(_, s)| *s).unwrap();
+    let primary = if best.1 >= MIN_THRESHOLD { best.0 } else { Intent::Unknown };
+
+    let mut intents: Vec<Intent> = all_scores
+        .iter()
+        .filter(|(i, s)| *s >= SECONDARY_THRESHOLD && *i != primary)
+        .map(|(i, _)| *i)
+        .collect();
+
+    if primary != Intent::Unknown {
+        intents.insert(0, primary);
+    }
+
+    let modifier = detect_modifier(&text);
+
+    ParsedInput {
+        intent: primary,
+        intents,
+        modifier,
+    }
+}
+
+// ── Context Helpers ──────────────────────────────────────────────────────────
+
+/// Check if input is a "more" / "ещё" follow-up.
+fn is_followup_more(text: &str) -> bool {
+    kw::FOLLOWUP_MORE.iter().any(|kw| text.contains(kw))
+}
+
+/// Check if input is a confirmation ("давай", "да", "ok").
+fn is_confirmation(text: &str) -> bool {
+    kw::CONFIRM_SIGNALS.iter().any(|kw| text == *kw || text.starts_with(&format!("{} ", kw)))
+}
+
+/// Check if input is a short recipe reference: "а борщ?", "а с курицей?"
+fn is_short_recipe_ref(text: &str) -> bool {
+    // "а борщ?", "а если стейк?", "а с рыбой?"
+    kw::SHORT_RECIPE_TRIGGERS.iter().any(|kw| text.starts_with(kw))
+}
+
+/// Boost scores based on active modifier → intent affinity.
+///
+/// LowCalorie/LowCarb/HighFiber  → slight boost to RecipeHelp + HealthyProduct
+/// HighProtein                     → slight boost to RecipeHelp + HealthyProduct
+/// Quick                           → slight boost to RecipeHelp
+/// Budget                          → slight boost to HealthyProduct
+/// ComfortFood                     → slight boost to RecipeHelp
+fn apply_modifier_boost(modifier: HealthModifier, scores: &mut [(Intent, i32); 8]) {
+    let (recipe_boost, healthy_boost) = match modifier {
+        HealthModifier::LowCalorie  => (1, 1),
+        HealthModifier::HighProtein => (1, 1),
+        HealthModifier::LowCarb     => (1, 1),
+        HealthModifier::HighFiber   => (1, 1),
+        HealthModifier::Quick       => (1, 0),
+        HealthModifier::Budget      => (0, 1),
+        HealthModifier::ComfortFood => (1, 0),
+        HealthModifier::None        => (0, 0),
+    };
+
+    for (intent, score) in scores.iter_mut() {
+        match intent {
+            Intent::RecipeHelp     => *score += recipe_boost,
+            Intent::HealthyProduct => *score += healthy_boost,
+            _ => {}
+        }
     }
 }
 
@@ -370,5 +548,129 @@ mod tests {
     }
     #[test] fn goal_action_diet_lunch() {
         assert_eq!(detect_intent("diet lunch ideas"), Intent::MealIdea);
+    }
+
+    // ═══ Context-aware routing tests ═════════════════════════════════════
+
+    fn ctx_with(intent: Intent) -> DialogContext {
+        DialogContext { last_intent: Some(intent), last_modifier: None, turn_count: 1 }
+    }
+
+    fn ctx_with_mod(intent: Intent, modifier: HealthModifier) -> DialogContext {
+        DialogContext { last_intent: Some(intent), last_modifier: Some(modifier), turn_count: 1 }
+    }
+
+    fn empty_ctx() -> DialogContext {
+        DialogContext { last_intent: None, last_modifier: None, turn_count: 0 }
+    }
+
+    // ── Follow-up "ещё" ──
+    #[test]
+    fn ctx_followup_more_healthy() {
+        let ctx = ctx_with(Intent::HealthyProduct);
+        assert_eq!(parse_input_with_context("ещё", &ctx).intent, Intent::HealthyProduct);
+    }
+
+    #[test]
+    fn ctx_followup_more_recipe() {
+        let ctx = ctx_with(Intent::RecipeHelp);
+        assert_eq!(parse_input_with_context("more", &ctx).intent, Intent::RecipeHelp);
+    }
+
+    #[test]
+    fn ctx_followup_drugoe_meal() {
+        let ctx = ctx_with(Intent::MealIdea);
+        assert_eq!(parse_input_with_context("другое", &ctx).intent, Intent::MealIdea);
+    }
+
+    #[test]
+    fn ctx_followup_no_context_stays_unknown() {
+        let ctx = empty_ctx();
+        // Without context, "ещё" alone should NOT resolve to anything meaningful
+        let r = parse_input_with_context("ещё", &ctx);
+        // No last_intent → falls through to scoring, likely Unknown
+        assert_ne!(r.intent, Intent::RecipeHelp);
+    }
+
+    // ── Confirmation ──
+    #[test]
+    fn ctx_confirm_after_recipe() {
+        let ctx = ctx_with(Intent::RecipeHelp);
+        assert_eq!(parse_input_with_context("давай", &ctx).intent, Intent::RecipeHelp);
+    }
+
+    #[test]
+    fn ctx_confirm_yes_after_healthy() {
+        let ctx = ctx_with(Intent::HealthyProduct);
+        assert_eq!(parse_input_with_context("да", &ctx).intent, Intent::HealthyProduct);
+    }
+
+    #[test]
+    fn ctx_confirm_ok_after_meal() {
+        let ctx = ctx_with(Intent::MealIdea);
+        assert_eq!(parse_input_with_context("ok", &ctx).intent, Intent::MealIdea);
+    }
+
+    // ── Short recipe ref ──
+    #[test]
+    fn ctx_short_recipe_ref_borsch() {
+        let ctx = ctx_with(Intent::RecipeHelp);
+        assert_eq!(parse_input_with_context("а борщ?", &ctx).intent, Intent::RecipeHelp);
+    }
+
+    #[test]
+    fn ctx_short_recipe_ref_with_chicken() {
+        let ctx = ctx_with(Intent::RecipeHelp);
+        assert_eq!(parse_input_with_context("а с курицей?", &ctx).intent, Intent::RecipeHelp);
+    }
+
+    #[test]
+    fn ctx_short_recipe_ref_what_about() {
+        let ctx = ctx_with(Intent::RecipeHelp);
+        assert_eq!(parse_input_with_context("what about steak?", &ctx).intent, Intent::RecipeHelp);
+    }
+
+    // ── Short ambiguous inherits context ──
+    #[test]
+    fn ctx_short_inherits_recipe() {
+        let ctx = ctx_with(Intent::RecipeHelp);
+        // "борщ" alone is ambiguous (1 word, no strong signal)
+        let r = parse_input_with_context("борщ", &ctx);
+        assert_eq!(r.intent, Intent::RecipeHelp);
+    }
+
+    #[test]
+    fn ctx_short_inherits_healthy() {
+        let ctx = ctx_with(Intent::HealthyProduct);
+        let r = parse_input_with_context("лосось", &ctx);
+        assert_eq!(r.intent, Intent::HealthyProduct);
+    }
+
+    // ── Modifier boost ──
+    #[test]
+    fn ctx_modifier_boost_recipe() {
+        let ctx = ctx_with_mod(Intent::RecipeHelp, HealthModifier::LowCalorie);
+        // "треска" alone + LowCalorie context → should lean toward RecipeHelp
+        let r = parse_input_with_context("треска", &ctx);
+        assert_eq!(r.intent, Intent::RecipeHelp);
+    }
+
+    // ── No context = normal scoring ──
+    #[test]
+    fn ctx_no_context_normal_scoring() {
+        let ctx = empty_ctx();
+        assert_eq!(parse_input_with_context("привет", &ctx).intent, Intent::Greeting);
+    }
+
+    #[test]
+    fn ctx_no_context_recipe() {
+        let ctx = empty_ctx();
+        assert_eq!(parse_input_with_context("приготовь борщ", &ctx).intent, Intent::RecipeHelp);
+    }
+
+    #[test]
+    fn ctx_no_context_healthy() {
+        let ctx = empty_ctx();
+        assert_eq!(parse_input_with_context("хочу похудеть", &ctx).intent, Intent::HealthyProduct);
     }
 }

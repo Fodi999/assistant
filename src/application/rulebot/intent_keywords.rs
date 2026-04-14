@@ -237,3 +237,36 @@ pub const MEAL_TIME_SIGNALS: &[&str] = &[
     "ужин", "обед", "завтрак", "dinner", "lunch", "breakfast",
     "kolacja", "obiad", "śniadanie", "вечеря", "обід", "сніданок",
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  FOLLOW-UP / SHORT INPUT — context-aware signals
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// "ещё" / "more" / "другое" — user wants same intent, different result.
+pub const FOLLOWUP_MORE: &[&str] = &[
+    "ещё", "ещe", "еще", "ещо", "давай ещё", "покажи ещё",
+    "more", "another", "show more", "next",
+    "jeszcze", "więcej", "następny",
+    "ще", "іще", "покажи ще", "далі",
+    "другое", "другой", "другую", "другие",
+    "варианты", "альтернатив",
+    "other", "alternatives",
+    "inne", "inny",
+];
+
+/// Short recipe triggers — bare product name or "а {product}?"
+/// These need context (last_intent == RecipeHelp) to resolve correctly.
+pub const SHORT_RECIPE_TRIGGERS: &[&str] = &[
+    "а если", "а с ", "а из ", "а ",
+    "what about", "and with", "how about",
+    "a co z", "a z ", "a z ",
+    "а якщо", "а з ",
+];
+
+/// Approval / confirmation — "давай", "да", "хочу", "go"
+pub const CONFIRM_SIGNALS: &[&str] = &[
+    "давай", "да", "хочу", "ок", "окей", "го", "попробую",
+    "yes", "sure", "ok", "okay", "go", "let's go", "yeah",
+    "tak", "jasne", "dobra",
+    "так", "добре", "гаразд",
+];

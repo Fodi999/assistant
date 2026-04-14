@@ -159,6 +159,14 @@ impl SessionContext {
             self.last_modifier.unwrap_or(HealthModifier::None)
         }
     }
+
+    /// Return the best modifier from context as Option (for DialogContext).
+    /// Tries last_goal first (persistent), then last_modifier.
+    pub fn effective_modifier_opt(&self) -> Option<HealthModifier> {
+        self.last_goal
+            .or(self.last_modifier)
+            .filter(|m| *m != HealthModifier::None)
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

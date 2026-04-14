@@ -4,9 +4,13 @@
 //!   - Which roles are required (protein, vegetable, aromatic…)
 //!   - Which cooking method per role
 //!   - Step sequence (pure logic, no LLM)
-//!   - Constraints (max_fat, required_liquid…)
+//!   - Constraints (max_fat, required_liquid, min_protein…)
 //!
-//! 7 dish types × 4 rule types ≈ 40–50 rules → covers 95% of dishes.
+//! 9 dish types × 4 rule types ≈ 50–60 rules → covers 95% of dishes.
+//!
+//! Constraint Engine:
+//!   After Gemini returns ingredients, `apply_constraints()` CORRECTS
+//!   the dish to obey culinary laws (liquid in soup, oil limits, etc.)
 
 use super::meal_builder::CookMethod;
 use super::recipe_engine::DishType;
@@ -119,10 +123,18 @@ pub struct StepRule {
 /// Constraint key for dish-level limits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstraintKey {
-    MaxFatPercent,
-    MaxKcal,
+    /// Dish MUST contain a liquid ingredient (soup, stew).
     RequiresLiquid,
-    MinProtein,
+    /// Max fat percentage of total dish weight (e.g. 15% for soup).
+    MaxFatPercent,
+    /// Max total kcal per serving.
+    MaxKcalPerServing,
+    /// Min protein grams per serving.
+    MinProteinPerServing,
+    /// Max oil grams total (hard cap).
+    MaxOilGrams,
+    /// Requires an aromatic (onion/carrot for зажарка).
+    RequiresAromatic,
 }
 
 /// A numeric constraint on the dish.
@@ -181,6 +193,7 @@ fn soup_rule() -> DishRule {
             RoleRule { role: Vegetable, min: 2, max: 6, required: true },
             RoleRule { role: Aromatic,  min: 1, max: 3, required: true },
             RoleRule { role: Base,      min: 0, max: 1, required: false },
+            RoleRule { role: Liquid,    min: 1, max: 1, required: true },
             RoleRule { role: Spice,     min: 0, max: 4, required: false },
             RoleRule { role: Oil,       min: 0, max: 1, required: false },
             RoleRule { role: Condiment, min: 0, max: 2, required: false },
@@ -190,14 +203,16 @@ fn soup_rule() -> DishRule {
             MethodRule { role: Vegetable, method: CookMethod::Boil },
             MethodRule { role: Aromatic,  method: CookMethod::Saute },
             MethodRule { role: Base,      method: CookMethod::Boil },
+            MethodRule { role: Liquid,    method: CookMethod::Boil },
             MethodRule { role: Spice,     method: CookMethod::Raw },
             MethodRule { role: Oil,       method: CookMethod::Raw },
             MethodRule { role: Condiment, method: CookMethod::Raw },
         ],
         steps: vec![
+            // CORRECT order: protein → aromatics → liquid → roots → leafy → base → spice
             StepRule { step: BoilProtein,     roles: vec![Protein],   time_min: Some(40) },
-            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
             StepRule { step: SauteAromatics,  roles: vec![Aromatic],  time_min: Some(7) },
+            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
             StepRule { step: AddRoots,        roles: vec![Vegetable], time_min: Some(15) },
             StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(10) },
             StepRule { step: AddAromatics,    roles: vec![Aromatic],  time_min: Some(2) },
@@ -205,7 +220,12 @@ fn soup_rule() -> DishRule {
             StepRule { step: AddSpices,       roles: vec![Spice, Condiment], time_min: Some(5) },
             StepRule { step: Rest,            roles: vec![],          time_min: Some(5) },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::RequiresLiquid,  value: 1.0 },
+            ConstraintRule { key: ConstraintKey::RequiresAromatic, value: 1.0 },
+            ConstraintRule { key: ConstraintKey::MaxFatPercent,   value: 15.0 },
+            ConstraintRule { key: ConstraintKey::MaxOilGrams,     value: 15.0 },
+        ],
     }
 }
 
@@ -221,6 +241,7 @@ fn stew_rule() -> DishRule {
             RoleRule { role: Vegetable, min: 2, max: 6, required: true },
             RoleRule { role: Aromatic,  min: 1, max: 3, required: true },
             RoleRule { role: Base,      min: 0, max: 1, required: false },
+            RoleRule { role: Liquid,    min: 1, max: 1, required: true },
             RoleRule { role: Spice,     min: 0, max: 4, required: false },
             RoleRule { role: Oil,       min: 0, max: 1, required: false },
             RoleRule { role: Condiment, min: 0, max: 2, required: false },
@@ -230,21 +251,27 @@ fn stew_rule() -> DishRule {
             MethodRule { role: Vegetable, method: CookMethod::Boil },
             MethodRule { role: Aromatic,  method: CookMethod::Saute },
             MethodRule { role: Base,      method: CookMethod::Boil },
+            MethodRule { role: Liquid,    method: CookMethod::Boil },
             MethodRule { role: Spice,     method: CookMethod::Raw },
             MethodRule { role: Oil,       method: CookMethod::Raw },
             MethodRule { role: Condiment, method: CookMethod::Raw },
         ],
         steps: vec![
             StepRule { step: BraiseProtein,   roles: vec![Protein],   time_min: Some(45) },
-            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
             StepRule { step: SauteAromatics,  roles: vec![Aromatic],  time_min: Some(7) },
+            StepRule { step: AddLiquid,       roles: vec![Liquid],    time_min: Some(5) },
             StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(20) },
             StepRule { step: AddAromatics,    roles: vec![Aromatic],  time_min: Some(2) },
             StepRule { step: AddBase,         roles: vec![Base],      time_min: Some(10) },
             StepRule { step: AddSpices,       roles: vec![Spice, Condiment], time_min: Some(5) },
             StepRule { step: Rest,            roles: vec![],          time_min: Some(5) },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::RequiresLiquid,   value: 1.0 },
+            ConstraintRule { key: ConstraintKey::RequiresAromatic, value: 1.0 },
+            ConstraintRule { key: ConstraintKey::MaxFatPercent,    value: 20.0 },
+            ConstraintRule { key: ConstraintKey::MaxOilGrams,      value: 20.0 },
+        ],
     }
 }
 
@@ -274,7 +301,10 @@ fn salad_rule() -> DishRule {
             StepRule { step: Combine,    roles: vec![],                   time_min: None },
             StepRule { step: Dress,      roles: vec![Spice, Condiment, Oil], time_min: None },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::MaxOilGrams,        value: 20.0 },
+            ConstraintRule { key: ConstraintKey::MaxKcalPerServing,  value: 350.0 },
+        ],
     }
 }
 
@@ -308,7 +338,10 @@ fn stir_fry_rule() -> DishRule {
             StepRule { step: AddSpices,     roles: vec![Spice, Condiment], time_min: Some(2) },
             StepRule { step: AddBase,       roles: vec![Base],      time_min: None },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::MaxFatPercent, value: 25.0 },
+            ConstraintRule { key: ConstraintKey::MaxOilGrams,   value: 20.0 },
+        ],
     }
 }
 
@@ -340,7 +373,10 @@ fn grill_rule() -> DishRule {
             StepRule { step: AddVegetables,   roles: vec![Vegetable], time_min: Some(8) },
             StepRule { step: BoilBase,        roles: vec![Base],      time_min: Some(10) },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::MinProteinPerServing, value: 25.0 },
+            ConstraintRule { key: ConstraintKey::MaxOilGrams,          value: 10.0 },
+        ],
     }
 }
 
@@ -370,7 +406,9 @@ fn bake_rule() -> DishRule {
             StepRule { step: ChopAll,         roles: vec![Protein, Vegetable], time_min: None },
             StepRule { step: BakeAll,         roles: vec![],                 time_min: Some(30) },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::MaxOilGrams, value: 15.0 },
+        ],
     }
 }
 
@@ -404,7 +442,10 @@ fn pasta_rule() -> DishRule {
             StepRule { step: Combine,         roles: vec![],          time_min: Some(2) },
             StepRule { step: AddSpices,       roles: vec![Spice, Condiment], time_min: None },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::MinProteinPerServing, value: 15.0 },
+            ConstraintRule { key: ConstraintKey::MaxOilGrams,          value: 20.0 },
+        ],
     }
 }
 
@@ -432,7 +473,10 @@ fn raw_rule() -> DishRule {
             StepRule { step: Dress,      roles: vec![Spice, Oil],         time_min: None },
             StepRule { step: ServeFresh,  roles: vec![],                   time_min: None },
         ],
-        constraints: vec![],
+        constraints: vec![
+            ConstraintRule { key: ConstraintKey::MaxOilGrams,       value: 10.0 },
+            ConstraintRule { key: ConstraintKey::MaxKcalPerServing, value: 300.0 },
+        ],
     }
 }
 
@@ -469,34 +513,295 @@ fn default_rule() -> DishRule {
     }
 }
 
+// ── Constraint Engine ────────────────────────────────────────────────────────
+//
+// The Constraint Engine CORRECTS a dish AFTER ingredients are resolved.
+// It enforces culinary laws that Gemini can't know about:
+//   - soup MUST have water
+//   - oil can't exceed N grams
+//   - fat % can't exceed N% of total weight
+//   - protein must hit N grams per serving
+
+/// Result of constraint validation — list of violations (if any).
+#[derive(Debug, Clone)]
+pub struct ConstraintViolation {
+    pub key: ConstraintKey,
+    pub message: String,
+    pub auto_fixed: bool,
+}
+
+/// Apply constraints to a mutable ingredient list.
+/// Returns a list of violations (some auto-fixed, some just logged).
+///
+/// This is called from `recipe_engine::resolve_dish()` AFTER ingredient resolution
+/// and `auto_insert_implicit()`.
+pub fn apply_constraints(
+    rule: &DishRule,
+    ingredients: &mut Vec<IngredientSnapshot>,
+    servings: u8,
+) -> Vec<ConstraintViolation> {
+    let mut violations = Vec::new();
+
+    for c in &rule.constraints {
+        match c.key {
+            // ── RequiresLiquid: soup/stew MUST have water ────────────
+            ConstraintKey::RequiresLiquid => {
+                let has_liquid = ingredients.iter().any(|i| i.role == IngredientRole::Liquid);
+                if !has_liquid {
+                    // Auto-fix: add 300ml water
+                    ingredients.push(IngredientSnapshot {
+                        slug: "water".into(),
+                        role: IngredientRole::Liquid,
+                        gross_g: 300.0,
+                        fat_g: 0.0,
+                        protein_g: 0.0,
+                        kcal: 0,
+                    });
+                    violations.push(ConstraintViolation {
+                        key: c.key,
+                        message: "Added 300ml water (dish requires liquid)".into(),
+                        auto_fixed: true,
+                    });
+                }
+            }
+
+            // ── RequiresAromatic: зажарка is mandatory ───────────────
+            ConstraintKey::RequiresAromatic => {
+                let has_aromatic = ingredients.iter().any(|i| i.role == IngredientRole::Aromatic);
+                if !has_aromatic {
+                    violations.push(ConstraintViolation {
+                        key: c.key,
+                        message: "Dish should have aromatics (onion/carrot) for зажарка".into(),
+                        auto_fixed: false,
+                    });
+                }
+            }
+
+            // ── MaxOilGrams: hard cap on oil ─────────────────────────
+            ConstraintKey::MaxOilGrams => {
+                let max_oil = c.value;
+                for ing in ingredients.iter_mut() {
+                    if ing.role == IngredientRole::Oil && ing.gross_g > max_oil {
+                        let old = ing.gross_g;
+                        ing.gross_g = max_oil;
+                        ing.fat_g = max_oil; // oil ≈ 100% fat
+                        ing.kcal = (max_oil * 9.0) as u32;
+                        violations.push(ConstraintViolation {
+                            key: c.key,
+                            message: format!("Oil capped: {:.0}g → {:.0}g", old, max_oil),
+                            auto_fixed: true,
+                        });
+                    }
+                }
+            }
+
+            // ── MaxFatPercent: total fat < N% of total weight ────────
+            ConstraintKey::MaxFatPercent => {
+                let total_weight: f32 = ingredients.iter().map(|i| i.gross_g).sum();
+                let total_fat: f32 = ingredients.iter().map(|i| i.fat_g).sum();
+                if total_weight > 0.0 {
+                    let fat_pct = (total_fat / total_weight) * 100.0;
+                    if fat_pct > c.value {
+                        // Reduce oil ingredients proportionally
+                        let excess_ratio = c.value / fat_pct;
+                        for ing in ingredients.iter_mut() {
+                            if ing.role == IngredientRole::Oil {
+                                ing.gross_g *= excess_ratio;
+                                ing.fat_g *= excess_ratio;
+                                ing.kcal = (ing.fat_g * 9.0) as u32;
+                            }
+                        }
+                        violations.push(ConstraintViolation {
+                            key: c.key,
+                            message: format!("Fat reduced from {:.1}% to ≤{:.0}%", fat_pct, c.value),
+                            auto_fixed: true,
+                        });
+                    }
+                }
+            }
+
+            // ── MaxKcalPerServing ────────────────────────────────────
+            ConstraintKey::MaxKcalPerServing => {
+                let total_kcal: u32 = ingredients.iter().map(|i| i.kcal).sum();
+                let per_serving = total_kcal as f32 / servings.max(1) as f32;
+                if per_serving > c.value {
+                    violations.push(ConstraintViolation {
+                        key: c.key,
+                        message: format!("Per-serving kcal ({:.0}) exceeds max ({:.0})", per_serving, c.value),
+                        auto_fixed: false,
+                    });
+                }
+            }
+
+            // ── MinProteinPerServing ─────────────────────────────────
+            ConstraintKey::MinProteinPerServing => {
+                let total_protein: f32 = ingredients.iter().map(|i| i.protein_g).sum();
+                let per_serving = total_protein / servings.max(1) as f32;
+                if per_serving < c.value {
+                    violations.push(ConstraintViolation {
+                        key: c.key,
+                        message: format!("Per-serving protein ({:.1}g) below min ({:.0}g)", per_serving, c.value),
+                        auto_fixed: false,
+                    });
+                }
+            }
+        }
+    }
+
+    violations
+}
+
+/// Lightweight snapshot of an ingredient for constraint checking.
+/// We don't need the full ResolvedIngredient — just role + amounts.
+#[derive(Debug, Clone)]
+pub struct IngredientSnapshot {
+    pub slug: String,
+    pub role: IngredientRole,
+    pub gross_g: f32,
+    pub fat_g: f32,
+    pub protein_g: f32,
+    pub kcal: u32,
+}
+
+// ── Vegetable Splitter ───────────────────────────────────────────────────────
+
+/// Split vegetables into root (long cook time) vs soft (short cook time).
+///
+/// Root vegetables (potato, beet, turnip…) go in first: 15 min.
+/// Soft vegetables (cabbage, tomato, pepper…) go in later: 10 min.
+///
+/// This prevents the classic mistake of overcooking cabbage alongside potato.
+pub fn split_vegetables<'a>(slugs: &'a [&str]) -> (Vec<&'a str>, Vec<&'a str>) {
+    let mut roots = Vec::new();
+    let mut soft = Vec::new();
+    for slug in slugs {
+        if is_root_vegetable(slug) {
+            roots.push(*slug);
+        } else {
+            soft.push(*slug);
+        }
+    }
+    (roots, soft)
+}
+
 // ── Step Text Generator ──────────────────────────────────────────────────────
 
 /// Generate the human-readable text for a step.
-/// Takes the step type and the ingredient names for that step.
-pub fn step_text(step: StepType, names: &str) -> String {
+/// `lang` — ISO 639-1 code: "ru", "en", "pl", "uk".
+pub fn step_text(step: StepType, names: &str, lang: &str) -> String {
+    match lang {
+        "en" => step_text_en(step, names),
+        "pl" => step_text_pl(step, names),
+        "uk" => step_text_uk(step, names),
+        _    => step_text_ru(step, names),
+    }
+}
+
+fn step_text_ru(step: StepType, n: &str) -> String {
     match step {
-        StepType::BoilProtein     => format!("Отварить {} до готовности", names),
-        StepType::BraiseProtein   => format!("Потушить {} до мягкости", names),
-        StepType::SearProtein     => format!("Обжарить {} до корочки", names),
-        StepType::GrillProtein    => format!("Обжарить {} на гриле", names),
-        StepType::MarinateProtein => format!("Замариновать {}", names),
-        StepType::SauteAromatics  => format!("Сделать зажарку: спассеровать {} на масле до золотистости", names),
-        StepType::AddRoots        => format!("Добавить {}, варить", names),
-        StepType::AddVegetables   => format!("Добавить {}", names),
-        StepType::AddAromatics    => "Добавить зажарку в суп, перемешать".to_string(),
-        StepType::BoilBase        => format!("Отварить {} до готовности", names),
-        StepType::AddBase         => format!("Добавить {}", names),
-        StepType::AddLiquid       => "Залить водой, довести до кипения".to_string(),
-        StepType::AddSpices       => format!("Добавить {}, довести до вкуса", names),
-        StepType::Combine         => "Соединить все ингредиенты, перемешать".to_string(),
-        StepType::Rest            => "Дать настояться 5 минут, подавать".to_string(),
-        StepType::PreheatOven     => "Разогреть духовку до 180°C".to_string(),
-        StepType::BakeAll         => "Запекать до готовности".to_string(),
-        StepType::PreheatWok      => "Разогреть масло в воке на сильном огне".to_string(),
-        StepType::PreheatGrill    => "Разогреть гриль до высокой температуры".to_string(),
-        StepType::ChopAll         => format!("Нарезать {}", names),
-        StepType::Dress           => format!("Заправить {}", names),
-        StepType::ServeFresh      => "Подать свежим".to_string(),
+        StepType::BoilProtein     => format!("Отварить {} до готовности", n),
+        StepType::BraiseProtein   => format!("Потушить {} до мягкости", n),
+        StepType::SearProtein     => format!("Обжарить {} до корочки", n),
+        StepType::GrillProtein    => format!("Обжарить {} на гриле", n),
+        StepType::MarinateProtein => format!("Замариновать {}", n),
+        StepType::SauteAromatics  => format!("Сделать зажарку: спассеровать {} на масле до золотистости", n),
+        StepType::AddRoots        => format!("Добавить {}, варить", n),
+        StepType::AddVegetables   => format!("Добавить {}", n),
+        StepType::AddAromatics    => "Добавить зажарку в суп, перемешать".into(),
+        StepType::BoilBase        => format!("Отварить {} до готовности", n),
+        StepType::AddBase         => format!("Добавить {}", n),
+        StepType::AddLiquid       => "Залить водой, довести до кипения".into(),
+        StepType::AddSpices       => format!("Добавить {}, довести до вкуса", n),
+        StepType::Combine         => "Соединить все ингредиенты, перемешать".into(),
+        StepType::Rest            => "Дать настояться 5 минут, подавать".into(),
+        StepType::PreheatOven     => "Разогреть духовку до 180 °C".into(),
+        StepType::BakeAll         => "Запекать до готовности".into(),
+        StepType::PreheatWok      => "Разогреть масло в воке на сильном огне".into(),
+        StepType::PreheatGrill    => "Разогреть гриль до высокой температуры".into(),
+        StepType::ChopAll         => format!("Нарезать {}", n),
+        StepType::Dress           => format!("Заправить {}", n),
+        StepType::ServeFresh      => "Подать свежим".into(),
+    }
+}
+
+fn step_text_en(step: StepType, n: &str) -> String {
+    match step {
+        StepType::BoilProtein     => format!("Boil {} until done", n),
+        StepType::BraiseProtein   => format!("Braise {} until tender", n),
+        StepType::SearProtein     => format!("Sear {} until golden", n),
+        StepType::GrillProtein    => format!("Grill {} until done", n),
+        StepType::MarinateProtein => format!("Marinate {}", n),
+        StepType::SauteAromatics  => format!("Sauté {} in oil until golden", n),
+        StepType::AddRoots        => format!("Add {}, cook", n),
+        StepType::AddVegetables   => format!("Add {}", n),
+        StepType::AddAromatics    => "Add the sautéed aromatics, stir".into(),
+        StepType::BoilBase        => format!("Boil {} until done", n),
+        StepType::AddBase         => format!("Add {}", n),
+        StepType::AddLiquid       => "Cover with water, bring to a boil".into(),
+        StepType::AddSpices       => format!("Add {}, season to taste", n),
+        StepType::Combine         => "Combine all ingredients, mix well".into(),
+        StepType::Rest            => "Let rest for 5 minutes, serve".into(),
+        StepType::PreheatOven     => "Preheat oven to 180 °C".into(),
+        StepType::BakeAll         => "Bake until done".into(),
+        StepType::PreheatWok      => "Heat oil in wok over high heat".into(),
+        StepType::PreheatGrill    => "Preheat grill to high".into(),
+        StepType::ChopAll         => format!("Chop {}", n),
+        StepType::Dress           => format!("Dress with {}", n),
+        StepType::ServeFresh      => "Serve fresh".into(),
+    }
+}
+
+fn step_text_pl(step: StepType, n: &str) -> String {
+    match step {
+        StepType::BoilProtein     => format!("Gotować {} do miękkości", n),
+        StepType::BraiseProtein   => format!("Dusić {} do miękkości", n),
+        StepType::SearProtein     => format!("Obsmażyć {} do złotego koloru", n),
+        StepType::GrillProtein    => format!("Grillować {} do gotowości", n),
+        StepType::MarinateProtein => format!("Zamarynować {}", n),
+        StepType::SauteAromatics  => format!("Zeszklić {} na oleju do złotego koloru", n),
+        StepType::AddRoots        => format!("Dodać {}, gotować", n),
+        StepType::AddVegetables   => format!("Dodać {}", n),
+        StepType::AddAromatics    => "Dodać zasmażkę, wymieszać".into(),
+        StepType::BoilBase        => format!("Ugotować {} do miękkości", n),
+        StepType::AddBase         => format!("Dodać {}", n),
+        StepType::AddLiquid       => "Zalać wodą, doprowadzić do wrzenia".into(),
+        StepType::AddSpices       => format!("Dodać {}, doprawić do smaku", n),
+        StepType::Combine         => "Połączyć wszystkie składniki, wymieszać".into(),
+        StepType::Rest            => "Odstawić na 5 minut, podawać".into(),
+        StepType::PreheatOven     => "Rozgrzać piekarnik do 180 °C".into(),
+        StepType::BakeAll         => "Piec do gotowości".into(),
+        StepType::PreheatWok      => "Rozgrzać olej w woku na dużym ogniu".into(),
+        StepType::PreheatGrill    => "Rozgrzać grill do wysokiej temperatury".into(),
+        StepType::ChopAll         => format!("Pokroić {}", n),
+        StepType::Dress           => format!("Polać {}", n),
+        StepType::ServeFresh      => "Podawać świeże".into(),
+    }
+}
+
+fn step_text_uk(step: StepType, n: &str) -> String {
+    match step {
+        StepType::BoilProtein     => format!("Відварити {} до готовності", n),
+        StepType::BraiseProtein   => format!("Потушкувати {} до м'якості", n),
+        StepType::SearProtein     => format!("Обсмажити {} до скоринки", n),
+        StepType::GrillProtein    => format!("Обсмажити {} на грилі", n),
+        StepType::MarinateProtein => format!("Замаринувати {}", n),
+        StepType::SauteAromatics  => format!("Зробити зажарку: спасерувати {} на олії до золотистості", n),
+        StepType::AddRoots        => format!("Додати {}, варити", n),
+        StepType::AddVegetables   => format!("Додати {}", n),
+        StepType::AddAromatics    => "Додати зажарку в суп, перемішати".into(),
+        StepType::BoilBase        => format!("Відварити {} до готовності", n),
+        StepType::AddBase         => format!("Додати {}", n),
+        StepType::AddLiquid       => "Залити водою, довести до кипіння".into(),
+        StepType::AddSpices       => format!("Додати {}, довести до смаку", n),
+        StepType::Combine         => "З'єднати всі інгредієнти, перемішати".into(),
+        StepType::Rest            => "Дати настоятися 5 хвилин, подавати".into(),
+        StepType::PreheatOven     => "Розігріти духовку до 180 °C".into(),
+        StepType::BakeAll         => "Запікати до готовності".into(),
+        StepType::PreheatWok      => "Розігріти олію у воку на сильному вогні".into(),
+        StepType::PreheatGrill    => "Розігріти гриль до високої температури".into(),
+        StepType::ChopAll         => format!("Нарізати {}", n),
+        StepType::Dress           => format!("Заправити {}", n),
+        StepType::ServeFresh      => "Подавати свіжим".into(),
     }
 }
 
@@ -597,8 +902,236 @@ mod tests {
     }
 
     #[test]
-    fn step_text_generation() {
-        let text = step_text(StepType::BoilProtein, "говядину");
+    fn step_text_ru() {
+        let text = step_text(StepType::BoilProtein, "говядину", "ru");
         assert_eq!(text, "Отварить говядину до готовности");
+    }
+
+    #[test]
+    fn step_text_en() {
+        let text = step_text(StepType::BoilProtein, "beef", "en");
+        assert_eq!(text, "Boil beef until done");
+    }
+
+    #[test]
+    fn step_text_pl() {
+        let text = step_text(StepType::BoilProtein, "wołowinę", "pl");
+        assert_eq!(text, "Gotować wołowinę do miękkości");
+    }
+
+    #[test]
+    fn step_text_uk() {
+        let text = step_text(StepType::BoilProtein, "яловичину", "uk");
+        assert_eq!(text, "Відварити яловичину до готовності");
+    }
+
+    #[test]
+    fn step_text_all_langs_sear() {
+        assert!(step_text(StepType::SearProtein, "X", "ru").contains("Обжарить"));
+        assert!(step_text(StepType::SearProtein, "X", "en").contains("Sear"));
+        assert!(step_text(StepType::SearProtein, "X", "pl").contains("Obsmażyć"));
+        assert!(step_text(StepType::SearProtein, "X", "uk").contains("Обсмажити"));
+    }
+
+    #[test]
+    fn step_text_static_steps_all_langs() {
+        // Steps without ingredient names (static text) — check they are non-empty
+        let statics = [
+            StepType::AddAromatics, StepType::AddLiquid, StepType::Combine,
+            StepType::Rest, StepType::PreheatOven, StepType::BakeAll,
+            StepType::PreheatWok, StepType::PreheatGrill, StepType::ServeFresh,
+        ];
+        for st in statics {
+            for lang in &["ru", "en", "pl", "uk"] {
+                let text = step_text(st, "", lang);
+                assert!(!text.is_empty(), "step_text({st:?}, \"\", {lang}) must be non-empty");
+            }
+        }
+    }
+
+    // ═══ Constraint Engine Tests ═════════════════════════════════════════
+
+    fn make_snapshot(slug: &str, role: IngredientRole, gross_g: f32, fat_g: f32, protein_g: f32) -> IngredientSnapshot {
+        IngredientSnapshot {
+            slug: slug.into(),
+            role,
+            gross_g,
+            fat_g,
+            protein_g,
+            kcal: ((fat_g * 9.0) + (protein_g * 4.0)) as u32,
+        }
+    }
+
+    #[test]
+    fn constraint_soup_requires_liquid() {
+        let rule = load_rule(DishType::Soup);
+        // Soup with NO water → auto-fix adds water
+        let mut ings = vec![
+            make_snapshot("beef", IngredientRole::Protein, 100.0, 10.0, 25.0),
+            make_snapshot("potato", IngredientRole::Vegetable, 80.0, 0.1, 2.0),
+            make_snapshot("onion", IngredientRole::Aromatic, 30.0, 0.0, 1.0),
+        ];
+        let violations = apply_constraints(&rule, &mut ings, 1);
+        assert!(violations.iter().any(|v| v.key == ConstraintKey::RequiresLiquid && v.auto_fixed));
+        assert!(ings.iter().any(|i| i.role == IngredientRole::Liquid));
+    }
+
+    #[test]
+    fn constraint_soup_liquid_already_present() {
+        let rule = load_rule(DishType::Soup);
+        let mut ings = vec![
+            make_snapshot("beef", IngredientRole::Protein, 100.0, 10.0, 25.0),
+            make_snapshot("water", IngredientRole::Liquid, 300.0, 0.0, 0.0),
+            make_snapshot("onion", IngredientRole::Aromatic, 30.0, 0.0, 1.0),
+        ];
+        let violations = apply_constraints(&rule, &mut ings, 1);
+        assert!(!violations.iter().any(|v| v.key == ConstraintKey::RequiresLiquid));
+    }
+
+    #[test]
+    fn constraint_max_oil_caps_excess() {
+        let rule = load_rule(DishType::Soup); // MaxOilGrams = 15
+        let mut ings = vec![
+            make_snapshot("beef", IngredientRole::Protein, 100.0, 10.0, 25.0),
+            make_snapshot("water", IngredientRole::Liquid, 300.0, 0.0, 0.0),
+            make_snapshot("onion", IngredientRole::Aromatic, 30.0, 0.0, 1.0),
+            make_snapshot("sunflower-oil", IngredientRole::Oil, 40.0, 40.0, 0.0), // 40g → should cap to 15g
+        ];
+        let violations = apply_constraints(&rule, &mut ings, 1);
+        let oil = ings.iter().find(|i| i.role == IngredientRole::Oil).unwrap();
+        assert_eq!(oil.gross_g, 15.0);
+        assert!(violations.iter().any(|v| v.key == ConstraintKey::MaxOilGrams && v.auto_fixed));
+    }
+
+    #[test]
+    fn constraint_min_protein_warns() {
+        let rule = load_rule(DishType::Pasta); // MinProteinPerServing = 15
+        let mut ings = vec![
+            make_snapshot("spaghetti", IngredientRole::Base, 100.0, 1.0, 5.0), // only 5g protein
+        ];
+        let violations = apply_constraints(&rule, &mut ings, 1);
+        assert!(violations.iter().any(|v| v.key == ConstraintKey::MinProteinPerServing && !v.auto_fixed));
+    }
+
+    #[test]
+    fn constraint_fat_percent_reduces_oil() {
+        let rule = load_rule(DishType::Soup); // MaxFatPercent = 15%
+        let mut ings = vec![
+            make_snapshot("water", IngredientRole::Liquid, 300.0, 0.0, 0.0),
+            make_snapshot("potato", IngredientRole::Vegetable, 80.0, 0.1, 2.0),
+            make_snapshot("onion", IngredientRole::Aromatic, 30.0, 0.0, 1.0),
+            // Oil already at 15g (from MaxOilGrams cap), but total weight = 425g
+            // fat% = 15/425 = 3.5% → fine, no reduction
+            make_snapshot("sunflower-oil", IngredientRole::Oil, 15.0, 15.0, 0.0),
+        ];
+        let violations = apply_constraints(&rule, &mut ings, 1);
+        // Should NOT trigger fat% reduction (3.5% < 15%)
+        assert!(!violations.iter().any(|v| v.key == ConstraintKey::MaxFatPercent));
+    }
+
+    #[test]
+    fn constraint_salad_no_constraints_on_liquid() {
+        let rule = load_rule(DishType::Salad);
+        let mut ings = vec![
+            make_snapshot("tomato", IngredientRole::Vegetable, 80.0, 0.2, 1.0),
+            make_snapshot("cucumber", IngredientRole::Vegetable, 80.0, 0.1, 0.7),
+        ];
+        let violations = apply_constraints(&rule, &mut ings, 1);
+        // Salad has no RequiresLiquid → no liquid added
+        assert!(!ings.iter().any(|i| i.role == IngredientRole::Liquid));
+        // But salad HAS MaxOilGrams and MaxKcalPerServing
+        assert!(!violations.iter().any(|v| v.key == ConstraintKey::RequiresLiquid));
+    }
+
+    #[test]
+    fn constraint_default_has_none() {
+        let rule = load_rule(DishType::Default);
+        assert!(rule.constraints.is_empty());
+    }
+
+    // ═══ Vegetable Splitter Tests ════════════════════════════════════════
+
+    #[test]
+    fn split_vegs_roots_vs_soft() {
+        let slugs = ["potato", "cabbage", "beetroot", "tomato", "sweet-potato"];
+        let (roots, soft) = split_vegetables(&slugs);
+        assert_eq!(roots, vec!["potato", "beetroot", "sweet-potato"]);
+        assert_eq!(soft, vec!["cabbage", "tomato"]);
+    }
+
+    #[test]
+    fn split_vegs_all_soft() {
+        let slugs = ["cabbage", "tomato", "pepper"];
+        let (roots, soft) = split_vegetables(&slugs);
+        assert!(roots.is_empty());
+        assert_eq!(soft.len(), 3);
+    }
+
+    #[test]
+    fn split_vegs_all_roots() {
+        let slugs = ["potato", "beet"];
+        let (roots, soft) = split_vegetables(&slugs);
+        assert_eq!(roots.len(), 2);
+        assert!(soft.is_empty());
+    }
+
+    // ═══ Soup step order ═════════════════════════════════════════════════
+
+    #[test]
+    fn soup_step_order_aromatics_before_liquid() {
+        let rule = load_rule(DishType::Soup);
+        let saute_idx = rule.steps.iter().position(|s| s.step == StepType::SauteAromatics).unwrap();
+        let liquid_idx = rule.steps.iter().position(|s| s.step == StepType::AddLiquid).unwrap();
+        assert!(saute_idx < liquid_idx, "SauteAromatics should come BEFORE AddLiquid in soup");
+    }
+
+    #[test]
+    fn stew_step_order_aromatics_before_liquid() {
+        let rule = load_rule(DishType::Stew);
+        let saute_idx = rule.steps.iter().position(|s| s.step == StepType::SauteAromatics).unwrap();
+        let liquid_idx = rule.steps.iter().position(|s| s.step == StepType::AddLiquid).unwrap();
+        assert!(saute_idx < liquid_idx, "SauteAromatics should come BEFORE AddLiquid in stew");
+    }
+
+    // ═══ Constraint presence tests ═══════════════════════════════════════
+
+    #[test]
+    fn soup_has_liquid_constraint() {
+        let rule = load_rule(DishType::Soup);
+        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::RequiresLiquid));
+    }
+
+    #[test]
+    fn soup_has_liquid_role_required() {
+        let rule = load_rule(DishType::Soup);
+        let liquid_role = rule.roles.iter().find(|r| r.role == IngredientRole::Liquid);
+        assert!(liquid_role.is_some(), "Soup must have Liquid role");
+        assert!(liquid_role.unwrap().required, "Liquid must be required in soup");
+    }
+
+    #[test]
+    fn stew_has_liquid_role_required() {
+        let rule = load_rule(DishType::Stew);
+        let liquid_role = rule.roles.iter().find(|r| r.role == IngredientRole::Liquid);
+        assert!(liquid_role.is_some());
+        assert!(liquid_role.unwrap().required);
+    }
+
+    #[test]
+    fn stir_fry_has_fat_constraint() {
+        let rule = load_rule(DishType::StirFry);
+        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::MaxFatPercent));
+    }
+
+    #[test]
+    fn grill_has_protein_constraint() {
+        let rule = load_rule(DishType::Grill);
+        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::MinProteinPerServing));
+    }
+
+    #[test]
+    fn pasta_has_protein_constraint() {
+        let rule = load_rule(DishType::Pasta);
+        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::MinProteinPerServing));
     }
 }

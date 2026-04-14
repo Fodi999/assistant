@@ -18,7 +18,7 @@ use std::sync::Arc;
 use crate::application::rulebot::chat_engine::ChatEngine;
 use crate::application::rulebot::chat_response::ChatResponse;
 use crate::application::rulebot::session_context::SessionContext;
-use crate::application::rulebot::intent_router::{detect_language, parse_input};
+use crate::application::rulebot::intent_router::{detect_language, parse_input_with_context, DialogContext};
 
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
@@ -62,7 +62,12 @@ pub async fn chat_handler(
 
     // Build updated context for next turn
     let lang = detect_language(&input);
-    let parsed = parse_input(&input);
+    let dialog_ctx = DialogContext {
+        last_intent: req.context.last_intent,
+        last_modifier: req.context.effective_modifier_opt(),
+        turn_count: req.context.turn_count,
+    };
+    let parsed = parse_input_with_context(&input, &dialog_ctx);
     let modifier = req.context.effective_modifier(parsed.modifier);
 
     // Extract product slug from first product card in response

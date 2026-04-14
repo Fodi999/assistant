@@ -22,7 +22,7 @@ use std::time::Instant;
 use crate::infrastructure::IngredientCache;
 use crate::infrastructure::llm_adapter::LlmAdapter;
 use crate::domain::tools::unit_converter as uc;
-use super::intent_router::{detect_language, parse_input, ChatLang, Intent};
+use super::intent_router::{detect_language, parse_input_with_context, DialogContext, ChatLang, Intent};
 use super::chat_response::ChatResponse;
 use super::session_context::SessionContext;
 use super::ai_brain::AiBrain;
@@ -58,7 +58,14 @@ impl ChatEngine {
     ) -> ChatResponse {
         let start = Instant::now();
         let lang = detect_language(input);
-        let parsed = parse_input(input);
+
+        // Build dialog context from session for context-aware intent scoring
+        let dialog_ctx = DialogContext {
+            last_intent: ctx.last_intent,
+            last_modifier: ctx.effective_modifier_opt(),
+            turn_count: ctx.turn_count,
+        };
+        let parsed = parse_input_with_context(input, &dialog_ctx);
 
         // Effective modifier: current OR remembered from last turn
         let modifier = ctx.effective_modifier(parsed.modifier);
@@ -376,7 +383,7 @@ impl ChatEngine {
                 );
 
                 // ── Step 2: Backend resolves everything: roles, states, grams, yield, КБЖУ ──
-                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal).await;
+                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal, lang).await;
 
                 tracing::info!(
                     "📊 tech_card: output={:.0}g kcal={} resolved={}/{} unresolved=[{}]",

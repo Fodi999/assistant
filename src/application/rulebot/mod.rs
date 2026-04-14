@@ -12,6 +12,7 @@
 //!   - `chef_coach`         → motivational sous-chef messages
 //!   - `meal_builder`       → dynamic meal combo assembler
 //!   - `cooking_rules`      → DDD dish rules as data
+//!   - `food_pairing`       → ingredient compatibility filter
 //!   - `recipe_engine`      → recipe resolution engine
 //!   - `ai_brain`           → Layer 2 LLM fallback with tool calling
 
@@ -27,5 +28,6 @@ pub mod session_context;
 pub mod chef_coach;
 pub mod meal_builder;
 pub mod cooking_rules;
+pub mod food_pairing;
 pub mod recipe_engine;
 pub mod ai_brain;

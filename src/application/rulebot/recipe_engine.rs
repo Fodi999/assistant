@@ -20,6 +20,7 @@ use super::intent_router::ChatLang;
 use super::meal_builder::CookMethod;
 use super::response_builder::HealthGoal;
 use super::cooking_rules::{self, IngredientRole, DishRule, StepType};
+use super::food_pairing;
 
 // ── Dish Cooking Profile ─────────────────────────────────────────────────────
 
@@ -223,14 +224,22 @@ pub async fn resolve_dish(
     cache: &IngredientCache,
     schema: &DishSchema,
     goal: HealthGoal,
+    lang: ChatLang,
 ) -> TechCard {
     let dish_type = DishType::detect(&schema.dish);
+    let rule = cooking_rules::load_rule(dish_type);
     tracing::info!("🍳 DishType: {:?} for '{}'", dish_type, schema.dish);
+
+    // ── 1. Food Pairing Filter: remove absurd combinations ──────────────
+    let (filtered_items, removed) = food_pairing::filter_ingredients(&schema.items, dish_type);
+    if !removed.is_empty() {
+        tracing::warn!("🚫 Removed ingredients: {:?}", removed);
+    }
 
     let mut ingredients = Vec::new();
     let mut unresolved = Vec::new();
 
-    for slug_hint in &schema.items {
+    for slug_hint in &filtered_items {
         match resolve_slug(cache, slug_hint).await {
             Some(product) => {
                 let resolved = build_ingredient_for_dish(&product, slug_hint, goal, dish_type);
@@ -251,22 +260,88 @@ pub async fn resolve_dish(
         }
     }
 
-    // ── Auto-insert implicit ingredients (Liquid for soup, Oil for sauté) ──
+    // ── 2. Auto-insert implicit ingredients (Liquid for soup, Oil for sauté) ──
     auto_insert_implicit(&mut ingredients, dish_type, cache, goal).await;
 
+    // ── 3. Constraint Engine: enforce culinary laws ─────────────────────
+    let servings_estimate = {
+        let total: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
+        let target = match dish_type {
+            DishType::Soup | DishType::Stew => 350.0_f32,
+            DishType::Salad | DishType::Raw    => 250.0,
+            _                                   => 300.0,
+        };
+        ((total / target).round() as u8).max(1)
+    };
+
+    let mut snapshots: Vec<cooking_rules::IngredientSnapshot> = ingredients.iter().map(|i| {
+        let slug = i.resolved_slug.as_deref().unwrap_or(&i.slug_hint);
+        cooking_rules::IngredientSnapshot {
+            slug: slug.to_string(),
+            role: IngredientRole::from_str_role(&i.role, slug),
+            gross_g: i.gross_g,
+            fat_g: i.fat_g,
+            protein_g: i.protein_g,
+            kcal: i.kcal,
+        }
+    }).collect();
+
+    let violations = cooking_rules::apply_constraints(&rule, &mut snapshots, servings_estimate);
+
+    // Apply constraint fixes back to actual ingredients
+    if !violations.is_empty() {
+        for v in &violations {
+            if v.auto_fixed {
+                tracing::info!("🔧 Constraint auto-fix: {}", v.message);
+            } else {
+                tracing::warn!("⚠️ Constraint warning: {}", v.message);
+            }
+        }
+
+        // Sync oil/fat changes back from snapshots
+        for (ing, snap) in ingredients.iter_mut().zip(snapshots.iter()) {
+            let slug = ing.resolved_slug.as_deref().unwrap_or(&ing.slug_hint);
+            let role = IngredientRole::from_str_role(&ing.role, slug);
+            if role == IngredientRole::Oil && (ing.gross_g - snap.gross_g).abs() > 0.1 {
+                ing.gross_g = snap.gross_g;
+                ing.cleaned_net_g = snap.gross_g;
+                ing.cooked_net_g = snap.gross_g;
+                ing.fat_g = snap.fat_g;
+                ing.kcal = snap.kcal;
+            }
+        }
+
+        // If constraint engine added water (RequiresLiquid auto-fix),
+        // check if it's already in ingredients (auto_insert_implicit may have added it)
+        let has_liquid = ingredients.iter().any(|i| i.role == "liquid");
+        let snap_has_water = snapshots.iter().any(|s| s.slug == "water" && s.role == IngredientRole::Liquid);
+        if snap_has_water && !has_liquid {
+            ingredients.push(ResolvedIngredient {
+                product: None,
+                slug_hint: "water".into(),
+                resolved_slug: Some("water".into()),
+                state: "boiled".into(),
+                role: "liquid".into(),
+                gross_g: 300.0, cleaned_net_g: 300.0, cooked_net_g: 300.0,
+                kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+            });
+        }
+    }
+
+    // ── 4. Compute totals ───────────────────────────────────────────────
     let total_output: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
     let total_kcal: u32 = ingredients.iter().map(|i| i.kcal).sum();
     let total_protein: f32 = ingredients.iter().map(|i| i.protein_g).sum();
     let total_fat: f32 = ingredients.iter().map(|i| i.fat_g).sum();
     let total_carbs: f32 = ingredients.iter().map(|i| i.carbs_g).sum();
 
-    // Generate cooking steps
-    let steps = generate_steps(&ingredients, dish_type, ChatLang::Ru);
+    // ── 5. Generate cooking steps ───────────────────────────────────────
+    let steps = generate_steps(&ingredients, dish_type, lang);
 
     // Build improved display name (with goal prefix)
-    let display_name = build_display_name(schema, &ingredients, dish_type, goal);
+    let display_name = build_display_name(schema, &ingredients, dish_type, goal, lang);
 
-    // ── Auto-portion: split into realistic servings (~300–400g each) ──
+    // ── 6. Auto-portion: split into realistic servings (~300–400g each) ──
     let portion_target = match dish_type {
         DishType::Soup | DishType::Stew => 350.0_f32,
         DishType::Salad | DishType::Raw    => 250.0,
@@ -507,8 +582,9 @@ async fn auto_insert_implicit(
 /// Generate cooking steps driven by DishRule (DDD: rules as data).
 /// Iterates the rule's step sequence; for each step, collects matching ingredients,
 /// skips the step if no ingredients match, otherwise generates text.
-fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang: ChatLang) -> Vec<CookingStep> {
+fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang: ChatLang) -> Vec<CookingStep> {
     let rule = cooking_rules::load_rule(dish_type);
+    let lang_code = lang.code();
 
     // ── Classify ingredients by DDD role ─────────────────────────────────
     let classify = |ing: &ResolvedIngredient| -> IngredientRole {
@@ -520,18 +596,37 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
         ingredients.iter().filter(|i| classify(i) == target).collect()
     };
 
-    // Helper: accusative case name
+    // Helper: pick ingredient name by language + apply grammar
     let name_of = |ing: &ResolvedIngredient| -> String {
         ing.product.as_ref()
-            .map(|p| accusative_case(&p.name_ru))
+            .map(|p| {
+                let raw = match lang {
+                    ChatLang::En => &p.name_en,
+                    ChatLang::Pl => &p.name_pl,
+                    ChatLang::Uk => &p.name_uk,
+                    ChatLang::Ru => &p.name_ru,
+                };
+                // Russian needs accusative case; others use nominative as-is
+                match lang {
+                    ChatLang::Ru => accusative_case(raw),
+                    _ => raw.to_lowercase(),
+                }
+            })
             .unwrap_or_else(|| ing.slug_hint.clone())
     };
 
-    let names_of = |ings: &[&ResolvedIngredient], sep: &str| -> String {
+    let sep = match lang {
+        ChatLang::Ru => " и ",
+        ChatLang::En => " and ",
+        ChatLang::Pl => " i ",
+        ChatLang::Uk => " і ",
+    };
+
+    let names_of = |ings: &[&ResolvedIngredient], join: &str| -> String {
         ings.iter()
-            .map(|i| name_of(i).to_lowercase())
+            .map(|i| name_of(i))
             .collect::<Vec<_>>()
-            .join(sep)
+            .join(join)
     };
 
     // ── Walk the rule's step sequence ────────────────────────────────────
@@ -572,7 +667,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
                 .collect();
             if !roots.is_empty() {
                 let names = names_of(&roots, ", ");
-                add(cooking_rules::step_text(StepType::AddRoots, &names), step_rule.time_min);
+                add(cooking_rules::step_text(StepType::AddRoots, &names, lang_code), step_rule.time_min);
             }
             continue;
         }
@@ -590,58 +685,85 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, _lang
                 .collect();
             if !leafy.is_empty() {
                 let names = names_of(&leafy, ", ");
-                add(cooking_rules::step_text(StepType::AddVegetables, &names), step_rule.time_min);
+                add(cooking_rules::step_text(StepType::AddVegetables, &names, lang_code), step_rule.time_min);
             }
             continue;
         }
 
-        // SauteAromatics: join with " и " (not ", ")
+        // SauteAromatics: join with localized "and" (not ", ")
         let names = if step_rule.step == StepType::SauteAromatics {
-            names_of(&matching, " и ")
+            names_of(&matching, sep)
         } else {
             names_of(&matching, ", ")
         };
 
-        add(cooking_rules::step_text(step_rule.step, &names), step_rule.time_min);
+        add(cooking_rules::step_text(step_rule.step, &names, lang_code), step_rule.time_min);
     }
 
     steps
 }
-
 // ── Display Name Builder ─────────────────────────────────────────────────────
 
-/// Build an improved display name with goal prefix:
-/// LowCalorie → "Диетический борщ с говядиной"
-/// HighProtein → "Высокобелковый борщ с говядиной"
-/// Balanced → "Борщ с говядиной"
-fn build_display_name(schema: &DishSchema, ingredients: &[ResolvedIngredient], _dish_type: DishType, goal: HealthGoal) -> String {
+/// Build an improved display name with goal prefix (multilingual):
+///   Ru: "Лёгкий борщ с говядиной"
+///   En: "Light borscht with beef"
+///   Pl: "Lekki barszcz z wołowiną"
+///   Uk: "Легкий борщ з яловичиною"
+fn build_display_name(
+    schema: &DishSchema,
+    ingredients: &[ResolvedIngredient],
+    _dish_type: DishType,
+    goal: HealthGoal,
+    lang: ChatLang,
+) -> String {
     let dish_local = schema.dish_local.as_deref().unwrap_or(&schema.dish);
 
-    // Base name with protein
-    let base_name = {
-        let dish_lower = dish_local.to_lowercase();
-        if dish_lower.contains(" с ") || dish_lower.contains(" with ") {
-            dish_local.to_string()
-        } else {
-            let protein_name = ingredients.iter()
-                .find(|i| i.role == "protein")
-                .and_then(|i| i.product.as_ref())
-                .map(|p| p.name_ru.clone());
+    // Detect if dish name already contains "with" preposition
+    let has_with = {
+        let d = dish_local.to_lowercase();
+        d.contains(" с ") || d.contains(" with ") || d.contains(" z ") || d.contains(" з ")
+    };
 
-            if let Some(protein) = protein_name {
-                let with_protein = instrumental_case(&protein);
-                format!("{} с {}", dish_local, with_protein)
-            } else {
-                dish_local.to_string()
-            }
+    // Base name with protein
+    let base_name = if has_with {
+        dish_local.to_string()
+    } else {
+        let protein_name = ingredients.iter()
+            .find(|i| i.role == "protein")
+            .and_then(|i| i.product.as_ref())
+            .map(|p| match lang {
+                ChatLang::Ru => instrumental_case(&p.name_ru),
+                ChatLang::En => p.name_en.to_lowercase(),
+                ChatLang::Pl => p.name_pl.to_lowercase(),
+                ChatLang::Uk => instrumental_case_uk(&p.name_uk),
+            });
+
+        if let Some(protein) = protein_name {
+            let prep = match lang {
+                ChatLang::Ru => "с",
+                ChatLang::En => "with",
+                ChatLang::Pl => "z",
+                ChatLang::Uk => "з",
+            };
+            format!("{} {} {}", dish_local, prep, protein)
+        } else {
+            dish_local.to_string()
         }
     };
 
     // Goal prefix
-    match goal {
-        HealthGoal::LowCalorie  => format!("Лёгкий {}", lowercase_first(&base_name)),
-        HealthGoal::HighProtein => format!("Высокобелковый {}", lowercase_first(&base_name)),
-        HealthGoal::Balanced    => base_name,
+    match (goal, lang) {
+        (HealthGoal::LowCalorie, ChatLang::Ru) => format!("Лёгкий {}", lowercase_first(&base_name)),
+        (HealthGoal::LowCalorie, ChatLang::En) => format!("Light {}", lowercase_first(&base_name)),
+        (HealthGoal::LowCalorie, ChatLang::Pl) => format!("Lekki {}", lowercase_first(&base_name)),
+        (HealthGoal::LowCalorie, ChatLang::Uk) => format!("Легкий {}", lowercase_first(&base_name)),
+
+        (HealthGoal::HighProtein, ChatLang::Ru) => format!("Высокобелковый {}", lowercase_first(&base_name)),
+        (HealthGoal::HighProtein, ChatLang::En) => format!("High-protein {}", lowercase_first(&base_name)),
+        (HealthGoal::HighProtein, ChatLang::Pl) => format!("Wysokobiałkowy {}", lowercase_first(&base_name)),
+        (HealthGoal::HighProtein, ChatLang::Uk) => format!("Високобілковий {}", lowercase_first(&base_name)),
+
+        (HealthGoal::Balanced, _) => base_name,
     }
 }
 
@@ -669,6 +791,26 @@ fn instrumental_case(name: &str) -> String {
     // -ь (feminine) → -ью
     if lower.ends_with('ь') {
         return format!("{}ью", &lower[..lower.len() - 'ь'.len_utf8()]);
+    }
+    // consonant (masculine) → +ом
+    format!("{}ом", lower)
+}
+
+/// Very simple Ukrainian instrumental case for common proteins.
+/// "Яловичина" → "яловичиною", "Курка" → "куркою"
+fn instrumental_case_uk(name: &str) -> String {
+    let lower = name.to_lowercase();
+    // -а → -ою
+    if lower.ends_with('а') {
+        return format!("{}ою", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    // -я → -ею
+    if lower.ends_with('я') {
+        return format!("{}ею", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
+    // -ь → -ю
+    if lower.ends_with('ь') {
+        return format!("{}ю", &lower[..lower.len() - 'ь'.len_utf8()]);
     }
     // consonant (masculine) → +ом
     format!("{}ом", lower)
