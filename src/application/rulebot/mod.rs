@@ -20,7 +20,10 @@
 //!   - `display_name`       → multilingual grammar + display names
 //!   - `user_constraints`   → dietary constraint parsing from user text
 //!   - `constraint_policy`  → enforce constraints on resolved ingredients
+//!   - `goal_engine`        → nutritional target profiles (GoalProfile + GoalStrategy)
+//!   - `adaptation_engine`  → smart rebalancing after constraint removal
 //!   - `recipe_validation`  → post-build recipe coherence checks
+//!   - `auto_fix`           → automatic repair of validation issues
 //!   - `ai_brain`           → Layer 2 LLM fallback with tool calling
 
 pub mod orchestrator;
@@ -43,5 +46,8 @@ pub mod nutrition_math;
 pub mod display_name;
 pub mod user_constraints;
 pub mod constraint_policy;
+pub mod goal_engine;
+pub mod adaptation_engine;
 pub mod recipe_validation;
+pub mod auto_fix;
 pub mod ai_brain;

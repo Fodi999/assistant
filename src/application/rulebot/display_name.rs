@@ -117,6 +117,64 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
         out.push(warn);
     }
 
+    // ── Goal Engine v2: visible system thinking ──────────────────────────
+    if !card.applied_constraints.is_empty() {
+        let label = match lang {
+            ChatLang::Ru => "🎯 Учтено",
+            ChatLang::En => "🎯 Applied",
+            ChatLang::Pl => "🎯 Dostosowano do",
+            ChatLang::Uk => "🎯 Враховано",
+        };
+        out.push(format!("{}: {}", label, card.applied_constraints.join(", ")));
+    }
+
+    if !card.adaptations.is_empty() {
+        let header = match lang {
+            ChatLang::Ru => "🔄 Адаптации",
+            ChatLang::En => "🔄 Adaptations",
+            ChatLang::Pl => "🔄 Zmiany",
+            ChatLang::Uk => "🔄 Адаптації",
+        };
+        let lines: Vec<String> = card.adaptations.iter().map(|a| {
+            let icon = match a.action.as_str() {
+                "added" => "➕",
+                "reduced" => "📉",
+                "increased" => "📈",
+                "removed" => "🚫",
+                "substituted" => "🔁",
+                _ => "•",
+            };
+            format!("  {} **{}** — {}", icon, a.slug, a.detail)
+        }).collect();
+        out.push(format!("{}:\n{}", header, lines.join("\n")));
+    }
+
+    if !card.auto_fixes.is_empty() {
+        let header = match lang {
+            ChatLang::Ru => "🩹 Авто-исправления",
+            ChatLang::En => "🩹 Auto-fixes",
+            ChatLang::Pl => "🩹 Auto-korekty",
+            ChatLang::Uk => "🩹 Авто-виправлення",
+        };
+        let lines: Vec<String> = card.auto_fixes.iter()
+            .map(|f| format!("  • {}", f))
+            .collect();
+        out.push(format!("{}:\n{}", header, lines.join("\n")));
+    }
+
+    if !card.validation_warnings.is_empty() {
+        let header = match lang {
+            ChatLang::Ru => "💡 Внимание",
+            ChatLang::En => "💡 Notes",
+            ChatLang::Pl => "💡 Uwagi",
+            ChatLang::Uk => "💡 Увага",
+        };
+        let lines: Vec<String> = card.validation_warnings.iter()
+            .map(|w| format!("  ⚠️ {}", w))
+            .collect();
+        out.push(format!("{}:\n{}", header, lines.join("\n")));
+    }
+
     out.join("\n")
 }
 

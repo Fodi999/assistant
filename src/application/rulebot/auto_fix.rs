@@ -1,0 +1,424 @@
+//! Auto-Fix Engine — automatically repair validation issues in a TechCard.
+//!
+//! Pipeline position:
+//!   validation → **auto_fix** → final TechCard
+//!
+//! Takes `ValidationReport` + `TechCard` and attempts to fix issues:
+//!   - NO_PROTEIN → insert plant protein (eggs/beans/chickpeas)
+//!   - KCAL_TOO_LOW → increase portions proportionally
+//!   - KCAL_TOO_HIGH → reduce fat/oil/condiment portions
+//!   - TOO_FEW_INGREDIENTS → warning only (can't invent ingredients)
+//!
+//! Every fix is logged for the UI "Автоматические исправления" block.
+
+use serde::Serialize;
+use super::recipe_engine::{TechCard, ResolvedIngredient, CookingStep, DishType};
+use super::recipe_validation::{ValidationReport, Severity};
+use super::nutrition_math::round1;
+use super::intent_router::ChatLang;
+
+// ── Fix Report ───────────────────────────────────────────────────────────────
+
+/// A single auto-fix action.
+#[derive(Debug, Clone, Serialize)]
+pub struct FixAction {
+    /// The validation code that triggered this fix
+    pub trigger: String,
+    /// What was done
+    pub action: String,
+    /// Human-readable detail
+    pub detail: String,
+}
+
+/// Full report of auto-fixes applied.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct FixReport {
+    pub fixes: Vec<FixAction>,
+}
+
+impl FixReport {
+    pub fn is_empty(&self) -> bool {
+        self.fixes.is_empty()
+    }
+
+    pub fn messages(&self) -> Vec<String> {
+        self.fixes.iter().map(|f| format!("{}: {}", f.action, f.detail)).collect()
+    }
+}
+
+// ── Main Entry Point ─────────────────────────────────────────────────────────
+
+/// Attempt to auto-fix validation issues in the TechCard.
+/// Modifies the TechCard in-place and returns a report.
+pub fn auto_fix(tech_card: &mut TechCard, validation: &ValidationReport) -> FixReport {
+    let mut report = FixReport::default();
+
+    for issue in &validation.issues {
+        match issue.code {
+            "NO_PROTEIN" | "NO_PROTEIN_DIETARY" => {
+                fix_no_protein(tech_card, &mut report);
+            }
+            "KCAL_TOO_LOW" => {
+                fix_kcal_too_low(tech_card, &mut report);
+            }
+            "KCAL_TOO_HIGH" => {
+                fix_kcal_too_high(tech_card, &mut report);
+            }
+            "NO_STEPS" => {
+                fix_no_steps(tech_card, &mut report);
+            }
+            "WEIGHT_TOO_LOW" => {
+                fix_weight_too_low(tech_card, &mut report);
+            }
+            _ => {
+                // TOO_FEW_INGREDIENTS, HIGH_UNRESOLVED — can't auto-fix
+            }
+        }
+    }
+
+    // Recalculate totals after fixes
+    if !report.is_empty() {
+        recalculate_totals(tech_card);
+    }
+
+    report
+}
+
+// ── Individual Fixes ─────────────────────────────────────────────────────────
+
+/// Add a synthetic protein source if none exists.
+fn fix_no_protein(tc: &mut TechCard, report: &mut FixReport) {
+    // Don't double-add if adaptation_engine already added chickpeas
+    let has_protein = tc.ingredients.iter().any(|i| i.role == "protein");
+    if has_protein { return; }
+
+    let has_legume = tc.ingredients.iter().any(|i| {
+        let slug = i.resolved_slug.as_deref().unwrap_or(&i.slug_hint).to_lowercase();
+        slug.contains("chickpea") || slug.contains("bean") || slug.contains("lentil")
+            || slug.contains("tofu") || slug.contains("tempeh")
+    });
+    if has_legume { return; }
+
+    // Insert eggs as the most universal protein (works in most dishes)
+    tc.ingredients.push(ResolvedIngredient {
+        product: None,
+        slug_hint: "eggs".into(),
+        resolved_slug: None,
+        state: "boiled".into(),
+        role: "protein".into(),
+        gross_g: 120.0,
+        cleaned_net_g: 120.0,
+        cooked_net_g: 120.0,
+        // 2 eggs: ~155kcal, 13g protein per 100g
+        kcal: 186,
+        protein_g: 15.6,
+        fat_g: 12.0,
+        carbs_g: 1.2,
+    });
+
+    report.fixes.push(FixAction {
+        trigger: "NO_PROTEIN".into(),
+        action: "Added eggs".into(),
+        detail: "2 eggs (120g) as protein source".into(),
+    });
+}
+
+/// Increase all portions proportionally if kcal is too low.
+fn fix_kcal_too_low(tc: &mut TechCard, report: &mut FixReport) {
+    if tc.per_serving_kcal >= 50 { return; }
+
+    // Scale up non-spice/oil ingredients by 50%
+    let factor = 1.5_f32;
+    for ing in tc.ingredients.iter_mut() {
+        if ing.role == "spice" || ing.role == "oil" || ing.role == "condiment" {
+            continue;
+        }
+        ing.gross_g = round1(ing.gross_g * factor);
+        ing.cleaned_net_g = round1(ing.cleaned_net_g * factor);
+        ing.cooked_net_g = round1(ing.cooked_net_g * factor);
+        ing.kcal = (ing.kcal as f32 * factor).round() as u32;
+        ing.protein_g = round1(ing.protein_g * factor);
+        ing.fat_g = round1(ing.fat_g * factor);
+        ing.carbs_g = round1(ing.carbs_g * factor);
+    }
+
+    report.fixes.push(FixAction {
+        trigger: "KCAL_TOO_LOW".into(),
+        action: "Increased portions".into(),
+        detail: "all main ingredients +50%".into(),
+    });
+}
+
+/// Reduce fat/oil if kcal is too high.
+fn fix_kcal_too_high(tc: &mut TechCard, report: &mut FixReport) {
+    if tc.per_serving_kcal <= 1500 { return; }
+
+    // Reduce oil + condiment by 50%
+    let factor = 0.5_f32;
+    let mut reduced = Vec::new();
+
+    for ing in tc.ingredients.iter_mut() {
+        if ing.role == "oil" || ing.role == "condiment" {
+            let old = ing.gross_g;
+            ing.gross_g = round1(ing.gross_g * factor);
+            ing.cleaned_net_g = round1(ing.cleaned_net_g * factor);
+            ing.cooked_net_g = round1(ing.cooked_net_g * factor);
+            ing.kcal = (ing.kcal as f32 * factor).round() as u32;
+            ing.fat_g = round1(ing.fat_g * factor);
+            ing.protein_g = round1(ing.protein_g * factor);
+            ing.carbs_g = round1(ing.carbs_g * factor);
+            reduced.push(format!("{}: {:.0}g → {:.0}g", ing.slug_hint, old, ing.gross_g));
+        }
+    }
+
+    if !reduced.is_empty() {
+        report.fixes.push(FixAction {
+            trigger: "KCAL_TOO_HIGH".into(),
+            action: "Reduced fats".into(),
+            detail: reduced.join(", "),
+        });
+    }
+}
+
+/// Generate minimal steps if none exist.
+fn fix_no_steps(tc: &mut TechCard, report: &mut FixReport) {
+    if !tc.steps.is_empty() { return; }
+
+    let ingredients_list: String = tc.ingredients.iter()
+        .filter(|i| i.role != "spice" && i.role != "oil" && i.role != "condiment")
+        .map(|i| i.slug_hint.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    tc.steps.push(CookingStep {
+        step: 1,
+        text: format!("Prepare: {}", ingredients_list),
+        time_min: Some(10),
+        temp_c: None,
+        tip: None,
+    });
+    tc.steps.push(CookingStep {
+        step: 2,
+        text: "Cook until ready, season to taste.".into(),
+        time_min: Some(20),
+        temp_c: None,
+        tip: None,
+    });
+
+    report.fixes.push(FixAction {
+        trigger: "NO_STEPS".into(),
+        action: "Generated basic steps".into(),
+        detail: "2 generic steps added".into(),
+    });
+}
+
+/// If total weight is unreasonably low, increase side portions.
+fn fix_weight_too_low(tc: &mut TechCard, report: &mut FixReport) {
+    if tc.total_output_g >= 100.0 { return; }
+
+    let factor = 2.0_f32;
+    for ing in tc.ingredients.iter_mut() {
+        if ing.role == "side" || ing.role == "base" {
+            ing.gross_g = round1(ing.gross_g * factor);
+            ing.cleaned_net_g = round1(ing.cleaned_net_g * factor);
+            ing.cooked_net_g = round1(ing.cooked_net_g * factor);
+            ing.kcal = (ing.kcal as f32 * factor).round() as u32;
+            ing.protein_g = round1(ing.protein_g * factor);
+            ing.fat_g = round1(ing.fat_g * factor);
+            ing.carbs_g = round1(ing.carbs_g * factor);
+        }
+    }
+
+    report.fixes.push(FixAction {
+        trigger: "WEIGHT_TOO_LOW".into(),
+        action: "Doubled side portions".into(),
+        detail: format!("{:.0}g was too low", tc.total_output_g),
+    });
+}
+
+// ── Recalculate ──────────────────────────────────────────────────────────────
+
+/// Recalculate TechCard totals after modifications.
+fn recalculate_totals(tc: &mut TechCard) {
+    tc.total_gross_g = tc.ingredients.iter().map(|i| i.gross_g).sum();
+    tc.total_output_g = tc.ingredients.iter().map(|i| i.cooked_net_g).sum();
+    tc.total_kcal = tc.ingredients.iter().map(|i| i.kcal).sum();
+    tc.total_protein = tc.ingredients.iter().map(|i| i.protein_g).sum();
+    tc.total_fat = tc.ingredients.iter().map(|i| i.fat_g).sum();
+    tc.total_carbs = tc.ingredients.iter().map(|i| i.carbs_g).sum();
+
+    let s = tc.servings.max(1) as f32;
+    tc.per_serving_kcal = (tc.total_kcal as f32 / s).round() as u32;
+    tc.per_serving_protein = round1(tc.total_protein / s);
+    tc.per_serving_fat = round1(tc.total_fat / s);
+    tc.per_serving_carbs = round1(tc.total_carbs / s);
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::recipe_validation::{ValidationIssue, Severity};
+    use crate::infrastructure::ingredient_cache::IngredientData;
+
+    fn make_techcard(ings: Vec<(&str, &str, f32, u32)>) -> TechCard {
+        let ingredients: Vec<ResolvedIngredient> = ings.iter().map(|(slug, role, grams, kcal)| {
+            ResolvedIngredient {
+                product: Some(IngredientData {
+                    slug: slug.to_string(),
+                    name_en: slug.to_string(),
+                    name_ru: slug.to_string(),
+                    name_pl: slug.to_string(),
+                    name_uk: slug.to_string(),
+                    calories_per_100g: 100.0,
+                    protein_per_100g: 10.0,
+                    fat_per_100g: 5.0,
+                    carbs_per_100g: 10.0,
+                    image_url: None,
+                    product_type: "other".into(),
+                    density_g_per_ml: None,
+                }),
+                slug_hint: slug.to_string(),
+                resolved_slug: Some(slug.to_string()),
+                state: "raw".into(),
+                role: role.to_string(),
+                gross_g: *grams,
+                cleaned_net_g: *grams,
+                cooked_net_g: *grams,
+                kcal: *kcal,
+                protein_g: 10.0,
+                fat_g: 5.0,
+                carbs_g: 10.0,
+            }
+        }).collect();
+
+        let total_output: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
+        let total_kcal: u32 = ingredients.iter().map(|i| i.kcal).sum();
+
+        TechCard {
+            dish_name: "test".into(),
+            dish_name_local: None,
+            display_name: None,
+            dish_type: "default".into(),
+            servings: 1,
+            steps: vec![CookingStep { step: 1, text: "Cook".into(), time_min: Some(10), temp_c: None, tip: None }],
+            total_output_g: total_output,
+            total_gross_g: total_output,
+            total_kcal,
+            total_protein: 30.0,
+            total_fat: 15.0,
+            total_carbs: 30.0,
+            per_serving_kcal: total_kcal,
+            per_serving_protein: 30.0,
+            per_serving_fat: 15.0,
+            per_serving_carbs: 30.0,
+            unresolved: vec![],
+            removed_ingredients: vec![],
+            complexity: "easy".into(),
+            goal: "balanced".into(),
+            allergens: vec![],
+            tags: vec![],
+            applied_constraints: vec![],
+            adaptations: vec![],
+            validation_warnings: vec![],
+            auto_fixes: vec![],
+            ingredients,
+        }
+    }
+
+    #[test]
+    fn fix_no_protein_adds_eggs() {
+        let mut tc = make_techcard(vec![
+            ("beet", "side", 100.0, 40),
+            ("potato", "side", 100.0, 80),
+        ]);
+        let validation = ValidationReport {
+            issues: vec![ValidationIssue {
+                severity: Severity::Warning,
+                code: "NO_PROTEIN",
+                message: "no protein".into(),
+            }],
+        };
+
+        let report = auto_fix(&mut tc, &validation);
+        assert!(tc.ingredients.iter().any(|i| i.slug_hint == "eggs"));
+        assert!(!report.is_empty());
+    }
+
+    #[test]
+    fn fix_kcal_too_high_reduces_oil() {
+        let mut tc = make_techcard(vec![
+            ("chicken", "protein", 100.0, 800),
+            ("olive-oil", "oil", 50.0, 442),
+            ("butter", "condiment", 30.0, 300),
+        ]);
+        tc.per_serving_kcal = 1542;
+
+        let validation = ValidationReport {
+            issues: vec![ValidationIssue {
+                severity: Severity::Warning,
+                code: "KCAL_TOO_HIGH",
+                message: "too high".into(),
+            }],
+        };
+
+        let oil_before = tc.ingredients.iter().find(|i| i.slug_hint == "olive-oil").unwrap().gross_g;
+        let report = auto_fix(&mut tc, &validation);
+        let oil_after = tc.ingredients.iter().find(|i| i.slug_hint == "olive-oil").unwrap().gross_g;
+
+        assert!(oil_after < oil_before, "oil should be reduced");
+        assert!(!report.is_empty());
+    }
+
+    #[test]
+    fn fix_no_steps_generates_basic() {
+        let mut tc = make_techcard(vec![
+            ("chicken", "protein", 100.0, 200),
+        ]);
+        tc.steps.clear();
+
+        let validation = ValidationReport {
+            issues: vec![ValidationIssue {
+                severity: Severity::Warning,
+                code: "NO_STEPS",
+                message: "no steps".into(),
+            }],
+        };
+
+        auto_fix(&mut tc, &validation);
+        assert!(tc.steps.len() >= 2);
+    }
+
+    #[test]
+    fn no_fixes_for_valid_recipe() {
+        let mut tc = make_techcard(vec![
+            ("chicken", "protein", 100.0, 200),
+            ("beet", "side", 100.0, 40),
+        ]);
+        let validation = ValidationReport { issues: vec![] };
+
+        let report = auto_fix(&mut tc, &validation);
+        assert!(report.is_empty());
+    }
+
+    #[test]
+    fn recalculate_after_fix() {
+        let mut tc = make_techcard(vec![
+            ("beet", "side", 50.0, 20),
+            ("potato", "side", 50.0, 40),
+        ]);
+        let old_kcal = tc.total_kcal;
+
+        let validation = ValidationReport {
+            issues: vec![ValidationIssue {
+                severity: Severity::Warning,
+                code: "NO_PROTEIN",
+                message: "no protein".into(),
+            }],
+        };
+
+        auto_fix(&mut tc, &validation);
+        assert!(tc.total_kcal > old_kcal, "total kcal should increase after adding protein");
+    }
+}

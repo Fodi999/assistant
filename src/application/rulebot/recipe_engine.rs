@@ -24,11 +24,15 @@ use crate::infrastructure::ingredient_cache::IngredientData;
 use super::intent_router::ChatLang;
 use super::meal_builder::CookMethod;
 use super::response_builder::HealthGoal;
+use super::goal_modifier::HealthModifier;
 use super::cooking_rules::{self, IngredientRole, StepType};
 use super::food_pairing;
 use super::user_constraints::UserConstraints;
 use super::constraint_policy;
+use super::goal_engine;
+use super::adaptation_engine;
 use super::recipe_validation;
+use super::auto_fix;
 
 // ── Re-exports from extracted modules ────────────────────────────────────────
 // Callers still use `recipe_engine::ask_gemini_dish_schema`, etc.
@@ -185,8 +189,12 @@ pub struct TechCard {
     pub tags: Vec<String>,
     /// Dietary constraints applied, e.g. ["lactose-free", "vegan diet"]
     pub applied_constraints: Vec<String>,
+    /// Adaptation actions taken, e.g. [("added", "chickpeas", "protein substitute")]
+    pub adaptations: Vec<adaptation_engine::AdaptationAction>,
     /// Post-build validation warnings
     pub validation_warnings: Vec<String>,
+    /// Auto-fix actions taken, e.g. [("Added eggs", "2 eggs as protein source")]
+    pub auto_fixes: Vec<String>,
 }
 
 // ── Backend Intelligence: resolve, assign roles, portions, cook methods ──────
@@ -199,6 +207,7 @@ pub async fn resolve_dish(
     goal: HealthGoal,
     lang: ChatLang,
     constraints: &UserConstraints,
+    modifier: HealthModifier,
 ) -> TechCard {
     let dish_type = DishType::detect(&schema.dish);
     let rule = cooking_rules::load_rule(dish_type);
@@ -245,6 +254,46 @@ pub async fn resolve_dish(
     let mut all_removed = removed;
     for (slug, reason) in &constraint_report.removed {
         all_removed.push((slug.clone(), reason.clone()));
+    }
+
+    // ── 2c. Adaptation Engine: smart rebalancing per goal profile ─────────
+    let goal_profile = goal_engine::profile_for(modifier);
+    let removed_types: Vec<String> = constraint_report.removed.iter()
+        .filter_map(|(slug, _)| {
+            // Try to infer product_type from removed slug
+            // (the actual product was already removed, so we check the reason)
+            None::<String> // We pass dietary mode types instead
+        })
+        .collect();
+    // Collect broad removed categories from dietary mode
+    let removed_categories: Vec<String> = match constraints.dietary_mode {
+        Some(super::user_constraints::DietaryMode::Vegan) =>
+            vec!["meat".into(), "fish".into(), "seafood".into(), "dairy".into()],
+        Some(super::user_constraints::DietaryMode::Vegetarian) =>
+            vec!["meat".into(), "fish".into(), "seafood".into()],
+        Some(super::user_constraints::DietaryMode::Pescatarian) =>
+            vec!["meat".into()],
+        None => vec![],
+    };
+
+    let adapt_servings = {
+        let total: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
+        let target = match dish_type {
+            DishType::Soup | DishType::Stew => 350.0_f32,
+            DishType::Salad | DishType::Raw    => 250.0,
+            _                                   => 300.0,
+        };
+        ((total / target).round() as u8).max(1)
+    };
+
+    let adaptation_report = adaptation_engine::adapt_to_goal(
+        &mut ingredients,
+        &goal_profile,
+        &removed_categories,
+        adapt_servings,
+    );
+    if !adaptation_report.is_empty() {
+        tracing::info!("🔄 Adaptations: {:?}", adaptation_report.actions);
     }
 
     // ── 3. Constraint Engine: enforce culinary laws ─────────────────────
@@ -374,7 +423,9 @@ pub async fn resolve_dish(
         allergens,
         tags,
         applied_constraints: constraint_report.messages,
+        adaptations: adaptation_report.actions,
         validation_warnings: vec![], // filled below
+        auto_fixes: vec![],          // filled below
     };
 
     // ── 7. Post-build validation ────────────────────────────────────────
@@ -389,6 +440,13 @@ pub async fn resolve_dish(
             }
         }
         tech_card.validation_warnings = validation.warning_messages();
+
+        // ── 8. Auto-fix: repair what we can ─────────────────────────────
+        let fix_report = auto_fix::auto_fix(&mut tech_card, &validation);
+        if !fix_report.is_empty() {
+            tracing::info!("🔧 Auto-fixes applied: {:?}", fix_report.messages());
+            tech_card.auto_fixes = fix_report.messages();
+        }
     }
 
     tech_card

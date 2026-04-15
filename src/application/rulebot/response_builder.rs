@@ -444,6 +444,17 @@ pub fn build_recipe_card(
         goal: card.goal.clone(),
         allergens: card.allergens.clone(),
         tags: card.tags.clone(),
+        // ── Goal Engine v2 ──
+        applied_constraints: card.applied_constraints.clone(),
+        adaptations: card.adaptations.iter().map(|a| {
+            super::chat_response::AdaptationActionRow {
+                action: a.action.clone(),
+                slug: a.slug.clone(),
+                detail: a.detail.clone(),
+            }
+        }).collect(),
+        validation_warnings: card.validation_warnings.clone(),
+        auto_fixes: card.auto_fixes.clone(),
     };
 
     let mut resp = ChatResponse::with_card(

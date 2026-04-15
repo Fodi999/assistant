@@ -264,7 +264,9 @@ mod tests {
             allergens: vec![],
             tags: vec![],
             applied_constraints: vec![],
+            adaptations: vec![],
             validation_warnings: vec![],
+            auto_fixes: vec![],
             ingredients: ings,
         }
     }

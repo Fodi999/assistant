@@ -235,6 +235,31 @@ pub struct RecipeCard {
     /// Diet tags: ["vegan", "vegetarian", "pescatarian"]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+
+    // ── Goal Engine v2 fields ──
+    /// Dietary constraints applied, e.g. ["lactose-free", "vegan diet"]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub applied_constraints: Vec<String>,
+    /// Adaptation actions taken by the engine (added / reduced / substituted)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adaptations: Vec<AdaptationActionRow>,
+    /// Post-build validation warnings
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub validation_warnings: Vec<String>,
+    /// Auto-fix actions taken, e.g. ["Added 2 eggs as protein source"]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub auto_fixes: Vec<String>,
+}
+
+/// A single adaptation action surfaced to the frontend.
+#[derive(Debug, Serialize)]
+pub struct AdaptationActionRow {
+    /// "added" | "removed" | "increased" | "reduced" | "substituted"
+    pub action: String,
+    /// The ingredient slug affected
+    pub slug: String,
+    /// Human-readable detail
+    pub detail: String,
 }
 
 /// A cooking step in a recipe.

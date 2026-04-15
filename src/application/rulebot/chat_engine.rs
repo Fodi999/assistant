@@ -95,7 +95,7 @@ impl ChatEngine {
             Intent::Conversion     => self.handle_conversion_with_density(input, lang).await,
             Intent::NutritionInfo  => self.handle_nutrition(input, lang).await,
             Intent::Seasonality    => self.handle_seasonality(input, lang),
-            Intent::RecipeHelp     => self.handle_recipe(input, lang, goal).await,
+            Intent::RecipeHelp     => self.handle_recipe(input, lang, goal, modifier).await,
             Intent::MealIdea       => self.handle_meal_idea(lang, goal, input, ctx).await,
             Intent::ProductInfo    => self.handle_product_info(input, lang).await,
             // ── Layer 2: AI Brain ── LLM with tool calling for complex queries
@@ -372,7 +372,7 @@ impl ChatEngine {
         rb::build_seasonality(product, lang)
     }
 
-    async fn handle_recipe(&self, input: &str, lang: ChatLang, goal: HealthGoal) -> ChatResponse {
+    async fn handle_recipe(&self, input: &str, lang: ChatLang, goal: HealthGoal, modifier: super::goal_modifier::HealthModifier) -> ChatResponse {
         // ── Step 0: Parse dietary constraints from user text ──
         let constraints = super::user_constraints::parse_constraints(input, lang);
         if !constraints.is_empty() {
@@ -389,7 +389,7 @@ impl ChatEngine {
                 );
 
                 // ── Step 2: Backend resolves everything: roles, states, grams, yield, КБЖУ ──
-                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal, lang, &constraints).await;
+                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal, lang, &constraints, modifier).await;
 
                 tracing::info!(
                     "📊 tech_card: output={:.0}g kcal={} resolved={}/{} unresolved=[{}]",
