@@ -18,6 +18,9 @@ pub async fn init_schema(pool: &PgPool) -> AppResult<()> {
     init_diet_flags(pool).await?;
     init_product_allergens(pool).await?;
     init_food_culinary_properties(pool).await?;
+    init_product_health_profile(pool).await?;
+    init_nutrition_sugar_profile(pool).await?;
+    init_product_processing_effects(pool).await?;
     init_food_pairing(pool).await?;
     init_recipes_catalog(pool).await?;
     init_recipe_catalog_ingredients(pool).await?;
@@ -365,6 +368,84 @@ async fn init_food_culinary_properties(pool: &PgPool) -> AppResult<()> {
     .await
     .map_err(|e| {
         tracing::error!("init food_culinary_properties: {e}");
+        AppError::internal("DB schema error")
+    })?;
+    Ok(())
+}
+
+// ── 13b. product_health_profile ──────────────────────────────────────────────
+
+async fn init_product_health_profile(pool: &PgPool) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS product_health_profile (
+            product_id          UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+            bioactive_compounds JSONB DEFAULT '[]'::jsonb,
+            health_effects      JSONB DEFAULT '[]'::jsonb,
+            contraindications   JSONB DEFAULT '[]'::jsonb,
+            food_role           TEXT,
+            orac_score          REAL,
+            absorption_notes    TEXT
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("init product_health_profile: {e}");
+        AppError::internal("DB schema error")
+    })?;
+    Ok(())
+}
+
+// ── 13c. nutrition_sugar_profile ─────────────────────────────────────────────
+
+async fn init_nutrition_sugar_profile(pool: &PgPool) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS nutrition_sugar_profile (
+            product_id           UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+            glucose              REAL,
+            fructose             REAL,
+            sucrose              REAL,
+            lactose              REAL,
+            maltose              REAL,
+            total_sugars         REAL,
+            added_sugars         REAL,
+            sweetness_perception REAL,
+            sugar_alcohols       REAL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("init nutrition_sugar_profile: {e}");
+        AppError::internal("DB schema error")
+    })?;
+    Ok(())
+}
+
+// ── 13d. product_processing_effects ──────────────────────────────────────────
+
+async fn init_product_processing_effects(pool: &PgPool) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS product_processing_effects (
+            product_id            UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+            vitamin_retention_pct REAL,
+            protein_denature_temp REAL,
+            mineral_leaching_risk TEXT,
+            best_cooking_method   TEXT,
+            maillard_temp         REAL,
+            processing_notes      TEXT
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("init product_processing_effects: {e}");
         AppError::internal("DB schema error")
     })?;
     Ok(())

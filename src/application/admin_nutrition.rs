@@ -88,6 +88,9 @@ pub struct NutritionProductDetail {
     pub allergens: Option<AllergensDto>,
     pub food_properties: Option<FoodPropertiesDto>,
     pub culinary: Option<CulinaryDto>,
+    pub health_profile: Option<HealthProfileDto>,
+    pub sugar_profile: Option<SugarProfileDto>,
+    pub processing_effects: Option<ProcessingEffectsDto>,
 }
 
 // ── Macros ────────────────────────────────────────────
@@ -201,6 +204,42 @@ pub struct CulinaryDto {
     pub umami: Option<f32>,
     pub aroma: Option<f32>,
     pub texture: Option<String>,
+}
+
+// ── Health Profile ────────────────────────────────────
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HealthProfileDto {
+    pub bioactive_compounds: Option<Vec<String>>,
+    pub health_effects: Option<Vec<String>>,
+    pub contraindications: Option<Vec<String>>,
+    pub food_role: Option<String>,
+    pub orac_score: Option<f32>,
+    pub absorption_notes: Option<String>,
+}
+
+// ── Sugar Profile ─────────────────────────────────────
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SugarProfileDto {
+    pub glucose: Option<f32>,
+    pub fructose: Option<f32>,
+    pub sucrose: Option<f32>,
+    pub lactose: Option<f32>,
+    pub maltose: Option<f32>,
+    pub total_sugars: Option<f32>,
+    pub added_sugars: Option<f32>,
+    pub sweetness_perception: Option<f32>,
+    pub sugar_alcohols: Option<f32>,
+}
+
+// ── Processing Effects ────────────────────────────────
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProcessingEffectsDto {
+    pub vitamin_retention_pct: Option<f32>,
+    pub protein_denature_temp: Option<f32>,
+    pub mineral_leaching_risk: Option<String>,
+    pub best_cooking_method: Option<String>,
+    pub maillard_temp: Option<f32>,
+    pub processing_notes: Option<String>,
 }
 
 // ── Update requests ───────────────────────────────────
@@ -409,6 +448,55 @@ impl AdminNutritionService {
         .await
         .map_err(AppError::from)?;
 
+        // ── Health profile (JSONB arrays) ──
+        let health_profile = {
+            #[derive(sqlx::FromRow)]
+            struct HpRow {
+                bioactive_compounds: Option<serde_json::Value>,
+                health_effects: Option<serde_json::Value>,
+                contraindications: Option<serde_json::Value>,
+                food_role: Option<String>,
+                orac_score: Option<f32>,
+                absorption_notes: Option<String>,
+            }
+            let row = sqlx::query_as::<_, HpRow>(
+                "SELECT bioactive_compounds,health_effects,contraindications,food_role,orac_score,absorption_notes FROM product_health_profile WHERE product_id=$1",
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+            row.map(|r| {
+                fn json_to_strings(v: Option<serde_json::Value>) -> Option<Vec<String>> {
+                    v.and_then(|val| serde_json::from_value(val).ok())
+                }
+                HealthProfileDto {
+                    bioactive_compounds: json_to_strings(r.bioactive_compounds),
+                    health_effects: json_to_strings(r.health_effects),
+                    contraindications: json_to_strings(r.contraindications),
+                    food_role: r.food_role,
+                    orac_score: round_opt(r.orac_score, 1),
+                    absorption_notes: r.absorption_notes,
+                }
+            })
+        };
+
+        let sugar_profile = sqlx::query_as::<_, SugarProfileDto>(
+            "SELECT glucose,fructose,sucrose,lactose,maltose,total_sugars,added_sugars,sweetness_perception,sugar_alcohols FROM nutrition_sugar_profile WHERE product_id=$1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::from)?;
+
+        let processing_effects = sqlx::query_as::<_, ProcessingEffectsDto>(
+            "SELECT vitamin_retention_pct,protein_denature_temp,mineral_leaching_risk,best_cooking_method,maillard_temp,processing_notes FROM product_processing_effects WHERE product_id=$1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::from)?;
+
         Ok(NutritionProductDetail {
             id: row.id,
             slug: row.slug,
@@ -440,6 +528,9 @@ impl AdminNutritionService {
             allergens,
             food_properties,
             culinary,
+            health_profile,
+            sugar_profile,
+            processing_effects,
         })
     }
 
@@ -905,6 +996,110 @@ impl AdminNutritionService {
         .bind(umami)
         .bind(aroma)
         .bind(dto.texture)
+        .execute(&self.pool)
+        .await
+        .map_err(AppError::from)?;
+        Ok(())
+    }
+
+    // ── Upsert health profile ─────────────────────────
+    pub async fn upsert_health_profile(&self, id: Uuid, dto: HealthProfileDto) -> AppResult<()> {
+        let bioactive = serde_json::to_value(&dto.bioactive_compounds.unwrap_or_default())
+            .unwrap_or(serde_json::Value::Array(vec![]));
+        let effects = serde_json::to_value(&dto.health_effects.unwrap_or_default())
+            .unwrap_or(serde_json::Value::Array(vec![]));
+        let contras = serde_json::to_value(&dto.contraindications.unwrap_or_default())
+            .unwrap_or(serde_json::Value::Array(vec![]));
+
+        sqlx::query(
+            r#"
+            INSERT INTO product_health_profile
+                (product_id, bioactive_compounds, health_effects, contraindications,
+                 food_role, orac_score, absorption_notes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (product_id) DO UPDATE SET
+                bioactive_compounds = EXCLUDED.bioactive_compounds,
+                health_effects      = EXCLUDED.health_effects,
+                contraindications   = EXCLUDED.contraindications,
+                food_role           = EXCLUDED.food_role,
+                orac_score          = EXCLUDED.orac_score,
+                absorption_notes    = EXCLUDED.absorption_notes
+            "#,
+        )
+        .bind(id)
+        .bind(bioactive)
+        .bind(effects)
+        .bind(contras)
+        .bind(dto.food_role)
+        .bind(round_opt(dto.orac_score, 1))
+        .bind(dto.absorption_notes)
+        .execute(&self.pool)
+        .await
+        .map_err(AppError::from)?;
+        Ok(())
+    }
+
+    // ── Upsert sugar profile ──────────────────────────
+    pub async fn upsert_sugar_profile(&self, id: Uuid, dto: SugarProfileDto) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO nutrition_sugar_profile
+                (product_id, glucose, fructose, sucrose, lactose, maltose,
+                 total_sugars, added_sugars, sweetness_perception, sugar_alcohols)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (product_id) DO UPDATE SET
+                glucose              = EXCLUDED.glucose,
+                fructose             = EXCLUDED.fructose,
+                sucrose              = EXCLUDED.sucrose,
+                lactose              = EXCLUDED.lactose,
+                maltose              = EXCLUDED.maltose,
+                total_sugars         = EXCLUDED.total_sugars,
+                added_sugars         = EXCLUDED.added_sugars,
+                sweetness_perception = EXCLUDED.sweetness_perception,
+                sugar_alcohols       = EXCLUDED.sugar_alcohols
+            "#,
+        )
+        .bind(id)
+        .bind(round_opt(dto.glucose, 2))
+        .bind(round_opt(dto.fructose, 2))
+        .bind(round_opt(dto.sucrose, 2))
+        .bind(round_opt(dto.lactose, 2))
+        .bind(round_opt(dto.maltose, 2))
+        .bind(round_opt(dto.total_sugars, 2))
+        .bind(round_opt(dto.added_sugars, 2))
+        .bind(round_opt(dto.sweetness_perception, 1))
+        .bind(round_opt(dto.sugar_alcohols, 2))
+        .execute(&self.pool)
+        .await
+        .map_err(AppError::from)?;
+        Ok(())
+    }
+
+    // ── Upsert processing effects ─────────────────────
+    pub async fn upsert_processing_effects(&self, id: Uuid, dto: ProcessingEffectsDto) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO product_processing_effects
+                (product_id, vitamin_retention_pct, protein_denature_temp,
+                 mineral_leaching_risk, best_cooking_method, maillard_temp,
+                 processing_notes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (product_id) DO UPDATE SET
+                vitamin_retention_pct = EXCLUDED.vitamin_retention_pct,
+                protein_denature_temp = EXCLUDED.protein_denature_temp,
+                mineral_leaching_risk = EXCLUDED.mineral_leaching_risk,
+                best_cooking_method   = EXCLUDED.best_cooking_method,
+                maillard_temp         = EXCLUDED.maillard_temp,
+                processing_notes      = EXCLUDED.processing_notes
+            "#,
+        )
+        .bind(id)
+        .bind(round_opt(dto.vitamin_retention_pct, 1))
+        .bind(round_opt(dto.protein_denature_temp, 1))
+        .bind(dto.mineral_leaching_risk)
+        .bind(dto.best_cooking_method)
+        .bind(round_opt(dto.maillard_temp, 1))
+        .bind(dto.processing_notes)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;

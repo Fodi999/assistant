@@ -1,6 +1,7 @@
 use crate::application::{
     AdminNutritionService, AllergensDto, CulinaryDto, DietFlagsDto, FattyAcidsDto,
-    FoodPropertiesDto, MacrosDto, MineralsDto, UpdateProductBasicRequest, VitaminsDto,
+    FoodPropertiesDto, HealthProfileDto, MacrosDto, MineralsDto, ProcessingEffectsDto,
+    SugarProfileDto, UpdateProductBasicRequest, VitaminsDto,
 };
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
@@ -167,5 +168,38 @@ pub async fn update_culinary(
     Json(body): Json<CulinaryDto>,
 ) -> Result<StatusCode, AppError> {
     svc.upsert_culinary(id, body).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// PUT /api/admin/nutrition/products/:id/health-profile
+pub async fn update_health_profile(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(svc): State<AdminNutritionService>,
+    Json(body): Json<HealthProfileDto>,
+) -> Result<StatusCode, AppError> {
+    svc.upsert_health_profile(id, body).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// PUT /api/admin/nutrition/products/:id/sugar-profile
+pub async fn update_sugar_profile(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(svc): State<AdminNutritionService>,
+    Json(body): Json<SugarProfileDto>,
+) -> Result<StatusCode, AppError> {
+    svc.upsert_sugar_profile(id, body).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// PUT /api/admin/nutrition/products/:id/processing-effects
+pub async fn update_processing_effects(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(svc): State<AdminNutritionService>,
+    Json(body): Json<ProcessingEffectsDto>,
+) -> Result<StatusCode, AppError> {
+    svc.upsert_processing_effects(id, body).await?;
     Ok(StatusCode::NO_CONTENT)
 }

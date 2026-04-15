@@ -453,7 +453,10 @@ pub fn detect_language(input: &str) -> ChatLang {
     }
 
     // Ukrainian-specific characters (ї, і, є, ґ)
-    if text.contains('ї') || text.contains('ґ') || text.contains('є') {
+    // Note: 'і' is U+0456 (Cyrillic і), distinct from Latin 'i' (U+0069)
+    if text.contains('ї') || text.contains('ґ') || text.contains('є')
+        || text.contains('\u{0456}') // Ukrainian 'і'
+    {
         return ChatLang::Uk;
     }
 

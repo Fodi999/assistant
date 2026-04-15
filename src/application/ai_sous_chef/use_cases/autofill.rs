@@ -127,9 +127,9 @@ impl AdminCatalogService {
         );
 
         // ── Call AI ──
-        // Thinking models (Pro) use ~80% of tokens for chain-of-thought
+        // Use Best quality (gemini-3.1-pro-preview + retry) for comprehensive data fill
         let raw = self.llm_adapter
-            .generate_with_quality(&prompt, 10000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 12000, AiQuality::Best)
             .await?;
 
         // ── Log raw AI response for debugging nutrition pipeline ──
@@ -332,6 +332,30 @@ Return ONLY valid JSON:
     "glycemic_index": <int or null>, "glycemic_load": <float or null>,
     "ph": <float or null>, "smoke_point": <int celsius or null>,
     "water_activity": <float 0-1 or null>
+  }},
+  "health_profile": {{
+    "bioactive_compounds": ["beta-carotene", "lycopene", ...] or [],
+    "health_effects": ["antioxidant", "anti-inflammatory", "heart-health", ...] or [],
+    "contraindications": ["kidney stones", "blood thinners", ...] or [],
+    "food_role": "<protein_source|carb_source|fat_source|flavor_base|aromatic|garnish|binder|acid|sweetener|thickener|liquid_base|topping|fermented or null>",
+    "orac_score": <float μmol TE/100g or null>,
+    "absorption_notes": "<string or null>"
+  }},
+  "sugar_profile": {{
+    "glucose": <float g or null>, "fructose": <float g or null>,
+    "sucrose": <float g or null>, "lactose": <float g or null>,
+    "maltose": <float g or null>,
+    "total_sugars": <float g or null>, "added_sugars": <float g or null>,
+    "sweetness_perception": <1-10 or null>,
+    "sugar_alcohols": <float g or null>
+  }},
+  "processing_effects": {{
+    "vitamin_retention_pct": <float 0-100 after typical cooking or null>,
+    "protein_denature_temp": <float celsius or null>,
+    "mineral_leaching_risk": "<low|medium|high or null>",
+    "best_cooking_method": "<raw|steamed|boiled|baked|grilled|fried|sous_vide|stewed or null>",
+    "maillard_temp": <float celsius or null>,
+    "processing_notes": "<string with key cooking/processing effects or null>"
   }}
 }}
 
@@ -341,6 +365,12 @@ Rules:
 - Descriptions must be natural, not machine-translated
 - If FILLED=true → return null for that field
 - If FILLED=false → you MUST provide real value, NOT null
+- health_profile.bioactive_compounds: list ACTUAL compounds (beta-carotene, not "vitamin A")
+- health_profile.health_effects: evidence-based effects only (antioxidant, anti-inflammatory, etc.)
+- health_profile.contraindications: real medical contraindications (kidney stones, blood thinners, etc.)
+- health_profile.food_role: the PRIMARY culinary role of this ingredient
+- sugar_profile: for animal products/oils set all to null or 0
+- processing_effects: how typical cooking affects this specific ingredient
 - Return ONLY JSON, no extra text"#,
         name_en = name_en,
         name_ru = name_ru,

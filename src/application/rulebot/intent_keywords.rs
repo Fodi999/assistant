@@ -95,6 +95,7 @@ pub const HEALTHY: &[ScoredKeyword] = &[
     ("na odchudzanie",5), ("для зниження",   4), ("znizit ves",     4),
     // Muscle / protein goals → also HealthyProduct
     ("набрать мышц",  5), ("набор массы",    5), ("на массу",       5),
+    ("набрать масс",  5), ("gain muscle",    5), ("gain mass",      5),
     ("мышечн",        4), ("muscle",         4), ("на белок",       4),
     ("nabrać masy",   5), ("на протеин",     4), ("protein goal",   4),
     ("набрати масу",  5),
