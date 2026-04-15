@@ -1,19 +1,22 @@
 //! Auto-Fix Engine — automatically repair validation issues in a TechCard.
 //!
 //! Pipeline position:
-//!   validation → **auto_fix** → final TechCard
+//!   validation → **auto_fix** → revalidation → final TechCard
 //!
-//! Takes `ValidationReport` + `TechCard` and attempts to fix issues:
-//!   - NO_PROTEIN → insert plant protein (eggs/beans/chickpeas)
+//! Takes `ValidationReport` + `TechCard` + `GoalProfile` and attempts to fix:
+//!   - NO_PROTEIN → insert dish-appropriate protein (beans for soup, chicken for salad, etc.)
 //!   - KCAL_TOO_LOW → increase portions proportionally
 //!   - KCAL_TOO_HIGH → reduce fat/oil/condiment portions
-//!   - TOO_FEW_INGREDIENTS → warning only (can't invent ingredients)
+//!   - NO_STEPS → generate basic steps
+//!   - WEIGHT_TOO_LOW → double side/base portions
 //!
-//! Every fix is logged for the UI "Автоматические исправления" block.
+//! All messages are localized via lang parameter.
+//! Every fix is logged for the UI "explain" block.
 
 use serde::Serialize;
 use super::recipe_engine::{TechCard, ResolvedIngredient, CookingStep, DishType};
 use super::recipe_validation::{ValidationReport, Severity};
+use super::goal_engine::{GoalProfile, GoalStrategy};
 use super::nutrition_math::round1;
 use super::intent_router::ChatLang;
 
@@ -50,25 +53,33 @@ impl FixReport {
 
 /// Attempt to auto-fix validation issues in the TechCard.
 /// Modifies the TechCard in-place and returns a report.
-pub fn auto_fix(tech_card: &mut TechCard, validation: &ValidationReport) -> FixReport {
+/// `goal` controls calorie-aware decisions (e.g. weight loss → don't add high-kcal protein).
+/// `lang` controls localized fix descriptions.
+pub fn auto_fix(
+    tech_card: &mut TechCard,
+    validation: &ValidationReport,
+    goal: &GoalProfile,
+    lang: ChatLang,
+) -> FixReport {
     let mut report = FixReport::default();
+    let dish_type = DishType::detect(&tech_card.dish_name);
 
     for issue in &validation.issues {
         match issue.code {
             "NO_PROTEIN" | "NO_PROTEIN_DIETARY" => {
-                fix_no_protein(tech_card, &mut report);
+                fix_no_protein(tech_card, dish_type, goal, lang, &mut report);
             }
             "KCAL_TOO_LOW" => {
-                fix_kcal_too_low(tech_card, &mut report);
+                fix_kcal_too_low(tech_card, goal, lang, &mut report);
             }
             "KCAL_TOO_HIGH" => {
-                fix_kcal_too_high(tech_card, &mut report);
+                fix_kcal_too_high(tech_card, goal, lang, &mut report);
             }
             "NO_STEPS" => {
-                fix_no_steps(tech_card, &mut report);
+                fix_no_steps(tech_card, lang, &mut report);
             }
             "WEIGHT_TOO_LOW" => {
-                fix_weight_too_low(tech_card, &mut report);
+                fix_weight_too_low(tech_card, lang, &mut report);
             }
             _ => {
                 // TOO_FEW_INGREDIENTS, HIGH_UNRESOLVED — can't auto-fix
@@ -86,9 +97,60 @@ pub fn auto_fix(tech_card: &mut TechCard, validation: &ValidationReport) -> FixR
 
 // ── Individual Fixes ─────────────────────────────────────────────────────────
 
-/// Add a synthetic protein source if none exists.
-fn fix_no_protein(tc: &mut TechCard, report: &mut FixReport) {
-    // Don't double-add if adaptation_engine already added chickpeas
+// ── Protein source selection table ───────────────────────────────────────────
+
+/// Pick the best protein source for the dish type + goal.
+/// Returns (slug, state, grams, kcal, protein_g, fat_g, carbs_g).
+fn pick_protein(dish_type: DishType, goal: &GoalProfile) -> (&'static str, &'static str, f32, u32, f32, f32, f32) {
+    let is_low_cal = matches!(goal.strategy, GoalStrategy::ReduceCalories);
+
+    match dish_type {
+        // Soups & stews: legumes first (culinary logic), then chicken
+        DishType::Soup | DishType::Stew => {
+            if is_low_cal {
+                // Lentils: low cal, high protein, perfect for soup
+                ("lentils", "boiled", 80.0, 93, 7.2, 0.3, 16.0)
+            } else {
+                // White beans: hearty, classic in soup
+                ("white-beans", "boiled", 80.0, 106, 7.5, 0.4, 19.2)
+            }
+        }
+        // Salads: chicken breast or chickpeas
+        DishType::Salad | DishType::Raw => {
+            if is_low_cal {
+                ("chickpeas", "boiled", 80.0, 131, 7.1, 2.1, 21.8)
+            } else {
+                ("chicken-breast", "grilled", 100.0, 165, 31.0, 3.6, 0.0)
+            }
+        }
+        // Stir-fry / wok: tofu for low-cal, chicken otherwise
+        DishType::StirFry => {
+            if is_low_cal {
+                ("tofu", "sauteed", 100.0, 76, 8.1, 4.8, 1.9)
+            } else {
+                ("chicken-breast", "sauteed", 100.0, 165, 31.0, 3.6, 0.0)
+            }
+        }
+        // Grill / bake / pasta / default: eggs as universal fallback
+        _ => {
+            if is_low_cal {
+                ("chickpeas", "boiled", 80.0, 131, 7.1, 2.1, 21.8)
+            } else {
+                ("eggs", "boiled", 120.0, 186, 15.6, 12.0, 1.2)
+            }
+        }
+    }
+}
+
+/// Add a dish-appropriate protein source if none exists.
+fn fix_no_protein(
+    tc: &mut TechCard,
+    dish_type: DishType,
+    goal: &GoalProfile,
+    lang: ChatLang,
+    report: &mut FixReport,
+) {
+    // Don't double-add if adaptation_engine already added a protein
     let has_protein = tc.ingredients.iter().any(|i| i.role == "protein");
     if has_protein { return; }
 
@@ -99,89 +161,116 @@ fn fix_no_protein(tc: &mut TechCard, report: &mut FixReport) {
     });
     if has_legume { return; }
 
-    // Insert eggs as the most universal protein (works in most dishes)
+    let (slug, state, grams, kcal, protein_g, fat_g, carbs_g) = pick_protein(dish_type, goal);
+
     tc.ingredients.push(ResolvedIngredient {
         product: None,
-        slug_hint: "eggs".into(),
+        slug_hint: slug.into(),
         resolved_slug: None,
-        state: "boiled".into(),
+        state: state.into(),
         role: "protein".into(),
-        gross_g: 120.0,
-        cleaned_net_g: 120.0,
-        cooked_net_g: 120.0,
-        // 2 eggs: ~155kcal, 13g protein per 100g
-        kcal: 186,
-        protein_g: 15.6,
-        fat_g: 12.0,
-        carbs_g: 1.2,
+        gross_g: grams,
+        cleaned_net_g: grams,
+        cooked_net_g: grams,
+        kcal,
+        protein_g,
+        fat_g,
+        carbs_g,
     });
+
+    let detail = match lang {
+        ChatLang::Ru => format!("{} ({:.0}г) как источник белка", slug, grams),
+        ChatLang::En => format!("{} ({:.0}g) as protein source", slug, grams),
+        ChatLang::Pl => format!("{} ({:.0}g) jako źródło białka", slug, grams),
+        ChatLang::Uk => format!("{} ({:.0}г) як джерело білка", slug, grams),
+    };
+    let action = match lang {
+        ChatLang::Ru => "Добавлено",
+        ChatLang::En => "Added",
+        ChatLang::Pl => "Dodano",
+        ChatLang::Uk => "Додано",
+    };
 
     report.fixes.push(FixAction {
         trigger: "NO_PROTEIN".into(),
-        action: "Added eggs".into(),
-        detail: "2 eggs (120g) as protein source".into(),
+        action: action.into(),
+        detail,
     });
 }
 
 /// Increase all portions proportionally if kcal is too low.
-fn fix_kcal_too_low(tc: &mut TechCard, report: &mut FixReport) {
+fn fix_kcal_too_low(tc: &mut TechCard, _goal: &GoalProfile, lang: ChatLang, report: &mut FixReport) {
     if tc.per_serving_kcal >= 50 { return; }
 
-    // Scale up non-spice/oil ingredients by 50%
     let factor = 1.5_f32;
     for ing in tc.ingredients.iter_mut() {
         if ing.role == "spice" || ing.role == "oil" || ing.role == "condiment" {
             continue;
         }
-        ing.gross_g = round1(ing.gross_g * factor);
-        ing.cleaned_net_g = round1(ing.cleaned_net_g * factor);
-        ing.cooked_net_g = round1(ing.cooked_net_g * factor);
-        ing.kcal = (ing.kcal as f32 * factor).round() as u32;
-        ing.protein_g = round1(ing.protein_g * factor);
-        ing.fat_g = round1(ing.fat_g * factor);
-        ing.carbs_g = round1(ing.carbs_g * factor);
+        scale_ingredient(ing, factor);
     }
+
+    let detail = match lang {
+        ChatLang::Ru => "все основные ингредиенты +50%".into(),
+        ChatLang::En => "all main ingredients +50%".into(),
+        ChatLang::Pl => "wszystkie główne składniki +50%".into(),
+        ChatLang::Uk => "всі основні інгредієнти +50%".into(),
+    };
+    let action = match lang {
+        ChatLang::Ru => "Увеличены порции",
+        ChatLang::En => "Increased portions",
+        ChatLang::Pl => "Zwiększono porcje",
+        ChatLang::Uk => "Збільшено порції",
+    };
 
     report.fixes.push(FixAction {
         trigger: "KCAL_TOO_LOW".into(),
-        action: "Increased portions".into(),
-        detail: "all main ingredients +50%".into(),
+        action: action.into(),
+        detail,
     });
 }
 
 /// Reduce fat/oil if kcal is too high.
-fn fix_kcal_too_high(tc: &mut TechCard, report: &mut FixReport) {
-    if tc.per_serving_kcal <= 1500 { return; }
+/// For weight-loss goals, use a stricter threshold from the GoalProfile.
+fn fix_kcal_too_high(tc: &mut TechCard, goal: &GoalProfile, lang: ChatLang, report: &mut FixReport) {
+    let threshold = match goal.strategy {
+        GoalStrategy::ReduceCalories => goal.kcal.end as u32, // e.g. 500
+        _ => 1500,
+    };
+    if tc.per_serving_kcal <= threshold { return; }
 
-    // Reduce oil + condiment by 50%
-    let factor = 0.5_f32;
+    let factor = match goal.strategy {
+        GoalStrategy::ReduceCalories => 0.3_f32, // aggressive for weight loss
+        _ => 0.5,
+    };
+
     let mut reduced = Vec::new();
 
     for ing in tc.ingredients.iter_mut() {
         if ing.role == "oil" || ing.role == "condiment" {
             let old = ing.gross_g;
-            ing.gross_g = round1(ing.gross_g * factor);
-            ing.cleaned_net_g = round1(ing.cleaned_net_g * factor);
-            ing.cooked_net_g = round1(ing.cooked_net_g * factor);
-            ing.kcal = (ing.kcal as f32 * factor).round() as u32;
-            ing.fat_g = round1(ing.fat_g * factor);
-            ing.protein_g = round1(ing.protein_g * factor);
-            ing.carbs_g = round1(ing.carbs_g * factor);
+            scale_ingredient(ing, factor);
             reduced.push(format!("{}: {:.0}g → {:.0}g", ing.slug_hint, old, ing.gross_g));
         }
     }
 
     if !reduced.is_empty() {
+        let action = match lang {
+            ChatLang::Ru => "Уменьшены жиры",
+            ChatLang::En => "Reduced fats",
+            ChatLang::Pl => "Zmniejszono tłuszcze",
+            ChatLang::Uk => "Зменшено жири",
+        };
         report.fixes.push(FixAction {
             trigger: "KCAL_TOO_HIGH".into(),
-            action: "Reduced fats".into(),
+            action: action.into(),
             detail: reduced.join(", "),
         });
     }
 }
 
 /// Generate minimal steps if none exist.
-fn fix_no_steps(tc: &mut TechCard, report: &mut FixReport) {
+fn fix_no_steps(tc: &mut TechCard, lang: ChatLang, report: &mut FixReport) {
     if !tc.steps.is_empty() { return; }
 
     let ingredients_list: String = tc.ingredients.iter()
@@ -190,50 +279,96 @@ fn fix_no_steps(tc: &mut TechCard, report: &mut FixReport) {
         .collect::<Vec<_>>()
         .join(", ");
 
+    let (step1_text, step2_text) = match lang {
+        ChatLang::Ru => (
+            format!("Подготовьте: {}", ingredients_list),
+            "Готовьте до готовности, приправьте по вкусу.".to_string(),
+        ),
+        ChatLang::En => (
+            format!("Prepare: {}", ingredients_list),
+            "Cook until ready, season to taste.".to_string(),
+        ),
+        ChatLang::Pl => (
+            format!("Przygotuj: {}", ingredients_list),
+            "Gotuj do miękkości, dopraw do smaku.".to_string(),
+        ),
+        ChatLang::Uk => (
+            format!("Підготуйте: {}", ingredients_list),
+            "Готуйте до готовності, приправте за смаком.".to_string(),
+        ),
+    };
+
     tc.steps.push(CookingStep {
         step: 1,
-        text: format!("Prepare: {}", ingredients_list),
+        text: step1_text,
         time_min: Some(10),
         temp_c: None,
         tip: None,
     });
     tc.steps.push(CookingStep {
         step: 2,
-        text: "Cook until ready, season to taste.".into(),
+        text: step2_text,
         time_min: Some(20),
         temp_c: None,
         tip: None,
     });
 
+    let action = match lang {
+        ChatLang::Ru => "Сгенерированы шаги",
+        ChatLang::En => "Generated basic steps",
+        ChatLang::Pl => "Wygenerowano kroki",
+        ChatLang::Uk => "Згенеровано кроки",
+    };
+    let detail = match lang {
+        ChatLang::Ru => "добавлено 2 базовых шага",
+        ChatLang::En => "2 generic steps added",
+        ChatLang::Pl => "dodano 2 podstawowe kroki",
+        ChatLang::Uk => "додано 2 базових кроки",
+    };
+
     report.fixes.push(FixAction {
         trigger: "NO_STEPS".into(),
-        action: "Generated basic steps".into(),
-        detail: "2 generic steps added".into(),
+        action: action.into(),
+        detail: detail.into(),
     });
 }
 
 /// If total weight is unreasonably low, increase side portions.
-fn fix_weight_too_low(tc: &mut TechCard, report: &mut FixReport) {
+fn fix_weight_too_low(tc: &mut TechCard, lang: ChatLang, report: &mut FixReport) {
     if tc.total_output_g >= 100.0 { return; }
 
     let factor = 2.0_f32;
     for ing in tc.ingredients.iter_mut() {
         if ing.role == "side" || ing.role == "base" {
-            ing.gross_g = round1(ing.gross_g * factor);
-            ing.cleaned_net_g = round1(ing.cleaned_net_g * factor);
-            ing.cooked_net_g = round1(ing.cooked_net_g * factor);
-            ing.kcal = (ing.kcal as f32 * factor).round() as u32;
-            ing.protein_g = round1(ing.protein_g * factor);
-            ing.fat_g = round1(ing.fat_g * factor);
-            ing.carbs_g = round1(ing.carbs_g * factor);
+            scale_ingredient(ing, factor);
         }
     }
 
+    let action = match lang {
+        ChatLang::Ru => "Увеличены гарниры",
+        ChatLang::En => "Doubled side portions",
+        ChatLang::Pl => "Zwiększono dodatki",
+        ChatLang::Uk => "Збільшено гарніри",
+    };
+
     report.fixes.push(FixAction {
         trigger: "WEIGHT_TOO_LOW".into(),
-        action: "Doubled side portions".into(),
-        detail: format!("{:.0}g was too low", tc.total_output_g),
+        action: action.into(),
+        detail: format!("{:.0}g", tc.total_output_g),
     });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Scale all gram/macro fields of an ingredient by a factor.
+fn scale_ingredient(ing: &mut ResolvedIngredient, factor: f32) {
+    ing.gross_g = round1(ing.gross_g * factor);
+    ing.cleaned_net_g = round1(ing.cleaned_net_g * factor);
+    ing.cooked_net_g = round1(ing.cooked_net_g * factor);
+    ing.kcal = (ing.kcal as f32 * factor).round() as u32;
+    ing.protein_g = round1(ing.protein_g * factor);
+    ing.fat_g = round1(ing.fat_g * factor);
+    ing.carbs_g = round1(ing.carbs_g * factor);
 }
 
 // ── Recalculate ──────────────────────────────────────────────────────────────
@@ -261,6 +396,12 @@ mod tests {
     use super::*;
     use super::super::recipe_validation::{ValidationIssue, Severity};
     use crate::infrastructure::ingredient_cache::IngredientData;
+
+    use super::super::goal_engine::profile_for;
+    use super::super::goal_modifier::HealthModifier;
+
+    fn balanced() -> GoalProfile { profile_for(HealthModifier::None) }
+    fn low_cal()  -> GoalProfile { profile_for(HealthModifier::LowCalorie) }
 
     fn make_techcard(ings: Vec<(&str, &str, f32, u32)>) -> TechCard {
         let ingredients: Vec<ResolvedIngredient> = ings.iter().map(|(slug, role, grams, kcal)| {
@@ -328,11 +469,12 @@ mod tests {
     }
 
     #[test]
-    fn fix_no_protein_adds_eggs() {
+    fn fix_no_protein_adds_legumes_for_soup() {
         let mut tc = make_techcard(vec![
             ("beet", "side", 100.0, 40),
             ("potato", "side", 100.0, 80),
         ]);
+        tc.dish_name = "tomato soup".into();
         let validation = ValidationReport {
             issues: vec![ValidationIssue {
                 severity: Severity::Warning,
@@ -341,8 +483,38 @@ mod tests {
             }],
         };
 
-        let report = auto_fix(&mut tc, &validation);
-        assert!(tc.ingredients.iter().any(|i| i.slug_hint == "eggs"));
+        let report = auto_fix(&mut tc, &validation, &balanced(), ChatLang::En);
+        // Soup should get beans/lentils, NOT eggs
+        let protein_slug = tc.ingredients.iter()
+            .find(|i| i.role == "protein")
+            .map(|i| i.slug_hint.as_str());
+        assert!(
+            protein_slug == Some("white-beans") || protein_slug == Some("lentils"),
+            "soup should get legumes, got {:?}", protein_slug
+        );
+        assert!(!report.is_empty());
+    }
+
+    #[test]
+    fn fix_no_protein_low_cal_soup_gets_lentils() {
+        let mut tc = make_techcard(vec![
+            ("beet", "side", 100.0, 40),
+            ("potato", "side", 100.0, 80),
+        ]);
+        tc.dish_name = "tomato soup".into();
+        let validation = ValidationReport {
+            issues: vec![ValidationIssue {
+                severity: Severity::Warning,
+                code: "NO_PROTEIN",
+                message: "no protein".into(),
+            }],
+        };
+
+        let report = auto_fix(&mut tc, &validation, &low_cal(), ChatLang::Ru);
+        let protein_slug = tc.ingredients.iter()
+            .find(|i| i.role == "protein")
+            .map(|i| i.slug_hint.as_str());
+        assert_eq!(protein_slug, Some("lentils"), "low-cal soup → lentils");
         assert!(!report.is_empty());
     }
 
@@ -364,7 +536,7 @@ mod tests {
         };
 
         let oil_before = tc.ingredients.iter().find(|i| i.slug_hint == "olive-oil").unwrap().gross_g;
-        let report = auto_fix(&mut tc, &validation);
+        let report = auto_fix(&mut tc, &validation, &balanced(), ChatLang::En);
         let oil_after = tc.ingredients.iter().find(|i| i.slug_hint == "olive-oil").unwrap().gross_g;
 
         assert!(oil_after < oil_before, "oil should be reduced");
@@ -386,7 +558,7 @@ mod tests {
             }],
         };
 
-        auto_fix(&mut tc, &validation);
+        auto_fix(&mut tc, &validation, &balanced(), ChatLang::En);
         assert!(tc.steps.len() >= 2);
     }
 
@@ -398,7 +570,7 @@ mod tests {
         ]);
         let validation = ValidationReport { issues: vec![] };
 
-        let report = auto_fix(&mut tc, &validation);
+        let report = auto_fix(&mut tc, &validation, &balanced(), ChatLang::En);
         assert!(report.is_empty());
     }
 
@@ -418,7 +590,7 @@ mod tests {
             }],
         };
 
-        auto_fix(&mut tc, &validation);
+        auto_fix(&mut tc, &validation, &balanced(), ChatLang::En);
         assert!(tc.total_kcal > old_kcal, "total kcal should increase after adding protein");
     }
 }

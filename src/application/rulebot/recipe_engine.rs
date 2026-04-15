@@ -429,7 +429,7 @@ pub async fn resolve_dish(
     };
 
     // ── 7. Post-build validation ────────────────────────────────────────
-    let validation = recipe_validation::validate_recipe(&tech_card, constraints);
+    let validation = recipe_validation::validate_recipe(&tech_card, constraints, lang);
     if !validation.issues.is_empty() {
         for issue in &validation.issues {
             match issue.severity {
@@ -439,13 +439,24 @@ pub async fn resolve_dish(
                     tracing::info!("⚠️ Validation warning: {}", issue.message),
             }
         }
-        tech_card.validation_warnings = validation.warning_messages();
 
-        // ── 8. Auto-fix: repair what we can ─────────────────────────────
-        let fix_report = auto_fix::auto_fix(&mut tech_card, &validation);
+        // ── 8. Auto-fix: repair what we can (goal-aware + localized) ────
+        let fix_report = auto_fix::auto_fix(&mut tech_card, &validation, &goal_profile, lang);
         if !fix_report.is_empty() {
             tracing::info!("🔧 Auto-fixes applied: {:?}", fix_report.messages());
             tech_card.auto_fixes = fix_report.messages();
+        }
+
+        // ── 9. Revalidation: clear warnings that were fixed ─────────────
+        let revalidation = recipe_validation::validate_recipe(&tech_card, constraints, lang);
+        tech_card.validation_warnings = revalidation.warning_messages();
+
+        if revalidation.issues.is_empty() {
+            tracing::info!("✅ All validation issues resolved by auto-fix");
+        } else {
+            for issue in &revalidation.issues {
+                tracing::info!("⚠️ Post-fix: {}", issue.message);
+            }
         }
     }
 
