@@ -238,6 +238,19 @@ pub const MEAL_TIME_SIGNALS: &[&str] = &[
     "kolacja", "obiad", "śniadanie", "вечеря", "обід", "сніданок",
 ];
 
+/// "need" / "want" + constraint signals → user wants a MEAL, not a product list.
+/// "chcę schudnąć, ale potrzebuję dużo białka" → MealIdea, not HealthyProduct.
+/// NOTE: Only explicit need/requirement words, NOT generic "want to" (which is a goal statement).
+pub const NEED_SIGNALS: &[&str] = &[
+    "нужно ", "мне нужно", "нужен ",
+    "need ", "i need", "but need",
+    "potrzebuję", "potrzeba",
+    "потрібно", "треба", "мені потрібно",
+    "но при этом", "але при цьому",
+    "але потрібно", "но нужно",
+    "but i need", "ale potrzebuję",
+];
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  FOLLOW-UP / SHORT INPUT — context-aware signals
 // ═══════════════════════════════════════════════════════════════════════════════

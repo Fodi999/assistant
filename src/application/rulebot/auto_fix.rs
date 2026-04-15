@@ -142,7 +142,9 @@ fn pick_protein(dish_type: DishType, goal: &GoalProfile) -> (&'static str, &'sta
     }
 }
 
-/// Add a dish-appropriate protein source if none exists.
+/// Target-driven protein fix: add dish-appropriate protein and scale until
+/// per-serving protein reaches `goal.protein_g.start`.
+/// This is a `while protein < target` loop — not a one-shot add.
 fn fix_no_protein(
     tc: &mut TechCard,
     dish_type: DishType,
@@ -152,50 +154,97 @@ fn fix_no_protein(
 ) {
     // Don't double-add if adaptation_engine already added a protein
     let has_protein = tc.ingredients.iter().any(|i| i.role == "protein");
-    if has_protein { return; }
 
     let has_legume = tc.ingredients.iter().any(|i| {
         let slug = i.resolved_slug.as_deref().unwrap_or(&i.slug_hint).to_lowercase();
         slug.contains("chickpea") || slug.contains("bean") || slug.contains("lentil")
             || slug.contains("tofu") || slug.contains("tempeh")
     });
-    if has_legume { return; }
 
-    let (slug, state, grams, kcal, protein_g, fat_g, carbs_g) = pick_protein(dish_type, goal);
+    // ── Step 1: Insert protein source if none exists ─────────────────────
+    if !has_protein && !has_legume {
+        let (slug, state, grams, kcal, protein_g, fat_g, carbs_g) = pick_protein(dish_type, goal);
 
-    tc.ingredients.push(ResolvedIngredient {
-        product: None,
-        slug_hint: slug.into(),
-        resolved_slug: None,
-        state: state.into(),
-        role: "protein".into(),
-        gross_g: grams,
-        cleaned_net_g: grams,
-        cooked_net_g: grams,
-        kcal,
-        protein_g,
-        fat_g,
-        carbs_g,
-    });
+        tc.ingredients.push(ResolvedIngredient {
+            product: None,
+            slug_hint: slug.into(),
+            resolved_slug: None,
+            state: state.into(),
+            role: "protein".into(),
+            gross_g: grams,
+            cleaned_net_g: grams,
+            cooked_net_g: grams,
+            kcal,
+            protein_g,
+            fat_g,
+            carbs_g,
+        });
 
-    let detail = match lang {
-        ChatLang::Ru => format!("{} ({:.0}г) как источник белка", slug, grams),
-        ChatLang::En => format!("{} ({:.0}g) as protein source", slug, grams),
-        ChatLang::Pl => format!("{} ({:.0}g) jako źródło białka", slug, grams),
-        ChatLang::Uk => format!("{} ({:.0}г) як джерело білка", slug, grams),
-    };
-    let action = match lang {
-        ChatLang::Ru => "Добавлено",
-        ChatLang::En => "Added",
-        ChatLang::Pl => "Dodano",
-        ChatLang::Uk => "Додано",
-    };
+        let detail = match lang {
+            ChatLang::Ru => format!("{} ({:.0}г) как источник белка", slug, grams),
+            ChatLang::En => format!("{} ({:.0}g) as protein source", slug, grams),
+            ChatLang::Pl => format!("{} ({:.0}g) jako źródło białka", slug, grams),
+            ChatLang::Uk => format!("{} ({:.0}г) як джерело білка", slug, grams),
+        };
+        let action = match lang {
+            ChatLang::Ru => "Добавлено",
+            ChatLang::En => "Added",
+            ChatLang::Pl => "Dodano",
+            ChatLang::Uk => "Додано",
+        };
+        report.fixes.push(FixAction {
+            trigger: "NO_PROTEIN".into(),
+            action: action.into(),
+            detail,
+        });
+    }
 
-    report.fixes.push(FixAction {
-        trigger: "NO_PROTEIN".into(),
-        action: action.into(),
-        detail,
-    });
+    // ── Step 2: Scale protein ingredients until target is reached ────────
+    // target-driven: while per_serving_protein < goal.protein_g.start → scale up
+    let servings = tc.servings.max(1) as f32;
+    let target = goal.protein_g.start;
+
+    // Max 3 iterations to avoid infinite loops
+    for _ in 0..3 {
+        let current_protein: f32 = tc.ingredients.iter().map(|i| i.protein_g).sum::<f32>() / servings;
+        if current_protein >= target { break; }
+
+        // Scale all protein-role ingredients by the deficit ratio (capped at 2x per step)
+        let deficit_ratio = (target / current_protein.max(1.0)).min(2.0);
+        let mut scaled = Vec::new();
+
+        for ing in tc.ingredients.iter_mut() {
+            if ing.role == "protein" || {
+                let s = ing.resolved_slug.as_deref().unwrap_or(&ing.slug_hint).to_lowercase();
+                s.contains("chickpea") || s.contains("bean") || s.contains("lentil")
+                    || s.contains("tofu") || s.contains("tempeh")
+            } {
+                let old_g = ing.gross_g;
+                scale_ingredient(ing, deficit_ratio);
+                scaled.push(format!("{}: {:.0}g → {:.0}g", ing.slug_hint, old_g, ing.gross_g));
+            }
+        }
+
+        if scaled.is_empty() { break; }
+
+        let action = match lang {
+            ChatLang::Ru => "Увеличен белок",
+            ChatLang::En => "Boosted protein",
+            ChatLang::Pl => "Zwiększono białko",
+            ChatLang::Uk => "Збільшено білок",
+        };
+        let detail = match lang {
+            ChatLang::Ru => format!("до {:.0}г/порцию (цель: {:.0}г): {}", current_protein * deficit_ratio, target, scaled.join(", ")),
+            ChatLang::En => format!("to {:.0}g/serv (target: {:.0}g): {}", current_protein * deficit_ratio, target, scaled.join(", ")),
+            ChatLang::Pl => format!("do {:.0}g/porcja (cel: {:.0}g): {}", current_protein * deficit_ratio, target, scaled.join(", ")),
+            ChatLang::Uk => format!("до {:.0}г/порцію (ціль: {:.0}г): {}", current_protein * deficit_ratio, target, scaled.join(", ")),
+        };
+        report.fixes.push(FixAction {
+            trigger: "LOW_PROTEIN".into(),
+            action: action.into(),
+            detail,
+        });
+    }
 }
 
 /// Increase all portions proportionally if kcal is too low.
@@ -592,5 +641,40 @@ mod tests {
 
         auto_fix(&mut tc, &validation, &balanced(), ChatLang::En);
         assert!(tc.total_kcal > old_kcal, "total kcal should increase after adding protein");
+    }
+
+    #[test]
+    fn target_driven_protein_scales_up() {
+        // High-protein goal requires 40g+ protein per serving.
+        // Default lentils add ~7g — not enough. System should scale up.
+        let high_protein = profile_for(HealthModifier::HighProtein);
+
+        let mut tc = make_techcard(vec![
+            ("beet", "side", 100.0, 40),
+            ("potato", "side", 100.0, 80),
+        ]);
+        tc.dish_name = "tomato soup".into();
+        tc.servings = 1;
+        // protein_g per ingredient = 10.0 by default → total = 20g
+        // high_protein goal wants 40g+, so system must add + scale protein
+
+        let validation = ValidationReport {
+            issues: vec![ValidationIssue {
+                severity: Severity::Warning,
+                code: "NO_PROTEIN",
+                message: "no protein".into(),
+            }],
+        };
+
+        let report = auto_fix(&mut tc, &validation, &high_protein, ChatLang::En);
+        recalculate_totals(&mut tc);
+        let per_serving_protein = tc.total_protein / tc.servings.max(1) as f32;
+
+        // Should have added protein AND scaled it up toward target
+        assert!(per_serving_protein >= 35.0,
+            "high-protein goal should drive protein up, got {:.1}g", per_serving_protein);
+        // Should have at least 2 fix actions: add + scale
+        assert!(report.fixes.len() >= 2,
+            "expected add + scale fixes, got {} fixes", report.fixes.len());
     }
 }

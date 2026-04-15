@@ -107,6 +107,12 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
 
     let mut out = vec![intro];
 
+    // ── Goal summary: what the system optimized for ──────────────────────
+    let goal_summary = format_goal_summary(&card.goal, lang);
+    if !goal_summary.is_empty() {
+        out.push(goal_summary);
+    }
+
     if !card.unresolved.is_empty() {
         let warn = match lang {
             ChatLang::Ru => format!("⚠️ Не в базе: {}", card.unresolved.join(", ")),
@@ -162,6 +168,27 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
         out.push(format!("{}:\n{}", header, lines.join("\n")));
     }
 
+    // ── Macros summary: per-serving breakdown ────────────────────────────
+    let macros_line = match lang {
+        ChatLang::Ru => format!(
+            "📊 Б: {:.1}г • Ж: {:.1}г • У: {:.1}г",
+            card.per_serving_protein, card.per_serving_fat, card.per_serving_carbs,
+        ),
+        ChatLang::En => format!(
+            "📊 P: {:.1}g • F: {:.1}g • C: {:.1}g",
+            card.per_serving_protein, card.per_serving_fat, card.per_serving_carbs,
+        ),
+        ChatLang::Pl => format!(
+            "📊 B: {:.1}g • T: {:.1}g • W: {:.1}g",
+            card.per_serving_protein, card.per_serving_fat, card.per_serving_carbs,
+        ),
+        ChatLang::Uk => format!(
+            "📊 Б: {:.1}г • Ж: {:.1}г • В: {:.1}г",
+            card.per_serving_protein, card.per_serving_fat, card.per_serving_carbs,
+        ),
+    };
+    out.push(macros_line);
+
     if !card.validation_warnings.is_empty() {
         let header = match lang {
             ChatLang::Ru => "💡 Внимание",
@@ -176,6 +203,34 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
     }
 
     out.join("\n")
+}
+
+/// Format localized goal summary line.
+fn format_goal_summary(goal: &str, lang: ChatLang) -> String {
+    match (goal, lang) {
+        ("weight_loss", ChatLang::Ru) => "🎯 **Цель**: похудение • низкокалорийный рецепт".into(),
+        ("weight_loss", ChatLang::En) => "🎯 **Goal**: weight loss • low-calorie recipe".into(),
+        ("weight_loss", ChatLang::Pl) => "🎯 **Cel**: odchudzanie • przepis niskokaloryczny".into(),
+        ("weight_loss", ChatLang::Uk) => "🎯 **Ціль**: схуднення • низькокалорійний рецепт".into(),
+
+        ("high_protein", ChatLang::Ru) => "🎯 **Цель**: высокий белок • усиленная протеиновая порция".into(),
+        ("high_protein", ChatLang::En) => "🎯 **Goal**: high protein • boosted protein portion".into(),
+        ("high_protein", ChatLang::Pl) => "🎯 **Cel**: wysoki białko • wzmocniona porcja białka".into(),
+        ("high_protein", ChatLang::Uk) => "🎯 **Ціль**: високий білок • посилена протеїнова порція".into(),
+
+        ("muscle_gain", ChatLang::Ru) => "🎯 **Цель**: набор массы • увеличены порции и углеводы".into(),
+        ("muscle_gain", ChatLang::En) => "🎯 **Goal**: muscle gain • increased portions and carbs".into(),
+        ("muscle_gain", ChatLang::Pl) => "🎯 **Cel**: masa mięśniowa • zwiększone porcje i węglowodany".into(),
+        ("muscle_gain", ChatLang::Uk) => "🎯 **Ціль**: набір маси • збільшені порції та вуглеводи".into(),
+
+        ("low_calorie", ChatLang::Ru) => "🎯 **Цель**: лёгкий рецепт • снижены калории".into(),
+        ("low_calorie", ChatLang::En) => "🎯 **Goal**: light recipe • reduced calories".into(),
+        ("low_calorie", ChatLang::Pl) => "🎯 **Cel**: lekki przepis • obniżone kalorie".into(),
+        ("low_calorie", ChatLang::Uk) => "🎯 **Ціль**: легкий рецепт • знижені калорії".into(),
+
+        ("balanced", _) => String::new(), // balanced = default, no special label
+        _ => String::new(),
+    }
 }
 
 fn fmt_time(min: u16) -> String {

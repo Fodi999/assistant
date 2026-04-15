@@ -382,6 +382,7 @@ fn apply_context_boosts(text: &str, scores: &mut [(Intent, i32); 8]) {
     let has_action_verb = kw::ACTION_SIGNALS.iter().any(|kw| text.contains(kw));
     let has_meal_time = kw::MEAL_TIME_SIGNALS.iter().any(|kw| text.contains(kw));
     let has_recipe_imperative = kw::RECIPE_IMPERATIVE.iter().any(|kw| text.contains(kw));
+    let has_need = kw::NEED_SIGNALS.iter().any(|kw| text.contains(kw));
 
     // ── RULE 1: Explicit cook command always wins ────────────────────────
     // "приготовь томатный суп" / "сделай борщ для похудения" / "рецепт салата на сушку"
@@ -409,6 +410,22 @@ fn apply_context_boosts(text: &str, scores: &mut [(Intent, i32); 8]) {
             // Penalize HealthyProduct to avoid it stealing the intent
             if *intent == Intent::HealthyProduct && *score > 0 {
                 *score = (*score - 3).max(0);
+            }
+        }
+    }
+
+    // ── RULE 3: Goal + need/constraint → MealIdea (complex dietary request) ──
+    // "chcę schudnąć, ale potrzebuję dużo białka" → user wants a meal suggestion
+    // "хочу похудеть, но нужно много белка" → same pattern
+    // The "need" signal indicates the user has requirements → they want a solution (meal),
+    // not a product list. Strong boost needed because goal keywords dominate HealthyProduct.
+    if has_goal && has_need && !has_recipe_imperative {
+        for (intent, score) in scores.iter_mut() {
+            if *intent == Intent::MealIdea {
+                *score += 8;
+            }
+            if *intent == Intent::HealthyProduct && *score > 0 {
+                *score = (*score / 2).max(0); // halve, not just -3
             }
         }
     }
@@ -593,6 +610,20 @@ mod tests {
     }
     #[test] fn goal_action_diet_lunch() {
         assert_eq!(detect_intent("diet lunch ideas"), Intent::MealIdea);
+    }
+
+    // ═══ Goal + need → MealIdea (not HealthyProduct) ═════════════════════
+    #[test] fn goal_need_pl() {
+        assert_eq!(detect_intent("chcę schudnąć, ale potrzebuję dużo białka"), Intent::MealIdea);
+    }
+    #[test] fn goal_need_ru() {
+        assert_eq!(detect_intent("хочу похудеть, но нужно много белка"), Intent::MealIdea);
+    }
+    #[test] fn goal_need_en() {
+        assert_eq!(detect_intent("want to lose weight but need high protein"), Intent::MealIdea);
+    }
+    #[test] fn goal_need_uk() {
+        assert_eq!(detect_intent("хочу схуднути, але потрібно багато білка"), Intent::MealIdea);
     }
 
     // ═══ Context-aware routing tests ═════════════════════════════════════

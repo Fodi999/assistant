@@ -362,6 +362,9 @@ pub async fn resolve_dish(
         }
     }
 
+    // ── 3b. Deduplicate ingredients (merge water+water, etc.) ──────────
+    merge_duplicate_ingredients(&mut ingredients);
+
     // ── 4. Compute totals ───────────────────────────────────────────────
     let total_gross: f32 = ingredients.iter().map(|i| i.gross_g).sum();
     let total_output: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
@@ -461,6 +464,54 @@ pub async fn resolve_dish(
     }
 
     tech_card
+}
+
+// ── Ingredient Deduplication ─────────────────────────────────────────────────
+
+/// Merge duplicate ingredients by resolved_slug (or slug_hint fallback).
+/// Water + Water → single Water with summed grams.
+/// This prevents duplicates caused by Gemini schema + auto_insert_implicit + cooking_rules
+/// all potentially adding the same ingredient (e.g. water for soup).
+fn merge_duplicate_ingredients(ingredients: &mut Vec<ResolvedIngredient>) {
+    use std::collections::HashMap;
+
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut merged_indices: Vec<usize> = Vec::new();
+
+    for i in 0..ingredients.len() {
+        let key = ingredients[i].resolved_slug.as_deref()
+            .unwrap_or(&ingredients[i].slug_hint)
+            .to_lowercase();
+
+        if let Some(&first_idx) = seen.get(&key) {
+            // Merge into the first occurrence
+            let donor_gross = ingredients[i].gross_g;
+            let donor_clean = ingredients[i].cleaned_net_g;
+            let donor_cooked = ingredients[i].cooked_net_g;
+            let donor_kcal = ingredients[i].kcal;
+            let donor_protein = ingredients[i].protein_g;
+            let donor_fat = ingredients[i].fat_g;
+            let donor_carbs = ingredients[i].carbs_g;
+
+            let target = &mut ingredients[first_idx];
+            target.gross_g += donor_gross;
+            target.cleaned_net_g += donor_clean;
+            target.cooked_net_g += donor_cooked;
+            target.kcal += donor_kcal;
+            target.protein_g += donor_protein;
+            target.fat_g += donor_fat;
+            target.carbs_g += donor_carbs;
+
+            merged_indices.push(i);
+        } else {
+            seen.insert(key, i);
+        }
+    }
+
+    // Remove merged duplicates in reverse order to preserve indices
+    for &idx in merged_indices.iter().rev() {
+        ingredients.remove(idx);
+    }
 }
 
 // ── Cooking Steps Generation (pure logic, no LLM) ───────────────────────────
@@ -880,5 +931,48 @@ mod tests {
         assert_eq!(instrumental_phrase("Говядина"), "говядиной");
         assert_eq!(instrumental_phrase("Чёрный перец"), "чёрным перцем");
         assert_eq!(instrumental_phrase("Куриные яйца"), "куриными яйцами");
+    }
+
+    // ═══ Ingredient deduplication ════════════════════════════════════════
+
+    #[test]
+    fn merge_duplicate_water() {
+        let mut ingredients = vec![
+            ResolvedIngredient {
+                product: None,
+                slug_hint: "water".into(),
+                resolved_slug: Some("water".into()),
+                state: "boiled".into(),
+                role: "liquid".into(),
+                gross_g: 300.0, cleaned_net_g: 300.0, cooked_net_g: 300.0,
+                kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+            },
+            ResolvedIngredient {
+                product: None,
+                slug_hint: "water".into(),
+                resolved_slug: Some("water".into()),
+                state: "boiled".into(),
+                role: "liquid".into(),
+                gross_g: 300.0, cleaned_net_g: 300.0, cooked_net_g: 300.0,
+                kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+            },
+            ResolvedIngredient {
+                product: None,
+                slug_hint: "potato".into(),
+                resolved_slug: Some("potato".into()),
+                state: "boiled".into(),
+                role: "side".into(),
+                gross_g: 200.0, cleaned_net_g: 170.0, cooked_net_g: 170.0,
+                kcal: 140, protein_g: 3.4, fat_g: 0.2, carbs_g: 31.0,
+            },
+        ];
+
+        merge_duplicate_ingredients(&mut ingredients);
+
+        assert_eq!(ingredients.len(), 2, "water should be merged into one");
+        let water = ingredients.iter().find(|i| i.slug_hint == "water").unwrap();
+        assert_eq!(water.gross_g, 600.0, "water grams should be summed");
+        let potato = ingredients.iter().find(|i| i.slug_hint == "potato").unwrap();
+        assert_eq!(potato.gross_g, 200.0, "potato should be unchanged");
     }
 }
