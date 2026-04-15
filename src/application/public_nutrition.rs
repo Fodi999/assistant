@@ -126,6 +126,60 @@ pub struct FoodPropertiesPublicRow {
     pub water_activity: Option<f32>,
 }
 
+// ── Health Profile (public) ───────────────────────────
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct HealthProfilePublicRow {
+    pub bioactive_compounds_en: Option<serde_json::Value>,
+    pub bioactive_compounds_ru: Option<serde_json::Value>,
+    pub bioactive_compounds_pl: Option<serde_json::Value>,
+    pub bioactive_compounds_uk: Option<serde_json::Value>,
+    pub health_effects_en: Option<serde_json::Value>,
+    pub health_effects_ru: Option<serde_json::Value>,
+    pub health_effects_pl: Option<serde_json::Value>,
+    pub health_effects_uk: Option<serde_json::Value>,
+    pub contraindications_en: Option<serde_json::Value>,
+    pub contraindications_ru: Option<serde_json::Value>,
+    pub contraindications_pl: Option<serde_json::Value>,
+    pub contraindications_uk: Option<serde_json::Value>,
+    pub food_role: Option<String>,
+    pub orac_score: Option<f32>,
+    pub absorption_notes_en: Option<String>,
+    pub absorption_notes_ru: Option<String>,
+    pub absorption_notes_pl: Option<String>,
+    pub absorption_notes_uk: Option<String>,
+}
+
+// ── Sugar Profile (public) ───────────────────────────
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct SugarProfilePublicRow {
+    pub glucose: Option<f32>,
+    pub fructose: Option<f32>,
+    pub sucrose: Option<f32>,
+    pub lactose: Option<f32>,
+    pub maltose: Option<f32>,
+    pub total_sugars: Option<f32>,
+    pub added_sugars: Option<f32>,
+    pub sweetness_perception: Option<f32>,
+    pub sugar_alcohols: Option<f32>,
+}
+
+// ── Processing Effects (public) ──────────────────────
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ProcessingEffectsPublicRow {
+    pub vitamin_retention_pct: Option<f32>,
+    pub protein_denature_temp: Option<f32>,
+    pub mineral_leaching_risk: Option<String>,
+    pub best_cooking_method_en: Option<String>,
+    pub best_cooking_method_ru: Option<String>,
+    pub best_cooking_method_pl: Option<String>,
+    pub best_cooking_method_uk: Option<String>,
+    pub maillard_temp: Option<f32>,
+    pub processing_notes_en: Option<String>,
+    pub processing_notes_ru: Option<String>,
+    pub processing_notes_pl: Option<String>,
+    pub processing_notes_uk: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct NutritionPageResponse {
     pub lang: String,
@@ -139,6 +193,9 @@ pub struct NutritionPageResponse {
     pub food_properties: Option<FoodPropertiesPublicRow>,
     pub availability_months: Option<Vec<bool>>,
     pub pairings: Vec<PairingPublicRow>,
+    pub health_profile: Option<HealthProfilePublicRow>,
+    pub sugar_profile: Option<SugarProfilePublicRow>,
+    pub processing_effects: Option<ProcessingEffectsPublicRow>,
 }
 
 // ══════════════════════════════════════════════════════
@@ -305,6 +362,50 @@ impl PublicNutritionService {
         .await
         .unwrap_or_default();
 
+        // 10. Health profile
+        let health_profile: Option<HealthProfilePublicRow> = sqlx::query_as(
+            r#"SELECT bioactive_compounds_en, bioactive_compounds_ru,
+                      bioactive_compounds_pl, bioactive_compounds_uk,
+                      health_effects_en, health_effects_ru,
+                      health_effects_pl, health_effects_uk,
+                      contraindications_en, contraindications_ru,
+                      contraindications_pl, contraindications_uk,
+                      food_role, orac_score,
+                      absorption_notes_en, absorption_notes_ru,
+                      absorption_notes_pl, absorption_notes_uk
+               FROM product_health_profile WHERE product_id = $1"#,
+        )
+        .bind(product_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
+        // 11. Sugar profile
+        let sugar_profile: Option<SugarProfilePublicRow> = sqlx::query_as(
+            r#"SELECT glucose, fructose, sucrose, lactose, maltose,
+                      total_sugars, added_sugars, sweetness_perception, sugar_alcohols
+               FROM nutrition_sugar_profile WHERE product_id = $1"#,
+        )
+        .bind(product_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
+        // 12. Processing effects
+        let processing_effects: Option<ProcessingEffectsPublicRow> = sqlx::query_as(
+            r#"SELECT vitamin_retention_pct, protein_denature_temp, mineral_leaching_risk,
+                      best_cooking_method_en, best_cooking_method_ru,
+                      best_cooking_method_pl, best_cooking_method_uk,
+                      maillard_temp,
+                      processing_notes_en, processing_notes_ru,
+                      processing_notes_pl, processing_notes_uk
+               FROM product_processing_effects WHERE product_id = $1"#,
+        )
+        .bind(product_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
         Ok(NutritionPageResponse {
             lang: "en".to_string(),
             slug: slug.to_string(),
@@ -317,6 +418,9 @@ impl PublicNutritionService {
             food_properties,
             availability_months,
             pairings,
+            health_profile,
+            sugar_profile,
+            processing_effects,
         })
     }
 
