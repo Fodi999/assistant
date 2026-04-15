@@ -135,6 +135,10 @@ struct DataQualityRaw {
     pub has_culinary: bool,
     pub has_food_props: bool,
     pub has_states: bool,
+    // health profile (new)
+    pub has_health_profile: bool,
+    pub has_sugar_profile: bool,
+    pub has_processing_effects: bool,
 }
 
 /// Admin request to update a single ingredient state
@@ -404,7 +408,11 @@ impl AiSousChefService {
                 EXISTS(SELECT 1 FROM diet_flags WHERE product_id = ci.id) as has_diet_flags,
                 EXISTS(SELECT 1 FROM food_culinary_properties WHERE product_id = ci.id) as has_culinary,
                 EXISTS(SELECT 1 FROM food_properties WHERE product_id = ci.id) as has_food_props,
-                ((SELECT COUNT(*) FROM ingredient_states WHERE ingredient_id = ci.id) >= 10) as has_states
+                ((SELECT COUNT(*) FROM ingredient_states WHERE ingredient_id = ci.id) >= 10) as has_states,
+                -- health profile (new)
+                EXISTS(SELECT 1 FROM product_health_profile WHERE product_id = ci.id) as has_health_profile,
+                EXISTS(SELECT 1 FROM nutrition_sugar_profile WHERE product_id = ci.id) as has_sugar_profile,
+                EXISTS(SELECT 1 FROM product_processing_effects WHERE product_id = ci.id) as has_processing_effects
             FROM catalog_ingredients ci
             WHERE ci.is_active = true
               AND ($1::uuid IS NULL OR ci.id = $1)
@@ -521,6 +529,10 @@ impl AiSousChefService {
             (r.has_culinary,       "food_culinary",     "Кулинарные свойства", "relations", "optional", ""),
             (r.has_food_props,     "food_properties",   "Свойства продукта",   "relations", "optional", ""),
             (r.has_states,         "ingredient_states", "Состояния (≥10)", "relations", "optional", ""),
+            // ── health profile (recommended) ──
+            (r.has_health_profile,     "health_profile",      "Профиль здоровья",     "health", "recommended", ""),
+            (r.has_sugar_profile,      "sugar_profile",       "Сахарный профиль",     "health", "recommended", ""),
+            (r.has_processing_effects, "processing_effects",  "Эффекты обработки",    "health", "recommended", ""),
         ];
 
         let mut total: i64 = 0;
@@ -699,6 +711,9 @@ impl AiSousChefService {
             "wild_farmed"      => "Дикий/фермерский — качество рыбы/морепродуктов",
             "sushi_grade"      => "Сашими-качество — можно есть сырым",
             "seo_title"        => "SEO Title — поисковая оптимизация",
+            "health_profile"   => "Профиль здоровья — биоактивные соединения, эффекты, противопоказания",
+            "sugar_profile"    => "Сахарный профиль — детальная разбивка сахаров",
+            "processing_effects" => "Эффекты обработки — как готовка влияет на нутриенты",
             _ => match severity {
                 "critical" => "Критическое поле — без него продукт неполный",
                 "recommended" => "Рекомендуемое — улучшает качество карточки",
@@ -732,6 +747,9 @@ impl AiSousChefService {
                                => "Запустите AI-автозаполнение — заполнит аллергены и диет-флаги",
             "food_culinary" | "food_properties"
                                => "Запустите AI-автозаполнение — создаст кулинарные/физические свойства",
+            "health_profile"   => "Запустите AI-автозаполнение — заполнит биоактивы, эффекты, противопоказания",
+            "sugar_profile"    => "Запустите AI-автозаполнение — создаст детальный сахарный профиль",
+            "processing_effects" => "Запустите AI-автозаполнение — заполнит эффекты обработки",
             "ingredient_states"=> "Запустите генерацию состояний (/generate-states)",
             _                  => "Заполните вручную или запустите AI-автозаполнение",
         }
