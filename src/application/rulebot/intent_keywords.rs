@@ -270,3 +270,28 @@ pub const CONFIRM_SIGNALS: &[&str] = &[
     "tak", "jasne", "dobra",
     "так", "добре", "гаразд",
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  EXPLICIT RECIPE COMMANDS — imperative cooking verbs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Imperative cooking verbs that signal the user wants a RECIPE, not a product list.
+/// When these co-occur with a goal keyword ("похудеть", "на массу"),
+/// RecipeHelp must still win because the user explicitly asked to cook.
+///
+/// NOTE: Only imperatives (приготовь) and direct nouns (рецепт), NOT infinitives
+/// (приготовить) — because "что приготовить?" is a question (MealIdea), not a command.
+pub const RECIPE_IMPERATIVE: &[&str] = &[
+    // RU imperative
+    "приготовь", "сделай", "свари", "пожарь", "потуши", "запеки",
+    "сготовь", "зажарь",
+    // UK imperative
+    "приготуй", "зроби", "звари", "підсмаж", "потуш", "запечи",
+    // EN imperative (trailing space avoids partial matches)
+    "cook ", "make ", "prepare ", "bake ", "grill ", "fry ",
+    "stew ", "roast ", "boil ",
+    // PL imperative
+    "ugotuj", "zrób", "usmaż", "upiecz", "przygotuj",
+    // Direct recipe-noun requests ("рецепт борща на сушку")
+    "рецепт", "recipe", "przepis", "рецепти",
+];

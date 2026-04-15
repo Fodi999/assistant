@@ -376,13 +376,32 @@ fn sum_scores(text: &str, keywords: &[kw::ScoredKeyword]) -> i32 {
 /// Fixes:
 /// - "хочу на массу, что поесть?" → MealIdea (goal + action verb = meal, not product list)
 /// - "low calorie dinner for diet" → MealIdea (meal-time + diet = meal, not nutrition_info)
+/// - "хочу похудеть, приготовь томатный суп" → RecipeHelp (explicit cook verb wins over goal)
 fn apply_context_boosts(text: &str, scores: &mut [(Intent, i32); 8]) {
     let has_goal = kw::GOAL_SIGNALS.iter().any(|kw| text.contains(kw));
     let has_action_verb = kw::ACTION_SIGNALS.iter().any(|kw| text.contains(kw));
     let has_meal_time = kw::MEAL_TIME_SIGNALS.iter().any(|kw| text.contains(kw));
+    let has_recipe_imperative = kw::RECIPE_IMPERATIVE.iter().any(|kw| text.contains(kw));
 
-    // Boost MealIdea when goal + action verb or goal + meal time
-    if has_goal && (has_action_verb || has_meal_time) {
+    // ── RULE 1: Explicit cook command always wins ────────────────────────
+    // "приготовь томатный суп" / "сделай борщ для похудения" / "рецепт салата на сушку"
+    // The user explicitly asked to cook → RecipeHelp must win regardless of goal keywords.
+    if has_recipe_imperative {
+        for (intent, score) in scores.iter_mut() {
+            if *intent == Intent::RecipeHelp {
+                *score += 6;
+            }
+            // Penalize HealthyProduct so goal keywords ("похуд", "на массу") don't steal the intent
+            if *intent == Intent::HealthyProduct && *score > 0 {
+                *score = (*score - 4).max(0);
+            }
+        }
+    }
+
+    // ── RULE 2: Goal + action/meal-time → MealIdea (no specific dish) ───
+    // "что приготовить на ужин на массу?" / "diet lunch ideas"
+    // Only if no recipe imperative already grabbed it.
+    if has_goal && (has_action_verb || has_meal_time) && !has_recipe_imperative {
         for (intent, score) in scores.iter_mut() {
             if *intent == Intent::MealIdea {
                 *score += 5;
@@ -515,6 +534,32 @@ mod tests {
     #[test] fn goal_comfort_ru()      { assert_eq!(detect_intent("что-нибудь сытное"),       Intent::HealthyProduct); }
 
     #[test] fn unknown_garbage() { assert_eq!(detect_intent("asdfghjkl"),               Intent::Unknown); }
+
+    // ── Explicit cook verb + goal → RecipeHelp (NOT HealthyProduct) ──
+    #[test]
+    fn recipe_with_goal_cook_tomato_soup() {
+        assert_eq!(detect_intent("хочу похудеть, приготовь томатный суп"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_with_goal_make_salad() {
+        assert_eq!(detect_intent("сделай салат для похудения"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_with_goal_cook_borscht_muscle() {
+        assert_eq!(detect_intent("рецепт борща на массу"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_with_goal_bake_fish_diet() {
+        assert_eq!(detect_intent("запеки рыбу диетическую"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_with_goal_cook_keto_en() {
+        assert_eq!(detect_intent("cook a keto chicken dinner"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_with_goal_make_light_soup_pl() {
+        assert_eq!(detect_intent("ugotuj lekką zupę pomidorową"), Intent::RecipeHelp);
+    }
 
     // ── Score-based wins ──
     #[test] fn ambiguous_healthy_wins() {
