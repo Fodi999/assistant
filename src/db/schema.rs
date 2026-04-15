@@ -379,13 +379,25 @@ async fn init_product_health_profile(pool: &PgPool) -> AppResult<()> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS product_health_profile (
-            product_id          UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
-            bioactive_compounds JSONB DEFAULT '[]'::jsonb,
-            health_effects      JSONB DEFAULT '[]'::jsonb,
-            contraindications   JSONB DEFAULT '[]'::jsonb,
-            food_role           TEXT,
-            orac_score          REAL,
-            absorption_notes    TEXT
+            product_id              UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+            bioactive_compounds_en  JSONB DEFAULT '[]'::jsonb,
+            bioactive_compounds_ru  JSONB DEFAULT '[]'::jsonb,
+            bioactive_compounds_pl  JSONB DEFAULT '[]'::jsonb,
+            bioactive_compounds_uk  JSONB DEFAULT '[]'::jsonb,
+            health_effects_en       JSONB DEFAULT '[]'::jsonb,
+            health_effects_ru       JSONB DEFAULT '[]'::jsonb,
+            health_effects_pl       JSONB DEFAULT '[]'::jsonb,
+            health_effects_uk       JSONB DEFAULT '[]'::jsonb,
+            contraindications_en    JSONB DEFAULT '[]'::jsonb,
+            contraindications_ru    JSONB DEFAULT '[]'::jsonb,
+            contraindications_pl    JSONB DEFAULT '[]'::jsonb,
+            contraindications_uk    JSONB DEFAULT '[]'::jsonb,
+            food_role               TEXT,
+            orac_score              REAL,
+            absorption_notes_en     TEXT,
+            absorption_notes_ru     TEXT,
+            absorption_notes_pl     TEXT,
+            absorption_notes_uk     TEXT
         )
         "#,
     )
@@ -432,13 +444,19 @@ async fn init_product_processing_effects(pool: &PgPool) -> AppResult<()> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS product_processing_effects (
-            product_id            UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
-            vitamin_retention_pct REAL,
-            protein_denature_temp REAL,
-            mineral_leaching_risk TEXT,
-            best_cooking_method   TEXT,
-            maillard_temp         REAL,
-            processing_notes      TEXT
+            product_id              UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+            vitamin_retention_pct   REAL,
+            protein_denature_temp   REAL,
+            mineral_leaching_risk   TEXT,
+            best_cooking_method_en  TEXT,
+            best_cooking_method_ru  TEXT,
+            best_cooking_method_pl  TEXT,
+            best_cooking_method_uk  TEXT,
+            maillard_temp           REAL,
+            processing_notes_en     TEXT,
+            processing_notes_ru     TEXT,
+            processing_notes_pl     TEXT,
+            processing_notes_uk     TEXT
         )
         "#,
     )

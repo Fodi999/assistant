@@ -334,12 +334,24 @@ Return ONLY valid JSON:
     "water_activity": <float 0-1 or null>
   }},
   "health_profile": {{
-    "bioactive_compounds": ["beta-carotene", "lycopene", ...] or [],
-    "health_effects": ["antioxidant", "anti-inflammatory", "heart-health", ...] or [],
-    "contraindications": ["kidney stones", "blood thinners", ...] or [],
+    "bioactive_compounds_en": ["beta-carotene", "lycopene", ...] or [],
+    "bioactive_compounds_ru": ["бета-каротин", "ликопин", ...] or [],
+    "bioactive_compounds_pl": ["beta-karoten", "likopen", ...] or [],
+    "bioactive_compounds_uk": ["бета-каротин", "лікопін", ...] or [],
+    "health_effects_en": ["antioxidant", "anti-inflammatory", ...] or [],
+    "health_effects_ru": ["антиоксидант", "противовоспалительное", ...] or [],
+    "health_effects_pl": ["antyoksydant", "przeciwzapalny", ...] or [],
+    "health_effects_uk": ["антиоксидант", "протизапальне", ...] or [],
+    "contraindications_en": ["kidney stones", "blood thinners", ...] or [],
+    "contraindications_ru": ["камни в почках", "разжижители крови", ...] or [],
+    "contraindications_pl": ["kamienie nerkowe", "leki rozrzedzające krew", ...] or [],
+    "contraindications_uk": ["камені в нирках", "розріджувачі крові", ...] or [],
     "food_role": "<protein_source|carb_source|fat_source|flavor_base|aromatic|garnish|binder|acid|sweetener|thickener|liquid_base|topping|fermented or null>",
     "orac_score": <float μmol TE/100g or null>,
-    "absorption_notes": "<string or null>"
+    "absorption_notes_en": "<string or null>",
+    "absorption_notes_ru": "<string or null>",
+    "absorption_notes_pl": "<string or null>",
+    "absorption_notes_uk": "<string or null>"
   }},
   "sugar_profile": {{
     "glucose": <float g or null>, "fructose": <float g or null>,
@@ -353,9 +365,15 @@ Return ONLY valid JSON:
     "vitamin_retention_pct": <float 0-100 after typical cooking or null>,
     "protein_denature_temp": <float celsius or null>,
     "mineral_leaching_risk": "<low|medium|high or null>",
-    "best_cooking_method": "<raw|steamed|boiled|baked|grilled|fried|sous_vide|stewed or null>",
+    "best_cooking_method_en": "<raw|steamed|boiled|baked|grilled|fried|sous_vide|stewed or null>",
+    "best_cooking_method_ru": "<сырой|на пару|варка|запекание|гриль|жарка|су-вид|тушение or null>",
+    "best_cooking_method_pl": "<surowy|na parze|gotowanie|pieczenie|grill|smażenie|sous_vide|duszenie or null>",
+    "best_cooking_method_uk": "<сирий|на парі|варка|запікання|гриль|смаження|су-від|тушкування or null>",
     "maillard_temp": <float celsius or null>,
-    "processing_notes": "<string with key cooking/processing effects or null>"
+    "processing_notes_en": "<string with key cooking effects or null>",
+    "processing_notes_ru": "<string or null>",
+    "processing_notes_pl": "<string or null>",
+    "processing_notes_uk": "<string or null>"
   }}
 }}
 
@@ -365,12 +383,14 @@ Rules:
 - Descriptions must be natural, not machine-translated
 - If FILLED=true → return null for that field
 - If FILLED=false → you MUST provide real value, NOT null
-- health_profile.bioactive_compounds: list ACTUAL compounds (beta-carotene, not "vitamin A")
-- health_profile.health_effects: evidence-based effects only (antioxidant, anti-inflammatory, etc.)
-- health_profile.contraindications: real medical contraindications (kidney stones, blood thinners, etc.)
-- health_profile.food_role: the PRIMARY culinary role of this ingredient
+- health_profile.bioactive_compounds_*: list ACTUAL compounds in EACH language natively (en: "beta-carotene", ru: "бета-каротин")
+- health_profile.health_effects_*: evidence-based effects in EACH language (en: "antioxidant", ru: "антиоксидант")
+- health_profile.contraindications_*: real medical contraindications in EACH language
+- health_profile.food_role: the PRIMARY culinary role of this ingredient (English enum key)
 - sugar_profile: for animal products/oils set all to null or 0
 - processing_effects: how typical cooking affects this specific ingredient
+- processing_effects.best_cooking_method_*: natural language in each language
+- processing_effects.processing_notes_*: natural language in each language
 - Return ONLY JSON, no extra text"#,
         name_en = name_en,
         name_ru = name_ru,

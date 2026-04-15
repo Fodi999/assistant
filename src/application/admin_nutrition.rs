@@ -209,12 +209,24 @@ pub struct CulinaryDto {
 // ── Health Profile ────────────────────────────────────
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HealthProfileDto {
-    pub bioactive_compounds: Option<Vec<String>>,
-    pub health_effects: Option<Vec<String>>,
-    pub contraindications: Option<Vec<String>>,
+    pub bioactive_compounds_en: Option<Vec<String>>,
+    pub bioactive_compounds_ru: Option<Vec<String>>,
+    pub bioactive_compounds_pl: Option<Vec<String>>,
+    pub bioactive_compounds_uk: Option<Vec<String>>,
+    pub health_effects_en: Option<Vec<String>>,
+    pub health_effects_ru: Option<Vec<String>>,
+    pub health_effects_pl: Option<Vec<String>>,
+    pub health_effects_uk: Option<Vec<String>>,
+    pub contraindications_en: Option<Vec<String>>,
+    pub contraindications_ru: Option<Vec<String>>,
+    pub contraindications_pl: Option<Vec<String>>,
+    pub contraindications_uk: Option<Vec<String>>,
     pub food_role: Option<String>,
     pub orac_score: Option<f32>,
-    pub absorption_notes: Option<String>,
+    pub absorption_notes_en: Option<String>,
+    pub absorption_notes_ru: Option<String>,
+    pub absorption_notes_pl: Option<String>,
+    pub absorption_notes_uk: Option<String>,
 }
 
 // ── Sugar Profile ─────────────────────────────────────
@@ -237,9 +249,15 @@ pub struct ProcessingEffectsDto {
     pub vitamin_retention_pct: Option<f32>,
     pub protein_denature_temp: Option<f32>,
     pub mineral_leaching_risk: Option<String>,
-    pub best_cooking_method: Option<String>,
+    pub best_cooking_method_en: Option<String>,
+    pub best_cooking_method_ru: Option<String>,
+    pub best_cooking_method_pl: Option<String>,
+    pub best_cooking_method_uk: Option<String>,
     pub maillard_temp: Option<f32>,
-    pub processing_notes: Option<String>,
+    pub processing_notes_en: Option<String>,
+    pub processing_notes_ru: Option<String>,
+    pub processing_notes_pl: Option<String>,
+    pub processing_notes_uk: Option<String>,
 }
 
 // ── Update requests ───────────────────────────────────
@@ -448,19 +466,37 @@ impl AdminNutritionService {
         .await
         .map_err(AppError::from)?;
 
-        // ── Health profile (JSONB arrays) ──
+        // ── Health profile (JSONB arrays, i18n) ──
         let health_profile = {
             #[derive(sqlx::FromRow)]
             struct HpRow {
-                bioactive_compounds: Option<serde_json::Value>,
-                health_effects: Option<serde_json::Value>,
-                contraindications: Option<serde_json::Value>,
+                bioactive_compounds_en: Option<serde_json::Value>,
+                bioactive_compounds_ru: Option<serde_json::Value>,
+                bioactive_compounds_pl: Option<serde_json::Value>,
+                bioactive_compounds_uk: Option<serde_json::Value>,
+                health_effects_en: Option<serde_json::Value>,
+                health_effects_ru: Option<serde_json::Value>,
+                health_effects_pl: Option<serde_json::Value>,
+                health_effects_uk: Option<serde_json::Value>,
+                contraindications_en: Option<serde_json::Value>,
+                contraindications_ru: Option<serde_json::Value>,
+                contraindications_pl: Option<serde_json::Value>,
+                contraindications_uk: Option<serde_json::Value>,
                 food_role: Option<String>,
                 orac_score: Option<f32>,
-                absorption_notes: Option<String>,
+                absorption_notes_en: Option<String>,
+                absorption_notes_ru: Option<String>,
+                absorption_notes_pl: Option<String>,
+                absorption_notes_uk: Option<String>,
             }
             let row = sqlx::query_as::<_, HpRow>(
-                "SELECT bioactive_compounds,health_effects,contraindications,food_role,orac_score,absorption_notes FROM product_health_profile WHERE product_id=$1",
+                r#"SELECT
+                    bioactive_compounds_en,bioactive_compounds_ru,bioactive_compounds_pl,bioactive_compounds_uk,
+                    health_effects_en,health_effects_ru,health_effects_pl,health_effects_uk,
+                    contraindications_en,contraindications_ru,contraindications_pl,contraindications_uk,
+                    food_role,orac_score,
+                    absorption_notes_en,absorption_notes_ru,absorption_notes_pl,absorption_notes_uk
+                FROM product_health_profile WHERE product_id=$1"#,
             )
             .bind(id)
             .fetch_optional(&self.pool)
@@ -471,12 +507,24 @@ impl AdminNutritionService {
                     v.and_then(|val| serde_json::from_value(val).ok())
                 }
                 HealthProfileDto {
-                    bioactive_compounds: json_to_strings(r.bioactive_compounds),
-                    health_effects: json_to_strings(r.health_effects),
-                    contraindications: json_to_strings(r.contraindications),
+                    bioactive_compounds_en: json_to_strings(r.bioactive_compounds_en),
+                    bioactive_compounds_ru: json_to_strings(r.bioactive_compounds_ru),
+                    bioactive_compounds_pl: json_to_strings(r.bioactive_compounds_pl),
+                    bioactive_compounds_uk: json_to_strings(r.bioactive_compounds_uk),
+                    health_effects_en: json_to_strings(r.health_effects_en),
+                    health_effects_ru: json_to_strings(r.health_effects_ru),
+                    health_effects_pl: json_to_strings(r.health_effects_pl),
+                    health_effects_uk: json_to_strings(r.health_effects_uk),
+                    contraindications_en: json_to_strings(r.contraindications_en),
+                    contraindications_ru: json_to_strings(r.contraindications_ru),
+                    contraindications_pl: json_to_strings(r.contraindications_pl),
+                    contraindications_uk: json_to_strings(r.contraindications_uk),
                     food_role: r.food_role,
                     orac_score: round_opt(r.orac_score, 1),
-                    absorption_notes: r.absorption_notes,
+                    absorption_notes_en: r.absorption_notes_en,
+                    absorption_notes_ru: r.absorption_notes_ru,
+                    absorption_notes_pl: r.absorption_notes_pl,
+                    absorption_notes_uk: r.absorption_notes_uk,
                 }
             })
         };
@@ -490,7 +538,11 @@ impl AdminNutritionService {
         .map_err(AppError::from)?;
 
         let processing_effects = sqlx::query_as::<_, ProcessingEffectsDto>(
-            "SELECT vitamin_retention_pct,protein_denature_temp,mineral_leaching_risk,best_cooking_method,maillard_temp,processing_notes FROM product_processing_effects WHERE product_id=$1",
+            r#"SELECT vitamin_retention_pct,protein_denature_temp,mineral_leaching_risk,
+                best_cooking_method_en,best_cooking_method_ru,best_cooking_method_pl,best_cooking_method_uk,
+                maillard_temp,
+                processing_notes_en,processing_notes_ru,processing_notes_pl,processing_notes_uk
+            FROM product_processing_effects WHERE product_id=$1"#,
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -1002,37 +1054,63 @@ impl AdminNutritionService {
         Ok(())
     }
 
-    // ── Upsert health profile ─────────────────────────
+    // ── Upsert health profile (i18n) ────────────────────
     pub async fn upsert_health_profile(&self, id: Uuid, dto: HealthProfileDto) -> AppResult<()> {
-        let bioactive = serde_json::to_value(&dto.bioactive_compounds.unwrap_or_default())
-            .unwrap_or(serde_json::Value::Array(vec![]));
-        let effects = serde_json::to_value(&dto.health_effects.unwrap_or_default())
-            .unwrap_or(serde_json::Value::Array(vec![]));
-        let contras = serde_json::to_value(&dto.contraindications.unwrap_or_default())
-            .unwrap_or(serde_json::Value::Array(vec![]));
+        fn to_json(v: Option<Vec<String>>) -> serde_json::Value {
+            serde_json::to_value(&v.unwrap_or_default())
+                .unwrap_or(serde_json::Value::Array(vec![]))
+        }
 
         sqlx::query(
             r#"
             INSERT INTO product_health_profile
-                (product_id, bioactive_compounds, health_effects, contraindications,
-                 food_role, orac_score, absorption_notes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (product_id,
+                 bioactive_compounds_en, bioactive_compounds_ru, bioactive_compounds_pl, bioactive_compounds_uk,
+                 health_effects_en, health_effects_ru, health_effects_pl, health_effects_uk,
+                 contraindications_en, contraindications_ru, contraindications_pl, contraindications_uk,
+                 food_role, orac_score,
+                 absorption_notes_en, absorption_notes_ru, absorption_notes_pl, absorption_notes_uk)
+            VALUES ($1, $2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13, $14,$15, $16,$17,$18,$19)
             ON CONFLICT (product_id) DO UPDATE SET
-                bioactive_compounds = EXCLUDED.bioactive_compounds,
-                health_effects      = EXCLUDED.health_effects,
-                contraindications   = EXCLUDED.contraindications,
-                food_role           = EXCLUDED.food_role,
-                orac_score          = EXCLUDED.orac_score,
-                absorption_notes    = EXCLUDED.absorption_notes
+                bioactive_compounds_en = EXCLUDED.bioactive_compounds_en,
+                bioactive_compounds_ru = EXCLUDED.bioactive_compounds_ru,
+                bioactive_compounds_pl = EXCLUDED.bioactive_compounds_pl,
+                bioactive_compounds_uk = EXCLUDED.bioactive_compounds_uk,
+                health_effects_en      = EXCLUDED.health_effects_en,
+                health_effects_ru      = EXCLUDED.health_effects_ru,
+                health_effects_pl      = EXCLUDED.health_effects_pl,
+                health_effects_uk      = EXCLUDED.health_effects_uk,
+                contraindications_en   = EXCLUDED.contraindications_en,
+                contraindications_ru   = EXCLUDED.contraindications_ru,
+                contraindications_pl   = EXCLUDED.contraindications_pl,
+                contraindications_uk   = EXCLUDED.contraindications_uk,
+                food_role              = EXCLUDED.food_role,
+                orac_score             = EXCLUDED.orac_score,
+                absorption_notes_en    = EXCLUDED.absorption_notes_en,
+                absorption_notes_ru    = EXCLUDED.absorption_notes_ru,
+                absorption_notes_pl    = EXCLUDED.absorption_notes_pl,
+                absorption_notes_uk    = EXCLUDED.absorption_notes_uk
             "#,
         )
         .bind(id)
-        .bind(bioactive)
-        .bind(effects)
-        .bind(contras)
+        .bind(to_json(dto.bioactive_compounds_en))
+        .bind(to_json(dto.bioactive_compounds_ru))
+        .bind(to_json(dto.bioactive_compounds_pl))
+        .bind(to_json(dto.bioactive_compounds_uk))
+        .bind(to_json(dto.health_effects_en))
+        .bind(to_json(dto.health_effects_ru))
+        .bind(to_json(dto.health_effects_pl))
+        .bind(to_json(dto.health_effects_uk))
+        .bind(to_json(dto.contraindications_en))
+        .bind(to_json(dto.contraindications_ru))
+        .bind(to_json(dto.contraindications_pl))
+        .bind(to_json(dto.contraindications_uk))
         .bind(dto.food_role)
         .bind(round_opt(dto.orac_score, 1))
-        .bind(dto.absorption_notes)
+        .bind(dto.absorption_notes_en)
+        .bind(dto.absorption_notes_ru)
+        .bind(dto.absorption_notes_pl)
+        .bind(dto.absorption_notes_uk)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
@@ -1075,31 +1153,45 @@ impl AdminNutritionService {
         Ok(())
     }
 
-    // ── Upsert processing effects ─────────────────────
+    // ── Upsert processing effects (i18n) ────────────────
     pub async fn upsert_processing_effects(&self, id: Uuid, dto: ProcessingEffectsDto) -> AppResult<()> {
         sqlx::query(
             r#"
             INSERT INTO product_processing_effects
                 (product_id, vitamin_retention_pct, protein_denature_temp,
-                 mineral_leaching_risk, best_cooking_method, maillard_temp,
-                 processing_notes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 mineral_leaching_risk,
+                 best_cooking_method_en, best_cooking_method_ru, best_cooking_method_pl, best_cooking_method_uk,
+                 maillard_temp,
+                 processing_notes_en, processing_notes_ru, processing_notes_pl, processing_notes_uk)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (product_id) DO UPDATE SET
-                vitamin_retention_pct = EXCLUDED.vitamin_retention_pct,
-                protein_denature_temp = EXCLUDED.protein_denature_temp,
-                mineral_leaching_risk = EXCLUDED.mineral_leaching_risk,
-                best_cooking_method   = EXCLUDED.best_cooking_method,
-                maillard_temp         = EXCLUDED.maillard_temp,
-                processing_notes      = EXCLUDED.processing_notes
+                vitamin_retention_pct  = EXCLUDED.vitamin_retention_pct,
+                protein_denature_temp  = EXCLUDED.protein_denature_temp,
+                mineral_leaching_risk  = EXCLUDED.mineral_leaching_risk,
+                best_cooking_method_en = EXCLUDED.best_cooking_method_en,
+                best_cooking_method_ru = EXCLUDED.best_cooking_method_ru,
+                best_cooking_method_pl = EXCLUDED.best_cooking_method_pl,
+                best_cooking_method_uk = EXCLUDED.best_cooking_method_uk,
+                maillard_temp          = EXCLUDED.maillard_temp,
+                processing_notes_en    = EXCLUDED.processing_notes_en,
+                processing_notes_ru    = EXCLUDED.processing_notes_ru,
+                processing_notes_pl    = EXCLUDED.processing_notes_pl,
+                processing_notes_uk    = EXCLUDED.processing_notes_uk
             "#,
         )
         .bind(id)
         .bind(round_opt(dto.vitamin_retention_pct, 1))
         .bind(round_opt(dto.protein_denature_temp, 1))
         .bind(dto.mineral_leaching_risk)
-        .bind(dto.best_cooking_method)
+        .bind(dto.best_cooking_method_en)
+        .bind(dto.best_cooking_method_ru)
+        .bind(dto.best_cooking_method_pl)
+        .bind(dto.best_cooking_method_uk)
         .bind(round_opt(dto.maillard_temp, 1))
-        .bind(dto.processing_notes)
+        .bind(dto.processing_notes_en)
+        .bind(dto.processing_notes_ru)
+        .bind(dto.processing_notes_pl)
+        .bind(dto.processing_notes_uk)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;
