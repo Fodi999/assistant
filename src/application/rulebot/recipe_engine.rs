@@ -26,6 +26,9 @@ use super::meal_builder::CookMethod;
 use super::response_builder::HealthGoal;
 use super::cooking_rules::{self, IngredientRole, StepType};
 use super::food_pairing;
+use super::user_constraints::UserConstraints;
+use super::constraint_policy;
+use super::recipe_validation;
 
 // ── Re-exports from extracted modules ────────────────────────────────────────
 // Callers still use `recipe_engine::ask_gemini_dish_schema`, etc.
@@ -180,6 +183,10 @@ pub struct TechCard {
     pub allergens: Vec<String>,
     /// Diet tags, e.g. ["vegetarian", "vegan", "pescatarian"]
     pub tags: Vec<String>,
+    /// Dietary constraints applied, e.g. ["lactose-free", "vegan diet"]
+    pub applied_constraints: Vec<String>,
+    /// Post-build validation warnings
+    pub validation_warnings: Vec<String>,
 }
 
 // ── Backend Intelligence: resolve, assign roles, portions, cook methods ──────
@@ -191,6 +198,7 @@ pub async fn resolve_dish(
     schema: &DishSchema,
     goal: HealthGoal,
     lang: ChatLang,
+    constraints: &UserConstraints,
 ) -> TechCard {
     let dish_type = DishType::detect(&schema.dish);
     let rule = cooking_rules::load_rule(dish_type);
@@ -228,6 +236,16 @@ pub async fn resolve_dish(
 
     // ── 2. Auto-insert implicit ingredients (Liquid for soup, Oil for sauté) ──
     auto_insert_implicit(&mut ingredients, dish_type, cache, goal).await;
+
+    // ── 2b. Dietary Constraint Policy: remove/substitute per user preferences ──
+    let constraint_report = constraint_policy::apply_dietary_constraints(&mut ingredients, constraints);
+    if !constraint_report.removed.is_empty() {
+        tracing::info!("🥗 Dietary constraints removed: {:?}", constraint_report.removed);
+    }
+    let mut all_removed = removed;
+    for (slug, reason) in &constraint_report.removed {
+        all_removed.push((slug.clone(), reason.clone()));
+    }
 
     // ── 3. Constraint Engine: enforce culinary laws ─────────────────────
     let servings_estimate = {
@@ -331,7 +349,7 @@ pub async fn resolve_dish(
     let per_fat  = round1(total_fat / servings as f32);
     let per_carb = round1(total_carbs / servings as f32);
 
-    TechCard {
+    let mut tech_card = TechCard {
         dish_name: schema.dish.clone(),
         dish_name_local: schema.dish_local.clone(),
         display_name: Some(display_name),
@@ -350,12 +368,30 @@ pub async fn resolve_dish(
         per_serving_fat: per_fat,
         per_serving_carbs: per_carb,
         unresolved,
-        removed_ingredients: removed,
+        removed_ingredients: all_removed,
         complexity,
         goal: goal_label,
         allergens,
         tags,
+        applied_constraints: constraint_report.messages,
+        validation_warnings: vec![], // filled below
+    };
+
+    // ── 7. Post-build validation ────────────────────────────────────────
+    let validation = recipe_validation::validate_recipe(&tech_card, constraints);
+    if !validation.issues.is_empty() {
+        for issue in &validation.issues {
+            match issue.severity {
+                recipe_validation::Severity::Error =>
+                    tracing::warn!("❌ Validation error: {}", issue.message),
+                recipe_validation::Severity::Warning =>
+                    tracing::info!("⚠️ Validation warning: {}", issue.message),
+            }
+        }
+        tech_card.validation_warnings = validation.warning_messages();
     }
+
+    tech_card
 }
 
 // ── Cooking Steps Generation (pure logic, no LLM) ───────────────────────────

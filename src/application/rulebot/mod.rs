@@ -4,7 +4,7 @@
 //!   - `intent_keywords`    → keyword data tables (WHAT words mean)
 //!   - `goal_modifier`      → health modifier detection (WHICH goal)
 //!   - `intent_router`      → intent scoring + routing (the BRAIN)
-//!   - `chat_engine`        → routes `POST /public/chat` to handlers
+//!   - `chat_engine`        → routes `POST /public /chat` to handlers
 //!   - `chat_response`      → ChatResponse / Card / Suggestion types
 //!   - `response_builder`   → card assembly + suggestion generation
 //!   - `response_templates` → localized human-readable text
@@ -18,6 +18,9 @@
 //!   - `ingredient_resolver`→ slug resolution + implicit ingredients
 //!   - `nutrition_math`     → portions, yields, КБЖУ, allergens, diet tags
 //!   - `display_name`       → multilingual grammar + display names
+//!   - `user_constraints`   → dietary constraint parsing from user text
+//!   - `constraint_policy`  → enforce constraints on resolved ingredients
+//!   - `recipe_validation`  → post-build recipe coherence checks
 //!   - `ai_brain`           → Layer 2 LLM fallback with tool calling
 
 pub mod orchestrator;
@@ -38,4 +41,7 @@ pub mod dish_schema;
 pub mod ingredient_resolver;
 pub mod nutrition_math;
 pub mod display_name;
+pub mod user_constraints;
+pub mod constraint_policy;
+pub mod recipe_validation;
 pub mod ai_brain;

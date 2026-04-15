@@ -373,6 +373,12 @@ impl ChatEngine {
     }
 
     async fn handle_recipe(&self, input: &str, lang: ChatLang, goal: HealthGoal) -> ChatResponse {
+        // ── Step 0: Parse dietary constraints from user text ──
+        let constraints = super::user_constraints::parse_constraints(input, lang);
+        if !constraints.is_empty() {
+            tracing::info!("🥗 Dietary constraints: {:?}", constraints.raw_exclusions);
+        }
+
         // ── Step 1: Ask Gemini for dish name + ingredient list (50-100 tokens) ──
         match recipe_engine::ask_gemini_dish_schema(&self.llm_adapter, input, lang, goal).await {
             Ok(schema) => {
@@ -383,7 +389,7 @@ impl ChatEngine {
                 );
 
                 // ── Step 2: Backend resolves everything: roles, states, grams, yield, КБЖУ ──
-                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal, lang).await;
+                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal, lang, &constraints).await;
 
                 tracing::info!(
                     "📊 tech_card: output={:.0}g kcal={} resolved={}/{} unresolved=[{}]",
