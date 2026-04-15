@@ -13,7 +13,11 @@
 //!   - `meal_builder`       → dynamic meal combo assembler
 //!   - `cooking_rules`      → DDD dish rules as data
 //!   - `food_pairing`       → ingredient compatibility filter
-//!   - `recipe_engine`      → recipe resolution engine
+//!   - `recipe_engine`      → recipe resolution engine (orchestrator + types)
+//!   - `dish_schema`        → Gemini LLM call + JSON parsing
+//!   - `ingredient_resolver`→ slug resolution + implicit ingredients
+//!   - `nutrition_math`     → portions, yields, КБЖУ, allergens, diet tags
+//!   - `display_name`       → multilingual grammar + display names
 //!   - `ai_brain`           → Layer 2 LLM fallback with tool calling
 
 pub mod orchestrator;
@@ -30,4 +34,8 @@ pub mod meal_builder;
 pub mod cooking_rules;
 pub mod food_pairing;
 pub mod recipe_engine;
+pub mod dish_schema;
+pub mod ingredient_resolver;
+pub mod nutrition_math;
+pub mod display_name;
 pub mod ai_brain;

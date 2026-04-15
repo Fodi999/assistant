@@ -10,17 +10,42 @@
 //!   3. Backend assigns role (meal_role), cooking method, portion grams
 //!   4. Backend computes gross/net/yield/КБЖУ deterministically
 //!   5. Response builder renders recipe-view or tech-card
+//!
+//! Extracted modules:
+//!   - `dish_schema`         — Gemini call + JSON parsing
+//!   - `ingredient_resolver` — slug resolution + implicit ingredients
+//!   - `nutrition_math`      — portions, yields, КБЖУ, allergens, diet tags
+//!   - `display_name`        — multilingual grammar + display names
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::infrastructure::IngredientCache;
 use crate::infrastructure::ingredient_cache::IngredientData;
-use crate::infrastructure::llm_adapter::LlmAdapter;
 use super::intent_router::ChatLang;
 use super::meal_builder::CookMethod;
 use super::response_builder::HealthGoal;
-use super::cooking_rules::{self, IngredientRole, DishRule, StepType};
+use super::cooking_rules::{self, IngredientRole, StepType};
 use super::food_pairing;
+
+// ── Re-exports from extracted modules ────────────────────────────────────────
+// Callers still use `recipe_engine::ask_gemini_dish_schema`, etc.
+
+pub use super::dish_schema::{DishSchema, ask_gemini_dish_schema};
+pub use super::display_name::{format_recipe_text, state_label};
+
+// ── Internal imports from extracted modules ──────────────────────────────────
+
+use super::ingredient_resolver::{resolve_slug, auto_insert_implicit};
+use super::nutrition_math::{
+    build_ingredient_for_dish,
+    round1, compute_complexity, detect_allergens, detect_diet_tags,
+};
+use super::display_name::{
+    build_display_name,
+    instrumental_phrase, accusative_phrase,
+    instrumental_phrase_pl, accusative_phrase_pl,
+    instrumental_phrase_uk, accusative_phrase_uk,
+};
 
 // ── Dish Cooking Profile ─────────────────────────────────────────────────────
 
@@ -104,15 +129,6 @@ pub struct CookingStep {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/// Minimal schema from Gemini — just dish name + ingredient slugs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DishSchema {
-    pub dish: String,
-    #[serde(default)]
-    pub dish_local: Option<String>,
-    pub items: Vec<String>,
-}
-
 /// Backend-resolved ingredient with full calculations.
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedIngredient {
@@ -164,73 +180,6 @@ pub struct TechCard {
     pub allergens: Vec<String>,
     /// Diet tags, e.g. ["vegetarian", "vegan", "pescatarian"]
     pub tags: Vec<String>,
-}
-
-// ── Gemini call (minimal — 50-100 tokens) ────────────────────────────────────
-
-/// Ask Gemini for ONLY the dish name + ingredient list. Nothing else.
-pub async fn ask_gemini_dish_schema(
-    llm: &LlmAdapter,
-    user_input: &str,
-    lang: ChatLang,
-    goal: HealthGoal,
-) -> Result<DishSchema, String> {
-    let lang_label = match lang {
-        ChatLang::Ru => "Russian",
-        ChatLang::En => "English",
-        ChatLang::Pl => "Polish",
-        ChatLang::Uk => "Ukrainian",
-    };
-
-    let goal_hint = match goal {
-        HealthGoal::LowCalorie  => "\nThis is a LOW-CALORIE / DIET version. Pick lean ingredients: vegetables, lean fish/poultry, skip heavy sauces and fatty items. No cherry, no cream, no sugar.",
-        HealthGoal::HighProtein => "\nThis is a HIGH-PROTEIN version. Prefer protein-rich ingredients: chicken breast, beef, eggs, legumes.",
-        HealthGoal::Balanced    => "",
-    };
-
-    let prompt = format!(
-        r#"Identify the dish. Return ONLY JSON, no other text.
-dish = English name. dish_local = name in {lang}. items = ingredient slugs (English, max 8).
-Use only realistic, classic ingredients for this dish. No exotic or random items.
-NEVER mix dessert ingredients (ice-cream, chocolate, candy, jam) with savory dishes (soup, stew, grill, pasta).{goal_hint}
-If unknown: {{"dish":"unknown","items":[]}}
-
-User: "{input}"
-
-Example: {{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","potato","carrot","onion","beef","garlic","tomato-paste"]}}"#,
-        input = user_input,
-        lang = lang_label,
-        goal_hint = goal_hint,
-    );
-
-    let raw = llm
-        // Thinking models use ~80% of max_tokens for chain-of-thought
-        .groq_raw_request_with_model(&prompt, 4000, "gemini-3-flash-preview")
-        .await
-        .map_err(|e| format!("Gemini error: {e}"))?;
-
-    parse_dish_schema(&raw)
-}
-
-fn parse_dish_schema(raw: &str) -> Result<DishSchema, String> {
-    let json_str = extract_json(raw)
-        .ok_or_else(|| format!("No JSON found in: {}", &raw[..raw.len().min(100)]))?;
-
-    let schema: DishSchema = serde_json::from_str(json_str)
-        .map_err(|e| format!("JSON parse error: {e} — raw: {}", &raw[..raw.len().min(150)]))?;
-
-    if schema.dish == "unknown" || schema.items.is_empty() {
-        return Err("Gemini couldn't recognize this dish".into());
-    }
-
-    Ok(schema)
-}
-
-/// Extract first {...} from raw text (strips markdown fences etc.)
-fn extract_json(raw: &str) -> Option<&str> {
-    let start = raw.find('{')?;
-    let end = raw.rfind('}')?;
-    if end >= start { Some(&raw[start..=end]) } else { None }
 }
 
 // ── Backend Intelligence: resolve, assign roles, portions, cook methods ──────
@@ -406,339 +355,6 @@ pub async fn resolve_dish(
         goal: goal_label,
         allergens,
         tags,
-    }
-}
-
-// ── Dish context helpers ─────────────────────────────────────────────────────
-
-/// Complexity: easy (<= 4 steps && <= 20 min), hard (>= 8 steps || >= 60 min), else medium.
-fn compute_complexity(steps: &[CookingStep]) -> String {
-    let total_min: u16 = steps.iter().filter_map(|s| s.time_min).sum();
-    let n = steps.len();
-    if n <= 4 && total_min <= 20 {
-        "easy".into()
-    } else if n >= 8 || total_min >= 60 {
-        "hard".into()
-    } else {
-        "medium".into()
-    }
-}
-
-/// Detect allergens/intolerances from ingredient product_types and slugs.
-fn detect_allergens(ingredients: &[ResolvedIngredient]) -> Vec<String> {
-    let mut flags = Vec::new();
-
-    let has = |f: &dyn Fn(&ResolvedIngredient) -> bool| ingredients.iter().any(f);
-
-    // Gluten: wheat, flour, pasta, bread, barley, rye, oats
-    if has(&|i| {
-        let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        s.contains("wheat") || s.contains("flour") || s.contains("pasta")
-            || s.contains("bread") || s.contains("barley") || s.contains("rye")
-            || s.contains("oat") || s.contains("spaghetti") || s.contains("noodle")
-            || s.contains("couscous") || s.contains("semolina")
-            || (pt == "grain" && !s.contains("rice") && !s.contains("corn") && !s.contains("buckwheat") && !s.contains("quinoa"))
-    }) {
-        flags.push("gluten".into());
-    }
-
-    // Lactose: dairy products
-    if has(&|i| {
-        let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        pt == "dairy" || s.contains("milk") || s.contains("cream") || s.contains("cheese")
-            || s.contains("butter") || s.contains("yogurt") || s.contains("kefir")
-            || s.contains("sour-cream") || s.contains("smetana")
-    }) {
-        flags.push("lactose".into());
-    }
-
-    // Nuts
-    if has(&|i| {
-        let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        pt == "nut" || s.contains("almond") || s.contains("walnut") || s.contains("cashew")
-            || s.contains("peanut") || s.contains("hazelnut") || s.contains("pecan")
-            || s.contains("pistachio") || s.contains("macadamia") || s.contains("pine-nut")
-    }) {
-        flags.push("nuts".into());
-    }
-
-    // Eggs
-    if has(&|i| {
-        let s = i.slug_hint.to_lowercase();
-        s.contains("egg")
-    }) {
-        flags.push("eggs".into());
-    }
-
-    // Fish
-    if has(&|i| {
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        pt == "fish"
-    }) {
-        flags.push("fish".into());
-    }
-
-    // Shellfish / Seafood
-    if has(&|i| {
-        let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        pt == "seafood" || s.contains("shrimp") || s.contains("prawn") || s.contains("crab")
-            || s.contains("lobster") || s.contains("mussel") || s.contains("oyster")
-            || s.contains("squid") || s.contains("octopus") || s.contains("clam")
-    }) {
-        flags.push("shellfish".into());
-    }
-
-    // Soy
-    if has(&|i| {
-        let s = i.slug_hint.to_lowercase();
-        s.contains("soy") || s.contains("tofu") || s.contains("edamame") || s.contains("tempeh")
-    }) {
-        flags.push("soy".into());
-    }
-
-    flags
-}
-
-/// Detect diet tags: vegan, vegetarian, pescatarian, etc.
-fn detect_diet_tags(ingredients: &[ResolvedIngredient]) -> Vec<String> {
-    let mut tags = Vec::new();
-
-    let types: Vec<&str> = ingredients
-        .iter()
-        .filter_map(|i| i.product.as_ref().map(|p| p.product_type.as_str()))
-        .collect();
-
-    let slugs: Vec<String> = ingredients.iter().map(|i| i.slug_hint.to_lowercase()).collect();
-
-    let has_meat = types.iter().any(|t| *t == "meat");
-    let has_fish = types.iter().any(|t| *t == "fish");
-    let has_seafood = types.iter().any(|t| *t == "seafood");
-    let has_dairy = types.iter().any(|t| *t == "dairy");
-    let has_eggs = slugs.iter().any(|s| s.contains("egg"));
-
-    if !has_meat && !has_fish && !has_seafood && !has_dairy && !has_eggs {
-        tags.push("vegan".into());
-        tags.push("vegetarian".into());
-    } else if !has_meat && !has_fish && !has_seafood {
-        tags.push("vegetarian".into());
-    } else if !has_meat && (has_fish || has_seafood) {
-        tags.push("pescatarian".into());
-    }
-
-    // High-protein: > 25g protein per serving
-    // (this is checked later in response, but we have the data)
-
-    // Low-carb: < 20g carbs per serving
-    // We don't have per-serving here, computed after, so skip
-
-    tags
-}
-
-/// Build a fully-resolved ingredient from a cache product.
-/// Backend decides: role, cooking method (based on dish type!), portion, yield, nutrition.
-fn build_ingredient(product: &IngredientData, slug_hint: &str, goal: HealthGoal) -> ResolvedIngredient {
-    build_ingredient_for_dish(product, slug_hint, goal, DishType::Default)
-}
-
-/// Build ingredient with dish-aware cooking method.
-/// Uses DDD cooking_rules to determine method by (dish_type, role, slug).
-fn build_ingredient_for_dish(
-    product: &IngredientData,
-    slug_hint: &str,
-    goal: HealthGoal,
-    dish_type: DishType,
-) -> ResolvedIngredient {
-    let role = override_role(product);
-    // DDD: cooking method resolved via rules (aromatics → Saute in soup, etc.)
-    let method = dish_type.cook_method(role, &product.slug, &product.product_type, goal);
-
-    let state = method_to_state(&method);
-
-    let cooked_portion = recipe_portion_goal(product, role, goal);
-    let yield_factor = method.yield_factor(&product.product_type);
-    let cleaned_net = cooked_portion / yield_factor;
-    let edible = edible_yield_for(&product.product_type, &product.slug);
-    let gross = cleaned_net / edible;
-
-    ResolvedIngredient {
-        product: Some(product.clone()),
-        slug_hint: slug_hint.to_string(),
-        resolved_slug: Some(product.slug.clone()),
-        state: state.into(),
-        role: role.into(),
-        gross_g: round1(gross),
-        cleaned_net_g: round1(cleaned_net),
-        cooked_net_g: round1(cooked_portion),
-        kcal: product.kcal_for(gross),
-        protein_g: product.protein_for(gross),
-        fat_g: product.fat_for(gross),
-        carbs_g: product.carbs_for(gross),
-    }
-}
-
-/// Aromatics, oils, condiments that meal_role() misclassifies as "side".
-/// Returns the corrected role.
-fn override_role<'a>(product: &IngredientData) -> &'static str {
-    // Slug-level overrides for aromatic "vegetables"
-    let slug = product.slug.as_str();
-    match slug {
-        "garlic" | "ginger" | "chili" | "chili-pepper" | "horseradish"
-        | "turmeric" | "lemongrass" | "shallot" => return "spice",
-        "salt" | "pepper" | "cumin" | "paprika" | "cinnamon" | "nutmeg"
-        | "coriander" | "bay-leaf" | "saffron" | "vanilla" => return "spice",
-        "olive-oil" | "sunflower-oil" | "butter" | "ghee" | "coconut-oil"
-        | "sesame-oil" => return "oil",
-        "soy-sauce" | "vinegar" | "mustard" | "ketchup" | "mayo"
-        | "tomato-paste" | "fish-sauce" | "worcestershire" => return "condiment",
-        _ => {}
-    }
-    // product_type-level overrides
-    match product.product_type.as_str() {
-        "oil" | "fat" => "oil",
-        "spice" | "herb" | "seasoning" => "spice",
-        "condiment" | "sauce" => "condiment",
-        _ => product.meal_role(),
-    }
-}
-
-/// Recipe-specific portion (grams of cooked food on plate).
-/// Smaller than standalone meal — this is one ingredient in a dish.
-fn recipe_portion(product: &IngredientData, role: &str) -> f32 {
-    match role {
-        "protein" => match product.product_type.as_str() {
-            "meat" | "fish" | "seafood" => 100.0,
-            "eggs" => 60.0,
-            "dairy" => 50.0,
-            _ => 80.0,
-        },
-        "base" => match product.product_type.as_str() {
-            "grain" | "legume" => 60.0,
-            _ => 80.0,
-        },
-        "side" => match product.product_type.as_str() {
-            "vegetable" | "mushroom" => 50.0,
-            "fruit" => 40.0,
-            _ => 50.0,
-        },
-        "spice" => 5.0,
-        "oil" => 15.0,
-        "condiment" => 15.0,
-        _ => 30.0,
-    }
-}
-
-/// Goal-aware portion: LowCalorie = less oil/meat, more veg.
-/// HighProtein = more protein, same oil. Balanced = default.
-fn recipe_portion_goal(product: &IngredientData, role: &str, goal: HealthGoal) -> f32 {
-    let base = recipe_portion(product, role);
-    match goal {
-        HealthGoal::LowCalorie => match role {
-            "oil"     => 5.0,        // 15g → 5g (минимум масла)
-            "protein" => base * 0.8, // 100g → 80g
-            "side"    => base * 1.2, // больше овощей
-            "condiment" => base * 0.5, // меньше соуса
-            _ => base,
-        },
-        HealthGoal::HighProtein => match role {
-            "protein" => base * 1.3, // 100g → 130g
-            "side"    => base * 0.8, // чуть меньше овощей
-            _ => base,
-        },
-        HealthGoal::Balanced => base,
-    }
-}
-
-fn method_to_state(method: &CookMethod) -> &'static str {
-    match method {
-        CookMethod::Grill => "grilled",
-        CookMethod::Bake => "baked",
-        CookMethod::Boil => "boiled",
-        CookMethod::Steam => "steamed",
-        CookMethod::Fry => "fried",
-        CookMethod::Saute => "sauteed",
-        CookMethod::Raw => "raw",
-    }
-}
-
-// ── Auto-insert Implicit Ingredients ─────────────────────────────────────────
-
-/// Automatically add implicit ingredients that a recipe logically needs but
-/// Gemini doesn't include (water for soup, oil for sauté).
-async fn auto_insert_implicit(
-    ingredients: &mut Vec<ResolvedIngredient>,
-    dish_type: DishType,
-    cache: &IngredientCache,
-    goal: HealthGoal,
-) {
-    // Pre-compute flags before mutating the vec (borrow checker)
-    let has_liquid = ingredients.iter().any(|i| i.role == "liquid");
-    let has_oil = ingredients.iter().any(|i| i.role == "oil");
-    let has_oil_slug = ingredients.iter().any(|i| {
-        i.resolved_slug.as_deref() == Some("sunflower-oil")
-            || i.resolved_slug.as_deref() == Some("olive-oil")
-            || i.slug_hint == "sunflower-oil"
-            || i.slug_hint == "olive-oil"
-    });
-    let has_saute = ingredients.iter().any(|i| i.state == "sauteed");
-
-    // ── Soup/Stew: add water (300ml per serving) if no liquid ───────────
-    if matches!(dish_type, DishType::Soup | DishType::Stew) && !has_liquid {
-        // Try to resolve from cache for localized name
-        let water_product = resolve_slug(cache, "water").await;
-        ingredients.push(ResolvedIngredient {
-            product: water_product,
-            slug_hint: "water".into(),
-            resolved_slug: Some("water".into()),
-            state: "boiled".into(),
-            role: "liquid".into(),
-            gross_g: 300.0,
-            cleaned_net_g: 300.0,
-            cooked_net_g: 300.0,
-            kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
-        });
-    }
-
-    // ── Sauté dishes: add cooking oil if none present ───────────────────
-    if has_saute && !has_oil && !has_oil_slug {
-        let portion = match goal {
-            HealthGoal::LowCalorie => 5.0_f32,  // minimal oil for diet
-            _ => 15.0_f32,                       // 15g = ~1 tbsp
-        };
-        // Try to resolve from cache for accurate nutrition
-        if let Some(oil) = resolve_slug(cache, "sunflower-oil").await {
-            ingredients.push(ResolvedIngredient {
-                product: Some(oil.clone()),
-                slug_hint: "sunflower-oil".into(),
-                resolved_slug: Some(oil.slug.clone()),
-                state: "raw".into(),
-                role: "oil".into(),
-                gross_g: portion,
-                cleaned_net_g: portion,
-                cooked_net_g: portion,
-                kcal: oil.kcal_for(portion),
-                protein_g: oil.protein_for(portion),
-                fat_g: oil.fat_for(portion),
-                carbs_g: oil.carbs_for(portion),
-            });
-        } else {
-            // Fallback: generic oil entry with estimated nutrition
-            let fallback_kcal = (portion * 9.0) as u32; // ~9 kcal/g for oil
-            ingredients.push(ResolvedIngredient {
-                product: None,
-                slug_hint: "sunflower-oil".into(),
-                resolved_slug: Some("sunflower-oil".into()),
-                state: "raw".into(),
-                role: "oil".into(),
-                gross_g: portion,
-                cleaned_net_g: portion,
-                cooked_net_g: portion,
-                kcal: fallback_kcal, protein_g: 0.0, fat_g: portion, carbs_g: 0.0,
-            });
-        }
     }
 }
 
@@ -944,712 +560,21 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
 
     steps
 }
-// ── Display Name Builder ─────────────────────────────────────────────────────
-
-/// Build an improved display name with goal prefix (multilingual):
-///   Ru: "Лёгкий борщ с говядиной"
-///   En: "Light borscht with beef"
-///   Pl: "Lekki barszcz z wołowiną"
-///   Uk: "Легкий борщ з яловичиною"
-fn build_display_name(
-    schema: &DishSchema,
-    ingredients: &[ResolvedIngredient],
-    _dish_type: DishType,
-    goal: HealthGoal,
-    lang: ChatLang,
-) -> String {
-    let dish_local = schema.dish_local.as_deref().unwrap_or(&schema.dish);
-
-    // Detect if dish name already contains "with" preposition
-    let has_with = {
-        let d = dish_local.to_lowercase();
-        d.contains(" с ") || d.contains(" with ") || d.contains(" z ") || d.contains(" з ")
-    };
-
-    // Base name with protein
-    let base_name = if has_with {
-        dish_local.to_string()
-    } else {
-        let protein_name = ingredients.iter()
-            .find(|i| i.role == "protein")
-            .and_then(|i| i.product.as_ref())
-            .map(|p| match lang {
-                ChatLang::Ru => instrumental_case(&p.name_ru),
-                ChatLang::En => p.name_en.to_lowercase(),
-                ChatLang::Pl => instrumental_case_pl(&p.name_pl),
-                ChatLang::Uk => instrumental_case_uk(&p.name_uk),
-            });
-
-        if let Some(protein) = protein_name {
-            let prep = match lang {
-                ChatLang::Ru => "с",
-                ChatLang::En => "with",
-                ChatLang::Pl => "z",
-                ChatLang::Uk => "з",
-            };
-            format!("{} {} {}", dish_local, prep, protein)
-        } else {
-            dish_local.to_string()
-        }
-    };
-
-    // Goal prefix
-    match (goal, lang) {
-        (HealthGoal::LowCalorie, ChatLang::Ru) => format!("Лёгкий {}", lowercase_first(&base_name)),
-        (HealthGoal::LowCalorie, ChatLang::En) => format!("Light {}", lowercase_first(&base_name)),
-        (HealthGoal::LowCalorie, ChatLang::Pl) => format!("Lekki {}", lowercase_first(&base_name)),
-        (HealthGoal::LowCalorie, ChatLang::Uk) => format!("Легкий {}", lowercase_first(&base_name)),
-
-        (HealthGoal::HighProtein, ChatLang::Ru) => format!("Высокобелковый {}", lowercase_first(&base_name)),
-        (HealthGoal::HighProtein, ChatLang::En) => format!("High-protein {}", lowercase_first(&base_name)),
-        (HealthGoal::HighProtein, ChatLang::Pl) => format!("Wysokobiałkowy {}", lowercase_first(&base_name)),
-        (HealthGoal::HighProtein, ChatLang::Uk) => format!("Високобілковий {}", lowercase_first(&base_name)),
-
-        (HealthGoal::Balanced, _) => base_name,
-    }
-}
-
-/// Lowercase first char: "Борщ" → "борщ" (for prefix composition)
-fn lowercase_first(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(c) => c.to_lowercase().to_string() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
-/// Russian instrumental case for a single word.
-/// Handles adjectives (-ая→-ой, -ые→-ыми, -ый→-ым) and nouns (-а→-ой, -о→-ом, etc.)
-fn instrumental_word(word: &str) -> String {
-    let lower = word.to_lowercase();
-    // ── Adjective endings (check BEFORE nouns) ──
-    if lower.ends_with("ая") {
-        return format!("{}ой", &lower[..lower.len() - "ая".len()]);
-    }
-    if lower.ends_with("яя") {
-        return format!("{}ей", &lower[..lower.len() - "яя".len()]);
-    }
-    if lower.ends_with("ое") || lower.ends_with("ее") {
-        return format!("{}ым", &lower[..lower.len() - "ое".len()]);
-    }
-    if lower.ends_with("ые") {
-        return format!("{}ыми", &lower[..lower.len() - "ые".len()]);
-    }
-    if lower.ends_with("ие") {
-        return format!("{}ими", &lower[..lower.len() - "ие".len()]);
-    }
-    if lower.ends_with("ый") || lower.ends_with("ой") {
-        return format!("{}ым", &lower[..lower.len() - "ый".len()]);
-    }
-    if lower.ends_with("ий") {
-        return format!("{}им", &lower[..lower.len() - "ий".len()]);
-    }
-    // ── Noun endings ──
-    // Neuter plural in -а (яйца) → -ами (яйцами)
-    if is_neuter_plural_a(&lower) {
-        return format!("{}ми", lower);  // яйца→яйцами
-    }
-    if lower.ends_with('а') {
-        return format!("{}ой", &lower[..lower.len() - 'а'.len_utf8()]);
-    }
-    if lower.ends_with('я') {
-        return format!("{}ей", &lower[..lower.len() - 'я'.len_utf8()]);
-    }
-    if lower.ends_with('о') {
-        return format!("{}ом", &lower[..lower.len() - 'о'.len_utf8()]);
-    }
-    if lower.ends_with('ь') {
-        return format!("{}ью", &lower[..lower.len() - 'ь'.len_utf8()]);
-    }
-    // -ец → -цем (перец→перцем)
-    if lower.ends_with("ец") {
-        return format!("{}цем", &lower[..lower.len() - "ец".len()]);
-    }
-    format!("{}ом", lower)
-}
-
-/// Russian accusative case for a single word.
-/// Adjectives: -ая→-ую. Nouns: -а→-у, -я→-ю, inanimate unchanged.
-fn accusative_word(word: &str) -> String {
-    let lower = word.to_lowercase();
-    // ── Adjective ending: -ая → -ую (пшеничная→пшеничную) ──
-    if lower.ends_with("ая") {
-        return format!("{}ую", &lower[..lower.len() - "ая".len()]);
-    }
-    if lower.ends_with("яя") {
-        return format!("{}юю", &lower[..lower.len() - "яя".len()]);
-    }
-    // Other adj endings (-ое/-ые/-ий/-ый) → unchanged for inanimate
-    // ── Neuter plural in -а (яйца, яблока) → unchanged (inanimate) ──
-    if is_neuter_plural_a(&lower) {
-        return lower;
-    }
-    // ── Noun endings ──
-    if lower.ends_with('а') {
-        return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]);
-    }
-    if lower.ends_with('я') {
-        return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]);
-    }
-    // Inanimate: acc = nom (морковь, лук, чеснок, яйцо, масло, перец)
-    lower
-}
-
-/// Neuter plural nouns ending in -а that should NOT get -у in accusative.
-/// "яйца" (egg-pl), "яблока" (apple-pl neuter form in compound names)
-fn is_neuter_plural_a(word: &str) -> bool {
-    matches!(word, "яйца" | "яблока" | "молока" | "масла")
-}
-
-/// Apply Russian accusative case to a compound name (word by word).
-/// "Пшеничная мука" → "пшеничную муку"
-/// "Куриные яйца" → "куриные яйца" (inanimate → unchanged)
-fn accusative_phrase(name: &str) -> String {
-    name.split_whitespace()
-        .map(|w| accusative_word(w))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Apply Russian instrumental case to a compound name (word by word).
-/// "Майонез" → "майонезом", "Подсолнечное масло" → "подсолнечным маслом"
-fn instrumental_phrase(name: &str) -> String {
-    name.split_whitespace()
-        .map(|w| instrumental_word(w))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Russian instrumental case for display name (protein in "борщ с говядиной").
-fn instrumental_case(name: &str) -> String {
-    instrumental_phrase(name)
-}
-
-/// Ukrainian instrumental case for display name.
-/// "Яловичина" → "яловичиною", "Курка" → "куркою"
-fn instrumental_case_uk(name: &str) -> String {
-    let lower = name.to_lowercase();
-    if lower.ends_with('а') {
-        return format!("{}ою", &lower[..lower.len() - 'а'.len_utf8()]);
-    }
-    if lower.ends_with('я') {
-        return format!("{}ею", &lower[..lower.len() - 'я'.len_utf8()]);
-    }
-    if lower.ends_with('ь') {
-        return format!("{}ю", &lower[..lower.len() - 'ь'.len_utf8()]);
-    }
-    format!("{}ом", lower)
-}
-
-/// Polish instrumental case for display name (narzędnik).
-/// Used in "z [czym]": "z kurczakiem", "z wołowiną", "z łososiem".
-/// For compound names like "Pierś z kurczaka" → simplify to "kurczakiem"
-/// (take the last noun and decline it — more natural).
-fn instrumental_case_pl(name: &str) -> String {
-    let lower = name.to_lowercase();
-
-    let words: Vec<&str> = lower.split_whitespace().collect();
-
-    // Compound "X z Y" → decline Y (the actual protein): "Pierś z kurczaka" → "kurczakiem"
-    if words.len() >= 3 && words.contains(&"z") {
-        let z_pos = words.iter().position(|w| *w == "z").unwrap();
-        if z_pos + 1 < words.len() {
-            // Take the noun after "z" and convert from genitive to instrumental
-            // "kurczaka" (gen) → "kurczakiem" (instr)
-            let gen_noun = words[z_pos + 1];
-            return genitive_to_instrumental_pl(gen_noun);
-        }
-    }
-
-    // Multi-word without "z": decline first word only
-    if words.len() > 1 {
-        let first = instrumental_word_pl(words[0]);
-        return format!("{} {}", first, words[1..].join(" "));
-    }
-
-    instrumental_word_pl(&lower)
-}
-
-/// Convert Polish genitive noun to instrumental (for display names).
-/// "kurczaka" (gen of kurczak) → "kurczakiem" (instr)
-/// "wołowiny" (gen of wołowina) → "wołowiną" (instr)
-fn genitive_to_instrumental_pl(gen: &str) -> String {
-    let w = gen.to_lowercase();
-    // Genitive -a → masculine noun: stem + -em/iem/kiem
-    // kurczaka → kurczak → kurczakiem
-    if w.ends_with('a') {
-        let stem = &w[..w.len() - 'a'.len_utf8()];
-        // Reconstruct nominative and apply instrumental
-        return instrumental_word_pl(stem);
-    }
-    // Genitive -y/-i → feminine noun: stem + -ą
-    // wołowiny → wołowina → wołowiną
-    if w.ends_with('y') {
-        let stem = &w[..w.len() - 'y'.len_utf8()];
-        return format!("{}ą", stem); // wołowin + ą = wołowiną
-    }
-    if w.ends_with('i') {
-        let stem = &w[..w.len() - 'i'.len_utf8()];
-        // Could be -ni → -nią, -ci → -cią
-        return format!("{}ią", stem);
-    }
-    // Fallback
-    instrumental_word_pl(&w)
-}
-
-/// Polish instrumental case for a single word.
-fn instrumental_word_pl(word: &str) -> String {
-    let w = word.to_lowercase();
-
-    // ── Adjective endings ──
-    // -y → -ym (surowy → surowym) — masc adj
-    // -i → -im (drobiowy → drobiowym — but -i is rare)
-    // -a → -ą (gotowana → gotowaną) — fem adj
-    // -e → -ym (świeże → świeżym) — neut adj
-
-    // ── Noun endings (food-specific) ──
-    // Special irregulars first
-    if w == "kurczak" { return "kurczakiem".into(); }
-    if w == "łosoś"  { return "łososiem".into(); }
-    if w == "dorsz"   { return "dorszem".into(); }
-
-    // Feminine -a → -ą: wołowina → wołowiną, cielęcina → cielęciną
-    if w.ends_with('a') {
-        return format!("{}ą", &w[..w.len() - 'a'.len_utf8()]);
-    }
-    // Feminine -ść → -ścią: pierś → piersią (but pierś ends in ś not ść)
-    // Soft consonant ś/ń/ć/ź → +ą sometimes, but for food:
-    if w.ends_with("ś") {
-        return format!("{}ią", w);   // pierś → piersią
-    }
-    // Neuter -o → -em: mięso → mięsem (rare in display name context)
-    if w.ends_with('o') {
-        return format!("{}em", &w[..w.len() - 'o'.len_utf8()]);
-    }
-    // Masculine hard consonant → -em: kurczak → kurczakiem, dorsz → dorszem
-    // Masculine -ek → -kiem: kurczak is matched above; indyk → indykiem
-    if w.ends_with("ek") {
-        return format!("{}kiem", &w[..w.len() - "ek".len()]);
-    }
-    if w.ends_with("ak") {
-        return format!("{}iem", w);   // kurczak → kurczakiem (handled above), but general
-    }
-    // Default masculine: +em
-    format!("{}em", w)
-}
-
-// ── Polish Accusative (Biernik) ──────────────────────────────────────────────
-
-/// Polish accusative for a single word (biernik).
-/// "Dodać [co?]": pomidor→pomidor (inanimate masc), śmietana→śmietanę, cebula→cebulę
-/// Polish accusative rules:
-///   - Feminine -a → -ę:  śmietana→śmietanę, cebula→cebulę, marchew doesn't end in -a
-///   - Inanimate masculine → nominative: pomidor→pomidor, czosnek→czosnek
-///   - Neuter -o → -o (unchanged): masło→masło
-///   - Adjective -a → -ą: podsmażona → podsmażoną (fem adj acc)
-///   - Adjective masc/neut → unchanged (inanimate)
-fn accusative_word_pl(word: &str) -> String {
-    let w = word.to_lowercase();
-
-    // Feminine adjective: -na → -ną, -wa → -wą, -ża → -żą, etc. (adj ending in -a)
-    // These are long feminine adj endings — check for consonant + a pattern
-    // But simplification: all -a endings in Polish food context are either adj fem or noun fem
-    // For feminine noun/adj: -a → -ę
-    if w.ends_with('a') {
-        return format!("{}ę", &w[..w.len() - 'a'.len_utf8()]);
-    }
-
-    // Inanimate masculine / neuter -o / -e → unchanged
-    // marchew, pieprz, czosnek, pomidor, makaron — all unchanged in accusative
-    w
-}
-
-/// Polish accusative for a compound name (word by word).
-/// "Pierś z kurczaka" → "pierś z kurczaka" (unchanged — pierś is fem but already correct form)
-/// "Śmietana" → "śmietanę"
-fn accusative_phrase_pl(name: &str) -> String {
-    let lower = name.to_lowercase();
-    let words: Vec<&str> = lower.split_whitespace().collect();
-
-    if words.len() == 1 {
-        return accusative_word_pl(words[0]);
-    }
-
-    // Compound: "Pierś z kurczaka" — first word gets accusative, rest keeps genitive/prepositional
-    // "Olej słonecznikowy" — olej (inanimate masc) unchanged, adj matches
-    // For "X z Y" pattern: decline X, keep rest
-    if words.len() >= 3 && words[1] == "z" {
-        let first = accusative_word_pl(words[0]);
-        return format!("{} {}", first, words[1..].join(" "));
-    }
-
-    // For "adj + noun": decline both (adj agrees with noun)
-    // "Masło klarowane" → "masło klarowane" (neuter unchanged)
-    // "Śmietana kwaśna" → "śmietanę kwaśną" (both fem → -ę/-ą)
-    words.iter()
-        .map(|w| accusative_word_pl(w))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Polish instrumental for compound names (narzędnik) — step context.
-fn instrumental_phrase_pl(name: &str) -> String {
-    instrumental_case_pl(name)
-}
-
-// ── Ukrainian Accusative (Знахідний) ─────────────────────────────────────────
-
-/// Ukrainian accusative for a single word.
-/// Rules similar to Russian: fem -а→-у, -я→-ю; inanimate masc/neut → nom
-fn accusative_word_uk(word: &str) -> String {
-    let lower = word.to_lowercase();
-
-    // Feminine adjective: -а → -у
-    if lower.ends_with('а') {
-        return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]);
-    }
-    if lower.ends_with('я') {
-        return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]);
-    }
-    // Inanimate → unchanged
-    lower
-}
-
-/// Ukrainian accusative for a compound name.
-fn accusative_phrase_uk(name: &str) -> String {
-    name.split_whitespace()
-        .map(|w| accusative_word_uk(w))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Ukrainian instrumental for compound names.
-fn instrumental_phrase_uk(name: &str) -> String {
-    instrumental_case_uk(name)
-}
-
-// ── Slug Resolution ──────────────────────────────────────────────────────────
-
-async fn resolve_slug(cache: &IngredientCache, hint: &str) -> Option<IngredientData> {
-    // Normalise: lowercase, spaces/underscores → dashes
-    let h = hint.to_lowercase().replace(' ', "-").replace('_', "-");
-
-    // 1. Exact match
-    if let Some(p) = cache.get(&h).await { return Some(p); }
-
-    // 2. Plural / singular variants
-    //    "noodle" → try "noodles";  "tomatoes" → try "tomato"
-    let singular = h.trim_end_matches('s');
-    let plural   = format!("{h}s");
-    if singular != h {
-        if let Some(p) = cache.get(singular).await { return Some(p); }
-    }
-    if let Some(p) = cache.get(&plural).await { return Some(p); }
-    // -es ending: "tomatoes" → "tomato", "potatoes" → "potato"
-    if h.ends_with("es") {
-        let stem = &h[..h.len() - 2];
-        if let Some(p) = cache.get(stem).await { return Some(p); }
-    }
-    // -ies → -y:  "cherries" → "cherry"
-    if h.ends_with("ies") {
-        let stem = format!("{}y", &h[..h.len() - 3]);
-        if let Some(p) = cache.get(&stem).await { return Some(p); }
-    }
-
-    // 3. Synonym / alias rewrites (EXACT slug → slug)
-    //    Only for slugs that DON'T exist in the DB themselves.
-    //    If the real product IS in the DB, step 1/2 already found it.
-    let aliases: &[(&str, &str)] = &[
-        // Vegetables
-        ("beet",          "beetroot"),
-        ("beets",         "beetroot"),
-        ("green-onion",   "onion"),
-        ("spring-onion",  "onion"),
-        ("scallion",      "onion"),
-        ("shallot",       "onion"),
-        ("celery-root",   "celery"),
-        ("celeriac",      "celery"),
-        ("bell-pepper",   "bell-pepper"),   // self (Gemini sometimes sends without dash)
-        ("sweet-pepper",  "bell-pepper"),
-        ("chili",         "black-pepper"),
-        ("chilli",        "black-pepper"),
-        ("jalapeno",      "black-pepper"),
-        // Proteins
-        ("chicken",       "chicken-breast"),
-        ("chicken-leg",   "chicken-thighs"),
-        ("chicken-wing",  "chicken-thighs"),
-        ("chicken-drumstick", "chicken-thighs"),
-        ("minced-meat",   "ground-meat"),
-        ("ground-beef",   "ground-meat"),
-        ("mince",         "ground-meat"),
-        // Dairy
-        ("cream",         "sour-cream"),
-        ("heavy-cream",   "sour-cream"),
-        ("cream-cheese",  "cottage-cheese"),
-        ("ricotta",       "cottage-cheese"),
-        ("parmesan",      "hard-cheese"),
-        ("cheddar",       "hard-cheese"),
-        ("cheese",        "hard-cheese"),
-        ("egg",           "chicken-eggs"),
-        ("eggs",          "chicken-eggs"),
-        // Grains & pasta
-        ("vermicelli",    "noodles"),
-        ("spaghetti",     "pasta"),
-        ("penne",         "pasta"),
-        ("macaroni",      "pasta"),
-        ("fettuccine",    "pasta"),
-        ("linguine",      "pasta"),
-        ("flour",         "wheat-flour"),
-        ("all-purpose-flour", "wheat-flour"),
-        // Liquids & sauces
-        ("stock",         "water"),
-        ("broth",         "water"),
-        ("chicken-stock", "water"),
-        ("chicken-broth", "water"),
-        ("vegetable-stock", "water"),
-        ("vegetable-broth", "water"),
-        ("bouillon",      "water"),
-        ("mineral-water", "water"),
-        // Oils
-        ("oil",           "sunflower-oil"),
-        ("vegetable-oil", "sunflower-oil"),
-        ("canola-oil",    "rapeseed-oil"),
-        // Spices & herbs
-        ("cilantro",      "parsley"),
-        ("coriander",     "parsley"),
-        ("bay-leaves",    "bay-leaf"),
-        ("peppercorn",    "black-pepper"),
-        ("peppercorns",   "black-pepper"),
-        ("allspice",      "black-pepper"),
-        ("paprika",       "sweet-paprika"),
-        ("sea-salt",      "salt"),
-        ("kosher-salt",   "salt"),
-        ("table-salt",    "salt"),
-        ("cornstarch",    "wheat-flour"),
-        ("corn-starch",   "wheat-flour"),
-        ("baking-soda",   "baking-powder"),
-        // Canned / processed
-        ("tomato-paste",  "canned-tomatoes"),
-        ("tomato-sauce",  "canned-tomatoes"),
-        ("crushed-tomatoes", "canned-tomatoes"),
-        ("diced-tomatoes", "canned-tomatoes"),
-        // Mushrooms
-        ("mushroom",      "button-mushroom"),
-        ("mushrooms",     "button-mushroom"),
-        ("champignon",    "button-mushroom"),
-        ("portobello",    "button-mushroom"),
-        ("shiitake",      "porcini-mushroom"),
-        // Nuts & seeds
-        ("almond",        "almonds"),
-        ("walnut",        "walnuts"),
-        ("hazelnut",      "hazelnuts"),
-        ("peanut",        "almonds"),
-        ("peanuts",       "almonds"),
-        ("sesame",        "sesame-seeds"),
-        // Drinks
-        ("wine",          "red-wine"),
-        ("white-wine",    "white-wine"),
-    ];
-
-    // Exact alias match first (fast path)
-    for (from, to) in aliases {
-        if h == *from {
-            if let Some(p) = cache.get(to).await { return Some(p); }
-        }
-    }
-    // Partial alias match (e.g. "chicken-stock-cube" contains "chicken-stock")
-    for (from, to) in aliases {
-        if h.contains(from) && h != *from {
-            if let Some(p) = cache.get(to).await { return Some(p); }
-        }
-    }
-
-    // 4. Substring match against all slugs and English names
-    let all = cache.all().await;
-    for p in &all {
-        if p.slug.contains(&h) || h.contains(&p.slug) {
-            return Some(p.clone());
-        }
-        if p.name_en.to_lowercase().contains(&h) {
-            return Some(p.clone());
-        }
-    }
-
-    None
-}
-
-// ── Yield Tables ─────────────────────────────────────────────────────────────
-
-fn edible_yield_for(product_type: &str, slug: &str) -> f32 {
-    let specific = match slug {
-        s if s.contains("potato") => Some(0.80),
-        s if s.contains("carrot") => Some(0.82),
-        s if s.contains("onion") => Some(0.84),
-        s if s.contains("garlic") => Some(0.62),
-        s if s.contains("shrimp") => Some(0.65),
-        s if s.contains("walnut") || s.contains("almond") || s.contains("pistachio") => Some(0.55),
-        s if s.contains("banana") => Some(0.64),
-        s if s.contains("lemon") || s.contains("orange") => Some(0.65),
-        s if s.contains("avocado") => Some(0.67),
-        s if s.contains("pumpkin") => Some(0.70),
-        s if s.contains("cabbage") => Some(0.80),
-        _ => None,
-    };
-    if let Some(y) = specific { return y; }
-
-    match product_type {
-        "fish" => 0.80,
-        "meat" => 0.92,
-        "seafood" => 0.70,
-        "vegetable" => 0.88,
-        "fruit" => 0.82,
-        "mushroom" => 0.95,
-        _ => 1.0,
-    }
-}
-
-fn round1(v: f32) -> f32 { (v * 10.0).round() / 10.0 }
-
-/// Human-friendly time: 89→" ⏱ ~1 ч 30 мин", 25→" ⏱ ~25 мин", 0→""
-fn fmt_time(min: u16) -> String {
-    if min == 0 { return String::new(); }
-    // Round to nearest 5
-    let rounded = ((min as f32 / 5.0).round() as u16).max(5);
-    if rounded < 60 {
-        format!(" ⏱ ~{} мин", rounded)
-    } else {
-        let h = rounded / 60;
-        let m = rounded % 60;
-        if m == 0 { format!(" ⏱ ~{} ч", h) }
-        else { format!(" ⏱ ~{} ч {} мин", h, m) }
-    }
-}
-
-// ── Text Formatting ──────────────────────────────────────────────────────────
-
-pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
-    // ── Minimal text — the card UI is the main content ──
-    // Only emit a short intro line + unresolved warnings.
-    // All ingredients, steps, КБЖУ are rendered by the frontend RecipeCard.
-    let dish = card.display_name.as_deref()
-        .unwrap_or_else(|| card.dish_name_local.as_deref().unwrap_or(&card.dish_name));
-
-    let total_time: u16 = card.steps.iter().filter_map(|s| s.time_min).sum();
-    let time_str = fmt_time(total_time);
-
-    let intro = match lang {
-        ChatLang::Ru => format!(
-            "🍽 **{}** — {} порц. • ~{:.0}г •{} {} ккал на порцию",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
-        ),
-        ChatLang::En => format!(
-            "🍽 **{}** — {} serv. • ~{:.0}g •{} {} kcal/serv",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
-        ),
-        ChatLang::Pl => format!(
-            "🍽 **{}** — {} porcji • ~{:.0}g •{} {} kcal/porcja",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
-        ),
-        ChatLang::Uk => format!(
-            "🍽 **{}** — {} порц. • ~{:.0}г •{} {} ккал/порція",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
-        ),
-    };
-
-    let mut out = vec![intro];
-
-    if !card.unresolved.is_empty() {
-        let warn = match lang {
-            ChatLang::Ru => format!("⚠️ Не в базе: {}", card.unresolved.join(", ")),
-            ChatLang::En => format!("⚠️ Not in DB: {}", card.unresolved.join(", ")),
-            ChatLang::Pl => format!("⚠️ Brak w bazie: {}", card.unresolved.join(", ")),
-            ChatLang::Uk => format!("⚠️ Нема в базі: {}", card.unresolved.join(", ")),
-        };
-        out.push(warn);
-    }
-
-    out.join("\n")
-}
-
-pub fn state_label<'a>(state: &'a str, lang: ChatLang) -> &'a str {
-    match (state, lang) {
-        ("raw", ChatLang::Ru) => "сырой", ("raw", ChatLang::En) => "raw",
-        ("raw", ChatLang::Pl) => "surowy", ("raw", ChatLang::Uk) => "сирий",
-        ("boiled", ChatLang::Ru) => "варёный", ("boiled", ChatLang::En) => "boiled",
-        ("boiled", ChatLang::Pl) => "gotowany", ("boiled", ChatLang::Uk) => "варений",
-        ("fried", ChatLang::Ru) => "жареный", ("fried", ChatLang::En) => "fried",
-        ("fried", ChatLang::Pl) => "smażony", ("fried", ChatLang::Uk) => "смажений",
-        ("sauteed", ChatLang::Ru) => "пассерованный", ("sauteed", ChatLang::En) => "sautéed",
-        ("sauteed", ChatLang::Pl) => "podsmażony", ("sauteed", ChatLang::Uk) => "спасерований",
-        ("baked", ChatLang::Ru) => "запечённый", ("baked", ChatLang::En) => "baked",
-        ("baked", ChatLang::Pl) => "pieczony", ("baked", ChatLang::Uk) => "запечений",
-        ("grilled", ChatLang::Ru) => "гриль", ("grilled", ChatLang::En) => "grilled",
-        ("grilled", ChatLang::Pl) => "grillowany", ("grilled", ChatLang::Uk) => "гриль",
-        ("steamed", ChatLang::Ru) => "на пару", ("steamed", ChatLang::En) => "steamed",
-        ("steamed", ChatLang::Pl) => "na parze", ("steamed", ChatLang::Uk) => "на парі",
-        ("smoked", ChatLang::Ru) => "копчёный", ("smoked", ChatLang::En) => "smoked",
-        ("smoked", ChatLang::Pl) => "wędzony", ("smoked", ChatLang::Uk) => "копчений",
-        _ => state,
-    }
-}
-
-/// Russian state label with gender agreement.
-/// "Свекла" (fem) → "варёная", "Лук" (masc) → "пассерованный", "Молоко" (neut) → "варёное"
-fn state_label_ru(state: &str, name_ru: &str) -> String {
-    let gender = ru_gender(name_ru);
-    match state {
-        "raw" => match gender { 'f' => "сырая", 'n' => "сырое", _ => "сырой" }.into(),
-        "boiled" => match gender { 'f' => "варёная", 'n' => "варёное", _ => "варёный" }.into(),
-        "fried" => match gender { 'f' => "жареная", 'n' => "жареное", _ => "жареный" }.into(),
-        "sauteed" => match gender { 'f' => "пассерованная", 'n' => "пассерованное", _ => "пассерованный" }.into(),
-        "baked" => match gender { 'f' => "запечённая", 'n' => "запечённое", _ => "запечённый" }.into(),
-        "grilled" => "гриль".into(),
-        "steamed" => "на пару".into(),
-        "smoked" => match gender { 'f' => "копчёная", 'n' => "копчёное", _ => "копчёный" }.into(),
-        _ => state.into(),
-    }
-}
-
-/// Guess Russian grammatical gender from the nominative form.
-/// -а/-я → feminine, -о/-е → neuter, else → masculine.
-/// Special case: some food words ending in -ь are feminine (морковь, фасоль…).
-fn ru_gender(name: &str) -> char {
-    let lower = name.to_lowercase();
-    let lower = lower.trim();
-
-    // Words ending in -ь need special handling: could be masc or fem
-    if lower.ends_with('ь') {
-        // Feminine food nouns ending in -ь
-        const FEM_SOFT: &[&str] = &[
-            "морковь", "фасоль", "соль", "ваниль", "зелень",
-            "форель", "печень", "стручковая фасоль",
-        ];
-        for w in FEM_SOFT {
-            if lower == *w { return 'f'; }
-        }
-        // Default for -ь: masculine (картофель, имбирь, миндаль, щавель…)
-        return 'm';
-    }
-
-    if lower.ends_with('а') || lower.ends_with('я') { 'f' }
-    else if lower.ends_with('о') || lower.ends_with('е') || lower.ends_with('ё') { 'n' }
-    else { 'm' }
-}
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::dish_schema;
+    use super::super::nutrition_math;
+    use super::super::display_name;
+    use nutrition_math::build_ingredient;
 
     #[test]
     fn parse_minimal_schema() {
         let json = r#"{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","potato","beef"]}"#;
-        let s = parse_dish_schema(json).unwrap();
+        let s = dish_schema::parse_dish_schema(json).unwrap();
         assert_eq!(s.dish, "borscht");
         assert_eq!(s.items.len(), 4);
         assert_eq!(s.items[0], "beet");
@@ -1658,7 +583,7 @@ mod tests {
     #[test]
     fn parse_markdown_wrapped() {
         let raw = "```json\n{\"dish\":\"test\",\"items\":[\"a\",\"b\"]}\n```";
-        let s = parse_dish_schema(raw).unwrap();
+        let s = dish_schema::parse_dish_schema(raw).unwrap();
         assert_eq!(s.dish, "test");
         assert_eq!(s.items.len(), 2);
     }
@@ -1666,18 +591,18 @@ mod tests {
     #[test]
     fn parse_unknown_dish_errors() {
         let json = r#"{"dish":"unknown","items":[]}"#;
-        assert!(parse_dish_schema(json).is_err());
+        assert!(dish_schema::parse_dish_schema(json).is_err());
     }
 
     #[test]
     fn edible_yield_potato() {
-        let y = edible_yield_for("vegetable", "potato");
+        let y = nutrition_math::edible_yield_for("vegetable", "potato");
         assert!((y - 0.80).abs() < 0.01);
     }
 
     #[test]
     fn edible_yield_default() {
-        let y = edible_yield_for("dairy", "milk");
+        let y = nutrition_math::edible_yield_for("dairy", "milk");
         assert!((y - 1.0).abs() < 0.01);
     }
 
@@ -1740,7 +665,7 @@ mod tests {
             fat_per_100g: 3.6, carbs_per_100g: 0.0, image_url: None,
             product_type: "meat".into(), density_g_per_ml: None,
         };
-        assert_eq!(recipe_portion(&meat, "protein"), 100.0);
+        assert_eq!(nutrition_math::recipe_portion(&meat, "protein"), 100.0);
 
         let oil = IngredientData {
             slug: "olive-oil".into(), name_en: "Olive Oil".into(),
@@ -1749,7 +674,7 @@ mod tests {
             fat_per_100g: 100.0, carbs_per_100g: 0.0, image_url: None,
             product_type: "oil".into(), density_g_per_ml: None,
         };
-        assert_eq!(recipe_portion(&oil, "oil"), 15.0);
+        assert_eq!(nutrition_math::recipe_portion(&oil, "oil"), 15.0);
     }
 
     #[test]
@@ -1769,32 +694,32 @@ mod tests {
     #[test]
     fn extract_json_from_markdown() {
         let raw = "Sure!\n```json\n{\"dish\":\"x\",\"items\":[]}\n```\nDone.";
-        let j = extract_json(raw).unwrap();
+        let j = dish_schema::extract_json(raw).unwrap();
         assert!(j.starts_with('{') && j.ends_with('}'));
     }
 
     #[test]
     fn ru_gender_feminine_soft_sign() {
         // Морковь, фасоль — feminine, ending in -ь
-        assert_eq!(ru_gender("Морковь"), 'f');
-        assert_eq!(ru_gender("Фасоль"), 'f');
-        assert_eq!(ru_gender("Форель"), 'f');
-        assert_eq!(ru_gender("Печень"), 'f');
+        assert_eq!(display_name::ru_gender("Морковь"), 'f');
+        assert_eq!(display_name::ru_gender("Фасоль"), 'f');
+        assert_eq!(display_name::ru_gender("Форель"), 'f');
+        assert_eq!(display_name::ru_gender("Печень"), 'f');
         // Картофель, имбирь — masculine, ending in -ь
-        assert_eq!(ru_gender("Картофель"), 'm');
-        assert_eq!(ru_gender("Имбирь"), 'm');
+        assert_eq!(display_name::ru_gender("Картофель"), 'm');
+        assert_eq!(display_name::ru_gender("Имбирь"), 'm');
     }
 
     #[test]
     fn state_label_morkov_feminine() {
-        let label = state_label_ru("sauteed", "Морковь");
+        let label = display_name::state_label_ru("sauteed", "Морковь");
         assert_eq!(label, "пассерованная");
     }
 
     #[test]
     fn state_label_kartoshka_feminine() {
         // Картошка ends in -а → feminine
-        let label = state_label_ru("boiled", "Картошка");
+        let label = display_name::state_label_ru("boiled", "Картошка");
         assert_eq!(label, "варёная");
     }
 
@@ -1802,19 +727,19 @@ mod tests {
 
     #[test]
     fn accusative_simple_nouns() {
-        assert_eq!(accusative_word("Говядина"), "говядину");
-        assert_eq!(accusative_word("Свинина"), "свинину");
-        assert_eq!(accusative_word("Мука"), "муку");
-        assert_eq!(accusative_word("Морковь"), "морковь");  // inanimate
-        assert_eq!(accusative_word("Лук"), "лук");          // inanimate
-        assert_eq!(accusative_word("Чеснок"), "чеснок");    // inanimate
+        assert_eq!(display_name::accusative_word("Говядина"), "говядину");
+        assert_eq!(display_name::accusative_word("Свинина"), "свинину");
+        assert_eq!(display_name::accusative_word("Мука"), "муку");
+        assert_eq!(display_name::accusative_word("Морковь"), "морковь");  // inanimate
+        assert_eq!(display_name::accusative_word("Лук"), "лук");          // inanimate
+        assert_eq!(display_name::accusative_word("Чеснок"), "чеснок");    // inanimate
     }
 
     #[test]
     fn accusative_adjective_aya() {
         // -ая → -ую
-        assert_eq!(accusative_word("Пшеничная"), "пшеничную");
-        assert_eq!(accusative_word("Каменная"), "каменную");
+        assert_eq!(display_name::accusative_word("Пшеничная"), "пшеничную");
+        assert_eq!(display_name::accusative_word("Каменная"), "каменную");
     }
 
     #[test]
@@ -1828,19 +753,19 @@ mod tests {
 
     #[test]
     fn instrumental_simple_nouns() {
-        assert_eq!(instrumental_word("Говядина"), "говядиной");
-        assert_eq!(instrumental_word("Майонез"), "майонезом");
-        assert_eq!(instrumental_word("Масло"), "маслом");
-        assert_eq!(instrumental_word("Морковь"), "морковью");
-        assert_eq!(instrumental_word("Перец"), "перцем");
+        assert_eq!(display_name::instrumental_word("Говядина"), "говядиной");
+        assert_eq!(display_name::instrumental_word("Майонез"), "майонезом");
+        assert_eq!(display_name::instrumental_word("Масло"), "маслом");
+        assert_eq!(display_name::instrumental_word("Морковь"), "морковью");
+        assert_eq!(display_name::instrumental_word("Перец"), "перцем");
     }
 
     #[test]
     fn instrumental_adjectives() {
-        assert_eq!(instrumental_word("Подсолнечное"), "подсолнечным");
-        assert_eq!(instrumental_word("Куриные"), "куриными");
-        assert_eq!(instrumental_word("Чёрный"), "чёрным");
-        assert_eq!(instrumental_word("Пшеничная"), "пшеничной");
+        assert_eq!(display_name::instrumental_word("Подсолнечное"), "подсолнечным");
+        assert_eq!(display_name::instrumental_word("Куриные"), "куриными");
+        assert_eq!(display_name::instrumental_word("Чёрный"), "чёрным");
+        assert_eq!(display_name::instrumental_word("Пшеничная"), "пшеничной");
     }
 
     #[test]
