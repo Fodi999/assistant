@@ -88,6 +88,7 @@ pub struct NutritionProductDetail {
     pub allergens: Option<AllergensDto>,
     pub food_properties: Option<FoodPropertiesDto>,
     pub culinary: Option<CulinaryDto>,
+    pub culinary_behavior: Option<CulinaryBehaviorDto>,
     pub health_profile: Option<HealthProfileDto>,
     pub sugar_profile: Option<SugarProfileDto>,
     pub processing_effects: Option<ProcessingEffectsDto>,
@@ -258,6 +259,15 @@ pub struct ProcessingEffectsDto {
     pub processing_notes_ru: Option<String>,
     pub processing_notes_pl: Option<String>,
     pub processing_notes_uk: Option<String>,
+}
+
+// ── Culinary Behavior (i18n JSONB arrays) ─────────────
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CulinaryBehaviorDto {
+    pub behaviors_en: Option<Vec<String>>,
+    pub behaviors_ru: Option<Vec<String>>,
+    pub behaviors_pl: Option<Vec<String>>,
+    pub behaviors_uk: Option<Vec<String>>,
 }
 
 // ── Update requests ───────────────────────────────────
@@ -549,6 +559,36 @@ impl AdminNutritionService {
         .await
         .map_err(AppError::from)?;
 
+        // ── Culinary behavior (JSONB arrays, i18n) ──
+        let culinary_behavior = {
+            #[derive(sqlx::FromRow)]
+            struct CbRow {
+                behaviors_en: Option<serde_json::Value>,
+                behaviors_ru: Option<serde_json::Value>,
+                behaviors_pl: Option<serde_json::Value>,
+                behaviors_uk: Option<serde_json::Value>,
+            }
+            let row = sqlx::query_as::<_, CbRow>(
+                r#"SELECT behaviors_en, behaviors_ru, behaviors_pl, behaviors_uk
+                FROM product_culinary_behavior WHERE product_id=$1"#,
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+            row.map(|r| {
+                fn json_to_strings(v: Option<serde_json::Value>) -> Option<Vec<String>> {
+                    v.and_then(|val| serde_json::from_value(val).ok())
+                }
+                CulinaryBehaviorDto {
+                    behaviors_en: json_to_strings(r.behaviors_en),
+                    behaviors_ru: json_to_strings(r.behaviors_ru),
+                    behaviors_pl: json_to_strings(r.behaviors_pl),
+                    behaviors_uk: json_to_strings(r.behaviors_uk),
+                }
+            })
+        };
+
         Ok(NutritionProductDetail {
             id: row.id,
             slug: row.slug,
@@ -580,6 +620,7 @@ impl AdminNutritionService {
             allergens,
             food_properties,
             culinary,
+            culinary_behavior,
             health_profile,
             sugar_profile,
             processing_effects,
@@ -1192,6 +1233,36 @@ impl AdminNutritionService {
         .bind(dto.processing_notes_ru)
         .bind(dto.processing_notes_pl)
         .bind(dto.processing_notes_uk)
+        .execute(&self.pool)
+        .await
+        .map_err(AppError::from)?;
+        Ok(())
+    }
+
+    // ── Upsert culinary behavior (i18n JSONB) ───────────
+    pub async fn upsert_culinary_behavior(&self, id: Uuid, dto: CulinaryBehaviorDto) -> AppResult<()> {
+        fn to_json(v: Option<Vec<String>>) -> serde_json::Value {
+            serde_json::to_value(&v.unwrap_or_default())
+                .unwrap_or(serde_json::Value::Array(vec![]))
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO product_culinary_behavior
+                (product_id, behaviors_en, behaviors_ru, behaviors_pl, behaviors_uk)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (product_id) DO UPDATE SET
+                behaviors_en = EXCLUDED.behaviors_en,
+                behaviors_ru = EXCLUDED.behaviors_ru,
+                behaviors_pl = EXCLUDED.behaviors_pl,
+                behaviors_uk = EXCLUDED.behaviors_uk
+            "#,
+        )
+        .bind(id)
+        .bind(to_json(dto.behaviors_en))
+        .bind(to_json(dto.behaviors_ru))
+        .bind(to_json(dto.behaviors_pl))
+        .bind(to_json(dto.behaviors_uk))
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;

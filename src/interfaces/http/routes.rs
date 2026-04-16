@@ -303,6 +303,7 @@ pub fn create_router(
         .route("/products/:id/health-profile", axum::routing::put(admin_nutrition::update_health_profile))
         .route("/products/:id/sugar-profile", axum::routing::put(admin_nutrition::update_sugar_profile))
         .route("/products/:id/processing-effects", axum::routing::put(admin_nutrition::update_processing_effects))
+        .route("/products/:id/culinary-behavior", axum::routing::put(admin_nutrition::update_culinary_behavior))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,

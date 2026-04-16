@@ -90,7 +90,7 @@ impl AdminCatalogService {
 
         // ── Cache check ──
         let fingerprint = format!(
-            "v3:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v4:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             name_en, product_type,
             has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
             has_cal, has_prot, has_fat
@@ -374,6 +374,12 @@ Return ONLY valid JSON:
     "processing_notes_ru": "<string or null>",
     "processing_notes_pl": "<string or null>",
     "processing_notes_uk": "<string or null>"
+  }},
+  "culinary_behavior": {{
+    "behaviors_en": ["softens quickly", "caramelizes well", "adds sweet-sour accent", "good for sauces, jams, baking"],
+    "behaviors_ru": ["быстро размягчается", "хорошо карамелизуется", "даёт сладко-кислый акцент", "подходит для соусов, джемов, запекания"],
+    "behaviors_pl": ["szybko mięknie", "dobrze karmelizuje się", "dodaje słodko-kwaśny akcent", "nadaje się do sosów, dżemów, pieczenia"],
+    "behaviors_uk": ["швидко розм'якшується", "добре карамелізується", "дає солодко-кислий акцент", "підходить для соусів, джемів, випічки"]
   }}
 }}
 
@@ -391,6 +397,7 @@ Rules:
 - processing_effects: how typical cooking affects this specific ingredient
 - processing_effects.best_cooking_method_*: natural language in each language
 - processing_effects.processing_notes_*: natural language in each language
+- culinary_behavior.behaviors_*: 3-6 short phrases per language describing how this ingredient BEHAVES in cooking (texture change, flavor contribution, best uses). Write natively in each language, NOT machine-translated
 - Return ONLY JSON, no extra text"#,
         name_en = name_en,
         name_ru = name_ru,

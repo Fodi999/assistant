@@ -139,6 +139,7 @@ struct DataQualityRaw {
     pub has_health_profile: bool,
     pub has_sugar_profile: bool,
     pub has_processing_effects: bool,
+    pub has_culinary_behavior: bool,
 }
 
 /// Admin request to update a single ingredient state
@@ -412,7 +413,8 @@ impl AiSousChefService {
                 -- health profile (new)
                 EXISTS(SELECT 1 FROM product_health_profile WHERE product_id = ci.id) as has_health_profile,
                 EXISTS(SELECT 1 FROM nutrition_sugar_profile WHERE product_id = ci.id) as has_sugar_profile,
-                EXISTS(SELECT 1 FROM product_processing_effects WHERE product_id = ci.id) as has_processing_effects
+                EXISTS(SELECT 1 FROM product_processing_effects WHERE product_id = ci.id) as has_processing_effects,
+                EXISTS(SELECT 1 FROM product_culinary_behavior WHERE product_id = ci.id) as has_culinary_behavior
             FROM catalog_ingredients ci
             WHERE ci.is_active = true
               AND ($1::uuid IS NULL OR ci.id = $1)
@@ -533,6 +535,7 @@ impl AiSousChefService {
             (r.has_health_profile,     "health_profile",      "Профиль здоровья",     "health", "recommended", ""),
             (r.has_sugar_profile,      "sugar_profile",       "Сахарный профиль",     "health", "recommended", ""),
             (r.has_processing_effects, "processing_effects",  "Эффекты обработки",    "health", "recommended", ""),
+            (r.has_culinary_behavior,  "culinary_behavior",   "Поведение в кулинарии","relations", "optional", ""),
         ];
 
         let mut total: i64 = 0;

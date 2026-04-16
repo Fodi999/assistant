@@ -21,6 +21,7 @@ pub async fn init_schema(pool: &PgPool) -> AppResult<()> {
     init_product_health_profile(pool).await?;
     init_nutrition_sugar_profile(pool).await?;
     init_product_processing_effects(pool).await?;
+    init_product_culinary_behavior(pool).await?;
     init_food_pairing(pool).await?;
     init_recipes_catalog(pool).await?;
     init_recipe_catalog_ingredients(pool).await?;
@@ -464,6 +465,29 @@ async fn init_product_processing_effects(pool: &PgPool) -> AppResult<()> {
     .await
     .map_err(|e| {
         tracing::error!("init product_processing_effects: {e}");
+        AppError::internal("DB schema error")
+    })?;
+    Ok(())
+}
+
+// ── 13e. product_culinary_behavior ───────────────────────────────────────────
+
+async fn init_product_culinary_behavior(pool: &PgPool) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS product_culinary_behavior (
+            product_id    UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+            behaviors_en  JSONB DEFAULT '[]'::jsonb,
+            behaviors_ru  JSONB DEFAULT '[]'::jsonb,
+            behaviors_pl  JSONB DEFAULT '[]'::jsonb,
+            behaviors_uk  JSONB DEFAULT '[]'::jsonb
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("init product_culinary_behavior: {e}");
         AppError::internal("DB schema error")
     })?;
     Ok(())

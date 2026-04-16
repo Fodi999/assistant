@@ -180,6 +180,15 @@ pub struct ProcessingEffectsPublicRow {
     pub processing_notes_uk: Option<String>,
 }
 
+// ── Culinary Behavior (public) ───────────────────────
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct CulinaryBehaviorPublicRow {
+    pub behaviors_en: Option<serde_json::Value>,
+    pub behaviors_ru: Option<serde_json::Value>,
+    pub behaviors_pl: Option<serde_json::Value>,
+    pub behaviors_uk: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct NutritionPageResponse {
     pub lang: String,
@@ -196,6 +205,7 @@ pub struct NutritionPageResponse {
     pub health_profile: Option<HealthProfilePublicRow>,
     pub sugar_profile: Option<SugarProfilePublicRow>,
     pub processing_effects: Option<ProcessingEffectsPublicRow>,
+    pub culinary_behavior: Option<CulinaryBehaviorPublicRow>,
 }
 
 // ══════════════════════════════════════════════════════
@@ -406,6 +416,16 @@ impl PublicNutritionService {
         .await
         .unwrap_or(None);
 
+        // 13. Culinary behavior
+        let culinary_behavior: Option<CulinaryBehaviorPublicRow> = sqlx::query_as(
+            r#"SELECT behaviors_en, behaviors_ru, behaviors_pl, behaviors_uk
+               FROM product_culinary_behavior WHERE product_id = $1"#,
+        )
+        .bind(product_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
         Ok(NutritionPageResponse {
             lang: "en".to_string(),
             slug: slug.to_string(),
@@ -421,6 +441,7 @@ impl PublicNutritionService {
             health_profile,
             sugar_profile,
             processing_effects,
+            culinary_behavior,
         })
     }
 
