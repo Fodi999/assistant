@@ -179,7 +179,7 @@ impl IngredientCache {
                 COALESCE(ci.carbs_per_100g, 0)::REAL    as carbs_per_100g,
                 ci.image_url,
                 COALESCE(ci.product_type, 'other')      as product_type,
-                ci.density_g_per_ml,
+                ci.density_g_per_ml::REAL               as density_g_per_ml,
                 pcb.behaviors as behaviors_json
             FROM catalog_ingredients ci
             LEFT JOIN product_culinary_behavior pcb ON pcb.product_id = ci.id
