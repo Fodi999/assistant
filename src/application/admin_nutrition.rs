@@ -261,13 +261,37 @@ pub struct ProcessingEffectsDto {
     pub processing_notes_uk: Option<String>,
 }
 
-// ── Culinary Behavior (i18n JSONB arrays) ─────────────
+// ── Culinary Behavior (structured JSONB) ──────────────
+/// A single structured cooking behavior entry.
+/// The recipe engine queries by `key` and `type`.
+/// Frontend renders labels via i18n dictionary keyed by `key`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CookingBehavior {
+    /// Unique machine key, e.g. "softens_quickly", "caramelizes"
+    pub key: String,
+    /// Category: texture | flavor | chemistry | pairing | usage
+    #[serde(rename = "type")]
+    pub behavior_type: String,
+    /// What happens: "softening", "sweetness_increase", "balance", etc.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect: Option<String>,
+    /// What triggers it: "heat", "raw", "acid", "fat", "time"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+    /// 0.0–1.0 strength
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intensity: Option<f32>,
+    /// Temperature threshold in °C (e.g. Maillard at 140)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temp_threshold: Option<f32>,
+    /// For pairing type — slugs of target ingredients
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CulinaryBehaviorDto {
-    pub behaviors_en: Option<Vec<String>>,
-    pub behaviors_ru: Option<Vec<String>>,
-    pub behaviors_pl: Option<Vec<String>>,
-    pub behaviors_uk: Option<Vec<String>>,
+    pub behaviors: Vec<CookingBehavior>,
 }
 
 // ── Update requests ───────────────────────────────────
@@ -559,33 +583,24 @@ impl AdminNutritionService {
         .await
         .map_err(AppError::from)?;
 
-        // ── Culinary behavior (JSONB arrays, i18n) ──
+        // ── Culinary behavior (structured JSONB) ──
         let culinary_behavior = {
             #[derive(sqlx::FromRow)]
             struct CbRow {
-                behaviors_en: Option<serde_json::Value>,
-                behaviors_ru: Option<serde_json::Value>,
-                behaviors_pl: Option<serde_json::Value>,
-                behaviors_uk: Option<serde_json::Value>,
+                behaviors: Option<serde_json::Value>,
             }
             let row = sqlx::query_as::<_, CbRow>(
-                r#"SELECT behaviors_en, behaviors_ru, behaviors_pl, behaviors_uk
-                FROM product_culinary_behavior WHERE product_id=$1"#,
+                "SELECT behaviors FROM product_culinary_behavior WHERE product_id=$1",
             )
             .bind(id)
             .fetch_optional(&self.pool)
             .await
             .map_err(AppError::from)?;
             row.map(|r| {
-                fn json_to_strings(v: Option<serde_json::Value>) -> Option<Vec<String>> {
-                    v.and_then(|val| serde_json::from_value(val).ok())
-                }
-                CulinaryBehaviorDto {
-                    behaviors_en: json_to_strings(r.behaviors_en),
-                    behaviors_ru: json_to_strings(r.behaviors_ru),
-                    behaviors_pl: json_to_strings(r.behaviors_pl),
-                    behaviors_uk: json_to_strings(r.behaviors_uk),
-                }
+                let behaviors: Vec<CookingBehavior> = r.behaviors
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+                CulinaryBehaviorDto { behaviors }
             })
         };
 
@@ -1239,30 +1254,21 @@ impl AdminNutritionService {
         Ok(())
     }
 
-    // ── Upsert culinary behavior (i18n JSONB) ───────────
+    // ── Upsert culinary behavior (structured JSONB) ────
     pub async fn upsert_culinary_behavior(&self, id: Uuid, dto: CulinaryBehaviorDto) -> AppResult<()> {
-        fn to_json(v: Option<Vec<String>>) -> serde_json::Value {
-            serde_json::to_value(&v.unwrap_or_default())
-                .unwrap_or(serde_json::Value::Array(vec![]))
-        }
+        let json = serde_json::to_value(&dto.behaviors)
+            .unwrap_or(serde_json::Value::Array(vec![]));
 
         sqlx::query(
             r#"
-            INSERT INTO product_culinary_behavior
-                (product_id, behaviors_en, behaviors_ru, behaviors_pl, behaviors_uk)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO product_culinary_behavior (product_id, behaviors)
+            VALUES ($1, $2)
             ON CONFLICT (product_id) DO UPDATE SET
-                behaviors_en = EXCLUDED.behaviors_en,
-                behaviors_ru = EXCLUDED.behaviors_ru,
-                behaviors_pl = EXCLUDED.behaviors_pl,
-                behaviors_uk = EXCLUDED.behaviors_uk
+                behaviors = EXCLUDED.behaviors
             "#,
         )
         .bind(id)
-        .bind(to_json(dto.behaviors_en))
-        .bind(to_json(dto.behaviors_ru))
-        .bind(to_json(dto.behaviors_pl))
-        .bind(to_json(dto.behaviors_uk))
+        .bind(json)
         .execute(&self.pool)
         .await
         .map_err(AppError::from)?;

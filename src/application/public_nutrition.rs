@@ -180,13 +180,10 @@ pub struct ProcessingEffectsPublicRow {
     pub processing_notes_uk: Option<String>,
 }
 
-// ── Culinary Behavior (public) ───────────────────────
+// ── Culinary Behavior (public, structured) ───────────
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct CulinaryBehaviorPublicRow {
-    pub behaviors_en: Option<serde_json::Value>,
-    pub behaviors_ru: Option<serde_json::Value>,
-    pub behaviors_pl: Option<serde_json::Value>,
-    pub behaviors_uk: Option<serde_json::Value>,
+    pub behaviors: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -418,8 +415,7 @@ impl PublicNutritionService {
 
         // 13. Culinary behavior
         let culinary_behavior: Option<CulinaryBehaviorPublicRow> = sqlx::query_as(
-            r#"SELECT behaviors_en, behaviors_ru, behaviors_pl, behaviors_uk
-               FROM product_culinary_behavior WHERE product_id = $1"#,
+            "SELECT behaviors FROM product_culinary_behavior WHERE product_id = $1",
         )
         .bind(product_id)
         .fetch_optional(&self.pool)

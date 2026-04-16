@@ -90,7 +90,7 @@ impl AdminCatalogService {
 
         // ── Cache check ──
         let fingerprint = format!(
-            "v4:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v5:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             name_en, product_type,
             has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
             has_cal, has_prot, has_fat
@@ -376,10 +376,12 @@ Return ONLY valid JSON:
     "processing_notes_uk": "<string or null>"
   }},
   "culinary_behavior": {{
-    "behaviors_en": ["softens quickly", "caramelizes well", "adds sweet-sour accent", "good for sauces, jams, baking"],
-    "behaviors_ru": ["быстро размягчается", "хорошо карамелизуется", "даёт сладко-кислый акцент", "подходит для соусов, джемов, запекания"],
-    "behaviors_pl": ["szybko mięknie", "dobrze karmelizuje się", "dodaje słodko-kwaśny akcent", "nadaje się do sosów, dżemów, pieczenia"],
-    "behaviors_uk": ["швидко розм'якшується", "добре карамелізується", "дає солодко-кислий акцент", "підходить для соусів, джемів, випічки"]
+    "behaviors": [
+      {{ "key": "softens_quickly", "type": "texture", "effect": "softening", "trigger": "heat", "intensity": 0.8 }},
+      {{ "key": "caramelizes", "type": "flavor", "effect": "sweetness_increase", "trigger": "heat", "temp_threshold": 140 }},
+      {{ "key": "good_for_sauces", "type": "usage" }},
+      {{ "key": "adds_acidity", "type": "flavor", "effect": "balance", "intensity": 0.6 }}
+    ]
   }}
 }}
 
@@ -397,7 +399,14 @@ Rules:
 - processing_effects: how typical cooking affects this specific ingredient
 - processing_effects.best_cooking_method_*: natural language in each language
 - processing_effects.processing_notes_*: natural language in each language
-- culinary_behavior.behaviors_*: 3-6 short phrases per language describing how this ingredient BEHAVES in cooking (texture change, flavor contribution, best uses). Write natively in each language, NOT machine-translated
+- culinary_behavior.behaviors: 3-8 structured objects per ingredient:
+  - key: snake_case (softens_quickly, caramelizes, releases_juice, adds_sweetness, adds_acidity, sweet_sour_balance, pairs_with_nuts, pairs_with_dairy, good_for_sauces, good_for_baking, good_for_raw, absorbs_flavors, forms_crust, emulsifies, thickens, gelates, ferments_well)
+  - type: texture | flavor | chemistry | pairing | usage
+  - effect: optional result string
+  - trigger: optional heat | raw | acid | fat | time | cold
+  - intensity: optional 0.0-1.0
+  - temp_threshold: optional celsius
+  - targets: optional ingredient slug array (pairing type only)
 - Return ONLY JSON, no extra text"#,
         name_en = name_en,
         name_ru = name_ru,

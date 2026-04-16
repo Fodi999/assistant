@@ -477,10 +477,7 @@ async fn init_product_culinary_behavior(pool: &PgPool) -> AppResult<()> {
         r#"
         CREATE TABLE IF NOT EXISTS product_culinary_behavior (
             product_id    UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
-            behaviors_en  JSONB DEFAULT '[]'::jsonb,
-            behaviors_ru  JSONB DEFAULT '[]'::jsonb,
-            behaviors_pl  JSONB DEFAULT '[]'::jsonb,
-            behaviors_uk  JSONB DEFAULT '[]'::jsonb
+            behaviors     JSONB DEFAULT '[]'::jsonb
         )
         "#,
     )
