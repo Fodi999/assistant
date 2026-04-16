@@ -90,7 +90,7 @@ impl AdminCatalogService {
 
         // ── Cache check ──
         let fingerprint = format!(
-            "v2:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v3:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             name_en, product_type,
             has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
             has_cal, has_prot, has_fat
