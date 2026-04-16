@@ -90,7 +90,7 @@ impl AdminCatalogService {
 
         // ── Cache check ──
         let fingerprint = format!(
-            "v8:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v9:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             name_en, product_type,
             has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
             has_cal, has_prot, has_fat
@@ -191,6 +191,45 @@ impl AdminCatalogService {
                 obj.insert("_warning".into(), serde_json::json!(
                     "AI did not return nutrition data. Product needs manual entry or USDA lookup."
                 ));
+            }
+
+            // ══════════════════════════════════════════════════════════════
+            // POST-PROCESS: Enforce culinary behavior DSL rules
+            // Gemini often ignores field constraints — clean up here.
+            // ══════════════════════════════════════════════════════════════
+            if let Some(cb) = obj.get_mut("culinary_behavior") {
+                if let Some(behaviors) = cb.get_mut("behaviors") {
+                    if let Some(arr) = behaviors.as_array_mut() {
+                        for b in arr.iter_mut() {
+                            if let Some(bobj) = b.as_object_mut() {
+                                let btype = bobj.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let trigger = bobj.get("trigger").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                                // targets ONLY for pairing
+                                if btype != "pairing" {
+                                    bobj.remove("targets");
+                                    bobj.remove("pairing_score");
+                                }
+
+                                // temp_threshold ONLY for heat/cold triggers
+                                if trigger != "heat" && trigger != "cold" {
+                                    bobj.remove("temp_threshold");
+                                }
+
+                                // pairing_score ONLY for pairing
+                                if btype != "pairing" {
+                                    bobj.remove("pairing_score");
+                                }
+
+                                // trigger "-" or "" → "none"
+                                if trigger == "-" || trigger.is_empty() {
+                                    bobj.insert("trigger".into(), serde_json::json!("none"));
+                                }
+                            }
+                        }
+                        tracing::info!("🔧 Post-processed {} culinary behaviors (DSL enforcement)", arr.len());
+                    }
+                }
             }
         }
 
