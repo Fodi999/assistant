@@ -41,7 +41,7 @@ fn make_ingredient(spec: &IngSpec) -> ResolvedIngredient {
             carbs_per_100g: carbs100,
             image_url: None,
             product_type: ptype.into(),
-            density_g_per_ml: None,
+            density_g_per_ml: None, behaviors: vec![],
         }),
         slug_hint: slug.into(),
         resolved_slug: Some(slug.into()),
@@ -99,7 +99,7 @@ fn make_techcard(name: &str, servings: u8, specs: &[IngSpec]) -> TechCard {
         applied_constraints: vec![],
         adaptations: vec![],
         validation_warnings: vec![],
-        auto_fixes: vec![],
+        auto_fixes: vec![], flavor_analysis: None,
     }
 }
 

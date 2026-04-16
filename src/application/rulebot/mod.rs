@@ -51,3 +51,4 @@ pub mod adaptation_engine;
 pub mod recipe_validation;
 pub mod auto_fix;
 pub mod ai_brain;
+pub mod flavor_engine;

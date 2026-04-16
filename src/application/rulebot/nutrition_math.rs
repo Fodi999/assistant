@@ -321,7 +321,7 @@ mod tests {
             carbs_per_100g: 0.0,
             image_url: None,
             product_type: "meat".into(),
-            density_g_per_ml: None,
+            density_g_per_ml: None, behaviors: vec![],
         };
         let resolved = build_ingredient(&product, "beef", HealthGoal::Balanced);
 
@@ -348,7 +348,7 @@ mod tests {
             carbs_per_100g: 9.6,
             image_url: None,
             product_type: "vegetable".into(),
-            density_g_per_ml: None,
+            density_g_per_ml: None, behaviors: vec![],
         };
         let resolved = build_ingredient(&product, "beet", HealthGoal::Balanced);
 
@@ -364,7 +364,7 @@ mod tests {
             name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
             calories_per_100g: 165.0, protein_per_100g: 31.0,
             fat_per_100g: 3.6, carbs_per_100g: 0.0, image_url: None,
-            product_type: "meat".into(), density_g_per_ml: None,
+            product_type: "meat".into(), density_g_per_ml: None, behaviors: vec![],
         };
         assert_eq!(recipe_portion(&meat, "protein"), 100.0);
 
@@ -373,7 +373,7 @@ mod tests {
             name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
             calories_per_100g: 884.0, protein_per_100g: 0.0,
             fat_per_100g: 100.0, carbs_per_100g: 0.0, image_url: None,
-            product_type: "oil".into(), density_g_per_ml: None,
+            product_type: "oil".into(), density_g_per_ml: None, behaviors: vec![],
         };
         assert_eq!(recipe_portion(&oil, "oil"), 15.0);
     }
@@ -385,7 +385,7 @@ mod tests {
             name_ru: "Чеснок".into(), name_pl: "Czosnek".into(), name_uk: "Часник".into(),
             calories_per_100g: 149.0, protein_per_100g: 6.4,
             fat_per_100g: 0.5, carbs_per_100g: 33.0, image_url: None,
-            product_type: "vegetable".into(), density_g_per_ml: None,
+            product_type: "vegetable".into(), density_g_per_ml: None, behaviors: vec![],
         };
         let resolved = build_ingredient(&garlic, "garlic", HealthGoal::Balanced);
         assert_eq!(resolved.role, "spice", "garlic should be spice, not {}", resolved.role);

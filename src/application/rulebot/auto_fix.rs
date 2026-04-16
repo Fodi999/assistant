@@ -467,7 +467,7 @@ mod tests {
                     carbs_per_100g: 10.0,
                     image_url: None,
                     product_type: "other".into(),
-                    density_g_per_ml: None,
+                    density_g_per_ml: None, behaviors: vec![],
                 }),
                 slug_hint: slug.to_string(),
                 resolved_slug: Some(slug.to_string()),
@@ -512,7 +512,7 @@ mod tests {
             applied_constraints: vec![],
             adaptations: vec![],
             validation_warnings: vec![],
-            auto_fixes: vec![],
+            auto_fixes: vec![], flavor_analysis: None,
             ingredients,
         }
     }

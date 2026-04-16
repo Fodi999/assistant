@@ -325,7 +325,7 @@ mod tests {
             carbs_per_100g: carbs,
             image_url: None,
             product_type: ptype.into(),
-            density_g_per_ml: None,
+            density_g_per_ml: None, behaviors: vec![],
         }
     }
 

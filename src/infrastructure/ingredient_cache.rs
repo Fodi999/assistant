@@ -8,6 +8,7 @@
 //! Invalidation:
 //!   cache.reload(&pool).await?;   // after admin edits
 
+use serde::{Serialize, Deserialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,6 +31,32 @@ pub struct IngredientData {
     pub product_type: String,
     /// Density for unit conversion: grams per 1 ml (e.g. water=1.0, honey=1.42, flour=0.55)
     pub density_g_per_ml: Option<f32>,
+    /// Structured culinary behaviors from product_culinary_behavior table
+    pub behaviors: Vec<CachedBehavior>,
+}
+
+/// Lightweight behavior struct for in-memory cache (subset of full CookingBehavior)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedBehavior {
+    pub key: String,
+    #[serde(rename = "type")]
+    pub behavior_type: String,
+    #[serde(default)]
+    pub effect: Option<String>,
+    #[serde(default)]
+    pub trigger: Option<String>,
+    #[serde(default)]
+    pub intensity: Option<f32>,
+    #[serde(default)]
+    pub temp_threshold: Option<f32>,
+    #[serde(default)]
+    pub targets: Vec<String>,
+    #[serde(default)]
+    pub polarity: Option<String>,
+    #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub pairing_score: Option<f32>,
 }
 
 impl IngredientData {
@@ -144,19 +171,21 @@ impl IngredientCache {
         let rows = sqlx::query_as::<_, IngredientRow>(
             r#"
             SELECT
-                slug,
-                name_en, name_ru, name_pl, name_uk,
-                COALESCE(calories_per_100g, 0)::REAL as calories_per_100g,
-                COALESCE(protein_per_100g, 0)::REAL  as protein_per_100g,
-                COALESCE(fat_per_100g, 0)::REAL      as fat_per_100g,
-                COALESCE(carbs_per_100g, 0)::REAL    as carbs_per_100g,
-                image_url,
-                COALESCE(product_type, 'other')      as product_type,
-                density_g_per_ml::REAL               as density_g_per_ml
-            FROM catalog_ingredients
-            WHERE COALESCE(is_active, true) = true
-              AND slug IS NOT NULL
-            ORDER BY slug
+                ci.slug,
+                ci.name_en, ci.name_ru, ci.name_pl, ci.name_uk,
+                COALESCE(ci.calories_per_100g, 0)::REAL as calories_per_100g,
+                COALESCE(ci.protein_per_100g, 0)::REAL  as protein_per_100g,
+                COALESCE(ci.fat_per_100g, 0)::REAL      as fat_per_100g,
+                COALESCE(ci.carbs_per_100g, 0)::REAL    as carbs_per_100g,
+                ci.image_url,
+                COALESCE(ci.product_type, 'other')      as product_type,
+                ci.density_g_per_ml,
+                pcb.behaviors as behaviors_json
+            FROM catalog_ingredients ci
+            LEFT JOIN product_culinary_behavior pcb ON pcb.product_id = ci.id
+            WHERE COALESCE(ci.is_active, true) = true
+              AND ci.slug IS NOT NULL
+            ORDER BY ci.slug
             "#,
         )
         .fetch_all(pool)
@@ -165,6 +194,9 @@ impl IngredientCache {
         let mut map = HashMap::with_capacity(rows.len());
         for row in rows {
             if let Some(slug) = row.slug {
+                let behaviors: Vec<CachedBehavior> = row.behaviors_json
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
                 map.insert(
                     slug.clone(),
                     IngredientData {
@@ -180,6 +212,7 @@ impl IngredientCache {
                         image_url: row.image_url,
                         product_type: row.product_type,
                         density_g_per_ml: row.density_g_per_ml,
+                        behaviors,
                     },
                 );
             }
@@ -202,4 +235,5 @@ struct IngredientRow {
     image_url: Option<String>,
     product_type: String,
     density_g_per_ml: Option<f32>,
+    behaviors_json: Option<serde_json::Value>,
 }

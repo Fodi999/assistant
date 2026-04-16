@@ -195,6 +195,8 @@ pub struct TechCard {
     pub validation_warnings: Vec<String>,
     /// Auto-fix actions taken, e.g. [("Added eggs", "2 eggs as protein source")]
     pub auto_fixes: Vec<String>,
+    /// Flavor/texture analysis from culinary behaviors DSL
+    pub flavor_analysis: Option<super::flavor_engine::FlavorAnalysis>,
 }
 
 // ── Backend Intelligence: resolve, assign roles, portions, cook methods ──────
@@ -429,7 +431,16 @@ pub async fn resolve_dish(
         adaptations: adaptation_report.actions,
         validation_warnings: vec![], // filled below
         auto_fixes: vec![],          // filled below
+        flavor_analysis: None,       // filled below
     };
+
+    // ── 6b. Flavor/texture analysis from culinary behaviors ────────────────
+    let flavor = super::flavor_engine::analyze_dish(&tech_card.ingredients);
+    if !flavor.suggestions.is_empty() {
+        tracing::info!("🎨 Flavor analysis: dominant={:?}, balance={:.2}, suggestions={:?}",
+            flavor.dominant, flavor.balance_score, flavor.suggestions);
+    }
+    tech_card.flavor_analysis = Some(flavor);
 
     // ── 7. Post-build validation ────────────────────────────────────────
     let validation = recipe_validation::validate_recipe(&tech_card, constraints, lang);
@@ -776,7 +787,7 @@ mod tests {
             carbs_per_100g: 0.0,
             image_url: None,
             product_type: "meat".into(),
-            density_g_per_ml: None,
+            density_g_per_ml: None, behaviors: vec![],
         };
         let resolved = build_ingredient(&product, "beef", HealthGoal::Balanced);
 
@@ -803,7 +814,7 @@ mod tests {
             carbs_per_100g: 9.6,
             image_url: None,
             product_type: "vegetable".into(),
-            density_g_per_ml: None,
+            density_g_per_ml: None, behaviors: vec![],
         };
         let resolved = build_ingredient(&product, "beet", HealthGoal::Balanced);
 
@@ -819,7 +830,7 @@ mod tests {
             name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
             calories_per_100g: 165.0, protein_per_100g: 31.0,
             fat_per_100g: 3.6, carbs_per_100g: 0.0, image_url: None,
-            product_type: "meat".into(), density_g_per_ml: None,
+            product_type: "meat".into(), density_g_per_ml: None, behaviors: vec![],
         };
         assert_eq!(nutrition_math::recipe_portion(&meat, "protein"), 100.0);
 
@@ -828,7 +839,7 @@ mod tests {
             name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
             calories_per_100g: 884.0, protein_per_100g: 0.0,
             fat_per_100g: 100.0, carbs_per_100g: 0.0, image_url: None,
-            product_type: "oil".into(), density_g_per_ml: None,
+            product_type: "oil".into(), density_g_per_ml: None, behaviors: vec![],
         };
         assert_eq!(nutrition_math::recipe_portion(&oil, "oil"), 15.0);
     }
@@ -840,7 +851,7 @@ mod tests {
             name_ru: "Чеснок".into(), name_pl: "Czosnek".into(), name_uk: "Часник".into(),
             calories_per_100g: 149.0, protein_per_100g: 6.4,
             fat_per_100g: 0.5, carbs_per_100g: 33.0, image_url: None,
-            product_type: "vegetable".into(), density_g_per_ml: None,
+            product_type: "vegetable".into(), density_g_per_ml: None, behaviors: vec![],
         };
         let resolved = build_ingredient(&garlic, "garlic", HealthGoal::Balanced);
         assert_eq!(resolved.role, "spice", "garlic should be spice, not {}", resolved.role);
