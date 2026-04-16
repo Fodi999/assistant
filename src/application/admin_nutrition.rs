@@ -272,21 +272,30 @@ pub struct CookingBehavior {
     /// Category: texture | flavor | chemistry | pairing | usage
     #[serde(rename = "type")]
     pub behavior_type: String,
-    /// What happens: "softening", "sweetness_increase", "balance", etc.
+    /// What happens: "softening", "moisture_release", "flavor_match", etc.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effect: Option<String>,
-    /// What triggers it: "heat", "raw", "acid", "fat", "time"
+    /// What triggers it: heat | raw | acid | fat | time | cold | mixing | cooling | none
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger: Option<String>,
     /// 0.0–1.0 strength
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intensity: Option<f32>,
-    /// Temperature threshold in °C (e.g. Maillard at 140)
+    /// Temperature threshold in °C — only for heat-related behaviors
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temp_threshold: Option<f32>,
     /// For pairing type — slugs of target ingredients
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<String>,
+    /// Polarity: "+" (increases), "-" (decreases), null if neutral
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub polarity: Option<String>,
+    /// Domain: "flavor", "physics", "nutrition"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    /// Pairing compatibility score 0.0–1.0
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pairing_score: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

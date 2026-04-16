@@ -90,7 +90,7 @@ impl AdminCatalogService {
 
         // ── Cache check ──
         let fingerprint = format!(
-            "v5:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v6:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             name_en, product_type,
             has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
             has_cal, has_prot, has_fat
@@ -377,10 +377,11 @@ Return ONLY valid JSON:
   }},
   "culinary_behavior": {{
     "behaviors": [
-      {{ "key": "softens_quickly", "type": "texture", "effect": "softening", "trigger": "heat", "intensity": 0.8 }},
-      {{ "key": "caramelizes", "type": "flavor", "effect": "sweetness_increase", "trigger": "heat", "temp_threshold": 140 }},
-      {{ "key": "good_for_sauces", "type": "usage" }},
-      {{ "key": "adds_acidity", "type": "flavor", "effect": "balance", "intensity": 0.6 }}
+      {{ "key": "softens_quickly", "type": "texture", "effect": "moisture_release", "trigger": "heat", "intensity": 0.8, "polarity": "+", "domain": "physics" }},
+      {{ "key": "caramelizes", "type": "flavor", "effect": "sweetness_increase", "trigger": "heat", "temp_threshold": 140, "intensity": 0.9, "polarity": "+", "domain": "flavor" }},
+      {{ "key": "good_for_sauces", "type": "usage", "effect": "suitable_for_sauces", "trigger": "none", "domain": "flavor" }},
+      {{ "key": "pairs_with_dairy", "type": "pairing", "effect": "complements", "targets": ["milk", "cream", "yogurt"], "intensity": 0.8, "pairing_score": 0.85, "domain": "flavor" }},
+      {{ "key": "adds_acidity", "type": "flavor", "effect": "acidity_increase", "trigger": "raw", "intensity": 0.6, "polarity": "+", "domain": "flavor" }}
     ]
   }}
 }}
@@ -402,11 +403,20 @@ Rules:
 - culinary_behavior.behaviors: 3-8 structured objects per ingredient:
   - key: snake_case (softens_quickly, caramelizes, releases_juice, adds_sweetness, adds_acidity, sweet_sour_balance, pairs_with_nuts, pairs_with_dairy, good_for_sauces, good_for_baking, good_for_raw, absorbs_flavors, forms_crust, emulsifies, thickens, gelates, ferments_well)
   - type: texture | flavor | chemistry | pairing | usage
-  - effect: optional result string
-  - trigger: optional heat | raw | acid | fat | time | cold
-  - intensity: optional 0.0-1.0
-  - temp_threshold: optional celsius
-  - targets: optional ingredient slug array (pairing type only)
+  - effect: REQUIRED meaningful result (NOT generic "softening" everywhere):
+    * texture: moisture_release, fiber_breakdown, crust_formation, gel_formation, emulsion
+    * flavor: sweetness_increase, acidity_increase, bitterness_reduce, umami_boost, aroma_release
+    * chemistry: maillard_reaction, starch_gelatinization, protein_denaturation, oxidation
+    * pairing: complements, contrasts, enhances, balances (use with targets[])
+    * usage: suitable_for_baking, suitable_for_sauces, suitable_for_raw, suitable_for_frying
+  - trigger: heat | raw | acid | fat | time | cold | mixing | cooling | none (REQUIRED, use "none" for usage/pairing without physical trigger)
+  - intensity: 0.0-1.0 (REQUIRED)
+  - polarity: "+" (increases/adds) or "-" (decreases/reduces) — required for flavor/chemistry effects
+  - domain: "flavor" | "physics" | "nutrition" — what domain this behavior belongs to
+  - temp_threshold: celsius — ONLY for heat/cold triggered behaviors, NEVER for usage/pairing
+  - targets: ingredient slug array — REQUIRED for pairing type, specific items (milk, cream, not just "dairy")
+  - pairing_score: 0.0-1.0 — ONLY for pairing type, how well they match
+  - CRITICAL: releases_juice is IMPORTANT for sauce/stew ingredients — always include if applicable
 - Return ONLY JSON, no extra text"#,
         name_en = name_en,
         name_ru = name_ru,
