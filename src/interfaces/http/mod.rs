@@ -26,3 +26,4 @@ pub mod smart_parse; // 🆕 SmartParse — POST /api/smart/parse
 pub mod tenant_ingredient;
 pub mod usage; // ChefOS iOS usage endpoints
 pub mod user;
+pub mod preferences; // ChefOS user preferences endpoints

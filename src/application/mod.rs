@@ -25,6 +25,7 @@ pub mod smart_service; // 🆕 SmartService — intelligent ingredient aggregato
 pub mod tenant_ingredient;
 pub mod usage_service; // ChefOS iOS usage tracking
 pub mod user;
+pub mod preferences_service; // ChefOS user preferences
 
 pub use admin_auth::*;
 pub use admin_catalog::*;

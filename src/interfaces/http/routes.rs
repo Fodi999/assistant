@@ -58,6 +58,7 @@ use crate::interfaces::http::{
     smart_parse::smart_from_text, // 🆕 SmartParse from-text handler
     tenant_ingredient,
     user::{get_avatar_upload_url, me_handler, update_avatar_url},
+    preferences::{get_preferences, save_preferences},
 };
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, FromRequestParts, Request},
@@ -371,6 +372,7 @@ pub fn create_router(
     let pool_for_autocomplete = pool.clone(); // 🆕 SmartService autocomplete
     let pool_for_smart_parse = pool.clone(); // 🆕 SmartParse
     let pool_for_cms = pool.clone();
+    let pool_for_prefs = pool.clone(); // User preferences
     let cms_service = CmsService::new(pool_for_cms, r2_client.clone());
 
     // Protected routes
@@ -385,6 +387,11 @@ pub fn create_router(
         .route("/profile/avatar/upload-url", post(get_avatar_upload_url))
         .route("/profile/avatar", axum::routing::put(update_avatar_url))
         .with_state(user_service.clone())
+        .merge(
+            Router::new()
+                .route("/preferences", get(get_preferences).put(save_preferences))
+                .with_state(crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone())),
+        )
         .merge(
             Router::new()
                 .route("/assistant/state", get(get_state))
