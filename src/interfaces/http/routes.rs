@@ -57,7 +57,7 @@ use crate::interfaces::http::{
     smart_parse::smart_parse, // 🆕 SmartParse handler
     smart_parse::smart_from_text, // 🆕 SmartParse from-text handler
     tenant_ingredient,
-    user::{get_avatar_upload_url, me_handler, update_avatar_url},
+    user::{get_avatar_upload_url, me_handler, update_avatar_url, update_language},
     preferences::{get_preferences, save_preferences},
 };
 use axum::{
@@ -386,6 +386,7 @@ pub fn create_router(
         .route("/me", get(me_handler))
         .route("/profile/avatar/upload-url", post(get_avatar_upload_url))
         .route("/profile/avatar", axum::routing::put(update_avatar_url))
+        .route("/profile/language", axum::routing::put(update_language))
         .with_state(user_service.clone())
         .merge(
             Router::new()

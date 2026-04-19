@@ -89,3 +89,22 @@ pub async fn update_avatar_url(
         .await?;
     Ok(axum::http::StatusCode::OK)
 }
+
+/// PUT /api/profile/language
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateLanguageRequest {
+    pub language: String,
+}
+
+pub async fn update_language(
+    auth_user: AuthUser,
+    State(user_service): State<UserService>,
+    Json(req): Json<UpdateLanguageRequest>,
+) -> Result<axum::http::StatusCode, crate::shared::AppError> {
+    let lang = crate::shared::Language::from_str(&req.language)
+        .map_err(|e| crate::shared::AppError::validation(e))?;
+    user_service
+        .update_language(auth_user.user_id, lang)
+        .await?;
+    Ok(axum::http::StatusCode::OK)
+}

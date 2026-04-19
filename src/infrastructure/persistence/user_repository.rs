@@ -13,6 +13,7 @@ pub trait UserRepositoryTrait: Send + Sync {
     async fn exists_by_email(&self, email: &Email) -> AppResult<bool>;
     async fn update_login_stats(&self, user_id: UserId) -> AppResult<()>;
     async fn update_avatar_url(&self, user_id: UserId, avatar_url: &str) -> AppResult<()>;
+    async fn update_language(&self, user_id: UserId, language: &Language) -> AppResult<()>;
 }
 
 #[derive(Clone)]
@@ -152,6 +153,16 @@ impl UserRepositoryTrait for UserRepository {
     async fn update_avatar_url(&self, user_id: UserId, avatar_url: &str) -> AppResult<()> {
         sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2")
             .bind(avatar_url)
+            .bind(user_id.as_uuid())
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn update_language(&self, user_id: UserId, language: &Language) -> AppResult<()> {
+        sqlx::query("UPDATE users SET language = $1 WHERE id = $2")
+            .bind(language.code())
             .bind(user_id.as_uuid())
             .execute(&self.pool)
             .await?;

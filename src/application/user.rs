@@ -79,6 +79,10 @@ impl UserService {
     pub async fn update_avatar_url(&self, user_id: UserId, avatar_url: String) -> AppResult<()> {
         self.user_repo.update_avatar_url(user_id, &avatar_url).await
     }
+
+    pub async fn update_language(&self, user_id: UserId, language: crate::shared::Language) -> AppResult<()> {
+        self.user_repo.update_language(user_id, &language).await
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
