@@ -16,6 +16,7 @@ pub mod report;
 pub mod tenant;
 pub mod tenant_ingredient;
 pub mod tools; // 🆕 Chef tools domain (unit converter, yield, scale)
+pub mod usage; // ChefOS iOS usage tracking + monetization
 pub mod user;
 
 pub use admin::*;

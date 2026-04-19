@@ -24,4 +24,5 @@ pub mod routes;
 pub mod smart; // 🆕 SmartService — POST /api/smart/ingredient
 pub mod smart_parse; // 🆕 SmartParse — POST /api/smart/parse
 pub mod tenant_ingredient;
+pub mod usage; // ChefOS iOS usage endpoints
 pub mod user;

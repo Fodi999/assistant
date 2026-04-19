@@ -521,6 +521,17 @@ pub fn create_router(
                 )
                 .with_state(tenant_ingredient_service),
         )
+        .merge({
+            // ChefOS iOS usage tracking
+            let usage_service = crate::application::usage_service::UsageService::new(pool_for_public.clone());
+            Router::new()
+                .route("/usage/today", get(crate::interfaces::http::usage::get_today))
+                .route("/usage/action", post(crate::interfaces::http::usage::perform_action))
+                .route("/usage/actions", post(crate::interfaces::http::usage::perform_batch))
+                .route("/usage/purchase", post(crate::interfaces::http::usage::record_purchase))
+                .route("/usage/welcome-bonus", post(crate::interfaces::http::usage::grant_welcome_bonus))
+                .with_state(usage_service)
+        })
         .layer(jwt_middleware);
 
     // Health check endpoint (no auth, no middleware)

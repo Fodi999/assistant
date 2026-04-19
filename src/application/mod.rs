@@ -23,6 +23,7 @@ pub mod rulebot; // 🆕 RuleBot orchestrator — Culinary Intelligence Platform
 pub mod smart_parse; // 🆕 SmartParse — deterministic text → ingredient parser
 pub mod smart_service; // 🆕 SmartService — intelligent ingredient aggregator
 pub mod tenant_ingredient;
+pub mod usage_service; // ChefOS iOS usage tracking
 pub mod user;
 
 pub use admin_auth::*;
