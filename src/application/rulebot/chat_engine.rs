@@ -21,6 +21,8 @@ use std::time::Instant;
 
 use crate::infrastructure::IngredientCache;
 use crate::infrastructure::llm_adapter::LlmAdapter;
+use crate::application::preferences_service::PreferencesService;
+use crate::domain::user_preferences::UserPreferences;
 use crate::domain::tools::unit_converter as uc;
 use super::intent_router::{detect_language, parse_input_with_context, DialogContext, ChatLang, Intent};
 use super::chat_response::ChatResponse;
@@ -37,12 +39,19 @@ pub struct ChatEngine {
     ingredient_cache: Arc<IngredientCache>,
     llm_adapter: Arc<LlmAdapter>,
     ai_brain: AiBrain,
+    preferences_service: Option<PreferencesService>,
 }
 
 impl ChatEngine {
     pub fn new(ingredient_cache: Arc<IngredientCache>, llm_adapter: Arc<LlmAdapter>) -> Self {
         let ai_brain = AiBrain::new(Arc::clone(&ingredient_cache), Arc::clone(&llm_adapter));
-        Self { ingredient_cache, llm_adapter, ai_brain }
+        Self { ingredient_cache, llm_adapter, ai_brain, preferences_service: None }
+    }
+
+    /// Create with preferences support for personalized chat
+    pub fn with_preferences(mut self, prefs_service: PreferencesService) -> Self {
+        self.preferences_service = Some(prefs_service);
+        self
     }
 
     /// Main entry point — takes free-text + optional session context, returns ChatResponse.
@@ -50,11 +59,47 @@ impl ChatEngine {
         self.handle_chat_with_context(input, &SessionContext::new()).await
     }
 
+    /// Extended entry with optional user_id for personalization.
+    pub async fn handle_chat_with_user(
+        &self,
+        input: &str,
+        ctx: &SessionContext,
+        user_id: Option<crate::shared::UserId>,
+    ) -> ChatResponse {
+        // Load preferences if user_id provided and service available
+        let prefs = if let (Some(uid), Some(svc)) = (user_id, &self.preferences_service) {
+            match svc.get(uid).await {
+                Ok(p) => {
+                    tracing::debug!("🎯 Chat personalization: goal={}, diet={}, allergies={:?}", p.goal, p.diet, p.allergies);
+                    Some(p)
+                }
+                Err(e) => {
+                    tracing::warn!("⚠️ Failed to load preferences for chat: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        self.handle_chat_personalized(input, ctx, prefs.as_ref()).await
+    }
+
     /// Extended entry with session context — enables follow-ups and modifier persistence.
     pub async fn handle_chat_with_context(
         &self,
         input: &str,
         ctx: &SessionContext,
+    ) -> ChatResponse {
+        self.handle_chat_personalized(input, ctx, None).await
+    }
+
+    /// Core chat handler with optional preferences.
+    async fn handle_chat_personalized(
+        &self,
+        input: &str,
+        ctx: &SessionContext,
+        prefs: Option<&UserPreferences>,
     ) -> ChatResponse {
         let start = Instant::now();
         let lang = detect_language(input);
@@ -67,9 +112,20 @@ impl ChatEngine {
         };
         let parsed = parse_input_with_context(input, &dialog_ctx);
 
-        // Effective modifier: current OR remembered from last turn
+        // Effective modifier: current OR remembered from last turn OR from preferences
         let modifier = ctx.effective_modifier(parsed.modifier);
-        let goal = HealthGoal::from_modifier(modifier, input);
+        let goal = if modifier != super::goal_modifier::HealthModifier::None {
+            HealthGoal::from_modifier(modifier, input)
+        } else if let Some(p) = prefs {
+            // Use saved goal from preferences as fallback
+            match p.goal.as_str() {
+                "lose_weight" | "low_calorie" | "cut" => HealthGoal::LowCalorie,
+                "gain_muscle" | "high_protein" | "bulk" => HealthGoal::HighProtein,
+                _ => HealthGoal::Balanced,
+            }
+        } else {
+            HealthGoal::from_modifier(modifier, input)
+        };
 
         tracing::debug!(
             "💬 chat: intent={:?} intents={:?} modifier={:?} lang={:?} turn={}",

@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::application::inventory::{InventoryService, InventoryView};
+use crate::application::preferences_service::PreferencesService;
+use crate::domain::user_preferences::UserPreferences;
 use crate::infrastructure::IngredientCache;
 use crate::infrastructure::llm_adapter::LlmAdapter;
 use crate::shared::{AppResult, Language, TenantId, UserId};
@@ -26,7 +28,7 @@ use super::rulebot::intent_router::ChatLang;
 use super::rulebot::recipe_engine;
 use super::rulebot::response_builder::HealthGoal;
 use super::rulebot::goal_modifier::HealthModifier;
-use super::rulebot::user_constraints::UserConstraints;
+use super::rulebot::user_constraints::{UserConstraints, DietaryMode};
 
 // ── Response Types (stable contract for iOS) ─────────────────────────────────
 
@@ -42,6 +44,21 @@ pub struct CookSuggestionsResponse {
     pub strategic: Vec<SuggestedDish>,
     /// What to buy to unlock more recipes
     pub suggestions: UnlockSuggestions,
+    /// Whether results are personalized based on user preferences
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub personalization: Option<PersonalizationInfo>,
+}
+
+/// Info about how results were personalized
+#[derive(Debug, Clone, Serialize)]
+pub struct PersonalizationInfo {
+    pub personalized: bool,
+    pub goal: String,
+    pub diet: String,
+    pub kcal_target: i32,
+    pub protein_target: i32,
+    pub excluded_allergens: Vec<String>,
+    pub excluded_dislikes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -151,6 +168,7 @@ pub struct CookSuggestionService {
     inventory_service: Arc<InventoryService>,
     ingredient_cache: Arc<IngredientCache>,
     llm_adapter: Arc<LlmAdapter>,
+    preferences_service: PreferencesService,
 }
 
 impl CookSuggestionService {
@@ -158,11 +176,13 @@ impl CookSuggestionService {
         inventory_service: Arc<InventoryService>,
         ingredient_cache: Arc<IngredientCache>,
         llm_adapter: Arc<LlmAdapter>,
+        preferences_service: PreferencesService,
     ) -> Self {
         Self {
             inventory_service,
             ingredient_cache,
             llm_adapter,
+            preferences_service,
         }
     }
 
@@ -174,6 +194,17 @@ impl CookSuggestionService {
         language: Language,
     ) -> AppResult<CookSuggestionsResponse> {
         let lang = language_to_chat_lang(&language);
+
+        // 0. Load user preferences for personalization
+        let prefs = self.preferences_service.get(user_id).await.unwrap_or_default();
+        let constraints = build_constraints_from_prefs(&prefs);
+        let modifier = modifier_from_prefs(&prefs);
+        let goal = HealthGoal::from_modifier(modifier, "");
+
+        tracing::info!(
+            "🎯 Personalization: goal={}, diet={}, allergies={:?}, dislikes={:?}, kcal={}",
+            prefs.goal, prefs.diet, prefs.allergies, prefs.dislikes, prefs.calorie_target
+        );
 
         // 1. Load inventory
         let inventory = self
@@ -190,23 +221,24 @@ impl CookSuggestionService {
                 almost: vec![],
                 strategic: vec![],
                 suggestions: UnlockSuggestions { missing_frequently: vec![], unlock_hints: vec![] },
+                personalization: None,
             });
         }
 
         // 2. Build ingredient context (with slug aliases from cache)
         let ctx = InventoryContext::from_views_with_cache(&inventory, &self.ingredient_cache).await;
 
-        // 3. Ask Gemini for dish candidates
-        let dish_schemas = self.generate_dish_candidates(&ctx, lang).await;
+        // 3. Ask Gemini for dish candidates (with diet/allergy hints)
+        let dish_schemas = self.generate_dish_candidates_personalized(&ctx, lang, &prefs).await;
         tracing::info!("📋 Gemini returned {} dish candidates", dish_schemas.len());
 
-        // 4. Resolve each dish → TechCard → classify
+        // 4. Resolve each dish → TechCard → classify (with user constraints)
         let mut can_cook = Vec::new();
         let mut almost = Vec::new();
         let mut strategic = Vec::new();
 
         for schema in &dish_schemas {
-            if let Some(dish) = self.resolve_and_classify(schema, &ctx, lang).await {
+            if let Some(dish) = self.resolve_and_classify_personalized(schema, &ctx, lang, &constraints, modifier, goal).await {
                 tracing::info!(
                     "✅ Dish '{}': missing={}, ingredients={}",
                     dish.dish_name, dish.missing_count, dish.ingredients.len()
@@ -227,7 +259,7 @@ impl CookSuggestionService {
         // 5. Build strategic suggestions (expiring-first dishes)
         if !ctx.expiring_names.is_empty() {
             for schema in &dish_schemas {
-                if let Some(mut dish) = self.resolve_and_classify(schema, &ctx, lang).await {
+                if let Some(mut dish) = self.resolve_and_classify_personalized(schema, &ctx, lang, &constraints, modifier, goal).await {
                     if dish.insight.uses_expiring && dish.missing_count <= 2 {
                         dish.insight.priority_score += 50; // boost expiring
                         if !strategic.iter().any(|s: &SuggestedDish| s.dish_name == dish.dish_name) {
@@ -262,12 +294,25 @@ impl CookSuggestionService {
             .collect();
         let suggestions = build_unlock_suggestions(&all_dishes, &almost);
 
+        // 9. Build personalization info
+        let personalization = Some(PersonalizationInfo {
+            personalized: prefs.goal != "eat_healthier" || prefs.diet != "no_restrictions"
+                || !prefs.allergies.is_empty() || !prefs.dislikes.is_empty(),
+            goal: prefs.goal.clone(),
+            diet: prefs.diet.clone(),
+            kcal_target: prefs.calorie_target,
+            protein_target: prefs.protein_target,
+            excluded_allergens: prefs.allergies.clone(),
+            excluded_dislikes: prefs.dislikes.clone(),
+        });
+
         Ok(CookSuggestionsResponse {
             inventory_insight,
             can_cook,
             almost,
             strategic,
             suggestions,
+            personalization,
         })
     }
 
@@ -329,6 +374,110 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         };
 
         // Parse JSON array
+        match parse_dish_array(&raw) {
+            Ok(schemas) => schemas,
+            Err(e) => {
+                tracing::warn!("⚠️ Failed to parse dish array: {e} — using fallback");
+                self.fallback_candidates(ctx)
+            }
+        }
+    }
+
+    /// Personalized dish candidates: includes diet, allergies, dislikes, goal in prompt
+    async fn generate_dish_candidates_personalized(
+        &self,
+        ctx: &InventoryContext,
+        lang: ChatLang,
+        prefs: &UserPreferences,
+    ) -> Vec<DishSchema> {
+        let ingredients_list = ctx.available_names.join(", ");
+        let expiring_hint = if ctx.expiring_names.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\nURGENT — these expire soon, prioritize them: {}",
+                ctx.expiring_names.join(", ")
+            )
+        };
+
+        // Build personalization hints for Gemini
+        let mut pref_hints = Vec::new();
+        if prefs.diet != "no_restrictions" {
+            pref_hints.push(format!("Diet: {} — strictly follow this dietary restriction.", prefs.diet));
+        }
+        if !prefs.allergies.is_empty() {
+            pref_hints.push(format!("ALLERGIES (MUST AVOID): {}", prefs.allergies.join(", ")));
+        }
+        if !prefs.intolerances.is_empty() {
+            pref_hints.push(format!("Intolerances (avoid): {}", prefs.intolerances.join(", ")));
+        }
+        if !prefs.dislikes.is_empty() {
+            pref_hints.push(format!("User dislikes (avoid if possible): {}", prefs.dislikes.join(", ")));
+        }
+        match prefs.goal.as_str() {
+            "lose_weight" | "low_calorie" => pref_hints.push(format!(
+                "Goal: weight loss. Target ~{} kcal/day. Prefer light, low-calorie dishes.", prefs.calorie_target
+            )),
+            "gain_muscle" | "high_protein" => pref_hints.push(format!(
+                "Goal: muscle gain. Target ~{}g protein/day. Prefer high-protein dishes.", prefs.protein_target
+            )),
+            "maintain" => pref_hints.push("Goal: maintain weight. Balanced meals.".into()),
+            _ => {}
+        }
+        if prefs.cooking_time == "quick" {
+            pref_hints.push("User prefers quick recipes (under 20 min).".into());
+        }
+        if prefs.cooking_level == "beginner" {
+            pref_hints.push("User is a beginner cook — suggest simple recipes.".into());
+        }
+
+        let personalization_block = if pref_hints.is_empty() {
+            String::new()
+        } else {
+            format!("\n\nUser preferences:\n{}", pref_hints.join("\n"))
+        };
+
+        let lang_label = match lang {
+            ChatLang::Ru => "Russian",
+            ChatLang::En => "English",
+            ChatLang::Pl => "Polish",
+            ChatLang::Uk => "Ukrainian",
+        };
+
+        let prompt = format!(
+            r#"You are a practical chef. The user has ONLY these ingredients in stock:
+{ingredients}{expiring}{personalization}
+
+Suggest 6 realistic dishes that can be made from these ingredients.
+For each dish, list ONLY ingredients from the user's stock (max 6 per dish).
+Prefer dishes that use expiring ingredients first.
+
+Return a JSON array, no other text:
+[
+  {{"dish":"english name","dish_local":"name in {lang}","items":["slug1","slug2"]}},
+  ...
+]
+
+Use English slugs for items (e.g. "chicken-breast", "tomato", "rice").
+Only suggest dishes where at least 60% of ingredients are available in stock."#,
+            ingredients = ingredients_list,
+            expiring = expiring_hint,
+            personalization = personalization_block,
+            lang = lang_label,
+        );
+
+        let raw = match self
+            .llm_adapter
+            .groq_raw_request_with_model(&prompt, 4000, "gemini-3-flash-preview")
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("⚠️ Gemini dish candidates failed: {e}");
+                return self.fallback_candidates(ctx);
+            }
+        };
+
         match parse_dish_array(&raw) {
             Ok(schemas) => schemas,
             Err(e) => {
@@ -552,6 +701,227 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             tags: tech_card.tags.clone(),
             allergens: tech_card.allergens.clone(),
         })
+    }
+
+    /// Personalized resolve_and_classify — uses user's constraints, goal, modifier
+    async fn resolve_and_classify_personalized(
+        &self,
+        schema: &DishSchema,
+        ctx: &InventoryContext,
+        lang: ChatLang,
+        constraints: &UserConstraints,
+        modifier: HealthModifier,
+        goal: HealthGoal,
+    ) -> Option<SuggestedDish> {
+        let tech_card = recipe_engine::resolve_dish(
+            &self.ingredient_cache,
+            schema,
+            goal,
+            lang,
+            constraints,
+            modifier,
+        )
+        .await;
+
+        if tech_card.ingredients.is_empty() {
+            return None;
+        }
+
+        // Compare with inventory
+        let mut ingredients = Vec::new();
+        let mut missing = Vec::new();
+        let mut uses_expiring = false;
+        let mut estimated_cost_cents: i64 = 0;
+
+        for ing in &tech_card.ingredients {
+            let slug = ing.resolved_slug.as_deref().unwrap_or(&ing.slug_hint);
+            let lang_code = match lang {
+                ChatLang::Ru => "ru",
+                ChatLang::Pl => "pl",
+                ChatLang::Uk => "uk",
+                ChatLang::En => "en",
+            };
+
+            let name = ing
+                .product
+                .as_ref()
+                .map(|p| p.name(lang_code).to_string())
+                .unwrap_or_else(|| slug.to_string());
+
+            let available = ctx.has_ingredient(slug);
+            let expiring_soon = ctx.is_expiring(slug);
+
+            if !available && ing.gross_g > 0.0 {
+                missing.push(name.clone());
+            }
+            if expiring_soon {
+                uses_expiring = true;
+            }
+            if let Some(price_cents) = ctx.price_cents_per_unit(slug) {
+                estimated_cost_cents += (price_cents as f64 * ing.gross_g as f64 / 1000.0) as i64;
+            }
+
+            ingredients.push(SuggestedIngredient {
+                name,
+                slug: slug.to_string(),
+                gross_g: ing.gross_g,
+                role: ing.role.clone(),
+                available,
+                expiring_soon,
+            });
+        }
+
+        let servings = tech_card.servings.max(1);
+        let protein_per_serving = tech_card.total_protein / servings as f32;
+        let high_protein = protein_per_serving >= 30.0;
+
+        let mut priority = 0i32;
+        if uses_expiring { priority += 40; }
+        if missing.is_empty() { priority += 30; }
+        if high_protein { priority += 10; }
+        priority -= (missing.len() as i32) * 15;
+
+        let mut reasons = Vec::new();
+        if uses_expiring { reasons.push("uses_expiring_ingredients".into()); }
+        if high_protein { reasons.push("high_protein".into()); }
+        if missing.is_empty() { reasons.push("all_ingredients_available".into()); }
+        if estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+
+        let flavor = tech_card.flavor_analysis.as_ref().map(|f| FlavorInfo {
+            balance_score: f.balance_score,
+            dominant: f.dominant.clone(),
+            suggestions: f.suggestions.clone(),
+        });
+
+        let adaptation = if tech_card.adaptations.is_empty() {
+            None
+        } else {
+            Some(AdaptationInfo {
+                changed: true,
+                strategy: Some(tech_card.goal.clone()),
+                actions: tech_card.adaptations.iter()
+                    .map(|a| format!("{}: {} ({})", a.action, a.slug, a.detail))
+                    .collect(),
+            })
+        };
+
+        let steps: Vec<RecipeStep> = tech_card.steps.iter().map(|s| RecipeStep {
+            step: s.step,
+            text: s.text.clone(),
+            time_min: s.time_min,
+            temp_c: s.temp_c,
+            tip: s.tip.clone(),
+        }).collect();
+
+        Some(SuggestedDish {
+            dish_name: schema.dish.clone(),
+            dish_name_local: schema.dish_local.clone(),
+            display_name: tech_card.display_name.clone(),
+            dish_type: tech_card.dish_type.clone(),
+            complexity: tech_card.complexity.clone(),
+            ingredients,
+            missing_count: missing.len(),
+            missing_ingredients: missing,
+            total_kcal: tech_card.total_kcal,
+            total_protein_g: tech_card.total_protein,
+            total_fat_g: tech_card.total_fat,
+            total_carbs_g: tech_card.total_carbs,
+            per_serving_kcal: tech_card.per_serving_kcal,
+            per_serving_protein_g: tech_card.per_serving_protein,
+            per_serving_fat_g: tech_card.per_serving_fat,
+            per_serving_carbs_g: tech_card.per_serving_carbs,
+            servings,
+            steps,
+            insight: DishInsight {
+                uses_expiring,
+                high_protein,
+                budget_friendly: estimated_cost_cents < 500,
+                estimated_cost_cents,
+                priority_score: priority,
+                reasons,
+            },
+            flavor,
+            adaptation,
+            warnings: tech_card.validation_warnings.clone(),
+            tags: tech_card.tags.clone(),
+            allergens: tech_card.allergens.clone(),
+        })
+    }
+}
+
+// ── Preferences → Constraints/Modifier helpers ──────────────────────────────
+
+/// Build UserConstraints from saved preferences (allergies, diet, dislikes)
+fn build_constraints_from_prefs(prefs: &UserPreferences) -> UserConstraints {
+    let mut c = UserConstraints::default();
+
+    // Diet → DietaryMode
+    match prefs.diet.as_str() {
+        "vegan" => { c.dietary_mode = Some(DietaryMode::Vegan); }
+        "vegetarian" => { c.dietary_mode = Some(DietaryMode::Vegetarian); }
+        "pescatarian" => { c.dietary_mode = Some(DietaryMode::Pescatarian); }
+        _ => {}
+    }
+
+    // Allergies → exclude_allergens
+    for a in &prefs.allergies {
+        let lower = a.to_lowercase();
+        match lower.as_str() {
+            "lactose" | "dairy" | "milk" => {
+                c.exclude_allergens.push("lactose".into());
+                c.exclude_types.push("dairy".into());
+            }
+            "gluten" | "wheat" => {
+                c.exclude_allergens.push("gluten".into());
+            }
+            "nuts" | "tree nuts" | "peanuts" => {
+                c.exclude_allergens.push("nuts".into());
+            }
+            "eggs" | "egg" => {
+                c.exclude_allergens.push("eggs".into());
+            }
+            "fish" => {
+                c.exclude_allergens.push("fish".into());
+                c.exclude_types.push("fish".into());
+            }
+            "shellfish" | "seafood" => {
+                c.exclude_allergens.push("shellfish".into());
+            }
+            "soy" | "soya" => {
+                c.exclude_allergens.push("soy".into());
+            }
+            _ => {
+                c.exclude_slugs.push(lower);
+            }
+        }
+    }
+
+    // Intolerances → also exclude
+    for i in &prefs.intolerances {
+        let lower = i.to_lowercase();
+        if !c.exclude_allergens.contains(&lower) {
+            c.exclude_allergens.push(lower);
+        }
+    }
+
+    // Dislikes → exclude_slugs
+    for d in &prefs.dislikes {
+        let slug = d.to_lowercase().replace(' ', "-");
+        if !c.exclude_slugs.contains(&slug) {
+            c.exclude_slugs.push(slug);
+        }
+    }
+
+    c
+}
+
+/// Map user goal preference → HealthModifier
+fn modifier_from_prefs(prefs: &UserPreferences) -> HealthModifier {
+    match prefs.goal.as_str() {
+        "lose_weight" | "low_calorie" | "cut" => HealthModifier::LowCalorie,
+        "gain_muscle" | "high_protein" | "bulk" => HealthModifier::HighProtein,
+        "gain_weight" | "mass" => HealthModifier::ComfortFood,
+        _ => HealthModifier::None,
     }
 }
 

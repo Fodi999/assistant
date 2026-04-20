@@ -27,6 +27,9 @@ pub struct ChatRequest {
     /// Optional session context from the previous turn (client-side storage).
     #[serde(default)]
     pub context: SessionContext,
+    /// Optional user ID for personalized responses (from auth token).
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -58,7 +61,16 @@ pub async fn chat_handler(
         );
     }
 
-    let response: ChatResponse = engine.handle_chat_with_context(&input, &req.context).await;
+    let response: ChatResponse = if let Some(ref uid_str) = req.user_id {
+        if let Ok(uuid) = uuid::Uuid::parse_str(uid_str) {
+            let user_id = crate::shared::UserId::from(uuid);
+            engine.handle_chat_with_user(&input, &req.context, Some(user_id)).await
+        } else {
+            engine.handle_chat_with_context(&input, &req.context).await
+        }
+    } else {
+        engine.handle_chat_with_context(&input, &req.context).await
+    };
 
     // Build updated context for next turn
     let lang = detect_language(&input);

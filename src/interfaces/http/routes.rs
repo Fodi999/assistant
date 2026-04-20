@@ -496,6 +496,7 @@ pub fn create_router(
                     Arc::new(inventory_service),
                     Arc::clone(&ingredient_cache),
                     Arc::clone(&llm_adapter),
+                    crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone()),
                 )
             );
             Router::new()
@@ -631,6 +632,9 @@ pub fn create_router(
         crate::application::rulebot::chat_engine::ChatEngine::new(
             Arc::clone(&ingredient_cache),
             Arc::clone(&llm_adapter),
+        )
+        .with_preferences(
+            crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone()),
         )
     );
     let chat_router = Router::new()
