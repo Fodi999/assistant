@@ -427,10 +427,17 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
 
         for ing in &tech_card.ingredients {
             let slug = ing.resolved_slug.as_deref().unwrap_or(&ing.slug_hint);
+            let lang_code = match lang {
+                ChatLang::Ru => "ru",
+                ChatLang::Pl => "pl",
+                ChatLang::Uk => "uk",
+                ChatLang::En => "en",
+            };
+
             let name = ing
                 .product
                 .as_ref()
-                .map(|p| p.name_en.clone())
+                .map(|p| p.name(lang_code).to_string())
                 .unwrap_or_else(|| slug.to_string());
 
             let available = ctx.has_ingredient(slug);
