@@ -467,7 +467,13 @@ pub async fn resolve_dish(
 
         // ── 9. Revalidation: clear warnings that were fixed ─────────────
         let revalidation = recipe_validation::validate_recipe(&tech_card, constraints, lang);
-        tech_card.validation_warnings = revalidation.warning_messages();
+        let mut all_warnings = revalidation.warning_messages();
+
+        // ── 9b. Culinary logic validation ────────────────────────────────
+        let culinary_warnings = culinary_base_layer::validate_cooking_logic(&tech_card.ingredients, dish_type);
+        all_warnings.extend(culinary_warnings);
+
+        tech_card.validation_warnings = all_warnings;
 
         if revalidation.issues.is_empty() {
             tracing::info!("✅ All validation issues resolved by auto-fix");
