@@ -193,11 +193,12 @@ impl CookSuggestionService {
             });
         }
 
-        // 2. Build ingredient context
-        let ctx = InventoryContext::from_views(&inventory);
+        // 2. Build ingredient context (with slug aliases from cache)
+        let ctx = InventoryContext::from_views_with_cache(&inventory, &self.ingredient_cache).await;
 
         // 3. Ask Gemini for dish candidates
         let dish_schemas = self.generate_dish_candidates(&ctx, lang).await;
+        tracing::info!("📋 Gemini returned {} dish candidates", dish_schemas.len());
 
         // 4. Resolve each dish → TechCard → classify
         let mut can_cook = Vec::new();
@@ -206,11 +207,20 @@ impl CookSuggestionService {
 
         for schema in &dish_schemas {
             if let Some(dish) = self.resolve_and_classify(schema, &ctx, lang).await {
+                tracing::info!(
+                    "✅ Dish '{}': missing={}, ingredients={}",
+                    dish.dish_name, dish.missing_count, dish.ingredients.len()
+                );
                 match dish.missing_count {
                     0 => can_cook.push(dish),
                     1..=2 => almost.push(dish),
-                    _ => {} // skip dishes needing 3+ missing
+                    3..=4 => strategic.push(dish), // relaxed: show as strategic instead of dropping
+                    _ => {
+                        tracing::info!("⏭ Skipped '{}' (missing {})", dish.dish_name, dish.missing_count);
+                    }
                 }
+            } else {
+                tracing::warn!("❌ resolve_and_classify returned None for '{}'", schema.dish);
             }
         }
 
@@ -551,6 +561,7 @@ struct InventoryContext {
     lookup: std::collections::HashMap<String, IngredientInfo>,
 }
 
+#[derive(Clone)]
 struct IngredientInfo {
     _quantity: f64,
     price_per_unit_cents: i64,
@@ -559,6 +570,21 @@ struct IngredientInfo {
 
 impl InventoryContext {
     fn from_views(views: &[InventoryView]) -> Self {
+        Self::build(views, &[])
+    }
+
+    async fn from_views_with_cache(
+        views: &[InventoryView],
+        cache: &crate::infrastructure::ingredient_cache::IngredientCache,
+    ) -> Self {
+        let all_ingredients = cache.all().await;
+        Self::build(views, &all_ingredients)
+    }
+
+    fn build(
+        views: &[InventoryView],
+        cache_ingredients: &[crate::infrastructure::ingredient_cache::IngredientData],
+    ) -> Self {
         let mut available_names = Vec::new();
         let mut expiring_names = Vec::new();
         let mut categories = Vec::new();
@@ -579,16 +605,42 @@ impl InventoryContext {
                 expiring_names.push(name.clone());
             }
 
-            // Use lowercase name as key for fuzzy matching
+            let info = IngredientInfo {
+                _quantity: v.remaining_quantity,
+                price_per_unit_cents: v.price_per_unit_cents,
+                is_expiring,
+            };
+
+            // Index by lowercase name
             let key = name.to_lowercase();
-            lookup.insert(
-                key,
-                IngredientInfo {
-                    _quantity: v.remaining_quantity,
-                    price_per_unit_cents: v.price_per_unit_cents,
-                    is_expiring,
-                },
-            );
+            lookup.insert(key.clone(), info.clone());
+
+            // Also index by all slug/name variants from ingredient cache
+            // Find matching cache entry by name (any language)
+            let name_lower = name.to_lowercase();
+            for ing in cache_ingredients {
+                let names = [
+                    ing.slug.to_lowercase(),
+                    ing.name_en.to_lowercase(),
+                    ing.name_ru.to_lowercase(),
+                    ing.name_pl.to_lowercase(),
+                    ing.name_uk.to_lowercase(),
+                ];
+                if names.iter().any(|n| n == &name_lower || n.contains(&name_lower) || name_lower.contains(n.as_str())) {
+                    // Add all variants as keys
+                    for alias in &names {
+                        if !alias.is_empty() && !lookup.contains_key(alias) {
+                            lookup.insert(alias.clone(), info.clone());
+                        }
+                    }
+                    // Also add slug with dashes replaced by spaces
+                    let slug_spaced = ing.slug.to_lowercase().replace('-', " ");
+                    if !lookup.contains_key(&slug_spaced) {
+                        lookup.insert(slug_spaced, info.clone());
+                    }
+                    break;
+                }
+            }
         }
 
         // Deduplicate names
@@ -596,6 +648,11 @@ impl InventoryContext {
         available_names.dedup();
         expiring_names.sort();
         expiring_names.dedup();
+
+        tracing::info!(
+            "🗃 InventoryContext: {} products, {} lookup keys, {} expiring",
+            available_names.len(), lookup.len(), expiring_names.len()
+        );
 
         Self {
             available_names,
