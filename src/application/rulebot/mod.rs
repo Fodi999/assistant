@@ -50,5 +50,6 @@ pub mod goal_engine;
 pub mod adaptation_engine;
 pub mod recipe_validation;
 pub mod auto_fix;
+pub mod culinary_base_layer;
 pub mod ai_brain;
 pub mod flavor_engine;

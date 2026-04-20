@@ -43,6 +43,7 @@ pub use super::display_name::{format_recipe_text, state_label};
 // ── Internal imports from extracted modules ──────────────────────────────────
 
 use super::ingredient_resolver::{resolve_slug, auto_insert_implicit};
+use super::culinary_base_layer;
 use super::nutrition_math::{
     build_ingredient_for_dish,
     round1, compute_complexity, detect_allergens, detect_diet_tags,
@@ -247,6 +248,9 @@ pub async fn resolve_dish(
 
     // ── 2. Auto-insert implicit ingredients (Liquid for soup, Oil for sauté) ──
     auto_insert_implicit(&mut ingredients, dish_type, cache, goal).await;
+
+    // ── 2a. Culinary Base Layer: salt, fat, pepper, aromatics ────────────
+    culinary_base_layer::apply_culinary_basics(&mut ingredients, dish_type, cache, goal).await;
 
     // ── 2b. Dietary Constraint Policy: remove/substitute per user preferences ──
     let constraint_report = constraint_policy::apply_dietary_constraints(&mut ingredients, constraints);
