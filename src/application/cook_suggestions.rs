@@ -32,29 +32,82 @@ use super::rulebot::user_constraints::UserConstraints;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CookSuggestionsResponse {
+    /// High-level inventory analysis
+    pub inventory_insight: InventoryInsight,
     /// Dishes that can be cooked RIGHT NOW (0 missing ingredients)
     pub can_cook: Vec<SuggestedDish>,
     /// Dishes missing 1-2 ingredients (almost ready)
     pub almost: Vec<SuggestedDish>,
     /// Smart strategic suggestions (uses expiring, high protein, budget)
     pub strategic: Vec<SuggestedDish>,
+    /// What to buy to unlock more recipes
+    pub suggestions: UnlockSuggestions,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InventoryInsight {
+    /// Estimated days until inventory runs out
+    pub days_left: u8,
+    /// Names of ingredients expiring within 3 days
+    pub at_risk: Vec<String>,
+    /// Waste risk percentage (0-100)
+    pub waste_risk: u8,
+    /// Total unique ingredients available
+    pub total_ingredients: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UnlockSuggestions {
+    /// Most commonly missing ingredients across all recipes
+    pub missing_frequently: Vec<String>,
+    /// Human-readable hints like "+rice → 3 more recipes"
+    pub unlock_hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SuggestedDish {
     pub dish_name: String,
     pub dish_name_local: Option<String>,
+    pub display_name: Option<String>,
+    pub dish_type: String,
+    pub complexity: String,
     pub ingredients: Vec<SuggestedIngredient>,
     pub missing_ingredients: Vec<String>,
     pub missing_count: usize,
-    /// Nutrition summary
+    /// Nutrition per dish
     pub total_kcal: u32,
     pub total_protein_g: f32,
     pub total_fat_g: f32,
     pub total_carbs_g: f32,
+    /// Nutrition per serving
+    pub per_serving_kcal: u32,
+    pub per_serving_protein_g: f32,
+    pub per_serving_fat_g: f32,
+    pub per_serving_carbs_g: f32,
     pub servings: u8,
+    /// Cooking steps (deterministic, no LLM)
+    pub steps: Vec<RecipeStep>,
     /// Smart insights
     pub insight: DishInsight,
+    /// Flavor/texture analysis
+    pub flavor: Option<FlavorInfo>,
+    /// Adaptation report
+    pub adaptation: Option<AdaptationInfo>,
+    /// Validation warnings
+    pub warnings: Vec<String>,
+    /// Diet tags
+    pub tags: Vec<String>,
+    /// Allergens
+    pub allergens: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RecipeStep {
+    pub step: u8,
+    pub text: String,
+    pub time_min: Option<u16>,
+    pub temp_c: Option<u16>,
+    pub tip: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,22 +115,34 @@ pub struct SuggestedIngredient {
     pub name: String,
     pub slug: String,
     pub gross_g: f32,
+    pub role: String,
     pub available: bool,
     pub expiring_soon: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DishInsight {
-    /// Uses ingredients that are about to expire
     pub uses_expiring: bool,
-    /// High protein dish (>30g per serving)
     pub high_protein: bool,
-    /// Budget-friendly (uses cheap/available ingredients)
     pub budget_friendly: bool,
-    /// Estimated cost from inventory (cents)
     pub estimated_cost_cents: i64,
-    /// Priority score (higher = suggest first)
     pub priority_score: i32,
+    /// Why this dish was suggested
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FlavorInfo {
+    pub balance_score: f32,
+    pub dominant: Option<String>,
+    pub suggestions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AdaptationInfo {
+    pub changed: bool,
+    pub strategy: Option<String>,
+    pub actions: Vec<String>,
 }
 
 // ── Service ──────────────────────────────────────────────────────────────────
@@ -118,9 +183,13 @@ impl CookSuggestionService {
 
         if inventory.is_empty() {
             return Ok(CookSuggestionsResponse {
+                inventory_insight: InventoryInsight {
+                    days_left: 0, at_risk: vec![], waste_risk: 0, total_ingredients: 0,
+                },
                 can_cook: vec![],
                 almost: vec![],
                 strategic: vec![],
+                suggestions: UnlockSuggestions { missing_frequently: vec![], unlock_hints: vec![] },
             });
         }
 
@@ -173,10 +242,22 @@ impl CookSuggestionService {
         almost.truncate(5);
         strategic.truncate(3);
 
+        // 7. Build inventory insight
+        let inventory_insight = build_inventory_insight(&ctx);
+
+        // 8. Build unlock suggestions from missing ingredients across all dishes
+        let all_dishes: Vec<&SuggestedDish> = can_cook.iter()
+            .chain(almost.iter())
+            .chain(strategic.iter())
+            .collect();
+        let suggestions = build_unlock_suggestions(&all_dishes, &almost);
+
         Ok(CookSuggestionsResponse {
+            inventory_insight,
             can_cook,
             almost,
             strategic,
+            suggestions,
         })
     }
 
@@ -362,6 +443,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 name,
                 slug: slug.to_string(),
                 gross_g: ing.gross_g,
+                role: ing.role.clone(),
                 available,
                 expiring_soon,
             });
@@ -384,9 +466,48 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         // Less missing = higher priority
         priority -= (missing.len() as i32) * 15;
 
+        // Build reasons
+        let mut reasons = Vec::new();
+        if uses_expiring { reasons.push("uses_expiring_ingredients".into()); }
+        if high_protein { reasons.push("high_protein".into()); }
+        if missing.is_empty() { reasons.push("all_ingredients_available".into()); }
+        if estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+
+        // Flavor info from TechCard
+        let flavor = tech_card.flavor_analysis.as_ref().map(|f| FlavorInfo {
+            balance_score: f.balance_score,
+            dominant: f.dominant.clone(),
+            suggestions: f.suggestions.clone(),
+        });
+
+        // Adaptation info
+        let adaptation = if tech_card.adaptations.is_empty() {
+            None
+        } else {
+            Some(AdaptationInfo {
+                changed: true,
+                strategy: Some(tech_card.goal.clone()),
+                actions: tech_card.adaptations.iter()
+                    .map(|a| format!("{}: {} ({})", a.action, a.slug, a.detail))
+                    .collect(),
+            })
+        };
+
+        // Steps
+        let steps: Vec<RecipeStep> = tech_card.steps.iter().map(|s| RecipeStep {
+            step: s.step,
+            text: s.text.clone(),
+            time_min: s.time_min,
+            temp_c: s.temp_c,
+            tip: s.tip.clone(),
+        }).collect();
+
         Some(SuggestedDish {
             dish_name: schema.dish.clone(),
             dish_name_local: schema.dish_local.clone(),
+            display_name: tech_card.display_name.clone(),
+            dish_type: tech_card.dish_type.clone(),
+            complexity: tech_card.complexity.clone(),
             ingredients,
             missing_count: missing.len(),
             missing_ingredients: missing,
@@ -394,14 +515,25 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             total_protein_g: tech_card.total_protein,
             total_fat_g: tech_card.total_fat,
             total_carbs_g: tech_card.total_carbs,
+            per_serving_kcal: tech_card.per_serving_kcal,
+            per_serving_protein_g: tech_card.per_serving_protein,
+            per_serving_fat_g: tech_card.per_serving_fat,
+            per_serving_carbs_g: tech_card.per_serving_carbs,
             servings,
+            steps,
             insight: DishInsight {
                 uses_expiring,
                 high_protein,
-                budget_friendly: estimated_cost_cents < 500, // < 5 currency units
+                budget_friendly: estimated_cost_cents < 500,
                 estimated_cost_cents,
                 priority_score: priority,
+                reasons,
             },
+            flavor,
+            adaptation,
+            warnings: tech_card.validation_warnings.clone(),
+            tags: tech_card.tags.clone(),
+            allergens: tech_card.allergens.clone(),
         })
     }
 }
@@ -520,5 +652,54 @@ fn language_to_chat_lang(lang: &Language) -> ChatLang {
         "pl" => ChatLang::Pl,
         "uk" => ChatLang::Uk,
         _ => ChatLang::En,
+    }
+}
+
+// ── Inventory Insight Builder ────────────────────────────────────────────────
+
+fn build_inventory_insight(ctx: &InventoryContext) -> InventoryInsight {
+    let total = ctx.available_names.len();
+    let at_risk = ctx.expiring_names.clone();
+    let waste_risk = if total == 0 {
+        0
+    } else {
+        ((at_risk.len() as f32 / total as f32) * 100.0).round() as u8
+    };
+    // Rough estimate: 1 ingredient ≈ 1 day of cooking variety
+    let days_left = (total as u8).min(14);
+
+    InventoryInsight {
+        days_left,
+        at_risk,
+        waste_risk,
+        total_ingredients: total,
+    }
+}
+
+// ── Unlock Suggestions Builder ───────────────────────────────────────────────
+
+fn build_unlock_suggestions(all: &[&SuggestedDish], almost: &[SuggestedDish]) -> UnlockSuggestions {
+    use std::collections::HashMap;
+
+    // Count how often each ingredient is missing across "almost" dishes
+    let mut missing_freq: HashMap<String, usize> = HashMap::new();
+    for dish in almost {
+        for m in &dish.missing_ingredients {
+            *missing_freq.entry(m.clone()).or_default() += 1;
+        }
+    }
+
+    let mut sorted: Vec<(String, usize)> = missing_freq.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let missing_frequently: Vec<String> = sorted.iter().take(5).map(|(k, _)| k.clone()).collect();
+
+    let unlock_hints: Vec<String> = sorted.iter().take(3).map(|(name, count)| {
+        format!("+{} → {} more recipes", name, count)
+    }).collect();
+
+    UnlockSuggestions {
+        missing_frequently,
+        unlock_hints,
     }
 }
