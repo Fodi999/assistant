@@ -487,8 +487,21 @@ pub fn create_router(
                 .route("/inventory/dashboard", get(get_dashboard)) // New ownership dashboard
                 .route("/inventory/alerts", get(get_alerts))
                 .route("/inventory/health", get(get_health))
-                .with_state(inventory_service),
+                .with_state(inventory_service.clone()),
         )
+        // 🆕 Cook Suggestions — smart recipe suggestions from inventory
+        .merge({
+            let cook_service = Arc::new(
+                crate::application::cook_suggestions::CookSuggestionService::new(
+                    Arc::new(inventory_service),
+                    Arc::clone(&ingredient_cache),
+                    Arc::clone(&llm_adapter),
+                )
+            );
+            Router::new()
+                .route("/cook/suggestions", post(crate::interfaces::http::cook_suggestions::cook_suggestions))
+                .with_state(cook_service)
+        })
         // Removed separate inventory_alert_service merge
         .merge(
             Router::new()

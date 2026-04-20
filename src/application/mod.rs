@@ -9,6 +9,7 @@ pub mod intent_pages;       // 🆕 Intent pages CRUD + batch + publish pipeline
 pub mod auth;
 pub mod catalog;
 pub mod cms_service;
+pub mod cook_suggestions; // 🆕 Smart recipe suggestions from inventory
 pub mod dish;
 pub mod inventory;
 pub mod inventory_alert;

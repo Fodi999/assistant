@@ -9,6 +9,7 @@ pub mod assistant;
 pub mod auth;
 pub mod catalog;
 pub mod chef_reference_public;
+pub mod cook_suggestions; // 🆕 Smart recipe suggestions from inventory
 pub mod dish;
 pub mod public;
 pub mod error;
