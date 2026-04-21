@@ -424,6 +424,20 @@ impl AdminNutritionService {
         Ok(count.0)
     }
 
+    // ── Get full product detail by slug ───────────────
+    /// Public-friendly lookup by slug (for anonymous /public/catalog/ingredients/:slug).
+    pub async fn get_product_by_slug(&self, slug: &str) -> AppResult<NutritionProductDetail> {
+        let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM products WHERE slug = $1")
+            .bind(slug)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::from)?;
+        let id = id.ok_or_else(|| {
+            AppError::NotFound(format!("Product with slug '{slug}' not found"))
+        })?;
+        self.get_product(id).await
+    }
+
     // ── Get full product detail ───────────────────────
     pub async fn get_product(&self, id: Uuid) -> AppResult<NutritionProductDetail> {
         // Basic row

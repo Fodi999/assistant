@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::application::{catalog::CatalogService, user::UserService};
+use crate::application::{catalog::CatalogService, user::UserService, AdminNutritionService, NutritionProductDetail};
 use crate::domain::catalog::CatalogCategoryId;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::{AppError, Language};
@@ -285,4 +285,29 @@ pub async fn search_ingredients_public(
     };
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Public ingredient DETAIL — rich Wikipedia-style card for chat/catalog.
+// Reads all joined nutrition tables (macros, vitamins, minerals, fatty
+// acids, diet flags, allergens, culinary, health profile, sugar profile,
+// processing effects, culinary behavior).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Shared state for the public ingredient-detail endpoint.
+#[derive(Clone)]
+pub struct PublicNutritionState {
+    pub nutrition_service: AdminNutritionService,
+}
+
+/// GET /public/catalog/ingredients/:slug
+///
+/// Returns the full `NutritionProductDetail` (same shape as admin endpoint
+/// but without auth). Used by the iOS chat to expand a product card.
+pub async fn get_ingredient_detail_public(
+    State(state): State<PublicNutritionState>,
+    Path(slug): Path<String>,
+) -> Result<Json<NutritionProductDetail>, AppError> {
+    let detail = state.nutrition_service.get_product_by_slug(&slug).await?;
+    Ok(Json(detail))
 }

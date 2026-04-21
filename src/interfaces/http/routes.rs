@@ -31,7 +31,7 @@ use crate::interfaces::http::{
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
-    catalog::{get_categories, get_categories_public, search_ingredients, search_ingredients_public, CatalogState},
+    catalog::{get_categories, get_categories_public, get_ingredient_detail_public, search_ingredients, search_ingredients_public, CatalogState, PublicNutritionState},
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
         cms as public_cms,
@@ -310,7 +310,7 @@ pub fn create_router(
             require_super_admin,
         ))
         .layer(admin_nutrition_middleware)
-        .with_state(admin_nutrition_service);
+        .with_state(admin_nutrition_service.clone());
 
     // Admin users route (for user management)
     let admin_users_route: Router = Router::new()
@@ -637,6 +637,14 @@ pub fn create_router(
             user_service: user_service.clone(),
         });
 
+    // 🆕 Public ingredient DETAIL (no JWT) — rich Wikipedia-style card.
+    // GET /public/catalog/ingredients/:slug  → NutritionProductDetail
+    let public_catalog_detail_router = Router::new()
+        .route("/catalog/ingredients/:slug", get(get_ingredient_detail_public))
+        .with_state(PublicNutritionState {
+            nutrition_service: admin_nutrition_service.clone(),
+        });
+
     // ── 🆕 ChefOS Chat Engine (POST /public/chat) ───────────────────────────
     let chat_engine = Arc::new(
         crate::application::rulebot::chat_engine::ChatEngine::new(
@@ -860,6 +868,7 @@ pub fn create_router(
         .merge(chat_router)     // 🆕 ChefOS: POST /chat
         .merge(chat_events_router) // 🆕 ChefOS: POST /chat/event (telemetry)
         .merge(public_catalog_router) // 🆕 ChefOS: GET /catalog/categories | /catalog/ingredients (no auth, ?lang=xx)
+        .merge(public_catalog_detail_router) // 🆕 ChefOS: GET /catalog/ingredients/:slug (full nutrition detail)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
