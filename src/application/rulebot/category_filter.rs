@@ -107,7 +107,8 @@ pub fn detect_category(text: &str) -> Option<ProductCategory> {
 
 /// High-level food category. Maps 1:1 to the `product_type` string used in
 /// the `catalog_ingredients` table and `IngredientData.product_type`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProductCategory {
     Vegetable,
     Fruit,

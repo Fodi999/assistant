@@ -17,6 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 use super::intent_router::{ChatLang, HealthModifier, Intent};
+use super::category_filter::ProductCategory;
 
 // ── Session Context ───────────────────────────────────────────────────────────
 
@@ -67,6 +68,31 @@ pub struct SessionContext {
     /// How many turns this session has had (for personalization and 80/20 exploration).
     #[serde(default)]
     pub turn_count: u32,
+
+    // ── Step 3 (stateful v1) — operational state ────────────────────────
+    // Filled by the CLIENT after the user actually executes an action
+    // (AddToPlan, AddToShopping). Server uses these to:
+    //   • exclude already-chosen items from new suggestions
+    //   • drop AddToPlan / AddToShopping actions from cards already added
+    //   • route follow-up suggestions toward complementary categories
+    //
+    // Strict contract: only operational state, no full message history.
+
+    /// Recipe identifiers (display_name) the user has added to their plan
+    /// in this session. Capped at 20 to keep JSON small.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_recipes: Vec<String>,
+
+    /// Product slugs the user has added to their shopping list this session.
+    /// Capped at 30.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_products: Vec<String>,
+
+    /// The category of the last shown card set (vegetable / fish / meat …).
+    /// Used by the suggestion layer to recommend complementary categories
+    /// ("you got protein → suggest a vegetable side").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_category: Option<ProductCategory>,
 }
 
 impl SessionContext {
@@ -84,6 +110,7 @@ impl SessionContext {
         lang: ChatLang,
         modifier: HealthModifier,
         card_slugs: Vec<String>,
+        last_category: Option<ProductCategory>,
     ) -> Self {
         let effective_goal = if modifier != HealthModifier::None {
             Some(modifier)
@@ -115,17 +142,31 @@ impl SessionContext {
                 all
             },
             turn_count: self.turn_count + 1,
+            // ── Step 3: operational state passes through unchanged ─────
+            // Server never mutates these — the client owns them and updates
+            // them when the user actually executes an action. last_category
+            // is overwritten when this turn produced category-typed cards.
+            added_recipes: self.added_recipes.clone(),
+            added_products: self.added_products.clone(),
+            last_category: last_category.or(self.last_category),
         }
     }
-
     /// Slugs to exclude in "а что ещё?" follow-ups.
-    /// Returns cumulative shown_slugs (all products ever shown this session).
-    pub fn excluded_slugs(&self) -> &[String] {
-        if self.shown_slugs.is_empty() {
-            &self.last_cards
+    /// Returns cumulative shown_slugs (all products ever shown this session)
+    /// PLUS added_products (already in shopping list — no point re-suggesting).
+    /// Falls back to last_cards on first turn.
+    pub fn excluded_slugs(&self) -> Vec<String> {
+        let mut out: Vec<String> = if self.shown_slugs.is_empty() {
+            self.last_cards.clone()
         } else {
-            &self.shown_slugs
+            self.shown_slugs.clone()
+        };
+        for p in &self.added_products {
+            if !out.contains(p) {
+                out.push(p.clone());
+            }
         }
+        out
     }
 
     /// Resolve follow-up: "а сколько в нём калорий?" — refers to last_product.
@@ -197,15 +238,18 @@ mod tests {
             ChatLang::Ru,
             HealthModifier::None,
             vec!["spinach".to_string()],
+            Some(ProductCategory::Vegetable),
         );
         assert_eq!(next.last_product_slug, Some("spinach".to_string()));
         assert_eq!(next.turn_count, 1);
         assert_eq!(next.last_cards, vec!["spinach".to_string()]);
+        assert_eq!(next.last_category, Some(ProductCategory::Vegetable));
 
-        // Second turn without product — should KEEP last product
-        let next2 = next.advance(Intent::Greeting, vec![], None, None, ChatLang::Ru, HealthModifier::None, vec![]);
+        // Second turn without product OR category — should KEEP both
+        let next2 = next.advance(Intent::Greeting, vec![], None, None, ChatLang::Ru, HealthModifier::None, vec![], None);
         assert_eq!(next2.last_product_slug, Some("spinach".to_string()));
         assert_eq!(next2.turn_count, 2);
+        assert_eq!(next2.last_category, Some(ProductCategory::Vegetable));
         // last_cards cleared (no cards this turn)
         assert!(next2.last_cards.is_empty());
     }
@@ -221,11 +265,31 @@ mod tests {
             ChatLang::Ru,
             HealthModifier::HighProtein,
             vec![],
+            None,
         );
         // Next turn no modifier — should carry forward HighProtein
         let effective = next.effective_modifier(HealthModifier::None);
         assert_eq!(effective, HealthModifier::HighProtein);
         // last_goal should also be set
         assert_eq!(next.last_goal, Some(HealthModifier::HighProtein));
+    }
+
+    #[test]
+    fn test_added_state_passes_through() {
+        let mut ctx = SessionContext::new();
+        ctx.added_recipes.push("Овсянка с ягодами".to_string());
+        ctx.added_products.push("oats".to_string());
+
+        let next = ctx.advance(
+            Intent::HealthyProduct,
+            vec![Intent::HealthyProduct],
+            None, None,
+            ChatLang::Ru,
+            HealthModifier::None,
+            vec![],
+            None,
+        );
+        assert_eq!(next.added_recipes, vec!["Овсянка с ягодами".to_string()]);
+        assert_eq!(next.added_products, vec!["oats".to_string()]);
     }
 }

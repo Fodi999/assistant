@@ -111,6 +111,9 @@ pub async fn chat_handler(
         lang,
         modifier,
         card_slugs,
+        // Step 3: detect category of THIS user query so the next turn knows
+        // what was asked about (used for complementary suggestions).
+        crate::application::rulebot::category_filter::detect_category(&input),
     );
 
     let mut body = serde_json::to_value(&response).unwrap_or_default();

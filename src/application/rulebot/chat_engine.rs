@@ -172,7 +172,7 @@ impl ChatEngine {
         response.coach_message = chef_coach::pick_message(ctx, goal, lang);
 
         // ── Action Layer: enrich cards with user-invokable actions ───────
-        enrich_with_actions(&mut response);
+        enrich_with_actions(&mut response, ctx);
 
         response.timing_ms = start.elapsed().as_millis() as u64;
         response
@@ -210,13 +210,13 @@ impl ChatEngine {
 
         // ── Step 3: No specific product → generic top-N by goal+category ─
         let exclude = ctx.excluded_slugs();
-        let products = self.select_top_products(goal, 3, exclude, category).await;
+        let products = self.select_top_products(goal, 3, &exclude, category).await;
 
         // ── Step 4: Graceful fallback when category has zero matches ────
         if products.is_empty() {
             if let Some(c) = category {
                 tracing::warn!("🥦 no products for category={} goal={:?} — widening to any", c.as_str(), goal);
-                let wider = self.select_top_products(goal, 3, exclude, None).await;
+                let wider = self.select_top_products(goal, 3, &exclude, None).await;
                 return rb::build_healthy_response(&wider, lang, goal);
             }
         }
@@ -521,7 +521,7 @@ impl ChatEngine {
         // Build a smart combo from live cache: protein + side [+ base]
         let all = self.ingredient_cache.all().await;
         let exclude = ctx.excluded_slugs();
-        if let Some(combo) = meal_builder::build_combo(&all, goal, exclude) {
+        if let Some(combo) = meal_builder::build_combo(&all, goal, &exclude) {
             tracing::info!(
                 "🍽 meal_combo: {} + {} [+ {}] → {}kcal {:.0}g protein",
                 combo.protein.slug,
@@ -995,7 +995,13 @@ use chrono::Timelike;
 
 /// Attach user-invokable actions to every card in the response.
 /// Idempotent — if a card already has actions, they're preserved.
-fn enrich_with_actions(response: &mut ChatResponse) {
+///
+/// Step 3 (stateful): drops actions that no longer make sense given the
+/// current session state. A recipe already in the user's plan loses
+/// AddToPlan; a product already in the shopping list loses AddToShopping.
+/// StartCooking and ShowRecipesFor are always kept — they remain useful
+/// even after the item is added.
+fn enrich_with_actions(response: &mut ChatResponse, ctx: &SessionContext) {
     for card in response.cards.iter_mut() {
         match card {
             Card::Recipe(r) if r.actions.is_empty() => {
@@ -1003,16 +1009,22 @@ fn enrich_with_actions(response: &mut ChatResponse) {
                     .clone()
                     .or_else(|| r.dish_name_local.clone())
                     .unwrap_or_else(|| r.dish_name.clone());
-                r.actions = vec![
-                    Action::AddToPlan    { recipe_id: recipe_id.clone() },
-                    Action::StartCooking { recipe_id },
-                ];
+                let already_planned = ctx.added_recipes.iter().any(|id| id == &recipe_id);
+                let mut acts = Vec::with_capacity(2);
+                if !already_planned {
+                    acts.push(Action::AddToPlan { recipe_id: recipe_id.clone() });
+                }
+                acts.push(Action::StartCooking { recipe_id });
+                r.actions = acts;
             }
             Card::Product(p) if p.actions.is_empty() => {
-                p.actions = vec![
-                    Action::AddToShopping  { product_slug: p.slug.clone() },
-                    Action::ShowRecipesFor { product_slug: p.slug.clone() },
-                ];
+                let already_in_list = ctx.added_products.iter().any(|s| s == &p.slug);
+                let mut acts = Vec::with_capacity(2);
+                if !already_in_list {
+                    acts.push(Action::AddToShopping { product_slug: p.slug.clone() });
+                }
+                acts.push(Action::ShowRecipesFor { product_slug: p.slug.clone() });
+                p.actions = acts;
             }
             _ => {}
         }
