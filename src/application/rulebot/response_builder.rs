@@ -10,7 +10,7 @@
 //! ```
 
 use super::intent_router::{ChatLang, Intent};
-use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, RecipeCard, RecipeIngredientRow, Suggestion, SuggestionBlock};
+use super::chat_response::{Card, ChatResponse, ConversionCard, CookingLossCard, CookingLossRow, NutritionCard, ProductCard, RecipeCard, RecipeIngredientRow, Suggestion, SuggestionBlock};
 use super::response_templates as tpl;
 use super::meal_builder::MealCombo;
 use crate::infrastructure::ingredient_cache::IngredientData;
@@ -355,6 +355,108 @@ pub fn build_nutrition(p: &IngredientData, lang: ChatLang) -> ChatResponse {
 
 pub fn build_nutrition_hint(lang: ChatLang) -> ChatResponse {
     ChatResponse::text_only(tpl::nutrition_hint(lang), Intent::NutritionInfo, lang, 0)
+}
+
+// ── Cooking loss ─────────────────────────────────────────────────────────────
+
+/// Build a cooking-loss response: per-state yield/loss table.
+pub fn build_cooking_loss(p: &IngredientData, lang: ChatLang) -> ChatResponse {
+    let name = p.name(lang.code()).to_string();
+
+    // Filter usable states (skip "raw", skip states with no data)
+    let mut rows: Vec<CookingLossRow> = p.states.iter()
+        .filter(|s| s.state != "raw")
+        .filter(|s| s.weight_change_percent.is_some()
+                 || s.water_loss_percent.is_some()
+                 || s.oil_absorption_g.is_some()
+                 || s.calories_per_100g.is_some())
+        .map(|s| CookingLossRow {
+            state: s.state.clone(),
+            label: state_label(&s.state, s, lang),
+            weight_change_percent: s.weight_change_percent,
+            water_loss_percent: s.water_loss_percent,
+            oil_absorption_g: s.oil_absorption_g,
+            calories_per_100g: s.calories_per_100g,
+            protein_per_100g: s.protein_per_100g,
+            fat_per_100g: s.fat_per_100g,
+            carbs_per_100g: s.carbs_per_100g,
+        })
+        .collect();
+
+    if rows.is_empty() {
+        return build_cooking_loss_hint(&name, lang);
+    }
+
+    // Stable ordering: boiled, fried, baked, grilled, steamed, smoked, frozen, dried, pickled
+    let order = ["boiled", "fried", "baked", "grilled", "steamed", "smoked", "frozen", "dried", "pickled"];
+    rows.sort_by_key(|r| order.iter().position(|s| *s == r.state).unwrap_or(99));
+
+    let text = tpl::cooking_loss_text(&name, &rows, lang);
+
+    ChatResponse::with_card(
+        text,
+        Card::CookingLoss(CookingLossCard {
+            slug: p.slug.clone(),
+            name,
+            raw_calories_per_100g: p.calories_per_100g,
+            image_url: p.image_url.clone(),
+            rows,
+        }),
+        Intent::CookingLoss,
+        lang,
+        0,
+    )
+}
+
+/// Fallback when the ingredient has no state data.
+pub fn build_cooking_loss_hint(name: &str, lang: ChatLang) -> ChatResponse {
+    let text = tpl::cooking_loss_hint(name, lang);
+    ChatResponse::text_only(text, Intent::CookingLoss, lang, 0)
+}
+
+/// Fallback when we couldn't identify the ingredient at all.
+pub fn build_cooking_loss_no_product(lang: ChatLang) -> ChatResponse {
+    let text = tpl::cooking_loss_no_product(lang);
+    ChatResponse::text_only(text, Intent::CookingLoss, lang, 0)
+}
+
+/// Localized label for a processing state ("варёная", "boiled", …).
+/// Prefers the DB-stored `name_suffix_*`, falls back to a static dictionary.
+fn state_label(state: &str, s: &crate::infrastructure::ingredient_cache::CachedState, lang: ChatLang) -> String {
+    let suffix = match lang {
+        ChatLang::Ru => s.name_suffix_ru.as_deref(),
+        ChatLang::En => s.name_suffix_en.as_deref(),
+        ChatLang::Pl => s.name_suffix_pl.as_deref(),
+        ChatLang::Uk => s.name_suffix_uk.as_deref(),
+    };
+    if let Some(sfx) = suffix {
+        if !sfx.trim().is_empty() {
+            return sfx.trim().to_string();
+        }
+    }
+    // Static fallback
+    let code = lang.code();
+    match (state, code) {
+        ("boiled",  "ru") => "варёная", ("boiled",  "en") => "boiled",
+        ("boiled",  "pl") => "ugotowana", ("boiled", "uk") => "варена",
+        ("fried",   "ru") => "жареная", ("fried",   "en") => "fried",
+        ("fried",   "pl") => "smażona", ("fried",   "uk") => "смажена",
+        ("baked",   "ru") => "запечённая", ("baked", "en") => "baked",
+        ("baked",   "pl") => "pieczona", ("baked",  "uk") => "запечена",
+        ("grilled", "ru") => "гриль",   ("grilled", "en") => "grilled",
+        ("grilled", "pl") => "z grilla",("grilled", "uk") => "на грилі",
+        ("steamed", "ru") => "на пару", ("steamed", "en") => "steamed",
+        ("steamed", "pl") => "na parze",("steamed", "uk") => "на парі",
+        ("smoked",  "ru") => "копчёная",("smoked",  "en") => "smoked",
+        ("smoked",  "pl") => "wędzona", ("smoked",  "uk") => "копчена",
+        ("frozen",  "ru") => "мороженая",("frozen", "en") => "frozen",
+        ("frozen",  "pl") => "mrożona", ("frozen",  "uk") => "заморожена",
+        ("dried",   "ru") => "сушёная", ("dried",   "en") => "dried",
+        ("dried",   "pl") => "suszona", ("dried",   "uk") => "сушена",
+        ("pickled", "ru") => "маринованная", ("pickled","en") => "pickled",
+        ("pickled", "pl") => "marynowana",   ("pickled","uk") => "маринована",
+        _ => state,
+    }.to_string()
 }
 
 /// Build a seasonality response.

@@ -68,6 +68,8 @@ pub enum Intent {
     NutritionInfo,
     /// "что такое лосось", "tell me about chicken", "co to jest szpinak"
     ProductInfo,
+    /// "сколько морковь теряет при варке", "cooking loss", "ужарка мяса"
+    CookingLoss,
     /// Could not determine intent — triggers controlled LLM fallback
     Unknown,
 }
@@ -83,6 +85,7 @@ impl Intent {
             Self::MealIdea       => "meal_idea",
             Self::NutritionInfo  => "nutrition_info",
             Self::ProductInfo    => "product_info",
+            Self::CookingLoss    => "cooking_loss",
             Self::Unknown        => "unknown",
         }
     }
@@ -359,7 +362,7 @@ fn is_short_recipe_ref(text: &str) -> bool {
 /// Quick                           → slight boost to RecipeHelp
 /// Budget                          → slight boost to HealthyProduct
 /// ComfortFood                     → slight boost to RecipeHelp
-fn apply_modifier_boost(modifier: HealthModifier, scores: &mut [(Intent, i32); 8]) {
+fn apply_modifier_boost(modifier: HealthModifier, scores: &mut [(Intent, i32); 9]) {
     let (recipe_boost, healthy_boost) = match modifier {
         HealthModifier::LowCalorie  => (1, 1),
         HealthModifier::HighProtein => (1, 1),
@@ -383,7 +386,7 @@ fn apply_modifier_boost(modifier: HealthModifier, scores: &mut [(Intent, i32); 8
 // ── Scoring Engine ────────────────────────────────────────────────────────────
 
 /// Score all intents in one pass using keyword tables from `intent_keywords`.
-fn score_all_intents(text: &str) -> [(Intent, i32); 8] {
+fn score_all_intents(text: &str) -> [(Intent, i32); 9] {
     let hi_base = if text.trim() == "hi" { 3 } else { 0 };
     [
         (Intent::Greeting,       hi_base + sum_scores(text, kw::GREETING)),
@@ -394,6 +397,7 @@ fn score_all_intents(text: &str) -> [(Intent, i32); 8] {
         (Intent::Seasonality,    sum_scores(text, kw::SEASONALITY)),
         (Intent::RecipeHelp,     sum_scores(text, kw::RECIPE)),
         (Intent::MealIdea,       sum_scores(text, kw::MEAL_IDEA)),
+        (Intent::CookingLoss,    sum_scores(text, kw::COOKING_LOSS)),
     ]
 }
 
@@ -411,7 +415,7 @@ fn sum_scores(text: &str, keywords: &[kw::ScoredKeyword]) -> i32 {
 /// - "хочу на массу, что поесть?" → MealIdea (goal + action verb = meal, not product list)
 /// - "low calorie dinner for diet" → MealIdea (meal-time + diet = meal, not nutrition_info)
 /// - "хочу похудеть, приготовь томатный суп" → RecipeHelp (explicit cook verb wins over goal)
-fn apply_context_boosts(text: &str, scores: &mut [(Intent, i32); 8]) {
+fn apply_context_boosts(text: &str, scores: &mut [(Intent, i32); 9]) {
     let has_goal = kw::GOAL_SIGNALS.iter().any(|kw| text.contains(kw));
     let has_action_verb = kw::ACTION_SIGNALS.iter().any(|kw| text.contains(kw));
     let has_meal_time = kw::MEAL_TIME_SIGNALS.iter().any(|kw| text.contains(kw));
@@ -545,6 +549,15 @@ mod tests {
     #[test] fn prod_info_en()    { assert_eq!(detect_intent("what is spinach"),         Intent::ProductInfo); }
     #[test] fn prod_info_pl()    { assert_eq!(detect_intent("co to jest brokuł"),      Intent::ProductInfo); }
     #[test] fn prod_info_tell()  { assert_eq!(detect_intent("расскажи о шпинате"),     Intent::ProductInfo); }
+
+    // ── Cooking Loss ──
+    #[test] fn loss_ru_boil()    { assert_eq!(detect_intent("сколько морковь теряет при варке"), Intent::CookingLoss); }
+    #[test] fn loss_ru_fry()     { assert_eq!(detect_intent("ужарка говядины в процентах"),      Intent::CookingLoss); }
+    #[test] fn loss_ru_bake()    { assert_eq!(detect_intent("потери при запекании курицы"),      Intent::CookingLoss); }
+    #[test] fn loss_en()         { assert_eq!(detect_intent("cooking loss for chicken breast"),  Intent::CookingLoss); }
+    #[test] fn loss_en_shrink()  { assert_eq!(detect_intent("beef shrinkage after frying"),      Intent::CookingLoss); }
+    #[test] fn loss_pl()         { assert_eq!(detect_intent("ile kurczak traci po ugotowaniu"),  Intent::CookingLoss); }
+    #[test] fn loss_uk()         { assert_eq!(detect_intent("скільки морква втрачає при варінні"),Intent::CookingLoss); }
 
     // ── Recipe ──
     #[test] fn recipe_ru()       { assert_eq!(detect_intent("рецепт борща"),            Intent::RecipeHelp); }

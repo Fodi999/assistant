@@ -33,6 +33,32 @@ pub struct IngredientData {
     pub density_g_per_ml: Option<f32>,
     /// Structured culinary behaviors from product_culinary_behavior table
     pub behaviors: Vec<CachedBehavior>,
+    /// Processing states (raw, boiled, fried, …) with weight/water/fat changes.
+    /// Loaded from `ingredient_states`. Keyed by state enum value ("boiled", etc.).
+    pub states: Vec<CachedState>,
+}
+
+/// Processing state with cooking-loss data (from `ingredient_states`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedState {
+    /// 'raw' | 'boiled' | 'fried' | 'baked' | 'grilled' | 'steamed' | 'smoked' | 'frozen' | 'dried' | 'pickled'
+    pub state: String,
+    /// Weight change % during cooking (negative = loss).
+    pub weight_change_percent: Option<f32>,
+    /// % of water lost.
+    pub water_loss_percent: Option<f32>,
+    /// Grams of oil absorbed per 100 g raw.
+    pub oil_absorption_g: Option<f32>,
+    /// Re-calculated kcal / 100 g in this state (may differ from raw).
+    pub calories_per_100g: Option<f32>,
+    pub protein_per_100g: Option<f32>,
+    pub fat_per_100g: Option<f32>,
+    pub carbs_per_100g: Option<f32>,
+    /// Localized suffixes ("варёный" / "boiled").
+    pub name_suffix_en: Option<String>,
+    pub name_suffix_ru: Option<String>,
+    pub name_suffix_pl: Option<String>,
+    pub name_suffix_uk: Option<String>,
 }
 
 /// Lightweight behavior struct for in-memory cache (subset of full CookingBehavior)
@@ -101,6 +127,11 @@ impl IngredientData {
             "grain" | "legume" => "base",
             _ => "other",
         }
+    }
+
+    /// Find a specific processing state (e.g. "boiled", "fried").
+    pub fn state(&self, name: &str) -> Option<&CachedState> {
+        self.states.iter().find(|s| s.state == name)
     }
 }
 
@@ -191,12 +222,59 @@ impl IngredientCache {
         .fetch_all(pool)
         .await?;
 
+        // Load processing-state rows once and bucket them by ingredient slug.
+        // Joined via `catalog_ingredients.id` which is referenced in
+        // `ingredient_states.ingredient_id`. We select only slugs so the
+        // merge below is O(n) in a HashMap.
+        let state_rows = sqlx::query_as::<_, StateRow>(
+            r#"
+            SELECT
+                ci.slug,
+                s.state::TEXT                            as state,
+                s.weight_change_percent::REAL            as weight_change_percent,
+                s.water_loss_percent::REAL               as water_loss_percent,
+                s.oil_absorption_g::REAL                 as oil_absorption_g,
+                s.calories_per_100g::REAL                as calories_per_100g,
+                s.protein_per_100g::REAL                 as protein_per_100g,
+                s.fat_per_100g::REAL                     as fat_per_100g,
+                s.carbs_per_100g::REAL                   as carbs_per_100g,
+                s.name_suffix_en, s.name_suffix_ru,
+                s.name_suffix_pl, s.name_suffix_uk
+            FROM ingredient_states s
+            JOIN catalog_ingredients ci ON ci.id = s.ingredient_id
+            WHERE ci.slug IS NOT NULL
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let mut states_by_slug: HashMap<String, Vec<CachedState>> = HashMap::new();
+        for sr in state_rows {
+            if let Some(slug) = sr.slug {
+                states_by_slug.entry(slug).or_default().push(CachedState {
+                    state: sr.state,
+                    weight_change_percent: sr.weight_change_percent,
+                    water_loss_percent: sr.water_loss_percent,
+                    oil_absorption_g: sr.oil_absorption_g,
+                    calories_per_100g: sr.calories_per_100g,
+                    protein_per_100g: sr.protein_per_100g,
+                    fat_per_100g: sr.fat_per_100g,
+                    carbs_per_100g: sr.carbs_per_100g,
+                    name_suffix_en: sr.name_suffix_en,
+                    name_suffix_ru: sr.name_suffix_ru,
+                    name_suffix_pl: sr.name_suffix_pl,
+                    name_suffix_uk: sr.name_suffix_uk,
+                });
+            }
+        }
+
         let mut map = HashMap::with_capacity(rows.len());
         for row in rows {
             if let Some(slug) = row.slug {
                 let behaviors: Vec<CachedBehavior> = row.behaviors_json
                     .and_then(|v| serde_json::from_value(v).ok())
                     .unwrap_or_default();
+                let states = states_by_slug.remove(&slug).unwrap_or_default();
                 map.insert(
                     slug.clone(),
                     IngredientData {
@@ -213,6 +291,7 @@ impl IngredientCache {
                         product_type: row.product_type,
                         density_g_per_ml: row.density_g_per_ml,
                         behaviors,
+                        states,
                     },
                 );
             }
@@ -236,4 +315,21 @@ struct IngredientRow {
     product_type: String,
     density_g_per_ml: Option<f32>,
     behaviors_json: Option<serde_json::Value>,
+}
+
+#[derive(sqlx::FromRow)]
+struct StateRow {
+    slug: Option<String>,
+    state: String,
+    weight_change_percent: Option<f32>,
+    water_loss_percent: Option<f32>,
+    oil_absorption_g: Option<f32>,
+    calories_per_100g: Option<f32>,
+    protein_per_100g: Option<f32>,
+    fat_per_100g: Option<f32>,
+    carbs_per_100g: Option<f32>,
+    name_suffix_en: Option<String>,
+    name_suffix_ru: Option<String>,
+    name_suffix_pl: Option<String>,
+    name_suffix_uk: Option<String>,
 }

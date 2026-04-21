@@ -209,6 +209,8 @@ pub enum Card {
     Nutrition(NutritionCard),
     /// Tech-card / recipe card — full dish breakdown.
     Recipe(RecipeCard),
+    /// Cooking-loss breakdown — per-state yield table (raw → boiled/fried/…)
+    CookingLoss(CookingLossCard),
 }
 
 /// Product card — name, nutrition, image.
@@ -253,6 +255,41 @@ pub struct NutritionCard {
     pub carbs_per_100g: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
+}
+
+/// Cooking-loss card — yield breakdown per processing state.
+#[derive(Debug, Serialize)]
+pub struct CookingLossCard {
+    pub slug: String,
+    pub name: String,
+    /// Base kcal per 100 g of the raw product (for reference).
+    pub raw_calories_per_100g: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+    pub rows: Vec<CookingLossRow>,
+}
+
+/// One row in the cooking-loss table.
+#[derive(Debug, Serialize)]
+pub struct CookingLossRow {
+    /// 'raw' | 'boiled' | 'fried' | 'baked' | …
+    pub state: String,
+    /// Localized state label ("варёная" / "boiled" / …).
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight_change_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_loss_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oil_absorption_g: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calories_per_100g: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protein_per_100g: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fat_per_100g: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub carbs_per_100g: Option<f32>,
 }
 
 /// Recipe/tech-card — full dish breakdown with gross/net calculations.

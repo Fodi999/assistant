@@ -156,6 +156,7 @@ impl ChatEngine {
             Intent::RecipeHelp     => self.handle_recipe(input, lang, goal, modifier).await,
             Intent::MealIdea       => self.handle_meal_idea(lang, goal, input, ctx).await,
             Intent::ProductInfo    => self.handle_product_info(input, lang).await,
+            Intent::CookingLoss    => self.handle_cooking_loss(input, lang).await,
             // ── Layer 2: AI Brain ── LLM with tool calling for complex queries
             Intent::Unknown        => {
                 tracing::info!("🧠 Escalating to AI Brain (Layer 2) for: {:?}", &input[..input.len().min(60)]);
@@ -479,6 +480,16 @@ impl ChatEngine {
             rb::build_nutrition(&p, lang)
         } else {
             rb::build_nutrition_hint(lang)
+        }
+    }
+
+    async fn handle_cooking_loss(&self, input: &str, lang: ChatLang) -> ChatResponse {
+        match self.find_ingredient_in_text(input).await {
+            Some(p) => {
+                tracing::info!("🔥 cooking_loss: {} ({} states)", p.slug, p.states.len());
+                rb::build_cooking_loss(&p, lang)
+            }
+            None => rb::build_cooking_loss_no_product(lang),
         }
     }
 

@@ -467,7 +467,7 @@ mod tests {
                     carbs_per_100g: 10.0,
                     image_url: None,
                     product_type: "other".into(),
-                    density_g_per_ml: None, behaviors: vec![],
+                    density_g_per_ml: None, behaviors: vec![], states: vec![],
                 }),
                 slug_hint: slug.to_string(),
                 resolved_slug: Some(slug.to_string()),

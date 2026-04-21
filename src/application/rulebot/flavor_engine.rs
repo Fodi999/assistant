@@ -217,6 +217,7 @@ mod tests {
                 behaviors: vec![
                     make_behavior("sweetness_increase", "+", 0.9),
                 ],
+                states: vec![],
             }),
             slug_hint: "apple".into(),
             resolved_slug: Some("apple".into()),

@@ -359,6 +359,94 @@ pub fn nutrition_hint(lang: ChatLang) -> &'static str {
     }
 }
 
+// ── Cooking loss ─────────────────────────────────────────────────────────────
+
+pub fn cooking_loss_text(
+    name: &str,
+    rows: &[super::chat_response::CookingLossRow],
+    lang: ChatLang,
+) -> String {
+    // Header
+    let header = match lang {
+        ChatLang::Ru => format!("🔥 Потери при готовке — {}:", name),
+        ChatLang::En => format!("🔥 Cooking loss — {}:", name),
+        ChatLang::Pl => format!("🔥 Straty przy gotowaniu — {}:", name),
+        ChatLang::Uk => format!("🔥 Втрати під час готування — {}:", name),
+    };
+
+    let mut lines: Vec<String> = Vec::with_capacity(rows.len() + 2);
+    lines.push(header);
+
+    for r in rows {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(w) = r.weight_change_percent {
+            let sign = if w < 0.0 { "" } else { "+" };
+            parts.push(match lang {
+                ChatLang::Ru => format!("вес {}{:.0}%", sign, w),
+                ChatLang::En => format!("weight {}{:.0}%", sign, w),
+                ChatLang::Pl => format!("waga {}{:.0}%", sign, w),
+                ChatLang::Uk => format!("вага {}{:.0}%", sign, w),
+            });
+        }
+        if let Some(wl) = r.water_loss_percent {
+            parts.push(match lang {
+                ChatLang::Ru => format!("вода −{:.0}%", wl),
+                ChatLang::En => format!("water −{:.0}%", wl),
+                ChatLang::Pl => format!("woda −{:.0}%", wl),
+                ChatLang::Uk => format!("вода −{:.0}%", wl),
+            });
+        }
+        if let Some(oa) = r.oil_absorption_g {
+            if oa > 0.0 {
+                parts.push(match lang {
+                    ChatLang::Ru => format!("масло +{:.1} г", oa),
+                    ChatLang::En => format!("oil +{:.1} g", oa),
+                    ChatLang::Pl => format!("olej +{:.1} g", oa),
+                    ChatLang::Uk => format!("олія +{:.1} г", oa),
+                });
+            }
+        }
+        if let Some(k) = r.calories_per_100g {
+            parts.push(format!("{:.0} kcal/100g", k));
+        }
+
+        let row_line = if parts.is_empty() {
+            format!("• {}", r.label)
+        } else {
+            format!("• {}: {}", r.label, parts.join(", "))
+        };
+        lines.push(row_line);
+    }
+
+    let footnote = match lang {
+        ChatLang::Ru => "\nДанные из техкарты — % считается от сырого веса.",
+        ChatLang::En => "\nData from the tech-card — % is relative to raw weight.",
+        ChatLang::Pl => "\nDane z karty technologicznej — % liczone od wagi surowej.",
+        ChatLang::Uk => "\nДані з техкарти — % рахується від сирої ваги.",
+    };
+    lines.push(footnote.to_string());
+
+    lines.join("\n")
+}
+
+pub fn cooking_loss_hint(name: &str, lang: ChatLang) -> String {
+    match lang {
+        ChatLang::Ru => format!("Для «{}» пока нет данных о потерях при готовке. Попробуй другой продукт — например: «сколько теряет курица при варке».", name),
+        ChatLang::En => format!("No cooking-loss data for \"{}\" yet. Try another product — e.g. \"how much chicken loses when boiled\".", name),
+        ChatLang::Pl => format!("Brak danych o stratach dla „{}”. Spróbuj innego produktu — np. „ile traci kurczak po ugotowaniu”.", name),
+        ChatLang::Uk => format!("Поки немає даних про втрати для «{}». Спробуй інший продукт — наприклад: «скільки втрачає курка при варінні».", name),
+    }
+}
+
+pub fn cooking_loss_no_product(lang: ChatLang) -> &'static str {
+    match lang {
+        ChatLang::Ru => "Укажи продукт — например: «сколько морковь теряет при варке» или «ужарка говядины».",
+        ChatLang::En => "Name the product — e.g. \"how much carrot loses when boiled\" or \"beef cooking loss\".",
+        ChatLang::Pl => "Podaj produkt — np. „ile marchew traci po ugotowaniu” lub „ubytek wołowiny”.",
+        ChatLang::Uk => "Вкажи продукт — наприклад: «скільки морква втрачає при варінні» або «ужарка яловичини».",
+    }
+}
+
 // ── Seasonality ──────────────────────────────────────────────────────────────
 
 pub fn season_text(product: &str, lang: ChatLang) -> String {
