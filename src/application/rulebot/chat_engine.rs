@@ -220,7 +220,32 @@ impl ChatEngine {
                 return rb::build_healthy_response(&wider, lang, goal);
             }
         }
-        rb::build_healthy_response(&products, lang, goal)
+        let mut response = rb::build_healthy_response(&products, lang, goal);
+
+        // ── Step 5 (Guidance): complementary category block ─────────────
+        // After main cards — attach a side block (e.g. Fish → Vegetable).
+        // Skipped when: no category detected, no complement mapped, or
+        // no products found for the complement.
+        if let Some(c) = category {
+            if let Some(complement) = c.complement() {
+                // Exclude main products too so the side doesn't repeat them.
+                let mut side_exclude = exclude.clone();
+                for (p, _, _) in &products {
+                    side_exclude.push(p.slug.clone());
+                }
+                let side = self.select_top_products(goal, 2, &side_exclude, Some(complement)).await;
+                if !side.is_empty() {
+                    tracing::debug!(
+                        "🍽️ complement: {} → {} ({} items)",
+                        c.as_str(), complement.as_str(), side.len()
+                    );
+                    response.suggestion_block = Some(
+                        rb::build_suggestion_block(complement, &side, lang, goal)
+                    );
+                }
+            }
+        }
+        response
     }
 
     /// Scan ALL ingredients from cache, rank by weighted normalized score.

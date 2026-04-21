@@ -10,7 +10,7 @@
 //! ```
 
 use super::intent_router::{ChatLang, Intent};
-use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, RecipeCard, RecipeIngredientRow, Suggestion};
+use super::chat_response::{Card, ChatResponse, ConversionCard, NutritionCard, ProductCard, RecipeCard, RecipeIngredientRow, Suggestion, SuggestionBlock};
 use super::response_templates as tpl;
 use super::meal_builder::MealCombo;
 use crate::infrastructure::ingredient_cache::IngredientData;
@@ -911,5 +911,72 @@ fn build_already_seen_suggestions(lang: ChatLang, goal: HealthGoal, name: &str, 
                 HealthGoal::Balanced    => "ще корисні продукти".into(),
             }, emoji: Some("🔄") },
         ],
+    }
+}
+
+// ── Step 3.5: Complementary suggestion block ────────────────────────────────
+
+/// Build a `SuggestionBlock` that pairs with the main cards.
+///
+/// Usage: user asked for fish → we show 3 fish cards → we also attach
+/// a side block of 2 vegetable cards under the title "Add a side".
+/// The block is NEVER a replacement — it's an additional section.
+pub fn build_suggestion_block(
+    complement: super::category_filter::ProductCategory,
+    products: &[(IngredientData, &'static str, String)],
+    lang: ChatLang,
+    goal: HealthGoal,
+) -> SuggestionBlock {
+    let title = complement_title(complement, lang);
+    let items: Vec<Card> = products.iter().map(|(p, reason_tag, _)| {
+        let name = p.name(lang.code()).to_string();
+        let hl = tpl::highlight(p, lang, goal);
+        Card::Product(ProductCard {
+            actions: vec![],
+            slug: p.slug.clone(),
+            name,
+            calories_per_100g: p.calories_per_100g,
+            protein_per_100g: p.protein_per_100g,
+            fat_per_100g: p.fat_per_100g,
+            carbs_per_100g: p.carbs_per_100g,
+            image_url: p.image_url.clone(),
+            highlight: Some(hl),
+            reason_tag: Some(reason_tag),
+        })
+    }).collect();
+
+    SuggestionBlock {
+        title,
+        category: complement.as_str().to_string(),
+        items,
+    }
+}
+
+/// Localized title for the complementary block.
+/// Uses the COMPLEMENT category to pick the right phrasing
+/// ("Add a side" for veg, "Pair with fruit" for dairy, …).
+fn complement_title(complement: super::category_filter::ProductCategory, lang: ChatLang) -> String {
+    use super::category_filter::ProductCategory as PC;
+    match (complement, lang) {
+        // Vegetables → "side dish"
+        (PC::Vegetable, ChatLang::Ru) => "Добавь гарнир".into(),
+        (PC::Vegetable, ChatLang::En) => "Add a side".into(),
+        (PC::Vegetable, ChatLang::Pl) => "Dodaj dodatek warzywny".into(),
+        (PC::Vegetable, ChatLang::Uk) => "Додай гарнір".into(),
+        // Protein
+        (PC::Meat, ChatLang::Ru) => "Добавь белок".into(),
+        (PC::Meat, ChatLang::En) => "Add a protein".into(),
+        (PC::Meat, ChatLang::Pl) => "Dodaj białko".into(),
+        (PC::Meat, ChatLang::Uk) => "Додай білок".into(),
+        // Fruit
+        (PC::Fruit, ChatLang::Ru) => "Добавь фрукт".into(),
+        (PC::Fruit, ChatLang::En) => "Add a fruit".into(),
+        (PC::Fruit, ChatLang::Pl) => "Dodaj owoc".into(),
+        (PC::Fruit, ChatLang::Uk) => "Додай фрукт".into(),
+        // Generic fallback
+        (_, ChatLang::Ru) => "Попробуй также".into(),
+        (_, ChatLang::En) => "Also try".into(),
+        (_, ChatLang::Pl) => "Wypróbuj też".into(),
+        (_, ChatLang::Uk) => "Спробуй також".into(),
     }
 }

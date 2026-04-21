@@ -33,6 +33,11 @@ pub struct ChatResponse {
     /// Next-step action suggestions — "Zrób plan dnia", "Pokaż przepisy"
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub suggestions: Vec<Suggestion>,
+    /// Complementary recommendation block (Step 3.5 "Guidance"):
+    /// e.g. after serving Fish cards → a side block of Vegetable cards.
+    /// Rendered as a SEPARATE section below main cards — never replaces them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion_block: Option<SuggestionBlock>,
     /// Chef tip — cooking insight from the "chef mode".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chef_tip: Option<String>,
@@ -57,6 +62,24 @@ pub struct Suggestion {
     pub emoji: Option<&'static str>,
 }
 
+/// Complementary recommendation block — Step 3.5 "Guidance" layer.
+///
+/// Appears BELOW main cards as a separate section. Example: user asked
+/// for fish, we show fish cards, then attach a SuggestionBlock with
+/// `title = "Add a side"` and 2 vegetable `ProductCard`s.
+///
+/// Never replaces main `cards[]` — always an addition.
+#[derive(Debug, Serialize)]
+pub struct SuggestionBlock {
+    /// Human-readable heading: "Add a side", "Добавь гарнир", etc.
+    pub title: String,
+    /// The suggested category slug ("vegetable", "fruit", …) —
+    /// clients can use this for icons / deep links.
+    pub category: String,
+    /// Complementary cards. Same shape as `ChatResponse.cards`.
+    pub items: Vec<Card>,
+}
+
 impl ChatResponse {
     /// Quick text-only response (no cards).
     pub fn text_only(text: impl Into<String>, intent: Intent, lang: ChatLang, timing_ms: u64) -> Self {
@@ -67,6 +90,7 @@ impl ChatResponse {
             intents: vec![],
             reason: None,
             suggestions: vec![],
+            suggestion_block: None,
             chef_tip: None,
             coach_message: None,
             lang,
@@ -89,6 +113,7 @@ impl ChatResponse {
             intents: vec![],
             reason: None,
             suggestions: vec![],
+            suggestion_block: None,
             chef_tip: None,
             coach_message: None,
             lang,
@@ -113,6 +138,7 @@ impl ChatResponse {
             intents,
             reason: Some(reason.into()),
             suggestions: vec![],
+            suggestion_block: None,
             chef_tip: None,
             coach_message: None,
             lang,

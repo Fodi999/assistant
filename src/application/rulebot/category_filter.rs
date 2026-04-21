@@ -162,6 +162,36 @@ impl ProductCategory {
             ProductCategory::Herb      => "herb",
         }
     }
+
+    /// Complementary category — what pairs well with this one on a plate.
+    ///
+    /// Used by the "Guidance" layer to suggest a side dish after the main
+    /// answer. Returns `None` for categories where a pairing doesn't add
+    /// value (fruits/berries/herbs stand alone as snacks).
+    ///
+    /// Rule of thumb:
+    /// - Proteins (meat / fish / seafood) → Vegetable side
+    /// - Grain / Legume → Vegetable side (carbs + fibre)
+    /// - Vegetable / Mushroom → Protein (meat → preferred, stays consistent)
+    /// - Dairy → Fruit (yoghurt-style pairing)
+    /// - Nut → Fruit (trail-mix pairing)
+    /// - Fruit / Berry / Herb → None (don't suggest, they stand alone)
+    pub fn complement(self) -> Option<ProductCategory> {
+        match self {
+            ProductCategory::Fish      => Some(ProductCategory::Vegetable),
+            ProductCategory::Seafood   => Some(ProductCategory::Vegetable),
+            ProductCategory::Meat      => Some(ProductCategory::Vegetable),
+            ProductCategory::Grain     => Some(ProductCategory::Vegetable),
+            ProductCategory::Legume    => Some(ProductCategory::Vegetable),
+            ProductCategory::Vegetable => Some(ProductCategory::Meat),
+            ProductCategory::Mushroom  => Some(ProductCategory::Meat),
+            ProductCategory::Dairy     => Some(ProductCategory::Fruit),
+            ProductCategory::Nut       => Some(ProductCategory::Fruit),
+            ProductCategory::Fruit     => None,
+            ProductCategory::Berry     => None,
+            ProductCategory::Herb      => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -203,5 +233,26 @@ mod tests {
     fn detects_dairy() {
         assert_eq!(detect_category("полезные молочные продукты"), Some(ProductCategory::Dairy));
         assert_eq!(detect_category("what cheese is best"), Some(ProductCategory::Dairy));
+    }
+
+    #[test]
+    fn complement_pairs_are_sensible() {
+        // Proteins take a vegetable side
+        assert_eq!(ProductCategory::Fish.complement(), Some(ProductCategory::Vegetable));
+        assert_eq!(ProductCategory::Seafood.complement(), Some(ProductCategory::Vegetable));
+        assert_eq!(ProductCategory::Meat.complement(), Some(ProductCategory::Vegetable));
+        // Carbs / legumes also pair with vegetables
+        assert_eq!(ProductCategory::Grain.complement(), Some(ProductCategory::Vegetable));
+        assert_eq!(ProductCategory::Legume.complement(), Some(ProductCategory::Vegetable));
+        // Vegetables and mushrooms pair with protein
+        assert_eq!(ProductCategory::Vegetable.complement(), Some(ProductCategory::Meat));
+        assert_eq!(ProductCategory::Mushroom.complement(), Some(ProductCategory::Meat));
+        // Dairy / nuts pair with fruit
+        assert_eq!(ProductCategory::Dairy.complement(), Some(ProductCategory::Fruit));
+        assert_eq!(ProductCategory::Nut.complement(), Some(ProductCategory::Fruit));
+        // Fruits / berries / herbs — stand alone
+        assert_eq!(ProductCategory::Fruit.complement(), None);
+        assert_eq!(ProductCategory::Berry.complement(), None);
+        assert_eq!(ProductCategory::Herb.complement(), None);
     }
 }
