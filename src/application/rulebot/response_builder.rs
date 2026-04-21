@@ -393,7 +393,18 @@ pub fn build_recipe_card(
         0.0
     };
 
+    // Stable slug — derived from canonical English `dish_name`.
+    // Used by clients for state tracking (e.g. added_recipes) because
+    // display_name/dish_name_local vary by language and AI rephrasing.
+    let slug = card.dish_name
+        .trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-");
+
     let recipe_card = RecipeCard {
+        slug,
         actions: vec![],
         dish_name: card.dish_name.clone(),
         dish_name_local: card.dish_name_local.clone(),

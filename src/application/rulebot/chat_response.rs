@@ -232,6 +232,10 @@ pub struct NutritionCard {
 /// Recipe/tech-card — full dish breakdown with gross/net calculations.
 #[derive(Debug, Serialize)]
 pub struct RecipeCard {
+    /// Stable identifier — slugified `dish_name` (canonical English).
+    /// MUST be used for state tracking (added_recipes), NOT display_name
+    /// or dish_name_local because those vary by language and AI rephrasing.
+    pub slug: String,
     pub dish_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dish_name_local: Option<String>,

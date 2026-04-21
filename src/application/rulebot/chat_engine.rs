@@ -1005,10 +1005,10 @@ fn enrich_with_actions(response: &mut ChatResponse, ctx: &SessionContext) {
     for card in response.cards.iter_mut() {
         match card {
             Card::Recipe(r) if r.actions.is_empty() => {
-                let recipe_id = r.display_name
-                    .clone()
-                    .or_else(|| r.dish_name_local.clone())
-                    .unwrap_or_else(|| r.dish_name.clone());
+                // Stable slug is the single source of truth for recipe identity.
+                // display_name/dish_name_local are localized/LLM-rephrased
+                // and MUST NOT be used as an id.
+                let recipe_id = r.slug.clone();
                 let already_planned = ctx.added_recipes.iter().any(|id| id == &recipe_id);
                 let mut acts = Vec::with_capacity(2);
                 if !already_planned {
