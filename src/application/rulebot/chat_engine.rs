@@ -170,7 +170,15 @@ impl ChatEngine {
         }
 
         // ── Coach motivation ──────────────────────────────────────────────
-        response.coach_message = chef_coach::pick_message(ctx, goal, lang);
+        // Suppress coach on precise factual intents — they are clean data answers
+        // where a motivational line is noise ("сколько калорий" + "ты уже профи!").
+        let coach_suppressed = matches!(
+            parsed.intent,
+            Intent::NutritionInfo | Intent::CookingLoss | Intent::Conversion | Intent::ProductInfo | Intent::Seasonality
+        );
+        if !coach_suppressed {
+            response.coach_message = chef_coach::pick_message(ctx, goal, lang);
+        }
 
         // ── Action Layer: enrich cards with user-invokable actions ───────
         enrich_with_actions(&mut response, ctx);
@@ -827,21 +835,21 @@ impl ChatEngine {
             // Vegetables
             ("шпинат",   "spinach"),   ("spinach",   "spinach"),   ("szpinak",  "spinach"),
             ("брокколи", "broccoli"),  ("broccoli",  "broccoli"),  ("brokuł",   "broccoli"),
-            ("помидор",  "tomatoes"),  ("томат",     "tomatoes"),  ("tomato",   "tomatoes"),  ("pomidor",  "tomatoes"),
-            ("картофел", "potatoes"),  ("картошк",   "potatoes"),  ("potato",   "potatoes"),  ("ziemniak", "potatoes"),
-            ("морков",   "carrots"),   ("carrot",    "carrots"),   ("marchew",  "carrots"),   ("морквин",  "carrots"),
+            ("помидор",  "tomato"),    ("томат",     "tomato"),    ("tomato",   "tomato"),    ("pomidor",  "tomato"),
+            ("картофел", "potato"),    ("картошк",   "potato"),    ("potato",   "potato"),    ("ziemniak", "potato"),
+            ("морков",   "carrot"),    ("carrot",    "carrot"),    ("marchew",  "carrot"),    ("морквин",  "carrot"),
             ("лук",      "onion"),     ("onion",     "onion"),     ("cebul",    "onion"),
             ("чеснок",   "garlic"),    ("часник",    "garlic"),    ("garlic",   "garlic"),    ("czosn",    "garlic"),
             ("огурц",    "cucumber"),  ("cucumber",  "cucumber"),  ("ogórek",   "cucumber"),  ("огірк",    "cucumber"),
             ("капуст",   "cabbage"),   ("cabbage",   "cabbage"),   ("kapust",   "cabbage"),
-            ("перц",     "pepper"),    ("pepper",    "pepper"),    ("papryk",   "pepper"),
+            ("перц",     "bell-pepper"), ("pepper",  "bell-pepper"), ("papryk",  "bell-pepper"),
             ("авокадо",  "avocado"),   ("avocado",   "avocado"),
             ("батат",    "sweet-potato"), ("sweet potato", "sweet-potato"),
             // Fruits & berries
-            ("яблок",    "apples"),    ("apple",     "apples"),    ("jabłk",    "apples"),
-            ("банан",    "bananas"),   ("banana",    "bananas"),
-            ("черник",   "blueberries"), ("blueberr", "blueberries"), ("borówk", "blueberries"),
-            ("клубник",  "strawberries"), ("strawberr", "strawberries"), ("truskawk", "strawberries"),
+            ("яблок",    "apple"),     ("apple",     "apple"),     ("jabłk",    "apple"),
+            ("банан",    "banana"),    ("banana",    "banana"),
+            ("черник",   "blueberry"), ("blueberr",  "blueberry"), ("borówk",   "blueberry"),
+            ("клубник",  "strawberry"),("strawberr", "strawberry"),("truskawk", "strawberry"),
             ("лимон",    "lemon"),     ("lemon",     "lemon"),     ("cytryn",   "lemon"),
             // Nuts & seeds
             ("миндал",   "almonds"),   ("almond",    "almonds"),   ("migdał",   "almonds"),
@@ -860,8 +868,17 @@ impl ChatEngine {
 
         for (stem, slug) in stem_slugs {
             if text_lower.contains(stem) {
-                if let Some(p) = self.ingredient_cache.get(slug).await {
-                    return Some(p);
+                // Try the mapped slug first, then common singular/plural variants
+                // (seed-data inconsistency safety net).
+                let candidates: [String; 3] = [
+                    (*slug).to_string(),
+                    if slug.ends_with('s') { slug.trim_end_matches('s').to_string() } else { format!("{}s", slug) },
+                    if slug.ends_with("es") { slug.trim_end_matches("es").to_string() } else { format!("{}es", slug) },
+                ];
+                for cand in &candidates {
+                    if let Some(p) = self.ingredient_cache.get(cand).await {
+                        return Some(p);
+                    }
                 }
             }
         }
