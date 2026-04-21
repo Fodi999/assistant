@@ -28,6 +28,7 @@ use super::intent_router::{detect_language, parse_input_with_context, DialogCont
 use super::chat_response::ChatResponse;
 use super::session_context::SessionContext;
 use super::chat_response::{Action, Card};
+use super::category_filter::{detect_category, ProductCategory};
 use super::ai_brain::AiBrain;
 use super::response_builder::{self as rb, HealthGoal};
 use super::chef_coach;
@@ -192,7 +193,7 @@ impl ChatEngine {
             if already_seen {
                 // Product was already shown → give a DIFFERENT angle
                 tracing::debug!("🔁 healthy_product: {} already seen → alternative response", product.slug);
-                let alternatives = self.select_top_products(goal, 2, &[product.slug.clone()]).await;
+                let alternatives = self.select_top_products(goal, 2, &[product.slug.clone()], None).await;
                 return rb::build_already_seen_product(&product, &alternatives, lang, goal);
             }
 
@@ -200,9 +201,25 @@ impl ChatEngine {
             return rb::build_specific_healthy_product(&product, lang, goal);
         }
 
-        // ── Step 2: No specific product → generic top-N by goal ──────────
+        // ── Step 2: Category filter (vegetables, fruit, fish, ...) ──────
+        // If the user asked "какой овощ полезный" we MUST NOT return tuna.
+        let category = detect_category(input);
+        if let Some(c) = category {
+            tracing::debug!("🥦 healthy_product: category filter = {}", c.as_str());
+        }
+
+        // ── Step 3: No specific product → generic top-N by goal+category ─
         let exclude = ctx.excluded_slugs();
-        let products = self.select_top_products(goal, 3, exclude).await;
+        let products = self.select_top_products(goal, 3, exclude, category).await;
+
+        // ── Step 4: Graceful fallback when category has zero matches ────
+        if products.is_empty() {
+            if let Some(c) = category {
+                tracing::warn!("🥦 no products for category={} goal={:?} — widening to any", c.as_str(), goal);
+                let wider = self.select_top_products(goal, 3, exclude, None).await;
+                return rb::build_healthy_response(&wider, lang, goal);
+            }
+        }
         rb::build_healthy_response(&products, lang, goal)
     }
 
@@ -214,6 +231,7 @@ impl ChatEngine {
         goal: HealthGoal,
         n: usize,
         exclude_slugs: &[String],
+        category: Option<ProductCategory>,
     ) -> Vec<(crate::infrastructure::ingredient_cache::IngredientData, &'static str, String)> {
         let all = self.ingredient_cache.all().await;
         if all.is_empty() {
@@ -225,6 +243,19 @@ impl ChatEngine {
             .filter(|p| (p.calories_per_100g > 0.0 || p.protein_per_100g > 0.0)
                 && !exclude_slugs.contains(&p.slug))
             .collect();
+
+        // ── Category hard filter (vegetables, fruit, fish, ...) ──────────
+        // Must run BEFORE goal filters so we don't e.g. drop all veggies
+        // for HighProtein and then look empty.
+        if let Some(cat) = category {
+            let allowed = cat.product_types();
+            let before = candidates.len();
+            candidates.retain(|p| allowed.iter().any(|t| p.product_type.eq_ignore_ascii_case(t)));
+            tracing::debug!(
+                "🥦 category={} filter: {} → {} candidates",
+                cat.as_str(), before, candidates.len()
+            );
+        }
 
         // ── Goal-specific hard filters ───────────────────────────────────
         // LowCalorie: remove products >250 kcal/100g (nuts, grains, oils etc.)
@@ -372,7 +403,7 @@ impl ChatEngine {
         &self,
         goal: HealthGoal,
     ) -> Option<(crate::infrastructure::ingredient_cache::IngredientData, &'static str, String)> {
-        self.select_top_products(goal, 1, &[]).await.into_iter().next()
+        self.select_top_products(goal, 1, &[], None).await.into_iter().next()
     }
 
     fn handle_conversion(&self, input: &str, lang: ChatLang) -> ChatResponse {
@@ -654,7 +685,7 @@ impl ChatEngine {
 
         // Fallback: if any slot missed, fill with top products
         if products.len() < 3 {
-            let extra = self.select_top_products(goal, 3 - products.len(), &used_slugs).await;
+            let extra = self.select_top_products(goal, 3 - products.len(), &used_slugs, None).await;
             products.extend(extra);
         }
 

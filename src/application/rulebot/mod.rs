@@ -53,3 +53,4 @@ pub mod auto_fix;
 pub mod culinary_base_layer;
 pub mod ai_brain;
 pub mod flavor_engine;
+pub mod category_filter;
