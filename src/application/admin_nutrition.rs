@@ -426,15 +426,34 @@ impl AdminNutritionService {
 
     // ── Get full product detail by slug ───────────────
     /// Public-friendly lookup by slug (for anonymous /public/catalog/ingredients/:slug).
+    ///
+    /// Resolves via `catalog_ingredients.slug` (the canonical machine-slug used
+    /// by the chat engine and the public catalog list), then falls back to
+    /// `products.slug` for legacy rows. Both tables share the same `id`.
     pub async fn get_product_by_slug(&self, slug: &str) -> AppResult<NutritionProductDetail> {
-        let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM products WHERE slug = $1")
+        // Primary: catalog_ingredients.slug
+        let id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM catalog_ingredients WHERE slug = $1 AND COALESCE(is_active, true) = true"
+        )
             .bind(slug)
             .fetch_optional(&self.pool)
             .await
             .map_err(AppError::from)?;
-        let id = id.ok_or_else(|| {
-            AppError::NotFound(format!("Product with slug '{slug}' not found"))
-        })?;
+
+        // Fallback: products.slug (legacy)
+        let id = if let Some(id) = id {
+            id
+        } else {
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE slug = $1")
+                .bind(slug)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(AppError::from)?
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("Product with slug '{slug}' not found"))
+                })?
+        };
+
         self.get_product(id).await
     }
 

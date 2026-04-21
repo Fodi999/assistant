@@ -304,10 +304,18 @@ pub struct PublicNutritionState {
 ///
 /// Returns the full `NutritionProductDetail` (same shape as admin endpoint
 /// but without auth). Used by the iOS chat to expand a product card.
+///
+/// Accepts either `catalog_ingredients.slug` (e.g. "almond") OR a bare UUID —
+/// the iOS catalog list returns `id`, while chat product cards carry `slug`.
 pub async fn get_ingredient_detail_public(
     State(state): State<PublicNutritionState>,
-    Path(slug): Path<String>,
+    Path(slug_or_id): Path<String>,
 ) -> Result<Json<NutritionProductDetail>, AppError> {
-    let detail = state.nutrition_service.get_product_by_slug(&slug).await?;
+    // If the path segment parses as a UUID, hit get_product directly.
+    if let Ok(uuid) = Uuid::parse_str(&slug_or_id) {
+        let detail = state.nutrition_service.get_product(uuid).await?;
+        return Ok(Json(detail));
+    }
+    let detail = state.nutrition_service.get_product_by_slug(&slug_or_id).await?;
     Ok(Json(detail))
 }
