@@ -40,10 +40,22 @@ pub struct SearchIngredientsQuery {
     pub q: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: i64,
+    /// Optional language override (used by public endpoints without JWT)
+    pub lang: Option<String>,
 }
 
 fn default_limit() -> i64 {
     50
+}
+
+/// Query parameters for public catalog endpoints (no JWT → language via query).
+#[derive(Debug, Deserialize, Default)]
+pub struct PublicCatalogQuery {
+    pub lang: Option<String>,
+}
+
+fn parse_language(raw: Option<&str>) -> Language {
+    raw.and_then(Language::from_code).unwrap_or(Language::Ru)
 }
 
 /// Response for a single ingredient
@@ -152,6 +164,99 @@ pub async fn search_ingredients(
             .await?
     } else {
         // List all ingredients (no filter)
+        state
+            .catalog_service
+            .list_ingredients(language, 0, params.limit)
+            .await?
+    };
+
+    let response = IngredientsResponse {
+        ingredients: ingredients
+            .into_iter()
+            .map(|ing| IngredientResponse {
+                id: ing.id.to_string(),
+                category_id: ing.category_id.to_string(),
+                name: ing.name(language).to_string(),
+                default_unit: ing.default_unit.as_str().to_string(),
+                default_shelf_life_days: ing.default_shelf_life_days,
+                allergens: ing
+                    .allergens
+                    .iter()
+                    .map(|a| a.as_str().to_string())
+                    .collect(),
+                calories_per_100g: ing.calories_per_100g,
+                seasons: ing.seasons.iter().map(|s| s.as_str().to_string()).collect(),
+                image_url: ing.image_url.clone(),
+            })
+            .collect(),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Public (no-auth) variants — let anonymous iOS users browse the catalog
+// to quickly add products to their inventory/shopping list.
+// Language comes from a `?lang=ru|en|pl|uk` query param (defaults to RU).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// GET /public/catalog/categories?lang=ru
+pub async fn get_categories_public(
+    State(state): State<CatalogState>,
+    Query(params): Query<PublicCatalogQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let language = parse_language(params.lang.as_deref());
+    let categories = state.catalog_service.get_categories(language).await?;
+
+    let response = CategoriesResponse {
+        categories: categories
+            .into_iter()
+            .map(|cat| CategoryResponse {
+                id: cat.id.to_string(),
+                name: cat.name(language).to_string(),
+                sort_order: cat.sort_order,
+            })
+            .collect(),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+/// GET /public/catalog/ingredients?lang=ru&q=...&category_id=...&limit=50
+pub async fn search_ingredients_public(
+    State(state): State<CatalogState>,
+    Query(params): Query<SearchIngredientsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let language = parse_language(params.lang.as_deref());
+
+    if let Some(ref query) = params.q {
+        let trimmed = query.trim();
+        if !trimmed.is_empty() && trimmed.chars().count() < 2 {
+            return Err(AppError::validation(
+                "Search query must be at least 2 characters",
+            ));
+        }
+    }
+
+    let ingredients = if let Some(category_id_str) = params.category_id {
+        let category_uuid = Uuid::parse_str(&category_id_str)
+            .map_err(|_| AppError::validation("Invalid category_id UUID format"))?;
+        let category_id = CatalogCategoryId::from_uuid(category_uuid);
+        state
+            .catalog_service
+            .search_ingredients_by_category(
+                category_id,
+                params.q.as_deref(),
+                language,
+                params.limit,
+            )
+            .await?
+    } else if let Some(query) = params.q.as_deref() {
+        state
+            .catalog_service
+            .search_ingredients(query, language, params.limit)
+            .await?
+    } else {
         state
             .catalog_service
             .list_ingredients(language, 0, params.limit)

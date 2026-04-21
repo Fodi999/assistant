@@ -31,7 +31,7 @@ use crate::interfaces::http::{
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
-    catalog::{get_categories, search_ingredients, CatalogState},
+    catalog::{get_categories, get_categories_public, search_ingredients, search_ingredients_public, CatalogState},
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     public::{
         cms as public_cms,
@@ -404,8 +404,8 @@ pub fn create_router(
                 .route("/catalog/categories", get(get_categories))
                 .route("/catalog/ingredients", get(search_ingredients))
                 .with_state(CatalogState {
-                    catalog_service,
-                    user_service,
+                    catalog_service: catalog_service.clone(),
+                    user_service: user_service.clone(),
                 }),
         )
         .merge(
@@ -626,6 +626,16 @@ pub fn create_router(
         .route("/tools/run", post(tools_run))
         .route("/tools/catalog", get(tools_catalog))
         .with_state(rulebot);
+
+    // 🆕 Public catalog (no JWT) — reads `?lang=ru|en|pl|uk`, defaults to RU.
+    // Lets anonymous iOS users browse catalog and quick-add products.
+    let public_catalog_router = Router::new()
+        .route("/catalog/categories", get(get_categories_public))
+        .route("/catalog/ingredients", get(search_ingredients_public))
+        .with_state(CatalogState {
+            catalog_service: catalog_service.clone(),
+            user_service: user_service.clone(),
+        });
 
     // ── 🆕 ChefOS Chat Engine (POST /public/chat) ───────────────────────────
     let chat_engine = Arc::new(
@@ -849,6 +859,7 @@ pub fn create_router(
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
         .merge(chat_router)     // 🆕 ChefOS: POST /chat
         .merge(chat_events_router) // 🆕 ChefOS: POST /chat/event (telemetry)
+        .merge(public_catalog_router) // 🆕 ChefOS: GET /catalog/categories | /catalog/ingredients (no auth, ?lang=xx)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
