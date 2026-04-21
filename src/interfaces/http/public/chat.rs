@@ -123,3 +123,60 @@ pub async fn chat_handler(
 
     (StatusCode::OK, Json(body))
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /public/chat/event — telemetry ingestion (Step 4)
+// ══════════════════════════════════════════════════════════════════════════════
+
+use crate::application::chat_events_service::{ChatEvent, ChatEventsService};
+
+#[derive(Debug, Deserialize)]
+pub struct ChatEventRequest {
+    /// Caller's authenticated user id — optional (anonymous chat allowed).
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(flatten)]
+    pub event: ChatEvent,
+}
+
+/// POST /public/chat/event
+///
+/// Fire-and-forget telemetry endpoint. Always returns 202 Accepted on
+/// valid payload; DB errors are logged server-side but never surfaced
+/// because telemetry must not break the chat flow.
+pub async fn chat_event_handler(
+    State(events): State<Arc<ChatEventsService>>,
+    Json(req): Json<ChatEventRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    // Whitelist accepted event types — keeps the table clean.
+    const ALLOWED: &[&str] = &[
+        "query_sent",
+        "card_shown",
+        "card_dismissed",
+        "action_clicked",
+        "suggestion_clicked",
+    ];
+    if !ALLOWED.contains(&req.event.event_type.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "invalid event_type",
+                "allowed": ALLOWED,
+            })),
+        );
+    }
+
+    let user_id = req
+        .user_id
+        .as_deref()
+        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+        .map(crate::shared::UserId::from);
+
+    // Fire-and-forget: we swallow errors on purpose so telemetry never
+    // becomes a user-visible failure mode.
+    if let Err(e) = events.record(user_id, req.event).await {
+        tracing::warn!("chat_event insert failed: {e}");
+    }
+
+    (StatusCode::ACCEPTED, Json(serde_json::json!({ "ok": true })))
+}

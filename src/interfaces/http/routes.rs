@@ -641,6 +641,14 @@ pub fn create_router(
         .route("/chat", post(crate::interfaces::http::public::chat::chat_handler))
         .with_state(chat_engine);
 
+    // ── 🆕 Chat Events (telemetry) POST /public/chat/event ──────────────────
+    let chat_events_service = Arc::new(
+        crate::application::chat_events_service::ChatEventsService::new(pool_for_prefs.clone())
+    );
+    let chat_events_router = Router::new()
+        .route("/chat/event", post(crate::interfaces::http::public::chat::chat_event_handler))
+        .with_state(chat_events_service);
+
     // ── 🆕 SmartService v2 ──────────────────────────────────────────────────
     let smart_service = std::sync::Arc::new(
         crate::application::smart_service::SmartService::new(pool_for_smart)
@@ -840,6 +848,7 @@ pub fn create_router(
         .merge(public_tools_router)
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
         .merge(chat_router)     // 🆕 ChefOS: POST /chat
+        .merge(chat_events_router) // 🆕 ChefOS: POST /chat/event (telemetry)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
