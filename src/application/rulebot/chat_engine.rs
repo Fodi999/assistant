@@ -27,6 +27,7 @@ use crate::domain::tools::unit_converter as uc;
 use super::intent_router::{detect_language, parse_input_with_context, DialogContext, ChatLang, Intent};
 use super::chat_response::ChatResponse;
 use super::session_context::SessionContext;
+use super::chat_response::{Action, Card};
 use super::ai_brain::AiBrain;
 use super::response_builder::{self as rb, HealthGoal};
 use super::chef_coach;
@@ -168,6 +169,9 @@ impl ChatEngine {
 
         // ── Coach motivation ──────────────────────────────────────────────
         response.coach_message = chef_coach::pick_message(ctx, goal, lang);
+
+        // ── Action Layer: enrich cards with user-invokable actions ───────
+        enrich_with_actions(&mut response);
 
         response.timing_ms = start.elapsed().as_millis() as u64;
         response
@@ -946,4 +950,41 @@ fn is_volume_weight_pair(from: &str, to: &str) -> bool {
 
 // needed for hour/day helpers
 use chrono::Timelike;
+
+// ── Action Layer ─────────────────────────────────────────────────────────────
+//
+// Centralizes decision of "which buttons should appear on each card".
+// The frontend (iOS) simply renders whatever actions the backend attaches.
+//
+// This lets us:
+//   - A/B test button sets
+//   - Hide "Add to plan" if already added (future: session-aware)
+//   - Keep the contract in one place instead of duplicated across 10+ card
+//     construction sites.
+
+/// Attach user-invokable actions to every card in the response.
+/// Idempotent — if a card already has actions, they're preserved.
+fn enrich_with_actions(response: &mut ChatResponse) {
+    for card in response.cards.iter_mut() {
+        match card {
+            Card::Recipe(r) if r.actions.is_empty() => {
+                let recipe_id = r.display_name
+                    .clone()
+                    .or_else(|| r.dish_name_local.clone())
+                    .unwrap_or_else(|| r.dish_name.clone());
+                r.actions = vec![
+                    Action::AddToPlan    { recipe_id: recipe_id.clone() },
+                    Action::StartCooking { recipe_id },
+                ];
+            }
+            Card::Product(p) if p.actions.is_empty() => {
+                p.actions = vec![
+                    Action::AddToShopping  { product_slug: p.slug.clone() },
+                    Action::ShowRecipesFor { product_slug: p.slug.clone() },
+                ];
+            }
+            _ => {}
+        }
+    }
+}
 

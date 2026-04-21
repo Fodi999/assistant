@@ -135,6 +135,40 @@ impl ChatResponse {
     }
 }
 
+// ── Actions ──────────────────────────────────────────────────────────────────
+
+/// User-invokable action attached to a card — rendered as a button on the frontend.
+///
+/// Centralizing actions here (vs generated on iOS) gives us:
+///   - single source of truth for what the user can do with a card
+///   - ability to A/B test button sets
+///   - session-aware actions (e.g. don't offer "add to plan" if already added)
+#[derive(Debug, Serialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Action {
+    /// Add a recipe to today's meal plan.
+    AddToPlan {
+        recipe_id: String,
+    },
+    /// Start guided cooking flow for this recipe.
+    StartCooking {
+        recipe_id: String,
+    },
+    /// Suggest an alternative for a single ingredient in a recipe.
+    SwapIngredient {
+        recipe_id: String,
+        ingredient_slug: String,
+    },
+    /// Add product to the shopping list.
+    AddToShopping {
+        product_slug: String,
+    },
+    /// Trigger a new chat query asking for recipes that use this product.
+    ShowRecipesFor {
+        product_slug: String,
+    },
+}
+
 // ── Card Types ───────────────────────────────────────────────────────────────
 
 /// Rich card attached to a chat response.
@@ -168,6 +202,9 @@ pub struct ProductCard {
     /// Machine-readable reason tag: "high_protein" | "low_calorie" | "balanced"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason_tag: Option<&'static str>,
+    /// User-invokable actions — populated centrally in `chat_engine::enrich_with_actions`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<Action>,
 }
 
 /// Conversion result card.
@@ -249,6 +286,9 @@ pub struct RecipeCard {
     /// Auto-fix actions taken, e.g. ["Added 2 eggs as protein source"]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub auto_fixes: Vec<String>,
+    /// User-invokable actions — populated centrally in `chat_engine::enrich_with_actions`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<Action>,
 }
 
 /// A single adaptation action surfaced to the frontend.

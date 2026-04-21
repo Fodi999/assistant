@@ -141,6 +141,7 @@ pub fn build_healthy_response(
         let name = p.name(lang.code()).to_string();
         let hl = tpl::highlight(p, lang, goal);
         Card::Product(ProductCard {
+            actions: vec![],
             slug: p.slug.clone(),
             name,
             calories_per_100g: p.calories_per_100g,
@@ -180,6 +181,7 @@ pub fn build_specific_healthy_product(
     let reason = tpl::macro_summary(p, lang, goal, 1);
 
     let card = Card::Product(ProductCard {
+            actions: vec![],
         slug: p.slug.clone(),
         name: name.clone(),
         calories_per_100g: p.calories_per_100g,
@@ -218,6 +220,7 @@ pub fn build_already_seen_product(
         let alt_name = alt.name(lang.code()).to_string();
         let hl = tpl::highlight(alt, lang, goal);
         Card::Product(ProductCard {
+            actions: vec![],
             slug: alt.slug.clone(),
             name: alt_name,
             calories_per_100g: alt.calories_per_100g,
@@ -234,6 +237,7 @@ pub fn build_already_seen_product(
     if cards.is_empty() {
         let hl = tpl::highlight(p, lang, goal);
         cards.push(Card::Product(ProductCard {
+            actions: vec![],
             slug: p.slug.clone(),
             name: name.clone(),
             calories_per_100g: p.calories_per_100g,
@@ -390,6 +394,7 @@ pub fn build_recipe_card(
     };
 
     let recipe_card = RecipeCard {
+        actions: vec![],
         dish_name: card.dish_name.clone(),
         dish_name_local: card.dish_name_local.clone(),
         display_name: card.display_name.clone(),
@@ -502,6 +507,7 @@ pub fn build_meal_idea(
     let mut resp = ChatResponse::with_card(
         text,
         Card::Product(ProductCard {
+            actions: vec![],
             slug: p.slug.clone(),
             name: ingredient_name.clone(),
             calories_per_100g: p.calories_per_100g,
@@ -542,6 +548,7 @@ pub fn build_meal_combo(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> 
     // Protein card
     let pname = combo.protein.name(lang.code()).to_string();
     cards.push(Card::Product(ProductCard {
+            actions: vec![],
         slug: combo.protein.slug.clone(),
         name: pname,
         calories_per_100g: combo.protein.calories_per_100g,
@@ -556,6 +563,7 @@ pub fn build_meal_combo(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> 
     // Side card
     let sname = combo.side.name(lang.code()).to_string();
     cards.push(Card::Product(ProductCard {
+            actions: vec![],
         slug: combo.side.slug.clone(),
         name: sname,
         calories_per_100g: combo.side.calories_per_100g,
@@ -571,6 +579,7 @@ pub fn build_meal_combo(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> 
     if let Some(ref base) = combo.base {
         let bname = base.name(lang.code()).to_string();
         cards.push(Card::Product(ProductCard {
+            actions: vec![],
             slug: base.slug.clone(),
             name: bname,
             calories_per_100g: base.calories_per_100g,
@@ -642,6 +651,7 @@ pub fn build_meal_plan(
         let name = p.name(lang.code()).to_string();
         let hl = tpl::highlight(p, lang, goal);
         Card::Product(ProductCard {
+            actions: vec![],
             slug: p.slug.clone(),
             name,
             calories_per_100g: p.calories_per_100g,
@@ -700,6 +710,7 @@ pub fn build_product_info(p: &IngredientData, lang: ChatLang) -> ChatResponse {
     ChatResponse::with_card(
         text,
         Card::Product(ProductCard {
+            actions: vec![],
             slug: p.slug.clone(),
             name,
             calories_per_100g: p.calories_per_100g,

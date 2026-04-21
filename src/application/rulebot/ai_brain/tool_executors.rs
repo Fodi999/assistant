@@ -70,6 +70,7 @@ pub(crate) async fn execute_search(
 
     let cards: Vec<Card> = top.iter().map(|(_, p)| {
         Card::Product(ProductCard {
+            actions: vec![],
             slug: p.slug.clone(),
             name: p.name(lang.code()).to_string(),
             calories_per_100g: p.calories_per_100g,
@@ -237,6 +238,7 @@ pub(crate) async fn execute_meal_plan(
     // Build cards from top picks
     let cards: Vec<Card> = top_products.iter().take(meals).map(|(_, p)| {
         Card::Product(ProductCard {
+            actions: vec![],
             slug: p.slug.clone(),
             name: p.name(lang.code()).to_string(),
             calories_per_100g: p.calories_per_100g,
