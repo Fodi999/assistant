@@ -121,7 +121,7 @@ fn match_group(needle: &str) -> Option<&'static str> {
     // Dairy
     if matches!(needle,
         "dairy" | "молочка" | "молочное" | "молочные" | "молоко"
-      | "nabiał" | "молочні" | "молочка"
+      | "nabiał" | "молочні"
     ) {
         return Some("dairy");
     }
