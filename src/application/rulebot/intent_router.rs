@@ -29,6 +29,8 @@ pub use super::goal_modifier::detect_modifier;
 
 // Import keyword data tables
 use super::intent_keywords as kw;
+// Category detection — used as a fallback signal when keyword scoring fails.
+use super::category_filter::detect_category;
 
 // ── Dialog Context (minimal, passed by caller) ───────────────────────────────
 
@@ -160,7 +162,20 @@ pub fn parse_input(input: &str) -> ParsedInput {
 
     // Best (primary)
     let best = all_scores.iter().max_by_key(|(_, s)| *s).unwrap();
-    let primary = if best.1 >= MIN_THRESHOLD { best.0 } else { Intent::Unknown };
+    let mut primary = if best.1 >= MIN_THRESHOLD { best.0 } else { Intent::Unknown };
+
+    // Category fallback (same logic as parse_input_with_context).
+    if primary == Intent::Unknown {
+        if let Some(cat) = detect_category(&text) {
+            tracing::debug!("🥗 category fallback (no ctx): Unknown → HealthyProduct (category={})", cat.as_str());
+            primary = Intent::HealthyProduct;
+            for (intent, score) in all_scores.iter_mut() {
+                if *intent == Intent::HealthyProduct {
+                    *score = (*score).max(MIN_THRESHOLD);
+                }
+            }
+        }
+    }
 
     // All intents above secondary threshold (multi-intent)
     let mut intents: Vec<Intent> = all_scores
@@ -279,7 +294,26 @@ pub fn parse_input_with_context(input: &str, ctx: &DialogContext) -> ParsedInput
 
     // ── 5. Resolve ──────────────────────────────────────────────────────
     let best = all_scores.iter().max_by_key(|(_, s)| *s).unwrap();
-    let primary = if best.1 >= MIN_THRESHOLD { best.0 } else { Intent::Unknown };
+    let mut primary = if best.1 >= MIN_THRESHOLD { best.0 } else { Intent::Unknown };
+
+    // ── 5b. Category-based fallback ────────────────────────────────────
+    // If keyword scoring failed (Unknown) but the user mentioned a food
+    // category (vegetables/fish/meat/fruit/...), treat it as an implicit
+    // HealthyProduct request. This catches "какое мясо лучше", "what fruit",
+    // "co jeść na obiad z ryb", etc. — phrasings that don't contain
+    // "полезн/healthy" keywords but clearly ask for a food recommendation.
+    if primary == Intent::Unknown {
+        if let Some(cat) = detect_category(&text) {
+            tracing::debug!("🥗 category fallback: Unknown → HealthyProduct (category={})", cat.as_str());
+            primary = Intent::HealthyProduct;
+            // Raise the score so multi-intent logic below sees it too.
+            for (intent, score) in all_scores.iter_mut() {
+                if *intent == Intent::HealthyProduct {
+                    *score = (*score).max(MIN_THRESHOLD);
+                }
+            }
+        }
+    }
 
     let mut intents: Vec<Intent> = all_scores
         .iter()
@@ -486,6 +520,15 @@ mod tests {
     #[test] fn healthy_ru2()     { assert_eq!(detect_intent("что полезного поесть"),   Intent::HealthyProduct); }
     #[test] fn healthy_en()      { assert_eq!(detect_intent("healthy food please"),    Intent::HealthyProduct); }
     #[test] fn healthy_super()   { assert_eq!(detect_intent("superfood рекомендации"),Intent::HealthyProduct); }
+
+    // ── Category fallback (no explicit "healthy" keyword) ──
+    #[test] fn fallback_meat_best()   { assert_eq!(detect_intent("какое мясо лучше"),     Intent::HealthyProduct); }
+    #[test] fn fallback_fruit_plain() { assert_eq!(detect_intent("посоветуй фрукты"),     Intent::HealthyProduct); }
+    #[test] fn fallback_fish()        { assert_eq!(detect_intent("топ рыбы"),             Intent::HealthyProduct); }
+    #[test] fn fallback_en_veg()      { assert_eq!(detect_intent("best vegetables"),      Intent::HealthyProduct); }
+    #[test] fn fallback_pl_meat()     { assert_eq!(detect_intent("jakie mięso najlepsze"),Intent::HealthyProduct); }
+    // Guard: generic query without category should stay Unknown (no false positive).
+    #[test] fn no_fallback_empty()    { assert_eq!(detect_intent("asdf qwerty"),          Intent::Unknown); }
 
     // ── Conversion ──
     #[test] fn conv_ru()         { assert_eq!(detect_intent("200 грамм в ложках"),     Intent::Conversion); }

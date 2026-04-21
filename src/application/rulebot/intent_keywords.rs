@@ -113,6 +113,16 @@ pub const HEALTHY: &[ScoredKeyword] = &[
     ("błonnik",       3), ("клітковин",      3),
     ("без углевод",   3), ("low carb",       3), ("кето",           3),
     ("keto",          3), ("bez węglowodan", 3), ("без вуглевод",   3),
+    // ── "best / top / recommend" patterns (weak signal, needs category) ──
+    // Alone these give only 1 pt (below MIN_THRESHOLD=2), but combined
+    // with a category match in parse_input_with_context they escalate
+    // Unknown → HealthyProduct. Prevents "какое мясо лучше" → unknown.
+    ("лучше",         1), ("лучший",          1), ("лучшие",        1),
+    ("топ",           1), ("самый хороший",   1), ("рекоменд",      1),
+    ("посоветуй",     1), ("подскажи",        1),
+    ("best",          1), ("top ",            1), ("recommend",     1),
+    ("najlepsz",      1), ("polec",           1), ("кращий",        1),
+    ("найкращ",       1), ("порадь",          1),
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
