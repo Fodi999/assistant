@@ -93,6 +93,23 @@ pub struct SessionContext {
     /// ("you got protein → suggest a vegetable side").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_category: Option<ProductCategory>,
+
+    // ── Step 4 Day 2 (personalization) — server-populated, ephemeral ────
+    // These fields are derived from `user_preferences` on every turn and
+    // intentionally `#[serde(skip)]` — we never trust client-provided values
+    // for allergy/diet filtering, and there's no point serializing them back
+    // (client re-populates via stored profile next turn).
+
+    /// Product slugs to HARD-exclude from every recommendation:
+    /// allergies + intolerances + explicit dislikes, resolved against the
+    /// ingredient cache by stem/name matching.
+    #[serde(skip)]
+    pub preference_excludes: Vec<String>,
+
+    /// Product slugs the user explicitly likes — used for soft-boost scoring
+    /// in future iterations (not a hard include).
+    #[serde(skip)]
+    pub preference_likes: Vec<String>,
 }
 
 impl SessionContext {
@@ -149,11 +166,15 @@ impl SessionContext {
             added_recipes: self.added_recipes.clone(),
             added_products: self.added_products.clone(),
             last_category: last_category.or(self.last_category),
+            // Personalization is server-derived per turn; pass through.
+            preference_excludes: self.preference_excludes.clone(),
+            preference_likes: self.preference_likes.clone(),
         }
     }
     /// Slugs to exclude in "а что ещё?" follow-ups.
     /// Returns cumulative shown_slugs (all products ever shown this session)
-    /// PLUS added_products (already in shopping list — no point re-suggesting).
+    /// PLUS added_products (already in shopping list — no point re-suggesting)
+    /// PLUS preference_excludes (allergies / intolerances / dislikes — HARD filter).
     /// Falls back to last_cards on first turn.
     pub fn excluded_slugs(&self) -> Vec<String> {
         let mut out: Vec<String> = if self.shown_slugs.is_empty() {
@@ -162,6 +183,11 @@ impl SessionContext {
             self.shown_slugs.clone()
         };
         for p in &self.added_products {
+            if !out.contains(p) {
+                out.push(p.clone());
+            }
+        }
+        for p in &self.preference_excludes {
             if !out.contains(p) {
                 out.push(p.clone());
             }

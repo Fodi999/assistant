@@ -106,6 +106,32 @@ impl ChatEngine {
         let start = Instant::now();
         let lang = detect_language(input);
 
+        // ── Personalization: resolve prefs → slugs, enrich ctx ────────────
+        // Allergies / intolerances / dislikes become a HARD exclusion list
+        // that flows through `ctx.excluded_slugs()` into every product picker.
+        // Likes become a soft-boost hint (reserved for future ranking tweak).
+        // We clone ctx here so downstream handlers see a uniform view —
+        // non-personalized callers simply get an empty list.
+        let ctx_owned: SessionContext;
+        let ctx: &SessionContext = if let Some(p) = prefs {
+            let hints = super::preference_resolver::resolve(p, &self.ingredient_cache).await;
+            if !hints.excludes.is_empty() || !hints.likes.is_empty() {
+                tracing::info!(
+                    "🎯 chat personalization: {} hard-excludes, {} likes",
+                    hints.excludes.len(), hints.likes.len()
+                );
+                let mut enriched = ctx.clone();
+                enriched.preference_excludes = hints.excludes;
+                enriched.preference_likes = hints.likes;
+                ctx_owned = enriched;
+                &ctx_owned
+            } else {
+                ctx
+            }
+        } else {
+            ctx
+        };
+
         // Build dialog context from session for context-aware intent scoring
         let dialog_ctx = DialogContext {
             last_intent: ctx.last_intent,
