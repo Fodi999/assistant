@@ -104,9 +104,10 @@ impl ChatEngine {
         prefs: Option<&UserPreferences>,
     ) -> ChatResponse {
         let start = Instant::now();
-        // Language: prefer profile setting over text auto-detection.
-        // If user has set a language in their profile (users.language), use it.
-        // Otherwise, detect from input text (ru/en/pl/uk by character set).
+        // Language priority:
+        //   1. users.language from DB profile (set via PUT /profile/language)
+        //   2. ctx.last_lang sent by iOS client (from LocalizationService / app language picker)
+        //   3. auto-detect from input text (character-set heuristic)
         let lang = prefs
             .and_then(|p| p.language.as_deref())
             .and_then(|code| match code {
@@ -116,6 +117,7 @@ impl ChatEngine {
                 "uk" => Some(ChatLang::Uk),
                 _ => None,
             })
+            .or_else(|| ctx.last_lang.clone())
             .unwrap_or_else(|| detect_language(input));
 
         // ── Personalization: resolve prefs → slugs, enrich ctx ────────────
