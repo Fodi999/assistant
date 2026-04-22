@@ -513,6 +513,7 @@ mod tests {
             adaptations: vec![],
             validation_warnings: vec![],
             auto_fixes: vec![], flavor_analysis: None,
+            dish_image_url: None,
             ingredients,
         }
     }

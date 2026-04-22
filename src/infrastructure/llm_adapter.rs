@@ -170,6 +170,47 @@ impl LlmAdapter {
         Ok(analysis)
     }
 
+    /// Generate a dish photo using gemini-2.5-flash-image.
+    /// Returns base64-encoded PNG (cached by dish slug for 90 days).
+    pub async fn generate_dish_image(
+        &self,
+        dish_slug: &str,
+        dish_name: &str,
+        ingredients: &[String],
+    ) -> Result<String, AppError> {
+        let cache_key = format!("dish_image_v1:{}", dish_slug);
+
+        // Check cache first — images are expensive to generate
+        if let Some(cached_val) = self.cache_repo.get(&cache_key).await? {
+            if let Some(b64) = cached_val.as_str() {
+                tracing::info!("🖼 Dish image cache hit: {}", dish_slug);
+                return Ok(b64.to_string());
+            }
+        }
+
+        let start = Instant::now();
+        let base64 = timeout(
+            Duration::from_secs(65),
+            self.gemini_service.generate_dish_image(dish_name, ingredients),
+        )
+        .await
+        .map_err(|_| AppError::internal("LLM Timeout: Dish image generation took too long"))??;
+
+        let duration_ms = start.elapsed().as_millis() as i32;
+        self.log_usage("generate_dish_image", duration_ms).await;
+
+        // Cache for 90 days — dish images rarely need refreshing
+        self.cache_repo.set(
+            &cache_key,
+            serde_json::Value::String(base64.clone()),
+            "gemini",
+            "gemini-2.5-flash-image",
+            90,
+        ).await?;
+
+        Ok(base64)
+    }
+
     /// Raw AI request — no cache, no rule engine.
     /// Used for one-off admin operations like AI autofill.
     pub async fn groq_raw_request(&self, prompt: &str, max_tokens: u32) -> Result<String, AppError> {

@@ -264,6 +264,78 @@ Pick the best match. Do not invent values."#,
         self.send_gemini_request_inner(request_body).await
     }
 
+    /// Generate a dish photo using gemini-2.5-flash-image (native Gemini API).
+    /// Returns base64-encoded PNG bytes (ready for data:image/png;base64,... URL).
+    pub async fn generate_dish_image(
+        &self,
+        dish_name: &str,
+        ingredients: &[String],
+    ) -> Result<String, AppError> {
+        let ingredients_hint = if ingredients.is_empty() {
+            String::new()
+        } else {
+            format!(", made with {}", ingredients.join(", "))
+        };
+
+        let prompt = format!(
+            "Professional food photography of {}{}: beautifully plated, natural lighting, \
+             shallow depth of field, rustic wooden table background, restaurant quality, \
+             appetizing and vibrant colors. No text, no watermarks.",
+            dish_name, ingredients_hint
+        );
+
+        let body = serde_json::json!({
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
+        });
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key={}",
+            self.api_key
+        );
+
+        tracing::info!("🎨 Generating dish image for: {}", dish_name);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            self.http_client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send(),
+        )
+        .await
+        .map_err(|_| AppError::internal("Timeout: dish image generation took too long"))?
+        .map_err(|e| AppError::internal(&format!("Image generation request failed: {}", e)))?;
+
+        let status = result.status();
+        if !status.is_success() {
+            let err = result.text().await.unwrap_or_default();
+            tracing::error!("❌ Image generation failed (HTTP {}): {}", status, &err[..err.len().min(200)]);
+            return Err(AppError::internal(&format!("Image generation API error: {}", status)));
+        }
+
+        let json: serde_json::Value = result.json().await
+            .map_err(|e| AppError::internal(&format!("Failed to parse image response: {}", e)))?;
+
+        // Extract base64 from candidates[0].content.parts[].inlineData.data
+        let base64 = json
+            .pointer("/candidates/0/content/parts")
+            .and_then(|parts| parts.as_array())
+            .and_then(|parts| {
+                parts.iter().find_map(|p| {
+                    p.pointer("/inlineData/data").and_then(|d| d.as_str()).map(|s| s.to_string())
+                })
+            })
+            .ok_or_else(|| {
+                tracing::error!("❌ No image data in Gemini response: {:?}", json.pointer("/candidates/0/content/parts"));
+                AppError::internal("No image data in Gemini response")
+            })?;
+
+        tracing::info!("✅ Dish image generated for '{}' ({} base64 chars)", dish_name, base64.len());
+        Ok(base64)
+    }
+
     // ── Internal helpers ────────────────────────────────────────────────────
 
     fn build_request(

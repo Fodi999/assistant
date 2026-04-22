@@ -198,6 +198,8 @@ pub struct TechCard {
     pub auto_fixes: Vec<String>,
     /// Flavor/texture analysis from culinary behaviors DSL
     pub flavor_analysis: Option<super::flavor_engine::FlavorAnalysis>,
+    /// AI-generated dish photo base64 (data:image/png;base64,...). None until generated.
+    pub dish_image_url: Option<String>,
 }
 
 // ── Backend Intelligence: resolve, assign roles, portions, cook methods ──────
@@ -436,6 +438,7 @@ pub async fn resolve_dish(
         validation_warnings: vec![], // filled below
         auto_fixes: vec![],          // filled below
         flavor_analysis: None,       // filled below
+        dish_image_url: None,        // filled by chat_engine after AI generation
     };
 
     // ── 6b. Flavor/texture analysis from culinary behaviors ────────────────

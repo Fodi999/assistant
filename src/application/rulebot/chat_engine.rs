@@ -550,7 +550,7 @@ impl ChatEngine {
                 );
 
                 // ── Step 2: Backend resolves everything: roles, states, grams, yield, КБЖУ ──
-                let tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal, lang, &constraints, modifier).await;
+                let mut tech_card = recipe_engine::resolve_dish(&self.ingredient_cache, &schema, goal, lang, &constraints, modifier).await;
 
                 tracing::info!(
                     "📊 tech_card: output={:.0}g kcal={} resolved={}/{} unresolved=[{}]",
@@ -560,6 +560,20 @@ impl ChatEngine {
                     tech_card.ingredients.len(),
                     tech_card.unresolved.join(", ")
                 );
+
+                // ── Step 2b: Generate dish photo with gemini-2.5-flash-image ──
+                let dish_slug = schema.dish.to_lowercase().replace(' ', "-");
+                let ingredient_names: Vec<String> = schema.items.iter().take(5).cloned().collect();
+                match self.llm_adapter.generate_dish_image(&dish_slug, &schema.dish, &ingredient_names).await {
+                    Ok(base64) => {
+                        tracing::info!("🖼 Dish image generated for '{}'", schema.dish);
+                        tech_card.dish_image_url = Some(format!("data:image/png;base64,{}", base64));
+                    }
+                    Err(e) => {
+                        tracing::warn!("⚠️ Dish image generation failed for '{}': {}", schema.dish, e);
+                        // Non-fatal — recipe response continues without image
+                    }
+                }
 
                 // ── Step 3: Build text + card response ──
                 let text = recipe_engine::format_recipe_text(&tech_card, lang);

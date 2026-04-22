@@ -573,6 +573,7 @@ pub fn build_recipe_card(
         }).collect(),
         validation_warnings: card.validation_warnings.clone(),
         auto_fixes: card.auto_fixes.clone(),
+        dish_image_url: card.dish_image_url.clone(),
     };
 
     let mut resp = ChatResponse::with_card(

@@ -353,6 +353,9 @@ pub struct RecipeCard {
     /// Auto-fix actions taken, e.g. ["Added 2 eggs as protein source"]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub auto_fixes: Vec<String>,
+    /// AI-generated dish photo (data:image/png;base64,... or None if not generated yet).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dish_image_url: Option<String>,
     /// User-invokable actions — populated centrally in `chat_engine::enrich_with_actions`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<Action>,
