@@ -28,7 +28,16 @@ impl PreferencesService {
         .await
         .map_err(|e| AppError::internal(format!("DB error: {e}")))?;
 
-        Ok(match row {
+        // Load language from users table (set via PUT /profile/language)
+        let language: Option<String> = sqlx::query_scalar(
+            "SELECT language FROM users WHERE id = $1"
+        )
+        .bind(user_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
+        let mut prefs = match row {
             Some(r) => r.into_domain(),
             None => UserPreferences {
                 goal: "eat_healthier".into(),
@@ -41,7 +50,9 @@ impl PreferencesService {
                 cooking_time: "medium".into(),
                 ..Default::default()
             },
-        })
+        };
+        prefs.language = language;
+        Ok(prefs)
     }
 
     /// Upsert (INSERT ON CONFLICT UPDATE) user preferences
@@ -139,6 +150,7 @@ impl PrefRow {
             allergies: json_to_strings(self.allergies),
             intolerances: json_to_strings(self.intolerances),
             medical_conditions: json_to_strings(self.medical_conditions),
+            language: None, // filled by get() from users table
         }
     }
 }

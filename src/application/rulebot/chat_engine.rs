@@ -104,7 +104,19 @@ impl ChatEngine {
         prefs: Option<&UserPreferences>,
     ) -> ChatResponse {
         let start = Instant::now();
-        let lang = detect_language(input);
+        // Language: prefer profile setting over text auto-detection.
+        // If user has set a language in their profile (users.language), use it.
+        // Otherwise, detect from input text (ru/en/pl/uk by character set).
+        let lang = prefs
+            .and_then(|p| p.language.as_deref())
+            .and_then(|code| match code {
+                "ru" => Some(ChatLang::Ru),
+                "en" => Some(ChatLang::En),
+                "pl" => Some(ChatLang::Pl),
+                "uk" => Some(ChatLang::Uk),
+                _ => None,
+            })
+            .unwrap_or_else(|| detect_language(input));
 
         // ── Personalization: resolve prefs → slugs, enrich ctx ────────────
         // Allergies / intolerances / dislikes become a HARD exclusion list

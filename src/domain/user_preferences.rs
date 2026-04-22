@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 /// User preferences — health, diet, lifestyle for ChefOS AI personalization
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UserPreferences {
+    /// Preferred interface language from user profile ("ru", "en", "pl", "uk").
+    /// When set, overrides auto-detection in chat engine.
+    pub language: Option<String>,
     pub age: Option<i32>,
     pub weight: Option<f64>,
     pub target_weight: Option<f64>,
