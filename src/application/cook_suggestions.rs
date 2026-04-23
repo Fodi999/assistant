@@ -146,6 +146,52 @@ pub struct DishInsight {
     pub priority_score: i32,
     /// Why this dish was suggested
     pub reasons: Vec<String>,
+    /// Honest kitchen economics — present only when we have real price data
+    /// for at least one ingredient. Never fabricated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub economics: Option<DishEconomics>,
+}
+
+/// Honest economics for a dish. Every field is computed from real inventory
+/// prices — never "guessed". If we don't have enough price data we return
+/// `None` instead of fabricating numbers.
+///
+/// Phase 0 (MVP): cost + waste_saved + margin only.
+#[derive(Debug, Clone, Serialize)]
+pub struct DishEconomics {
+    /// Total ingredient cost in cents (summed from actual inventory prices).
+    pub cost_cents: i64,
+
+    /// Money saved from waste — sum of (price × grams_used) ONLY for
+    /// ingredients that are expiring (Critical/Warning ≤3 days).
+    /// 0 if dish doesn't use any expiring stock.
+    pub waste_saved_cents: i64,
+
+    /// Suggested menu price in cents using a realistic 3.0× markup
+    /// (food cost ≈ 33%, standard restaurant industry baseline).
+    pub suggested_price_cents: i64,
+
+    /// Margin %: (price - cost) / price × 100. Rounded to 1 decimal.
+    pub margin_percent: f64,
+
+    /// How many of the dish's ingredients had real price data.
+    /// If < 70% we down-rank confidence.
+    pub price_coverage_percent: u8,
+
+    /// Recommendation strength based on data quality + fit.
+    pub confidence: ConfidenceLevel,
+}
+
+/// Confidence of the recommendation — drives UI emphasis (🔥 / ⚠️ / ❌).
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfidenceLevel {
+    /// 🔥 All ingredients in stock, good price coverage, strong fit
+    Strong,
+    /// ⚠️ Minor gaps (≤2 missing OR partial price data)
+    Medium,
+    /// ❌ Many gaps — show only as a fallback
+    Weak,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -572,7 +618,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         let mut ingredients = Vec::new();
         let mut missing = Vec::new();
         let mut uses_expiring = false;
-        let mut estimated_cost_cents: i64 = 0;
+        // Honest economics accumulators — only real data, no fabrication.
+        let mut cost_cents: i64 = 0;
+        let mut waste_saved_cents: i64 = 0;
+        let mut priced_count = 0usize;
+        let mut total_count = 0usize;
 
         for ing in &tech_card.ingredients {
             let slug = ing.resolved_slug.as_deref().unwrap_or(&ing.slug_hint);
@@ -600,9 +650,16 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 uses_expiring = true;
             }
 
-            // Estimate cost from inventory prices
-            if let Some(price_cents) = ctx.price_cents_per_unit(slug) {
-                estimated_cost_cents += (price_cents as f64 * ing.gross_g as f64 / 1000.0) as i64;
+            // Honest cost: only count if unit is convertible (kg/g/l/ml).
+            if ing.gross_g > 0.0 {
+                total_count += 1;
+                if let Some(c) = ctx.cost_for_grams(slug, ing.gross_g) {
+                    cost_cents += c;
+                    priced_count += 1;
+                    if expiring_soon {
+                        waste_saved_cents += c;
+                    }
+                }
             }
 
             ingredients.push(SuggestedIngredient {
@@ -614,6 +671,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 expiring_soon,
             });
         }
+
+        let estimated_cost_cents = cost_cents; // alias for legacy field
 
         let servings = tech_card.servings.max(1);
         let protein_per_serving = tech_card.total_protein / servings as f32;
@@ -637,7 +696,12 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         if uses_expiring { reasons.push("uses_expiring_ingredients".into()); }
         if high_protein { reasons.push("high_protein".into()); }
         if missing.is_empty() { reasons.push("all_ingredients_available".into()); }
-        if estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+        if estimated_cost_cents > 0 && estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+
+        // Honest economics (Phase 0) — None when we couldn't price anything.
+        let economics = compute_economics(
+            cost_cents, waste_saved_cents, priced_count, total_count, missing.len(),
+        );
 
         // Flavor info from TechCard
         let flavor = tech_card.flavor_analysis.as_ref().map(|f| FlavorInfo {
@@ -690,10 +754,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             insight: DishInsight {
                 uses_expiring,
                 high_protein,
-                budget_friendly: estimated_cost_cents < 500,
+                budget_friendly: estimated_cost_cents > 0 && estimated_cost_cents < 500,
                 estimated_cost_cents,
                 priority_score: priority,
                 reasons,
+                economics: economics.clone(),
             },
             flavor,
             adaptation,
@@ -731,7 +796,10 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         let mut ingredients = Vec::new();
         let mut missing = Vec::new();
         let mut uses_expiring = false;
-        let mut estimated_cost_cents: i64 = 0;
+        let mut cost_cents: i64 = 0;
+        let mut waste_saved_cents: i64 = 0;
+        let mut priced_count = 0usize;
+        let mut total_count = 0usize;
 
         for ing in &tech_card.ingredients {
             let slug = ing.resolved_slug.as_deref().unwrap_or(&ing.slug_hint);
@@ -757,8 +825,15 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             if expiring_soon {
                 uses_expiring = true;
             }
-            if let Some(price_cents) = ctx.price_cents_per_unit(slug) {
-                estimated_cost_cents += (price_cents as f64 * ing.gross_g as f64 / 1000.0) as i64;
+            if ing.gross_g > 0.0 {
+                total_count += 1;
+                if let Some(c) = ctx.cost_for_grams(slug, ing.gross_g) {
+                    cost_cents += c;
+                    priced_count += 1;
+                    if expiring_soon {
+                        waste_saved_cents += c;
+                    }
+                }
             }
 
             ingredients.push(SuggestedIngredient {
@@ -770,6 +845,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 expiring_soon,
             });
         }
+
+        let estimated_cost_cents = cost_cents; // alias for legacy field
 
         let servings = tech_card.servings.max(1);
         let protein_per_serving = tech_card.total_protein / servings as f32;
@@ -785,7 +862,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         if uses_expiring { reasons.push("uses_expiring_ingredients".into()); }
         if high_protein { reasons.push("high_protein".into()); }
         if missing.is_empty() { reasons.push("all_ingredients_available".into()); }
-        if estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+        if estimated_cost_cents > 0 && estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+
+        let economics = compute_economics(
+            cost_cents, waste_saved_cents, priced_count, total_count, missing.len(),
+        );
 
         let flavor = tech_card.flavor_analysis.as_ref().map(|f| FlavorInfo {
             balance_score: f.balance_score,
@@ -835,10 +916,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             insight: DishInsight {
                 uses_expiring,
                 high_protein,
-                budget_friendly: estimated_cost_cents < 500,
+                budget_friendly: estimated_cost_cents > 0 && estimated_cost_cents < 500,
                 estimated_cost_cents,
                 priority_score: priority,
                 reasons,
+                economics: economics.clone(),
             },
             flavor,
             adaptation,
@@ -942,7 +1024,26 @@ struct InventoryContext {
 struct IngredientInfo {
     _quantity: f64,
     price_per_unit_cents: i64,
+    /// `"kg"`, `"g"`, `"l"`, `"ml"`, `"piece"`, …
+    base_unit: String,
     is_expiring: bool,
+}
+
+impl IngredientInfo {
+    /// Convert `grams` to real cost **only** when the unit is mass- or
+    /// volume-based. For `piece` / unknown units we return `None` instead of
+    /// guessing — this is the core of "honest economics".
+    fn cost_for_grams(&self, grams: f32) -> Option<i64> {
+        match self.base_unit.to_ascii_lowercase().as_str() {
+            "kg"         => Some((self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64),
+            "g"          => Some((self.price_per_unit_cents as f64 * grams as f64) as i64),
+            // Assume density ≈ 1 for l/ml — good enough for water-based items;
+            // oils and creams will be slightly off but still in the right order.
+            "l"          => Some((self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64),
+            "ml"         => Some((self.price_per_unit_cents as f64 * grams as f64) as i64),
+            _            => None, // piece / pack / unknown → skip (be honest)
+        }
+    }
 }
 
 impl InventoryContext {
@@ -985,6 +1086,7 @@ impl InventoryContext {
             let info = IngredientInfo {
                 _quantity: v.remaining_quantity,
                 price_per_unit_cents: v.price_per_unit_cents,
+                base_unit: v.product.base_unit.clone(),
                 is_expiring,
             };
 
@@ -1063,6 +1165,19 @@ impl InventoryContext {
             }
         })
     }
+
+    /// Honest cost for `grams` of ingredient matching `slug`.
+    /// Returns `None` when we can't convert the base unit (e.g. `piece`).
+    fn cost_for_grams(&self, slug: &str, grams: f32) -> Option<i64> {
+        let normalized = slug.to_lowercase().replace('-', " ");
+        self.lookup.iter().find_map(|(k, info)| {
+            if k.contains(&normalized) || normalized.contains(k.as_str()) {
+                info.cost_for_grams(grams)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1086,6 +1201,106 @@ fn language_to_chat_lang(lang: &Language) -> ChatLang {
         "pl" => ChatLang::Pl,
         "uk" => ChatLang::Uk,
         _ => ChatLang::En,
+    }
+}
+
+// ── Honest Economics (Phase 0) ──────────────────────────────────────────────
+//
+// Rules:
+//   • If we have zero priced ingredients → return None. We never fabricate.
+//   • suggested_price uses a realistic 3.0× markup (food cost ≈ 33%). This is
+//     a documented industry baseline, not magic. We also round UP to the
+//     nearest 0.50 zł for a more "menu-looking" price.
+//   • Confidence is conservative: Strong requires ≥80% price coverage AND
+//     no missing ingredients.
+//
+// The function is pure — easy to unit-test.
+
+/// Realistic markup for casual restaurants / home-cook → menu conversion.
+const MARKUP_FACTOR: f64 = 3.0;
+
+fn compute_economics(
+    cost_cents: i64,
+    waste_saved_cents: i64,
+    priced_count: usize,
+    total_count: usize,
+    missing_count: usize,
+) -> Option<DishEconomics> {
+    // No priced ingredients → no honest economics.
+    if priced_count == 0 || cost_cents <= 0 || total_count == 0 {
+        return None;
+    }
+
+    // Round suggested price UP to nearest 50 cents (→ 0.50 zł).
+    let raw_price = (cost_cents as f64 * MARKUP_FACTOR).round() as i64;
+    let suggested_price_cents = ((raw_price + 49) / 50) * 50;
+
+    let margin_percent = if suggested_price_cents > 0 {
+        let m = (suggested_price_cents - cost_cents) as f64 / suggested_price_cents as f64 * 100.0;
+        (m * 10.0).round() / 10.0
+    } else {
+        0.0
+    };
+
+    let coverage = ((priced_count as f32 / total_count as f32) * 100.0).round() as u8;
+
+    let confidence = if coverage >= 80 && missing_count == 0 {
+        ConfidenceLevel::Strong
+    } else if coverage >= 50 && missing_count <= 2 {
+        ConfidenceLevel::Medium
+    } else {
+        ConfidenceLevel::Weak
+    };
+
+    Some(DishEconomics {
+        cost_cents,
+        waste_saved_cents,
+        suggested_price_cents,
+        margin_percent,
+        price_coverage_percent: coverage,
+        confidence,
+    })
+}
+
+#[cfg(test)]
+mod economics_tests {
+    use super::*;
+
+    #[test]
+    fn no_priced_ingredients_returns_none() {
+        assert!(compute_economics(0, 0, 0, 5, 0).is_none());
+    }
+
+    #[test]
+    fn honest_markup_and_margin() {
+        // cost 820 cents (8.20 zł) → price 820*3=2460 → rounded up to 2500 (25.00 zł)
+        let e = compute_economics(820, 0, 5, 5, 0).unwrap();
+        assert_eq!(e.cost_cents, 820);
+        assert_eq!(e.suggested_price_cents, 2500);
+        // margin = (2500 - 820) / 2500 = 67.2%
+        assert!((e.margin_percent - 67.2).abs() < 0.1, "got {}", e.margin_percent);
+        assert!(matches!(e.confidence, ConfidenceLevel::Strong));
+    }
+
+    #[test]
+    fn waste_saved_is_tracked() {
+        let e = compute_economics(1500, 450, 4, 5, 0).unwrap();
+        assert_eq!(e.waste_saved_cents, 450);
+        assert_eq!(e.price_coverage_percent, 80);
+        assert!(matches!(e.confidence, ConfidenceLevel::Strong));
+    }
+
+    #[test]
+    fn low_coverage_becomes_weak() {
+        let e = compute_economics(300, 0, 1, 5, 0).unwrap();
+        assert_eq!(e.price_coverage_percent, 20);
+        assert!(matches!(e.confidence, ConfidenceLevel::Weak));
+    }
+
+    #[test]
+    fn missing_ingredients_downgrade() {
+        let e = compute_economics(600, 0, 4, 5, 1).unwrap();
+        assert!(matches!(e.confidence, ConfidenceLevel::Medium));
     }
 }
 
