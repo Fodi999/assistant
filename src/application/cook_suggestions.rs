@@ -374,7 +374,7 @@ impl CookSuggestionService {
             String::new()
         } else {
             format!(
-                "\n\n⚠️ CRITICAL PRIORITY — these ingredients expire within 3 days and will be wasted if not used:\n{}\n\nRULES (in strict priority order):\n1. Every suggested dish MUST use at least ONE expiring ingredient.\n2. Maximize total amount of expiring ingredients consumed across the 6 dishes.\n3. Do NOT suggest dishes that require buying new expensive items just to use 1 expiring item.\n4. Prefer dishes where expiring ingredients are the MAIN component, not a minor garnish.",
+                "\n\n⚠️ HIGH PRIORITY — these ingredients expire within 3 days and will be wasted if unused:\n{}\n\nGUIDELINES (soft priorities — prefer tasty over forced):\n1. Aim for AT LEAST 4 out of 6 dishes to use one or more expiring ingredients.\n2. Maximize total amount of expiring ingredients consumed — but only when the result is a natural, tasty dish.\n3. If a dish would become weird just to include an expiring item, SKIP it and suggest a normal balanced dish instead.\n4. Do NOT invent dishes that require expensive new purchases just to use 1 short-dated item.\n5. Prefer dishes where expiring ingredients are MAIN components, not minor garnish.",
                 ctx.expiring_names.join(", ")
             )
         };
@@ -441,7 +441,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             String::new()
         } else {
             format!(
-                "\n\n⚠️ CRITICAL PRIORITY — these ingredients expire within 3 days and will be wasted if not used:\n{}\n\nRULES (in strict priority order):\n1. Every suggested dish MUST use at least ONE expiring ingredient.\n2. Maximize total amount of expiring ingredients consumed across the 6 dishes.\n3. Do NOT suggest dishes that require buying new expensive items just to use 1 expiring item.\n4. Prefer dishes where expiring ingredients are the MAIN component, not a minor garnish.",
+                "\n\n⚠️ HIGH PRIORITY — these ingredients expire within 3 days and will be wasted if unused:\n{}\n\nGUIDELINES (soft priorities — prefer tasty over forced):\n1. Aim for AT LEAST 4 out of 6 dishes to use one or more expiring ingredients.\n2. Maximize total amount of expiring ingredients consumed — but only when the result is a natural, tasty dish.\n3. If a dish would become weird just to include an expiring item, SKIP it and suggest a normal balanced dish instead.\n4. Do NOT invent dishes that require expensive new purchases just to use 1 short-dated item.\n5. Prefer dishes where expiring ingredients are MAIN components, not minor garnish.",
                 ctx.expiring_names.join(", ")
             )
         };
