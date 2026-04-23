@@ -374,7 +374,7 @@ impl CookSuggestionService {
             String::new()
         } else {
             format!(
-                "\nURGENT — these expire soon, prioritize them: {}",
+                "\n\n⚠️ CRITICAL PRIORITY — these ingredients expire within 3 days and will be wasted if not used:\n{}\n\nRULES (in strict priority order):\n1. Every suggested dish MUST use at least ONE expiring ingredient.\n2. Maximize total amount of expiring ingredients consumed across the 6 dishes.\n3. Do NOT suggest dishes that require buying new expensive items just to use 1 expiring item.\n4. Prefer dishes where expiring ingredients are the MAIN component, not a minor garnish.",
                 ctx.expiring_names.join(", ")
             )
         };
@@ -387,12 +387,12 @@ impl CookSuggestionService {
         };
 
         let prompt = format!(
-            r#"You are a practical chef. The user has ONLY these ingredients in stock:
+            r#"You are a practical chef focused on ZERO FOOD WASTE and cost efficiency.
+The user has ONLY these ingredients in stock:
 {ingredients}{expiring}
 
 Suggest 6 realistic dishes that can be made from these ingredients.
 For each dish, list ONLY ingredients from the user's stock (max 6 per dish).
-Prefer dishes that use expiring ingredients first.
 
 Return a JSON array, no other text:
 [
@@ -441,7 +441,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             String::new()
         } else {
             format!(
-                "\nURGENT — these expire soon, prioritize them: {}",
+                "\n\n⚠️ CRITICAL PRIORITY — these ingredients expire within 3 days and will be wasted if not used:\n{}\n\nRULES (in strict priority order):\n1. Every suggested dish MUST use at least ONE expiring ingredient.\n2. Maximize total amount of expiring ingredients consumed across the 6 dishes.\n3. Do NOT suggest dishes that require buying new expensive items just to use 1 expiring item.\n4. Prefer dishes where expiring ingredients are the MAIN component, not a minor garnish.",
                 ctx.expiring_names.join(", ")
             )
         };
@@ -491,12 +491,12 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         };
 
         let prompt = format!(
-            r#"You are a practical chef. The user has ONLY these ingredients in stock:
+            r#"You are a practical chef focused on ZERO FOOD WASTE and cost efficiency.
+The user has ONLY these ingredients in stock:
 {ingredients}{expiring}{personalization}
 
 Suggest 6 realistic dishes that can be made from these ingredients.
 For each dish, list ONLY ingredients from the user's stock (max 6 per dish).
-Prefer dishes that use expiring ingredients first.
 
 Return a JSON array, no other text:
 [
