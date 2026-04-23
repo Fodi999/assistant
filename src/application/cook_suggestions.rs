@@ -653,11 +653,19 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             // Honest cost: only count if unit is convertible (kg/g/l/ml).
             if ing.gross_g > 0.0 {
                 total_count += 1;
-                if let Some(c) = ctx.cost_for_grams(slug, ing.gross_g) {
-                    cost_cents += c;
-                    priced_count += 1;
-                    if expiring_soon {
-                        waste_saved_cents += c;
+                match ctx.cost_for_grams(slug, ing.gross_g) {
+                    Some(c) => {
+                        cost_cents += c;
+                        priced_count += 1;
+                        if expiring_soon {
+                            waste_saved_cents += c;
+                        }
+                    }
+                    None => {
+                        tracing::debug!(
+                            "💸 no price for slug='{}' ({}g) — not in inventory lookup",
+                            slug, ing.gross_g
+                        );
                     }
                 }
             }
@@ -671,6 +679,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 expiring_soon,
             });
         }
+
+        tracing::info!(
+            "📊 dish '{}' economics: {}/{} priced, cost={}¢, waste_saved={}¢",
+            schema.dish, priced_count, total_count, cost_cents, waste_saved_cents
+        );
 
         let estimated_cost_cents = cost_cents; // alias for legacy field
 
@@ -827,11 +840,19 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             }
             if ing.gross_g > 0.0 {
                 total_count += 1;
-                if let Some(c) = ctx.cost_for_grams(slug, ing.gross_g) {
-                    cost_cents += c;
-                    priced_count += 1;
-                    if expiring_soon {
-                        waste_saved_cents += c;
+                match ctx.cost_for_grams(slug, ing.gross_g) {
+                    Some(c) => {
+                        cost_cents += c;
+                        priced_count += 1;
+                        if expiring_soon {
+                            waste_saved_cents += c;
+                        }
+                    }
+                    None => {
+                        tracing::debug!(
+                            "💸 no price for slug='{}' ({}g) — not in inventory lookup (personalized)",
+                            slug, ing.gross_g
+                        );
                     }
                 }
             }
@@ -845,6 +866,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 expiring_soon,
             });
         }
+
+        tracing::info!(
+            "📊 dish '{}' economics (personalized): {}/{} priced, cost={}¢, waste_saved={}¢",
+            schema.dish, priced_count, total_count, cost_cents, waste_saved_cents
+        );
 
         let estimated_cost_cents = cost_cents; // alias for legacy field
 
@@ -1027,22 +1053,43 @@ struct IngredientInfo {
     /// `"kg"`, `"g"`, `"l"`, `"ml"`, `"piece"`, …
     base_unit: String,
     is_expiring: bool,
+    /// Fallback piece weight (g) when `base_unit` is `piece`/`pack`/unknown.
+    /// Derived from ingredient cache `product_type` when available.
+    /// Falls back to 100 g inside `cost_for_grams` when `None`.
+    typical_piece_g: Option<f32>,
 }
 
 impl IngredientInfo {
-    /// Convert `grams` to real cost **only** when the unit is mass- or
-    /// volume-based. For `piece` / unknown units we return `None` instead of
-    /// guessing — this is the core of "honest economics".
+    /// Convert `grams` to real cost.
+    ///
+    /// * `kg` / `g` / `l` / `ml` — exact (density ≈ 1 for liquids).
+    /// * `piece` / `pack` / unknown — pragmatic fallback using
+    ///   `typical_piece_g` (or 100 g if unknown). We log a debug line
+    ///   so imprecise conversions are traceable, but we no longer return
+    ///   `None` — that was causing empty economics for dishes with eggs,
+    ///   lemons, bread slices, etc.
     fn cost_for_grams(&self, grams: f32) -> Option<i64> {
-        match self.base_unit.to_ascii_lowercase().as_str() {
-            "kg"         => Some((self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64),
-            "g"          => Some((self.price_per_unit_cents as f64 * grams as f64) as i64),
-            // Assume density ≈ 1 for l/ml — good enough for water-based items;
-            // oils and creams will be slightly off but still in the right order.
-            "l"          => Some((self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64),
-            "ml"         => Some((self.price_per_unit_cents as f64 * grams as f64) as i64),
-            _            => None, // piece / pack / unknown → skip (be honest)
+        if self.price_per_unit_cents <= 0 || grams <= 0.0 {
+            return None;
         }
+        let cents = match self.base_unit.to_ascii_lowercase().as_str() {
+            "kg"          => (self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64,
+            "g"           => (self.price_per_unit_cents as f64 * grams as f64) as i64,
+            // density ≈ 1 fallback for l/ml (good enough for water-based items)
+            "l"           => (self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64,
+            "ml"          => (self.price_per_unit_cents as f64 * grams as f64) as i64,
+            // piece / pack / szt / pcs / unknown → use typical weight
+            other => {
+                let per_piece = self.typical_piece_g.unwrap_or(100.0) as f64;
+                let result = (self.price_per_unit_cents as f64 * grams as f64 / per_piece) as i64;
+                tracing::debug!(
+                    "💰 piece-fallback: unit='{}' price={}¢ grams={:.0} per_piece={:.0}g → {}¢",
+                    other, self.price_per_unit_cents, grams, per_piece, result
+                );
+                result
+            }
+        };
+        Some(cents)
     }
 }
 
@@ -1088,6 +1135,7 @@ impl InventoryContext {
                 price_per_unit_cents: v.price_per_unit_cents,
                 base_unit: v.product.base_unit.clone(),
                 is_expiring,
+                typical_piece_g: None, // filled later when we match a cache entry
             };
 
             // Index by lowercase name
@@ -1106,17 +1154,23 @@ impl InventoryContext {
                     ing.name_uk.to_lowercase(),
                 ];
                 if names.iter().any(|n| n == &name_lower || n.contains(&name_lower) || name_lower.contains(n.as_str())) {
+                    // Enrich info with a per-piece weight estimate based on product_type.
+                    let mut enriched = info.clone();
+                    enriched.typical_piece_g = Some(typical_piece_weight_g(&ing.product_type, &ing.slug));
                     // Add all variants as keys
                     for alias in &names {
                         if !alias.is_empty() && !lookup.contains_key(alias) {
-                            lookup.insert(alias.clone(), info.clone());
+                            lookup.insert(alias.clone(), enriched.clone());
                         }
                     }
                     // Also add slug with dashes replaced by spaces
                     let slug_spaced = ing.slug.to_lowercase().replace('-', " ");
                     if !lookup.contains_key(&slug_spaced) {
-                        lookup.insert(slug_spaced, info.clone());
+                        lookup.insert(slug_spaced, enriched.clone());
                     }
+                    // Overwrite the original name entry with the enriched one
+                    // (so piece-fallback works when matched by display name too)
+                    lookup.insert(key.clone(), enriched);
                     break;
                 }
             }
@@ -1201,6 +1255,57 @@ fn language_to_chat_lang(lang: &Language) -> ChatLang {
         "pl" => ChatLang::Pl,
         "uk" => ChatLang::Uk,
         _ => ChatLang::En,
+    }
+}
+
+/// Rough per-piece weight in grams, used as fallback when a product is priced
+/// per-piece/pack and the recipe asks for grams. These are intentionally
+/// middle-of-the-road values; the goal is "close enough to show a price" not
+/// lab-grade accuracy. Order: specific slug overrides, then product_type bucket.
+fn typical_piece_weight_g(product_type: &str, slug: &str) -> f32 {
+    // Specific slug overrides (most common offenders).
+    let s = slug.to_lowercase();
+    let specific: &[(&str, f32)] = &[
+        ("egg", 55.0),
+        ("lemon", 80.0),
+        ("lime", 50.0),
+        ("orange", 150.0),
+        ("apple", 180.0),
+        ("banana", 120.0),
+        ("pear", 170.0),
+        ("avocado", 170.0),
+        ("potato", 180.0),
+        ("onion", 110.0),
+        ("garlic-clove", 5.0),
+        ("garlic", 40.0),
+        ("cucumber", 200.0),
+        ("tomato", 120.0),
+        ("bell-pepper", 160.0),
+        ("pepper", 160.0),
+        ("carrot", 80.0),
+        ("zucchini", 200.0),
+        ("eggplant", 280.0),
+        ("mushroom", 20.0),
+        ("bread-slice", 30.0),
+        ("bread", 500.0),
+        ("tortilla", 45.0),
+    ];
+    for (k, w) in specific {
+        if s.contains(k) {
+            return *w;
+        }
+    }
+    // Bucket by product_type.
+    match product_type.to_ascii_lowercase().as_str() {
+        "vegetable" | "fruit"       => 150.0,
+        "egg"                       => 55.0,
+        "spice" | "herb"            => 5.0,
+        "mushroom"                  => 20.0,
+        "nut"                       => 10.0,
+        "grain" | "legume"          => 200.0, // pack-ish
+        "dairy"                     => 200.0, // small container
+        "meat" | "fish" | "seafood" => 200.0,
+        _                           => 100.0,
     }
 }
 
@@ -1301,6 +1406,48 @@ mod economics_tests {
     fn missing_ingredients_downgrade() {
         let e = compute_economics(600, 0, 4, 5, 1).unwrap();
         assert!(matches!(e.confidence, ConfidenceLevel::Medium));
+    }
+
+    #[test]
+    fn kg_cost_is_exact() {
+        let info = IngredientInfo {
+            _quantity: 0.0, price_per_unit_cents: 2000, // 20 zł/kg
+            base_unit: "kg".into(), is_expiring: false, typical_piece_g: None,
+        };
+        // 500g → 10 zł
+        assert_eq!(info.cost_for_grams(500.0), Some(1000));
+    }
+
+    #[test]
+    fn piece_uses_typical_weight() {
+        // egg: 55 g per piece, 90¢ per piece → 50g should cost ~82¢
+        let info = IngredientInfo {
+            _quantity: 0.0, price_per_unit_cents: 90,
+            base_unit: "piece".into(), is_expiring: false,
+            typical_piece_g: Some(55.0),
+        };
+        let c = info.cost_for_grams(50.0).unwrap();
+        assert!(c >= 70 && c <= 90, "expected ~82¢, got {c}");
+    }
+
+    #[test]
+    fn piece_falls_back_to_100g_when_unknown() {
+        // 5 zł per piece, asking for 100g → ~5 zł (1:1)
+        let info = IngredientInfo {
+            _quantity: 0.0, price_per_unit_cents: 500,
+            base_unit: "szt".into(), is_expiring: false,
+            typical_piece_g: None,
+        };
+        assert_eq!(info.cost_for_grams(100.0), Some(500));
+    }
+
+    #[test]
+    fn zero_price_returns_none() {
+        let info = IngredientInfo {
+            _quantity: 0.0, price_per_unit_cents: 0,
+            base_unit: "kg".into(), is_expiring: false, typical_piece_g: None,
+        };
+        assert_eq!(info.cost_for_grams(100.0), None);
     }
 }
 
