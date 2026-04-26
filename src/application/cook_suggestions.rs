@@ -135,6 +135,15 @@ pub struct SuggestedIngredient {
     pub role: String,
     pub available: bool,
     pub expiring_soon: bool,
+    /// Catalog photo URL when present (lets the frontend render an
+    /// "ingredient card" with the real product image, not just text).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+    /// Catalog category (e.g. "meat", "dairy", "produce") — used by the
+    /// UI to pick fallback icons / colors when there is no photo and to
+    /// group ingredients visually.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -677,6 +686,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 role: ing.role.clone(),
                 available,
                 expiring_soon,
+                image_url: ing.product.as_ref().and_then(|p| p.image_url.clone()),
+                category: ing.product.as_ref().map(|p| p.product_type.clone()),
             });
         }
 
@@ -864,6 +875,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 role: ing.role.clone(),
                 available,
                 expiring_soon,
+                image_url: ing.product.as_ref().and_then(|p| p.image_url.clone()),
+                category: ing.product.as_ref().map(|p| p.product_type.clone()),
             });
         }
 
