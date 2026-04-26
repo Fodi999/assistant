@@ -302,6 +302,10 @@ pub struct CatalogIngredient {
     // UX
     pub image_url: Option<String>,
 
+    // Mass / volume conversion (used by the recipe editor on the client)
+    pub density_g_per_ml: Option<Decimal>,
+    pub typical_portion_g: Option<Decimal>,
+
     // Soft delete
     pub is_active: bool,
 }
@@ -345,6 +349,8 @@ impl CatalogIngredient {
             calories_per_100g,
             seasons,
             image_url,
+            density_g_per_ml: None,
+            typical_portion_g: None,
             min_stock_threshold: Decimal::ZERO,
             is_active: true, // New products are active by default
         }
@@ -367,6 +373,8 @@ impl CatalogIngredient {
         image_url: Option<String>,
         is_active: bool,
         min_stock_threshold: Decimal,
+        density_g_per_ml: Option<Decimal>,
+        typical_portion_g: Option<Decimal>,
     ) -> Self {
         Self {
             id,
@@ -381,6 +389,8 @@ impl CatalogIngredient {
             calories_per_100g,
             seasons,
             image_url,
+            density_g_per_ml,
+            typical_portion_g,
             is_active,
             min_stock_threshold,
         }

@@ -76,6 +76,8 @@ impl CatalogIngredientRepository {
         let is_active: bool = row.try_get("is_active").unwrap_or(true);
         let min_stock_threshold: Decimal =
             row.try_get("min_stock_threshold").unwrap_or(Decimal::ZERO);
+        let density_g_per_ml: Option<Decimal> = row.try_get("density_g_per_ml").ok().flatten();
+        let typical_portion_g: Option<Decimal> = row.try_get("typical_portion_g").ok().flatten();
 
         Ok(CatalogIngredient::from_parts(
             CatalogIngredientId::from_uuid(id),
@@ -92,6 +94,8 @@ impl CatalogIngredientRepository {
             image_url,
             is_active,
             min_stock_threshold,
+            density_g_per_ml,
+            typical_portion_g,
         ))
     }
 }
@@ -122,7 +126,9 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                 ci.image_url,
                 ci.is_active,
-                ci.min_stock_threshold
+                ci.min_stock_threshold,
+                ci.density_g_per_ml,
+                ci.typical_portion_g
             FROM catalog_ingredients ci
             WHERE COALESCE(ci.is_active, true) = true 
               AND (
@@ -169,7 +175,9 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                     ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                     ci.image_url,
                     ci.is_active,
-                    ci.min_stock_threshold
+                    ci.min_stock_threshold,
+                    ci.density_g_per_ml,
+                    ci.typical_portion_g
                 FROM catalog_ingredients ci
                 WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1 
@@ -198,7 +206,9 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                     ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                     ci.image_url,
                     ci.is_active,
-                    ci.min_stock_threshold
+                    ci.min_stock_threshold,
+                    ci.density_g_per_ml,
+                    ci.typical_portion_g
                 FROM catalog_ingredients ci
                 WHERE COALESCE(ci.is_active, true) = true 
                   AND ci.category_id = $1
@@ -233,7 +243,7 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                    ARRAY(SELECT unnest(allergens)::text) as allergens, 
                    calories_per_100g, 
                    ARRAY(SELECT unnest(seasons)::text) as seasons, 
-                   image_url, is_active, min_stock_threshold
+                   image_url, is_active, min_stock_threshold, density_g_per_ml, typical_portion_g
             FROM catalog_ingredients
             WHERE id = $1 AND COALESCE(is_active, true) = true
             "#,
@@ -271,7 +281,9 @@ impl CatalogIngredientRepositoryTrait for CatalogIngredientRepository {
                 ARRAY(SELECT unnest(ci.seasons)::text) as seasons, 
                 ci.image_url,
                 ci.is_active,
-                ci.min_stock_threshold
+                ci.min_stock_threshold,
+                ci.density_g_per_ml,
+                ci.typical_portion_g
             FROM catalog_ingredients ci
             WHERE COALESCE(ci.is_active, true) = true
             ORDER BY ci.name_en ASC

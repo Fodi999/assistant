@@ -70,6 +70,12 @@ pub struct IngredientResponse {
     pub calories_per_100g: Option<i32>,
     pub seasons: Vec<String>,
     pub image_url: Option<String>,
+    /// Density in g/ml — used by clients to convert ml↔g for liquids/sauces.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub density_g_per_ml: Option<f64>,
+    /// Typical mass of one piece (egg, apple, etc.) in grams.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub typical_portion_g: Option<f64>,
 }
 
 /// Response for a list of ingredients
@@ -187,6 +193,8 @@ pub async fn search_ingredients(
                 calories_per_100g: ing.calories_per_100g,
                 seasons: ing.seasons.iter().map(|s| s.as_str().to_string()).collect(),
                 image_url: ing.image_url.clone(),
+                density_g_per_ml: ing.density_g_per_ml.and_then(|d| d.to_string().parse::<f64>().ok()),
+                typical_portion_g: ing.typical_portion_g.and_then(|d| d.to_string().parse::<f64>().ok()),
             })
             .collect(),
     };
@@ -280,6 +288,8 @@ pub async fn search_ingredients_public(
                 calories_per_100g: ing.calories_per_100g,
                 seasons: ing.seasons.iter().map(|s| s.as_str().to_string()).collect(),
                 image_url: ing.image_url.clone(),
+                density_g_per_ml: ing.density_g_per_ml.and_then(|d| d.to_string().parse::<f64>().ok()),
+                typical_portion_g: ing.typical_portion_g.and_then(|d| d.to_string().parse::<f64>().ok()),
             })
             .collect(),
     };
