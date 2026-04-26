@@ -68,6 +68,7 @@ pub enum DishType {
     Bake,       // casserole, lasagna, pizza…
     Pasta,      // spaghetti, carbonara…
     Raw,        // tartare, sashimi…
+    Pancake,    // pancakes, omelette, frittata — batter-mixed sweet/egg dishes
     Default,    // unknown → old behaviour
 }
 
@@ -109,6 +110,12 @@ impl DishType {
         // Raw
         if d.contains("tartare") || d.contains("sashimi")
             || d.contains("carpaccio") { return DishType::Raw; }
+        // Pancakes / omelettes / frittata — batter-mixed egg/fruit dishes.
+        // Must be detected BEFORE Default to avoid "Protein→Grill" steps.
+        if d.contains("pancake") || d.contains("панкейк") || d.contains("блинч")
+            || d.contains("оладь") || d.contains("омлет") || d.contains("omelette")
+            || d.contains("omelet") || d.contains("frittata") || d.contains("crepe")
+            || d.contains("крепе") { return DishType::Pancake; }
         DishType::Default
     }
 

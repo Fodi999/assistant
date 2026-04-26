@@ -111,23 +111,25 @@ pub async fn apply_culinary_basics(
         ensure_ingredient(ingredients, cache, slug, oil_g, "oil", "raw").await;
     }
 
-    // ── 3. BLACK PEPPER — skip for sweet+delicate combos ─────────────────
+    // ── 3. BLACK PEPPER — never in sweet dishes ──────────────────────────
+    // A sweet ingredient (banana, apple, honey, etc.) signals a dessert/sweet
+    // breakfast dish — black pepper has no place there regardless of protein type.
     let needs_pepper = matches!(
         dish_type,
         DishType::Soup | DishType::Stew | DishType::StirFry |
         DishType::Grill | DishType::Bake | DishType::Pasta | DishType::Default
-    );
-    let pepper_ok = !metrics.has_sweet || !metrics.has_delicate_protein;
+    ) && !matches!(dish_type, DishType::Pancake);
+    let pepper_ok = !metrics.has_sweet; // strict: ANY sweet ingredient → no pepper
     if needs_pepper && pepper_ok && !has_slug(ingredients, "black-pepper") {
         let pepper_g = (metrics.food_weight_g * 0.001).clamp(0.3, 2.0);
         ensure_ingredient(ingredients, cache, "black-pepper", pepper_g, "seasoning", "raw").await;
     }
 
-    // ── 4. GARLIC — only robust dishes, no sweet/delicate ────────────────
+    // ── 4. GARLIC — only robust dishes, never sweet ──────────────────────
     let garlic_ok = matches!(
         dish_type,
         DishType::StirFry | DishType::Pasta | DishType::Stew
-    ) && !metrics.has_sweet && !metrics.has_delicate_protein;
+    ) && !metrics.has_sweet;
 
     if garlic_ok && !has_slug(ingredients, "garlic") {
         let garlic_g = (metrics.food_weight_g * 0.01).clamp(3.0, 10.0);

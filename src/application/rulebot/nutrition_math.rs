@@ -72,6 +72,14 @@ pub fn override_role(product: &IngredientData) -> &'static str {
         | "tomato-paste" | "fish-sauce" | "worcestershire" => return "condiment",
         _ => {}
     }
+    // Fruits that act as a binder/base in sweet dishes (banana pancakes, apple cake…).
+    // They are the structural/sweetening backbone — not a garnish ("side").
+    if product.product_type == "fruit"
+        && ["banana", "apple", "pear", "mango", "date", "fig", "plantain"]
+            .iter().any(|k| slug.contains(k))
+    {
+        return "base";
+    }
     match product.product_type.as_str() {
         "oil" | "fat" => "oil",
         "spice" | "herb" | "seasoning" => "spice",
@@ -204,12 +212,17 @@ pub fn detect_allergens(ingredients: &[ResolvedIngredient]) -> Vec<String> {
         flags.push("gluten".into());
     }
 
-    // Lactose
+    // Lactose — only genuinely high-lactose products.
+    // Butter / ghee contain only trace lactose (< 0.1 g/100 g) and should NOT
+    // be flagged — they are cooking fats, not dairy allergens in practice.
     if has(&|i| {
         let s = i.slug_hint.to_lowercase();
         let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
+        let is_fat = s.contains("butter") || s.contains("ghee")
+            || pt == "oil" || pt == "fat";
+        if is_fat { return false; }
         pt == "dairy" || s.contains("milk") || s.contains("cream") || s.contains("cheese")
-            || s.contains("butter") || s.contains("yogurt") || s.contains("kefir")
+            || s.contains("yogurt") || s.contains("kefir")
             || s.contains("sour-cream") || s.contains("smetana")
     }) {
         flags.push("lactose".into());

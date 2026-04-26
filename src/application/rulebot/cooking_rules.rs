@@ -92,6 +92,9 @@ pub enum StepType {
     ChopAll,          // "Нарезать" (salad)
     Dress,            // "Заправить" (salad)
     ServeFresh,       // "Подать свежим"
+    MashBase,         // "Размять банан/яблоко до пюре" (pancake)
+    MixBatter,        // "Смешать яйца с пюре и щепоткой соли" (pancake)
+    FryPancakes,      // "Жарить небольшие порции на среднем огне" (pancake)
 }
 
 // ── Rule Structs ─────────────────────────────────────────────────────────────
@@ -182,6 +185,7 @@ pub fn load_rule(dish_type: DishType) -> DishRule {
         DishType::Bake => bake_rule(),
         DishType::Pasta => pasta_rule(),
         DishType::Raw => raw_rule(),
+        DishType::Pancake => pancake_rule(),
         DishType::Default => default_rule(),
     }
 }
@@ -494,6 +498,45 @@ fn raw_rule() -> DishRule {
     }
 }
 
+// ── Pancake / Omelette ───────────────────────────────────────────────────────
+//
+// Covers: banana-egg pancakes, omelettes, frittata, crepes.
+// Key culinary truth: batter-based dishes → mash / mix / fry-flat.
+// No "sear until golden crust" step — that's wrong for eggs-as-batter.
+// Base role (banana, apple, pear) is mashed first.
+// Protein (egg) is beaten and mixed with the base.
+// Spices go into the batter (AddSpices step before frying).
+
+fn pancake_rule() -> DishRule {
+    use IngredientRole::*;
+    use StepType::*;
+    DishRule {
+        dish_type: DishType::Pancake,
+        roles: vec![
+            RoleRule { role: Protein,   min: 1, max: 2, required: true  },  // eggs
+            RoleRule { role: Base,      min: 0, max: 2, required: false },  // banana, apple
+            RoleRule { role: Spice,     min: 0, max: 2, required: false },  // salt, cinnamon
+            RoleRule { role: Oil,       min: 0, max: 1, required: false },
+            RoleRule { role: Condiment, min: 0, max: 1, required: false },
+        ],
+        methods: vec![
+            MethodRule { role: Protein,   method: CookMethod::Fry   },
+            MethodRule { role: Base,      method: CookMethod::Raw   }, // mashed, not cooked
+            MethodRule { role: Spice,     method: CookMethod::Raw   },
+            MethodRule { role: Oil,       method: CookMethod::Raw   },
+            MethodRule { role: Condiment, method: CookMethod::Raw   },
+        ],
+        steps: vec![
+            sr(MashBase,    vec![Base],                Some(2)),
+            sr(MixBatter,   vec![Protein, Base],       Some(2)),
+            sr(AddSpices,   vec![Spice, Condiment],    None),
+            sr_t(FryPancakes, vec![Protein, Base, Oil], Some(8), 160, Some("no_move")),
+            sr(Rest,        vec![],                    Some(1)),
+        ],
+        constraints: vec![],
+    }
+}
+
 // ── Default (fallback) ───────────────────────────────────────────────────────
 
 fn default_rule() -> DishRule {
@@ -735,6 +778,9 @@ fn step_text_ru(step: StepType, n: &str) -> String {
         StepType::ChopAll         => format!("Нарезать {}", n),
         StepType::Dress           => format!("Заправить {}", n),
         StepType::ServeFresh      => "Подать свежим".into(),
+        StepType::MashBase        => format!("Размять {} вилкой до однородного пюре", n),
+        StepType::MixBatter       => "Взбить яйца, соединить с пюре и щепоткой соли, перемешать до однородной массы".into(),
+        StepType::FryPancakes     => "Разогреть сковороду на среднем огне, смазать маслом. Выложить небольшие порции теста, жарить 2–3 мин с каждой стороны до устойчивой корочки".into(),
     }
 }
 
@@ -762,6 +808,9 @@ fn step_text_en(step: StepType, n: &str) -> String {
         StepType::ChopAll         => format!("Chop {}", n),
         StepType::Dress           => format!("Dress with {}", n),
         StepType::ServeFresh      => "Serve fresh".into(),
+        StepType::MashBase        => format!("Mash {} with a fork until smooth", n),
+        StepType::MixBatter       => "Beat eggs, add the mashed base and a pinch of salt, mix until a smooth batter forms".into(),
+        StepType::FryPancakes     => "Heat a pan over medium heat and lightly grease with oil. Pour small amounts of batter and cook 2–3 min per side until golden and set".into(),
     }
 }
 
@@ -789,6 +838,9 @@ fn step_text_pl(step: StepType, n: &str) -> String {
         StepType::ChopAll         => format!("Pokroić {}", n),
         StepType::Dress           => format!("Polać {}", n),
         StepType::ServeFresh      => "Podawać świeże".into(),
+        StepType::MashBase        => format!("Rozgnieść {} widelcem na gładkie purée", n),
+        StepType::MixBatter       => "Roztrzepać jajka, dodać purée i szczyptę soli, wymieszać na jednolite ciasto".into(),
+        StepType::FryPancakes     => "Rozgrzać patelnię na średnim ogniu, lekko natłuścić. Nakładać małe porcje ciasta, smażyć 2–3 min z każdej strony do złotego koloru".into(),
     }
 }
 
@@ -816,6 +868,9 @@ fn step_text_uk(step: StepType, n: &str) -> String {
         StepType::ChopAll         => format!("Нарізати {}", n),
         StepType::Dress           => format!("Заправити {}", n),
         StepType::ServeFresh      => "Подавати свіжим".into(),
+        StepType::MashBase        => format!("Розім'яти {} виделкою до однорідного пюре", n),
+        StepType::MixBatter       => "Збити яйця, додати пюре і щіпку солі, перемішати до однорідної маси".into(),
+        StepType::FryPancakes     => "Розігріти сковорідку на середньому вогні, змастити олією. Викладати невеликі порції тіста, смажити 2–3 хв з кожного боку до стійкої скоринки".into(),
     }
 }
 

@@ -1425,8 +1425,34 @@ fn scale_ingredient(ing: &mut recipe_engine::ResolvedIngredient, cap_g: f32) {
 /// Salt 1–2 g, black pepper 0.2–0.5 g, dried herbs/spices ≤ 1 g per serving.
 /// Without this Gemini sometimes returns "5 g of black pepper" — which is
 /// clearly wrong and ruins both nutrition and cost numbers.
+///
+/// Additionally removes pepper/garlic entirely from sweet dishes (banana, apple…)
+/// as a belt-and-suspenders guard on top of culinary_base_layer's own check.
 fn cap_spices(tech_card: &mut recipe_engine::TechCard) {
     let servings = tech_card.servings.max(1) as f32;
+
+    // Detect if this is a sweet dish (any sweet-profile ingredient present).
+    let is_sweet_dish = tech_card.ingredients.iter().any(|ing| {
+        let s = ing.resolved_slug.as_deref()
+            .unwrap_or(&ing.slug_hint)
+            .to_lowercase();
+        ["banana", "apple", "pear", "mango", "honey", "sugar", "maple",
+         "date", "fig", "berry", "strawberry", "raspberry", "cherry",
+         "orange", "melon", "grape", "pineapple", "kiwi", "peach"]
+            .iter().any(|k| s.contains(k))
+    });
+
+    // Slugs that must be removed entirely from sweet dishes.
+    let savory_only_slugs: &[&str] = &["black-pepper", "white-pepper", "pink-pepper",
+        "garlic", "onion", "soy-sauce", "fish-sauce", "worcestershire"];
+
+    tech_card.ingredients.retain(|ing| {
+        if !is_sweet_dish { return true; }
+        let s = ing.resolved_slug.as_deref()
+            .unwrap_or(&ing.slug_hint)
+            .to_lowercase();
+        !savory_only_slugs.iter().any(|k| s.contains(k))
+    });
 
     for ing in tech_card.ingredients.iter_mut() {
         let slug_owned = ing.resolved_slug.clone()
