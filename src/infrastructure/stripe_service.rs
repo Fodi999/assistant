@@ -104,6 +104,8 @@ impl StripeService {
             );
         }
 
+        tracing::info!("✅ Stripe service initialized (Test Mode: {})", secret_key.starts_with("sk_test_"));
+
         Some(Self {
             secret_key,
             webhook_secret,
