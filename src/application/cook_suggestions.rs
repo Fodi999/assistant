@@ -102,6 +102,10 @@ pub struct SuggestedDish {
     pub per_serving_fat_g: f32,
     pub per_serving_carbs_g: f32,
     pub servings: u8,
+    /// Professional yield breakdown — gross → net → cooked.
+    /// Lets the UI honestly show "Yield: 278 g from 343 g gross"
+    /// instead of summing raw weights and calling that a yield.
+    pub yield_summary: YieldSummary,
     /// Cooking steps (deterministic, no LLM)
     pub steps: Vec<RecipeStep>,
     /// Smart insights
@@ -131,7 +135,21 @@ pub struct RecipeStep {
 pub struct SuggestedIngredient {
     pub name: String,
     pub slug: String,
+    /// Raw amount taken from inventory (used for cost & shopping list).
     pub gross_g: f32,
+    /// Edible weight after trimming (peel, bone, core).
+    /// `gross_g * edible_yield_percent / 100`.
+    pub net_g: f32,
+    /// Final weight after cooking — what actually ends up on the plate.
+    /// `net_g * (1 + weight_change_percent / 100)`.
+    pub cooked_g: f32,
+    /// % lost during preparation (peeling, deboning, coring). 0 if unknown.
+    pub trim_loss_percent: f32,
+    /// % weight change during cooking (negative = loss). 0 if raw / unknown.
+    pub cooking_loss_percent: f32,
+    /// Processing state assigned by the recipe engine — "raw", "boiled",
+    /// "fried", "baked", "grilled", "steamed", …
+    pub state: String,
     pub role: String,
     pub available: bool,
     pub expiring_soon: bool,
@@ -152,6 +170,22 @@ pub struct SuggestedIngredient {
     /// row as pcs (egg ≈ 60 g, apple ≈ 180 g …).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typical_portion_g: Option<f32>,
+}
+
+/// Honest yield breakdown for a dish.
+///
+/// `gross → net → cooked` is the professional kitchen flow:
+///   • gross   — purchased / pulled from stock (used for cost)
+///   • net     — after trimming peels, bones, cores
+///   • cooked  — after water/fat losses during cooking (the real plate weight)
+///
+/// `total_loss_percent` = `(gross - cooked) / gross * 100`, capped at 0..=100.
+#[derive(Debug, Clone, Serialize)]
+pub struct YieldSummary {
+    pub gross_total_g: f32,
+    pub net_total_g: f32,
+    pub cooked_total_g: f32,
+    pub total_loss_percent: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -617,7 +651,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         let modifier = HealthModifier::None;
         let goal = HealthGoal::Balanced;
 
-        let tech_card = recipe_engine::resolve_dish(
+        let mut tech_card = recipe_engine::resolve_dish(
             &self.ingredient_cache,
             schema,
             goal,
@@ -630,6 +664,10 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         if tech_card.ingredients.is_empty() {
             return None;
         }
+
+        // Apply professional sanity caps (salt 2 g/serving, pepper 0.5 g, …)
+        // and recompute totals — protects from Gemini's occasional "5 g of black pepper".
+        cap_spices(&mut tech_card);
 
         // Compare with inventory
         let mut ingredients = Vec::new();
@@ -691,6 +729,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 name,
                 slug: slug.to_string(),
                 gross_g: ing.gross_g,
+                net_g: ing.cleaned_net_g,
+                cooked_g: ing.cooked_net_g,
+                trim_loss_percent: pct_loss(ing.gross_g, ing.cleaned_net_g, false),
+                cooking_loss_percent: pct_loss(ing.cleaned_net_g, ing.cooked_net_g, true),
+                state: ing.state.clone(),
                 role: ing.role.clone(),
                 available,
                 expiring_soon,
@@ -766,6 +809,9 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             tip: s.tip.clone(),
         }).collect();
 
+        // Honest yield summary — gross → net → cooked.
+        let yield_summary = build_yield_summary(&tech_card.ingredients);
+
         Some(SuggestedDish {
             dish_name: schema.dish.clone(),
             dish_name_local: schema.dish_local.clone(),
@@ -784,6 +830,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             per_serving_fat_g: tech_card.per_serving_fat,
             per_serving_carbs_g: tech_card.per_serving_carbs,
             servings,
+            yield_summary,
             steps,
             insight: DishInsight {
                 uses_expiring,
@@ -812,7 +859,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         modifier: HealthModifier,
         goal: HealthGoal,
     ) -> Option<SuggestedDish> {
-        let tech_card = recipe_engine::resolve_dish(
+        let mut tech_card = recipe_engine::resolve_dish(
             &self.ingredient_cache,
             schema,
             goal,
@@ -825,6 +872,10 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         if tech_card.ingredients.is_empty() {
             return None;
         }
+
+        // Apply professional sanity caps (salt/pepper/spices) before any
+        // cost / nutrition / yield calculation downstream.
+        cap_spices(&mut tech_card);
 
         // Compare with inventory
         let mut ingredients = Vec::new();
@@ -882,6 +933,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 name,
                 slug: slug.to_string(),
                 gross_g: ing.gross_g,
+                net_g: ing.cleaned_net_g,
+                cooked_g: ing.cooked_net_g,
+                trim_loss_percent: pct_loss(ing.gross_g, ing.cleaned_net_g, false),
+                cooking_loss_percent: pct_loss(ing.cleaned_net_g, ing.cooked_net_g, true),
+                state: ing.state.clone(),
                 role: ing.role.clone(),
                 available,
                 expiring_soon,
@@ -945,6 +1001,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             tip: s.tip.clone(),
         }).collect();
 
+        let yield_summary = build_yield_summary(&tech_card.ingredients);
+
         Some(SuggestedDish {
             dish_name: schema.dish.clone(),
             dish_name_local: schema.dish_local.clone(),
@@ -963,6 +1021,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             per_serving_fat_g: tech_card.per_serving_fat,
             per_serving_carbs_g: tech_card.per_serving_carbs,
             servings,
+            yield_summary,
             steps,
             insight: DishInsight {
                 uses_expiring,
@@ -1348,6 +1407,102 @@ fn typical_piece_weight_g(product_type: &str, slug: &str) -> f32 {
 
 /// Realistic markup for casual restaurants / home-cook → menu conversion.
 const MARKUP_FACTOR: f64 = 3.0;
+
+/// Cap an ingredient at a max gross_g; scales nutrition proportionally.
+fn scale_ingredient(ing: &mut recipe_engine::ResolvedIngredient, cap_g: f32) {
+    if ing.gross_g <= cap_g || ing.gross_g <= 0.0 { return; }
+    let r = cap_g / ing.gross_g;
+    ing.gross_g       = cap_g;
+    ing.cleaned_net_g = (ing.cleaned_net_g * r).max(0.0);
+    ing.cooked_net_g  = (ing.cooked_net_g  * r).max(0.0);
+    ing.kcal      = (ing.kcal as f32 * r).round() as u32;
+    ing.protein_g = (ing.protein_g * r * 10.0).round() / 10.0;
+    ing.fat_g     = (ing.fat_g     * r * 10.0).round() / 10.0;
+    ing.carbs_g   = (ing.carbs_g   * r * 10.0).round() / 10.0;
+}
+
+/// Apply professional sanity caps for spices/condiments per serving.
+/// Salt 1–2 g, black pepper 0.2–0.5 g, dried herbs/spices ≤ 1 g per serving.
+/// Without this Gemini sometimes returns "5 g of black pepper" — which is
+/// clearly wrong and ruins both nutrition and cost numbers.
+fn cap_spices(tech_card: &mut recipe_engine::TechCard) {
+    let servings = tech_card.servings.max(1) as f32;
+
+    for ing in tech_card.ingredients.iter_mut() {
+        let slug_owned = ing.resolved_slug.clone()
+            .unwrap_or_else(|| ing.slug_hint.clone())
+            .to_lowercase();
+        let slug = slug_owned.as_str();
+
+        // Salt: 2 g/serving max.
+        let cap_per_serving: Option<f32> =
+            if slug == "salt" || slug.contains("salt") { Some(2.0) }
+            // Black pepper: 0.5 g/serving max.
+            else if slug.contains("black-pepper") || slug == "pepper" || slug.contains("black pepper") { Some(0.5) }
+            // White / pink peppers: 0.5 g/serving.
+            else if slug.contains("white-pepper") || slug.contains("pink-pepper") { Some(0.5) }
+            // Dried herbs & general spices: 1 g/serving.
+            else if matches!(
+                slug, "paprika" | "cumin" | "oregano" | "thyme" | "basil" | "rosemary"
+                    | "coriander" | "turmeric" | "curry" | "cinnamon" | "nutmeg"
+                    | "cardamom" | "cayenne" | "chili" | "chili-powder"
+                    | "bay-leaf" | "dill" | "parsley" | "tarragon"
+            ) || slug.ends_with("-powder") { Some(1.0) }
+            else { None };
+
+        if let Some(per) = cap_per_serving {
+            scale_ingredient(ing, per * servings);
+        }
+    }
+
+    // Recompute totals after capping.
+    let g: f32  = tech_card.ingredients.iter().map(|i| i.gross_g).sum();
+    let out: f32 = tech_card.ingredients.iter().map(|i| i.cooked_net_g).sum();
+    let k: u32  = tech_card.ingredients.iter().map(|i| i.kcal).sum();
+    let p: f32  = tech_card.ingredients.iter().map(|i| i.protein_g).sum();
+    let f: f32  = tech_card.ingredients.iter().map(|i| i.fat_g).sum();
+    let c: f32  = tech_card.ingredients.iter().map(|i| i.carbs_g).sum();
+
+    tech_card.total_gross_g  = g;
+    tech_card.total_output_g = out;
+    tech_card.total_kcal     = k;
+    tech_card.total_protein  = (p * 10.0).round() / 10.0;
+    tech_card.total_fat      = (f * 10.0).round() / 10.0;
+    tech_card.total_carbs    = (c * 10.0).round() / 10.0;
+
+    let s = tech_card.servings.max(1) as f32;
+    tech_card.per_serving_kcal    = (k as f32 / s).round() as u32;
+    tech_card.per_serving_protein = ((p / s) * 10.0).round() / 10.0;
+    tech_card.per_serving_fat     = ((f / s) * 10.0).round() / 10.0;
+    tech_card.per_serving_carbs   = ((c / s) * 10.0).round() / 10.0;
+}
+
+/// Build a YieldSummary from already-resolved ingredients.
+/// Uses gross/cleaned_net/cooked_net which the recipe engine already computes.
+fn build_yield_summary(ings: &[recipe_engine::ResolvedIngredient]) -> YieldSummary {
+    let gross: f32  = ings.iter().map(|i| i.gross_g).sum();
+    let net: f32    = ings.iter().map(|i| i.cleaned_net_g).sum();
+    let cooked: f32 = ings.iter().map(|i| i.cooked_net_g).sum();
+    let loss = if gross > 0.0 {
+        (((gross - cooked) / gross) * 100.0 * 10.0).round() / 10.0
+    } else { 0.0 };
+    YieldSummary {
+        gross_total_g: (gross * 10.0).round() / 10.0,
+        net_total_g:   (net   * 10.0).round() / 10.0,
+        cooked_total_g:(cooked* 10.0).round() / 10.0,
+        total_loss_percent: loss.clamp(0.0, 100.0),
+    }
+}
+
+/// % loss/gain helper rounded to 1 dp, sign-preserving.
+/// trim:    (gross  - net)    / gross  * 100  (always >= 0, capped 0..100)
+/// cooking: (net    - cooked) / net    * 100  (negative when cooking adds water)
+fn pct_loss(from: f32, to: f32, allow_negative: bool) -> f32 {
+    if from <= 0.0 { return 0.0; }
+    let raw = ((from - to) / from) * 100.0;
+    let rounded = (raw * 10.0).round() / 10.0;
+    if allow_negative { rounded } else { rounded.clamp(0.0, 100.0) }
+}
 
 fn compute_economics(
     cost_cents: i64,
