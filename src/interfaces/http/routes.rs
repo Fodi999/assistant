@@ -558,6 +558,7 @@ pub fn create_router(
             let usage_service = crate::application::usage_service::UsageService::new(pool_for_public.clone());
             Router::new()
                 .route("/usage/today", get(crate::interfaces::http::usage::get_today))
+                .route("/usage/history", get(crate::interfaces::http::usage::get_history))
                 .route("/usage/action", post(crate::interfaces::http::usage::perform_action))
                 .route("/usage/actions", post(crate::interfaces::http::usage::perform_batch))
                 .route("/usage/purchase", post(crate::interfaces::http::usage::record_purchase))

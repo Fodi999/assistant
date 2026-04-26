@@ -2,7 +2,7 @@ use crate::application::usage_service::UsageService;
 use crate::domain::usage::{ActionType, UsageSnapshot};
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppError;
-use axum::{extract::State, http::HeaderMap, Json};
+use axum::{extract::{Query, State}, http::HeaderMap, Json};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -253,4 +253,33 @@ pub async fn grant_welcome_bonus(
         purchased_actions: after.purchased_actions,
         granted: !before.welcome_bonus && after.welcome_bonus,
     }))
+}
+
+// ============================================================================
+// GET /api/usage/history — wallet ledger (credits + debits)
+// ============================================================================
+
+use crate::domain::usage::WalletTransaction;
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryQuery {
+    /// Optional cap on returned rows (default 100, max 500).
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HistoryResponse {
+    pub transactions: Vec<WalletTransaction>,
+    pub total: i32,
+}
+
+pub async fn get_history(
+    auth: AuthUser,
+    State(service): State<UsageService>,
+    Query(q): Query<HistoryQuery>,
+) -> Result<Json<HistoryResponse>, AppError> {
+    let limit = q.limit.unwrap_or(100);
+    let transactions = service.get_history(auth.user_id, limit).await?;
+    let total = transactions.len() as i32;
+    Ok(Json(HistoryResponse { transactions, total }))
 }

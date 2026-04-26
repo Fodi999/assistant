@@ -210,3 +210,32 @@ pub struct BatchActionItem {
     pub reason: Option<DenyReason>,
     pub message: Option<String>,
 }
+
+// ============================================================================
+// Wallet history (unified credit + debit ledger)
+// ============================================================================
+
+/// Direction of a wallet event in the user's view.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransactionKind {
+    Credit,
+    Debit,
+}
+
+/// One row in the wallet history.
+///
+/// `actions` is ALWAYS positive — UI uses `kind` to decide sign/colour.
+/// `source` is a stable string the frontend translates:
+///   credit → "iap" | "welcome_bonus" | "weekly_bonus" | "promo"
+///   debit  → "generate_plan" | "create_recipe" | "scan_receipt" |
+///            "optimize_day" | "ai_chat"
+#[derive(Debug, Clone, Serialize)]
+pub struct WalletTransaction {
+    pub id: Uuid,
+    pub kind: TransactionKind,
+    pub source: String,
+    pub actions: i32,
+    pub paid_from: Option<String>, // 'free' | 'purchased' (debits only)
+    pub created_at: time::OffsetDateTime,
+}

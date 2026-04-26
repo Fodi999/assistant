@@ -1,6 +1,6 @@
 use crate::domain::usage::{
     ActionBalance, ActionResult, ActionSource, ActionType, BatchActionItem, BatchActionResult,
-    DailyUsage, DenyReason, ServerLimits, UsageSnapshot,
+    DailyUsage, DenyReason, ServerLimits, TransactionKind, UsageSnapshot, WalletTransaction,
 };
 use crate::shared::{AppError, AppResult, UserId};
 use sqlx::PgPool;
@@ -75,6 +75,62 @@ impl UsageService {
         .fetch_one(&self.pool)
         .await?;
         Ok(bonus.unwrap_or(0) as i32)
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // GET /api/usage/history — unified credit + debit ledger
+    // ────────────────────────────────────────────────────────────
+
+    /// Fetch the latest `limit` wallet transactions (credits + debits)
+    /// for a user, ordered by `created_at DESC`.
+    ///
+    /// Credits come from `usage_purchases`, debits from `usage_action_log`.
+    /// Both tables are joined into a single chronological feed via UNION ALL.
+    pub async fn get_history(&self, user_id: UserId, limit: i64) -> AppResult<Vec<WalletTransaction>> {
+        let uid = *user_id.as_uuid();
+        let limit = limit.clamp(1, 500);
+
+        let credits = sqlx::query_as::<_, CreditRow>(
+            "SELECT id, source, actions, created_at \
+             FROM usage_purchases WHERE user_id = $1"
+        )
+        .bind(uid)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let debits = sqlx::query_as::<_, DebitRow>(
+            "SELECT id, action_type, cost, paid_from, created_at \
+             FROM usage_action_log WHERE user_id = $1"
+        )
+        .bind(uid)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut tx: Vec<WalletTransaction> = Vec::with_capacity(credits.len() + debits.len());
+        for c in credits {
+            tx.push(WalletTransaction {
+                id: c.id,
+                kind: TransactionKind::Credit,
+                source: c.source,
+                actions: c.actions,
+                paid_from: None,
+                created_at: c.created_at,
+            });
+        }
+        for d in debits {
+            tx.push(WalletTransaction {
+                id: d.id,
+                kind: TransactionKind::Debit,
+                source: d.action_type,
+                actions: d.cost,
+                paid_from: Some(d.paid_from),
+                created_at: d.created_at,
+            });
+        }
+
+        tx.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        tx.truncate(limit as usize);
+        Ok(tx)
     }
 
     // ────────────────────────────────────────────────────────────
@@ -155,6 +211,14 @@ impl UsageService {
             .bind(uid).bind(today)
             .execute(&mut *tx).await?;
 
+            // Audit trail (free spend → cost = 0, paid_from = 'free')
+            sqlx::query(
+                "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
+                 VALUES ($1, $2, 0, 'free')"
+            )
+            .bind(uid).bind(action.as_str())
+            .execute(&mut *tx).await?;
+
             let remaining_free = limit - used - 1;
             let warning = remaining_free <= 1;
 
@@ -190,6 +254,14 @@ impl UsageService {
                  total_spent = total_spent + $2, updated_at = NOW() WHERE user_id = $1"
             )
             .bind(uid).bind(cost)
+            .execute(&mut *tx).await?;
+
+            // Audit trail (purchased spend)
+            sqlx::query(
+                "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
+                 VALUES ($1, $2, $3, 'purchased')"
+            )
+            .bind(uid).bind(action.as_str()).bind(cost)
             .execute(&mut *tx).await?;
 
             let new_purchased = balance.purchased_actions - cost;
@@ -272,6 +344,12 @@ impl UsageService {
 
             if used < limit {
                 increment_row(&mut usage_row, *action);
+                sqlx::query(
+                    "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
+                     VALUES ($1, $2, 0, 'free')"
+                )
+                .bind(uid).bind(action.as_str())
+                .execute(&mut *tx).await?;
                 items.push(BatchActionItem {
                     action: action.as_str().to_string(),
                     allowed: true, source: ActionSource::FreeTier,
@@ -281,6 +359,12 @@ impl UsageService {
                 increment_row(&mut usage_row, *action);
                 balance_row.purchased_actions -= cost;
                 balance_row.total_spent += cost;
+                sqlx::query(
+                    "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
+                     VALUES ($1, $2, $3, 'purchased')"
+                )
+                .bind(uid).bind(action.as_str()).bind(cost)
+                .execute(&mut *tx).await?;
                 items.push(BatchActionItem {
                     action: action.as_str().to_string(),
                     allowed: true, source: ActionSource::Purchased,
@@ -487,6 +571,23 @@ struct ServerLimitsRow {
     cost_scan: i32,
     cost_optimize: i32,
     cost_chat: i32,
+}
+
+#[derive(sqlx::FromRow)]
+struct CreditRow {
+    id: Uuid,
+    source: String,
+    actions: i32,
+    created_at: OffsetDateTime,
+}
+
+#[derive(sqlx::FromRow)]
+struct DebitRow {
+    id: Uuid,
+    action_type: String,
+    cost: i32,
+    paid_from: String,
+    created_at: OffsetDateTime,
 }
 
 fn daily_from_row(r: &DailyUsageRow) -> DailyUsage {
