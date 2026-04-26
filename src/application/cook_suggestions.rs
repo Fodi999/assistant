@@ -144,6 +144,14 @@ pub struct SuggestedIngredient {
     /// group ingredients visually.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Density g/ml — lets the client render the row as ml/l rather than
+    /// grams (milk 1.03, oil 0.91, honey 1.42 …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub density_g_per_ml: Option<f32>,
+    /// Typical mass of one piece in grams — lets the client render the
+    /// row as pcs (egg ≈ 60 g, apple ≈ 180 g …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub typical_portion_g: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -688,6 +696,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 expiring_soon,
                 image_url: ing.product.as_ref().and_then(|p| p.image_url.clone()),
                 category: ing.product.as_ref().map(|p| p.product_type.clone()),
+                density_g_per_ml: ing.product.as_ref().and_then(|p| p.density_g_per_ml),
+                typical_portion_g: ing.product.as_ref().and_then(|p| p.typical_portion_g),
             });
         }
 
@@ -877,6 +887,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 expiring_soon,
                 image_url: ing.product.as_ref().and_then(|p| p.image_url.clone()),
                 category: ing.product.as_ref().map(|p| p.product_type.clone()),
+                density_g_per_ml: ing.product.as_ref().and_then(|p| p.density_g_per_ml),
+                typical_portion_g: ing.product.as_ref().and_then(|p| p.typical_portion_g),
             });
         }
 

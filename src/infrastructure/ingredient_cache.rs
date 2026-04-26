@@ -31,6 +31,9 @@ pub struct IngredientData {
     pub product_type: String,
     /// Density for unit conversion: grams per 1 ml (e.g. water=1.0, honey=1.42, flour=0.55)
     pub density_g_per_ml: Option<f32>,
+    /// Typical mass of one piece in grams (e.g. egg=60, apple=180). Used to
+    /// render `pcs` instead of `g` for piece-counted produce on the client.
+    pub typical_portion_g: Option<f32>,
     /// Structured culinary behaviors from product_culinary_behavior table
     pub behaviors: Vec<CachedBehavior>,
     /// Processing states (raw, boiled, fried, …) with weight/water/fat changes.
@@ -211,6 +214,7 @@ impl IngredientCache {
                 ci.image_url,
                 COALESCE(ci.product_type, 'other')      as product_type,
                 ci.density_g_per_ml::REAL               as density_g_per_ml,
+                ci.typical_portion_g::REAL              as typical_portion_g,
                 pcb.behaviors as behaviors_json
             FROM catalog_ingredients ci
             LEFT JOIN product_culinary_behavior pcb ON pcb.product_id = ci.id
@@ -290,6 +294,7 @@ impl IngredientCache {
                         image_url: row.image_url,
                         product_type: row.product_type,
                         density_g_per_ml: row.density_g_per_ml,
+                        typical_portion_g: row.typical_portion_g,
                         behaviors,
                         states,
                     },
@@ -314,6 +319,7 @@ struct IngredientRow {
     image_url: Option<String>,
     product_type: String,
     density_g_per_ml: Option<f32>,
+    typical_portion_g: Option<f32>,
     behaviors_json: Option<serde_json::Value>,
 }
 
