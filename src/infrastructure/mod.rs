@@ -8,6 +8,7 @@ pub mod llm_adapter;
 pub mod persistence;
 pub mod r2_client;
 pub mod security;
+pub mod stripe_service; // 🆕 Stripe Checkout + Webhook
 
 pub use cache::AppCache;
 pub use config::*;
@@ -18,3 +19,4 @@ pub use llm_adapter::LlmAdapter;
 pub use persistence::*;
 pub use r2_client::R2Client;
 pub use security::*;
+pub use stripe_service::StripeService;

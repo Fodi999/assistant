@@ -34,6 +34,9 @@ argon2 = "0.5"
 jsonwebtoken = "9.2"
 sha2 = "0.10"
 base64ct = "=1.6.0"  # Pin to avoid edition2024
+hmac = "0.12"        # Stripe webhook signature verification
+hex = "0.4"          # Hex encoding for HMAC digest
+subtle = "2.5"       # Constant-time comparison for signature check
 
 # Validation
 validator = { version = "0.18", features = ["derive"] }

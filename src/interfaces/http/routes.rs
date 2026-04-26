@@ -373,7 +373,17 @@ pub fn create_router(
     let pool_for_smart_parse = pool.clone(); // 🆕 SmartParse
     let pool_for_cms = pool.clone();
     let pool_for_prefs = pool.clone(); // User preferences
+    let pool_for_billing = pool.clone(); // 🆕 Stripe billing
     let cms_service = CmsService::new(pool_for_cms, r2_client.clone());
+
+    // 🆕 Stripe service — optional. If env vars are missing the billing
+    // endpoints simply aren't mounted, the rest of the API stays online.
+    let stripe_service_opt = crate::infrastructure::StripeService::from_env();
+    if stripe_service_opt.is_none() {
+        tracing::warn!(
+            "STRIPE_SECRET_KEY not set — billing endpoints disabled (test mode unavailable)"
+        );
+    }
 
     // Protected routes
     let jwt_middleware = middleware::from_fn(move |req: Request, next: Next| {
@@ -554,7 +564,7 @@ pub fn create_router(
                 .route("/usage/welcome-bonus", post(crate::interfaces::http::usage::grant_welcome_bonus))
                 .with_state(usage_service)
         })
-        .layer(jwt_middleware);
+        .layer(jwt_middleware.clone());
 
     // Health check endpoint (no auth, no middleware)
     let health_route = Router::new().route("/health", get(|| async { "OK" }));
@@ -645,7 +655,9 @@ pub fn create_router(
             nutrition_service: admin_nutrition_service.clone(),
         });
 
-    // ── 🆕 ChefOS Chat Engine (POST /public/chat) ───────────────────────────
+    // ── 🆕 ChefOS Chat Engine (POST /api/chat) ──────────────────────────────
+    // Authenticated + billed via UsageService. user_id is derived from JWT,
+    // so anonymous abuse of LLM costs is impossible.
     let chat_engine = Arc::new(
         crate::application::rulebot::chat_engine::ChatEngine::new(
             Arc::clone(&ingredient_cache),
@@ -655,11 +667,16 @@ pub fn create_router(
             crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone()),
         )
     );
+    let chat_state = crate::interfaces::http::public::chat::AuthChatState {
+        engine: chat_engine,
+        usage: crate::application::usage_service::UsageService::new(pool_for_public.clone()),
+    };
     let chat_router = Router::new()
         .route("/chat", post(crate::interfaces::http::public::chat::chat_handler))
-        .with_state(chat_engine);
+        .with_state(chat_state);
 
-    // ── 🆕 Chat Events (telemetry) POST /public/chat/event ──────────────────
+    // ── 🆕 Chat Events (telemetry) POST /api/chat/event ─────────────────────
+    // Authenticated; user_id derived from JWT (no body spoofing).
     let chat_events_service = Arc::new(
         crate::application::chat_events_service::ChatEventsService::new(pool_for_prefs.clone())
     );
@@ -865,8 +882,6 @@ pub fn create_router(
         .merge(public_ingredients_router)
         .merge(public_tools_router)
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
-        .merge(chat_router)     // 🆕 ChefOS: POST /chat
-        .merge(chat_events_router) // 🆕 ChefOS: POST /chat/event (telemetry)
         .merge(public_catalog_router) // 🆕 ChefOS: GET /catalog/categories | /catalog/ingredients (no auth, ?lang=xx)
         .merge(public_catalog_detail_router) // 🆕 ChefOS: GET /catalog/ingredients/:slug (full nutrition detail)
         .merge(public_cms_router)
@@ -874,8 +889,58 @@ pub fn create_router(
         .merge(public_seo_content_router) // 🆕 AI SEO content
         .merge(public_intent_pages_router); // 🆕 Intent Pages pSEO
 
+    // ── 🔒 Protected ChefOS chat (authenticated + billed) ───────────────────
+    // Pay-per-action: each turn debits 1 free `chats_used` quota OR
+    // `cost_chat` purchased actions. user_id derived from JWT to prevent
+    // anonymous LLM-cost abuse.
+    let protected_chat_routes = Router::new()
+        .merge(chat_router)
+        .merge(chat_events_router)
+        .layer(jwt_middleware.clone());
+
+    // ── 🆕 Stripe billing routers ────────────────────────────────────────────
+    // Public:    GET  /api/billing/bundles   (catalog of available packs)
+    //            POST /webhooks/stripe       (HMAC-verified, never under JWT)
+    // Protected: POST /api/billing/checkout  (creates a Checkout Session)
+    let (billing_protected, billing_public_bundles, stripe_webhook_router) =
+        if let Some(stripe) = stripe_service_opt.clone() {
+            let billing_state = crate::interfaces::http::billing::BillingState {
+                stripe,
+                usage: crate::application::usage_service::UsageService::new(
+                    pool_for_billing.clone(),
+                ),
+                pool: pool_for_billing.clone(),
+            };
+
+            let protected = Router::new()
+                .route(
+                    "/billing/checkout",
+                    post(crate::interfaces::http::billing::create_checkout),
+                )
+                .with_state(billing_state.clone())
+                .layer(jwt_middleware);
+
+            let public_bundles = Router::new().route(
+                "/billing/bundles",
+                get(crate::interfaces::http::billing::list_bundles),
+            );
+
+            // Stripe webhook is intentionally NOT under jwt_middleware —
+            // Stripe authenticates itself via the Stripe-Signature header.
+            let webhook = Router::new()
+                .route(
+                    "/webhooks/stripe",
+                    post(crate::interfaces::http::billing::stripe_webhook),
+                )
+                .with_state(billing_state);
+
+            (Some(protected), Some(public_bundles), Some(webhook))
+        } else {
+            (None, None, None)
+        };
+
     // Combine all routes
-    Router::new()
+    let mut router = Router::new()
         .merge(health_route)
         .merge(chef_reference_routes)
         .nest("/public", public_router)
@@ -891,8 +956,21 @@ pub fn create_router(
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete
         .nest("/api", smart_parse_router) // 🆕 POST /api/smart/parse
         .nest("/api", smart_from_text_router) // 🆕 POST /api/smart/from-text
-        .nest("/api", protected_routes)
-        .layer(cors)
+        .nest("/api", protected_chat_routes) // 🔒 POST /api/chat + /api/chat/event (auth + billing)
+        .nest("/api", protected_routes);
+
+    // 🆕 Stripe billing — only mounted when STRIPE_SECRET_KEY is set.
+    if let Some(r) = billing_public_bundles {
+        router = router.nest("/api", r);
+    }
+    if let Some(r) = billing_protected {
+        router = router.nest("/api", r);
+    }
+    if let Some(r) = stripe_webhook_router {
+        router = router.merge(r); // 💳 /webhooks/stripe — root-level
+    }
+
+    router.layer(cors)
 }
 
 // ── Strict CORS builder ──

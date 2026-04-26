@@ -1,13 +1,24 @@
-//! HTTP handler for POST /public/chat — ChefOS Chat Interface.
+//! HTTP handler for POST /api/chat — ChefOS authenticated chat.
+//!
+//! Pay-per-action billing:
+//!   • Each chat turn debits 1 daily-free `AiChat` action OR `cost_chat`
+//!     purchased actions (server-truth via `UsageService::perform_action`).
+//!   • `user_id` is derived from the JWT (`AuthUser`) — never from the body.
+//!     This eliminates spoofing and prevents anonymous abuse of LLM costs.
+//!   • On quota exceeded → HTTP 402 Payment Required + usage snapshot
+//!     so the client can trigger a paywall / IAP flow.
 //!
 //! Request:
 //!   { "input": "что полезного поесть" }
 //!   { "input": "а сколько в нём калорий?", "context": { "last_product_slug": "salmon", "turn_count": 1 } }
 //!
-//! Response:
-//!   { "text": "...", "card": {...}, "intent": "healthy_product", "intents": [...],
-//!     "reason": "protein: 31.0g/100g", "lang": "ru", "timing_ms": 12,
-//!     "context": { "last_product_slug": "salmon", "turn_count": 2 } }
+//! Response 200:
+//!   { "text": "...", "cards": [...], "intent": "...", "context": {...},
+//!     "usage": { "chats_left": 4, "purchased_actions": 18, ... } }
+//!
+//! Response 402:
+//!   { "error": "quota_exceeded", "reason": "DailyLimitReached",
+//!     "message": "...", "usage": { "chats_left": 0, "purchased_actions": 0, ... } }
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -19,6 +30,17 @@ use crate::application::rulebot::chat_engine::ChatEngine;
 use crate::application::rulebot::chat_response::ChatResponse;
 use crate::application::rulebot::session_context::SessionContext;
 use crate::application::rulebot::intent_router::{detect_language, parse_input_with_context, DialogContext};
+use crate::application::usage_service::UsageService;
+use crate::domain::usage::{ActionSource, ActionType};
+use crate::interfaces::http::middleware::AuthUser;
+
+/// Combined state for the authenticated chat endpoint:
+/// engine for the LLM/rule pipeline + usage service for token billing.
+#[derive(Clone)]
+pub struct AuthChatState {
+    pub engine: Arc<ChatEngine>,
+    pub usage: UsageService,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
@@ -27,9 +49,6 @@ pub struct ChatRequest {
     /// Optional session context from the previous turn (client-side storage).
     #[serde(default)]
     pub context: SessionContext,
-    /// Optional user ID for personalized responses (from auth token).
-    #[serde(default)]
-    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,9 +59,10 @@ pub struct ChatApiResponse {
     pub context: SessionContext,
 }
 
-/// POST /public/chat
+/// POST /api/chat — authenticated, billed.
 pub async fn chat_handler(
-    State(engine): State<Arc<ChatEngine>>,
+    State(state): State<AuthChatState>,
+    auth: AuthUser,
     Json(req): Json<ChatRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let input = req.input.trim().to_string();
@@ -61,16 +81,37 @@ pub async fn chat_handler(
         );
     }
 
-    let response: ChatResponse = if let Some(ref uid_str) = req.user_id {
-        if let Ok(uuid) = uuid::Uuid::parse_str(uid_str) {
-            let user_id = crate::shared::UserId::from(uuid);
-            engine.handle_chat_with_user(&input, &req.context, Some(user_id)).await
-        } else {
-            engine.handle_chat_with_context(&input, &req.context).await
+    // ── Token / action billing — server-truth ─────────────────────────────
+    // Try to debit one AiChat action BEFORE running the (expensive) engine.
+    // Free tier first; falls back to purchased balance; otherwise 402.
+    let billing = match state.usage.perform_action(auth.user_id.clone(), ActionType::AiChat).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("usage.perform_action(AiChat) failed: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "usage_service_unavailable" })),
+            );
         }
-    } else {
-        engine.handle_chat_with_context(&input, &req.context).await
     };
+
+    if !billing.allowed {
+        return (
+            StatusCode::PAYMENT_REQUIRED,
+            Json(serde_json::json!({
+                "error": "quota_exceeded",
+                "reason": billing.reason.map(|r| format!("{:?}", r)),
+                "message": billing.message,
+                "usage": billing.usage,
+            })),
+        );
+    }
+
+    // Run the chat pipeline with the authenticated user id.
+    let response: ChatResponse = state
+        .engine
+        .handle_chat_with_user(&input, &req.context, Some(auth.user_id.clone()))
+        .await;
 
     // Build updated context for next turn
     let lang = detect_language(&input);
@@ -119,33 +160,43 @@ pub async fn chat_handler(
     let mut body = serde_json::to_value(&response).unwrap_or_default();
     if let serde_json::Value::Object(ref mut map) = body {
         map.insert("context".to_string(), serde_json::to_value(&updated_ctx).unwrap_or_default());
+        // Surface remaining quota so the UI can render counters / nudges
+        // without an extra round-trip to /api/usage/today.
+        map.insert("usage".to_string(), serde_json::to_value(&billing.usage).unwrap_or_default());
+        map.insert(
+            "billing_source".to_string(),
+            serde_json::Value::String(match billing.source {
+                ActionSource::FreeTier => "free_tier".to_string(),
+                ActionSource::Purchased => "purchased".to_string(),
+                ActionSource::Denied => "denied".to_string(),
+            }),
+        );
     }
 
     (StatusCode::OK, Json(body))
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// POST /public/chat/event — telemetry ingestion (Step 4)
+// POST /api/chat/event — telemetry ingestion (authenticated)
 // ══════════════════════════════════════════════════════════════════════════════
 
 use crate::application::chat_events_service::{ChatEvent, ChatEventsService};
 
 #[derive(Debug, Deserialize)]
 pub struct ChatEventRequest {
-    /// Caller's authenticated user id — optional (anonymous chat allowed).
-    #[serde(default)]
-    pub user_id: Option<String>,
     #[serde(flatten)]
     pub event: ChatEvent,
 }
 
-/// POST /public/chat/event
+/// POST /api/chat/event
 ///
-/// Fire-and-forget telemetry endpoint. Always returns 202 Accepted on
-/// valid payload; DB errors are logged server-side but never surfaced
-/// because telemetry must not break the chat flow.
+/// Fire-and-forget telemetry endpoint. `user_id` is derived from the JWT,
+/// never from the body. Always returns 202 Accepted on valid payload;
+/// DB errors are logged server-side but never surfaced because telemetry
+/// must not break the chat flow.
 pub async fn chat_event_handler(
     State(events): State<Arc<ChatEventsService>>,
+    auth: AuthUser,
     Json(req): Json<ChatEventRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     // Whitelist accepted event types — keeps the table clean.
@@ -166,15 +217,9 @@ pub async fn chat_event_handler(
         );
     }
 
-    let user_id = req
-        .user_id
-        .as_deref()
-        .and_then(|s| uuid::Uuid::parse_str(s).ok())
-        .map(crate::shared::UserId::from);
-
     // Fire-and-forget: we swallow errors on purpose so telemetry never
     // becomes a user-visible failure mode.
-    if let Err(e) = events.record(user_id, req.event).await {
+    if let Err(e) = events.record(Some(auth.user_id), req.event).await {
         tracing::warn!("chat_event insert failed: {e}");
     }
 
