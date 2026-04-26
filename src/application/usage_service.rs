@@ -61,6 +61,22 @@ impl UsageService {
         Ok((usage, balance))
     }
 
+    /// Sum of lifetime actions credited from non-IAP sources
+    /// (welcome bonus, weekly bonus, promo codes, manual grants).
+    /// Used by the AI Wallet card on the dashboard to display
+    /// the "bonus" subtotal underneath purchased totals.
+    pub async fn get_bonus_actions(&self, user_id: UserId) -> AppResult<i32> {
+        let uid = *user_id.as_uuid();
+        let bonus: Option<i64> = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(actions), 0) FROM usage_purchases \
+             WHERE user_id = $1 AND source <> 'iap'"
+        )
+        .bind(uid)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(bonus.unwrap_or(0) as i32)
+    }
+
     // ────────────────────────────────────────────────────────────
     // Idempotency
     // ────────────────────────────────────────────────────────────

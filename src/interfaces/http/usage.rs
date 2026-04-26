@@ -17,6 +17,14 @@ pub struct UsageTodayResponse {
     pub optimize_left: i32,
     pub chats_left: i32,
     pub purchased_actions: i32,
+    /// Lifetime total of actions ever credited (purchases + bonuses).
+    /// Used by the AI Wallet UI as the denominator of the progress bar.
+    pub total_purchased: i32,
+    /// Lifetime total of actions consumed from the purchased balance.
+    pub total_spent: i32,
+    /// Subset of `total_purchased` that came from non-IAP sources
+    /// (welcome bonus, weekly bonus, promo codes).
+    pub bonus_actions: i32,
     pub daily_limits: LimitsResponse,
     pub costs: CostsResponse,
     pub welcome_bonus_granted: bool,
@@ -47,6 +55,7 @@ pub async fn get_today(
     let _ = service.check_weekly_bonus(auth.user_id).await;
     let (usage, balance) = service.get_today(auth.user_id).await?;
     let limits = service.get_limits().await?;
+    let bonus_actions = service.get_bonus_actions(auth.user_id).await.unwrap_or(0);
 
     Ok(Json(UsageTodayResponse {
         plans_left: usage.free_remaining(ActionType::GeneratePlan, &limits),
@@ -55,6 +64,9 @@ pub async fn get_today(
         optimize_left: usage.free_remaining(ActionType::OptimizeDay, &limits),
         chats_left: usage.free_remaining(ActionType::AiChat, &limits),
         purchased_actions: balance.purchased_actions,
+        total_purchased: balance.total_purchased,
+        total_spent: balance.total_spent,
+        bonus_actions,
         daily_limits: LimitsResponse {
             plans: limits.plans,
             recipes: limits.recipes,
