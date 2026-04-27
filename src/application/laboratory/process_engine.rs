@@ -236,13 +236,9 @@ fn behavior_to_effect(
     let confidence = behavior.confidence.unwrap_or(0.7).clamp(0.0, 1.0);
 
     let message = match (step_temp, behavior.temperature_c) {
-        (Some(t), Some(threshold)) => format!(
-            "{display}: эффект '{label}' активируется при {threshold}°C (текущая {t}°C).",
-        ),
-        (Some(t), None) => format!(
-            "{display}: эффект '{label}' активируется при {t}°C.",
-        ),
-        _ => format!("{display}: эффект '{label}' активируется."),
+        (Some(t), Some(threshold)) => natural_effect_message(&effect_type, display, threshold, t),
+        (Some(t), None) => natural_effect_message_no_threshold(&effect_type, display, t),
+        _ => format!("{display}: активируется эффект «{label}».")
     };
 
     Some(LaboratoryEffect {
@@ -350,6 +346,61 @@ fn processing_effects_for(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Natural-language effect messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn natural_effect_message(effect_type: &str, display: &str, threshold: f64, actual: f64) -> String {
+    match effect_type {
+        "softening" | "texture_breakdown" => format!(
+            "При {actual}°C {display} быстро размягчается: структура становится мягкой и пюреобразной."
+        ),
+        "moisture_release" | "juice_release" => format!(
+            "При нагреве {display} выделяет сок, поэтому соус станет более жидким."
+        ),
+        "caramelization" => format!(
+            "При {actual}°C сахара в {display} начинают карамелизоваться — появляется золотистый цвет и сладковатый аромат."
+        ),
+        "maillard" | "browning" => format!(
+            "При {actual}°C в {display} запускается реакция Майяра: поверхность темнеет и появляется насыщенный аромат."
+        ),
+        "protein_denaturation" | "protein_change" => format!(
+            "При {actual}°C белки в {display} денатурируют — текстура уплотняется."
+        ),
+        "thickening" | "starch_gelatinization" => format!(
+            "При {actual}°C крахмал в {display} клейстеризуется — соус становится гуще."
+        ),
+        "vitamin_loss" | "nutrition_loss" => format!(
+            "Температура {actual}°C разрушает часть витаминов в {display}. Добавьте лимонный сок после охлаждения для компенсации."
+        ),
+        "smoke_risk" | "smoke" => format!(
+            "{display} перегревается: {actual}°C ≥ точки дымления {threshold}°C. Снизьте температуру."
+        ),
+        _ => format!(
+            "При {actual}°C в {display} активируется эффект «{}».",
+            label_for_effect(effect_type)
+        ),
+    }
+}
+
+fn natural_effect_message_no_threshold(effect_type: &str, display: &str, actual: f64) -> String {
+    match effect_type {
+        "softening" | "texture_breakdown" => format!(
+            "При {actual}°C {display} размягчается."
+        ),
+        "moisture_release" | "juice_release" => format!(
+            "При нагреве {display} выделяет сок — консистенция разжижается."
+        ),
+        "caramelization" => format!(
+            "При {actual}°C начинается карамелизация {display}."
+        ),
+        _ => format!(
+            "При {actual}°C в {display} активируется эффект «{}».",
+            label_for_effect(effect_type)
+        ),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn make_effect(
     slug: &str,
@@ -426,7 +477,7 @@ fn technique_effect(
         confidence: 0.9,
         trigger_temperature_c: None,
         actual_temperature_c: None,
-        message: format!("Техника '{technique}' применена {scope}."),
+        message: format!("Техника «{technique}» применена {scope}.",),
     })
 }
 

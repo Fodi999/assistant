@@ -61,11 +61,13 @@ pub struct LaboratoryPairingSuggestion {
     pub ingredient_name: String,
     /// 0.0 .. 100.0 — derived from `pairing_score` × `intensity` (×100).
     pub score: f64,
-    /// Optional human reason (e.g. "сочетается с сливками по поведению pcb").
+    /// Optional human reason (e.g. "сочетается со сливками по поведению pcb").
     pub reason: Option<String>,
     /// `culinary_behavior` for now; future sources may include
     /// `flavor_graph`, `chef_db`, etc.
     pub source: String,
+    /// Suggested culinary role of this pairing ingredient (e.g. "acid", "fat", "aroma", "texture").
+    pub role: Option<String>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,6 +243,52 @@ fn build_flavor_result(
 // Pairing extraction
 // ─────────────────────────────────────────────────────────────────────────────
 
+fn pairing_role_for(slug: &str) -> String {
+    let s = slug.to_lowercase();
+    // Acids / brightness
+    if s.contains("lemon") || s.contains("lime") || s.contains("vinegar")
+        || s.contains("yogurt") || s.contains("kefir") || s.contains("tamarind")
+        || s.contains("verjuice") || s.contains("cranberry")
+    {
+        return "кислотность".into();
+    }
+    // Fats / creaminess
+    if s.contains("cream") || s.contains("butter") || s.contains("oil") || s.contains("ghee")
+        || s.contains("coconut_milk") || s.contains("avocado")
+    {
+        return "кремовость".into();
+    }
+    // Sweeteners
+    if s.contains("honey") || s.contains("sugar") || s.contains("maple") || s.contains("agave")
+        || s.contains("molasses") || s.contains("date")
+    {
+        return "сладость".into();
+    }
+    // Texture / nuts / seeds
+    if s.contains("almond") || s.contains("walnut") || s.contains("pecan") || s.contains("seed")
+        || s.contains("pine_nut") || s.contains("cashew") || s.contains("pistachio")
+        || s.contains("hazelnut")
+    {
+        return "текстура".into();
+    }
+    // Aromatics / spices
+    if s.contains("vanilla") || s.contains("cinnamon") || s.contains("cardamom")
+        || s.contains("clove") || s.contains("star_anise") || s.contains("ginger")
+        || s.contains("mint") || s.contains("basil") || s.contains("thyme")
+        || s.contains("rosemary") || s.contains("bay")
+    {
+        return "аромат".into();
+    }
+    // Proteins
+    if s.contains("chicken") || s.contains("beef") || s.contains("pork") || s.contains("tofu")
+        || s.contains("fish") || s.contains("egg") || s.contains("cheese")
+        || s.contains("ricotta") || s.contains("feta")
+    {
+        return "белок".into();
+    }
+    "добавка".into()
+}
+
 fn collect_pairings(
     profiles: &[LaboratoryIngredientProfile],
     in_project: &HashSet<String>,
@@ -290,6 +338,7 @@ fn collect_pairings(
     let mut out: Vec<LaboratoryPairingSuggestion> = best
         .into_iter()
         .map(|(slug, (score, _src, reason))| LaboratoryPairingSuggestion {
+            role: Some(pairing_role_for(&slug)),
             ingredient_slug: Some(slug.clone()),
             ingredient_name: slug,
             score,
