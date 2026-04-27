@@ -283,6 +283,19 @@ impl CookSuggestionService {
         }
     }
 
+    /// Generate an AI dish photo for the given dish name + top ingredients.
+    /// Returns base64-encoded PNG as `data:image/png;base64,...`.
+    pub async fn generate_dish_image(
+        &self,
+        dish_name: &str,
+        ingredients: Vec<String>,
+    ) -> AppResult<String> {
+        let slug = dish_name.to_lowercase().replace(' ', "-");
+        self.llm_adapter
+            .generate_dish_image(&slug, dish_name, &ingredients)
+            .await
+    }
+
     /// Main entry: suggest dishes from user's current inventory.
     pub async fn suggest(
         &self,

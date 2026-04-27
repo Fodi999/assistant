@@ -511,6 +511,7 @@ pub fn create_router(
             );
             Router::new()
                 .route("/cook/suggestions", post(crate::interfaces::http::cook_suggestions::cook_suggestions))
+                .route("/cook/suggestions/dish-image", post(crate::interfaces::http::cook_suggestions::generate_dish_image))
                 .with_state(cook_service)
         })
         // Removed separate inventory_alert_service merge
