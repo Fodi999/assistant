@@ -6,6 +6,7 @@ pub mod catalog_ingredient_repository;
 pub mod dictionary_service;
 pub mod dish_repository;
 pub mod inventory_batch_repository;
+pub mod laboratory_repository; // 🆕 Laboratory: lab_projects / ingredients / steps / analysis
 pub mod recipe_ai_insights_repository; // AI insights repository
 pub mod recipe_repository;
 pub mod recipe_translation_repository;

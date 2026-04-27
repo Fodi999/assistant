@@ -514,6 +514,46 @@ pub fn create_router(
                 .route("/cook/suggestions/dish-image", post(crate::interfaces::http::cook_suggestions::generate_dish_image))
                 .with_state(cook_service)
         })
+        // 🆕 Laboratory — food-tech analysis projects (CRUD + /analyze)
+        .merge({
+            let lab_service = crate::application::laboratory::LaboratoryService::new(pool_for_prefs.clone());
+            Router::new()
+                .route(
+                    "/laboratory/projects",
+                    post(crate::interfaces::http::laboratory::create_project)
+                        .get(crate::interfaces::http::laboratory::list_projects),
+                )
+                .route(
+                    "/laboratory/projects/:id",
+                    get(crate::interfaces::http::laboratory::get_project)
+                        .delete(crate::interfaces::http::laboratory::delete_project),
+                )
+                .route(
+                    "/laboratory/projects/:id/ingredients",
+                    post(crate::interfaces::http::laboratory::add_ingredient),
+                )
+                .route(
+                    "/laboratory/projects/:id/ingredients/:ingredient_id",
+                    axum::routing::delete(crate::interfaces::http::laboratory::delete_ingredient),
+                )
+                .route(
+                    "/laboratory/projects/:id/steps",
+                    post(crate::interfaces::http::laboratory::add_step),
+                )
+                .route(
+                    "/laboratory/projects/:id/steps/:step_id",
+                    axum::routing::delete(crate::interfaces::http::laboratory::delete_step),
+                )
+                .route(
+                    "/laboratory/projects/:id/analyze",
+                    post(crate::interfaces::http::laboratory::analyze_project),
+                )
+                .route(
+                    "/laboratory/copilot/suggest",
+                    post(crate::interfaces::http::laboratory::copilot_suggest),
+                )
+                .with_state(lab_service)
+        })
         // Removed separate inventory_alert_service merge
         .merge(
             Router::new()

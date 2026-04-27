@@ -16,6 +16,7 @@ pub mod public;
 pub mod error;
 pub mod health;
 pub mod inventory;
+pub mod laboratory; // 🆕 Food-tech Laboratory HTTP handlers
 pub mod menu_engineering;
 pub mod middleware;
 pub mod recipe;

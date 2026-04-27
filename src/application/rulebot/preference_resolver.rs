@@ -171,6 +171,7 @@ mod tests {
             image_url: None,
             product_type: product_type.into(),
             density_g_per_ml: None,
+            typical_portion_g: None,
             behaviors: vec![],
             states: vec![],
         }

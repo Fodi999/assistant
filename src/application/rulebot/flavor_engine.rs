@@ -214,6 +214,7 @@ mod tests {
                 image_url: None,
                 product_type: "fruit".into(),
                 density_g_per_ml: None,
+                typical_portion_g: None,
                 behaviors: vec![
                     make_behavior("sweetness_increase", "+", 0.9),
                 ],

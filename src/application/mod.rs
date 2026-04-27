@@ -13,6 +13,7 @@ pub mod cook_suggestions; // 🆕 Smart recipe suggestions from inventory
 pub mod dish;
 pub mod inventory;
 pub mod inventory_alert;
+pub mod laboratory; // 🆕 Food-tech Laboratory — analysis projects on top of catalog
 pub mod menu_engineering;
 pub mod recipe;
 pub mod recipe_ai_insights_service; // AI insights service
