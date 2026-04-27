@@ -332,6 +332,17 @@ Pick the best match. Do not invent values."#,
                 AppError::internal("No image data in Gemini response")
             })?;
 
+        // Log token usage from usageMetadata
+        if let Some(usage) = json.pointer("/usageMetadata") {
+            let prompt_tokens   = usage.pointer("/promptTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
+            let output_tokens   = usage.pointer("/candidatesTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
+            let total_tokens    = usage.pointer("/totalTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
+            tracing::info!(
+                "🪙 Dish image tokens for '{}': prompt={} output={} total={}",
+                dish_name, prompt_tokens, output_tokens, total_tokens
+            );
+        }
+
         tracing::info!("✅ Dish image generated for '{}' ({} base64 chars)", dish_name, base64.len());
         Ok(base64)
     }
