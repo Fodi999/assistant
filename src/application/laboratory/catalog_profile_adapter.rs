@@ -386,7 +386,7 @@ impl CatalogProfileAdapter {
     async fn fetch_processing_effects(&self, ids: &[Uuid]) -> HashMap<Uuid, ProcessingRow> {
         let sql = r#"
             SELECT product_id, vitamin_retention_pct, protein_denature_temp,
-                   best_cooking_method, maillard_temp
+                   best_cooking_method_en, maillard_temp
             FROM product_processing_effects
             WHERE product_id = ANY($1)
         "#;
@@ -401,7 +401,7 @@ impl CatalogProfileAdapter {
                             protein_denature_temp: opt_real(&r, "protein_denature_temp"),
                             vitamin_retention_pct: opt_real(&r, "vitamin_retention_pct"),
                             best_cooking_method: r
-                                .try_get("best_cooking_method")
+                                .try_get("best_cooking_method_en")
                                 .ok()
                                 .flatten(),
                         },
@@ -417,7 +417,7 @@ impl CatalogProfileAdapter {
 
     async fn fetch_health_profile(&self, ids: &[Uuid]) -> HashMap<Uuid, HealthRow> {
         let sql = r#"
-            SELECT product_id, food_role, bioactive_compounds, contraindications
+            SELECT product_id, food_role, bioactive_compounds_en, contraindications_en
             FROM product_health_profile
             WHERE product_id = ANY($1)
         "#;
@@ -430,10 +430,10 @@ impl CatalogProfileAdapter {
                         HealthRow {
                             food_role: r.try_get("food_role").ok().flatten(),
                             bioactive_compounds: parse_string_array(
-                                r.try_get("bioactive_compounds").ok().flatten(),
+                                r.try_get("bioactive_compounds_en").ok().flatten(),
                             ),
                             contraindications: parse_string_array(
-                                r.try_get("contraindications").ok().flatten(),
+                                r.try_get("contraindications_en").ok().flatten(),
                             ),
                         },
                     )
