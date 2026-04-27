@@ -183,7 +183,10 @@ impl LlmAdapter {
         // Check cache first — images are expensive to generate
         if let Some(cached_val) = self.cache_repo.get(&cache_key).await? {
             if let Some(b64) = cached_val.as_str() {
-                tracing::info!("🖼 Dish image cache hit: {}", dish_slug);
+                tracing::info!(
+                    "🖼 Dish image cache_hit=true slug={} | estimated cost: $0.000 / 0.00 PLN",
+                    dish_slug
+                );
                 return Ok(b64.to_string());
             }
         }

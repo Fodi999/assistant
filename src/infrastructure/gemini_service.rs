@@ -337,9 +337,25 @@ Pick the best match. Do not invent values."#,
             let prompt_tokens   = usage.pointer("/promptTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
             let output_tokens   = usage.pointer("/candidatesTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
             let total_tokens    = usage.pointer("/totalTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
+            // Gemini 2.5 Flash pricing (as of 2025):
+            //   text input  = $0.15 / 1M tokens
+            //   image output = $0.039 per image (fixed, billed as output tokens ~1272 tokens)
+            let input_cost_usd  = (prompt_tokens as f64) * 0.15 / 1_000_000.0;
+            let output_cost_usd = (output_tokens as f64) * 0.039 / 1272.0; // ~$0.039 per image
+            let total_cost_usd  = input_cost_usd + output_cost_usd;
+            let total_cost_pln  = total_cost_usd * 4.05; // approx USD→PLN
             tracing::info!(
-                "🪙 Dish image tokens for '{}': prompt={} output={} total={}",
-                dish_name, prompt_tokens, output_tokens, total_tokens
+                "🪙 Dish image tokens for '{}': prompt={} output={} total={} | cache_hit=false | estimated cost: ${:.4} / {:.2} PLN",
+                dish_name, prompt_tokens, output_tokens, total_tokens,
+                total_cost_usd, total_cost_pln
+            );
+        } else {
+            // No usageMetadata — log fixed estimate (~1 image = $0.039)
+            let cost_usd = 0.039_f64;
+            let cost_pln = cost_usd * 4.05;
+            tracing::info!(
+                "🪙 Dish image '{}': cache_hit=false | estimated cost: ${:.4} / {:.2} PLN (no usageMetadata)",
+                dish_name, cost_usd, cost_pln
             );
         }
 
