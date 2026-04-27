@@ -383,6 +383,7 @@ mod tests {
             sort_order: 0,
             notes: None,
             created_at: OffsetDateTime::now_utc(),
+            merged: None,
         }
     }
 

@@ -122,9 +122,9 @@ impl LaboratoryService {
             return Err(AppError::validation("unit cannot be empty"));
         }
 
-        let row = self
+        let (row, merged) = self
             .repo
-            .insert_ingredient(NewLabProjectIngredient {
+            .upsert_ingredient(NewLabProjectIngredient {
                 project_id,
                 ingredient_slug: slug,
                 quantity: req.quantity,
@@ -137,7 +137,11 @@ impl LaboratoryService {
                 notes: req.notes.map(|n| n.trim().to_string()).filter(|s| !s.is_empty()),
             })
             .await?;
-        Ok(row.into())
+        let mut dto: LabProjectIngredientDto = row.into();
+        if merged {
+            dto.merged = Some(true);
+        }
+        Ok(dto)
     }
 
     pub async fn delete_ingredient(
@@ -176,6 +180,45 @@ impl LaboratoryService {
             }
         }
 
+        let target_slugs: Option<Vec<String>> = req.target_slugs.map(|v| {
+            v.into_iter()
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        });
+
+        // ── Duplicate-step guard (Laboratory v2) ─────────────────────────
+        // Block trivially-identical back-to-back steps so the visual story
+        // doesn't degenerate into "softening → softening → softening".
+        // We compare against the *last* step of the project on:
+        //   * technique
+        //   * temperature_c
+        //   * duration_min
+        //   * target_slugs (order-insensitive)
+        if let Some(prev) = self.repo.latest_step(project_id).await? {
+            let prev_targets: Vec<String> =
+                prev.target_slugs.clone().unwrap_or_default();
+            let new_targets: Vec<String> =
+                target_slugs.clone().unwrap_or_default();
+            let same_targets = {
+                let mut a = prev_targets.clone();
+                let mut b = new_targets.clone();
+                a.sort();
+                b.sort();
+                a == b
+            };
+            if prev.technique == technique
+                && prev.temperature_c == req.temperature_c
+                && prev.duration_min == req.duration_min
+                && same_targets
+            {
+                return Err(AppError::conflict(
+                    "DUPLICATE_STEP: похожий шаг уже идёт последним. \
+                     Повторяйте его только если это технологически необходимо.",
+                ));
+            }
+        }
+
         let row = self
             .repo
             .insert_step(NewLabProcessStep {
@@ -184,12 +227,7 @@ impl LaboratoryService {
                 technique,
                 temperature_c: req.temperature_c,
                 duration_min: req.duration_min,
-                target_slugs: req.target_slugs.map(|v| {
-                    v.into_iter()
-                        .map(|s| s.trim().to_lowercase())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                }),
+                target_slugs,
                 notes: req.notes.map(|n| n.trim().to_string()).filter(|s| !s.is_empty()),
             })
             .await?;

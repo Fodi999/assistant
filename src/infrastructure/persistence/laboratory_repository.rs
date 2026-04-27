@@ -233,7 +233,29 @@ impl LaboratoryRepository {
         &self,
         ing: NewLabProjectIngredient,
     ) -> AppResult<LabProjectIngredientRow> {
-        // Auto-assign sort_order = max+1 if not provided.
+        let (row, _merged) = self.upsert_ingredient(ing).await?;
+        Ok(row)
+    }
+
+    /// Insert a new ingredient row OR merge into the existing one when
+    /// `(project_id, ingredient_slug, unit)` already exists for this project.
+    ///
+    /// Merge behaviour (Laboratory v2):
+    /// * `quantity`  ← old + new
+    /// * `role`      ← keep existing if set, otherwise take new
+    /// * `notes`     ← keep existing if set, otherwise take new
+    /// * `sort_order`← unchanged on conflict (keeps the user's layout)
+    ///
+    /// Returns `(row, merged)` where `merged == true` when this call
+    /// updated an existing row instead of inserting a fresh one.
+    /// Detection uses Postgres' `xmax <> 0` system column trick on the
+    /// returned row of an `INSERT ... ON CONFLICT DO UPDATE`.
+    pub async fn upsert_ingredient(
+        &self,
+        ing: NewLabProjectIngredient,
+    ) -> AppResult<(LabProjectIngredientRow, bool)> {
+        // Auto-assign sort_order = max+1 only when this is a fresh insert.
+        // (For an UPDATE path the column simply isn't touched.)
         let sort_order: i32 = match ing.sort_order {
             Some(v) => v,
             None => {
@@ -248,13 +270,19 @@ impl LaboratoryRepository {
             }
         };
 
-        let row = sqlx::query_as::<_, LabProjectIngredientRow>(
+        use sqlx::Row;
+        let rec = sqlx::query(
             r#"
             INSERT INTO lab_project_ingredients
                 (project_id, ingredient_slug, quantity, unit, role, sort_order, notes)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (project_id, ingredient_slug, unit) DO UPDATE SET
+                quantity = lab_project_ingredients.quantity + EXCLUDED.quantity,
+                role     = COALESCE(lab_project_ingredients.role,  EXCLUDED.role),
+                notes    = COALESCE(lab_project_ingredients.notes, EXCLUDED.notes)
             RETURNING id, project_id, ingredient_slug, quantity, unit, role, sort_order,
-                      notes, created_at
+                      notes, created_at,
+                      (xmax <> 0) AS merged
             "#,
         )
         .bind(ing.project_id)
@@ -266,8 +294,21 @@ impl LaboratoryRepository {
         .bind(&ing.notes)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| AppError::internal(format!("insert_ingredient: {e}")))?;
-        Ok(row)
+        .map_err(|e| AppError::internal(format!("upsert_ingredient: {e}")))?;
+
+        let merged: bool = rec.try_get("merged").unwrap_or(false);
+        let row = LabProjectIngredientRow {
+            id: rec.try_get("id").map_err(|e| AppError::internal(format!("upsert_ingredient row id: {e}")))?,
+            project_id: rec.try_get("project_id").map_err(|e| AppError::internal(format!("upsert_ingredient row project_id: {e}")))?,
+            ingredient_slug: rec.try_get("ingredient_slug").map_err(|e| AppError::internal(format!("upsert_ingredient row slug: {e}")))?,
+            quantity: rec.try_get("quantity").map_err(|e| AppError::internal(format!("upsert_ingredient row quantity: {e}")))?,
+            unit: rec.try_get("unit").map_err(|e| AppError::internal(format!("upsert_ingredient row unit: {e}")))?,
+            role: rec.try_get("role").ok(),
+            sort_order: rec.try_get("sort_order").map_err(|e| AppError::internal(format!("upsert_ingredient row sort_order: {e}")))?,
+            notes: rec.try_get("notes").ok(),
+            created_at: rec.try_get("created_at").map_err(|e| AppError::internal(format!("upsert_ingredient row created_at: {e}")))?,
+        };
+        Ok((row, merged))
     }
 
     pub async fn list_ingredients(
@@ -372,6 +413,26 @@ impl LaboratoryRepository {
         .await
         .map_err(|e| AppError::internal(format!("list_steps: {e}")))?;
         Ok(rows)
+    }
+
+    /// Returns the highest-`order_index` step of a project, used by the
+    /// service layer to detect "back-to-back identical step" duplicates.
+    pub async fn latest_step(&self, project_id: Uuid) -> AppResult<Option<LabProcessStepRow>> {
+        let row = sqlx::query_as::<_, LabProcessStepRow>(
+            r#"
+            SELECT id, project_id, order_index, technique, temperature_c, duration_min,
+                   target_slugs, notes, created_at
+            FROM lab_process_steps
+            WHERE project_id = $1
+            ORDER BY order_index DESC, created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(project_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("latest_step: {e}")))?;
+        Ok(row)
     }
 
     pub async fn delete_step_for_owner(

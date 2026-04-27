@@ -59,6 +59,13 @@ pub struct LaboratorySceneFrame {
     pub prompt_hint: String,
     /// Optional URL of a previously generated image (filled by a later step).
     pub image_url: Option<String>,
+    /// How many adjacent technologically-identical steps were collapsed into
+    /// this single frame (Laboratory v2 — keeps the visual narrative clean
+    /// when a user repeats `heat 85°C 15min` two times in a row).
+    /// `None` for the default case (== 1, single source step).
+    /// `Some(n)` where `n >= 2` means the frame represents `n` repeated steps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeated_count: Option<i32>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,6 +96,7 @@ pub fn build_visual_story(
         composition: "top-down studio shot of fresh ingredients on a wooden board".into(),
         prompt_hint: prompt_raw(&primary, ingredients),
         image_url: None,
+        repeated_count: None,
     });
     order += 1;
 
@@ -117,7 +125,18 @@ pub fn build_visual_story(
         composition: "hero plating shot, soft natural light, shallow depth of field".into(),
         prompt_hint: prompt_ready(product_type.as_deref(), &primary),
         image_url: None,
+        repeated_count: None,
     });
+
+    // ── (4) Collapse adjacent technologically-identical step frames ───────
+    //
+    // After a user iterates on the recipe, the same step may appear back-to-
+    // back (e.g. legacy data created before the duplicate-step guard, or two
+    // steps that happen to produce the same scene_key + tokens because they
+    // share temperature + technique). We merge them into a single frame and
+    // record how many were folded together via `repeated_count`. The opening
+    // "raw" and closing "ready" frames are never collapsed.
+    let scenes = collapse_adjacent_identical(scenes);
 
     let headline = headline_for(&primary, product_type.as_deref(), &scenes);
 
@@ -178,7 +197,38 @@ fn scene_for_step(
         composition,
         prompt_hint,
         image_url: None,
+        repeated_count: None,
     }
+}
+
+/// Walks the scene list once and merges back-to-back frames whose
+/// `(scene_key, technique-equivalent visual_tokens)` are identical. Opening
+/// `raw` and closing `ready` frames are intentionally untouched.
+fn collapse_adjacent_identical(scenes: Vec<LaboratorySceneFrame>) -> Vec<LaboratorySceneFrame> {
+    let mut out: Vec<LaboratorySceneFrame> = Vec::with_capacity(scenes.len());
+    for frame in scenes.into_iter() {
+        let can_merge = frame.scene_key != "raw" && frame.scene_key != "ready";
+        if can_merge {
+            if let Some(prev) = out.last_mut() {
+                let prev_can_merge = prev.scene_key != "raw" && prev.scene_key != "ready";
+                if prev_can_merge
+                    && prev.scene_key == frame.scene_key
+                    && prev.visual_tokens == frame.visual_tokens
+                {
+                    // Fold this frame into the previous one.
+                    prev.repeated_count = Some(prev.repeated_count.unwrap_or(1) + 1);
+                    continue;
+                }
+            }
+        }
+        out.push(frame);
+    }
+    // Re-number order_index after collapses so the frontend timeline stays
+    // contiguous (0..n).
+    for (i, f) in out.iter_mut().enumerate() {
+        f.order_index = i as i32;
+    }
+    out
 }
 
 fn scene_key_for(technique: &str, dominant: Option<&LaboratoryEffect>) -> String {
@@ -474,6 +524,7 @@ mod tests {
             sort_order: 0,
             notes: None,
             created_at: OffsetDateTime::now_utc(),
+            merged: None,
         }
     }
 
@@ -568,5 +619,49 @@ mod tests {
         let steps = vec![step(1, "heat", Some(85.0)), step(2, "blend", None)];
         let pt = infer_product_type(&steps);
         assert_eq!(pt.as_deref(), Some("sauce"));
+    }
+
+    #[test]
+    fn adjacent_identical_step_frames_collapse_with_repeated_count() {
+        // Two identical "heat 85°C" steps in a row → single visual frame
+        // tagged with `repeated_count = 2`. Opening/closing untouched.
+        let ings = vec![ing("apricot", "300", Some("base"))];
+        let steps = vec![
+            step(1, "heat", Some(85.0)),
+            step(2, "heat", Some(85.0)),
+        ];
+        let story = build_visual_story(
+            &ings,
+            &steps,
+            &LaboratoryProcessAnalysis::default(),
+            Some("sauce"),
+        );
+        // raw + 1 collapsed step + ready
+        assert_eq!(story.scenes.len(), 3, "scenes={:?}", story.scenes);
+        assert_eq!(story.scenes[0].scene_key, "raw");
+        assert_eq!(story.scenes[1].scene_key, "heated");
+        assert_eq!(story.scenes[1].repeated_count, Some(2));
+        assert_eq!(story.scenes[2].scene_key, "ready");
+        // order_index re-numbered after collapse.
+        assert_eq!(story.scenes[0].order_index, 0);
+        assert_eq!(story.scenes[1].order_index, 1);
+        assert_eq!(story.scenes[2].order_index, 2);
+    }
+
+    #[test]
+    fn distinct_steps_do_not_collapse() {
+        let ings = vec![ing("apricot", "300", Some("base"))];
+        let steps = vec![
+            step(1, "heat", Some(85.0)),
+            step(2, "blend", None),
+        ];
+        let story = build_visual_story(
+            &ings,
+            &steps,
+            &LaboratoryProcessAnalysis::default(),
+            Some("sauce"),
+        );
+        assert_eq!(story.scenes.len(), 4); // raw + heat + blend + ready
+        assert!(story.scenes.iter().all(|s| s.repeated_count.is_none()));
     }
 }

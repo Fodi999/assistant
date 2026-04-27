@@ -187,6 +187,38 @@ pub fn analyze_process(
             step_effects.push(tech_effect);
         }
 
+        // ── (2b) dedupe within this step (Laboratory v2) ──────────────────
+        // Catalog rules + technique rules occasionally emit the same
+        // (slug, effect_type, visual_token) triplet (e.g. juice_release fired
+        // by both behaviour and technique). Keep only the strongest one so
+        // the Visual Story right-panel doesn't show the same chip 2-3x.
+        {
+            use std::collections::HashMap;
+            let mut best: HashMap<(Option<String>, String, String), LaboratoryEffect> =
+                HashMap::new();
+            for eff in step_effects.drain(..) {
+                let key = (
+                    eff.ingredient_slug.clone(),
+                    eff.effect_type.clone(),
+                    eff.visual_token.clone(),
+                );
+                match best.get(&key) {
+                    Some(existing) if existing.intensity >= eff.intensity => {}
+                    _ => {
+                        best.insert(key, eff);
+                    }
+                }
+            }
+            step_effects = best.into_values().collect();
+            // Stable order for downstream consumers.
+            step_effects.sort_by(|a, b| {
+                b.intensity
+                    .partial_cmp(&a.intensity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.visual_token.cmp(&b.visual_token))
+            });
+        }
+
         analysis.step_effects.push(LaboratoryStepEffects {
             step_id: step.id,
             order_index: step.order_index,
@@ -610,6 +642,7 @@ mod tests {
             sort_order: 0,
             notes: None,
             created_at: OffsetDateTime::now_utc(),
+            merged: None,
         }
     }
 

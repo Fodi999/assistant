@@ -83,6 +83,12 @@ pub struct LabProjectIngredientDto {
     pub sort_order: i32,
     pub notes: Option<String>,
     pub created_at: OffsetDateTime,
+    /// Set to `Some(true)` when this row was returned from an `add_ingredient`
+    /// call that merged into an existing line (slug+unit already in project).
+    /// Omitted from the JSON payload otherwise — list/get endpoints never
+    /// emit this field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merged: Option<bool>,
 }
 
 impl From<LabProjectIngredientRow> for LabProjectIngredientDto {
@@ -96,6 +102,7 @@ impl From<LabProjectIngredientRow> for LabProjectIngredientDto {
             sort_order: r.sort_order,
             notes: r.notes,
             created_at: r.created_at,
+            merged: None,
         }
     }
 }
