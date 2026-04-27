@@ -25,6 +25,7 @@ use super::types::{
     CopilotSuggestStep, CreateLabProjectRequest, LabProcessStepDto, LabProjectAnalysisDto,
     LabProjectFull, LabProjectIngredientDto, LabProjectSummary,
 };
+use super::visual_story_engine::{self, LaboratoryVisualStory};
 
 #[derive(Clone)]
 pub struct LaboratoryService {
@@ -321,7 +322,69 @@ impl LaboratoryService {
         self.hydrate_project(project.into(), owner_id).await
     }
 
-    // ── Copilot ─────────────────────────────────────────────────────────────
+    // ── Visual story (Step 9) ───────────────────────────────────────────────
+
+    /// `POST /api/laboratory/projects/:id/generate-scenes`
+    ///
+    /// Builds a deterministic visual story (frame plan) from the project's
+    /// ingredients, steps and **most recent** persisted analysis. Pure: no
+    /// AI call here, no DB write. Frontend uses the returned `scenes[]` to
+    /// render the story-player; a follow-up step will fill `image_url`s
+    /// with Gemini Image / Imagen output.
+    ///
+    /// Errors:
+    ///  * `Ok(None)` — project does not exist (or is not owned by `owner_id`)
+    ///  * `Err(Conflict)` — project has no analysis yet → run `/analyze` first
+    pub async fn generate_visual_story(
+        &self,
+        owner_id: Uuid,
+        project_id: Uuid,
+    ) -> AppResult<Option<LaboratoryVisualStory>> {
+        // 1) Ownership.
+        let project = match self
+            .repo
+            .get_project_for_owner(project_id, owner_id)
+            .await?
+        {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+        // 2) Children + latest analysis in parallel.
+        let (ingredient_rows, step_rows, latest_analysis) = tokio::try_join!(
+            self.repo.list_ingredients(project_id),
+            self.repo.list_steps(project_id),
+            self.repo.latest_analysis(project_id),
+        )?;
+
+        let ingredients: Vec<LabProjectIngredientDto> =
+            ingredient_rows.into_iter().map(Into::into).collect();
+        let steps: Vec<LabProcessStepDto> = step_rows.into_iter().map(Into::into).collect();
+
+        // 3) Require an analysis snapshot — visual story is downstream of /analyze.
+        let analysis_row = latest_analysis.ok_or_else(|| {
+            AppError::conflict(
+                "Run /analyze on this project before generating visual scenes.",
+            )
+        })?;
+
+        // 4) Decode persisted process effects → engine struct.
+        //    Stored shape: `{ "step_effects": [...], "global_effects": [...] }`
+        //    `warnings` is missing from the stored blob (it lives in its own
+        //    column) — `#[serde(default)]` on the engine type makes that fine.
+        let process_analysis: LaboratoryProcessAnalysis =
+            serde_json::from_value(analysis_row.process_effects.clone()).unwrap_or_default();
+
+        // 5) Build the story (pure, deterministic).
+        let story = visual_story_engine::build_visual_story(
+            &ingredients,
+            &steps,
+            &process_analysis,
+            project.target_product_type.as_deref(),
+        );
+
+        Ok(Some(story))
+    }
 
     /// `POST /api/laboratory/copilot/suggest`
     ///

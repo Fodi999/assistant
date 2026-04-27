@@ -23,7 +23,7 @@
 //!   no time-dependent simulation yet.
 
 use rust_decimal::prelude::ToPrimitive;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -35,30 +35,36 @@ use super::types::{LabProcessStepDto, LabProjectIngredientDto};
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Final analysis bundle returned by the engine.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LaboratoryProcessAnalysis {
+    #[serde(default)]
     pub step_effects: Vec<LaboratoryStepEffects>,
+    #[serde(default)]
     pub global_effects: Vec<LaboratoryEffect>,
+    #[serde(default)]
     pub warnings: Vec<LaboratoryWarning>,
 }
 
 /// All effects produced by a single step, grouped under that step's id.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaboratoryStepEffects {
     pub step_id: Uuid,
     pub order_index: i32,
     pub technique: String,
     pub temperature_c: Option<f64>,
     pub duration_min: Option<i32>,
+    #[serde(default)]
     pub effects: Vec<LaboratoryEffect>,
 }
 
 /// One frontend-ready effect.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaboratoryEffect {
     /// `None` when the effect is global to the step (e.g. a technique-only
     /// effect with no targets).
+    #[serde(default)]
     pub ingredient_slug: Option<String>,
+    #[serde(default)]
     pub ingredient_name: Option<String>,
     /// Domain-level effect category (`maillard`, `protein_change`, …).
     pub effect_type: String,
@@ -71,17 +77,21 @@ pub struct LaboratoryEffect {
     /// 0.0 .. 1.0 — how confident we are in the prediction.
     pub confidence: f64,
     /// Threshold from catalog (if any).
+    #[serde(default)]
     pub trigger_temperature_c: Option<f64>,
     /// Step temperature actually used (if any).
+    #[serde(default)]
     pub actual_temperature_c: Option<f64>,
     /// Free-form, locale-agnostic explanation. i18n later.
+    #[serde(default)]
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaboratoryWarning {
     pub kind: String,
     pub severity: String, // "info" | "warning" | "critical"
+    #[serde(default)]
     pub ingredient_slug: Option<String>,
     pub message: String,
 }

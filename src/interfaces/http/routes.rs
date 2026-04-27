@@ -549,6 +549,10 @@ pub fn create_router(
                     post(crate::interfaces::http::laboratory::analyze_project),
                 )
                 .route(
+                    "/laboratory/projects/:id/generate-scenes",
+                    post(crate::interfaces::http::laboratory::generate_scenes),
+                )
+                .route(
                     "/laboratory/copilot/suggest",
                     post(crate::interfaces::http::laboratory::copilot_suggest),
                 )

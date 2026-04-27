@@ -24,9 +24,11 @@ pub mod process_engine;
 pub mod service;
 pub mod shelf_life_engine;
 pub mod types;
+pub mod visual_story_engine;
 
 pub use catalog_profile_adapter::{
     CatalogProfileAdapter, LaboratoryCulinaryBehavior, LaboratoryIngredientProfile,
 };
 pub use service::LaboratoryService;
 pub use types::*;
+pub use visual_story_engine::{LaboratorySceneFrame, LaboratoryVisualStory};

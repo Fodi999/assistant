@@ -17,6 +17,7 @@ use crate::application::laboratory::{
     AddLabIngredientRequest, AddLabStepRequest, CopilotSuggestRequest, CopilotSuggestResponse,
     CreateLabProjectRequest, LabProcessStepDto,
     LabProjectFull, LabProjectIngredientDto, LabProjectSummary, LaboratoryService,
+    LaboratoryVisualStory,
 };
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::{AppError, Language};
@@ -187,5 +188,32 @@ pub async fn copilot_suggest(
 
     let response = svc.suggest_draft(&body.prompt, language).await?;
     Ok(Json(response))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Visual story (Step 9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `POST /api/laboratory/projects/:id/generate-scenes`
+///
+/// Returns the deterministic visual story (`raw → … → ready`) built from
+/// the project's latest analysis. Image generation (Gemini / Imagen) is
+/// intentionally **not** wired here yet — `image_url` is `null` for every
+/// frame so the frontend can already build its story-player.
+///
+/// Status codes:
+///  * `200 OK`        — story returned
+///  * `404 NOT_FOUND` — project does not exist or is not owned by the caller
+///  * `409 CONFLICT`  — project has no analysis yet (run `/analyze` first)
+pub async fn generate_scenes(
+    auth: AuthUser,
+    State(svc): State<LaboratoryService>,
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<LaboratoryVisualStory>, AppError> {
+    let story = svc
+        .generate_visual_story(*auth.user_id.as_uuid(), project_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Laboratory project not found"))?;
+    Ok(Json(story))
 }
 
