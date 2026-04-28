@@ -181,6 +181,49 @@ pub struct ProductVisualSpec {
     /// Free-form short description ("thick red sauce with herb specks").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Visible surface geometry — filled by Vision for sauce_in_bowl / plate_food.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<ProductSurfaceSpec>,
+}
+
+/// Surface geometry parameters estimated by Gemini Vision.
+///
+/// All fields are optional so old Gemini responses (without `surface`) keep
+/// deserializing correctly. Generators should call `.unwrap_or(default)`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProductSurfaceSpec {
+    /// General surface pattern:
+    /// `"flat"` | `"swirl"` | `"spiral_swirl"` | `"mound"` | `"waves"` | `"chunky"` | `"unknown"`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+    /// Number of visible swirl arms (1–8). Relevant for swirl / spiral_swirl.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swirl_arms: Option<u8>,
+    /// Height of ridges relative to container radius (0.0 = flat, 1.0 = very tall).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ridge_height: Option<f32>,
+    /// Depth of grooves between ridges (0.0 = none, 1.0 = deep).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub groove_depth: Option<f32>,
+    /// Height of the centre peak relative to container radius (0.0 = flat, 1.0 = prominent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center_peak: Option<f32>,
+    /// Fraction of container radius the sauce fills (0.80–1.0, typical 0.92–0.96).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill_radius_ratio: Option<f32>,
+    /// Gap between sauce edge and container rim as a fraction of radius (0.0–0.20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rim_gap_ratio: Option<f32>,
+    /// Degree of random noise / organic imperfection (0.0 = perfect, 1.0 = very rough).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_irregularity: Option<f32>,
+    /// Strength of specular highlight in the centre (0.0 = none, 1.0 = very bright).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight_strength: Option<f32>,
+    /// Camera angle used to estimate the surface:
+    /// `"top_down"` | `"three_quarter"` | `"side"` | `"unknown"`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_angle: Option<String>,
 }
 
 /// Optional scene hints (lighting, surface). Generators may ignore.

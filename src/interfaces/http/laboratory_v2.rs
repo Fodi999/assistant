@@ -12,13 +12,14 @@ use axum::{
     http::{header, StatusCode},
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::laboratory_v2::{
     Laboratory3DAsset, LaboratoryImage, LaboratoryV2Service, RegisterImagePayload,
 };
 use crate::infrastructure::geometry::kernel::GeometryQuality;
+use crate::infrastructure::gemini::GeminiVision3D;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppError;
 
@@ -139,4 +140,90 @@ pub async fn get_asset(
 ) -> Result<Json<Laboratory3DAsset>, AppError> {
     let asset = svc.get_asset(asset_id, *auth.user_id.as_uuid()).await?;
     Ok(Json(asset))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `POST /laboratory/debug-vision`
+//
+// Development / QA endpoint. Does NOT touch the DB.
+// Accepts a multipart `file` part, sends it straight to Gemini Vision,
+// and returns:
+//   {
+//     "image_size_bytes": 12345,
+//     "mime_type": "image/jpeg",
+//     "gemini_model": "gemini-2.5-flash",
+//     "tokens": { "prompt": 1234, "output": 56, "total": 1290 },
+//     "raw_response": "{ … }", // exactly what Gemini returned
+//     "parsed_spec": { … }     // the decoded Product3DSpec
+//   }
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct DebugVisionResponse {
+    pub image_size_bytes: usize,
+    pub mime_type: String,
+    pub gemini_model: String,
+    pub tokens: DebugVisionTokens,
+    pub raw_response: serde_json::Value,
+    pub parsed_spec: serde_json::Value,
+}
+
+#[derive(Serialize)]
+pub struct DebugVisionTokens {
+    pub prompt: u64,
+    pub output: u64,
+    pub total: u64,
+}
+
+pub async fn debug_vision(
+    _auth: AuthUser,
+    State(vision): State<std::sync::Arc<GeminiVision3D>>,
+    request: Request,
+) -> Result<Json<DebugVisionResponse>, AppError> {
+    let mut multipart = Multipart::from_request(request, &())
+        .await
+        .map_err(|e| AppError::validation(format!("invalid multipart: {e}")))?;
+
+    let mut bytes: Option<Vec<u8>> = None;
+    let mut mime: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::validation(format!("multipart field: {e}")))?
+    {
+        if field.name() == Some("file") {
+            mime = field.content_type().map(str::to_owned);
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| AppError::validation(format!("multipart read: {e}")))?;
+            bytes = Some(data.to_vec());
+            break;
+        }
+    }
+
+    let bytes = bytes.ok_or_else(|| AppError::validation("missing `file` part"))?;
+    let mime = mime.unwrap_or_else(|| "image/jpeg".to_string());
+    let image_size = bytes.len();
+
+    let result = vision
+        .analyze_image_for_3d_with_usage(bytes, &mime)
+        .await?;
+
+    let raw_json: serde_json::Value = serde_json::to_value(&result.spec)
+        .unwrap_or(serde_json::Value::Null);
+
+    Ok(Json(DebugVisionResponse {
+        image_size_bytes: image_size,
+        mime_type: mime,
+        gemini_model: "gemini-2.5-flash".to_string(),
+        tokens: DebugVisionTokens {
+            prompt: result.usage.prompt_tokens,
+            output: result.usage.output_tokens,
+            total: result.usage.total_tokens,
+        },
+        raw_response: raw_json.clone(),
+        parsed_spec: raw_json,
+    }))
 }

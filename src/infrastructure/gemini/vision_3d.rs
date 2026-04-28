@@ -77,13 +77,30 @@ Schema (all keys required unless marked optional):
     "color_hex": "#RRGGBB",           // dominant colour of the product itself
     "viscosity": 0.0..1.0,            // optional, only for liquids/sauces (0=water, 1=paste)
     "gloss": 0.0..1.0,                // optional (0=matte, 1=mirror)
-    "description": "short phrase"     // optional, e.g. "thick red sauce with herb specks"
+    "description": "short phrase",    // optional, e.g. "thick red sauce with herb specks"
+    "surface": {                      // optional — fill for sauce_in_bowl and plate_food
+      "pattern": "flat" | "swirl" | "spiral_swirl" | "mound" | "waves" | "chunky" | "unknown",
+      "swirl_arms": 1..8,             // integer — number of visible swirl arms
+      "ridge_height": 0.0..1.0,       // height of ridges (0=flat, 1=very tall)
+      "groove_depth": 0.0..1.0,       // depth of grooves between ridges
+      "center_peak": 0.0..1.0,        // height of centre peak (0=flat, 1=prominent dome)
+      "fill_radius_ratio": 0.0..1.0,  // fraction of container radius the product fills (typical 0.88–0.97)
+      "rim_gap_ratio": 0.0..0.20,     // gap between product edge and rim as fraction of radius
+      "surface_irregularity": 0.0..1.0, // organic noise (0=perfect, 1=very rough/chunky)
+      "highlight_strength": 0.0..1.0, // specular highlight in centre (0=none, 1=bright)
+      "view_angle": "top_down" | "three_quarter" | "side" | "unknown"
+    }
   },
   "scene": {                          // optional
     "background": "...",
     "lighting": "..."
   }
 }
+
+For sauce_in_bowl: do not only classify the product — estimate the visible surface geometry.
+If the sauce has a spiral swirl, set pattern="spiral_swirl" and estimate swirl_arms, ridge_height,
+groove_depth, center_peak, fill_radius_ratio and rim_gap_ratio from what is visible in the image.
+If the surface is flat or featureless, set pattern="flat" and leave other surface fields at 0.
 
 Return ONLY this JSON. No backticks. No commentary."##;
 
@@ -156,7 +173,7 @@ impl GeminiVision3D {
             generation_config: GenerationConfig {
                 temperature: 0.0,
                 response_mime_type: "application/json".to_string(),
-                max_output_tokens: 1024,
+                max_output_tokens: 1536,
             },
         };
 
@@ -251,9 +268,10 @@ impl GeminiVision3D {
         })?;
 
         tracing::info!(
-            "✅ vision_3d: object_type={} confidence={:.2}",
+            "✅ vision_3d: object_type={} confidence={:.2}\n📋 raw_gemini_response:\n{}",
             spec.object_type.as_str(),
-            spec.confidence
+            spec.confidence,
+            cleaned,
         );
 
         Ok(VisionResult { spec, usage })
@@ -348,7 +366,19 @@ mod tests {
             "color_hex": "#B8321F",
             "viscosity": 0.6,
             "gloss": 0.3,
-            "description": "thick red tomato sauce"
+            "description": "thick red tomato sauce",
+            "surface": {
+                "pattern": "spiral_swirl",
+                "swirl_arms": 4,
+                "ridge_height": 0.8,
+                "groove_depth": 0.7,
+                "center_peak": 0.6,
+                "fill_radius_ratio": 0.96,
+                "rim_gap_ratio": 0.04,
+                "surface_irregularity": 0.3,
+                "highlight_strength": 0.9,
+                "view_angle": "top_down"
+            }
         },
         "scene": {
             "background": "white",
@@ -367,6 +397,11 @@ mod tests {
         assert_eq!(container.diameter_mm, Some(120.0));
         assert_eq!(spec.product.color_hex, "#B8321F");
         assert_eq!(spec.effective_object_type(), Product3DObjectType::SauceInBowl);
+        let surface = spec.product.surface.as_ref().expect("surface should be present");
+        assert_eq!(surface.pattern.as_deref(), Some("spiral_swirl"));
+        assert_eq!(surface.swirl_arms, Some(4));
+        assert!((surface.ridge_height.unwrap() - 0.8).abs() < 1e-4);
+        assert_eq!(surface.view_angle.as_deref(), Some("top_down"));
     }
 
     #[test]

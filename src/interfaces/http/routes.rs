@@ -574,6 +574,7 @@ pub fn create_router(
                 );
             }
             let vision = Arc::new(GeminiVision3D::new(vision_api_key));
+            let vision_for_debug = vision.clone();
             let lab_v2_service = crate::application::laboratory_v2::LaboratoryV2Service::new(
                 pool_for_prefs.clone(),
                 storage,
@@ -593,6 +594,14 @@ pub fn create_router(
                     get(crate::interfaces::http::laboratory_v2::get_asset),
                 )
                 .with_state(lab_v2_service)
+                .merge(
+                    Router::new()
+                        .route(
+                            "/laboratory/debug-vision",
+                            post(crate::interfaces::http::laboratory_v2::debug_vision),
+                        )
+                        .with_state(vision_for_debug),
+                )
         })
         // Removed separate inventory_alert_service merge
         .merge(
