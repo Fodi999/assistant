@@ -1,46 +1,53 @@
-//! Bottled-sauce generator (PR #7).
+//! Bottled-sauce generator (PR #12 — kernel rewrite).
 //!
-//! Produces a single mesh with **four material groups**:
+//! Realistic sauce / oil / dressing bottle. Built entirely from the geometry
+//! kernel (profile → lathe → mesh_builder + disk fans), so shading and UVs
+//! are consistent with `jar_product` and the upcoming bowl/plate generators.
 //!
-//!   1. **Body** — main vertical cylinder, the bottle wall (glass or plastic).
-//!   2. **Neck** — short frustum tapering from body radius to cap radius.
-//!   3. **Cap** — short cylinder + top disk on top of the neck.
-//!   4. **Liquid** — inner cylinder filled with the product colour, with a
-//!      visible meniscus disk near the top of the body (so the colour shows
-//!      through the open neck once the frontend applies glass transmission).
+//! Output mesh has **four material groups**:
+//!   1. `bottle_glass` / `bottle_plastic` — full lathed exterior
+//!      (body → shoulder → neck) as one continuous profile so the normals
+//!      flow smoothly across the shoulder transition.
+//!   2. `bottle_glass` / `bottle_plastic` — bottom cap disk (same material,
+//!      separate group; keeps the disk's hard edge from pulling neighbouring
+//!      wall normals downward).
+//!   3. `cap_metal` — lathed cap with chamfered top & bottom + sealed top
+//!      and underside disks.
+//!   4. `liquid_material` — inner lathed liquid surface (smaller radius
+//!      than the bottle wall to avoid z-fight) + meniscus disk so the
+//!      colour reads through transmissive glass.
 //!
-//! Naming convention for materials is important: the frontend (`ObjViewer`)
-//! upgrades materials by name —
-//!   * `*glass*` → `MeshPhysicalMaterial` with transmission/opacity
-//!   * `*liquid*` / `*sauce*` → glossy `MeshStandardMaterial`
-//!   * `*metal*` / `*cap*` → metallic `MeshStandardMaterial`
+//! Frontend material upgrade rules (in `ModelViewer.tsx`):
+//!   * `*glass*` → transmissive `MeshPhysicalMaterial`
+//!   * `*plastic*` → falls through to default standard material
+//!   * `*metal*|*lid*|*cap*` → metallic
+//!   * `*liquid*|*sauce*|*product*` → glossy diffuse
 //!
-//! All geometry is in metres, Y-up, centred at origin (Y = 0 is mid-height of
-//! the body). Dimensions can be driven by `ContainerSpec` `diameter_mm` /
-//! `height_mm` in a later PR.
+//! Y-up, centred at origin, all units in metres.
 
-use std::f32::consts::PI;
+use crate::infrastructure::geometry::kernel::{
+    disk_fan_down, disk_fan_up, lathe_profile, MeshBuilder, Profile, ProfilePoint,
+};
+use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
-use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, MaterialGroup, Mesh};
-
-/// Tessellation around the rotational axis.
 const SEGMENTS: usize = 48;
 
-// ── Default dimensions (metres) ─────────────────────────────────────────────
-const BODY_RADIUS: f32 = 0.030; // 3 cm — slim sauce bottle
-const BODY_HEIGHT: f32 = 0.120; // 12 cm
-const NECK_HEIGHT: f32 = 0.025; // 2.5 cm shoulder + neck
-const NECK_TOP_RADIUS: f32 = 0.011; // 1.1 cm
-const CAP_HEIGHT: f32 = 0.018; // 1.8 cm
-const CAP_RADIUS: f32 = 0.013; // slightly wider than neck
-
-/// How full the bottle is (0..1) — used to position the liquid meniscus.
-const FILL_RATIO: f32 = 0.85;
-
 // ── Default colours ─────────────────────────────────────────────────────────
-const BOTTLE_GLASS_COLOR: [f32; 3] = [0.90, 0.93, 0.92]; // very light cool tint
+const BOTTLE_GLASS_COLOR: [f32; 3] = [0.90, 0.93, 0.92];
 const BOTTLE_PLASTIC_COLOR: [f32; 3] = [0.96, 0.96, 0.96];
 const CAP_DEFAULT_COLOR: [f32; 3] = [0.55, 0.55, 0.58]; // brushed metal grey
+
+// ── Geometry constants (metres) ─────────────────────────────────────────────
+// Bottle exterior — see `bottle_body_profile()` for the actual profile.
+const BODY_RADIUS: f32 = 0.030; // 3 cm widest point on body
+const NECK_RADIUS: f32 = 0.011; // 1.1 cm at the neck top
+const NECK_TOP_Y: f32 = 0.076;
+const CAP_BOTTOM_Y: f32 = 0.076;
+const CAP_TOP_Y: f32 = 0.096;
+const CAP_RADIUS: f32 = 0.015; // slightly wider than neck
+const CAP_INNER_RADIUS: f32 = 0.013; // bottom/top after chamfer
+
+const BOTTOM_DISK_RADIUS: f32 = 0.026; // matches first profile point
 
 /// Container kind hints from `ContainerSpec.kind`.
 #[derive(Debug, Clone, Copy)]
@@ -72,6 +79,55 @@ impl BottleKind {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Profiles
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Bottle exterior — bottom inset → bottom bevel → straight body →
+/// shoulder transition → neck. Eight points total; the curve compresses
+/// the shoulder over ~16 mm and the neck stays at constant 1.1 cm.
+fn bottle_body_profile() -> Profile {
+    Profile::new(vec![
+        ProfilePoint::new(0.026, -0.060), // bottom inset (foot)
+        ProfilePoint::new(0.030, -0.056), // bottom bevel — wall starts here
+        ProfilePoint::new(0.030, 0.020),  // straight body
+        ProfilePoint::new(0.029, 0.028),  // shoulder begins (subtle taper)
+        ProfilePoint::new(0.026, 0.036),  // shoulder mid
+        ProfilePoint::new(0.016, 0.050),  // shoulder ends, narrow neck base
+        ProfilePoint::new(0.011, 0.056),  // neck base
+        ProfilePoint::new(0.011, 0.076),  // neck top (NECK_TOP_Y)
+    ])
+    .expect("hard-coded bottle body profile is valid")
+}
+
+/// Inner liquid surface — slightly smaller than the bottle wall to avoid
+/// z-fight, with the meniscus sitting just below the shoulder.
+fn liquid_profile() -> Profile {
+    Profile::new(vec![
+        ProfilePoint::new(0.027, -0.055), // inner bottom
+        ProfilePoint::new(0.027, 0.018),  // inner straight wall
+        ProfilePoint::new(0.023, 0.032),  // shoulder narrowing
+        ProfilePoint::new(0.010, 0.050),  // tucked under the bottle shoulder
+    ])
+    .expect("hard-coded liquid profile is valid")
+}
+
+/// Cap exterior — bottom chamfer → straight wall → top chamfer.
+/// Both chamfers are 2 mm tall, giving the cap two extra highlight bands.
+fn cap_profile() -> Profile {
+    Profile::new(vec![
+        ProfilePoint::new(CAP_INNER_RADIUS, CAP_BOTTOM_Y),
+        ProfilePoint::new(CAP_RADIUS, CAP_BOTTOM_Y + 0.002), // bottom chamfer
+        ProfilePoint::new(CAP_RADIUS, CAP_TOP_Y - 0.002),    // straight wall
+        ProfilePoint::new(CAP_INNER_RADIUS, CAP_TOP_Y),      // top chamfer
+    ])
+    .expect("hard-coded cap profile is valid")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public entrypoint
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Generate a bottled-sauce mesh.
 ///
 /// - `liquid_color_hex` — hex colour of the sauce inside (`product.color_hex`).
@@ -86,222 +142,65 @@ pub fn generate(
     let bottle_color = bottle_kind.default_color();
     let cap_color = cap_color_hex.map(hex_to_rgb).unwrap_or(CAP_DEFAULT_COLOR);
 
-    let mut verts: Vec<[f32; 3]> = Vec::new();
-    let mut norms: Vec<[f32; 3]> = Vec::new();
-    let mut uvs: Vec<[f32; 2]> = Vec::new();
+    let mut b = MeshBuilder::new();
 
-    // Reference Y coordinates (centre of body at Y = 0).
-    let body_bottom = -BODY_HEIGHT / 2.0;
-    let body_top = BODY_HEIGHT / 2.0;
-    let neck_top = body_top + NECK_HEIGHT;
-    let cap_bottom = neck_top;
-    let cap_top = neck_top + CAP_HEIGHT;
-    let liquid_top_y = body_bottom + BODY_HEIGHT * FILL_RATIO;
-
-    // ── Body (cylinder + bottom disk) ───────────────────────────────────────
-    let mut body_faces: Vec<[usize; 3]> = Vec::new();
-    append_cylinder_wall(
-        &mut verts,
-        &mut norms,
-        &mut uvs,
-        &mut body_faces,
-        BODY_RADIUS,
-        BODY_RADIUS,
-        body_bottom,
-        body_top,
+    // Group 1: bottle exterior wall (continuous lathe — keeps shoulder smooth).
+    let bottle_wall_g = b.add_group(
+        Material::solid(bottle_kind.material_name(), bottle_color)
+            .with_gloss(0.55, 96.0),
     );
-    append_disk(
-        &mut verts,
-        &mut norms,
-        &mut uvs,
-        &mut body_faces,
-        BODY_RADIUS,
-        body_bottom,
-        false, // facing -Y
+    // Group 2: bottle bottom disk (same material, separate group so the
+    // normal seam doesn't pull the wall normals downward).
+    let bottle_bottom_g = b.add_group(
+        Material::solid(bottle_kind.material_name(), bottle_color)
+            .with_gloss(0.55, 96.0),
+    );
+    // Group 3: cap.
+    let cap_g = b.add_group(Material::solid("cap_metal", cap_color).with_gloss(0.60, 64.0));
+    // Group 4: liquid interior + meniscus.
+    let liquid_g = b.add_group(
+        Material::solid("liquid_material", liquid_color).with_gloss(0.55, 96.0),
     );
 
-    // ── Neck (frustum) ──────────────────────────────────────────────────────
-    let mut neck_faces: Vec<[usize; 3]> = Vec::new();
-    append_cylinder_wall(
-        &mut verts,
-        &mut norms,
-        &mut uvs,
-        &mut neck_faces,
-        BODY_RADIUS,      // bottom radius (matches body)
-        NECK_TOP_RADIUS,  // top radius (narrower)
-        body_top,
-        neck_top,
-    );
+    // ── Bottle exterior wall ────────────────────────────────────────────────
+    let body = lathe_profile(&bottle_body_profile(), SEGMENTS)
+        .expect("lathe bottle body");
+    b.add_part(bottle_wall_g, &body);
 
-    // ── Cap (cylinder + top disk) ───────────────────────────────────────────
-    let mut cap_faces: Vec<[usize; 3]> = Vec::new();
-    append_cylinder_wall(
-        &mut verts,
-        &mut norms,
-        &mut uvs,
-        &mut cap_faces,
-        CAP_RADIUS,
-        CAP_RADIUS,
-        cap_bottom,
-        cap_top,
-    );
-    append_disk(
-        &mut verts,
-        &mut norms,
-        &mut uvs,
-        &mut cap_faces,
-        CAP_RADIUS,
-        cap_top,
-        true, // facing +Y
-    );
+    // ── Bottle bottom disk ──────────────────────────────────────────────────
+    let bottom_cap = disk_fan_down(BOTTOM_DISK_RADIUS, -0.060, SEGMENTS)
+        .expect("bottle bottom disk");
+    b.add_part(bottle_bottom_g, &bottom_cap);
 
-    // ── Liquid (slightly inset cylinder + meniscus disk) ────────────────────
-    // Inset so a glass shader doesn't z-fight with the bottle wall.
-    let liquid_radius = BODY_RADIUS * 0.96;
-    let mut liquid_faces: Vec<[usize; 3]> = Vec::new();
-    append_cylinder_wall(
-        &mut verts,
-        &mut norms,
-        &mut uvs,
-        &mut liquid_faces,
-        liquid_radius,
-        liquid_radius,
-        body_bottom + 0.0005, // tiny lift off the inner bottom
-        liquid_top_y,
-    );
-    append_disk(
-        &mut verts,
-        &mut norms,
-        &mut uvs,
-        &mut liquid_faces,
-        liquid_radius,
-        liquid_top_y,
-        true, // meniscus faces +Y
-    );
+    // ── Cap ─────────────────────────────────────────────────────────────────
+    let cap_wall = lathe_profile(&cap_profile(), SEGMENTS).expect("lathe cap");
+    b.add_part(cap_g, &cap_wall);
+    let cap_top = disk_fan_up(CAP_INNER_RADIUS, CAP_TOP_Y, SEGMENTS)
+        .expect("cap top disk");
+    b.add_part(cap_g, &cap_top);
+    // Underside ring of the cap so it isn't open from below.
+    let cap_under = disk_fan_down(CAP_INNER_RADIUS, CAP_BOTTOM_Y, SEGMENTS)
+        .expect("cap underside disk");
+    b.add_part(cap_g, &cap_under);
 
-    // ── Materials ───────────────────────────────────────────────────────────
-    let bottle_mat = Material::solid(bottle_kind.material_name(), bottle_color)
-        // Glassy / glossy highlight — frontend will upgrade by name.
-        .with_gloss(0.45, 80.0);
-    let neck_mat = Material::solid(bottle_kind.material_name(), bottle_color)
-        .with_gloss(0.45, 80.0);
-    let cap_mat = Material::solid("cap_metal", cap_color).with_gloss(0.60, 64.0);
-    let liquid_mat =
-        Material::solid("liquid_material", liquid_color).with_gloss(0.55, 96.0);
+    // ── Liquid (inner wall + meniscus) ──────────────────────────────────────
+    let liquid_wall =
+        lathe_profile(&liquid_profile(), SEGMENTS).expect("lathe liquid");
+    b.add_part(liquid_g, &liquid_wall);
+    // Meniscus sits at the topmost liquid profile point.
+    let menisc_radius = liquid_profile().points.last().unwrap().radius;
+    let menisc_y = liquid_profile().points.last().unwrap().y;
+    let meniscus =
+        disk_fan_up(menisc_radius, menisc_y, SEGMENTS).expect("liquid meniscus");
+    b.add_part(liquid_g, &meniscus);
 
-    Mesh::new_multi(
-        verts,
-        norms,
-        uvs,
-        vec![
-            MaterialGroup { material: bottle_mat, faces: body_faces },
-            // Neck shares the same kind of material but lives in its own group
-            // to keep the OBJ structure clean and to allow per-group tweaks
-            // later (e.g. label band on the body only).
-            MaterialGroup { material: neck_mat, faces: neck_faces },
-            MaterialGroup { material: cap_mat, faces: cap_faces },
-            MaterialGroup { material: liquid_mat, faces: liquid_faces },
-        ],
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Geometry helpers (generic cylinder wall + disk).
-// Local copies — kept here to avoid prematurely abstracting; will be lifted
-// into a shared `primitives` module once a 3rd generator needs them.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Append a (possibly tapered) cylinder wall between `y_bot` and `y_top`,
-/// pushing all required attributes and triangle indices.
-fn append_cylinder_wall(
-    verts: &mut Vec<[f32; 3]>,
-    norms: &mut Vec<[f32; 3]>,
-    uvs: &mut Vec<[f32; 2]>,
-    faces: &mut Vec<[usize; 3]>,
-    r_bot: f32,
-    r_top: f32,
-    y_bot: f32,
-    y_top: f32,
-) {
-    let base = verts.len();
-    let height = (y_top - y_bot).max(1e-6);
-    let slope = (r_top - r_bot) / height;
-
-    for i in 0..=SEGMENTS {
-        let t = i as f32 / SEGMENTS as f32;
-        let theta = t * 2.0 * PI;
-        let cos_t = theta.cos();
-        let sin_t = theta.sin();
-
-        let xb = cos_t * r_bot;
-        let zb = sin_t * r_bot;
-        let xt = cos_t * r_top;
-        let zt = sin_t * r_top;
-
-        // Outward-pointing normal, slightly tilted for tapered walls.
-        let nx = cos_t;
-        let ny = -slope;
-        let nz = sin_t;
-        let len = (nx * nx + ny * ny + nz * nz).sqrt();
-        let n = [nx / len, ny / len, nz / len];
-
-        verts.push([xb, y_bot, zb]);
-        norms.push(n);
-        uvs.push([t, 0.0]);
-
-        verts.push([xt, y_top, zt]);
-        norms.push(n);
-        uvs.push([t, 1.0]);
-    }
-
-    for i in 0..SEGMENTS {
-        let b0 = base + i * 2;
-        let t0 = base + i * 2 + 1;
-        let b1 = base + (i + 1) * 2;
-        let t1 = base + (i + 1) * 2 + 1;
-        faces.push([b0, b1, t1]);
-        faces.push([b0, t1, t0]);
-    }
-}
-
-/// Append a flat disk at height `y` with radius `r`, facing either +Y or -Y.
-fn append_disk(
-    verts: &mut Vec<[f32; 3]>,
-    norms: &mut Vec<[f32; 3]>,
-    uvs: &mut Vec<[f32; 2]>,
-    faces: &mut Vec<[usize; 3]>,
-    r: f32,
-    y: f32,
-    face_up: bool,
-) {
-    let n = if face_up { [0.0, 1.0, 0.0] } else { [0.0, -1.0, 0.0] };
-    let centre = verts.len();
-    verts.push([0.0, y, 0.0]);
-    norms.push(n);
-    uvs.push([0.5, 0.5]);
-
-    for i in 0..=SEGMENTS {
-        let t = i as f32 / SEGMENTS as f32;
-        let theta = t * 2.0 * PI;
-        let x = theta.cos() * r;
-        let z = theta.sin() * r;
-        verts.push([x, y, z]);
-        norms.push(n);
-        uvs.push([0.5 + theta.cos() * 0.5, 0.5 + theta.sin() * 0.5]);
-    }
-
-    for i in 0..SEGMENTS {
-        if face_up {
-            faces.push([centre, centre + 1 + i, centre + 1 + i + 1]);
-        } else {
-            faces.push([centre, centre + 1 + i + 1, centre + 1 + i]);
-        }
-    }
+    b.build()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::geometry::kernel::validate_mesh;
 
     #[test]
     fn bottled_sauce_mesh_is_non_empty() {
@@ -309,19 +208,25 @@ mod tests {
         assert!(!mesh.vertices.is_empty());
         assert_eq!(mesh.vertices.len(), mesh.normals.len());
         assert_eq!(mesh.vertices.len(), mesh.uvs.len());
-        assert_eq!(mesh.groups.len(), 4, "body + neck + cap + liquid");
         for g in &mesh.groups {
-            assert!(!g.faces.is_empty(), "every group must have faces");
+            assert!(!g.faces.is_empty(), "group {} has no faces", g.material.name);
         }
+    }
+
+    #[test]
+    fn bottled_sauce_has_four_groups() {
+        let mesh = generate("#B8321F", BottleKind::Glass, None);
+        assert_eq!(
+            mesh.groups.len(),
+            4,
+            "bottle_wall + bottle_bottom + cap + liquid"
+        );
     }
 
     #[test]
     fn bottled_sauce_glass_kind_uses_glass_material_name() {
         let mesh = generate("#FF0000", BottleKind::Glass, None);
-        assert!(mesh
-            .groups
-            .iter()
-            .any(|g| g.material.name == "bottle_glass"));
+        assert!(mesh.groups.iter().any(|g| g.material.name == "bottle_glass"));
     }
 
     #[test]
@@ -334,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn bottled_sauce_liquid_uses_product_color() {
+    fn bottled_sauce_uses_liquid_color() {
         let mesh = generate("#FF0000", BottleKind::Glass, None);
         let liquid = mesh
             .groups
@@ -361,8 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn bottled_sauce_extends_above_body() {
-        // Cap must sit above the body top — verifies neck + cap stacking.
+    fn bottled_sauce_cap_above_neck() {
         let mesh = generate("#B8321F", BottleKind::Glass, None);
         let max_y = mesh
             .vertices
@@ -370,8 +274,51 @@ mod tests {
             .map(|v| v[1])
             .fold(f32::NEG_INFINITY, f32::max);
         assert!(
-            max_y > BODY_HEIGHT / 2.0 + NECK_HEIGHT - 1e-4,
-            "cap should sit above body+neck"
+            max_y > NECK_TOP_Y - 1e-4,
+            "cap top should sit at or above neck top (got {max_y})"
+        );
+        assert!((max_y - CAP_TOP_Y).abs() < 1e-4);
+    }
+
+    #[test]
+    fn bottled_sauce_neck_radius_smaller_than_body() {
+        let p = bottle_body_profile();
+        assert!(
+            p.max_radius() > NECK_RADIUS + 0.005,
+            "body should be at least 5 mm wider than neck"
+        );
+    }
+
+    #[test]
+    fn bottled_sauce_passes_kernel_validation() {
+        let mesh = generate("#B8321F", BottleKind::Glass, Some("#CCCCCC"));
+        validate_mesh(&mesh).expect("kernel validation should pass on bottle mesh");
+    }
+
+    #[test]
+    fn bottled_sauce_widest_radius_is_body_or_cap() {
+        // The widest point in a sauce bottle is either the body wall
+        // (BODY_RADIUS) or the cap. Should never live on the neck.
+        let mesh = generate("#B8321F", BottleKind::Glass, None);
+        let mut widest_xz: f32 = 0.0;
+        let mut widest_y: f32 = 0.0;
+        for v in &mesh.vertices {
+            let r = (v[0] * v[0] + v[2] * v[2]).sqrt();
+            if r > widest_xz {
+                widest_xz = r;
+                widest_y = v[1];
+            }
+        }
+        // Should match BODY_RADIUS within tolerance — body wins over cap.
+        assert!(
+            (widest_xz - BODY_RADIUS).abs() < 1e-4,
+            "widest radius should equal body radius {BODY_RADIUS}, got {widest_xz}"
+        );
+        // …and that widest ring lives on the body (between bottom bevel
+        // and shoulder), not on the neck or above.
+        assert!(
+            widest_y >= -0.056 - 1e-4 && widest_y <= 0.028 + 1e-4,
+            "widest ring should sit on the straight body section (got y={widest_y})"
         );
     }
 }
