@@ -13,9 +13,23 @@ pub struct Mesh {
     /// Per-vertex UV coordinates (same length as `vertices`).
     pub uvs: Vec<[f32; 2]>,
     /// Triangles — each entry is three indices into `vertices`.
+    /// Used only when `groups` is empty (legacy single-material path).
     pub faces: Vec<[usize; 3]>,
-    /// Single material for the whole mesh (PR #4 scope — no multi-material).
+    /// Single material for the whole mesh.
+    /// Used only when `groups` is empty.
     pub material: Material,
+    /// Optional multi-material groups (PR #6).
+    /// When non-empty, the OBJ exporter writes one `usemtl` block per group
+    /// and the MTL file contains one `newmtl` entry per group.
+    /// `faces` / `material` are then ignored.
+    pub groups: Vec<MaterialGroup>,
+}
+
+/// One material slot inside a mesh — its own faces, its own material.
+#[derive(Debug, Clone)]
+pub struct MaterialGroup {
+    pub material: Material,
+    pub faces: Vec<[usize; 3]>,
 }
 
 impl Mesh {
@@ -36,6 +50,32 @@ impl Mesh {
             uvs,
             faces,
             material,
+            groups: Vec::new(),
+        }
+    }
+
+    /// Multi-material constructor (PR #6). Each entry in `groups` defines its
+    /// own material and triangle list — the OBJ exporter will emit them as
+    /// separate `usemtl` blocks.
+    pub fn new_multi(
+        vertices: Vec<[f32; 3]>,
+        normals: Vec<[f32; 3]>,
+        uvs: Vec<[f32; 2]>,
+        groups: Vec<MaterialGroup>,
+    ) -> Self {
+        debug_assert_eq!(vertices.len(), normals.len(), "normals length mismatch");
+        debug_assert_eq!(vertices.len(), uvs.len(), "uvs length mismatch");
+        debug_assert!(!groups.is_empty(), "new_multi requires at least one group");
+        // Mirror the first group into the legacy fields so older code paths
+        // still see a sensible material/face list.
+        let first = groups[0].clone();
+        Self {
+            vertices,
+            normals,
+            uvs,
+            faces: first.faces,
+            material: first.material,
+            groups,
         }
     }
 }
@@ -50,6 +90,10 @@ pub struct Material {
     /// Optional texture filename (relative, e.g. `"source.png"`).
     /// If present, the MTL file will include `map_Kd <texture_file>`.
     pub texture_file: Option<String>,
+    /// Specular intensity 0..1 (mapped to MTL `Ks`). Default 0.15.
+    pub specular: f32,
+    /// Shininess exponent (mapped to MTL `Ns`). Higher = sharper highlight. Default 32.0.
+    pub shininess: f32,
 }
 
 impl Material {
@@ -58,7 +102,16 @@ impl Material {
             name: name.into(),
             diffuse_color,
             texture_file: None,
+            specular: 0.15,
+            shininess: 32.0,
         }
+    }
+
+    /// Builder helper — make this material glossy (used for sauces / liquids).
+    pub fn with_gloss(mut self, specular: f32, shininess: f32) -> Self {
+        self.specular = specular.clamp(0.0, 1.0);
+        self.shininess = shininess.max(1.0);
+        self
     }
 }
 
