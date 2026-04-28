@@ -28,7 +28,9 @@ use crate::application::laboratory_v2::Product3DSpec;
 use crate::shared::AppError;
 
 /// Gemini multimodal model that supports image input.
-const VISION_MODEL: &str = "gemini-2.0-flash-exp";
+/// gemini-2.5-flash is the stable replacement for 2.0-flash-exp:
+/// supports vision input, structured JSON output, recommended for production.
+const VISION_MODEL: &str = "gemini-2.5-flash";
 
 /// System prompt — deterministic, no creativity.
 const VISION_PROMPT: &str = r##"Analyze this food/product image and return a strict JSON specification for a procedural 3D prototype generator.
@@ -184,8 +186,10 @@ impl GeminiVision3D {
                 "❌ vision_3d: spec JSON parse failed: {e}\nraw_text:\n{}",
                 content_text
             );
+            // Limit payload in error to avoid enormous log/response lines.
+            let preview = &cleaned[..cleaned.len().min(800)];
             AppError::internal(format!(
-                "vision_3d: spec JSON parse: {e} — payload: {cleaned}"
+                "vision_3d: spec JSON parse: {e} — payload: {preview}"
             ))
         })?;
 
@@ -263,4 +267,82 @@ struct GenerationConfig {
     response_mime_type: String,
     #[serde(rename = "maxOutputTokens")]
     max_output_tokens: u32,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::laboratory_v2::{Product3DObjectType, Product3DSpec};
+
+    const CLEAN_JSON: &str = r##"{
+        "object_type": "sauce_in_bowl",
+        "confidence": 0.92,
+        "container": {
+            "kind": "ceramic_bowl",
+            "color_hex": "#F2EFE7",
+            "diameter_mm": 120.0,
+            "height_mm": 55.0
+        },
+        "product": {
+            "color_hex": "#B8321F",
+            "viscosity": 0.6,
+            "gloss": 0.3,
+            "description": "thick red tomato sauce"
+        },
+        "scene": {
+            "background": "white",
+            "lighting": "soft overhead"
+        }
+    }"##;
+
+    #[test]
+    fn parse_clean_json_into_product3d_spec() {
+        let spec: Product3DSpec =
+            serde_json::from_str(CLEAN_JSON).expect("should parse clean JSON");
+        assert_eq!(spec.object_type, Product3DObjectType::SauceInBowl);
+        assert!((spec.confidence - 0.92).abs() < 1e-4);
+        let container = spec.container.as_ref().expect("container should be present");
+        assert_eq!(container.kind, "ceramic_bowl");
+        assert_eq!(container.diameter_mm, Some(120.0));
+        assert_eq!(spec.product.color_hex, "#B8321F");
+        assert_eq!(spec.effective_object_type(), Product3DObjectType::SauceInBowl);
+    }
+
+    #[test]
+    fn parse_fenced_json_via_strip_markdown_fences() {
+        let fenced = format!("```json\n{}\n```", CLEAN_JSON);
+        let cleaned = strip_markdown_fences(&fenced);
+        let spec: Product3DSpec =
+            serde_json::from_str(&cleaned).expect("should parse after stripping fences");
+        assert_eq!(spec.object_type, Product3DObjectType::SauceInBowl);
+    }
+
+    #[test]
+    fn low_confidence_falls_back_to_flat_card() {
+        let mut spec: Product3DSpec = serde_json::from_str(CLEAN_JSON).unwrap();
+        spec.confidence = 0.4; // below MIN_CONFIDENCE
+        assert_eq!(spec.effective_object_type(), Product3DObjectType::FlatCard);
+    }
+
+    #[test]
+    fn unknown_type_falls_back_to_flat_card() {
+        let json = r##"{
+            "object_type": "unknown",
+            "confidence": 0.8,
+            "product": { "color_hex": "#AAAAAA" }
+        }"##;
+        let spec: Product3DSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.effective_object_type(), Product3DObjectType::FlatCard);
+    }
+
+    #[test]
+    fn strip_plain_backtick_fences() {
+        let fenced = format!("```\n{}\n```", CLEAN_JSON);
+        let cleaned = strip_markdown_fences(&fenced);
+        assert!(serde_json::from_str::<Product3DSpec>(&cleaned).is_ok());
+    }
 }
