@@ -74,6 +74,7 @@ use std::net::SocketAddr;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use tower_http::cors::{AllowHeaders, CorsLayer};
+use tower_http::services::ServeDir;
 
 /// IP-based rate limiter type
 type IpRateLimiter = RateLimiter<String, DashMapStateStore<String>, DefaultClock>;
@@ -558,10 +559,17 @@ pub fn create_router(
                 )
                 .with_state(lab_service)
         })
-        // 🆕 Laboratory v2 — Photo → 3D Model pipeline (PR #1: skeleton, returns 500 not_implemented)
+        // 🆕 Laboratory v2 — Photo → 3D Model pipeline
+        // PR #2: real `register_image` (JSON + multipart) + `get_asset`.
+        // PR #3-4 will fill `generate-model`.
         .merge({
-            let lab_v2_service =
-                crate::application::laboratory_v2::LaboratoryV2Service::new(pool_for_prefs.clone());
+            use std::sync::Arc;
+            use crate::infrastructure::storage::LocalStorageAdapter;
+            let storage = Arc::new(LocalStorageAdapter::new("./uploads", "/static"));
+            let lab_v2_service = crate::application::laboratory_v2::LaboratoryV2Service::new(
+                pool_for_prefs.clone(),
+                storage,
+            );
             Router::new()
                 .route(
                     "/laboratory/images",
@@ -1008,6 +1016,10 @@ pub fn create_router(
     let mut router = Router::new()
         .merge(health_route)
         .merge(chef_reference_routes)
+        // 🆕 Static file serving for Laboratory v2 uploads (no auth).
+        // Files written by `LocalStorageAdapter("./uploads", "/static")`
+        // are served back at `/static/<key>`.
+        .nest_service("/static", ServeDir::new("uploads"))
         .nest("/public", public_router)
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)

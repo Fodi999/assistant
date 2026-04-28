@@ -8,6 +8,7 @@ pub mod llm_adapter;
 pub mod persistence;
 pub mod r2_client;
 pub mod security;
+pub mod storage;        // 🆕 Object storage abstraction (local FS first, R2/S3 later)
 pub mod stripe_service; // 🆕 Stripe Checkout + Webhook
 
 pub use cache::AppCache;

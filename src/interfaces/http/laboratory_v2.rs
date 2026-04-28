@@ -1,17 +1,15 @@
 //! HTTP handlers for Laboratory **v2** — Photo → 3D Model.
 //!
-//! PR #1: thin wrappers around the service skeleton. Every handler compiles,
-//! is wired to JWT auth via `AuthUser`, and currently returns HTTP 500 with
-//! a stable error envelope (`AppError::internal("not_implemented: …")`).
-//!
-//! Routes (mounted under `/api/laboratory/...` next to the legacy v1):
-//!   * `POST /laboratory/images`
-//!   * `POST /laboratory/images/:image_id/generate-model`
+//! Routes (mounted under `/api/laboratory/...`):
+//!   * `POST /laboratory/images` — accepts **either**
+//!       - `application/json`        → registers a pre-hosted URL
+//!       - `multipart/form-data`     → uploads a file (`file` part)
+//!   * `POST /laboratory/images/:image_id/generate-model`  (501 — PR #3-4)
 //!   * `GET  /laboratory/assets/:asset_id`
 
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::{FromRequest, Multipart, Path, Request, State},
+    http::{header, StatusCode},
     Json,
 };
 use serde::Deserialize;
@@ -24,12 +22,8 @@ use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppError;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Wrapper request body
+// JSON body for the non-multipart variant
 // ─────────────────────────────────────────────────────────────────────────────
-//
-// PR #1 ships only the JSON variant ("client uploaded the file elsewhere,
-// here is the URL"). The multipart variant — `multipart/form-data` with a
-// `file` part — will be added on top in PR #2 alongside the StorageAdapter.
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterImageBody {
@@ -38,22 +32,76 @@ pub struct RegisterImageBody {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Handlers
+// `POST /laboratory/images` — content-type dispatcher
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// `POST /api/laboratory/images`
 pub async fn register_image(
     auth: AuthUser,
     State(svc): State<LaboratoryV2Service>,
-    Json(body): Json<RegisterImageBody>,
+    request: Request,
 ) -> Result<(StatusCode, Json<LaboratoryImage>), AppError> {
-    let image = svc
-        .register_image(*auth.user_id.as_uuid(), body.payload)
-        .await?;
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let user_id = *auth.user_id.as_uuid();
+
+    let image = if content_type.starts_with("multipart/form-data") {
+        register_image_multipart(&svc, user_id, request).await?
+    } else {
+        let Json(body) = Json::<RegisterImageBody>::from_request(request, &())
+            .await
+            .map_err(|e| AppError::validation(format!("invalid JSON body: {e}")))?;
+        svc.register_image(user_id, body.payload).await?
+    };
+
     Ok((StatusCode::CREATED, Json(image)))
 }
 
-/// `POST /api/laboratory/images/:image_id/generate-model`
+async fn register_image_multipart(
+    svc: &LaboratoryV2Service,
+    user_id: Uuid,
+    request: Request,
+) -> Result<LaboratoryImage, AppError> {
+    let mut multipart = Multipart::from_request(request, &())
+        .await
+        .map_err(|e| AppError::validation(format!("invalid multipart body: {e}")))?;
+
+    let mut bytes: Option<Vec<u8>> = None;
+    let mut mime: Option<String> = None;
+    let mut filename: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::validation(format!("multipart field: {e}")))?
+    {
+        if field.name() == Some("file") {
+            filename = field.file_name().map(str::to_owned);
+            mime = field.content_type().map(str::to_owned);
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| AppError::validation(format!("multipart read: {e}")))?;
+            bytes = Some(data.to_vec());
+            break;
+        }
+    }
+
+    let bytes = bytes.ok_or_else(|| AppError::validation("multipart: missing `file` part"))?;
+    let mime = mime
+        .ok_or_else(|| AppError::validation("multipart: `file` part missing Content-Type"))?;
+
+    svc.upload_and_register(user_id, bytes, mime, filename).await
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `POST /laboratory/images/:image_id/generate-model`
+// ─────────────────────────────────────────────────────────────────────────────
+
 pub async fn generate_model(
     auth: AuthUser,
     State(svc): State<LaboratoryV2Service>,
@@ -65,7 +113,10 @@ pub async fn generate_model(
     Ok((StatusCode::CREATED, Json(asset)))
 }
 
-/// `GET /api/laboratory/assets/:asset_id`
+// ─────────────────────────────────────────────────────────────────────────────
+// `GET /laboratory/assets/:asset_id`
+// ─────────────────────────────────────────────────────────────────────────────
+
 pub async fn get_asset(
     auth: AuthUser,
     State(svc): State<LaboratoryV2Service>,
