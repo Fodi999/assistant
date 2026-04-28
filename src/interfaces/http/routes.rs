@@ -1067,15 +1067,25 @@ pub fn create_router(
 }
 
 // ── Static file MIME fixup ──
-// `mime_guess` (used by tower-http ServeDir) doesn't know `.obj` / `.mtl`,
-// so we patch `Content-Type` after the response is produced.
+// `mime_guess` (used by tower-http ServeDir) doesn't know `.obj` / `.mtl` /
+// `.glb`, so we patch `Content-Type` after the response is produced.
 async fn fix_static_mime(
     req: axum::extract::Request,
     next: middleware::Next,
 ) -> axum::response::Response {
     let path = req.uri().path().to_string();
     let mut res = next.run(req).await;
-    if path.ends_with(".obj") {
+    if path.ends_with(".glb") {
+        res.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("model/gltf-binary"),
+        );
+    } else if path.ends_with(".gltf") {
+        res.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("model/gltf+json"),
+        );
+    } else if path.ends_with(".obj") {
         res.headers_mut().insert(
             axum::http::header::CONTENT_TYPE,
             axum::http::HeaderValue::from_static("model/obj"),

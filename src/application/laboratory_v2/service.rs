@@ -16,7 +16,7 @@ use super::models::{
     AssetStatus, Laboratory3DAsset, LaboratoryImage, RegisterImagePayload,
 };
 use crate::infrastructure::gemini::GeminiVision3D;
-use crate::infrastructure::geometry::{dispatch as geometry_dispatch, export_obj};
+use crate::infrastructure::geometry::{dispatch as geometry_dispatch, export_glb};
 use crate::infrastructure::persistence::laboratory_v2_repository::{
     CreateImageInput, LaboratoryV2Repository,
 };
@@ -220,29 +220,20 @@ impl LaboratoryV2Service {
             .save_spec_and_mark_generating(asset_id, effective.as_str(), spec_json.clone())
             .await?;
 
-        // 7. Geometry dispatch → Mesh → OBJ
+        // 7. Geometry dispatch → Mesh → GLB
         let mesh = geometry_dispatch(effective.as_str(), Some(&spec_json))?;
-        let export = export_obj(&mesh)?;
+        let export = export_glb(&mesh)?;
 
-        // 8. Store OBJ + MTL
-        let obj_key = format!("laboratory/models/{asset_id}/model.obj");
-        let mtl_key = format!("laboratory/models/{asset_id}/model.mtl");
-
-        // Store MTL first (OBJ references it — if MTL is missing the viewer
-        // just falls back to default material, so order isn't critical, but
-        // this is cleaner).
-        self.storage
-            .put_bytes(&mtl_key, export.mtl_bytes, "text/plain")
-            .await?;
-
+        // 8. Store .glb (single self-contained file with embedded PBR materials)
+        let glb_key = format!("laboratory/models/{asset_id}/model.glb");
         let model_url = self
             .storage
-            .put_bytes(&obj_key, export.obj_bytes, "text/plain")
+            .put_bytes(&glb_key, export.glb_bytes, "model/gltf-binary")
             .await?;
 
         // 9. Mark ready
         self.repo
-            .mark_asset_ready(asset_id, "obj", &model_url)
+            .mark_asset_ready(asset_id, "glb", &model_url)
             .await?;
 
         tracing::info!(
