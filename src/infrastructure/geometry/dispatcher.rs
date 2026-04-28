@@ -51,9 +51,11 @@ pub fn dispatch_with_quality(
             let sauce_color = extract_str(spec, "/product/color_hex").unwrap_or("#B8321F");
             let container_color = extract_str(spec, "/container/color_hex");
             let surface = full_spec.as_ref().and_then(|s| s.product.surface.as_ref());
+            let container = full_spec.as_ref().and_then(|s| s.container.as_ref());
             Ok(sauce_in_bowl::generate_with_surface_and_quality(
                 sauce_color,
                 container_color,
+                container,
                 surface,
                 quality,
             ))

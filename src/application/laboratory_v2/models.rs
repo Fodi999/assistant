@@ -156,10 +156,25 @@ impl Product3DObjectType {
 /// Container hint (bowl, bottle, jar, plate). Optional — for `flat_card` etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerSpec {
-    /// "ceramic_bowl" | "glass_bottle" | "glass_jar" | "white_plate" | …
+    /// "ceramic_bowl" | "glass_bowl" | "glass_bottle" | "glass_jar" | "white_plate" | …
     pub kind: String,
+    /// Physical material: `"glass"` | `"ceramic"` | `"plastic"` | `"metal"` | `"unknown"`.
+    /// Used by the frontend to choose the correct material shader.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
+    /// Opaque base colour (for ceramic / plastic / metal).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_hex: Option<String>,
+    /// Glass tint colour — the colour visible through the glass wall.
+    /// Only meaningful when `material == "glass"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint_hex: Option<String>,
+    /// Glass transparency fraction (0.0 = opaque, 1.0 = fully transparent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<f32>,
+    /// How much darker the rim appears compared to the body (0.0–1.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rim_darkness: Option<f32>,
     /// Approximate diameter / width in mm (vision is rough — used as a hint).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diameter_mm: Option<f32>,

@@ -68,8 +68,12 @@ Schema (all keys required unless marked optional):
   "object_type": "sauce_in_bowl" | "bottled_sauce" | "jar_product" | "plate_food" | "flat_card" | "unknown",
   "confidence": 0.0..1.0,
   "container": {                      // optional — omit for flat_card / unknown
-    "kind": "ceramic_bowl" | "glass_bottle" | "glass_jar" | "white_plate" | "...",
-    "color_hex": "#RRGGBB",           // optional
+    "kind": "ceramic_bowl" | "glass_bowl" | "glass_bottle" | "glass_jar" | "white_plate" | "...",
+    "material": "glass" | "ceramic" | "plastic" | "metal" | "unknown",
+    "color_hex": "#RRGGBB",           // optional — opaque body colour (ceramic/plastic/metal)
+    "tint_hex": "#RRGGBB",            // optional — glass tint colour (when material=glass)
+    "transparency": 0.0..1.0,         // optional — glass transparency (0=opaque, 1=clear)
+    "rim_darkness": 0.0..1.0,         // optional — how much darker the rim appears vs body
     "diameter_mm": number,            // optional, rough estimate
     "height_mm": number               // optional, rough estimate
   },
@@ -101,6 +105,12 @@ For sauce_in_bowl: do not only classify the product — estimate the visible sur
 If the sauce has a spiral swirl, set pattern="spiral_swirl" and estimate swirl_arms, ridge_height,
 groove_depth, center_peak, fill_radius_ratio and rim_gap_ratio from what is visible in the image.
 If the surface is flat or featureless, set pattern="flat" and leave other surface fields at 0.
+
+For container material: always set container.material explicitly.
+If the container is transparent or semi-transparent glass and appears brown/red/amber because the
+product is visible through it, set material="glass", tint_hex to the dominant glass wall tint
+(e.g. "#3D1A0A" for dark brown), transparency to 0.55–0.85, and rim_darkness to how much the rim
+appears darker than the body. Do not omit tint_hex or color_hex if the rim or wall colour is visible.
 
 Return ONLY this JSON. No backticks. No commentary."##;
 

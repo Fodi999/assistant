@@ -21,7 +21,7 @@
 
 use std::f32::consts::PI;
 
-use crate::application::laboratory_v2::ProductSurfaceSpec;
+use crate::application::laboratory_v2::{ContainerSpec, ProductSurfaceSpec};
 use crate::infrastructure::geometry::kernel::{
     disk_fan_down, disk_fan_up, lathe_profile, GeometryQuality, MeshBuilder, Profile,
     ProfilePoint,
@@ -125,6 +125,7 @@ pub fn generate(sauce_color_hex: &str, container_color_hex: Option<&str>) -> Mes
         sauce_color_hex,
         container_color_hex,
         None,
+        None,
         GeometryQuality::default(),
     )
 }
@@ -136,21 +137,51 @@ pub fn generate_with_quality(
     container_color_hex: Option<&str>,
     quality: GeometryQuality,
 ) -> Mesh {
-    generate_with_surface_and_quality(sauce_color_hex, container_color_hex, None, quality)
+    generate_with_surface_and_quality(sauce_color_hex, container_color_hex, None, None, quality)
 }
 
-/// Full generator — accepts Gemini Vision [`ProductSurfaceSpec`] and an
-/// explicit [`GeometryQuality`] preset.
+/// Full generator — accepts Gemini Vision [`ProductSurfaceSpec`], full
+/// [`ContainerSpec`] (for material/tint/glass detection) and an explicit
+/// [`GeometryQuality`] preset.
 ///
-/// `surface` drives swirl arms, ridge/groove heights, fill radius and organic
-/// noise. Passing `None` produces the same geometry as [`generate`].
+/// - `surface`   — drives swirl arms, ridge/groove heights, fill radius, noise.
+/// - `container` — drives bowl material name (`bowl_glass` vs `bowl_ceramic`)
+///                 and colour / tint fallback.
+/// Passing `None` for either produces the same geometry as [`generate`].
 pub fn generate_with_surface_and_quality(
     sauce_color_hex: &str,
     container_color_hex: Option<&str>,
+    container: Option<&ContainerSpec>,
     surface: Option<&ProductSurfaceSpec>,
     quality: GeometryQuality,
 ) -> Mesh {
-    let bowl_color = container_color_hex.map(hex_to_rgb).unwrap_or(BOWL_COLOR);
+    // ── Determine bowl material ──────────────────────────────────────────────
+    let is_glass = container
+        .map(|c| {
+            c.kind.to_lowercase().contains("glass")
+                || c.material.as_deref() == Some("glass")
+        })
+        .unwrap_or(false);
+
+    let material_name = if is_glass { "bowl_glass" } else { "bowl_ceramic" };
+
+    // Colour priority: explicit override arg → container tint_hex (glass) →
+    // container color_hex → fallback (amber for glass, white ceramic).
+    let glass_fallback = [0.24, 0.09, 0.04]; // dark amber/brown glass
+    let ceramic_fallback = BOWL_COLOR;
+    let bowl_color = container_color_hex
+        .map(hex_to_rgb)
+        .or_else(|| {
+            container.and_then(|c| {
+                if is_glass {
+                    c.tint_hex.as_deref().or(c.color_hex.as_deref())
+                } else {
+                    c.color_hex.as_deref()
+                }
+            }).map(hex_to_rgb)
+        })
+        .unwrap_or(if is_glass { glass_fallback } else { ceramic_fallback });
+
     let sauce_color = hex_to_rgb(sauce_color_hex);
 
     let segments = quality.radial_segments();
@@ -159,10 +190,12 @@ pub fn generate_with_surface_and_quality(
 
     let mut b = MeshBuilder::new();
 
-    // The frontend matches `*bowl*|*ceramic*` first (PR #9 polish) and applies
-    // a non-transmissive ceramic upgrade. Soft highlight → low gloss.
-    let bowl_g =
-        b.add_group(Material::solid("bowl_material", bowl_color).with_gloss(0.10, 24.0));
+    // Glass gets higher gloss + lower roughness so the frontend makeGlassMaterial
+    // picks it up cleanly. Ceramic keeps low gloss.
+    let (gloss_factor, gloss_exp) = if is_glass { (0.85, 256.0) } else { (0.10, 24.0) };
+    let bowl_g = b.add_group(
+        Material::solid(material_name, bowl_color).with_gloss(gloss_factor, gloss_exp),
+    );
     let sauce_g = b.add_group(
         Material::solid("sauce_material", sauce_color).with_gloss(0.55, 96.0),
     );
@@ -329,6 +362,7 @@ fn add_sauce_surface(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::laboratory_v2::ContainerSpec;
     use crate::infrastructure::geometry::kernel::validate_mesh;
 
     #[test]
@@ -362,8 +396,8 @@ mod tests {
         let bowl = mesh
             .groups
             .iter()
-            .find(|g| g.material.name == "bowl_material")
-            .expect("bowl_material group should exist");
+            .find(|g| g.material.name == "bowl_ceramic")
+            .expect("bowl_ceramic group should exist");
         let [r, g, b] = bowl.material.diffuse_color;
         assert!(r > 0.85 && g > 0.85 && b > 0.85);
     }
@@ -405,7 +439,7 @@ mod tests {
         let bowl = mesh
             .groups
             .iter()
-            .find(|g| g.material.name == "bowl_material")
+            .find(|g| g.material.name == "bowl_ceramic")
             .unwrap();
         let mut inward_count = 0usize;
         let mut indices = std::collections::HashSet::new();
@@ -521,8 +555,8 @@ mod tests {
         let low_spec = make_surface(None, Some(0.1), None, None, None, None, None);
         let high_spec = make_surface(None, Some(0.9), None, None, None, None, None);
         let q = GeometryQuality::Standard;
-        let low  = generate_with_surface_and_quality("#B8321F", None, Some(&low_spec), q);
-        let high = generate_with_surface_and_quality("#B8321F", None, Some(&high_spec), q);
+        let low  = generate_with_surface_and_quality("#B8321F", None, None, Some(&low_spec), q);
+        let high = generate_with_surface_and_quality("#B8321F", None, None, Some(&high_spec), q);
         assert!(
             sauce_y_range(&high) > sauce_y_range(&low),
             "higher ridge_height must produce larger Y range (low={:.5} high={:.5})",
@@ -536,8 +570,8 @@ mod tests {
         let default_spec = make_surface(None, None, None, None, None, None, None);
         let wide_spec    = make_surface(None, None, None, None, Some(0.97), None, None);
         let q = GeometryQuality::Standard;
-        let default_mesh = generate_with_surface_and_quality("#B8321F", None, Some(&default_spec), q);
-        let wide_mesh    = generate_with_surface_and_quality("#B8321F", None, Some(&wide_spec), q);
+        let default_mesh = generate_with_surface_and_quality("#B8321F", None, None, Some(&default_spec), q);
+        let wide_mesh    = generate_with_surface_and_quality("#B8321F", None, None, Some(&wide_spec), q);
         assert!(
             sauce_max_radius(&wide_mesh) > sauce_max_radius(&default_mesh),
             "fill_radius_ratio=0.97 must produce wider sauce than default"
@@ -549,8 +583,8 @@ mod tests {
         let spec_3 = make_surface(Some(3), None, None, None, None, None, None);
         let spec_7 = make_surface(Some(7), None, None, None, None, None, None);
         let q = GeometryQuality::Standard;
-        let m3 = generate_with_surface_and_quality("#B8321F", None, Some(&spec_3), q);
-        let m7 = generate_with_surface_and_quality("#B8321F", None, Some(&spec_7), q);
+        let m3 = generate_with_surface_and_quality("#B8321F", None, None, Some(&spec_3), q);
+        let m7 = generate_with_surface_and_quality("#B8321F", None, None, Some(&spec_7), q);
         // With more arms the surface should be more varied — different Y ranges.
         let r3 = sauce_y_range(&m3);
         let r7 = sauce_y_range(&m7);
@@ -562,9 +596,9 @@ mod tests {
 
     #[test]
     fn missing_surface_uses_safe_defaults() {
-        // No surface spec — should not panic, should produce valid mesh.
         let mesh = generate_with_surface_and_quality(
             "#B8321F",
+            None,
             None,
             None,
             GeometryQuality::Standard,
@@ -579,9 +613,73 @@ mod tests {
         let mesh = generate_with_surface_and_quality(
             "#B8321F",
             None,
+            None,
             Some(&spec),
             GeometryQuality::High,
         );
         validate_mesh(&mesh).expect("full surface spec mesh should pass kernel validation");
+    }
+
+    #[test]
+    fn glass_bowl_creates_bowl_glass_material() {
+        let container = ContainerSpec {
+            kind: "glass_bowl".to_string(),
+            material: Some("glass".to_string()),
+            color_hex: None,
+            tint_hex: Some("#3D1A0A".to_string()),
+            transparency: Some(0.7),
+            rim_darkness: Some(0.4),
+            diameter_mm: Some(120.0),
+            height_mm: Some(55.0),
+        };
+        let mesh = generate_with_surface_and_quality(
+            "#B8321F",
+            None,
+            Some(&container),
+            None,
+            GeometryQuality::Standard,
+        );
+        let bowl_group = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "bowl_glass")
+            .expect("glass_bowl container must produce bowl_glass material group");
+        // Tint colour #3D1A0A → approx [0.239, 0.098, 0.039]
+        let [r, _g, _b] = bowl_group.material.diffuse_color;
+        assert!(r > 0.15 && r < 0.40, "glass tint red channel should be dark amber");
+    }
+
+    #[test]
+    fn ceramic_bowl_creates_bowl_ceramic_material() {
+        let container = ContainerSpec {
+            kind: "ceramic_bowl".to_string(),
+            material: Some("ceramic".to_string()),
+            color_hex: Some("#F0EDE8".to_string()),
+            tint_hex: None,
+            transparency: None,
+            rim_darkness: None,
+            diameter_mm: None,
+            height_mm: None,
+        };
+        let mesh = generate_with_surface_and_quality(
+            "#B8321F",
+            None,
+            Some(&container),
+            None,
+            GeometryQuality::Standard,
+        );
+        assert!(
+            mesh.groups.iter().any(|g| g.material.name == "bowl_ceramic"),
+            "ceramic container must produce bowl_ceramic group"
+        );
+    }
+
+    #[test]
+    fn no_container_spec_falls_back_to_bowl_ceramic() {
+        let mesh = generate("#B8321F", None);
+        assert!(
+            mesh.groups.iter().any(|g| g.material.name == "bowl_ceramic"),
+            "no container defaults to bowl_ceramic"
+        );
     }
 }
