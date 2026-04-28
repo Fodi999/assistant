@@ -27,6 +27,22 @@ use serde::Serialize;
 use crate::application::laboratory_v2::Product3DSpec;
 use crate::shared::AppError;
 
+/// Token usage reported by Gemini for one Vision call.
+/// Useful for cost dashboards and per-asset accounting.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VisionUsage {
+    pub prompt_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+}
+
+/// Result of a Vision call — the parsed spec plus token usage.
+#[derive(Debug, Clone)]
+pub struct VisionResult {
+    pub spec: Product3DSpec,
+    pub usage: VisionUsage,
+}
+
 /// Gemini multimodal model that supports image input.
 /// gemini-2.5-flash is the stable replacement for 2.0-flash-exp:
 /// supports vision input, structured JSON output, recommended for production.
@@ -99,6 +115,19 @@ impl GeminiVision3D {
         image_bytes: Vec<u8>,
         mime_type: &str,
     ) -> Result<Product3DSpec, AppError> {
+        self.analyze_image_for_3d_with_usage(image_bytes, mime_type)
+            .await
+            .map(|r| r.spec)
+    }
+
+    /// Same as [`analyze_image_for_3d`] but also returns Gemini-reported
+    /// token usage (`promptTokenCount` / `candidatesTokenCount` / total).
+    /// Use this in callers that want to persist or display per-asset cost.
+    pub async fn analyze_image_for_3d_with_usage(
+        &self,
+        image_bytes: Vec<u8>,
+        mime_type: &str,
+    ) -> Result<VisionResult, AppError> {
         if self.api_key.is_empty() {
             return Err(AppError::internal(
                 "GEMINI_API_KEY is not configured — Laboratory v2 generate-model is unavailable",
@@ -179,6 +208,34 @@ impl GeminiVision3D {
                 ))
             })?;
 
+        // ── Token usage (Gemini returns this in every response) ──
+        // We log it so callers can see exactly how expensive each 3D
+        // generation is. Image input dominates promptTokenCount.
+        let prompt_tokens = json
+            .pointer("/usageMetadata/promptTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let output_tokens = json
+            .pointer("/usageMetadata/candidatesTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let total_tokens = json
+            .pointer("/usageMetadata/totalTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(prompt_tokens + output_tokens);
+        tracing::info!(
+            "💰 vision_3d tokens: prompt={} output={} total={} (model={})",
+            prompt_tokens,
+            output_tokens,
+            total_tokens,
+            self.model,
+        );
+        let usage = VisionUsage {
+            prompt_tokens,
+            output_tokens,
+            total_tokens,
+        };
+
         let cleaned = strip_markdown_fences(content_text);
 
         let spec: Product3DSpec = serde_json::from_str(&cleaned).map_err(|e| {
@@ -199,7 +256,7 @@ impl GeminiVision3D {
             spec.confidence
         );
 
-        Ok(spec)
+        Ok(VisionResult { spec, usage })
     }
 }
 
