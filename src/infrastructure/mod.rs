@@ -1,6 +1,7 @@
 pub mod ai_client_impl; // 🆕 AiClient trait implementation for LlmAdapter
 pub mod cache;          // 🆕 In-memory cache for public endpoints (saves Neon CU)
 pub mod config;
+pub mod gemini;         // 🆕 New vertical-slice Gemini adapters (vision_3d, …)
 pub mod gemini_service; // 🆕 Google Gemini AI (replaces Groq for generation)
 pub mod groq_service;   // Legacy — types re-exported by gemini_service
 pub mod ingredient_cache; // 🆕 In-memory ingredient catalog for Sous-Chef (0 SQL)

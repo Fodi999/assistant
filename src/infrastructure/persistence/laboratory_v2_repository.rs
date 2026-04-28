@@ -224,6 +224,109 @@ impl LaboratoryV2Repository {
 
         row.map(Laboratory3DAssetRow::into_dto).transpose()
     }
+
+    // ── Asset lifecycle (PR #3) ─────────────────────────────────────────────
+
+    /// Insert a fresh asset row in `pending` state for the given image.
+    ///
+    /// The `image_id` must already exist; FK is enforced by the schema.
+    /// `provider` defaults to `"chefos_procedural"` server-side.
+    pub async fn create_asset_pending(
+        &self,
+        image_id: Uuid,
+        user_id: Uuid,
+        tenant_id: Option<Uuid>,
+    ) -> Result<Laboratory3DAsset, AppError> {
+        let row = sqlx::query_as::<_, Laboratory3DAssetRow>(
+            r#"
+            INSERT INTO laboratory_3d_assets (image_id, user_id, tenant_id, status)
+            VALUES ($1, $2, $3, 'pending')
+            RETURNING id,
+                      image_id,
+                      user_id,
+                      tenant_id,
+                      status,
+                      provider,
+                      object_type,
+                      object_spec_json,
+                      model_format,
+                      model_url,
+                      thumbnail_url,
+                      error_message,
+                      created_at,
+                      updated_at,
+                      NULL::TEXT AS image_url
+            "#,
+        )
+        .bind(image_id)
+        .bind(user_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("laboratory_v2.create_asset_pending: {e}")))?;
+
+        row.into_dto()
+    }
+
+    /// Move an asset to a new lifecycle status without touching other fields.
+    ///
+    /// Used to mark `analyzing_image` before the Vision call and `failed`
+    /// (with an error message) on any pipeline error.
+    pub async fn update_asset_status(
+        &self,
+        asset_id: Uuid,
+        status: AssetStatus,
+        error_message: Option<&str>,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            r#"
+            UPDATE laboratory_3d_assets
+               SET status = $2,
+                   error_message = COALESCE($3, error_message)
+             WHERE id = $1
+            "#,
+        )
+        .bind(asset_id)
+        .bind(status.as_str())
+        .bind(error_message)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("laboratory_v2.update_asset_status: {e}")))?;
+
+        Ok(())
+    }
+
+    /// Persist the Vision result and transition `analyzing_image → generating_model`.
+    ///
+    /// This is a single atomic UPDATE so a partial failure can't leave
+    /// `object_spec_json` populated while `status` lags behind.
+    pub async fn save_spec_and_mark_generating(
+        &self,
+        asset_id: Uuid,
+        object_type: &str,
+        object_spec_json: serde_json::Value,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            r#"
+            UPDATE laboratory_3d_assets
+               SET object_type      = $2,
+                   object_spec_json = $3,
+                   status           = 'generating_model',
+                   error_message    = NULL
+             WHERE id = $1
+            "#,
+        )
+        .bind(asset_id)
+        .bind(object_type)
+        .bind(object_spec_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            AppError::internal(format!("laboratory_v2.save_spec_and_mark_generating: {e}"))
+        })?;
+
+        Ok(())
+    }
 }
 
 /// Render an `OffsetDateTime` as RFC 3339 (e.g. `"2024-09-21T10:11:12.345Z"`).

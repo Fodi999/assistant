@@ -561,14 +561,23 @@ pub fn create_router(
         })
         // 🆕 Laboratory v2 — Photo → 3D Model pipeline
         // PR #2: real `register_image` (JSON + multipart) + `get_asset`.
-        // PR #3-4 will fill `generate-model`.
+        // PR #3: real `generate-model` Vision flow (no OBJ yet).
         .merge({
             use std::sync::Arc;
+            use crate::infrastructure::gemini::GeminiVision3D;
             use crate::infrastructure::storage::LocalStorageAdapter;
             let storage = Arc::new(LocalStorageAdapter::new("./uploads", "/static"));
+            let vision_api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
+            if vision_api_key.is_empty() {
+                tracing::warn!(
+                    "⚠️ GEMINI_API_KEY not set — Laboratory v2 generate-model will return 500"
+                );
+            }
+            let vision = Arc::new(GeminiVision3D::new(vision_api_key));
             let lab_v2_service = crate::application::laboratory_v2::LaboratoryV2Service::new(
                 pool_for_prefs.clone(),
                 storage,
+                vision,
             );
             Router::new()
                 .route(
