@@ -558,6 +558,25 @@ pub fn create_router(
                 )
                 .with_state(lab_service)
         })
+        // 🆕 Laboratory v2 — Photo → 3D Model pipeline (PR #1: skeleton, returns 500 not_implemented)
+        .merge({
+            let lab_v2_service =
+                crate::application::laboratory_v2::LaboratoryV2Service::new(pool_for_prefs.clone());
+            Router::new()
+                .route(
+                    "/laboratory/images",
+                    post(crate::interfaces::http::laboratory_v2::register_image),
+                )
+                .route(
+                    "/laboratory/images/:image_id/generate-model",
+                    post(crate::interfaces::http::laboratory_v2::generate_model),
+                )
+                .route(
+                    "/laboratory/assets/:asset_id",
+                    get(crate::interfaces::http::laboratory_v2::get_asset),
+                )
+                .with_state(lab_v2_service)
+        })
         // Removed separate inventory_alert_service merge
         .merge(
             Router::new()

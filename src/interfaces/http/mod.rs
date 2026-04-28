@@ -17,6 +17,7 @@ pub mod error;
 pub mod health;
 pub mod inventory;
 pub mod laboratory; // 🆕 Food-tech Laboratory HTTP handlers
+pub mod laboratory_v2; // 🆕 Laboratory v2 — Photo → 3D Model HTTP handlers
 pub mod menu_engineering;
 pub mod middleware;
 pub mod recipe;

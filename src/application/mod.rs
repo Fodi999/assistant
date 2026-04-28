@@ -14,6 +14,7 @@ pub mod dish;
 pub mod inventory;
 pub mod inventory_alert;
 pub mod laboratory; // 🆕 Food-tech Laboratory — analysis projects on top of catalog
+pub mod laboratory_v2; // 🆕 Laboratory v2 — Photo → 3D Model pipeline (PR #1: skeleton)
 pub mod menu_engineering;
 pub mod recipe;
 pub mod recipe_ai_insights_service; // AI insights service
