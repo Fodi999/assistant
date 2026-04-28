@@ -21,6 +21,8 @@
 
 use crate::infrastructure::geometry::mesh::{Material, MaterialGroup, Mesh};
 
+use super::lathe::MeshPart;
+
 #[derive(Debug, Default)]
 pub struct MeshBuilder {
     vertices: Vec<[f32; 3]>,
@@ -92,6 +94,27 @@ impl MeshBuilder {
     ) {
         self.add_triangle(group, a, b, c);
         self.add_triangle(group, a, c, d);
+    }
+
+    /// Splice a self-contained [`MeshPart`] (e.g. a lathed wall or a disk
+    /// fan) into the given material group. Vertices/normals/uvs are
+    /// appended to the global arrays, and face indices are offset by the
+    /// current vertex count so the part remains valid.
+    pub fn add_part(&mut self, group: usize, part: &MeshPart) {
+        debug_assert!(group < self.groups.len(), "unknown group {group}");
+        debug_assert_eq!(part.vertices.len(), part.normals.len());
+        debug_assert_eq!(part.vertices.len(), part.uvs.len());
+
+        let offset = self.vertices.len();
+        self.vertices.extend_from_slice(&part.vertices);
+        self.normals.extend_from_slice(&part.normals);
+        self.uvs.extend_from_slice(&part.uvs);
+
+        let faces = &mut self.groups[group].faces;
+        faces.reserve(part.faces.len());
+        for f in &part.faces {
+            faces.push([f[0] + offset, f[1] + offset, f[2] + offset]);
+        }
     }
 
     pub fn vertex_count(&self) -> usize {

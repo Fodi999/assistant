@@ -28,7 +28,9 @@ pub mod mesh_builder;
 pub mod normals;
 pub mod profile;
 pub mod validate;
+pub mod disk;
 
+pub use disk::{disk_fan_down, disk_fan_up};
 pub use lathe::{lathe_profile, MeshPart};
 pub use math::{Vec2, Vec3};
 pub use mesh_builder::MeshBuilder;
