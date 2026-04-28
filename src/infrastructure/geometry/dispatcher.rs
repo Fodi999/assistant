@@ -1,7 +1,7 @@
 //! Geometry dispatcher — routes `object_type` string → generator.
 //!
-//! Implemented (PR #4 → PR #14):
-//!   * `sauce_in_bowl`  — bowl frustum + swirl sauce surface
+//! Implemented (PR #4 → PR #26):
+//!   * `sauce_in_bowl`  — bowl frustum + swirl sauce surface (Vision surface params since PR #26)
 //!   * `bottled_sauce`  — body + neck + cap + liquid (glass / plastic)
 //!   * `jar_product`    — wide glass jar + product + metal lid
 //!   * `plate_food`     — ceramic plate + radial food mound (PR #14)
@@ -11,6 +11,7 @@
 
 use serde_json::Value;
 
+use crate::application::laboratory_v2::Product3DSpec;
 use crate::infrastructure::geometry::generators::{
     bottled_sauce, flat_card, jar_product, plate_food, sauce_in_bowl,
 };
@@ -39,13 +40,21 @@ pub fn dispatch_with_quality(
     spec: Option<&Value>,
     quality: GeometryQuality,
 ) -> Result<Mesh, AppError> {
+    // Attempt to deserialise full Product3DSpec once — used by generators that
+    // need rich Vision data (e.g. sauce surface params). Failure is non-fatal;
+    // generators fall back to defaults.
+    let full_spec: Option<Product3DSpec> = spec
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
     match object_type {
         "sauce_in_bowl" => {
             let sauce_color = extract_str(spec, "/product/color_hex").unwrap_or("#B8321F");
             let container_color = extract_str(spec, "/container/color_hex");
-            Ok(sauce_in_bowl::generate_with_quality(
+            let surface = full_spec.as_ref().and_then(|s| s.product.surface.as_ref());
+            Ok(sauce_in_bowl::generate_with_surface_and_quality(
                 sauce_color,
                 container_color,
+                surface,
                 quality,
             ))
         }
