@@ -34,13 +34,20 @@ pub fn dispatch(object_type: &str, spec: Option<&Value>) -> Result<Mesh, AppErro
             let kind = bottled_sauce::BottleKind::from_str(
                 extract_str(spec, "/container/kind"),
             );
+            let label_url = extract_str(spec, "/labels/main_url");
             // Cap colour is not in the current spec — leave as default for now.
-            Ok(bottled_sauce::generate(liquid_color, kind, None))
+            Ok(bottled_sauce::generate_with_label(
+                liquid_color,
+                kind,
+                None,
+                label_url,
+            ))
         }
         "jar_product" => {
             let product_color = extract_str(spec, "/product/color_hex").unwrap_or("#A85B12");
             let lid_color = extract_str(spec, "/container/color_hex");
-            Ok(jar_product::generate(product_color, lid_color))
+            let label_url = extract_str(spec, "/labels/main_url");
+            Ok(jar_product::generate_with_label(product_color, lid_color, label_url))
         }
         "plate_food" => {
             let product_color = extract_str(spec, "/product/color_hex").unwrap_or("#A85B12");
@@ -143,5 +150,56 @@ mod tests {
             .groups
             .iter()
             .any(|g| g.material.name == "product_material"));
+    }
+
+    #[test]
+    fn dispatch_bottled_sauce_with_label_adds_label_group() {
+        let spec = json!({
+            "product": { "color_hex": "#B8321F" },
+            "container": { "kind": "glass_bottle" },
+            "labels": { "main_url": "https://cdn.example.com/labels/sauce.png" }
+        });
+        let mesh = dispatch("bottled_sauce", Some(&spec)).unwrap();
+        assert_eq!(mesh.groups.len(), 5, "body+bottom+cap+liquid+label");
+        let label = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "bottle_label")
+            .expect("bottle_label group missing");
+        assert_eq!(
+            label.material.texture_url.as_deref(),
+            Some("https://cdn.example.com/labels/sauce.png")
+        );
+    }
+
+    #[test]
+    fn dispatch_bottled_sauce_without_label_has_four_groups() {
+        let spec = json!({
+            "product": { "color_hex": "#B8321F" },
+            "container": { "kind": "glass_bottle" }
+        });
+        let mesh = dispatch("bottled_sauce", Some(&spec)).unwrap();
+        assert_eq!(mesh.groups.len(), 4);
+        assert!(mesh.groups.iter().all(|g| g.material.texture_url.is_none()));
+    }
+
+    #[test]
+    fn dispatch_jar_product_with_label_adds_label_group() {
+        let spec = json!({
+            "product": { "color_hex": "#A85B12" },
+            "container": { "kind": "glass_jar" },
+            "labels": { "main_url": "https://cdn.example.com/labels/jar.png" }
+        });
+        let mesh = dispatch("jar_product", Some(&spec)).unwrap();
+        assert_eq!(mesh.groups.len(), 4, "glass+product+lid+label");
+        let label = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "jar_label")
+            .expect("jar_label group missing");
+        assert_eq!(
+            label.material.texture_url.as_deref(),
+            Some("https://cdn.example.com/labels/jar.png")
+        );
     }
 }

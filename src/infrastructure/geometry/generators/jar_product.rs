@@ -18,9 +18,16 @@
 //! Y-up, centred at origin, all units in metres.
 
 use crate::infrastructure::geometry::kernel::{
-    disk_fan_down, disk_fan_up, lathe_profile, MeshBuilder, Profile, ProfilePoint,
+    disk_fan_down, disk_fan_up, flat_patch, lathe_profile, MeshBuilder, Profile, ProfilePoint,
 };
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
+
+// Label patch placement on the front face of the jar (PR #15).
+const LABEL_WIDTH: f32 = 0.050; // 5 cm
+const LABEL_HEIGHT: f32 = 0.040; // 4 cm
+const LABEL_CENTER_Y: f32 = 0.000; // mid-jar
+const LABEL_DEPTH_OFFSET: f32 = 0.0006; // 0.6 mm in front of the wall
+const LABEL_PAPER_COLOR: [f32; 3] = [0.97, 0.96, 0.93];
 
 const SEGMENTS: usize = 48;
 
@@ -50,6 +57,17 @@ const LID_DEFAULT_COLOR: [f32; 3] = [0.62, 0.50, 0.18];
 /// - `product_color_hex` — hex colour of the product inside.
 /// - `lid_color_hex` — optional override for the lid colour.
 pub fn generate(product_color_hex: &str, lid_color_hex: Option<&str>) -> Mesh {
+    generate_with_label(product_color_hex, lid_color_hex, None)
+}
+
+/// Same as [`generate`] but additionally adds a flat rectangular label
+/// patch on the front face of the jar. The `label_url` is stored as
+/// `materials[i].extras.texture_url` in the GLB.
+pub fn generate_with_label(
+    product_color_hex: &str,
+    lid_color_hex: Option<&str>,
+    label_url: Option<&str>,
+) -> Mesh {
     let product_color = hex_to_rgb(product_color_hex);
     let lid_color = lid_color_hex.map(hex_to_rgb).unwrap_or(LID_DEFAULT_COLOR);
 
@@ -135,6 +153,23 @@ pub fn generate(product_color_hex: &str, lid_color_hex: Option<&str>) -> Mesh {
         disk_fan_down(lid_radius - LID_RIM_BEVEL, lid_bottom, SEGMENTS)
             .expect("lid underside disk");
     b.add_part(lid_g, &lid_bottom_cap);
+
+    // ── Label patch (optional, PR #15) ──────────────────────────────────────
+    if let Some(url) = label_url {
+        let label_g = b.add_group(
+            Material::solid("jar_label", LABEL_PAPER_COLOR)
+                .with_gloss(0.20, 16.0)
+                .with_texture_url(url),
+        );
+        let patch = flat_patch(
+            LABEL_WIDTH,
+            LABEL_HEIGHT,
+            LABEL_CENTER_Y,
+            JAR_RADIUS + LABEL_DEPTH_OFFSET,
+        )
+        .expect("jar label patch");
+        b.add_part(label_g, &patch);
+    }
 
     b.build()
 }

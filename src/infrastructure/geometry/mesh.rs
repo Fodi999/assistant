@@ -94,6 +94,11 @@ pub struct Material {
     pub specular: f32,
     /// Shininess exponent (mapped to MTL `Ns`). Higher = sharper highlight. Default 32.0.
     pub shininess: f32,
+    /// Optional URL of a remote label / decal texture (PR #15).
+    /// Embedded into the GLB as `materials[i].extras.texture_url` so the
+    /// frontend can `THREE.TextureLoader` it onto the matching material
+    /// without round-tripping through MTL `map_Kd`.
+    pub texture_url: Option<String>,
 }
 
 impl Material {
@@ -104,6 +109,7 @@ impl Material {
             texture_file: None,
             specular: 0.15,
             shininess: 32.0,
+            texture_url: None,
         }
     }
 
@@ -111,6 +117,13 @@ impl Material {
     pub fn with_gloss(mut self, specular: f32, shininess: f32) -> Self {
         self.specular = specular.clamp(0.0, 1.0);
         self.shininess = shininess.max(1.0);
+        self
+    }
+
+    /// Attach a remote label / decal texture URL (PR #15). The frontend
+    /// reads this via glTF `extras` and applies it as `map` on the material.
+    pub fn with_texture_url(mut self, url: impl Into<String>) -> Self {
+        self.texture_url = Some(url.into());
         self
     }
 }

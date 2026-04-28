@@ -287,7 +287,8 @@ fn material_to_gltf(mat: &Material) -> Value {
         1.0_f32,
     ];
     let roughness = (1.0 - mat.shininess / 200.0).clamp(0.15, 0.9);
-    json!({
+
+    let mut m = json!({
         "name": mat.name,
         "pbrMetallicRoughness": {
             "baseColorFactor": base_color_linear,
@@ -296,7 +297,18 @@ fn material_to_gltf(mat: &Material) -> Value {
         },
         "alphaMode": "OPAQUE",
         "doubleSided": false,
-    })
+    });
+
+    // PR #15 — surface label / decal URL through glTF `extras` so the
+    // frontend (which reads `material.userData` after GLTFLoader parsing)
+    // can fetch the bitmap and assign it as `map`. We deliberately don't
+    // embed the image bytes themselves into the GLB — labels are typically
+    // hosted on the CDN that already serves the GLB.
+    if let Some(url) = &mat.texture_url {
+        m["extras"] = json!({ "texture_url": url });
+    }
+
+    m
 }
 
 /// sRGB (0..1) → linear (0..1). glTF requires linear-space colour factors.
@@ -431,5 +443,38 @@ mod tests {
         // mid-grey 0.5 sRGB ≈ 0.214 linear
         let m = srgb_to_linear(0.5);
         assert!((m - 0.214).abs() < 0.01, "got {m}");
+    }
+
+    #[test]
+    fn glb_label_material_carries_texture_url_in_extras() {
+        let mesh = bottled_sauce::generate_with_label(
+            "#B8321F",
+            bottled_sauce::BottleKind::Glass,
+            None,
+            Some("https://cdn.example.com/labels/sauce.png"),
+        );
+        let export = export_glb(&mesh).unwrap();
+        let b = &export.glb_bytes;
+        let json_len = read_u32_le(b, 12) as usize;
+        let json_text = std::str::from_utf8(&b[20..20 + json_len]).unwrap();
+        let v: Value = serde_json::from_str(json_text.trim_end()).unwrap();
+
+        let materials = v["materials"].as_array().unwrap();
+        assert_eq!(materials.len(), 5, "body+bottom+cap+liquid+label");
+        let label = materials
+            .iter()
+            .find(|m| m["name"] == "bottle_label")
+            .expect("bottle_label material missing in GLB");
+        assert_eq!(
+            label["extras"]["texture_url"].as_str(),
+            Some("https://cdn.example.com/labels/sauce.png")
+        );
+
+        // Materials without a label must NOT have an `extras` key.
+        let glass = materials
+            .iter()
+            .find(|m| m["name"] == "bottle_glass")
+            .unwrap();
+        assert!(glass.get("extras").is_none(), "untextured material must not emit extras");
     }
 }
