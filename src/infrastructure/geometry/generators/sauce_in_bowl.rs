@@ -1,202 +1,156 @@
-//! Sauce-in-bowl generator.
+//! Sauce-in-bowl generator (PR #13 — kernel rewrite).
 //!
-//! Produces a single mesh with **two material groups** (PR #6):
+//! Two material groups (public API preserved):
 //!
-//!   1. **Bowl** — a truncated cone (frustum) open at the top, off-white
-//!      ceramic. Built from `SEGMENTS` quad-strips: outer wall + flat
-//!      annular bottom.
+//!   1. **`bowl_material`** — ceramic bowl built from **four lathed parts**:
+//!      * outer wall (foot bevel → flared body → rim outer edge)
+//!      * inner wall (concave inside, normals flipped to face the axis)
+//!      * rim ring (thin annulus connecting outer top to inner top)
+//!      * foot disk (under the base, faces down)
+//!      * inner bottom disk (concave floor, faces up)
+//!      All five sub-meshes share the same material — the bowl now has a
+//!      visible wall thickness, a foot ring, and a sharp rim that catches
+//!      highlights.
 //!
-//!   2. **Sauce surface** — a filled disk at the fill level (`FILL_RATIO`
-//!      of the bowl height) with a **swirl relief** (sin-based displacement
-//!      following a logarithmic spiral). Colour comes from
-//!      `Product3DSpec.product.color_hex`. Glossy material.
+//!   2. **`sauce_material`** — glossy sauce surface inside the bowl with a
+//!      logarithmic-spiral swirl relief. Built procedurally on top of a
+//!      tessellated disk (not a simple lathe — the swirl needs angular
+//!      displacement, which the kernel doesn't model).
 //!
-//! Dimensions are fixed for now and can be driven by `ContainerSpec`
-//! `diameter_mm` / `height_mm` in a later PR.
-//!
-//! All geometry is in metres, Y-up, centred at origin.
+//! All geometry is in metres, Y-up, centred at origin (Y = 0 = mid-height).
 
 use std::f32::consts::PI;
 
-use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, MaterialGroup, Mesh};
+use crate::infrastructure::geometry::kernel::{
+    disk_fan_down, disk_fan_up, lathe_profile, MeshBuilder, Profile, ProfilePoint,
+};
+use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
-/// Number of horizontal segments (higher = smoother, more verts).
-const SEGMENTS: usize = 32;
-/// Number of radial rings on the sauce surface (for swirl relief).
+const SEGMENTS: usize = 48;
 const SAUCE_RINGS: usize = 12;
 
-/// Bowl dimensions.
-const BOWL_RADIUS_TOP: f32 = 0.07;  // 7 cm opening radius
-const BOWL_RADIUS_BOT: f32 = 0.045; // 4.5 cm base radius
-const BOWL_HEIGHT: f32 = 0.06;      // 6 cm tall
+// ── Bowl dimensions (metres) ────────────────────────────────────────────────
+const BOWL_HEIGHT: f32 = 0.060;            // 6 cm tall
+const Y_BOTTOM: f32 = -BOWL_HEIGHT / 2.0;  // -0.030
+const Y_TOP: f32 = BOWL_HEIGHT / 2.0;      // +0.030
 
-/// Sauce fill level as a fraction of bowl height (0 = empty, 1 = full).
+// Outer profile.
+const OUTER_R_FOOT: f32 = 0.040;     // foot ring radius
+const OUTER_R_FOOT_TOP: f32 = 0.044; // top of foot bevel
+const OUTER_R_BASE: f32 = 0.046;     // wall just above foot
+const OUTER_R_TOP: f32 = 0.070;      // rim outer radius
+
+// Inner profile (3 mm wall thickness at top, 3 mm at floor).
+const INNER_R_BOT: f32 = 0.043;
+const INNER_R_TOP: f32 = 0.067;
+
+// Foot rests at Y_BOTTOM. Inner floor is 4 mm above that to give wall thickness.
+const Y_FOOT_TOP: f32 = Y_BOTTOM + 0.004;       // -0.026
+const Y_INNER_BOTTOM: f32 = Y_BOTTOM + 0.004;   // -0.026
+
+// ── Sauce dimensions ────────────────────────────────────────────────────────
 const FILL_RATIO: f32 = 0.72;
-
-/// Swirl displacement amplitude (metres). Small relative to bowl height.
 const SWIRL_AMPLITUDE: f32 = 0.0025;
-/// Number of full swirl arms.
 const SWIRL_ARMS: f32 = 3.0;
 
-/// Bowl wall colour (off-white ceramic).
+// ── Default colours ─────────────────────────────────────────────────────────
 const BOWL_COLOR: [f32; 3] = [0.96, 0.94, 0.90];
 
-/// Generate a sauce-in-bowl mesh with two material groups (bowl + sauce).
+/// Generate a sauce-in-bowl mesh (bowl + sauce, two material groups).
 ///
-/// - `sauce_color_hex` — hex colour for the sauce surface (`"#RRGGBB"`).
+/// - `sauce_color_hex` — hex colour for the sauce surface.
 /// - `container_color_hex` — optional override for bowl colour.
 pub fn generate(sauce_color_hex: &str, container_color_hex: Option<&str>) -> Mesh {
-    let bowl_color = container_color_hex
-        .map(hex_to_rgb)
-        .unwrap_or(BOWL_COLOR);
+    let bowl_color = container_color_hex.map(hex_to_rgb).unwrap_or(BOWL_COLOR);
     let sauce_color = hex_to_rgb(sauce_color_hex);
 
-    // Build bowl geometry → its faces become group #0
-    let (mut verts, mut norms, mut uvs, bowl_faces) = build_bowl();
+    let mut b = MeshBuilder::new();
 
-    // Build sauce surface — vertices appended into the same vertex array,
-    // its faces (with offset already applied) become group #1.
-    let v_offset = verts.len();
-    let (sv, sn, su, sauce_faces) = build_sauce_surface(v_offset);
-    verts.extend(sv);
-    norms.extend(sn);
-    uvs.extend(su);
+    // The frontend matches `*bowl*|*ceramic*` first (PR #9 polish) and applies
+    // a non-transmissive ceramic upgrade. Soft highlight → low gloss.
+    let bowl_g =
+        b.add_group(Material::solid("bowl_material", bowl_color).with_gloss(0.10, 24.0));
+    let sauce_g = b.add_group(
+        Material::solid("sauce_material", sauce_color).with_gloss(0.55, 96.0),
+    );
 
-    let bowl_material = Material::solid("bowl_material", bowl_color)
-        // ceramic — slightly soft highlight
-        .with_gloss(0.10, 24.0);
-    let sauce_material = Material::solid("sauce_material", sauce_color)
-        // glossy sauce — strong highlight
-        .with_gloss(0.55, 96.0);
+    // ── Bowl: outer wall ────────────────────────────────────────────────────
+    let outer_profile = Profile::new(vec![
+        ProfilePoint::new(OUTER_R_FOOT, Y_BOTTOM),
+        ProfilePoint::new(OUTER_R_FOOT_TOP, Y_FOOT_TOP),
+        ProfilePoint::new(OUTER_R_BASE, Y_FOOT_TOP + 0.001),
+        ProfilePoint::new(OUTER_R_TOP, Y_TOP),
+    ])
+    .expect("hard-coded outer bowl profile is valid");
+    let outer = lathe_profile(&outer_profile, SEGMENTS).expect("lathe outer wall");
+    b.add_part(bowl_g, &outer);
 
-    Mesh::new_multi(
-        verts,
-        norms,
-        uvs,
-        vec![
-            MaterialGroup { material: bowl_material, faces: bowl_faces },
-            MaterialGroup { material: sauce_material, faces: sauce_faces },
-        ],
-    )
+    // ── Bowl: inner wall (flipped: normals point toward the axis) ───────────
+    let inner_profile = Profile::new(vec![
+        ProfilePoint::new(INNER_R_BOT, Y_INNER_BOTTOM),
+        ProfilePoint::new(INNER_R_TOP, Y_TOP),
+    ])
+    .expect("hard-coded inner bowl profile is valid");
+    let inner = lathe_profile(&inner_profile, SEGMENTS)
+        .expect("lathe inner wall")
+        .flipped();
+    b.add_part(bowl_g, &inner);
+
+    // ── Bowl: rim (flat annulus at Y_TOP, faces up) ────────────────────────
+    // Profile from outer→inner at constant Y → outward normal is +Y.
+    let rim_profile = Profile::new(vec![
+        ProfilePoint::new(OUTER_R_TOP, Y_TOP),
+        ProfilePoint::new(INNER_R_TOP, Y_TOP),
+    ])
+    .expect("hard-coded rim profile is valid");
+    let rim = lathe_profile(&rim_profile, SEGMENTS).expect("lathe rim");
+    b.add_part(bowl_g, &rim);
+
+    // ── Bowl: foot underside (disk facing down) ─────────────────────────────
+    let foot_disk = disk_fan_down(OUTER_R_FOOT, Y_BOTTOM, SEGMENTS).expect("foot disk");
+    b.add_part(bowl_g, &foot_disk);
+
+    // ── Bowl: inner floor (disk facing up) ──────────────────────────────────
+    let inner_floor =
+        disk_fan_up(INNER_R_BOT, Y_INNER_BOTTOM, SEGMENTS).expect("inner floor disk");
+    b.add_part(bowl_g, &inner_floor);
+
+    // ── Sauce: tessellated swirl disk inside the bowl ───────────────────────
+    add_sauce_surface(&mut b, sauce_g);
+
+    b.build()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bowl frustum
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn build_bowl() -> (
-    Vec<[f32; 3]>,
-    Vec<[f32; 3]>,
-    Vec<[f32; 2]>,
-    Vec<[usize; 3]>,
-) {
-    let mut verts: Vec<[f32; 3]> = Vec::new();
-    let mut norms: Vec<[f32; 3]> = Vec::new();
-    let mut uvs: Vec<[f32; 2]> = Vec::new();
-    let mut faces: Vec<[usize; 3]> = Vec::new();
-
-    let y_bot = -BOWL_HEIGHT / 2.0;
-    let y_top = BOWL_HEIGHT / 2.0;
-
-    for i in 0..=SEGMENTS {
-        let t = i as f32 / SEGMENTS as f32;
-        let theta = t * 2.0 * PI;
-        let cos_t = theta.cos();
-        let sin_t = theta.sin();
-
-        let xb = cos_t * BOWL_RADIUS_BOT;
-        let zb = sin_t * BOWL_RADIUS_BOT;
-        let xt = cos_t * BOWL_RADIUS_TOP;
-        let zt = sin_t * BOWL_RADIUS_TOP;
-
-        let slope = (BOWL_RADIUS_TOP - BOWL_RADIUS_BOT) / BOWL_HEIGHT;
-        let nx = cos_t;
-        let ny = -slope;
-        let nz = sin_t;
-        let len = (nx * nx + ny * ny + nz * nz).sqrt();
-        let wall_norm = [nx / len, ny / len, nz / len];
-
-        verts.push([xb, y_bot, zb]);
-        norms.push(wall_norm);
-        uvs.push([t, 0.0]);
-
-        verts.push([xt, y_top, zt]);
-        norms.push(wall_norm);
-        uvs.push([t, 1.0]);
-    }
-
-    for i in 0..SEGMENTS {
-        let b0 = i * 2;
-        let t0 = i * 2 + 1;
-        let b1 = (i + 1) * 2;
-        let t1 = (i + 1) * 2 + 1;
-        faces.push([b0, b1, t1]);
-        faces.push([b0, t1, t0]);
-    }
-
-    // Bottom disk
-    let base = verts.len();
-    verts.push([0.0, y_bot, 0.0]);
-    norms.push([0.0, -1.0, 0.0]);
-    uvs.push([0.5, 0.5]);
-
-    for i in 0..=SEGMENTS {
-        let t = i as f32 / SEGMENTS as f32;
-        let theta = t * 2.0 * PI;
-        let x = theta.cos() * BOWL_RADIUS_BOT;
-        let z = theta.sin() * BOWL_RADIUS_BOT;
-        verts.push([x, y_bot, z]);
-        norms.push([0.0, -1.0, 0.0]);
-        uvs.push([0.5 + theta.cos() * 0.5, 0.5 + theta.sin() * 0.5]);
-    }
-
-    for i in 0..SEGMENTS {
-        faces.push([base, base + 1 + i + 1, base + 1 + i]);
-    }
-
-    (verts, norms, uvs, faces)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sauce surface with swirl relief
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// We tessellate the disk into concentric rings (`SAUCE_RINGS`) and angular
-// segments (`SEGMENTS`). Each ring vertex is displaced in Y by:
+// Sauce surface — concentric rings + angular swirl displacement.
 //
 //   dy = SWIRL_AMPLITUDE * sin(SWIRL_ARMS * theta + 2π * radius_ratio)
 //
-// This creates a logarithmic-spiral-style ridge pattern — a clear visual
-// signature of "sauce", not just a flat disk.
+// We push vertices straight into the `MeshBuilder` and attach faces to the
+// sauce group. Edge-falloff zeros the displacement at the rim so the disk
+// stays in contact with the inner bowl wall.
+// ─────────────────────────────────────────────────────────────────────────────
+fn add_sauce_surface(b: &mut MeshBuilder, group: usize) {
+    let y_fill = Y_BOTTOM + BOWL_HEIGHT * FILL_RATIO + 0.002;
 
-fn build_sauce_surface(
-    v_offset: usize,
-) -> (
-    Vec<[f32; 3]>,
-    Vec<[f32; 3]>,
-    Vec<[f32; 2]>,
-    Vec<[usize; 3]>,
-) {
-    let mut verts: Vec<[f32; 3]> = Vec::new();
-    let mut norms: Vec<[f32; 3]> = Vec::new();
-    let mut uvs: Vec<[f32; 2]> = Vec::new();
-    let mut faces: Vec<[usize; 3]> = Vec::new();
+    // Inner-wall radius at the fill height (linear interp on inner profile),
+    // then shrunk so the sauce rim sits ~1 mm clear of the wall.
+    let lerp = (y_fill - Y_INNER_BOTTOM) / (Y_TOP - Y_INNER_BOTTOM);
+    let r_at_fill = INNER_R_BOT + (INNER_R_TOP - INNER_R_BOT) * lerp.clamp(0.0, 1.0);
+    let sauce_radius = r_at_fill * 0.92;
 
-    let y_fill = -BOWL_HEIGHT / 2.0 + BOWL_HEIGHT * FILL_RATIO + 0.002;
-    // Shrink the sauce disk inward so its rim never z-fights with the bowl
-    // wall (PR #9 fix). 0.92 leaves a clean ~5 mm visible ring of ceramic.
-    let sauce_radius =
-        (BOWL_RADIUS_BOT + (BOWL_RADIUS_TOP - BOWL_RADIUS_BOT) * FILL_RATIO) * 0.92;
+    // Centre vertex, undisplaced.
+    let centre = b.add_vertex([0.0, y_fill, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5]);
 
-    // Centre vertex (radius 0) — apex of the swirl, undisplaced.
-    verts.push([0.0, y_fill, 0.0]);
-    norms.push([0.0, 1.0, 0.0]);
-    uvs.push([0.5, 0.5]);
+    // Build all ring vertices and remember their starting index.
+    let ring_size = SEGMENTS + 1;
+    let first_ring_v = centre + 1; // next index pushed will be this
 
-    // Rings 1..=SAUCE_RINGS
     for ring in 1..=SAUCE_RINGS {
         let r_ratio = ring as f32 / SAUCE_RINGS as f32;
         let r = sauce_radius * r_ratio;
+        // Falloff window: full amplitude up to 0.85, linearly to zero by 1.0.
+        let edge_falloff = (1.0 - (r_ratio - 0.85).max(0.0) / 0.15).clamp(0.0, 1.0);
 
         for seg in 0..=SEGMENTS {
             let t = seg as f32 / SEGMENTS as f32;
@@ -204,77 +158,51 @@ fn build_sauce_surface(
             let cos_t = theta.cos();
             let sin_t = theta.sin();
 
-            let x = cos_t * r;
-            let z = sin_t * r;
+            let phase = SWIRL_ARMS * theta + r_ratio * 2.0 * PI;
+            let dy = SWIRL_AMPLITUDE * phase.sin() * edge_falloff;
+            let dphase = SWIRL_AMPLITUDE * SWIRL_ARMS * phase.cos() * edge_falloff;
 
-            // Swirl: displacement decays slightly toward the rim so the
-            // edge stays in contact with the bowl wall.
-            let edge_falloff = 1.0 - (r_ratio - 0.85).max(0.0) / 0.15;
-            let dy = SWIRL_AMPLITUDE
-                * (SWIRL_ARMS * theta + r_ratio * 2.0 * PI).sin()
-                * edge_falloff.clamp(0.0, 1.0);
-
-            let y = y_fill + dy;
-            verts.push([x, y, z]);
-
-            // Approximate normal — we tilt slightly with the gradient of dy.
-            // Cheap analytic gradient (good enough for shading).
-            let dtheta = SWIRL_AMPLITUDE
-                * SWIRL_ARMS
-                * (SWIRL_ARMS * theta + r_ratio * 2.0 * PI).cos()
-                * edge_falloff.clamp(0.0, 1.0);
-            // Tangent in the angular direction has length r (per radian); we
-            // treat dy/dtheta divided by r as the tangential slope.
-            let slope_t = if r > 1e-5 { dtheta / r } else { 0.0 };
-            // Build a quick tilted normal: start from up and lean opposite
-            // to the tangential gradient.
+            // Cheap analytic normal: tilt up-vector against angular gradient.
+            let slope_t = if r > 1e-5 { dphase / r } else { 0.0 };
             let nx = -slope_t * (-sin_t);
             let nz = -slope_t * cos_t;
             let ny = 1.0;
             let len = (nx * nx + ny * ny + nz * nz).sqrt();
-            norms.push([nx / len, ny / len, nz / len]);
 
-            uvs.push([0.5 + cos_t * 0.5 * r_ratio, 0.5 + sin_t * 0.5 * r_ratio]);
+            b.add_vertex(
+                [cos_t * r, y_fill + dy, sin_t * r],
+                [nx / len, ny / len, nz / len],
+                [0.5 + cos_t * 0.5 * r_ratio, 0.5 + sin_t * 0.5 * r_ratio],
+            );
         }
     }
 
-    // Triangulate.
-    // Indices: centre = 0 (local). First ring starts at local idx 1.
-    // Each ring has SEGMENTS+1 verts.
-    let centre_local = 0usize;
-    let ring_size = SEGMENTS + 1;
-
-    // Inner fan: centre → ring 1
+    // Inner fan: centre → first ring.
     for seg in 0..SEGMENTS {
-        let a = 1 + seg;
-        let b = 1 + seg + 1;
-        faces.push([
-            v_offset + centre_local,
-            v_offset + a,
-            v_offset + b,
-        ]);
+        let a = first_ring_v + seg;
+        let bb = first_ring_v + seg + 1;
+        b.add_triangle(group, centre, a, bb);
     }
 
-    // Quads between consecutive rings
+    // Quads between consecutive rings.
     for ring in 1..SAUCE_RINGS {
-        let inner_start = 1 + (ring - 1) * ring_size;
-        let outer_start = 1 + ring * ring_size;
+        let inner_start = first_ring_v + (ring - 1) * ring_size;
+        let outer_start = first_ring_v + ring * ring_size;
         for seg in 0..SEGMENTS {
             let i0 = inner_start + seg;
             let i1 = inner_start + seg + 1;
             let o0 = outer_start + seg;
             let o1 = outer_start + seg + 1;
-            faces.push([v_offset + i0, v_offset + o0, v_offset + o1]);
-            faces.push([v_offset + i0, v_offset + o1, v_offset + i1]);
+            b.add_triangle(group, i0, o0, o1);
+            b.add_triangle(group, i0, o1, i1);
         }
     }
-
-    (verts, norms, uvs, faces)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::geometry::kernel::validate_mesh;
 
     #[test]
     fn sauce_in_bowl_mesh_is_non_empty() {
@@ -309,18 +237,15 @@ mod tests {
             .iter()
             .find(|g| g.material.name == "bowl_material")
             .expect("bowl_material group should exist");
-        // Off-white ceramic, all channels > 0.85
         let [r, g, b] = bowl.material.diffuse_color;
         assert!(r > 0.85 && g > 0.85 && b > 0.85);
     }
 
     #[test]
     fn sauce_surface_has_swirl_displacement() {
-        // At least one sauce vertex must be off the flat fill plane.
         let mesh = generate("#FF0000", None);
-        let y_fill = -BOWL_HEIGHT / 2.0 + BOWL_HEIGHT * FILL_RATIO;
+        let y_fill = Y_BOTTOM + BOWL_HEIGHT * FILL_RATIO;
 
-        // Collect indices used by the sauce group.
         let sauce = mesh
             .groups
             .iter()
@@ -337,5 +262,64 @@ mod tests {
             .iter()
             .any(|&i| (mesh.vertices[i][1] - y_fill).abs() > 1e-5);
         assert!(any_displaced, "sauce surface should have swirl relief");
+    }
+
+    #[test]
+    fn sauce_in_bowl_passes_kernel_validation() {
+        let mesh = generate("#B8321F", None);
+        validate_mesh(&mesh).expect("kernel validation should pass on bowl mesh");
+    }
+
+    #[test]
+    fn bowl_has_inner_wall_with_inward_normals() {
+        // The flipped inner wall should have at least one vertex whose
+        // normal opposes its outward (axis-pointing) direction.
+        let mesh = generate("#B8321F", None);
+        let bowl = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "bowl_material")
+            .unwrap();
+        let mut inward_count = 0usize;
+        let mut indices = std::collections::HashSet::new();
+        for [a, b, c] in &bowl.faces {
+            indices.insert(*a);
+            indices.insert(*b);
+            indices.insert(*c);
+        }
+        for i in indices {
+            let v = mesh.vertices[i];
+            let r = (v[0] * v[0] + v[2] * v[2]).sqrt();
+            if r < 1e-5 {
+                continue;
+            }
+            let outward = [v[0] / r, 0.0_f32, v[2] / r];
+            let n = mesh.normals[i];
+            let dot = n[0] * outward[0] + n[1] * outward[1] + n[2] * outward[2];
+            if dot < -0.5 {
+                inward_count += 1;
+            }
+        }
+        assert!(
+            inward_count > SEGMENTS,
+            "expected many inner-wall vertices with inward normals (got {inward_count})"
+        );
+    }
+
+    #[test]
+    fn bowl_widest_radius_is_at_rim() {
+        let mesh = generate("#B8321F", None);
+        let mut widest_r: f32 = 0.0;
+        let mut widest_y: f32 = 0.0;
+        for v in &mesh.vertices {
+            let r = (v[0] * v[0] + v[2] * v[2]).sqrt();
+            if r > widest_r {
+                widest_r = r;
+                widest_y = v[1];
+            }
+        }
+        // Rim outer radius dominates.
+        assert!((widest_r - OUTER_R_TOP).abs() < 1e-4);
+        assert!((widest_y - Y_TOP).abs() < 1e-4);
     }
 }

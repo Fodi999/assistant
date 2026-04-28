@@ -48,6 +48,24 @@ impl MeshPart {
     pub fn face_count(&self) -> usize {
         self.faces.len()
     }
+
+    /// Return a copy with **all face windings reversed** and **all normals
+    /// negated**. Used for inner walls of bowls / hollow shells where the
+    /// surface should face the rotation axis instead of away from it.
+    pub fn flipped(&self) -> Self {
+        let normals = self
+            .normals
+            .iter()
+            .map(|n| [-n[0], -n[1], -n[2]])
+            .collect();
+        let faces = self.faces.iter().map(|f| [f[0], f[2], f[1]]).collect();
+        Self {
+            vertices: self.vertices.clone(),
+            normals,
+            uvs: self.uvs.clone(),
+            faces,
+        }
+    }
 }
 
 /// Revolve `profile` around the Y axis with `segments` slices.
@@ -240,6 +258,36 @@ mod tests {
         // For a widening frustum, normals must have a *negative* Y component.
         for n in &mp.normals {
             assert!(n[1] < 0.0, "frustum normal Y should be negative, got {}", n[1]);
+        }
+    }
+
+    #[test]
+    fn flipped_inverts_normals_and_winding() {
+        let p = Profile::new(vec![
+            ProfilePoint::new(0.05, -0.05),
+            ProfilePoint::new(0.05, 0.05),
+        ])
+        .unwrap();
+        let mp = lathe_profile(&p, 8).unwrap();
+        let flipped = mp.flipped();
+
+        assert_eq!(flipped.vertices.len(), mp.vertices.len());
+        assert_eq!(flipped.faces.len(), mp.faces.len());
+
+        // Normals must point inward now: dot with outward < 0.
+        for (i, v) in flipped.vertices.iter().enumerate() {
+            let r = (v[0] * v[0] + v[2] * v[2]).sqrt().max(1e-6);
+            let outward = [v[0] / r, 0.0_f32, v[2] / r];
+            let n = flipped.normals[i];
+            let dot = n[0] * outward[0] + n[1] * outward[1] + n[2] * outward[2];
+            assert!(dot < -0.99, "flipped normal should be inward: dot={dot}");
+        }
+
+        // Windings reversed: original (a,b,c) → (a,c,b).
+        for (orig, flip) in mp.faces.iter().zip(flipped.faces.iter()) {
+            assert_eq!(flip[0], orig[0]);
+            assert_eq!(flip[1], orig[2]);
+            assert_eq!(flip[2], orig[1]);
         }
     }
 }
