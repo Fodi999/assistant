@@ -18,7 +18,8 @@
 //! Y-up, centred at origin, all units in metres.
 
 use crate::infrastructure::geometry::kernel::{
-    disk_fan_down, disk_fan_up, flat_patch, lathe_profile, MeshBuilder, Profile, ProfilePoint,
+    disk_fan_down, disk_fan_up, flat_patch, lathe_profile, GeometryQuality, MeshBuilder, Profile,
+    ProfilePoint,
 };
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
@@ -28,8 +29,6 @@ const LABEL_HEIGHT: f32 = 0.040; // 4 cm
 const LABEL_CENTER_Y: f32 = 0.000; // mid-jar
 const LABEL_DEPTH_OFFSET: f32 = 0.0006; // 0.6 mm in front of the wall
 const LABEL_PAPER_COLOR: [f32; 3] = [0.97, 0.96, 0.93];
-
-const SEGMENTS: usize = 48;
 
 // ── Default dimensions (metres) ─────────────────────────────────────────────
 const JAR_RADIUS: f32 = 0.040; // 4 cm wall radius
@@ -68,8 +67,25 @@ pub fn generate_with_label(
     lid_color_hex: Option<&str>,
     label_url: Option<&str>,
 ) -> Mesh {
+    generate_with_label_and_quality(
+        product_color_hex,
+        lid_color_hex,
+        label_url,
+        GeometryQuality::default(),
+    )
+}
+
+/// Full entrypoint with explicit [`GeometryQuality`].
+pub fn generate_with_label_and_quality(
+    product_color_hex: &str,
+    lid_color_hex: Option<&str>,
+    label_url: Option<&str>,
+    quality: GeometryQuality,
+) -> Mesh {
     let product_color = hex_to_rgb(product_color_hex);
     let lid_color = lid_color_hex.map(hex_to_rgb).unwrap_or(LID_DEFAULT_COLOR);
+
+    let segments = quality.radial_segments();
 
     let mut b = MeshBuilder::new();
 
@@ -103,11 +119,11 @@ pub fn generate_with_label(
         ProfilePoint::new(r - JAR_SHOULDER_INSET, jar_top),
     ])
     .expect("hard-coded jar profile is valid");
-    let jar_wall = lathe_profile(&jar_profile, SEGMENTS).expect("lathe jar wall");
+    let jar_wall = lathe_profile(&jar_profile, segments).expect("lathe jar wall");
     b.add_part(glass_g, &jar_wall);
 
     // Bottom disk caps the foot opening.
-    let jar_bottom_cap = disk_fan_down(r - JAR_FOOT_BEVEL, jar_bottom, SEGMENTS)
+    let jar_bottom_cap = disk_fan_down(r - JAR_FOOT_BEVEL, jar_bottom, segments)
         .expect("jar bottom disk");
     b.add_part(glass_g, &jar_bottom_cap);
 
@@ -120,11 +136,11 @@ pub fn generate_with_label(
     ])
     .expect("hard-coded product profile is valid");
     let product_wall =
-        lathe_profile(&product_profile, SEGMENTS).expect("lathe product wall");
+        lathe_profile(&product_profile, segments).expect("lathe product wall");
     b.add_part(product_g, &product_wall);
 
     let meniscus =
-        disk_fan_up(product_radius, product_top_y, SEGMENTS).expect("meniscus disk");
+        disk_fan_up(product_radius, product_top_y, segments).expect("meniscus disk");
     b.add_part(product_g, &meniscus);
 
     // ── Lid: metal cylinder with overhang + top + underside ─────────────────
@@ -140,17 +156,17 @@ pub fn generate_with_label(
         ProfilePoint::new(lid_radius - LID_RIM_BEVEL, lid_top),
     ])
     .expect("hard-coded lid profile is valid");
-    let lid_wall = lathe_profile(&lid_profile, SEGMENTS).expect("lathe lid wall");
+    let lid_wall = lathe_profile(&lid_profile, segments).expect("lathe lid wall");
     b.add_part(lid_g, &lid_wall);
 
     // Top of lid (sealed disk, faces up).
-    let lid_top_cap = disk_fan_up(lid_radius - LID_RIM_BEVEL, lid_top, SEGMENTS)
+    let lid_top_cap = disk_fan_up(lid_radius - LID_RIM_BEVEL, lid_top, segments)
         .expect("lid top disk");
     b.add_part(lid_g, &lid_top_cap);
 
     // Underside of lid (faces down, hidden by jar but keeps the mesh closed).
     let lid_bottom_cap =
-        disk_fan_down(lid_radius - LID_RIM_BEVEL, lid_bottom, SEGMENTS)
+        disk_fan_down(lid_radius - LID_RIM_BEVEL, lid_bottom, segments)
             .expect("lid underside disk");
     b.add_part(lid_g, &lid_bottom_cap);
 

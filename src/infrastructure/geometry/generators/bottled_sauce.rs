@@ -26,8 +26,8 @@
 //! Y-up, centred at origin, all units in metres.
 
 use crate::infrastructure::geometry::kernel::{
-    cylindrical_band, disk_fan_down, disk_fan_up, lathe_profile, MeshBuilder, Profile,
-    ProfilePoint,
+    cylindrical_band, disk_fan_down, disk_fan_up, lathe_profile, GeometryQuality, MeshBuilder,
+    Profile, ProfilePoint,
 };
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
@@ -37,8 +37,6 @@ const LABEL_Y_MIN: f32 = -0.030;
 const LABEL_Y_MAX: f32 = 0.015;
 const LABEL_RADIUS_OFFSET: f32 = 0.0004; // 0.4 mm outset (slightly proud)
 const LABEL_PAPER_COLOR: [f32; 3] = [0.97, 0.96, 0.93]; // off-white paper
-
-const SEGMENTS: usize = 48;
 
 // ── Default colours ─────────────────────────────────────────────────────────
 const BOTTLE_GLASS_COLOR: [f32; 3] = [0.90, 0.93, 0.92];
@@ -159,9 +157,28 @@ pub fn generate_with_label(
     cap_color_hex: Option<&str>,
     label_url: Option<&str>,
 ) -> Mesh {
+    generate_with_label_and_quality(
+        liquid_color_hex,
+        bottle_kind,
+        cap_color_hex,
+        label_url,
+        GeometryQuality::default(),
+    )
+}
+
+/// Full entrypoint with explicit [`GeometryQuality`].
+pub fn generate_with_label_and_quality(
+    liquid_color_hex: &str,
+    bottle_kind: BottleKind,
+    cap_color_hex: Option<&str>,
+    label_url: Option<&str>,
+    quality: GeometryQuality,
+) -> Mesh {
     let liquid_color = hex_to_rgb(liquid_color_hex);
     let bottle_color = bottle_kind.default_color();
     let cap_color = cap_color_hex.map(hex_to_rgb).unwrap_or(CAP_DEFAULT_COLOR);
+
+    let segments = quality.radial_segments();
 
     let mut b = MeshBuilder::new();
 
@@ -184,35 +201,35 @@ pub fn generate_with_label(
     );
 
     // ── Bottle exterior wall ────────────────────────────────────────────────
-    let body = lathe_profile(&bottle_body_profile(), SEGMENTS)
+    let body = lathe_profile(&bottle_body_profile(), segments)
         .expect("lathe bottle body");
     b.add_part(bottle_wall_g, &body);
 
     // ── Bottle bottom disk ──────────────────────────────────────────────────
-    let bottom_cap = disk_fan_down(BOTTOM_DISK_RADIUS, -0.060, SEGMENTS)
+    let bottom_cap = disk_fan_down(BOTTOM_DISK_RADIUS, -0.060, segments)
         .expect("bottle bottom disk");
     b.add_part(bottle_bottom_g, &bottom_cap);
 
     // ── Cap ─────────────────────────────────────────────────────────────────
-    let cap_wall = lathe_profile(&cap_profile(), SEGMENTS).expect("lathe cap");
+    let cap_wall = lathe_profile(&cap_profile(), segments).expect("lathe cap");
     b.add_part(cap_g, &cap_wall);
-    let cap_top = disk_fan_up(CAP_INNER_RADIUS, CAP_TOP_Y, SEGMENTS)
+    let cap_top = disk_fan_up(CAP_INNER_RADIUS, CAP_TOP_Y, segments)
         .expect("cap top disk");
     b.add_part(cap_g, &cap_top);
     // Underside ring of the cap so it isn't open from below.
-    let cap_under = disk_fan_down(CAP_INNER_RADIUS, CAP_BOTTOM_Y, SEGMENTS)
+    let cap_under = disk_fan_down(CAP_INNER_RADIUS, CAP_BOTTOM_Y, segments)
         .expect("cap underside disk");
     b.add_part(cap_g, &cap_under);
 
     // ── Liquid (inner wall + meniscus) ──────────────────────────────────────
     let liquid_wall =
-        lathe_profile(&liquid_profile(), SEGMENTS).expect("lathe liquid");
+        lathe_profile(&liquid_profile(), segments).expect("lathe liquid");
     b.add_part(liquid_g, &liquid_wall);
     // Meniscus sits at the topmost liquid profile point.
     let menisc_radius = liquid_profile().points.last().unwrap().radius;
     let menisc_y = liquid_profile().points.last().unwrap().y;
     let meniscus =
-        disk_fan_up(menisc_radius, menisc_y, SEGMENTS).expect("liquid meniscus");
+        disk_fan_up(menisc_radius, menisc_y, segments).expect("liquid meniscus");
     b.add_part(liquid_g, &meniscus);
 
     // ── Label band (optional, PR #15) ───────────────────────────────────────
@@ -226,7 +243,7 @@ pub fn generate_with_label(
             BODY_RADIUS + LABEL_RADIUS_OFFSET,
             LABEL_Y_MIN,
             LABEL_Y_MAX,
-            SEGMENTS,
+            segments,
         )
         .expect("label band");
         b.add_part(label_g, &band);

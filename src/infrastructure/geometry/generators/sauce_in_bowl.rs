@@ -22,12 +22,10 @@
 use std::f32::consts::PI;
 
 use crate::infrastructure::geometry::kernel::{
-    disk_fan_down, disk_fan_up, lathe_profile, MeshBuilder, Profile, ProfilePoint,
+    disk_fan_down, disk_fan_up, lathe_profile, GeometryQuality, MeshBuilder, Profile,
+    ProfilePoint,
 };
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
-
-const SEGMENTS: usize = 48;
-const SAUCE_RINGS: usize = 12;
 
 // ── Bowl dimensions (metres) ────────────────────────────────────────────────
 const BOWL_HEIGHT: f32 = 0.060;            // 6 cm tall
@@ -58,11 +56,26 @@ const BOWL_COLOR: [f32; 3] = [0.96, 0.94, 0.90];
 
 /// Generate a sauce-in-bowl mesh (bowl + sauce, two material groups).
 ///
+/// Uses [`GeometryQuality::default`] (= `High`).
+///
 /// - `sauce_color_hex` — hex colour for the sauce surface.
 /// - `container_color_hex` — optional override for bowl colour.
 pub fn generate(sauce_color_hex: &str, container_color_hex: Option<&str>) -> Mesh {
+    generate_with_quality(sauce_color_hex, container_color_hex, GeometryQuality::default())
+}
+
+/// Same as [`generate`] but with an explicit [`GeometryQuality`] preset
+/// driving the radial segment count and the number of swirl rings.
+pub fn generate_with_quality(
+    sauce_color_hex: &str,
+    container_color_hex: Option<&str>,
+    quality: GeometryQuality,
+) -> Mesh {
     let bowl_color = container_color_hex.map(hex_to_rgb).unwrap_or(BOWL_COLOR);
     let sauce_color = hex_to_rgb(sauce_color_hex);
+
+    let segments = quality.radial_segments();
+    let sauce_rings = quality.surface_rings();
 
     let mut b = MeshBuilder::new();
 
@@ -82,7 +95,7 @@ pub fn generate(sauce_color_hex: &str, container_color_hex: Option<&str>) -> Mes
         ProfilePoint::new(OUTER_R_TOP, Y_TOP),
     ])
     .expect("hard-coded outer bowl profile is valid");
-    let outer = lathe_profile(&outer_profile, SEGMENTS).expect("lathe outer wall");
+    let outer = lathe_profile(&outer_profile, segments).expect("lathe outer wall");
     b.add_part(bowl_g, &outer);
 
     // ── Bowl: inner wall (flipped: normals point toward the axis) ───────────
@@ -91,7 +104,7 @@ pub fn generate(sauce_color_hex: &str, container_color_hex: Option<&str>) -> Mes
         ProfilePoint::new(INNER_R_TOP, Y_TOP),
     ])
     .expect("hard-coded inner bowl profile is valid");
-    let inner = lathe_profile(&inner_profile, SEGMENTS)
+    let inner = lathe_profile(&inner_profile, segments)
         .expect("lathe inner wall")
         .flipped();
     b.add_part(bowl_g, &inner);
@@ -103,20 +116,20 @@ pub fn generate(sauce_color_hex: &str, container_color_hex: Option<&str>) -> Mes
         ProfilePoint::new(INNER_R_TOP, Y_TOP),
     ])
     .expect("hard-coded rim profile is valid");
-    let rim = lathe_profile(&rim_profile, SEGMENTS).expect("lathe rim");
+    let rim = lathe_profile(&rim_profile, segments).expect("lathe rim");
     b.add_part(bowl_g, &rim);
 
     // ── Bowl: foot underside (disk facing down) ─────────────────────────────
-    let foot_disk = disk_fan_down(OUTER_R_FOOT, Y_BOTTOM, SEGMENTS).expect("foot disk");
+    let foot_disk = disk_fan_down(OUTER_R_FOOT, Y_BOTTOM, segments).expect("foot disk");
     b.add_part(bowl_g, &foot_disk);
 
     // ── Bowl: inner floor (disk facing up) ──────────────────────────────────
     let inner_floor =
-        disk_fan_up(INNER_R_BOT, Y_INNER_BOTTOM, SEGMENTS).expect("inner floor disk");
+        disk_fan_up(INNER_R_BOT, Y_INNER_BOTTOM, segments).expect("inner floor disk");
     b.add_part(bowl_g, &inner_floor);
 
     // ── Sauce: tessellated swirl disk inside the bowl ───────────────────────
-    add_sauce_surface(&mut b, sauce_g);
+    add_sauce_surface(&mut b, sauce_g, segments, sauce_rings);
 
     b.build()
 }
@@ -130,7 +143,7 @@ pub fn generate(sauce_color_hex: &str, container_color_hex: Option<&str>) -> Mes
 // sauce group. Edge-falloff zeros the displacement at the rim so the disk
 // stays in contact with the inner bowl wall.
 // ─────────────────────────────────────────────────────────────────────────────
-fn add_sauce_surface(b: &mut MeshBuilder, group: usize) {
+fn add_sauce_surface(b: &mut MeshBuilder, group: usize, segments: usize, sauce_rings: usize) {
     let y_fill = Y_BOTTOM + BOWL_HEIGHT * FILL_RATIO + 0.002;
 
     // Inner-wall radius at the fill height (linear interp on inner profile),
@@ -143,17 +156,17 @@ fn add_sauce_surface(b: &mut MeshBuilder, group: usize) {
     let centre = b.add_vertex([0.0, y_fill, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5]);
 
     // Build all ring vertices and remember their starting index.
-    let ring_size = SEGMENTS + 1;
+    let ring_size = segments + 1;
     let first_ring_v = centre + 1; // next index pushed will be this
 
-    for ring in 1..=SAUCE_RINGS {
-        let r_ratio = ring as f32 / SAUCE_RINGS as f32;
+    for ring in 1..=sauce_rings {
+        let r_ratio = ring as f32 / sauce_rings as f32;
         let r = sauce_radius * r_ratio;
         // Falloff window: full amplitude up to 0.85, linearly to zero by 1.0.
         let edge_falloff = (1.0 - (r_ratio - 0.85).max(0.0) / 0.15).clamp(0.0, 1.0);
 
-        for seg in 0..=SEGMENTS {
-            let t = seg as f32 / SEGMENTS as f32;
+        for seg in 0..=segments {
+            let t = seg as f32 / segments as f32;
             let theta = t * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
@@ -178,17 +191,17 @@ fn add_sauce_surface(b: &mut MeshBuilder, group: usize) {
     }
 
     // Inner fan: centre → first ring.
-    for seg in 0..SEGMENTS {
+    for seg in 0..segments {
         let a = first_ring_v + seg;
         let bb = first_ring_v + seg + 1;
         b.add_triangle(group, centre, a, bb);
     }
 
     // Quads between consecutive rings.
-    for ring in 1..SAUCE_RINGS {
+    for ring in 1..sauce_rings {
         let inner_start = first_ring_v + (ring - 1) * ring_size;
         let outer_start = first_ring_v + ring * ring_size;
-        for seg in 0..SEGMENTS {
+        for seg in 0..segments {
             let i0 = inner_start + seg;
             let i1 = inner_start + seg + 1;
             let o0 = outer_start + seg;
@@ -301,7 +314,7 @@ mod tests {
             }
         }
         assert!(
-            inward_count > SEGMENTS,
+            inward_count > GeometryQuality::default().radial_segments(),
             "expected many inner-wall vertices with inward normals (got {inward_count})"
         );
     }

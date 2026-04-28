@@ -17,7 +17,7 @@ pub mod kernel;
 pub mod mesh;
 pub mod obj_exporter;
 
-pub use dispatcher::dispatch;
+pub use dispatcher::{dispatch, dispatch_with_quality};
 pub use gltf_exporter::export_glb;
 pub use mesh::{Material, Mesh};
 pub use obj_exporter::export_obj;

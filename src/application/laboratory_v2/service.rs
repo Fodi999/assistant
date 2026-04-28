@@ -16,7 +16,8 @@ use super::models::{
     AssetStatus, Laboratory3DAsset, LaboratoryImage, RegisterImagePayload,
 };
 use crate::infrastructure::gemini::GeminiVision3D;
-use crate::infrastructure::geometry::{dispatch as geometry_dispatch, export_glb};
+use crate::infrastructure::geometry::kernel::GeometryQuality;
+use crate::infrastructure::geometry::{dispatch_with_quality as geometry_dispatch, export_glb};
 use crate::infrastructure::persistence::laboratory_v2_repository::{
     CreateImageInput, LaboratoryV2Repository,
 };
@@ -146,6 +147,24 @@ impl LaboratoryV2Service {
         image_id: Uuid,
         user_id: Uuid,
     ) -> Result<Laboratory3DAsset, AppError> {
+        self.generate_model_from_image_with_quality(
+            image_id,
+            user_id,
+            GeometryQuality::default(),
+        )
+        .await
+    }
+
+    /// Same as [`generate_model_from_image`] but with explicit
+    /// [`GeometryQuality`]. Studio default is `High`; final exports use
+    /// `Ultra`. Frontend `RenderQuality` is independent and acts on the
+    /// viewer canvas (DPR / shadows / AA), not on the GLB topology.
+    pub async fn generate_model_from_image_with_quality(
+        &self,
+        image_id: Uuid,
+        user_id: Uuid,
+        quality: GeometryQuality,
+    ) -> Result<Laboratory3DAsset, AppError> {
         // 1. Load image
         let image = self
             .repo
@@ -161,7 +180,7 @@ impl LaboratoryV2Service {
         let asset_id = asset.id;
 
         // From here on every error path must mark the row as failed.
-        match self.run_vision_pipeline(&image, asset_id).await {
+        match self.run_vision_pipeline(&image, asset_id, quality).await {
             Ok(()) => {
                 // 6. Re-read so the response carries the joined image_url + spec.
                 self.repo
@@ -195,6 +214,7 @@ impl LaboratoryV2Service {
         &self,
         image: &LaboratoryImage,
         asset_id: Uuid,
+        quality: GeometryQuality,
     ) -> Result<(), AppError> {
         // 3. analyzing_image
         self.repo
@@ -220,8 +240,9 @@ impl LaboratoryV2Service {
             .save_spec_and_mark_generating(asset_id, effective.as_str(), spec_json.clone())
             .await?;
 
-        // 7. Geometry dispatch → Mesh → GLB
-        let mesh = geometry_dispatch(effective.as_str(), Some(&spec_json))?;
+        // 7. Geometry dispatch → Mesh → GLB (geometry quality drives segment
+        // counts and ring counts on heightfield surfaces).
+        let mesh = geometry_dispatch(effective.as_str(), Some(&spec_json), quality)?;
         let export = export_glb(&mesh)?;
 
         // 8. Store .glb (single self-contained file with embedded PBR materials)
@@ -237,8 +258,9 @@ impl LaboratoryV2Service {
             .await?;
 
         tracing::info!(
-            "✅ laboratory_v2: asset {asset_id} ready — object_type={} model_url={model_url}",
-            effective.as_str()
+            "✅ laboratory_v2: asset {asset_id} ready — object_type={} quality={} model_url={model_url}",
+            effective.as_str(),
+            quality.as_str()
         );
 
         Ok(())

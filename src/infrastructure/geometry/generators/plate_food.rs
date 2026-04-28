@@ -25,13 +25,9 @@
 use std::f32::consts::PI;
 
 use crate::infrastructure::geometry::kernel::{
-    disk_fan_down, lathe_profile, MeshBuilder, Profile, ProfilePoint,
+    disk_fan_down, lathe_profile, GeometryQuality, MeshBuilder, Profile, ProfilePoint,
 };
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
-
-const SEGMENTS: usize = 64;          // plate is wide → more slices help
-const MOUND_RINGS: usize = 14;       // radial resolution of the food mound
-const MOUND_SEGMENTS: usize = 48;    // angular resolution of the food mound
 
 // ── Plate dimensions (metres) ───────────────────────────────────────────────
 const PLATE_FOOT_INNER: f32 = 0.030;
@@ -65,8 +61,22 @@ const PLATE_DEFAULT_COLOR: [f32; 3] = [0.96, 0.94, 0.90];
 /// - `product_color_hex` — hex colour of the food (`product.color_hex`).
 /// - `plate_color_hex` — optional override for the plate.
 pub fn generate(product_color_hex: &str, plate_color_hex: Option<&str>) -> Mesh {
+    generate_with_quality(product_color_hex, plate_color_hex, GeometryQuality::default())
+}
+
+/// Same as [`generate`] but with an explicit [`GeometryQuality`] preset
+/// driving the radial segment count and the number of mound rings.
+pub fn generate_with_quality(
+    product_color_hex: &str,
+    plate_color_hex: Option<&str>,
+    quality: GeometryQuality,
+) -> Mesh {
     let product_color = hex_to_rgb(product_color_hex);
     let plate_color = plate_color_hex.map(hex_to_rgb).unwrap_or(PLATE_DEFAULT_COLOR);
+
+    let segments = quality.radial_segments();
+    let mound_segments = quality.radial_segments();
+    let mound_rings = quality.surface_rings();
 
     let mut b = MeshBuilder::new();
 
@@ -91,16 +101,16 @@ pub fn generate(product_color_hex: &str, plate_color_hex: Option<&str>) -> Mesh 
         ProfilePoint::new(PLATE_RIM_INNER, Y_RIM_INNER),
     ])
     .expect("hard-coded plate profile is valid");
-    let plate_wall = lathe_profile(&plate_profile, SEGMENTS).expect("lathe plate");
+    let plate_wall = lathe_profile(&plate_profile, segments).expect("lathe plate");
     b.add_part(plate_g, &plate_wall);
 
     // Underside of the foot (small disk facing down so the plate is closed).
     let foot_disk =
-        disk_fan_down(PLATE_FOOT_INNER, Y_FOOT_BOTTOM, SEGMENTS).expect("foot disk");
+        disk_fan_down(PLATE_FOOT_INNER, Y_FOOT_BOTTOM, segments).expect("foot disk");
     b.add_part(plate_g, &foot_disk);
 
     // ── Food mound via radial heightfield ───────────────────────────────────
-    add_food_mound(&mut b, food_g);
+    add_food_mound(&mut b, food_g, mound_segments, mound_rings);
 
     b.build()
 }
@@ -117,7 +127,7 @@ pub fn generate(product_color_hex: &str, plate_color_hex: Option<&str>) -> Mesh 
 // The smoothstep zeros the noise both at the apex (so the centre stays the
 // highest point) and at the rim (so the mound smoothly meets the plate).
 // ─────────────────────────────────────────────────────────────────────────────
-fn add_food_mound(b: &mut MeshBuilder, group: usize) {
+fn add_food_mound(b: &mut MeshBuilder, group: usize, mound_segments: usize, mound_rings: usize) {
     // Centre vertex — the highest point.
     let centre = b.add_vertex(
         [0.0, PLATE_TOP_Y + FOOD_DOME, 0.0],
@@ -125,12 +135,12 @@ fn add_food_mound(b: &mut MeshBuilder, group: usize) {
         [0.5, 0.5],
     );
 
-    let ring_size = MOUND_SEGMENTS + 1;
+    let ring_size = mound_segments + 1;
     let first_ring_v = centre + 1;
 
     // Build all ring vertices.
-    for ring in 1..=MOUND_RINGS {
-        let r_ratio = ring as f32 / MOUND_RINGS as f32;
+    for ring in 1..=mound_rings {
+        let r_ratio = ring as f32 / mound_rings as f32;
         let r = FOOD_MAX_RADIUS * r_ratio;
 
         // Smoothstep window for the noise: full strength in the middle, zero
@@ -139,8 +149,8 @@ fn add_food_mound(b: &mut MeshBuilder, group: usize) {
         let edge_hi = 1.0 - smoothstep(0.85, 1.00, r_ratio);
         let noise_w = (edge_lo * edge_hi).clamp(0.0, 1.0);
 
-        for seg in 0..=MOUND_SEGMENTS {
-            let t = seg as f32 / MOUND_SEGMENTS as f32;
+        for seg in 0..=mound_segments {
+            let t = seg as f32 / mound_segments as f32;
             let theta = t * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
@@ -187,17 +197,17 @@ fn add_food_mound(b: &mut MeshBuilder, group: usize) {
     }
 
     // Inner fan: centre → ring 1.
-    for seg in 0..MOUND_SEGMENTS {
+    for seg in 0..mound_segments {
         let a = first_ring_v + seg;
         let bb = first_ring_v + seg + 1;
         b.add_triangle(group, centre, a, bb);
     }
 
     // Quads between consecutive rings.
-    for ring in 1..MOUND_RINGS {
+    for ring in 1..mound_rings {
         let inner_start = first_ring_v + (ring - 1) * ring_size;
         let outer_start = first_ring_v + ring * ring_size;
-        for seg in 0..MOUND_SEGMENTS {
+        for seg in 0..mound_segments {
             let i0 = inner_start + seg;
             let i1 = inner_start + seg + 1;
             let o0 = outer_start + seg;

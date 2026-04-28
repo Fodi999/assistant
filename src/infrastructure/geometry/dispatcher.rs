@@ -14,20 +14,40 @@ use serde_json::Value;
 use crate::infrastructure::geometry::generators::{
     bottled_sauce, flat_card, jar_product, plate_food, sauce_in_bowl,
 };
+use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::geometry::mesh::Mesh;
 use crate::shared::AppError;
 
 /// Generate a [`Mesh`] from `object_type` (the string stored in
 /// `laboratory_3d_assets.object_type`) and the raw `object_spec_json`.
 ///
+/// Uses [`GeometryQuality::default`] (= `High`).
+///
 /// The caller can pass `None` for `spec` if the spec is unavailable — all
 /// generators have sensible defaults.
 pub fn dispatch(object_type: &str, spec: Option<&Value>) -> Result<Mesh, AppError> {
+    dispatch_with_quality(object_type, spec, GeometryQuality::default())
+}
+
+/// Same as [`dispatch`] but with an explicit [`GeometryQuality`] preset.
+///
+/// Studio default is `High`. Final-render exports use `Ultra`. The frontend
+/// `Render Quality` switch is independent of this — render quality changes
+/// instantly, geometry quality requires regenerating the GLB.
+pub fn dispatch_with_quality(
+    object_type: &str,
+    spec: Option<&Value>,
+    quality: GeometryQuality,
+) -> Result<Mesh, AppError> {
     match object_type {
         "sauce_in_bowl" => {
             let sauce_color = extract_str(spec, "/product/color_hex").unwrap_or("#B8321F");
             let container_color = extract_str(spec, "/container/color_hex");
-            Ok(sauce_in_bowl::generate(sauce_color, container_color))
+            Ok(sauce_in_bowl::generate_with_quality(
+                sauce_color,
+                container_color,
+                quality,
+            ))
         }
         "bottled_sauce" => {
             let liquid_color = extract_str(spec, "/product/color_hex").unwrap_or("#B8321F");
@@ -36,25 +56,36 @@ pub fn dispatch(object_type: &str, spec: Option<&Value>) -> Result<Mesh, AppErro
             );
             let label_url = extract_str(spec, "/labels/main_url");
             // Cap colour is not in the current spec — leave as default for now.
-            Ok(bottled_sauce::generate_with_label(
+            Ok(bottled_sauce::generate_with_label_and_quality(
                 liquid_color,
                 kind,
                 None,
                 label_url,
+                quality,
             ))
         }
         "jar_product" => {
             let product_color = extract_str(spec, "/product/color_hex").unwrap_or("#A85B12");
             let lid_color = extract_str(spec, "/container/color_hex");
             let label_url = extract_str(spec, "/labels/main_url");
-            Ok(jar_product::generate_with_label(product_color, lid_color, label_url))
+            Ok(jar_product::generate_with_label_and_quality(
+                product_color,
+                lid_color,
+                label_url,
+                quality,
+            ))
         }
         "plate_food" => {
             let product_color = extract_str(spec, "/product/color_hex").unwrap_or("#A85B12");
             let plate_color = extract_str(spec, "/container/color_hex");
-            Ok(plate_food::generate(product_color, plate_color))
+            Ok(plate_food::generate_with_quality(
+                product_color,
+                plate_color,
+                quality,
+            ))
         }
-        // Remaining types (flat_card, unknown) → flat_card.
+        // Remaining types (flat_card, unknown) → flat_card. Quality has no
+        // effect on the simple textured rectangle.
         _ => {
             let color = extract_str(spec, "/product/color_hex").unwrap_or("#CCCCCC");
             Ok(flat_card::generate(color, None))

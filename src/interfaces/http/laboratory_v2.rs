@@ -8,7 +8,7 @@
 //!   * `GET  /laboratory/assets/:asset_id`
 
 use axum::{
-    extract::{FromRequest, Multipart, Path, Request, State},
+    extract::{FromRequest, Multipart, Path, Query, Request, State},
     http::{header, StatusCode},
     Json,
 };
@@ -18,6 +18,7 @@ use uuid::Uuid;
 use crate::application::laboratory_v2::{
     Laboratory3DAsset, LaboratoryImage, LaboratoryV2Service, RegisterImagePayload,
 };
+use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppError;
 
@@ -100,15 +101,29 @@ async fn register_image_multipart(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // `POST /laboratory/images/:image_id/generate-model`
+//
+// Accepts an optional `?quality=draft|standard|high|ultra` query parameter.
+// Defaults to `high` (the Studio preset). Quality drives Rust-side geometry
+// resolution: radial segments + heightfield rings. Unrelated to the
+// frontend `RenderQuality` switch (DPR / shadow maps / AA).
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Default, Deserialize)]
+pub struct GenerateModelQuery {
+    /// `draft` | `standard` | `high` | `ultra`. Unknown / missing → `high`.
+    #[serde(default)]
+    pub quality: Option<String>,
+}
 
 pub async fn generate_model(
     auth: AuthUser,
     State(svc): State<LaboratoryV2Service>,
     Path(image_id): Path<Uuid>,
+    Query(query): Query<GenerateModelQuery>,
 ) -> Result<(StatusCode, Json<Laboratory3DAsset>), AppError> {
+    let quality = GeometryQuality::from_opt(query.quality.as_deref());
     let asset = svc
-        .generate_model_from_image(image_id, *auth.user_id.as_uuid())
+        .generate_model_from_image_with_quality(image_id, *auth.user_id.as_uuid(), quality)
         .await?;
     Ok((StatusCode::CREATED, Json(asset)))
 }
