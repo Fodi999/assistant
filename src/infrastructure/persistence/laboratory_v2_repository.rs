@@ -327,6 +327,36 @@ impl LaboratoryV2Repository {
 
         Ok(())
     }
+
+    /// Persist the generated model URL and flip status to `ready`.
+    ///
+    /// Called by the service after OBJ bytes are stored via `StorageAdapter`.
+    /// Sets `model_format`, `model_url`, clears `error_message`.
+    pub async fn mark_asset_ready(
+        &self,
+        asset_id: Uuid,
+        model_format: &str,
+        model_url: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            r#"
+            UPDATE laboratory_3d_assets
+               SET status        = 'ready',
+                   model_format  = $2,
+                   model_url     = $3,
+                   error_message = NULL
+             WHERE id = $1
+            "#,
+        )
+        .bind(asset_id)
+        .bind(model_format)
+        .bind(model_url)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("laboratory_v2.mark_asset_ready: {e}")))?;
+
+        Ok(())
+    }
 }
 
 /// Render an `OffsetDateTime` as RFC 3339 (e.g. `"2024-09-21T10:11:12.345Z"`).

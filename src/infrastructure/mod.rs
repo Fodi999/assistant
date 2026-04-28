@@ -3,6 +3,7 @@ pub mod cache;          // 🆕 In-memory cache for public endpoints (saves Neon
 pub mod config;
 pub mod gemini;         // 🆕 New vertical-slice Gemini adapters (vision_3d, …)
 pub mod gemini_service; // 🆕 Google Gemini AI (replaces Groq for generation)
+pub mod geometry;       // 🆕 Procedural 3D geometry generators (PR #4)
 pub mod groq_service;   // Legacy — types re-exported by gemini_service
 pub mod ingredient_cache; // 🆕 In-memory ingredient catalog for Sous-Chef (0 SQL)
 pub mod llm_adapter;
