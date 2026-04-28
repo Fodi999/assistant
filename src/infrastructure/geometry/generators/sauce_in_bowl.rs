@@ -182,8 +182,11 @@ fn build_sauce_surface(
     let mut uvs: Vec<[f32; 2]> = Vec::new();
     let mut faces: Vec<[usize; 3]> = Vec::new();
 
-    let y_fill = -BOWL_HEIGHT / 2.0 + BOWL_HEIGHT * FILL_RATIO;
-    let sauce_radius = BOWL_RADIUS_BOT + (BOWL_RADIUS_TOP - BOWL_RADIUS_BOT) * FILL_RATIO;
+    let y_fill = -BOWL_HEIGHT / 2.0 + BOWL_HEIGHT * FILL_RATIO + 0.002;
+    // Shrink the sauce disk inward so its rim never z-fights with the bowl
+    // wall (PR #9 fix). 0.92 leaves a clean ~5 mm visible ring of ceramic.
+    let sauce_radius =
+        (BOWL_RADIUS_BOT + (BOWL_RADIUS_TOP - BOWL_RADIUS_BOT) * FILL_RATIO) * 0.92;
 
     // Centre vertex (radius 0) — apex of the swirl, undisplaced.
     verts.push([0.0, y_fill, 0.0]);
