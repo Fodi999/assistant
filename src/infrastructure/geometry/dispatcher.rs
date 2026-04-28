@@ -1,18 +1,18 @@
 //! Geometry dispatcher — routes `object_type` string → generator.
 //!
-//! Implemented (PR #4 → PR #7):
+//! Implemented (PR #4 → PR #14):
 //!   * `sauce_in_bowl`  — bowl frustum + swirl sauce surface
 //!   * `bottled_sauce`  — body + neck + cap + liquid (glass / plastic)
 //!   * `jar_product`    — wide glass jar + product + metal lid
+//!   * `plate_food`     — ceramic plate + radial food mound (PR #14)
 //!   * `flat_card`      — fallback rectangular card with product photo
 //!
-//! Anything else (`plate_food`, `unknown`, …) still falls back to
-//! `flat_card` — the real generators will land in later PRs.
+//! Anything else (`unknown`, …) falls back to `flat_card`.
 
 use serde_json::Value;
 
 use crate::infrastructure::geometry::generators::{
-    bottled_sauce, flat_card, jar_product, sauce_in_bowl,
+    bottled_sauce, flat_card, jar_product, plate_food, sauce_in_bowl,
 };
 use crate::infrastructure::geometry::mesh::Mesh;
 use crate::shared::AppError;
@@ -42,7 +42,12 @@ pub fn dispatch(object_type: &str, spec: Option<&Value>) -> Result<Mesh, AppErro
             let lid_color = extract_str(spec, "/container/color_hex");
             Ok(jar_product::generate(product_color, lid_color))
         }
-        // Remaining types (plate_food, flat_card, unknown) → flat_card.
+        "plate_food" => {
+            let product_color = extract_str(spec, "/product/color_hex").unwrap_or("#A85B12");
+            let plate_color = extract_str(spec, "/container/color_hex");
+            Ok(plate_food::generate(product_color, plate_color))
+        }
+        // Remaining types (flat_card, unknown) → flat_card.
         _ => {
             let color = extract_str(spec, "/product/color_hex").unwrap_or("#CCCCCC");
             Ok(flat_card::generate(color, None))
@@ -129,6 +134,14 @@ mod tests {
     #[test]
     fn dispatch_plate_food_still_falls_back_to_flat_card() {
         let mesh = dispatch("plate_food", None).unwrap();
-        assert_eq!(mesh.vertices.len(), 24, "flat_card fallback");
+        assert_eq!(mesh.groups.len(), 2, "plate + product groups");
+        assert!(mesh
+            .groups
+            .iter()
+            .any(|g| g.material.name == "plate_ceramic"));
+        assert!(mesh
+            .groups
+            .iter()
+            .any(|g| g.material.name == "product_material"));
     }
 }
