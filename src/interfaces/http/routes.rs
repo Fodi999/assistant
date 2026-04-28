@@ -1028,7 +1028,14 @@ pub fn create_router(
         // 🆕 Static file serving for Laboratory v2 uploads (no auth).
         // Files written by `LocalStorageAdapter("./uploads", "/static")`
         // are served back at `/static/<key>`.
-        .nest_service("/static", ServeDir::new("uploads"))
+        // The `fix_static_mime` middleware patches Content-Type for .obj / .mtl
+        // because mime_guess doesn't know those extensions.
+        .nest_service(
+            "/static",
+            Router::new()
+                .nest_service("/", ServeDir::new("uploads"))
+                .layer(middleware::from_fn(fix_static_mime)),
+        )
         .nest("/public", public_router)
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
@@ -1057,6 +1064,29 @@ pub fn create_router(
     }
 
     router.layer(cors)
+}
+
+// ── Static file MIME fixup ──
+// `mime_guess` (used by tower-http ServeDir) doesn't know `.obj` / `.mtl`,
+// so we patch `Content-Type` after the response is produced.
+async fn fix_static_mime(
+    req: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let path = req.uri().path().to_string();
+    let mut res = next.run(req).await;
+    if path.ends_with(".obj") {
+        res.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("model/obj"),
+        );
+    } else if path.ends_with(".mtl") {
+        res.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+    }
+    res
 }
 
 // ── Strict CORS builder ──
