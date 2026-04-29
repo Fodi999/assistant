@@ -67,6 +67,15 @@ pub struct SauceSurfaceParams {
     pub radius_scale: f32,
     /// Organic noise amplitude multiplier (0.0–1.0).
     pub irregularity: f32,
+    /// Radial turns of the spiral from centre to rim.
+    /// Maps 0..1 → 0.5..3.5 (replaces hardcoded 1.35).
+    pub spiral_turns: f32,
+    /// Angular frequency multiplier — scales swirl_arms in the phase formula.
+    /// Maps 0..1 → 0.5..2.0. Higher = more tightly packed waves per revolution.
+    pub frequency: f32,
+    /// Controls where edge falloff starts (0 = abrupt at rim, 1 = early soft fade).
+    /// Maps 0..1 → falloff_start ∈ [0.92, 0.65].
+    pub edge_softness: f32,
 }
 
 impl Default for SauceSurfaceParams {
@@ -78,6 +87,9 @@ impl Default for SauceSurfaceParams {
             center_peak_m: 0.0015,
             radius_scale: 0.92,
             irregularity: 0.15,
+            spiral_turns: 1.35,
+            frequency: 1.0,
+            edge_softness: 0.5,
         }
     }
 }
@@ -144,7 +156,24 @@ pub fn surface_params_from_spec(surface: Option<&ProductSurfaceSpec>) -> SauceSu
     let swirl_arms     = s.swirl_arms.unwrap_or(3).clamp(1, 8) as f32;
     let irregularity   = s.surface_irregularity.unwrap_or(0.20).clamp(0.0, 1.0);
 
-    SauceSurfaceParams { swirl_arms, ridge_height_m, groove_depth_m, center_peak_m, radius_scale, irregularity }
+    let spiral_turns = s.spiral_turns.unwrap_or(0.45).clamp(0.0, 1.0);
+    let frequency    = s.frequency.unwrap_or(0.50).clamp(0.0, 1.0);
+    let edge_softness = s.edge_softness.unwrap_or(0.50).clamp(0.0, 1.0);
+
+    SauceSurfaceParams {
+        swirl_arms,
+        ridge_height_m,
+        groove_depth_m,
+        center_peak_m,
+        radius_scale,
+        irregularity,
+        // spiral_turns 0..1 → 0.5..3.5 radial turns
+        spiral_turns: lerp_f32(0.5, 3.5, spiral_turns),
+        // frequency 0..1 → multiplier 0.5..2.0
+        frequency: lerp_f32(0.5, 2.0, frequency),
+        // edge_softness 0..1 → falloff_start 0.92..0.65
+        edge_softness,
+    }
 }
 
 #[inline]
@@ -371,8 +400,11 @@ fn add_sauce_surface(
     for ring in 1..=sauce_rings {
         let r_ratio = ring as f32 / sauce_rings as f32;
         let r = sauce_radius * r_ratio;
-        // Edge falloff: full amplitude inside 0.85, fade to zero at 1.0.
-        let edge_falloff = (1.0 - (r_ratio - 0.85).max(0.0) / 0.15).clamp(0.0, 1.0);
+        // Edge falloff: edge_softness 0..1 → falloff starts at r_ratio ∈ [0.92, 0.65].
+        // 0 = hard cutoff near the rim (start=0.92), 1 = early soft fade (start=0.65).
+        let falloff_start = lerp_f32(0.92, 0.65, params.edge_softness);
+        let falloff_width = 1.0 - falloff_start;
+        let edge_falloff = (1.0 - (r_ratio - falloff_start).max(0.0) / falloff_width).clamp(0.0, 1.0);
 
         for seg in 0..=segments {
             let t = seg as f32 / segments as f32;
@@ -381,7 +413,10 @@ fn add_sauce_surface(
             let sin_t = theta.sin();
 
             // ── Ridge / groove wave ──────────────────────────────────────
-            let phase = params.swirl_arms * theta + r_ratio * 2.0 * PI * 1.35;
+            // frequency scales angular wave density; spiral_turns controls
+            // how many full radial turns the spiral completes centre→rim.
+            let phase = params.swirl_arms * params.frequency * theta
+                + r_ratio * 2.0 * PI * params.spiral_turns;
             let wave  = phase.sin();
             let ridge  = wave.max(0.0).powf(2.4);
             let groove = (-wave).max(0.0).powf(1.8);
@@ -762,6 +797,9 @@ mod tests {
             fill_height_ratio: None,
             surface_thickness: None,
             meniscus_height: None,
+            spiral_turns: None,
+            frequency: None,
+            edge_softness: None,
         }
     }
 
@@ -919,6 +957,9 @@ mod tests {
             fill_height_ratio,
             surface_thickness,
             meniscus_height,
+            spiral_turns: None,
+            frequency: None,
+            edge_softness: None,
         }
     }
 

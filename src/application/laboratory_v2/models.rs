@@ -256,6 +256,23 @@ pub struct ProductSurfaceSpec {
     /// Typical range 0.05–0.60.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meniscus_height: Option<f32>,
+
+    // ── PR #33: Surface detail controls ─────────────────────────────────────
+    /// How many radial turns the spiral completes from centre to rim.
+    /// 0 = loose open spiral (≈0.5 turns), 1 = tight dense spiral (≈3.5 turns).
+    /// Typical range 0.30–0.75 for a visible food swirl.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spiral_turns: Option<f32>,
+    /// Overall detail frequency multiplier.
+    /// 0 = coarse / few ridges, 1 = fine / many small waves.
+    /// Typical range 0.30–0.70.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency: Option<f32>,
+    /// How softly the surface displacement fades near the bowl rim.
+    /// 0 = hard cutoff right at the rim, 1 = smooth fade starts well inside.
+    /// Typical range 0.40–0.80.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_softness: Option<f32>,
 }
 
 /// Optional scene hints (lighting, surface). Generators may ignore.

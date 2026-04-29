@@ -105,7 +105,10 @@ Schema (all keys required unless marked optional):
       "view_angle": "top_down" | "three_quarter" | "side" | "unknown",
       "fill_height_ratio": 0.0..1.0,  // how full the container is vertically (0=empty, 1=brim)
       "surface_thickness": 0.0..1.0,  // visible depth/thickness of the sauce layer (0=thin, 1=thick)
-      "meniscus_height": 0.0..1.0     // raised edge at the container wall (0=flat, 1=strong curve)
+      "meniscus_height": 0.0..1.0,    // raised edge at the container wall (0=flat, 1=strong curve)
+      "spiral_turns": 0.0..1.0,       // radial turns of spiral centre→rim (0=loose, 1=tight/dense)
+      "frequency": 0.0..1.0,          // detail frequency multiplier (0=coarse few ridges, 1=many fine waves)
+      "edge_softness": 0.0..1.0       // how early/softly displacement fades near the rim (0=abrupt, 1=early soft fade)
     }
   },
   "scene": {                          // optional
@@ -140,6 +143,11 @@ Always estimate fill volume for sauce_in_bowl and jar_product:
 - surface_thickness: how thick/deep the sauce layer looks from side view (0=thin film, 1=thick paste). Typical 0.15–0.65.
 - meniscus_height: how strongly the sauce curves up at the container wall (0=flat, 1=water-glass curve). Typical 0.05–0.50.
 If only a top-down view is visible, estimate fill_height_ratio=0.72, surface_thickness=0.45, meniscus_height=0.20 as safe defaults.
+
+Always estimate spiral geometry detail for sauce_in_bowl and plate_food:
+- spiral_turns: how tightly wound the swirl looks — loose open spiral → 0.25, tight multi-turn spiral → 0.75. Default 0.45.
+- frequency: how fine the wave detail is — broad smooth waves → 0.25, many tight ridges → 0.70. Default 0.45.
+- edge_softness: how naturally the sauce fades at the bowl rim — hard cutoff → 0.20, smooth natural fade → 0.70. Default 0.50.
 
 For plate_food: estimate the food mound geometry on the plate.
 - pattern: "smooth_mound" for purée/cream/hummus, "chunky" for salad/grains/roasted veg/potatoes,
