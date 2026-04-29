@@ -92,7 +92,10 @@ Schema (all keys required unless marked optional):
       "rim_gap_ratio": 0.0..0.20,     // gap between product edge and rim as fraction of radius
       "surface_irregularity": 0.0..1.0, // organic noise (0=perfect, 1=very rough/chunky)
       "highlight_strength": 0.0..1.0, // specular highlight in centre (0=none, 1=bright)
-      "view_angle": "top_down" | "three_quarter" | "side" | "unknown"
+      "view_angle": "top_down" | "three_quarter" | "side" | "unknown",
+      "fill_height_ratio": 0.0..1.0,  // how full the container is vertically (0=empty, 1=brim)
+      "surface_thickness": 0.0..1.0,  // visible depth/thickness of the sauce layer (0=thin, 1=thick)
+      "meniscus_height": 0.0..1.0     // raised edge at the container wall (0=flat, 1=strong curve)
     }
   },
   "scene": {                          // optional
@@ -121,6 +124,12 @@ For sauce_in_bowl: do not only classify the product — estimate the visible sur
 If the sauce has a spiral swirl, set pattern="spiral_swirl" and estimate swirl_arms, ridge_height,
 groove_depth, center_peak, fill_radius_ratio and rim_gap_ratio from what is visible in the image.
 If the surface is flat or featureless, set pattern="flat" and leave other surface fields at 0.
+
+Always estimate fill volume for sauce_in_bowl and jar_product:
+- fill_height_ratio: how full the container appears (0=empty, 1=filled to brim). Typical 0.40–0.85.
+- surface_thickness: how thick/deep the sauce layer looks from side view (0=thin film, 1=thick paste). Typical 0.15–0.65.
+- meniscus_height: how strongly the sauce curves up at the container wall (0=flat, 1=water-glass curve). Typical 0.05–0.50.
+If only a top-down view is visible, estimate fill_height_ratio=0.72, surface_thickness=0.45, meniscus_height=0.20 as safe defaults.
 
 For container material: always set container.material explicitly.
 If the container is transparent or semi-transparent glass and appears brown/red/amber because the

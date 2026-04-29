@@ -239,6 +239,23 @@ pub struct ProductSurfaceSpec {
     /// `"top_down"` | `"three_quarter"` | `"side"` | `"unknown"`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view_angle: Option<String>,
+
+    // ── PR #29: Fill Volume ──────────────────────────────────────────────────
+    /// How full the container is, from 0 (empty) to 1 (filled to the brim).
+    /// Drives the liquid side-wall height and the sauce floor Y position.
+    /// Typical range 0.35–0.90.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill_height_ratio: Option<f32>,
+    /// Visible thickness / depth of the sauce layer relative to bowl height.
+    /// 0 = thin film, 1 = very thick paste (affects side-wall geometry).
+    /// Typical range 0.10–0.70.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_thickness: Option<f32>,
+    /// Height of the meniscus (raised edge at the container wall).
+    /// 0 = flat edge, 1 = strongly curved up at the rim (like a full glass of water).
+    /// Typical range 0.05–0.60.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meniscus_height: Option<f32>,
 }
 
 /// Optional scene hints (lighting, surface). Generators may ignore.

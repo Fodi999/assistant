@@ -59,6 +59,12 @@ impl MeshBuilder {
         idx
     }
 
+    /// Return the current number of vertices. Useful for recording the start
+    /// index before adding a ring of vertices (PR #29 fill volume).
+    pub fn vertices_len(&self) -> usize {
+        self.vertices.len()
+    }
+
     /// Register a new material group and return its handle (the index into
     /// the groups array). Pass this handle back to `add_triangle` /
     /// `add_quad` to attach faces to that material.

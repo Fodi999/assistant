@@ -1,21 +1,14 @@
-//! Sauce-in-bowl generator (PR #13 — kernel rewrite, PR #26 — Vision Surface Spec).
+//! Sauce-in-bowl generator (PR #13 — kernel rewrite, PR #26 — Vision Surface Spec,
+//! PR #29 — Fill Volume: side wall + bottom disk + meniscus edge).
 //!
-//! Two material groups (public API preserved):
+//! Three material groups (public API preserved):
 //!
-//!   1. **`bowl_material`** — ceramic bowl built from **four lathed parts**:
-//!      * outer wall (foot bevel → flared body → rim outer edge)
-//!      * inner wall (concave inside, normals flipped to face the axis)
-//!      * rim ring (thin annulus connecting outer top to inner top)
-//!      * foot disk (under the base, faces down)
-//!      * inner bottom disk (concave floor, faces up)
-//!      All five sub-meshes share the same material — the bowl now has a
-//!      visible wall thickness, a foot ring, and a sharp rim that catches
-//!      highlights.
-//!
-//!   2. **`sauce_material`** — glossy sauce surface inside the bowl with a
-//!      ridge-based spiral-swirl relief driven by [`ProductSurfaceSpec`] values
-//!      from Gemini Vision. Falls back to sensible defaults when the spec is
-//!      absent.
+//!   1. **`bowl_ceramic` / `bowl_glass`** — ceramic or glass bowl, four lathed parts.
+//!   2. **`sauce_material`** — top swirl surface inside the bowl.
+//!   3. **`sauce_volume`** — cylindrical side wall + bottom disk + meniscus ring,
+//!      giving the sauce actual depth so it looks like a poured volume and not
+//!      a flat disc. Only generated when `fill_height_ratio` produces a non-trivial
+//!      wall height (> 1 mm).
 //!
 //! All geometry is in metres, Y-up, centred at origin (Y = 0 = mid-height).
 
@@ -85,6 +78,51 @@ impl Default for SauceSurfaceParams {
             radius_scale: 0.92,
             irregularity: 0.15,
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PR #29 — Fill Volume parameters
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Parameters that drive the sauce's volumetric geometry:
+/// the cylindrical liquid side wall, the bottom disk, and the meniscus ring.
+#[derive(Debug, Clone, Copy)]
+pub struct FillVolumeParams {
+    /// Y coordinate of the top sauce surface (= fill height inside the bowl).
+    pub y_fill: f32,
+    /// Y coordinate of the sauce bottom (below the top surface by surface_thickness_m).
+    pub y_fill_bottom: f32,
+    /// Sauce radius at `y_fill` — matches the swirl disk radius.
+    pub sauce_radius: f32,
+    /// Meniscus ring height in metres (how much the edge curves up at the wall).
+    pub meniscus_m: f32,
+}
+
+/// Derive [`FillVolumeParams`] from the Vision spec.
+pub fn fill_volume_from_spec(
+    surface: Option<&ProductSurfaceSpec>,
+    sauce_radius_at_fill: f32,
+    y_fill: f32,
+) -> FillVolumeParams {
+    let fill_h   = surface.and_then(|s| s.fill_height_ratio).unwrap_or(0.72).clamp(0.25, 0.95);
+    let thickness = surface.and_then(|s| s.surface_thickness).unwrap_or(0.45).clamp(0.0, 1.0);
+    let meniscus  = surface.and_then(|s| s.meniscus_height).unwrap_or(0.20).clamp(0.0, 1.0);
+
+    // thickness maps 0..1 → 3 mm .. 20 mm
+    let thickness_m = lerp_f32(0.003, 0.020, thickness);
+    // meniscus maps 0..1 → 0.5 mm .. 6 mm
+    let meniscus_m  = lerp_f32(0.0005, 0.006, meniscus);
+
+    // Bottom of the sauce body = top surface − thickness.
+    // But don't go below the bowl inner floor.
+    let y_fill_bottom = (y_fill - thickness_m).max(Y_INNER_BOTTOM + 0.001);
+
+    FillVolumeParams {
+        y_fill,
+        y_fill_bottom,
+        sauce_radius: sauce_radius_at_fill,
+        meniscus_m,
     }
 }
 
@@ -222,6 +260,13 @@ pub fn generate_with_surface_and_quality(
             .with_pbr(sauce_roughness, 0.0)
             .with_class("liquid"),
     );
+    // PR #29: sauce_volume carries the side wall + bottom + meniscus geometry.
+    let volume_g = b.add_group(
+        Material::solid("sauce_volume", sauce_color)
+            .with_gloss(0.40, 64.0)
+            .with_pbr(sauce_roughness + 0.05, 0.0)
+            .with_class("liquid"),
+    );
 
     // ── Bowl: outer wall ────────────────────────────────────────────────────
     let outer_profile = Profile::new(vec![
@@ -246,7 +291,6 @@ pub fn generate_with_surface_and_quality(
     b.add_part(bowl_g, &inner);
 
     // ── Bowl: rim (flat annulus at Y_TOP, faces up) ────────────────────────
-    // Profile from outer→inner at constant Y → outward normal is +Y.
     let rim_profile = Profile::new(vec![
         ProfilePoint::new(OUTER_R_TOP, Y_TOP),
         ProfilePoint::new(INNER_R_TOP, Y_TOP),
@@ -264,12 +308,28 @@ pub fn generate_with_surface_and_quality(
         disk_fan_up(INNER_R_BOT, Y_INNER_BOTTOM, segments).expect("inner floor disk");
     b.add_part(bowl_g, &inner_floor);
 
-    // ── Sauce: tessellated swirl disk inside the bowl ───────────────────────
-    add_sauce_surface(&mut b, sauce_g, segments, sauce_rings, &params);
+    // ── Sauce: top swirl surface ─────────────────────────────────────────────
+    // Compute fill height from spec so we can pass y_fill to the volume too.
+    let fill_h_ratio = surface
+        .and_then(|s| s.fill_height_ratio)
+        .unwrap_or(FILL_RATIO)
+        .clamp(0.25, 0.95);
+    let y_fill = Y_BOTTOM + BOWL_HEIGHT * fill_h_ratio + 0.002;
+    let lerp_t = (y_fill - Y_INNER_BOTTOM) / (Y_TOP - Y_INNER_BOTTOM);
+    let r_at_fill = INNER_R_BOT + (INNER_R_TOP - INNER_R_BOT) * lerp_t.clamp(0.0, 1.0);
+    let sauce_radius = r_at_fill * params.radius_scale;
+
+    add_sauce_surface(&mut b, sauce_g, segments, sauce_rings, &params, y_fill, sauce_radius);
+
+    // ── Sauce: PR #29 fill volume (side wall + bottom + meniscus) ───────────
+    let fvp = fill_volume_from_spec(surface, sauce_radius, y_fill);
+    let wall_height = fvp.y_fill - fvp.y_fill_bottom;
+    if wall_height > 0.001 {
+        add_sauce_volume(&mut b, volume_g, segments, &fvp);
+    }
 
     b.build()
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Sauce surface — ridge-based spiral swirl driven by SauceSurfaceParams.
 //
@@ -292,14 +352,9 @@ fn add_sauce_surface(
     segments: usize,
     sauce_rings: usize,
     params: &SauceSurfaceParams,
+    y_fill: f32,
+    sauce_radius: f32,
 ) {
-    let y_fill = Y_BOTTOM + BOWL_HEIGHT * FILL_RATIO + 0.002;
-
-    // Inner-wall radius at the fill height, then scaled by Vision fill ratio.
-    let lerp_t = (y_fill - Y_INNER_BOTTOM) / (Y_TOP - Y_INNER_BOTTOM);
-    let r_at_fill = INNER_R_BOT + (INNER_R_TOP - INNER_R_BOT) * lerp_t.clamp(0.0, 1.0);
-    let sauce_radius = r_at_fill * params.radius_scale;
-
     // Centre vertex, undisplaced.
     let centre = b.add_vertex([0.0, y_fill, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5]);
 
@@ -382,6 +437,132 @@ fn add_sauce_surface(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PR #29 — Sauce volume: side wall + bottom disk + meniscus ring.
+//
+// Geometry description (cross section, viewed from the side):
+//
+//   y_fill ────────────────── (top surface, built by add_sauce_surface)
+//               ╲ meniscus ring: outer edge curves up by meniscus_m
+//   y_fill_bottom ─────────── bottom disk (faces up)
+//
+// Side wall: outward-facing cylinder from y_fill_bottom to y_fill,
+// radius = sauce_radius. Normals point outward (+XZ).
+//
+// Bottom disk: flat upward-facing disk at y_fill_bottom.
+//
+// Meniscus ring: a thin band of quads at the outer edge of the top surface
+// that ramps upward by `meniscus_m` so the sauce appears to cling to the bowl
+// wall rather than ending at a hard horizontal edge.
+// ─────────────────────────────────────────────────────────────────────────────
+fn add_sauce_volume(
+    b: &mut MeshBuilder,
+    group: usize,
+    segments: usize,
+    fvp: &FillVolumeParams,
+) {
+    let r = fvp.sauce_radius;
+    let y_top = fvp.y_fill;
+    let y_bot = fvp.y_fill_bottom;
+    let men   = fvp.meniscus_m;
+
+    // ── Side wall ──────────────────────────────────────────────────────────
+    // Two rings of verts: bottom ring at y_bot, top ring at y_top.
+    // Normals point radially outward.
+    let bot_start = b.vertices_len();
+    for seg in 0..=segments {
+        let t = seg as f32 / segments as f32;
+        let theta = t * 2.0 * PI;
+        let cos_t = theta.cos();
+        let sin_t = theta.sin();
+        let uv_u = t;
+        b.add_vertex([cos_t * r, y_bot, sin_t * r], [cos_t, 0.0, sin_t], [uv_u, 0.0]);
+    }
+    let top_start = b.vertices_len();
+    for seg in 0..=segments {
+        let t = seg as f32 / segments as f32;
+        let theta = t * 2.0 * PI;
+        let cos_t = theta.cos();
+        let sin_t = theta.sin();
+        let uv_u = t;
+        b.add_vertex([cos_t * r, y_top, sin_t * r], [cos_t, 0.0, sin_t], [uv_u, 1.0]);
+    }
+    for seg in 0..segments {
+        let b0 = bot_start + seg;
+        let b1 = bot_start + seg + 1;
+        let t0 = top_start + seg;
+        let t1 = top_start + seg + 1;
+        b.add_triangle(group, b0, t0, t1);
+        b.add_triangle(group, b0, t1, b1);
+    }
+
+    // ── Bottom disk (faces up) ─────────────────────────────────────────────
+    let centre_bot = b.add_vertex([0.0, y_bot, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5]);
+    let rim_bot_start = b.vertices_len();
+    for seg in 0..=segments {
+        let t = seg as f32 / segments as f32;
+        let theta = t * 2.0 * PI;
+        let cos_t = theta.cos();
+        let sin_t = theta.sin();
+        b.add_vertex(
+            [cos_t * r, y_bot, sin_t * r],
+            [0.0, 1.0, 0.0],
+            [0.5 + cos_t * 0.5, 0.5 + sin_t * 0.5],
+        );
+    }
+    for seg in 0..segments {
+        let a = rim_bot_start + seg;
+        let bb = rim_bot_start + seg + 1;
+        b.add_triangle(group, centre_bot, a, bb);
+    }
+
+    // ── Meniscus ring (raised outer edge at the top surface) ───────────────
+    // Inner ring sits flush at y_top (radius r * 0.88).
+    // Outer ring is at y_top + meniscus_m (radius r).
+    // Normals tilt upward + outward to blend with the swirl surface.
+    if men > 0.0002 {
+        let inner_r = r * 0.88;
+        let men_inner_start = b.vertices_len();
+        for seg in 0..=segments {
+            let t = seg as f32 / segments as f32;
+            let theta = t * 2.0 * PI;
+            let cos_t = theta.cos();
+            let sin_t = theta.sin();
+            let nx = cos_t * 0.3;
+            let nz = sin_t * 0.3;
+            let ny = (1.0_f32 - 0.09_f32).sqrt(); // ~0.954
+            b.add_vertex(
+                [cos_t * inner_r, y_top, sin_t * inner_r],
+                [nx, ny, nz],
+                [0.5 + cos_t * 0.44, 0.5 + sin_t * 0.44],
+            );
+        }
+        let men_outer_start = b.vertices_len();
+        for seg in 0..=segments {
+            let t = seg as f32 / segments as f32;
+            let theta = t * 2.0 * PI;
+            let cos_t = theta.cos();
+            let sin_t = theta.sin();
+            let nx = cos_t * 0.55;
+            let nz = sin_t * 0.55;
+            let ny = (1.0_f32 - 0.3025_f32).sqrt(); // ~0.836
+            b.add_vertex(
+                [cos_t * r, y_top + men, sin_t * r],
+                [nx, ny, nz],
+                [0.5 + cos_t * 0.5, 0.5 + sin_t * 0.5],
+            );
+        }
+        for seg in 0..segments {
+            let i0 = men_inner_start + seg;
+            let i1 = men_inner_start + seg + 1;
+            let o0 = men_outer_start + seg;
+            let o1 = men_outer_start + seg + 1;
+            b.add_triangle(group, i0, o0, o1);
+            b.add_triangle(group, i0, o1, i1);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,9 +575,10 @@ mod tests {
         assert!(!mesh.vertices.is_empty());
         assert_eq!(mesh.vertices.len(), mesh.normals.len());
         assert_eq!(mesh.vertices.len(), mesh.uvs.len());
-        assert_eq!(mesh.groups.len(), 2, "expect bowl + sauce groups");
+        assert_eq!(mesh.groups.len(), 3, "expect bowl + sauce_material + sauce_volume groups");
         assert!(!mesh.groups[0].faces.is_empty());
         assert!(!mesh.groups[1].faces.is_empty());
+        assert!(!mesh.groups[2].faces.is_empty(), "sauce_volume must have faces");
     }
 
     #[test]
@@ -570,6 +752,9 @@ mod tests {
             surface_irregularity,
             highlight_strength: None,
             view_angle: None,
+            fill_height_ratio: None,
+            surface_thickness: None,
+            meniscus_height: None,
         }
     }
 
@@ -704,5 +889,123 @@ mod tests {
             mesh.groups.iter().any(|g| g.material.name == "bowl_ceramic"),
             "no container defaults to bowl_ceramic"
         );
+    }
+
+    // ── PR #29 Fill Volume tests ─────────────────────────────────────────────
+
+    fn make_fill_spec(
+        fill_height_ratio: Option<f32>,
+        surface_thickness: Option<f32>,
+        meniscus_height: Option<f32>,
+    ) -> ProductSurfaceSpec {
+        ProductSurfaceSpec {
+            pattern: None,
+            swirl_arms: None,
+            ridge_height: None,
+            groove_depth: None,
+            center_peak: None,
+            fill_radius_ratio: None,
+            rim_gap_ratio: None,
+            surface_irregularity: None,
+            highlight_strength: None,
+            view_angle: None,
+            fill_height_ratio,
+            surface_thickness,
+            meniscus_height,
+        }
+    }
+
+    /// The sauce_volume group must exist and have faces — i.e. the side wall
+    /// is actually generated for the default fill.
+    #[test]
+    fn sauce_volume_has_side_faces() {
+        let mesh = generate("#B8321F", None);
+        let vol = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "sauce_volume")
+            .expect("sauce_volume group must be present");
+        assert!(
+            !vol.faces.is_empty(),
+            "sauce_volume must contain side-wall faces"
+        );
+    }
+
+    /// Reducing `fill_height_ratio` lowers the y_fill of the top surface,
+    /// which means all sauce vertices will have a lower max Y.
+    #[test]
+    fn fill_height_ratio_changes_liquid_wall_height() {
+        let low_spec  = make_fill_spec(Some(0.30), None, None);
+        let high_spec = make_fill_spec(Some(0.90), None, None);
+        let q = GeometryQuality::Standard;
+
+        let low_mesh  = generate_with_surface_and_quality("#B8321F", None, None, Some(&low_spec),  q);
+        let high_mesh = generate_with_surface_and_quality("#B8321F", None, None, Some(&high_spec), q);
+
+        // Find the max Y in the sauce_material group (top surface).
+        fn max_sauce_y(mesh: &Mesh) -> f32 {
+            let grp = mesh.groups.iter().find(|g| g.material.name == "sauce_material").unwrap();
+            let mut max_y = f32::NEG_INFINITY;
+            for [a, b, c] in &grp.faces {
+                for &vi in &[*a, *b, *c] {
+                    if mesh.vertices[vi][1] > max_y { max_y = mesh.vertices[vi][1]; }
+                }
+            }
+            max_y
+        }
+
+        let low_y  = max_sauce_y(&low_mesh);
+        let high_y = max_sauce_y(&high_mesh);
+        assert!(
+            high_y > low_y,
+            "higher fill_height_ratio must push the sauce surface up (low={low_y:.4} high={high_y:.4})"
+        );
+    }
+
+    /// Higher `surface_thickness` → deeper sauce volume → larger Y span of the
+    /// sauce_volume side wall (top minus bottom of the wall).
+    #[test]
+    fn surface_thickness_increases_volume_depth() {
+        let thin_spec  = make_fill_spec(Some(0.72), Some(0.10), None);
+        let thick_spec = make_fill_spec(Some(0.72), Some(0.90), None);
+        let q = GeometryQuality::Standard;
+
+        let thin_mesh  = generate_with_surface_and_quality("#B8321F", None, None, Some(&thin_spec),  q);
+        let thick_mesh = generate_with_surface_and_quality("#B8321F", None, None, Some(&thick_spec), q);
+
+        fn volume_y_span(mesh: &Mesh) -> f32 {
+            let grp = mesh.groups.iter().find(|g| g.material.name == "sauce_volume").unwrap();
+            let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
+            for [a, b, c] in &grp.faces {
+                for &vi in &[*a, *b, *c] {
+                    let y = mesh.vertices[vi][1];
+                    if y < min_y { min_y = y; }
+                    if y > max_y { max_y = y; }
+                }
+            }
+            max_y - min_y
+        }
+
+        let thin_span  = volume_y_span(&thin_mesh);
+        let thick_span = volume_y_span(&thick_mesh);
+        assert!(
+            thick_span > thin_span,
+            "thicker sauce must have larger volume y-span (thin={thin_span:.5} thick={thick_span:.5})"
+        );
+    }
+
+    /// The full mesh (bowl + sauce_material + sauce_volume) must pass the
+    /// geometry validator — no degenerate faces, no out-of-range indices.
+    #[test]
+    fn sauce_volume_passes_validation() {
+        let spec = make_fill_spec(Some(0.72), Some(0.45), Some(0.30));
+        let mesh = generate_with_surface_and_quality(
+            "#B8321F",
+            None,
+            None,
+            Some(&spec),
+            GeometryQuality::Standard,
+        );
+        validate_mesh(&mesh).expect("fill-volume mesh must pass geometry validation");
     }
 }
