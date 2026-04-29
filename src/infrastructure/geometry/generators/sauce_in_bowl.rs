@@ -19,6 +19,7 @@ use crate::infrastructure::geometry::kernel::{
     disk_fan_down, disk_fan_up, lathe_profile, GeometryQuality, MeshBuilder, Profile,
     ProfilePoint,
 };
+use crate::infrastructure::geometry::kernel::normals::recalculate_smooth_normals;
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
 // ── Bowl dimensions (metres) ────────────────────────────────────────────────
@@ -328,7 +329,13 @@ pub fn generate_with_surface_and_quality(
         add_sauce_volume(&mut b, volume_g, segments, &fvp);
     }
 
-    b.build()
+    // ── PR #32: smooth normals on sauce groups so facets disappear ───────────
+    // Bowl groups use analytic lathe normals (already smooth).
+    // Sauce surface/volume are heightfield meshes — faces at slightly different
+    // angles leave hard seams without this pass.
+    let mut mesh = b.build();
+    recalculate_smooth_normals(&mut mesh);
+    mesh
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Sauce surface — ridge-based spiral swirl driven by SauceSurfaceParams.

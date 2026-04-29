@@ -18,6 +18,7 @@ use crate::application::laboratory_v2::ProductSurfaceSpec;
 use crate::infrastructure::geometry::kernel::{
     disk_fan_down, lathe_profile, GeometryQuality, MeshBuilder, Profile, ProfilePoint,
 };
+use crate::infrastructure::geometry::kernel::normals::recalculate_smooth_normals;
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
 // ── Plate dimensions (metres) ───────────────────────────────────────────────
@@ -205,7 +206,11 @@ pub fn generate_with_surface_and_quality(
         FoodPattern::FlatSpread  => add_flat_spread  (&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
     }
 
-    b.build()
+    // PR #32: smooth normals on food mound so heightfield facets disappear.
+    // Plate uses analytic lathe normals (already smooth).
+    let mut mesh = b.build();
+    recalculate_smooth_normals(&mut mesh);
+    mesh
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
