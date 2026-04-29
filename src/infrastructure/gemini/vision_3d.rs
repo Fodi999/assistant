@@ -43,12 +43,22 @@ pub struct VisionResult {
     pub usage: VisionUsage,
 }
 
+/// Token budget for JSON output.
+/// gemini-2.5-flash uses internal "thinking" tokens that count against
+/// `maxOutputTokens`. With the default 2048 limit the thinking phase (~1 800
+/// tokens) left only ~250 tokens for the actual JSON → truncated output →
+/// parse failure (EOF while parsing a string).
+/// We raise the limit to 8 192 and simultaneously suppress thinking entirely
+/// (`thinkingBudget: 0`) because this is a deterministic structured-output
+/// task — no chain-of-thought needed. That keeps latency and cost down while
+/// guaranteeing the full JSON fits in the window.
+const MAX_OUTPUT_TOKENS: u32 = 8_192;
+const THINKING_BUDGET: u32 = 0; // disable CoT for structured-output
+
 /// Gemini multimodal model that supports image input.
 /// gemini-2.5-flash is the stable replacement for 2.0-flash-exp:
 /// supports vision input, structured JSON output, recommended for production.
 const VISION_MODEL: &str = "gemini-2.5-flash";
-
-/// System prompt — deterministic, no creativity.
 const VISION_PROMPT: &str = r##"Analyze this food/product image and return a strict JSON specification for a procedural 3D prototype generator.
 
 Do not describe the image in prose. Do not return markdown. Return only JSON matching the schema.
@@ -226,7 +236,10 @@ impl GeminiVision3D {
             generation_config: GenerationConfig {
                 temperature: 0.0,
                 response_mime_type: "application/json".to_string(),
-                max_output_tokens: 2048,
+                max_output_tokens: MAX_OUTPUT_TOKENS,
+                thinking_config: ThinkingConfig {
+                    thinking_budget: THINKING_BUDGET,
+                },
             },
         };
 
@@ -395,6 +408,18 @@ struct GenerationConfig {
     response_mime_type: String,
     #[serde(rename = "maxOutputTokens")]
     max_output_tokens: u32,
+    #[serde(rename = "thinkingConfig")]
+    thinking_config: ThinkingConfig,
+}
+
+/// Suppress chain-of-thought for structured-output calls.
+/// `thinkingBudget: 0` tells Gemini 2.5 Flash not to spend any tokens on
+/// internal reasoning — the task is deterministic JSON extraction, not
+/// open-ended reasoning, so thinking only wastes the output window.
+#[derive(Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "thinkingBudget")]
+    thinking_budget: u32,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
