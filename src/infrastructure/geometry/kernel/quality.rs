@@ -18,14 +18,14 @@
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GeometryQuality {
-    /// 32 segments / 12 rings — fast preview.
+    /// 32 segments / 8 rings — fast preview.
     Draft,
     /// 48 segments / 14 rings — legacy default (PR #11–#14).
     Standard,
-    /// 96 segments / 24 rings — Studio default (PR #23+).
+    /// 144 segments / 48 rings — Studio default (PR #32 — smoother sauce/food).
     #[default]
     High,
-    /// 128 segments / 32 rings — final-render GLB.
+    /// 192 segments / 64 rings — final-render GLB (PR #32).
     Ultra,
 }
 
@@ -34,10 +34,10 @@ impl GeometryQuality {
     #[inline]
     pub fn radial_segments(self) -> usize {
         match self {
-            GeometryQuality::Draft => 32,
+            GeometryQuality::Draft    => 32,
             GeometryQuality::Standard => 48,
-            GeometryQuality::High => 96,
-            GeometryQuality::Ultra => 128,
+            GeometryQuality::High     => 144,
+            GeometryQuality::Ultra    => 192,
         }
     }
 
@@ -45,10 +45,10 @@ impl GeometryQuality {
     #[inline]
     pub fn surface_rings(self) -> usize {
         match self {
-            GeometryQuality::Draft => 8,
+            GeometryQuality::Draft    => 8,
             GeometryQuality::Standard => 14,
-            GeometryQuality::High => 24,
-            GeometryQuality::Ultra => 32,
+            GeometryQuality::High     => 48,
+            GeometryQuality::Ultra    => 64,
         }
     }
 
@@ -87,8 +87,8 @@ mod tests {
     #[test]
     fn defaults_match_studio_spec() {
         assert_eq!(GeometryQuality::default(), GeometryQuality::High);
-        assert_eq!(GeometryQuality::High.radial_segments(), 96);
-        assert_eq!(GeometryQuality::High.surface_rings(), 24);
+        assert_eq!(GeometryQuality::High.radial_segments(), 144);
+        assert_eq!(GeometryQuality::High.surface_rings(), 48);
     }
 
     #[test]
