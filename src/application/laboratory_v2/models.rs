@@ -250,6 +250,63 @@ pub struct SceneSpec {
     pub lighting: Option<String>,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PR #28 — Shape Recipe
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One constructive layer in the Shape Recipe — maps to a geometry generator
+/// call or a material group in the final mesh.
+///
+/// Gemini populates this; the geometry dispatcher reads it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShapeLayer {
+    /// What this layer is: `"container"` | `"fill"` | `"surface"` |
+    /// `"label"` | `"cap"` | `"decal"` | `"lighting_hint"`.
+    pub layer: String,
+    /// Sub-type hint used to select the correct generator:
+    /// `"bowl"` | `"bottle"` | `"jar"` | `"plate"` | `"flat_card"` |
+    /// `"sauce"` | `"swirl"` | `"mound"` | `"waves"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Physical material class: `"glass"` | `"ceramic"` | `"plastic"` |
+    /// `"metal"` | `"food"` | `"liquid"` | `"label"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material_class: Option<String>,
+    /// Dominant colour for this layer as `"#RRGGBB"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_hex: Option<String>,
+    /// PBR roughness 0.0–1.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<f32>,
+    /// PBR metalness 0.0–1.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metalness: Option<f32>,
+    /// Opacity / transparency 0.0–1.0 (1 = solid, 0 = invisible).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f32>,
+    /// Free-form notes the geometry generator may use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+/// Gemini-authored build plan for the 3D model.
+///
+/// Contains an ordered list of [`ShapeLayer`]s from bottom to top (container
+/// first, fill/surface last, lighting hints last).  Generators walk this list
+/// to decide which sub-generators to call and what PBR properties to assign.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ShapeRecipe {
+    /// Ordered layers, bottom → top.
+    pub layers: Vec<ShapeLayer>,
+    /// Optional overall lighting hint (e.g. `"soft overhead"`, `"HDRI studio"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lighting_hint: Option<String>,
+    /// Camera angle most likely to show the product at its best.
+    /// `"top_down"` | `"three_quarter"` | `"side"` | `"hero_45"`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hero_angle: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product3DSpec {
     pub object_type: Product3DObjectType,
@@ -260,6 +317,9 @@ pub struct Product3DSpec {
     pub product: ProductVisualSpec,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene: Option<SceneSpec>,
+    /// PR #28 — Gemini-authored build plan (layers, PBR hints, hero angle).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape_recipe: Option<ShapeRecipe>,
 }
 
 impl Product3DSpec {

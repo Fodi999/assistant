@@ -193,11 +193,34 @@ pub fn generate_with_surface_and_quality(
     // Glass gets higher gloss + lower roughness so the frontend makeGlassMaterial
     // picks it up cleanly. Ceramic keeps low gloss.
     let (gloss_factor, gloss_exp) = if is_glass { (0.85, 256.0) } else { (0.10, 24.0) };
+
+    // PR #28: derive PBR values from ContainerSpec or sensible defaults.
+    let (bowl_roughness, bowl_metalness, bowl_opacity, bowl_class) = if is_glass {
+        let opacity = container
+            .and_then(|c| c.transparency)
+            .map(|t| 1.0 - t)          // transparency → opacity (invert)
+            .unwrap_or(0.35);
+        (0.06_f32, 0.0_f32, opacity, "glass")
+    } else {
+        (0.55_f32, 0.0_f32, 1.0_f32, "ceramic")
+    };
+
+    // Sauce PBR: liquid roughness driven by viscosity (thin=low roughness, thick=higher).
+    let sauce_viscosity = surface.map(|_| 0.6_f32).unwrap_or(0.5);
+    let sauce_roughness = (0.05 + sauce_viscosity * 0.25).clamp(0.05, 0.30);
+
     let bowl_g = b.add_group(
-        Material::solid(material_name, bowl_color).with_gloss(gloss_factor, gloss_exp),
+        Material::solid(material_name, bowl_color)
+            .with_gloss(gloss_factor, gloss_exp)
+            .with_pbr(bowl_roughness, bowl_metalness)
+            .with_opacity(bowl_opacity)
+            .with_class(bowl_class),
     );
     let sauce_g = b.add_group(
-        Material::solid("sauce_material", sauce_color).with_gloss(0.55, 96.0),
+        Material::solid("sauce_material", sauce_color)
+            .with_gloss(0.55, 96.0)
+            .with_pbr(sauce_roughness, 0.0)
+            .with_class("liquid"),
     );
 
     // ── Bowl: outer wall ────────────────────────────────────────────────────

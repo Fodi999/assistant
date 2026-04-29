@@ -219,6 +219,7 @@ pub fn export_glb(mesh: &Mesh) -> Result<GltfExport, AppError> {
             "version": "2.0",
             "generator": "ChefOS Laboratory v2 (Rust hand-rolled GLB)",
         },
+        "extensionsUsed": ["KHR_materials_transmission", "KHR_materials_ior"],
         "scene": 0,
         "scenes": [{ "nodes": [0] }],
         "nodes": [{ "mesh": 0 }],
@@ -270,43 +271,74 @@ pub fn export_glb(mesh: &Mesh) -> Result<GltfExport, AppError> {
 // Material → glTF mapping
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Minimal PBR mapping — PR #9 will refine glass / metal / liquid by name.
-// For now:
-//   * `baseColorFactor` = sRGB→linear of `diffuse_color`
-//   * `metallicFactor`  = 0
-//   * `roughnessFactor` = clamp(1 - shininess/200, 0.15, 0.9)
-//   * `alphaMode`       = OPAQUE
-//   * material `name`   = `Material.name` (frontend keys upgrades on this)
+// PR #28: Full PBR mapping.
+//   * `baseColorFactor`     = sRGB→linear of `diffuse_color` + alpha
+//   * `metallicFactor`      = `Material.metalness`
+//   * `roughnessFactor`     = `Material.roughness` (or legacy shininess formula)
+//   * `alphaMode`           = BLEND when opacity < 1
+//   * `KHR_materials_transmission` emitted when material_class == "glass"
+//   * `extras.material_class` carried through for the frontend shader picker
 
 fn material_to_gltf(mat: &Material) -> Value {
     let [r, g, b] = mat.diffuse_color;
+    let alpha = mat.opacity;
     let base_color_linear = [
         srgb_to_linear(r),
         srgb_to_linear(g),
         srgb_to_linear(b),
-        1.0_f32,
+        alpha,
     ];
-    let roughness = (1.0 - mat.shininess / 200.0).clamp(0.15, 0.9);
+
+    // Use explicit PBR roughness when set; fall back to legacy shininess formula.
+    let roughness = if mat.roughness > 0.0 {
+        mat.roughness
+    } else {
+        (1.0 - mat.shininess / 200.0).clamp(0.15, 0.9)
+    };
+    let metalness = mat.metalness;
+
+    let alpha_mode = if alpha < 0.999 { "BLEND" } else { "OPAQUE" };
+    let is_glass = mat.material_class == "glass";
+
+    let mut pbr = json!({
+        "baseColorFactor": base_color_linear,
+        "metallicFactor": metalness,
+        "roughnessFactor": roughness,
+    });
+
+    // Glass: tint the base colour toward near-transparent and add transmission.
+    if is_glass {
+        pbr["baseColorFactor"] = json!([
+            srgb_to_linear(r),
+            srgb_to_linear(g),
+            srgb_to_linear(b),
+            (1.0 - alpha).clamp(0.05, 0.45),   // glass body is mostly transparent
+        ]);
+    }
 
     let mut m = json!({
         "name": mat.name,
-        "pbrMetallicRoughness": {
-            "baseColorFactor": base_color_linear,
-            "metallicFactor": 0.0_f32,
-            "roughnessFactor": roughness,
-        },
-        "alphaMode": "OPAQUE",
-        "doubleSided": false,
+        "pbrMetallicRoughness": pbr,
+        "alphaMode": alpha_mode,
+        "doubleSided": is_glass,   // glass walls need back-face rendering
     });
 
-    // PR #15 — surface label / decal URL through glTF `extras` so the
-    // frontend (which reads `material.userData` after GLTFLoader parsing)
-    // can fetch the bitmap and assign it as `map`. We deliberately don't
-    // embed the image bytes themselves into the GLB — labels are typically
-    // hosted on the CDN that already serves the GLB.
-    if let Some(url) = &mat.texture_url {
-        m["extras"] = json!({ "texture_url": url });
+    // KHR_materials_transmission — physical glass transmittance.
+    if is_glass {
+        m["extensions"] = json!({
+            "KHR_materials_transmission": {
+                "transmissionFactor": alpha.clamp(0.5, 0.95)
+            }
+        });
+        m["extensions"]["KHR_materials_ior"] = json!({ "ior": 1.52 });
     }
+
+    // extras always carry material_class so frontend can classify without name heuristics.
+    let mut extras = json!({ "material_class": mat.material_class });
+    if let Some(url) = &mat.texture_url {
+        extras["texture_url"] = json!(url);
+    }
+    m["extras"] = extras;
 
     m
 }
@@ -470,11 +502,19 @@ mod tests {
             Some("https://cdn.example.com/labels/sauce.png")
         );
 
-        // Materials without a label must NOT have an `extras` key.
+        // PR #28: all materials now emit extras.material_class — texture_url is optional.
+        // Verify bottle_glass has material_class but no texture_url.
         let glass = materials
             .iter()
             .find(|m| m["name"] == "bottle_glass")
             .unwrap();
-        assert!(glass.get("extras").is_none(), "untextured material must not emit extras");
+        assert!(
+            glass["extras"]["material_class"].as_str().is_some(),
+            "glass material must carry extras.material_class (PR #28)"
+        );
+        assert!(
+            glass["extras"].get("texture_url").is_none(),
+            "untextured material must not emit texture_url in extras"
+        );
     }
 }

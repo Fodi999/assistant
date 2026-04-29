@@ -1,6 +1,10 @@
 //! Core mesh types for the procedural geometry generators.
 //!
-//! Kept intentionally minimal for PR #4 — just enough to drive OBJ export.
+//! PR #28: `Material` now carries full PBR properties (roughness, metalness,
+//! opacity) so the glTF exporter can emit physically-correct materials instead
+//! of the old Phong→roughness approximation.  Generators must set these fields
+//! via the new builder helpers; the `shininess` field is kept for backwards
+//! compatibility but is no longer used by the exporter when `roughness` > 0.
 //! No GPU types, no normal compression, no skinning.
 
 /// A triangle mesh ready for OBJ serialisation.
@@ -80,7 +84,7 @@ impl Mesh {
     }
 }
 
-/// Simple Phong-style material, enough for `map_Kd` OBJ/MTL.
+/// Simple PBR material, maps 1-to-1 to glTF `pbrMetallicRoughness`.
 #[derive(Debug, Clone)]
 pub struct Material {
     /// Used as the `newmtl` name in the MTL file and `usemtl` in OBJ.
@@ -91,14 +95,26 @@ pub struct Material {
     /// If present, the MTL file will include `map_Kd <texture_file>`.
     pub texture_file: Option<String>,
     /// Specular intensity 0..1 (mapped to MTL `Ks`). Default 0.15.
+    /// Legacy — used only by the OBJ exporter; glTF ignores this.
     pub specular: f32,
-    /// Shininess exponent (mapped to MTL `Ns`). Higher = sharper highlight. Default 32.0.
+    /// Shininess exponent (mapped to MTL `Ns`). Legacy — kept for OBJ.
+    /// The glTF exporter uses `roughness` directly when it is > 0.
     pub shininess: f32,
     /// Optional URL of a remote label / decal texture (PR #15).
-    /// Embedded into the GLB as `materials[i].extras.texture_url` so the
-    /// frontend can `THREE.TextureLoader` it onto the matching material
-    /// without round-tripping through MTL `map_Kd`.
     pub texture_url: Option<String>,
+
+    // ── PR #28: PBR fields ────────────────────────────────────────────────
+    /// PBR roughness 0.0 (mirror) … 1.0 (fully matte). 0.0 = use legacy
+    /// `shininess` formula in the exporter.
+    pub roughness: f32,
+    /// PBR metalness 0.0 (dielectric) … 1.0 (metal). Food/ceramics = 0.
+    pub metalness: f32,
+    /// Alpha / opacity 0.0 (invisible) … 1.0 (solid). < 1.0 triggers
+    /// `alphaMode: BLEND` and `KHR_materials_transmission` in the GLB.
+    pub opacity: f32,
+    /// `material_class` hint for the frontend shader picker.
+    /// One of: `"opaque"` | `"glass"` | `"liquid"` | `"metal"` | `"ceramic"` | `"food"`.
+    pub material_class: String,
 }
 
 impl Material {
@@ -110,6 +126,10 @@ impl Material {
             specular: 0.15,
             shininess: 32.0,
             texture_url: None,
+            roughness: 0.0,
+            metalness: 0.0,
+            opacity: 1.0,
+            material_class: "opaque".to_string(),
         }
     }
 
@@ -117,6 +137,25 @@ impl Material {
     pub fn with_gloss(mut self, specular: f32, shininess: f32) -> Self {
         self.specular = specular.clamp(0.0, 1.0);
         self.shininess = shininess.max(1.0);
+        self
+    }
+
+    /// Set PBR roughness + metalness explicitly (PR #28).
+    pub fn with_pbr(mut self, roughness: f32, metalness: f32) -> Self {
+        self.roughness = roughness.clamp(0.0, 1.0);
+        self.metalness = metalness.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set opacity < 1.0 for glass / translucent materials (PR #28).
+    pub fn with_opacity(mut self, opacity: f32) -> Self {
+        self.opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Tag this material with a class hint for the frontend (PR #28).
+    pub fn with_class(mut self, class: impl Into<String>) -> Self {
+        self.material_class = class.into();
         self
     }
 

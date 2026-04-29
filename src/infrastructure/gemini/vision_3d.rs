@@ -98,6 +98,22 @@ Schema (all keys required unless marked optional):
   "scene": {                          // optional
     "background": "...",
     "lighting": "..."
+  },
+  "shape_recipe": {                   // PR #28 — build plan for the geometry engine
+    "layers": [                       // ordered bottom→top: container first, surface last
+      {
+        "layer": "container" | "fill" | "surface" | "label" | "cap" | "lighting_hint",
+        "kind": "bowl" | "bottle" | "jar" | "plate" | "flat_card" | "sauce" | "swirl" | "mound" | "waves",
+        "material_class": "glass" | "ceramic" | "plastic" | "metal" | "food" | "liquid" | "label",
+        "color_hex": "#RRGGBB",       // dominant colour for this layer
+        "roughness": 0.0..1.0,        // PBR roughness (0=mirror, 1=very matte)
+        "metalness": 0.0..1.0,        // PBR metalness (0=dielectric, food/ceramic=0)
+        "opacity": 0.0..1.0,          // 1=solid, <1=translucent/glass
+        "notes": "..."                // optional hint for the generator
+      }
+    ],
+    "lighting_hint": "soft overhead" | "HDRI studio" | "rim light" | "...",
+    "hero_angle": "top_down" | "three_quarter" | "side" | "hero_45"
   }
 }
 
@@ -111,6 +127,15 @@ If the container is transparent or semi-transparent glass and appears brown/red/
 product is visible through it, set material="glass", tint_hex to the dominant glass wall tint
 (e.g. "#3D1A0A" for dark brown), transparency to 0.55–0.85, and rim_darkness to how much the rim
 appears darker than the body. Do not omit tint_hex or color_hex if the rim or wall colour is visible.
+
+For shape_recipe: always populate it. List every visible layer bottom→top.
+A ceramic bowl with red sauce would have two layers:
+  [{"layer":"container","kind":"bowl","material_class":"ceramic","roughness":0.55,...},
+   {"layer":"fill","kind":"sauce","material_class":"liquid","roughness":0.10,...}]
+For liquids: roughness 0.05–0.15, metalness 0, opacity 1.0.
+For ceramics: roughness 0.45–0.65, metalness 0, opacity 1.0.
+For glass: roughness 0.04–0.10, metalness 0, opacity 0.25–0.55.
+Always set hero_angle to the camera angle that best shows the product.
 
 Return ONLY this JSON. No backticks. No commentary."##;
 
@@ -183,7 +208,7 @@ impl GeminiVision3D {
             generation_config: GenerationConfig {
                 temperature: 0.0,
                 response_mime_type: "application/json".to_string(),
-                max_output_tokens: 1536,
+                max_output_tokens: 2048,
             },
         };
 
