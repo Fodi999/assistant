@@ -29,3 +29,4 @@ pub mod service;
 
 pub use models::*;
 pub use service::LaboratoryV2Service;
+pub use service::SurfaceTuneInfo;

@@ -24,6 +24,22 @@ use crate::infrastructure::persistence::laboratory_v2_repository::{
 use crate::infrastructure::storage::StorageAdapter;
 use crate::shared::AppError;
 
+// ── PR #31 — derived surface parameters returned by tune_surface() ───────────
+/// The concrete surface field values that `smoothness` maps to.
+/// Returned alongside the regenerated asset so the frontend can display them.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SurfaceTuneInfo {
+    pub smoothness: f32,
+    pub ridge_height: f32,
+    pub groove_depth: f32,
+    pub center_peak: f32,
+    pub surface_irregularity: f32,
+    pub highlight_strength: f32,
+}
+
+// ── PR #31 re-export so the HTTP handler can use it without reaching in ──────
+pub use crate::interfaces::http::laboratory_v2::TuneSurfaceInfo;
+
 /// Mime types accepted by the multipart uploader.
 const ALLOWED_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp"];
 
@@ -323,11 +339,141 @@ impl LaboratoryV2Service {
             .await?
             .ok_or_else(|| AppError::not_found(format!("asset {asset_id} not found")))
     }
+
+    // ── PR #31 — Smoothness Slider ────────────────────────────────────────────
+    //
+    // Regenerates the geometry for an existing asset **without** re-running
+    // Gemini Vision. The stored `product_spec` (object_type + colours +
+    // container) is reused; only the `surface` block is replaced by the
+    // smoothness mapping.
+    //
+    // `smoothness` is in [0.0, 1.0]:
+    //   0.0 → max ridges / groove / peak / irregularity  (heavy sauce swirl)
+    //   1.0 → flat / almost mirror-smooth liquid surface
+    //
+    // Formula (matches the front-end preview tooltip):
+    //   ridge_height         = lerp(0.85, 0.15, s)
+    //   groove_depth         = lerp(0.75, 0.10, s)
+    //   center_peak          = lerp(0.80, 0.20, s)
+    //   surface_irregularity = lerp(0.20, 0.02, s)
+    //   highlight_strength   = lerp(0.85, 0.65, s)
+    pub async fn tune_surface(
+        &self,
+        asset_id: Uuid,
+        user_id: Uuid,
+        smoothness: f32,
+        quality: GeometryQuality,
+    ) -> Result<(Laboratory3DAsset, SurfaceTuneInfo), AppError> {
+        // 1. Load the existing asset to get its stored spec + object_type.
+        let asset = self
+            .repo
+            .get_asset_by_id(asset_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::not_found(format!("asset {asset_id} not found")))?;
+
+        let object_type = asset.object_type.as_deref().unwrap_or("flat_card");
+
+        // 2. Build new surface override from smoothness value.
+        let (info, surface_value) = smoothness_to_surface_spec(smoothness);
+
+        // 3. Merge override into the stored spec JSON.
+        let mut spec_json = asset
+            .object_spec
+            .clone()
+            .unwrap_or(serde_json::Value::Object(Default::default()));
+        if let Some(obj) = spec_json.as_object_mut() {
+            obj.entry("product")
+                .or_insert(serde_json::json!({}))
+                .as_object_mut()
+                .map(|p| p.insert("surface".to_string(), surface_value));
+        }
+
+        // 4. Regenerate geometry — same dispatcher, different surface.
+        let mesh = geometry_dispatch(object_type, Some(&spec_json), quality)?;
+        let export = export_glb(&mesh)?;
+
+        // 5. Store new GLB (overwrite same key for this asset).
+        let glb_key = format!("laboratory/models/{asset_id}/model.glb");
+        let model_url = self
+            .storage
+            .put_bytes(&glb_key, export.glb_bytes, "model/gltf-binary")
+            .await?;
+
+        // 6. Mark ready with updated URL.
+        self.repo
+            .mark_asset_ready(asset_id, "glb", &model_url)
+            .await?;
+
+        tracing::info!(
+            "🎛️  tune_surface: asset={asset_id} smoothness={smoothness:.2} quality={} → {model_url}",
+            quality.as_str()
+        );
+
+        // 7. Re-read so the response has the latest model_url.
+        let updated = self
+            .repo
+            .get_asset_by_id(asset_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::internal(format!("asset {asset_id} missing after tune")))?;
+
+        Ok((updated, info))
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Map `smoothness` ∈ [0,1] to concrete `ProductSurfaceSpec`-shaped JSON and
+/// a [`SurfaceTuneInfo`] summary for display.
+///
+/// ```text
+/// smoothness = 0.0  →  max ridges, deep grooves, tall peak, noisy
+/// smoothness = 1.0  →  flat / mirror-smooth
+///
+/// ridge_height         = lerp(0.85, 0.15, s)
+/// groove_depth         = lerp(0.75, 0.10, s)
+/// center_peak          = lerp(0.80, 0.20, s)
+/// surface_irregularity = lerp(0.20, 0.02, s)
+/// highlight_strength   = lerp(0.85, 0.65, s)
+/// ```
+fn smoothness_to_surface_spec(s: f32) -> (SurfaceTuneInfo, serde_json::Value) {
+    #[inline]
+    fn lerp(a: f32, b: f32, t: f32) -> f32 { a + (b - a) * t.clamp(0.0, 1.0) }
+
+    let ridge_height         = lerp(0.85, 0.15, s);
+    let groove_depth         = lerp(0.75, 0.10, s);
+    let center_peak          = lerp(0.80, 0.20, s);
+    let surface_irregularity = lerp(0.20, 0.02, s);
+    let highlight_strength   = lerp(0.85, 0.65, s);
+
+    let info = SurfaceTuneInfo {
+        smoothness: s,
+        ridge_height,
+        groove_depth,
+        center_peak,
+        surface_irregularity,
+        highlight_strength,
+    };
+
+    let json = serde_json::json!({
+        "pattern": if s < 0.35 { "spiral_swirl" } else if s < 0.70 { "mound" } else { "flat" },
+        "ridge_height":         ridge_height,
+        "groove_depth":         groove_depth,
+        "center_peak":          center_peak,
+        "surface_irregularity": surface_irregularity,
+        "highlight_strength":   highlight_strength,
+        // Preserve neutral defaults for fill/swirl fields not driven by slider.
+        "fill_height_ratio":  0.72,
+        "surface_thickness":  0.45,
+        "meniscus_height":    0.20,
+        "fill_radius_ratio":  0.92,
+        "rim_gap_ratio":      0.04,
+        "view_angle":         "top_down"
+    });
+
+    (info, json)
+}
 
 fn validate_mime(mime: &str) -> Result<(), AppError> {
     if ALLOWED_MIME_TYPES

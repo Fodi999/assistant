@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::application::laboratory_v2::{
     Laboratory3DAsset, LaboratoryImage, LaboratoryV2Service, RegisterImagePayload,
+    SurfaceTuneInfo,
 };
 use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::gemini::GeminiVision3D;
@@ -226,4 +227,62 @@ pub async fn debug_vision(
         raw_response: raw_json.clone(),
         parsed_spec: raw_json,
     }))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `POST /laboratory/assets/:asset_id/tune-surface`
+//
+// PR #31 — Smoothness Slider.
+//
+// Regenerates the geometry for an existing asset using a single
+// `smoothness` value (0.0 = very textured/chunky, 1.0 = perfectly smooth)
+// without re-running Gemini Vision. The stored `product_spec` is reused
+// for object_type / colours / container; only the surface params are
+// overridden by the smoothness mapping.
+//
+// Body:
+//   {
+//     "smoothness": 0.72,          // 0.0..1.0  (front-end sends 0..100 / 100)
+//     "quality": "draft"            // optional — default "draft" for preview
+//   }
+//
+// Typical frontend flow:
+//   • slider drag (debounce 300 ms) → POST tune-surface?quality=draft
+//   • "Apply High" button           → POST tune-surface?quality=high
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct TuneSurfaceBody {
+    /// Smoothness in [0.0, 1.0]. Frontend may send the integer 0–100 and
+    /// divide by 100 before posting, or send the float directly.
+    pub smoothness: f32,
+    /// `"draft"` | `"standard"` | `"high"` | `"ultra"`. Default: `"draft"`.
+    #[serde(default)]
+    pub quality: Option<String>,
+}
+
+/// Derived surface parameters returned alongside the new GLB URL so the
+/// frontend can display what the slider actually produced.
+pub type TuneSurfaceInfo = SurfaceTuneInfo;
+
+#[derive(Debug, Serialize)]
+pub struct TuneSurfaceResponse {
+    pub asset: Laboratory3DAsset,
+    pub surface_info: SurfaceTuneInfo,
+}
+
+pub async fn tune_surface(
+    auth: AuthUser,
+    State(svc): State<LaboratoryV2Service>,
+    Path(asset_id): Path<Uuid>,
+    Json(body): Json<TuneSurfaceBody>,
+) -> Result<Json<TuneSurfaceResponse>, AppError> {
+    let smoothness = body.smoothness.clamp(0.0, 1.0);
+    let quality = GeometryQuality::from_opt(body.quality.as_deref());
+
+    let (asset, info) = svc
+        .tune_surface(asset_id, *auth.user_id.as_uuid(), smoothness, quality)
+        .await?;
+
+    Ok(Json(TuneSurfaceResponse { asset, surface_info: info }))
 }

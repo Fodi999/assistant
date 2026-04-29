@@ -593,6 +593,10 @@ pub fn create_router(
                     "/laboratory/assets/:asset_id",
                     get(crate::interfaces::http::laboratory_v2::get_asset),
                 )
+                .route(
+                    "/laboratory/assets/:asset_id/tune-surface",
+                    post(crate::interfaces::http::laboratory_v2::tune_surface),
+                )
                 .with_state(lab_v2_service)
                 .merge(
                     Router::new()
