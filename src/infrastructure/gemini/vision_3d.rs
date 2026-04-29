@@ -131,6 +131,15 @@ Always estimate fill volume for sauce_in_bowl and jar_product:
 - meniscus_height: how strongly the sauce curves up at the container wall (0=flat, 1=water-glass curve). Typical 0.05–0.50.
 If only a top-down view is visible, estimate fill_height_ratio=0.72, surface_thickness=0.45, meniscus_height=0.20 as safe defaults.
 
+For plate_food: estimate the food mound geometry on the plate.
+- pattern: "smooth_mound" for purée/cream/hummus, "chunky" for salad/grains/roasted veg/potatoes,
+  "swirl" for mashed-potato-swirl or sauce-drizzle, "flat" for flatbread/pizza/galette.
+- center_peak: height of the apex (0=flat, 1=tall dome). Typical purée=0.40–0.65, salad=0.55–0.80.
+- surface_irregularity: how textured/lumpy the surface looks (purée≈0.15, salad≈0.75, mash≈0.40).
+- fill_radius_ratio: how much of the plate's edible area the food covers (typical 0.75–0.95).
+- highlight_strength: sheen/gloss visible on the food surface (sauce on top → 0.60–0.85, dry food → 0.05–0.20).
+Always set container.material="ceramic" for the plate unless visibly glass or other material.
+
 For container material: always set container.material explicitly.
 If the container is transparent or semi-transparent glass and appears brown/red/amber because the
 product is visible through it, set material="glass", tint_hex to the dominant glass wall tint

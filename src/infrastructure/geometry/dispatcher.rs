@@ -89,9 +89,12 @@ pub fn dispatch_with_quality(
         "plate_food" => {
             let product_color = extract_str(spec, "/product/color_hex").unwrap_or("#A85B12");
             let plate_color = extract_str(spec, "/container/color_hex");
-            Ok(plate_food::generate_with_quality(
+            let surface = spec.and_then(|v| v.pointer("/product/surface"))
+                .and_then(|v| serde_json::from_value::<crate::application::laboratory_v2::ProductSurfaceSpec>(v.clone()).ok());
+            Ok(plate_food::generate_with_surface_and_quality(
                 product_color,
                 plate_color,
+                surface.as_ref(),
                 quality,
             ))
         }
@@ -191,7 +194,7 @@ mod tests {
         assert!(mesh
             .groups
             .iter()
-            .any(|g| g.material.name == "product_material"));
+            .any(|g| g.material.name == "food_material"));
     }
 
     #[test]

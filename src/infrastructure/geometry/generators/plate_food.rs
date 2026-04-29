@@ -1,29 +1,20 @@
-//! Plate-food generator (PR #14).
+//! Plate-food generator (PR #14 — base, PR #30 — Vision Surface Spec + PBR + food patterns).
 //!
-//! A shallow ceramic plate with an irregular food mound on top. Two
-//! material groups (PR #14 scope — garnish kept for a future PR):
+//! Material groups:
 //!
-//!   1. **`plate_material`** — lathed plate built from foot ring → flat
-//!      base → shallow rise → rolled rim. Same ceramic upgrade rules as the
-//!      bowl (`*plate*|*ceramic*` triggers ceramic shading on the frontend
-//!      via the existing `bowl|ceramic` rule, see note below).
-//!   2. **`product_material`** — radial heightfield mound on top of the
-//!      plate. Height is `BASE_DOME * (1 - r²) + small low-frequency noise`
-//!      so the centre is the highest point and the edge tapers to the
-//!      plate surface; tiny angular ripples make it look like food, not a
-//!      perfect dome.
-//!
-//! Frontend material rules (`ModelViewer.tsx`):
-//!   * `*plate*` does **not** match the ceramic rule yet — the `classify()`
-//!     function looks for `bowl` / `ceramic`. We name the plate material
-//!     `plate_ceramic` so the existing `ceramic` keyword catches it without
-//!     a frontend change.
-//!   * `*product*` → glossy diffuse (already handled).
+//!   1. **`plate_ceramic`** — lathed plate: foot ring → flat base → shallow rise → rolled rim.
+//!   2. **`food_material`** — radial heightfield mound driven by [`ProductSurfaceSpec`].
+//!      Supports four patterns:
+//!        * `"smooth_mound"` / `"mound"` / `"flat"` — bell dome (purée, hummus, risotto)
+//!        * `"chunky"` / `"chunky_mound"` / `"waves"` — angular high-frequency noise (salad, potatoes)
+//!        * `"swirl"` / `"spiral_swirl"` — low ridge-based swirl borrowed from sauce_in_bowl
+//!        * default / unknown — smooth mound with moderate noise
 //!
 //! Y-up, centred at origin, all units in metres.
 
 use std::f32::consts::PI;
 
+use crate::application::laboratory_v2::ProductSurfaceSpec;
 use crate::infrastructure::geometry::kernel::{
     disk_fan_down, lathe_profile, GeometryQuality, MeshBuilder, Profile, ProfilePoint,
 };
@@ -48,7 +39,7 @@ const Y_RIM_INNER: f32 = 0.008;
 const PLATE_TOP_Y: f32 = Y_BASE + 0.0008;
 /// Maximum food radius — tucked just inside the rim's inner edge.
 const FOOD_MAX_RADIUS: f32 = PLATE_RIM_INNER - 0.006;
-/// Apex height of the food dome (above `PLATE_TOP_Y`).
+/// Default apex height of the food dome (above `PLATE_TOP_Y`).
 const FOOD_DOME: f32 = 0.012;
 /// Amplitude of the angular noise wobble.
 const FOOD_NOISE: f32 = 0.0020;
@@ -56,39 +47,137 @@ const FOOD_NOISE: f32 = 0.0020;
 // ── Default colours ─────────────────────────────────────────────────────────
 const PLATE_DEFAULT_COLOR: [f32; 3] = [0.96, 0.94, 0.90];
 
-/// Generate a plate-food mesh.
-///
-/// - `product_color_hex` — hex colour of the food (`product.color_hex`).
-/// - `plate_color_hex` — optional override for the plate.
-pub fn generate(product_color_hex: &str, plate_color_hex: Option<&str>) -> Mesh {
-    generate_with_quality(product_color_hex, plate_color_hex, GeometryQuality::default())
+// ─────────────────────────────────────────────────────────────────────────────
+// PR #30 — Food Mound Parameters
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Controls the shape of the food mound.
+#[derive(Debug, Clone, Copy)]
+pub struct FoodMoundParams {
+    /// Which algorithm to use.
+    pub pattern: FoodPattern,
+    /// Apex height in metres above the plate surface.
+    pub apex_m: f32,
+    /// Fraction of FOOD_MAX_RADIUS the mound actually fills (0.6–1.0).
+    pub spread_ratio: f32,
+    /// Organic noise amplitude multiplier (0.0–1.0).
+    pub irregularity: f32,
+    /// Number of angular high-frequency noise harmonics (chunky pattern).
+    pub chunk_freq: f32,
+    /// PBR roughness for the food material.
+    pub roughness: f32,
+    /// PBR gloss/specular (for things like sauce on top or rice grains).
+    pub gloss: f32,
 }
 
-/// Same as [`generate`] but with an explicit [`GeometryQuality`] preset
-/// driving the radial segment count and the number of mound rings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FoodPattern {
+    SmoothMound,  // purée, hummus, cream, risotto
+    ChunkyMound,  // salad, roasted veg, potatoes, grains
+    SwirlMound,   // sauce drizzled on plate, mashed-with-swirl
+    FlatSpread,   // flatbread, pizza, thin galette
+}
+
+impl Default for FoodMoundParams {
+    fn default() -> Self {
+        Self {
+            pattern: FoodPattern::SmoothMound,
+            apex_m: FOOD_DOME,
+            spread_ratio: 0.88,
+            irregularity: 0.25,
+            chunk_freq: 5.0,
+            roughness: 0.55,
+            gloss: 0.30,
+        }
+    }
+}
+
+/// Map an optional [`ProductSurfaceSpec`] (from Gemini Vision) to concrete
+/// food mound parameters. Falls back to sensible defaults when `None`.
+pub fn mound_params_from_spec(surface: Option<&ProductSurfaceSpec>) -> FoodMoundParams {
+    let Some(s) = surface else {
+        return FoodMoundParams::default();
+    };
+
+    let pattern = match s.pattern.as_deref().unwrap_or("unknown") {
+        "chunky" | "chunky_mound" | "waves" => FoodPattern::ChunkyMound,
+        "swirl" | "spiral_swirl"            => FoodPattern::SwirlMound,
+        "flat"                              => FoodPattern::FlatSpread,
+        _                                   => FoodPattern::SmoothMound,
+    };
+
+    let apex_m = lerp_f32(
+        0.004,
+        0.030,
+        s.ridge_height.or(s.center_peak).unwrap_or(0.45),
+    );
+    let spread_ratio = s.fill_radius_ratio.unwrap_or(0.88).clamp(0.55, 1.0);
+    let irregularity = s.surface_irregularity.unwrap_or(0.25).clamp(0.0, 1.0);
+    let chunk_freq   = lerp_f32(3.0, 12.0, irregularity);
+    let roughness    = lerp_f32(0.20, 0.80, irregularity);
+    let gloss        = lerp_f32(0.55, 0.10, irregularity);
+
+    FoodMoundParams { pattern, apex_m, spread_ratio, irregularity, chunk_freq, roughness, gloss }
+}
+
+#[inline]
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t.clamp(0.0, 1.0)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public generator API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Generate a plate-food mesh with default quality and no Vision surface spec.
+pub fn generate(product_color_hex: &str, plate_color_hex: Option<&str>) -> Mesh {
+    generate_with_surface_and_quality(
+        product_color_hex,
+        plate_color_hex,
+        None,
+        GeometryQuality::default(),
+    )
+}
+
+/// Same as [`generate`] but with an explicit [`GeometryQuality`] preset.
 pub fn generate_with_quality(
     product_color_hex: &str,
     plate_color_hex: Option<&str>,
     quality: GeometryQuality,
 ) -> Mesh {
-    let product_color = hex_to_rgb(product_color_hex);
-    let plate_color = plate_color_hex.map(hex_to_rgb).unwrap_or(PLATE_DEFAULT_COLOR);
+    generate_with_surface_and_quality(product_color_hex, plate_color_hex, None, quality)
+}
 
-    let segments = quality.radial_segments();
+/// Full generator — Vision [`ProductSurfaceSpec`] drives food mound shape + PBR.
+pub fn generate_with_surface_and_quality(
+    product_color_hex: &str,
+    plate_color_hex: Option<&str>,
+    surface: Option<&ProductSurfaceSpec>,
+    quality: GeometryQuality,
+) -> Mesh {
+    let product_color = hex_to_rgb(product_color_hex);
+    let plate_color   = plate_color_hex.map(hex_to_rgb).unwrap_or(PLATE_DEFAULT_COLOR);
+    let params        = mound_params_from_spec(surface);
+
+    let segments       = quality.radial_segments();
     let mound_segments = quality.radial_segments();
-    let mound_rings = quality.surface_rings();
+    let mound_rings    = quality.surface_rings();
 
     let mut b = MeshBuilder::new();
 
-    // Group 1 — plate (ceramic). The name contains `ceramic` so the existing
-    // frontend `bowl|ceramic` upgrade rule picks it up as opaque ceramic
-    // instead of glass / liquid.
+    // Group 1 — plate ceramic (PBR: low roughness for porcelain feel).
     let plate_g = b.add_group(
-        Material::solid("plate_ceramic", plate_color).with_gloss(0.10, 24.0),
+        Material::solid("plate_ceramic", plate_color)
+            .with_gloss(0.10, 24.0)
+            .with_pbr(0.52, 0.0)
+            .with_class("ceramic"),
     );
     // Group 2 — food mound.
     let food_g = b.add_group(
-        Material::solid("product_material", product_color).with_gloss(0.45, 64.0),
+        Material::solid("food_material", product_color)
+            .with_gloss(params.gloss, lerp_f32(24.0, 128.0, params.gloss))
+            .with_pbr(params.roughness, 0.0)
+            .with_class("food"),
     );
 
     // ── Plate via lathe ─────────────────────────────────────────────────────
@@ -104,110 +193,246 @@ pub fn generate_with_quality(
     let plate_wall = lathe_profile(&plate_profile, segments).expect("lathe plate");
     b.add_part(plate_g, &plate_wall);
 
-    // Underside of the foot (small disk facing down so the plate is closed).
-    let foot_disk =
-        disk_fan_down(PLATE_FOOT_INNER, Y_FOOT_BOTTOM, segments).expect("foot disk");
+    let foot_disk = disk_fan_down(PLATE_FOOT_INNER, Y_FOOT_BOTTOM, segments).expect("foot disk");
     b.add_part(plate_g, &foot_disk);
 
-    // ── Food mound via radial heightfield ───────────────────────────────────
-    add_food_mound(&mut b, food_g, mound_segments, mound_rings);
+    // ── Food mound ──────────────────────────────────────────────────────────
+    let food_radius = FOOD_MAX_RADIUS * params.spread_ratio;
+    match params.pattern {
+        FoodPattern::SmoothMound => add_smooth_mound(&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
+        FoodPattern::ChunkyMound => add_chunky_mound(&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
+        FoodPattern::SwirlMound  => add_swirl_mound (&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
+        FoodPattern::FlatSpread  => add_flat_spread  (&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
+    }
 
     b.build()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Food mound — concentric rings + angular displacement.
-//
-// Height field:
-//   r_ratio = r / FOOD_MAX_RADIUS
-//   dome    = FOOD_DOME * (1 - r_ratio²)         // smooth bell, 0 at edge
-//   noise   = FOOD_NOISE * sin(3θ + 8 r_ratio) * sin(7θ)
-//   y       = PLATE_TOP_Y + dome + noise * smoothstep(r_ratio, 0.1, 0.9)
-//
-// The smoothstep zeros the noise both at the apex (so the centre stays the
-// highest point) and at the rim (so the mound smoothly meets the plate).
+// Pattern implementations
 // ─────────────────────────────────────────────────────────────────────────────
-fn add_food_mound(b: &mut MeshBuilder, group: usize, mound_segments: usize, mound_rings: usize) {
-    // Centre vertex — the highest point.
+
+/// Smooth bell dome — purée, hummus, cream, risotto.
+fn add_smooth_mound(
+    b: &mut MeshBuilder,
+    group: usize,
+    segments: usize,
+    rings: usize,
+    params: &FoodMoundParams,
+    food_radius: f32,
+) {
     let centre = b.add_vertex(
-        [0.0, PLATE_TOP_Y + FOOD_DOME, 0.0],
+        [0.0, PLATE_TOP_Y + params.apex_m, 0.0],
         [0.0, 1.0, 0.0],
         [0.5, 0.5],
     );
-
-    let ring_size = mound_segments + 1;
+    let ring_size = segments + 1;
     let first_ring_v = centre + 1;
 
-    // Build all ring vertices.
-    for ring in 1..=mound_rings {
-        let r_ratio = ring as f32 / mound_rings as f32;
-        let r = FOOD_MAX_RADIUS * r_ratio;
-
-        // Smoothstep window for the noise: full strength in the middle, zero
-        // at apex and rim. Hand-rolled smoothstep clamp.
+    for ring in 1..=rings {
+        let r_ratio = ring as f32 / rings as f32;
+        let r = food_radius * r_ratio;
         let edge_lo = smoothstep(0.10, 0.30, r_ratio);
         let edge_hi = 1.0 - smoothstep(0.85, 1.00, r_ratio);
         let noise_w = (edge_lo * edge_hi).clamp(0.0, 1.0);
 
-        for seg in 0..=mound_segments {
-            let t = seg as f32 / mound_segments as f32;
+        for seg in 0..=segments {
+            let t     = seg as f32 / segments as f32;
             let theta = t * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
 
-            let dome = FOOD_DOME * (1.0 - r_ratio * r_ratio);
-            let noise = FOOD_NOISE
+            let dome  = params.apex_m * (1.0 - r_ratio * r_ratio);
+            let noise = FOOD_NOISE * params.irregularity
                 * (3.0 * theta + 8.0 * r_ratio).sin()
                 * (7.0 * theta).sin()
                 * noise_w;
             let y = PLATE_TOP_Y + dome + noise;
 
-            // Approximate normal: gradient of (dome + noise) in (r, θ) space.
-            // dr/dr   = -2 * FOOD_DOME * r_ratio / FOOD_MAX_RADIUS
-            // dnoise/dθ component handled approximately.
-            let d_y_d_r = -2.0 * FOOD_DOME * r_ratio / FOOD_MAX_RADIUS.max(1e-6);
-            let d_noise_d_theta = FOOD_NOISE
-                * (3.0 * (3.0 * theta + 8.0 * r_ratio).cos() * (7.0 * theta).sin()
-                    + 7.0 * (3.0 * theta + 8.0 * r_ratio).sin() * (7.0 * theta).cos())
-                * noise_w;
-            let slope_radial = d_y_d_r;
-            let slope_tangential = if r > 1e-5 {
-                d_noise_d_theta / r
-            } else {
-                0.0
-            };
-
-            // Surface normal: start from up (0,1,0), tilt against gradients.
-            // Tangent in radial direction is (cos_t, slope_radial, sin_t);
-            // tangent in angular direction is (-sin_t, slope_tangential, cos_t).
-            // Cross product (radial × tangential) gives outward normal.
-            let tr = [cos_t, slope_radial, sin_t];
-            let tt = [-sin_t, slope_tangential, cos_t];
-            let nx = tr[1] * tt[2] - tr[2] * tt[1];
-            let ny = tr[2] * tt[0] - tr[0] * tt[2];
-            let nz = tr[0] * tt[1] - tr[1] * tt[0];
-            let len = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-6);
+            let d_y_d_r = -2.0 * params.apex_m * r_ratio / food_radius.max(1e-6);
+            let (nx, ny, nz) = approximate_normal(cos_t, sin_t, r, d_y_d_r, 0.0);
 
             b.add_vertex(
                 [cos_t * r, y, sin_t * r],
-                [nx / len, ny / len, nz / len],
+                [nx, ny, nz],
                 [0.5 + cos_t * 0.5 * r_ratio, 0.5 + sin_t * 0.5 * r_ratio],
             );
         }
     }
+    stitch_rings(b, group, centre, first_ring_v, ring_size, rings, segments);
+}
 
-    // Inner fan: centre → ring 1.
-    for seg in 0..mound_segments {
+/// High-frequency angular noise — salad, roasted veg, rice, potatoes.
+fn add_chunky_mound(
+    b: &mut MeshBuilder,
+    group: usize,
+    segments: usize,
+    rings: usize,
+    params: &FoodMoundParams,
+    food_radius: f32,
+) {
+    let centre = b.add_vertex(
+        [0.0, PLATE_TOP_Y + params.apex_m * 0.85, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.5, 0.5],
+    );
+    let ring_size = segments + 1;
+    let first_ring_v = centre + 1;
+
+    for ring in 1..=rings {
+        let r_ratio = ring as f32 / rings as f32;
+        let r = food_radius * r_ratio;
+        let edge_w = (1.0 - smoothstep(0.80, 1.00, r_ratio)).clamp(0.0, 1.0);
+
+        for seg in 0..=segments {
+            let t     = seg as f32 / segments as f32;
+            let theta = t * 2.0 * PI;
+            let cos_t = theta.cos();
+            let sin_t = theta.sin();
+
+            // Bell envelope + chunky high-frequency noise.
+            let dome   = params.apex_m * (1.0 - r_ratio * r_ratio);
+            let freq   = params.chunk_freq;
+            let chunk  = (freq * theta).sin().abs() * 0.4
+                + (freq * 1.3 * theta + r_ratio * 5.0).cos().abs() * 0.35
+                + (freq * 0.7 * theta - r_ratio * 3.0).sin() * 0.25;
+            let noise = FOOD_NOISE * 2.5 * params.irregularity * chunk * edge_w;
+            let y = PLATE_TOP_Y + dome + noise;
+
+            let d_y_d_r = -2.0 * params.apex_m * r_ratio / food_radius.max(1e-6);
+            let (nx, ny, nz) = approximate_normal(cos_t, sin_t, r, d_y_d_r, 0.0);
+
+            b.add_vertex(
+                [cos_t * r, y, sin_t * r],
+                [nx, ny, nz],
+                [0.5 + cos_t * 0.5 * r_ratio, 0.5 + sin_t * 0.5 * r_ratio],
+            );
+        }
+    }
+    stitch_rings(b, group, centre, first_ring_v, ring_size, rings, segments);
+}
+
+/// Ridge-based swirl — mashed potato with fork swirl, sauce-topped mound.
+fn add_swirl_mound(
+    b: &mut MeshBuilder,
+    group: usize,
+    segments: usize,
+    rings: usize,
+    params: &FoodMoundParams,
+    food_radius: f32,
+) {
+    let centre = b.add_vertex(
+        [0.0, PLATE_TOP_Y + params.apex_m, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.5, 0.5],
+    );
+    let ring_size = segments + 1;
+    let first_ring_v = centre + 1;
+
+    let swirl_arms = 3.0_f32;
+    let ridge_m = params.apex_m * 0.35;
+
+    for ring in 1..=rings {
+        let r_ratio = ring as f32 / rings as f32;
+        let r = food_radius * r_ratio;
+        let edge_falloff = (1.0 - (r_ratio - 0.80).max(0.0) / 0.20).clamp(0.0, 1.0);
+
+        for seg in 0..=segments {
+            let t     = seg as f32 / segments as f32;
+            let theta = t * 2.0 * PI;
+            let cos_t = theta.cos();
+            let sin_t = theta.sin();
+
+            let dome  = params.apex_m * (1.0 - r_ratio * r_ratio);
+            let phase = swirl_arms * theta + r_ratio * 2.0 * PI * 1.2;
+            let wave  = phase.sin();
+            let ridge = wave.max(0.0).powf(2.2) * ridge_m * edge_falloff;
+            let y = PLATE_TOP_Y + dome + ridge;
+
+            let d_y_d_r = -2.0 * params.apex_m * r_ratio / food_radius.max(1e-6);
+            let (nx, ny, nz) = approximate_normal(cos_t, sin_t, r, d_y_d_r, 0.0);
+
+            b.add_vertex(
+                [cos_t * r, y, sin_t * r],
+                [nx, ny, nz],
+                [0.5 + cos_t * 0.5 * r_ratio, 0.5 + sin_t * 0.5 * r_ratio],
+            );
+        }
+    }
+    stitch_rings(b, group, centre, first_ring_v, ring_size, rings, segments);
+}
+
+/// Thin flat spread — flatbread, pizza, galette, thin sauce pool.
+fn add_flat_spread(
+    b: &mut MeshBuilder,
+    group: usize,
+    segments: usize,
+    rings: usize,
+    params: &FoodMoundParams,
+    food_radius: f32,
+) {
+    let flat_apex = params.apex_m * 0.18; // very low — nearly flat
+    let centre = b.add_vertex(
+        [0.0, PLATE_TOP_Y + flat_apex, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.5, 0.5],
+    );
+    let ring_size = segments + 1;
+    let first_ring_v = centre + 1;
+
+    for ring in 1..=rings {
+        let r_ratio = ring as f32 / rings as f32;
+        let r = food_radius * r_ratio;
+        let edge_drop = smoothstep(0.88, 1.00, r_ratio);
+
+        for seg in 0..=segments {
+            let t     = seg as f32 / segments as f32;
+            let theta = t * 2.0 * PI;
+            let cos_t = theta.cos();
+            let sin_t = theta.sin();
+
+            // Mostly flat with a slight edge crisp.
+            let y = PLATE_TOP_Y + flat_apex * (1.0 - edge_drop * 0.9)
+                + FOOD_NOISE * 0.4 * params.irregularity
+                    * (5.0 * theta + r_ratio * 4.0).sin();
+
+            let (nx, ny, nz) = approximate_normal(cos_t, sin_t, r, -flat_apex * 2.0 * r_ratio / food_radius.max(1e-6), 0.0);
+
+            b.add_vertex(
+                [cos_t * r, y, sin_t * r],
+                [nx, ny, nz],
+                [0.5 + cos_t * 0.5 * r_ratio, 0.5 + sin_t * 0.5 * r_ratio],
+            );
+        }
+    }
+    stitch_rings(b, group, centre, first_ring_v, ring_size, rings, segments);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Stitch a centre vertex + N concentric rings into triangles.
+fn stitch_rings(
+    b: &mut MeshBuilder,
+    group: usize,
+    centre: usize,
+    first_ring_v: usize,
+    ring_size: usize,
+    rings: usize,
+    segments: usize,
+) {
+    // Centre fan → ring 1.
+    for seg in 0..segments {
         let a = first_ring_v + seg;
         let bb = first_ring_v + seg + 1;
         b.add_triangle(group, centre, a, bb);
     }
-
     // Quads between consecutive rings.
-    for ring in 1..mound_rings {
+    for ring in 1..rings {
         let inner_start = first_ring_v + (ring - 1) * ring_size;
         let outer_start = first_ring_v + ring * ring_size;
-        for seg in 0..mound_segments {
+        for seg in 0..segments {
             let i0 = inner_start + seg;
             let i1 = inner_start + seg + 1;
             let o0 = outer_start + seg;
@@ -218,6 +443,17 @@ fn add_food_mound(b: &mut MeshBuilder, group: usize, mound_segments: usize, moun
     }
 }
 
+/// Approximate surface normal from the radial slope and tangential slope.
+fn approximate_normal(cos_t: f32, sin_t: f32, r: f32, d_y_d_r: f32, slope_tang: f32) -> (f32, f32, f32) {
+    let tr = [cos_t, d_y_d_r, sin_t];
+    let tt = [-sin_t, if r > 1e-5 { slope_tang / r } else { 0.0 }, cos_t];
+    let nx = tr[1] * tt[2] - tr[2] * tt[1];
+    let ny = tr[2] * tt[0] - tr[0] * tt[2];
+    let nz = tr[0] * tt[1] - tr[1] * tt[0];
+    let len = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-6);
+    (nx / len, ny / len, nz / len)
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -226,6 +462,7 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::laboratory_v2::ProductSurfaceSpec;
     use crate::infrastructure::geometry::kernel::validate_mesh;
 
     #[test]
@@ -250,7 +487,7 @@ mod tests {
         assert!(mesh
             .groups
             .iter()
-            .any(|g| g.material.name == "product_material"));
+            .any(|g| g.material.name == "food_material"));
     }
 
     #[test]
@@ -259,8 +496,8 @@ mod tests {
         let product = mesh
             .groups
             .iter()
-            .find(|g| g.material.name == "product_material")
-            .expect("product_material group missing");
+            .find(|g| g.material.name == "food_material")
+            .expect("food_material group missing");
         let [r, g, b] = product.material.diffuse_color;
         assert!((r - 1.0).abs() < 1e-4);
         assert!(g.abs() < 1e-4);
@@ -294,7 +531,7 @@ mod tests {
         let food = mesh
             .groups
             .iter()
-            .find(|g| g.material.name == "product_material")
+            .find(|g| g.material.name == "food_material")
             .unwrap();
         let mut indices = std::collections::HashSet::new();
         for [a, b, c] in &food.faces {
@@ -359,5 +596,102 @@ mod tests {
         );
         // And it must be above the plate rim.
         assert!(max_y > Y_RIM_TOP, "food apex must rise above plate rim");
+    }
+
+    // ── PR #30 tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn plate_food_pbr_material_class_is_set() {
+        let mesh = generate("#A85B12", None);
+        let ceramic = mesh.groups.iter().find(|g| g.material.name == "plate_ceramic").unwrap();
+        let food    = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        assert_eq!(ceramic.material.material_class, "ceramic");
+        assert_eq!(food.material.material_class, "food");
+    }
+
+    #[test]
+    fn plate_food_pbr_roughness_fields_are_set() {
+        let mesh = generate("#A85B12", None);
+        let ceramic = mesh.groups.iter().find(|g| g.material.name == "plate_ceramic").unwrap();
+        let food    = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        let cr = ceramic.material.roughness;
+        assert!((cr - 0.52).abs() < 0.01, "plate_ceramic roughness should be ~0.52, got {cr}");
+        let fr = food.material.roughness;
+        assert!(fr > 0.0 && fr <= 1.0, "food roughness out of range: {fr}");
+    }
+
+    #[test]
+    fn plate_food_chunky_pattern_from_spec() {
+        let surface = ProductSurfaceSpec {
+            pattern: Some("chunky".to_string()),
+            surface_irregularity: Some(0.80),
+            ridge_height: Some(0.60),
+            fill_radius_ratio: Some(0.88),
+            ..Default::default()
+        };
+        let mesh = generate_with_surface_and_quality(
+            "#E2A060",
+            None,
+            Some(&surface),
+            crate::infrastructure::geometry::kernel::GeometryQuality::default(),
+        );
+        validate_mesh(&mesh).expect("chunky mound passes validation");
+        let food = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        assert!(!food.faces.is_empty());
+    }
+
+    #[test]
+    fn plate_food_swirl_pattern_from_spec() {
+        let surface = ProductSurfaceSpec {
+            pattern: Some("swirl".to_string()),
+            surface_irregularity: Some(0.30),
+            ridge_height: Some(0.40),
+            ..Default::default()
+        };
+        let mesh = generate_with_surface_and_quality(
+            "#F4C261",
+            None,
+            Some(&surface),
+            crate::infrastructure::geometry::kernel::GeometryQuality::default(),
+        );
+        validate_mesh(&mesh).expect("swirl mound passes validation");
+    }
+
+    #[test]
+    fn plate_food_flat_spread_pattern_from_spec() {
+        let surface = ProductSurfaceSpec {
+            pattern: Some("flat".to_string()),
+            surface_irregularity: Some(0.10),
+            ..Default::default()
+        };
+        let mesh = generate_with_surface_and_quality(
+            "#C8B08A",
+            None,
+            Some(&surface),
+            crate::infrastructure::geometry::kernel::GeometryQuality::default(),
+        );
+        validate_mesh(&mesh).expect("flat spread passes validation");
+        // Flat spread must have a much smaller height range than the default dome.
+        let food = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        let mut indices = std::collections::HashSet::new();
+        for [a, b, c] in &food.faces { indices.insert(*a); indices.insert(*b); indices.insert(*c); }
+        let (min_y, max_y) = indices.iter().fold(
+            (f32::INFINITY, f32::NEG_INFINITY),
+            |(mn, mx), &i| (mn.min(mesh.vertices[i][1]), mx.max(mesh.vertices[i][1])),
+        );
+        // flat spread apex ~ apex_m * 0.18 * default_apex → much less than 12 mm
+        assert!(max_y - min_y < 0.010, "flat spread height range should be < 10 mm (got {})", max_y - min_y);
+    }
+
+    #[test]
+    fn mound_params_from_spec_high_irregularity_gives_chunky() {
+        let surface = ProductSurfaceSpec {
+            pattern: Some("chunky_mound".to_string()),
+            surface_irregularity: Some(0.90),
+            ..Default::default()
+        };
+        let p = mound_params_from_spec(Some(&surface));
+        assert_eq!(p.pattern, FoodPattern::ChunkyMound);
+        assert!(p.roughness > 0.60, "high irregularity → rough food (got {})", p.roughness);
     }
 }
