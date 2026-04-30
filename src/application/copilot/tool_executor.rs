@@ -267,19 +267,32 @@ fn build_preview_changes(
 ) -> Vec<ActionChange> {
     match tool {
         CopilotTool::PrepareInventoryUpdate | CopilotTool::WriteOffInventory => {
+            // Вариант 1: args = { "items": [{ "ingredient", "quantity", "unit" }] }
             if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
                 return items.iter().filter_map(|item| {
-                    let ingredient = item.get("ingredient")?.as_str()?;
+                    let ingredient = item.get("ingredient").or_else(|| item.get("ingredient_name"))?.as_str()?;
                     let quantity = item.get("quantity")?.as_f64()?;
                     let unit = item.get("unit").and_then(|u| u.as_str()).unwrap_or("kg");
                     Some(ActionChange {
                         entity: ingredient.to_string(),
                         field: "quantity".to_string(),
-                        before: None, // будет заполнено из inventory данных
+                        before: None,
                         after: format!("{} {}", quantity, unit),
                         unit: Some(unit.to_string()),
                     })
                 }).collect();
+            }
+            // Вариант 2: плоские args от Gemini = { "ingredient_name", "quantity", "unit" }
+            if let Some(name) = args.get("ingredient_name").or_else(|| args.get("ingredient")).and_then(|v| v.as_str()) {
+                let quantity = args.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let unit = args.get("unit").and_then(|v| v.as_str()).unwrap_or("kg");
+                return vec![ActionChange {
+                    entity: name.to_string(),
+                    field: "quantity".to_string(),
+                    before: None,
+                    after: format!("{} {}", quantity, unit),
+                    unit: Some(unit.to_string()),
+                }];
             }
             vec![]
         }

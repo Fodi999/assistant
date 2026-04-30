@@ -71,8 +71,11 @@ pub fn validate_write_execution(
     ctx: &CopilotContext,
     plan: &ActionPlan,
 ) -> Result<(), AppError> {
-    // Нельзя выполнять пустые планы
-    if plan.changes.is_empty() && !matches!(plan.plan_type, ActionPlanType::NoWriteAction) {
+    // Нельзя выполнять пустые планы без write_tool
+    if plan.changes.is_empty()
+        && plan.write_tool.is_none()
+        && !matches!(plan.plan_type, ActionPlanType::NoWriteAction)
+    {
         return Err(AppError::validation("Action plan has no changes to execute."));
     }
 

@@ -27,6 +27,13 @@ use super::safety;
 use super::tool_executor::{ToolExecutor, ToolExecutorServices};
 use super::tools::CopilotTool;
 
+#[derive(Debug, serde::Serialize)]
+pub struct CancelResult {
+    pub success: bool,
+    pub message: String,
+    pub action_id: uuid::Uuid,
+}
+
 pub struct CopilotEngine {
     planner: CopilotPlanner,
     executor: ToolExecutor,
@@ -107,6 +114,34 @@ impl CopilotEngine {
             message: "Action executed successfully.".to_string(),
             action_id,
             executed_at: chrono::Utc::now(),
+        })
+    }
+
+    /// Отменить action plan.
+    pub async fn cancel_action(
+        &self,
+        user_id: crate::shared::UserId,
+        action_id: uuid::Uuid,
+    ) -> AppResult<CancelResult> {
+        // Проверяем что запись существует и принадлежит пользователю
+        let entry = self.audit.get(action_id, user_id.clone()).await?
+            .ok_or_else(|| AppError::not_found("Action plan not found or access denied"))?;
+
+        if entry.status == super::audit::AuditStatus::Executed {
+            return Err(AppError::validation("Cannot cancel an already executed action."));
+        }
+        if entry.status == super::audit::AuditStatus::Cancelled {
+            return Err(AppError::validation("Action is already cancelled."));
+        }
+
+        self.audit.mark_cancelled(action_id, user_id).await?;
+
+        tracing::info!("❌ Copilot cancel: action_id={}", action_id);
+
+        Ok(CancelResult {
+            success: true,
+            message: "Action cancelled successfully.".to_string(),
+            action_id,
         })
     }
 

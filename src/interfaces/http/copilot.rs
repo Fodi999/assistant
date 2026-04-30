@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::application::copilot::{
     context::{CopilotContext, CopilotPermission, CopilotScreen},
+    engine::CancelResult,
     CopilotEngine, CopilotResponse,
 };
 use crate::interfaces::http::middleware::AuthUser;
@@ -126,15 +127,14 @@ pub async fn cancel_action(
     auth: AuthUser,
     Path(action_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Доступ к audit напрямую не через engine — используем engine.confirm_action с cancel
-    // TODO: expose cancel через engine в следующей итерации
     tracing::info!(
         "❌ Copilot cancel: user={} action_id={}",
         *auth.user_id.as_uuid(),
         action_id,
     );
-    // Для MVP возвращаем 200, полная реализация в следующей итерации
-    Ok(StatusCode::OK)
+
+    let result = state.engine.cancel_action(auth.user_id.clone(), action_id).await?;
+    Ok(Json(result))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
