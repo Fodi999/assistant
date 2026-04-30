@@ -78,15 +78,19 @@ impl CopilotPlanner {
         let system_prompt = self.build_system_prompt(ctx);
         let request_body = serde_json::json!({
             "model": "gemini-2.0-flash",
-            "contents": [{
-                "role": "user",
-                "parts": [{ "text": format!("{}\n\nUser message: {}", system_prompt, message) }]
-            }],
-            "generationConfig": {
-                "temperature": 0.1,
-                "maxOutputTokens": 1024,
-                "responseMimeType": "application/json"
-            }
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ],
+            "temperature": 0.1,
+            "max_tokens": 1024,
+            "response_format": { "type": "json_object" }
         });
 
         let raw = self.gemini.send_raw_request(&request_body).await?;

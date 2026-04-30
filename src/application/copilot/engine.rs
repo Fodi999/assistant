@@ -251,8 +251,9 @@ impl CopilotEngine {
 
             let request_body = json!({
                 "model": "gemini-2.0-flash",
-                "contents": [{"role": "user", "parts": [{"text": synthesis_prompt}]}],
-                "generationConfig": { "temperature": 0.3, "maxOutputTokens": 800 }
+                "messages": [{"role": "user", "content": synthesis_prompt}],
+                "temperature": 0.3,
+                "max_tokens": 800
             });
 
             match self.gemini.send_raw_request(&request_body).await {
