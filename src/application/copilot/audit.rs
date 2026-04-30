@@ -66,7 +66,8 @@ impl CopilotAuditService {
         action_plan: &Option<ActionPlan>,
         requires_confirmation: bool,
     ) -> AppResult<Uuid> {
-        let id = Uuid::new_v4();
+        // Use action_plan.id so confirm works
+        let id = action_plan.as_ref().map(|p| p.id).unwrap_or_else(Uuid::new_v4);
         let uid = *user_id.as_uuid();
         let tid = *tenant_id.as_uuid();
         let tools_json = serde_json::to_value(used_tools).unwrap_or_default();
