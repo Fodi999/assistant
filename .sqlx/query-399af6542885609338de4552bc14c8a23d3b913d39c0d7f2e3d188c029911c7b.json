@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, user_id, tenant_id, screen, input_message, intent,\n                      used_tools, action_payload, status,\n                      requires_confirmation, confirmed_at, executed_at, created_at\n               FROM copilot_action_log\n               WHERE id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "screen",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "input_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "intent",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "used_tools",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "action_payload",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "requires_confirmation",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "confirmed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "executed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "399af6542885609338de4552bc14c8a23d3b913d39c0d7f2e3d188c029911c7b"
+}

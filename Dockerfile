@@ -16,6 +16,7 @@ COPY src ./src
 COPY migrations ./migrations
 
 # Deterministic build with locked dependencies
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --locked
 
 # Runtime stage - Ubuntu 24.04 has GLIBC 2.39 (required for Rust 1.93)
