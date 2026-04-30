@@ -211,9 +211,7 @@ impl CopilotEngine {
         })
     }
 
-    /// Синтезировать финальный текстовый ответ.
-    /// Если использовался GeneralChefAnswer — вызываем LLM.
-    /// Иначе — строим структурированный ответ из tool_results.
+    /// Синтезировать финальный текстовый ответ через LLM.
     async fn synthesize_answer(
         &self,
         ctx: &CopilotContext,
@@ -236,53 +234,73 @@ impl CopilotEngine {
             }
         }
 
-        // Если GeneralChefAnswer — вызвать LLM с контекстом из tool_results
-        let has_general_answer = tool_results.iter().any(|r| r.tool_name == "general_chef_answer");
-        let has_tool_data = tool_results.iter().any(|r| r.tool_name != "general_chef_answer");
+        // Подготовить данные от tools — ограничить размер для inventory
+        let context_data: Vec<serde_json::Value> = tool_results.iter()
+            .map(|r| {
+                let data = limit_tool_data(&r.tool_name, &r.data);
+                json!({ "tool": r.tool_name, "data": data })
+            })
+            .collect();
 
-        if has_general_answer || !has_tool_data {
-            // Вызвать LLM для финального ответа
-            let context_data: Vec<serde_json::Value> = tool_results.iter()
-                .map(|r| json!({ "tool": r.tool_name, "data": r.data }))
-                .collect();
+        let synthesis_prompt = format!(
+            "You are ChefOS Copilot. Answer the user in their language ({locale}).\n\
+            Use the tool results below. Do NOT expose raw JSON or field names.\n\
+            Be concise and practical. Use bullet points for lists.\n\
+            If inventory contains expired items, warn clearly at the end.\n\
+            If stock is low, mention it.\n\
+            User intent: {intent}\n\
+            User message: {message}\n\
+            Tool results:\n{data}",
+            locale = ctx.locale.code(),
+            intent = intent,
+            message = original_message,
+            data = serde_json::to_string_pretty(&context_data).unwrap_or_default(),
+        );
 
-            let synthesis_prompt = format!(
-                "You are ChefOS Copilot. Answer the user's question based on the retrieved data.\n\
-                Context: {}\n\
-                User intent: {}\n\
-                Retrieved data: {}\n\
-                User message: {}\n\
-                Answer in language: {}. Be concise and practical.",
-                ctx.to_prompt_context(),
-                intent,
-                serde_json::to_string(&context_data).unwrap_or_default(),
-                original_message,
-                ctx.locale.code(),
-            );
+        let request_body = json!({
+            "model": "gemini-3-flash-preview",
+            "messages": [{"role": "user", "content": synthesis_prompt}],
+            "temperature": 0.4,
+            "max_tokens": 900
+        });
 
-            let request_body = json!({
-                "model": "gemini-3-flash-preview",
-                "messages": [{"role": "user", "content": synthesis_prompt}],
-                "temperature": 0.3,
-                "max_tokens": 800
-            });
-
-            match self.gemini.send_raw_request(&request_body).await {
-                Ok(text) => return text,
-                Err(e) => {
-                    tracing::warn!("Synthesis LLM call failed: {e}");
-                    return "I encountered an issue generating the response. Please try again.".to_string();
-                }
+        match self.gemini.send_raw_request(&request_body).await {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::warn!("Synthesis LLM call failed: {e}");
+                // Fallback: краткое текстовое представление без LLM
+                tool_results.iter()
+                    .map(|r| format!("[{}]: {}", r.tool_name, r.data.to_string().chars().take(300).collect::<String>()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             }
         }
-
-        // Структурированный ответ из tool data (без дополнительного LLM call)
-        let summaries: Vec<String> = tool_results.iter().map(|r| {
-            format!("[{}]: {}", r.tool_name, r.data.to_string().chars().take(200).collect::<String>())
-        }).collect();
-
-        summaries.join("\n")
     }
+}
+
+/// Ограничить размер данных tool перед передачей в LLM.
+/// Для inventory: топ-10 позиций (просроченные первыми, потом по остатку).
+fn limit_tool_data(tool_name: &str, data: &serde_json::Value) -> serde_json::Value {
+    if tool_name == "get_inventory" || tool_name == "get_expiring_soon" {
+        if let Some(arr) = data.get("inventory").and_then(|v| v.as_array()) {
+            // Сортировка: Expired сначала, потом Critical, потом остальные
+            let mut items = arr.clone();
+            items.sort_by_key(|item| {
+                let severity = item.get("severity").and_then(|s| s.as_str()).unwrap_or("");
+                match severity {
+                    "Expired"  => 0,
+                    "Critical" => 1,
+                    "Low"      => 2,
+                    _          => 3,
+                }
+            });
+            // Топ 10
+            items.truncate(10);
+            let shown = items.len();
+            return json!({ "inventory": items, "total_shown": shown });
+        }
+    }
+    data.clone()
 }
 
 /// Detect if user message looks like a write/mutation request.
