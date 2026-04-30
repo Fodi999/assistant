@@ -261,11 +261,67 @@ impl ToolExecutor {
             CopilotTool::PrepareInventoryUpdate => {
                 self.execute_inventory_add(user_id, tenant_id, &plan.payload).await
             }
+            CopilotTool::WriteOffInventory => {
+                self.execute_inventory_writeoff(tenant_id, &plan.payload).await
+            }
             _ => {
                 tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
                 Ok(format!("Action {} logged (execution pending implementation).", tool.name()))
             }
         }
+    }
+
+    /// Извлечь {name, quantity, unit, reason?} из payload (поддерживает items[] и flat).
+    fn extract_item(payload: &serde_json::Value) -> AppResult<(String, f64, String, Option<String>)> {
+        let item = if let Some(items) = payload.get("items").and_then(|v| v.as_array()) {
+            items.first().cloned().unwrap_or(serde_json::Value::Null)
+        } else {
+            payload.clone()
+        };
+
+        let name = item.get("ingredient_name")
+            .or_else(|| item.get("ingredient"))
+            .or_else(|| item.get("name"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("ingredient_name is required in action payload"))?
+            .to_string();
+
+        let quantity = item.get("quantity")
+            .and_then(|v| v.as_f64())
+            .ok_or_else(|| AppError::validation("quantity is required in action payload"))?;
+
+        let unit = item.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
+
+        // reason может быть на уровне item или на верхнем уровне payload
+        let reason = item.get("reason")
+            .or_else(|| payload.get("reason"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        Ok((name, quantity, unit, reason))
+    }
+
+    /// Найти catalog_ingredient_id по имени (EN → RU fallback).
+    async fn find_catalog_id(&self, name: &str) -> AppResult<crate::domain::catalog::CatalogIngredientId> {
+        let candidates = self.services.catalog
+            .search_ingredients(name, Language::En, 5)
+            .await
+            .unwrap_or_default();
+
+        if let Some(ing) = candidates.into_iter().next() {
+            return Ok(ing.id);
+        }
+
+        let candidates_ru = self.services.catalog
+            .search_ingredients(name, Language::Ru, 5)
+            .await
+            .unwrap_or_default();
+
+        candidates_ru.into_iter().next()
+            .map(|i| i.id)
+            .ok_or_else(|| AppError::not_found(
+                format!("Ingredient '{}' not found in catalog. Please use the exact catalog name.", name)
+            ))
     }
 
     /// Добавить/обновить позицию в инвентаре.
@@ -276,50 +332,12 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        // Нормализовать payload — Gemini может слать:
-        // Вариант A: { "name": "tuna", "quantity": 3, "unit": "kg" }
-        // Вариант B: { "ingredient_name": "tuna", ... }
-        // Вариант C: { "items": [{ "name": "tuna", "quantity": 3, "unit": "kg" }] }
-        let item = if let Some(items) = payload.get("items").and_then(|v| v.as_array()) {
-            items.first().cloned().unwrap_or(serde_json::Value::Null)
-        } else {
-            payload.clone()
-        };
-
-        let ingredient_name = item.get("ingredient_name")
-            .or_else(|| item.get("ingredient"))
-            .or_else(|| item.get("name"))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::validation("ingredient_name is required in action payload"))?;
-
-        let quantity = item.get("quantity")
-            .and_then(|v| v.as_f64())
-            .ok_or_else(|| AppError::validation("quantity is required in action payload"))?;
-
-        // Найти ингредиент в каталоге по имени (EN + RU)
-        let candidates = self.services.catalog
-            .search_ingredients(ingredient_name, Language::En, 5)
-            .await
-            .unwrap_or_default();
-
-        let catalog_id = if let Some(ing) = candidates.first() {
-            ing.id
-        } else {
-            // Попробовать RU
-            let candidates_ru = self.services.catalog
-                .search_ingredients(ingredient_name, Language::Ru, 5)
-                .await
-                .unwrap_or_default();
-            candidates_ru.into_iter().next()
-                .map(|i| i.id)
-                .ok_or_else(|| AppError::not_found(
-                    format!("Ingredient '{}' not found in catalog. Please use the exact catalog name.", ingredient_name)
-                ))?
-        };
+        let (name, quantity, unit, _reason) = Self::extract_item(payload)?;
+        let catalog_id = self.find_catalog_id(&name).await?;
 
         // Добавить batch с разумными defaults
         let now = time::OffsetDateTime::now_utc();
-        let expires_at = now + time::Duration::days(30); // 30 дней по умолчанию
+        let expires_at = now + time::Duration::days(30);
 
         self.services.inventory
             .add_product(
@@ -333,8 +351,56 @@ impl ToolExecutor {
             )
             .await?;
 
-        tracing::info!("✅ Copilot write: added {} x {} to inventory", quantity, ingredient_name);
-        Ok(format!("Added {} {} to inventory successfully.", quantity, ingredient_name))
+        tracing::info!("✅ Copilot write: added {} {} {} to inventory", quantity, unit, name);
+        Ok(format!("Added {} {} of {} to inventory.", quantity, unit, name))
+    }
+
+    /// Списать со склада (FIFO).
+    /// Поддерживает причины: expired, used_in_production, waste, correction, manual.
+    async fn execute_inventory_writeoff(
+        &self,
+        tenant_id: TenantId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        let (name, quantity, unit, reason_opt) = Self::extract_item(payload)?;
+        let catalog_id = self.find_catalog_id(&name).await?;
+
+        // Нормализовать reason
+        let reason = reason_opt
+            .as_deref()
+            .map(normalize_writeoff_reason)
+            .unwrap_or("manual")
+            .to_string();
+
+        self.services.inventory
+            .deduct_fifo(
+                tenant_id,
+                catalog_id,
+                quantity,
+                None,
+                Some(format!("copilot_writeoff:{}", reason)),
+                Some(format!("Copilot write-off: {} ({})", name, reason)),
+            )
+            .await?;
+
+        tracing::info!("✅ Copilot write-off: {} {} {} reason={}", quantity, unit, name, reason);
+        Ok(format!("Wrote off {} {} of {} (reason: {}).", quantity, unit, name, reason))
+    }
+}
+
+/// Нормализовать причину списания к одному из допустимых значений.
+fn normalize_writeoff_reason(input: &str) -> &'static str {
+    let s = input.to_lowercase();
+    if s.contains("expir") || s.contains("просроч") || s.contains("истёк") || s.contains("истек") {
+        "expired"
+    } else if s.contains("product") || s.contains("производ") || s.contains("приготовл") {
+        "used_in_production"
+    } else if s.contains("waste") || s.contains("испорч") || s.contains("отход") {
+        "waste"
+    } else if s.contains("correct") || s.contains("корректир") || s.contains("исправ") {
+        "correction"
+    } else {
+        "manual"
     }
 }
 
