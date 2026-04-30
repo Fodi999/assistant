@@ -276,14 +276,23 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        // Извлечь аргументы из payload (Gemini может слать: ingredient_name / ingredient / name)
-        let ingredient_name = payload.get("ingredient_name")
-            .or_else(|| payload.get("ingredient"))
-            .or_else(|| payload.get("name"))
+        // Нормализовать payload — Gemini может слать:
+        // Вариант A: { "name": "tuna", "quantity": 3, "unit": "kg" }
+        // Вариант B: { "ingredient_name": "tuna", ... }
+        // Вариант C: { "items": [{ "name": "tuna", "quantity": 3, "unit": "kg" }] }
+        let item = if let Some(items) = payload.get("items").and_then(|v| v.as_array()) {
+            items.first().cloned().unwrap_or(serde_json::Value::Null)
+        } else {
+            payload.clone()
+        };
+
+        let ingredient_name = item.get("ingredient_name")
+            .or_else(|| item.get("ingredient"))
+            .or_else(|| item.get("name"))
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::validation("ingredient_name is required in action payload"))?;
 
-        let quantity = payload.get("quantity")
+        let quantity = item.get("quantity")
             .and_then(|v| v.as_f64())
             .ok_or_else(|| AppError::validation("quantity is required in action payload"))?;
 
