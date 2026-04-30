@@ -89,7 +89,7 @@ impl CopilotPlanner {
                 }
             ],
             "temperature": 0.1,
-            "max_tokens": 1024,
+            "max_tokens": 2048,
             "response_format": { "type": "json_object" }
         });
 
@@ -100,34 +100,24 @@ impl CopilotPlanner {
     fn build_system_prompt(&self, ctx: &CopilotContext) -> String {
         let tool_catalog = CopilotTool::tool_catalog_prompt();
         format!(
-r#"You are ChefOS Copilot — an AI assistant for restaurant and food-tech professionals.
+r#"You are ChefOS Copilot. Output ONLY compact valid JSON. No markdown. No explanations.
 
-CONTEXT:
-{context}
+CONTEXT: {context}
 
-AVAILABLE TOOLS:
-{tools}
+TOOLS: {tools}
 
-INSTRUCTIONS:
-- Analyze the user message and select the minimal set of tools needed.
-- For WRITE tools, always set requires_confirmation to true.
-- READ tools can be used without confirmation.
-- Respond ONLY with valid JSON in this exact format:
-{{
-  "intent": "<short description of what the user wants>",
-  "tools": ["tool_name_1", "tool_name_2"],
-  "args": {{
-    "tool_name_1": {{ "key": "value" }},
-    "tool_name_2": {{ "key": "value" }}
-  }},
-  "requires_confirmation": false
-}}
-- If you don't know which tool to use, use "general_chef_answer".
-- Never invent tool names. Use only the tools listed above.
-- Language for your answer: {locale}"#,
+RULES:
+- Pick minimal tools needed.
+- WRITE tools MUST have requires_confirmation=true.
+- intent: short snake_case label (e.g. "inventory_add", "inventory_view", "dish_price_update").
+- args: short keys, English values only.
+- Unknown request → use "general_chef_answer".
+- Keep total response under 400 tokens.
+
+OUTPUT FORMAT (exactly):
+{{"intent":"<snake_case>","tools":["tool_name"],"args":{{"tool_name":{{"key":"value"}}}},"requires_confirmation":false}}"#,
             context = ctx.to_prompt_context(),
             tools = tool_catalog,
-            locale = ctx.locale.code(),
         )
     }
 

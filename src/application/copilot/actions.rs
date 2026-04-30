@@ -120,6 +120,20 @@ impl CopilotResponse {
             billing_warning: None,
         }
     }
+
+    /// Safe error for write-command planner failures — clearly states no changes were made.
+    pub fn safe_error(message: &str, actions_left: i32) -> Self {
+        CopilotResponse {
+            answer: message.to_string(),
+            used_tools: vec![],
+            requires_confirmation: false,
+            action_plan: None,
+            actions_cost: 1,
+            actions_left,
+            risk_level: RiskLevel::Low,
+            billing_warning: None,
+        }
+    }
 }
 
 /// Результат подтверждения action plan.

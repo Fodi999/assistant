@@ -129,18 +129,29 @@ impl CopilotEngine {
         }
 
         // ── Step 2: Planner → ToolPlan ────────────────────────────────────────
-        let plan = self.planner.plan(ctx, message).await.unwrap_or_else(|e| {
-            tracing::warn!("Planner failed, falling back to GeneralChefAnswer: {e}");
-            super::planner::ToolPlan {
-                intent: "general question".to_string(),
-                tools: vec![CopilotTool::GeneralChefAnswer],
-                tool_calls: vec![super::planner::ToolCall {
-                    tool: CopilotTool::GeneralChefAnswer,
-                    args: std::collections::HashMap::new(),
-                }],
-                requires_confirmation: false,
+        let plan = match self.planner.plan(ctx, message).await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Planner failed: {e}");
+                // Safety: if message looks like a write request, refuse with safe error
+                if looks_like_write_request(message) {
+                    return Ok(CopilotResponse::safe_error(
+                        "Could not prepare a safe action plan. No changes were made. Please try again.",
+                        billing.actions_left,
+                    ));
+                }
+                // Read/chat fallback is safe
+                super::planner::ToolPlan {
+                    intent: "general_question".to_string(),
+                    tools: vec![CopilotTool::GeneralChefAnswer],
+                    tool_calls: vec![super::planner::ToolCall {
+                        tool: CopilotTool::GeneralChefAnswer,
+                        args: std::collections::HashMap::new(),
+                    }],
+                    requires_confirmation: false,
+                }
             }
-        });
+        };
 
         // ── Step 3: Safety pre-check ──────────────────────────────────────────
         let safety_result = safety::validate_plan(ctx, &plan);
@@ -272,4 +283,18 @@ impl CopilotEngine {
 
         summaries.join("\n")
     }
+}
+
+/// Detect if user message looks like a write/mutation request.
+/// Used to decide safe fallback when planner fails.
+fn looks_like_write_request(message: &str) -> bool {
+    let msg = message.to_lowercase();
+    let write_keywords = [
+        "добавь", "добавить", "измени", "изменить", "удали", "удалить",
+        "спиши", "списать", "закажи", "заказать", "создай", "создать",
+        "обнови", "обновить", "купи", "купить", "закупку", "закупить",
+        "add", "update", "delete", "remove", "order", "create", "write off",
+        "purchase", "modify", "set price", "change price",
+    ];
+    write_keywords.iter().any(|kw| msg.contains(kw))
 }
