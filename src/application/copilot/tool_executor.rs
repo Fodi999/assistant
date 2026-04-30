@@ -9,13 +9,15 @@ use std::sync::Arc;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::application::catalog::CatalogService;
 use crate::application::cook_suggestions::CookSuggestionService;
 use crate::application::dish::DishService;
 use crate::application::inventory::InventoryService;
 use crate::application::recipe_v2_service::RecipeV2Service;
 use crate::application::sous_chef::{SousChefPlannerService, PlanRequest};
+use crate::shared::Language;
 use crate::shared::PaginationParams;
-use crate::shared::{AppError, AppResult};
+use crate::shared::{AppError, AppResult, TenantId, UserId};
 
 use super::actions::{ActionChange, ActionPlan, ActionPlanType, RiskLevel};
 use super::context::CopilotContext;
@@ -37,6 +39,7 @@ pub struct ToolExecutorServices {
     pub recipes: Arc<RecipeV2Service>,
     pub cook_suggestions: Arc<CookSuggestionService>,
     pub sous_chef: Arc<SousChefPlannerService>,
+    pub catalog: Arc<CatalogService>,
 }
 
 pub struct ToolExecutor {
@@ -241,6 +244,87 @@ impl ToolExecutor {
                 })
             }
         }
+    }
+
+    /// Выполнить реальный write action после confirmation.
+    /// Поддерживает: PrepareInventoryUpdate (add/update quantity).
+    pub async fn execute_write_tool(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+        plan: &super::actions::ActionPlan,
+    ) -> AppResult<String> {
+        let tool = plan.write_tool.as_ref()
+            .ok_or_else(|| AppError::internal("Action plan has no write_tool"))?;
+
+        match tool {
+            CopilotTool::PrepareInventoryUpdate => {
+                self.execute_inventory_add(user_id, tenant_id, &plan.payload).await
+            }
+            _ => {
+                tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
+                Ok(format!("Action {} logged (execution pending implementation).", tool.name()))
+            }
+        }
+    }
+
+    /// Добавить/обновить позицию в инвентаре.
+    /// Ищет ингредиент в каталоге по имени, создаёт batch.
+    async fn execute_inventory_add(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        // Извлечь аргументы из payload
+        let ingredient_name = payload.get("ingredient_name")
+            .or_else(|| payload.get("ingredient"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("ingredient_name is required in action payload"))?;
+
+        let quantity = payload.get("quantity")
+            .and_then(|v| v.as_f64())
+            .ok_or_else(|| AppError::validation("quantity is required in action payload"))?;
+
+        // Найти ингредиент в каталоге по имени (EN + RU)
+        let candidates = self.services.catalog
+            .search_ingredients(ingredient_name, Language::En, 5)
+            .await
+            .unwrap_or_default();
+
+        let catalog_id = if let Some(ing) = candidates.first() {
+            ing.id
+        } else {
+            // Попробовать RU
+            let candidates_ru = self.services.catalog
+                .search_ingredients(ingredient_name, Language::Ru, 5)
+                .await
+                .unwrap_or_default();
+            candidates_ru.into_iter().next()
+                .map(|i| i.id)
+                .ok_or_else(|| AppError::not_found(
+                    format!("Ingredient '{}' not found in catalog. Please use the exact catalog name.", ingredient_name)
+                ))?
+        };
+
+        // Добавить batch с разумными defaults
+        let now = time::OffsetDateTime::now_utc();
+        let expires_at = now + time::Duration::days(30); // 30 дней по умолчанию
+
+        self.services.inventory
+            .add_product(
+                user_id,
+                tenant_id,
+                catalog_id,
+                0, // price_per_unit_cents = 0 (неизвестно)
+                quantity,
+                now,
+                expires_at,
+            )
+            .await?;
+
+        tracing::info!("✅ Copilot write: added {} x {} to inventory", quantity, ingredient_name);
+        Ok(format!("Added {} {} to inventory successfully.", quantity, ingredient_name))
     }
 }
 

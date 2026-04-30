@@ -98,23 +98,35 @@ impl CopilotEngine {
         self.audit.mark_confirmed(action_id).await?;
 
         // 5. Execute write tool
-        // TODO: подключить ToolExecutor::execute_write_tool в следующей итерации
-        // Пока — mark executed с placeholder
-        tracing::info!(
-            "✅ Copilot confirm: action_id={} type={:?} user={}",
-            action_id,
-            plan.plan_type,
-            *ctx.user_id.as_uuid(),
-        );
+        safety::validate_write_execution(ctx, &plan)?;
 
-        self.audit.mark_executed(action_id).await?;
+        self.audit.mark_confirmed(action_id).await?;
 
-        Ok(ConfirmResult {
-            success: true,
-            message: "Action executed successfully.".to_string(),
-            action_id,
-            executed_at: chrono::Utc::now(),
-        })
+        let exec_result = self.executor
+            .execute_write_tool(ctx.user_id.clone(), ctx.tenant_id.clone(), &plan)
+            .await;
+
+        match exec_result {
+            Ok(msg) => {
+                self.audit.mark_executed(action_id).await?;
+                tracing::info!(
+                    "✅ Copilot confirm: action_id={} type={:?} user={}",
+                    action_id,
+                    plan.plan_type,
+                    *ctx.user_id.as_uuid(),
+                );
+                Ok(ConfirmResult {
+                    success: true,
+                    message: msg,
+                    action_id,
+                    executed_at: chrono::Utc::now(),
+                })
+            }
+            Err(e) => {
+                self.audit.mark_failed(action_id, &e.to_string()).await?;
+                Err(e)
+            }
+        }
     }
 
     /// Отменить action plan.
@@ -255,18 +267,27 @@ impl CopilotEngine {
         tool_results: &[super::tool_executor::ToolResult],
         action_plan: &Option<ActionPlan>,
     ) -> String {
-        // Если есть write plan — короткий confirmation-required ответ
+        // Если есть write plan — локализованный confirmation-required ответ
         if let Some(plan) = action_plan {
             if !plan.changes.is_empty() {
                 let changes_text = plan.changes.iter()
                     .map(|c| format!("• {} {}: {} → {}", c.entity, c.field, c.before.as_deref().unwrap_or("?"), c.after))
                     .collect::<Vec<_>>()
                     .join("\n");
-                return format!(
-                    "I've prepared the following changes for your review:\n\n{}\n\nPlease confirm to apply.",
-                    changes_text
-                );
+                let locale = ctx.locale.code();
+                return if locale.starts_with("ru") {
+                    format!("Я подготовил следующие изменения для проверки:\n\n{}\n\nПодтвердите, чтобы применить.", changes_text)
+                } else {
+                    format!("I've prepared the following changes for your review:\n\n{}\n\nPlease confirm to apply.", changes_text)
+                };
             }
+            // Write tool без changes — краткое сообщение
+            let locale = ctx.locale.code();
+            return if locale.starts_with("ru") {
+                "Действие подготовлено и ожидает подтверждения.".to_string()
+            } else {
+                "Action prepared and awaiting confirmation.".to_string()
+            };
         }
 
         // Подготовить данные от tools — ограничить размер для inventory
