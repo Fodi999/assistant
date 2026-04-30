@@ -104,16 +104,15 @@ impl CopilotAuditService {
     /// Получить запись по action_id (для confirm endpoint).
     pub async fn get(&self, action_id: Uuid, user_id: UserId) -> AppResult<Option<CopilotAuditEntry>> {
         let uid = *user_id.as_uuid();
-        let row = sqlx::query_as!(
-            CopilotAuditRow,
+        let row = sqlx::query_as::<_, CopilotAuditRow>(
             r#"SELECT id, user_id, tenant_id, screen, input_message, intent,
                       used_tools, action_payload, status,
                       requires_confirmation, confirmed_at, executed_at, created_at
                FROM copilot_action_log
                WHERE id = $1 AND user_id = $2"#,
-            action_id,
-            uid,
         )
+        .bind(action_id)
+        .bind(uid)
         .fetch_optional(&self.pool)
         .await?;
 
