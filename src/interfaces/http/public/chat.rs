@@ -108,9 +108,10 @@ pub async fn chat_handler(
     }
 
     // Run the chat pipeline with the authenticated user id.
+    let is_paid = billing.source == ActionSource::Purchased;
     let response: ChatResponse = state
         .engine
-        .handle_chat_with_user(&input, &req.context, Some(auth.user_id.clone()))
+        .handle_chat_with_user(&input, &req.context, Some(auth.user_id.clone()), is_paid)
         .await;
 
     // Build updated context for next turn

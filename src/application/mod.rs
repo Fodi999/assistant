@@ -23,6 +23,7 @@ pub mod recipe_v2_service; // V2 recipe service
 pub mod recipe_validator; // Rule-based validator
 pub mod report;
 pub mod rulebot; // 🆕 RuleBot orchestrator — Culinary Intelligence Platform
+pub mod sous_chef; // 🆕 Sous Chef — AI meal planner
 pub mod smart_parse; // 🆕 SmartParse — deterministic text → ingredient parser
 pub mod smart_service; // 🆕 SmartService — intelligent ingredient aggregator
 pub mod tenant_ingredient;
@@ -30,6 +31,7 @@ pub mod usage_service; // ChefOS iOS usage tracking
 pub mod user;
 pub mod preferences_service; // ChefOS user preferences
 pub mod chat_events_service; // 🆕 Chat telemetry (Step 4)
+pub mod copilot;             // 🆕 Copilot — главный LLM Brain над всеми ботами
 
 pub use admin_auth::*;
 pub use admin_catalog::*;

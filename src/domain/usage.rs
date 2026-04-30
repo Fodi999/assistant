@@ -169,7 +169,7 @@ pub struct ActionResult {
     pub usage: UsageSnapshot,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionSource {
     FreeTier,

@@ -99,6 +99,7 @@ pub fn create_router(
     r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
     llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>, // 🆕 for public AI SEO content
     ingredient_cache: Arc<crate::infrastructure::IngredientCache>, // 🆕 for ChefOS Chat
+    gemini_for_copilot: Arc<crate::infrastructure::gemini_service::GeminiService>, // 🆕 Copilot Brain
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
 ) -> Router {
@@ -115,6 +116,12 @@ pub fn create_router(
         inventory_service.clone(),
         menu_engineering_service.clone(),
     );
+
+    // 🆕 Pre-clone services for Copilot (they are consumed in their own router blocks)
+    let dish_service_for_copilot = dish_service.clone();
+    let inventory_service_for_copilot = inventory_service.clone();
+    let inventory_service_for_cook = inventory_service_for_copilot.clone();
+    let recipe_v2_for_copilot = Arc::clone(&recipe_v2_service);
 
     // Auth routes (public) — with rate limiting
     /* ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТОВ
@@ -658,6 +665,45 @@ pub fn create_router(
                 .route("/usage/purchase", post(crate::interfaces::http::usage::record_purchase))
                 .route("/usage/welcome-bonus", post(crate::interfaces::http::usage::grant_welcome_bonus))
                 .with_state(usage_service)
+        })
+        // 🆕 Copilot — главный LLM Brain
+        .merge({
+            use crate::application::copilot::{CopilotEngine, CopilotAuditService};
+            use crate::application::copilot::tool_executor::ToolExecutorServices;
+            use crate::application::usage_service::UsageService;
+            use crate::interfaces::http::copilot::{handle_message, confirm_action, cancel_action, CopilotState};
+            use crate::infrastructure::persistence::AiCacheRepository;
+            use crate::application::sous_chef::SousChefPlannerService;
+
+            let copilot_services = ToolExecutorServices {
+                inventory: Arc::new(inventory_service_for_copilot),
+                dishes: Arc::new(dish_service_for_copilot),
+                recipes: recipe_v2_for_copilot,
+                cook_suggestions: Arc::new(
+                    crate::application::cook_suggestions::CookSuggestionService::new(
+                        Arc::new(inventory_service_for_cook),
+                        Arc::clone(&ingredient_cache),
+                        Arc::clone(&llm_adapter),
+                        crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone()),
+                    )
+                ),
+                sous_chef: Arc::new(SousChefPlannerService::new(
+                    Arc::clone(&llm_adapter),
+                    AiCacheRepository::new(pool_for_prefs.clone()),
+                    (*ingredient_cache).clone(),
+                )),
+            };
+            let copilot_engine = Arc::new(CopilotEngine::new(
+                Arc::clone(&gemini_for_copilot),
+                copilot_services,
+                UsageService::new(pool_for_prefs.clone()),
+                CopilotAuditService::new(pool_for_prefs.clone()),
+            ));
+            Router::new()
+                .route("/copilot/message", axum::routing::post(handle_message))
+                .route("/copilot/actions/:id/confirm", axum::routing::post(confirm_action))
+                .route("/copilot/actions/:id", axum::routing::delete(cancel_action))
+                .with_state(CopilotState { engine: copilot_engine })
         })
         .layer(jwt_middleware.clone());
 

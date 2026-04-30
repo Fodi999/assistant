@@ -67,6 +67,7 @@ impl ChatEngine {
         input: &str,
         ctx: &SessionContext,
         user_id: Option<crate::shared::UserId>,
+        is_paid: bool,
     ) -> ChatResponse {
         // Load preferences if user_id provided and service available
         let prefs = if let (Some(uid), Some(svc)) = (user_id, &self.preferences_service) {
@@ -84,7 +85,7 @@ impl ChatEngine {
             None
         };
 
-        self.handle_chat_personalized(input, ctx, prefs.as_ref()).await
+        self.handle_chat_personalized(input, ctx, prefs.as_ref(), is_paid).await
     }
 
     /// Extended entry with session context — enables follow-ups and modifier persistence.
@@ -93,7 +94,7 @@ impl ChatEngine {
         input: &str,
         ctx: &SessionContext,
     ) -> ChatResponse {
-        self.handle_chat_personalized(input, ctx, None).await
+        self.handle_chat_personalized(input, ctx, None, false).await
     }
 
     /// Core chat handler with optional preferences.
@@ -102,6 +103,7 @@ impl ChatEngine {
         input: &str,
         ctx: &SessionContext,
         prefs: Option<&UserPreferences>,
+        is_paid: bool,
     ) -> ChatResponse {
         let start = Instant::now();
         // Language priority:
@@ -193,8 +195,22 @@ impl ChatEngine {
             Intent::Conversion     => self.handle_conversion_with_density(input, lang).await,
             Intent::NutritionInfo  => self.handle_nutrition(input, lang).await,
             Intent::Seasonality    => self.handle_seasonality(input, lang),
-            Intent::RecipeHelp     => self.handle_recipe(input, lang, goal, modifier).await,
-            Intent::MealIdea       => self.handle_meal_idea(lang, goal, input, ctx).await,
+            Intent::RecipeHelp => {
+                if is_paid {
+                    tracing::info!("🧠 [paid] Escalating RecipeHelp to AI Brain for: {:?}", &input[..input.len().min(60)]);
+                    self.ai_brain.handle(input, lang, ctx).await
+                } else {
+                    self.handle_recipe(input, lang, goal, modifier).await
+                }
+            }
+            Intent::MealIdea => {
+                if is_paid {
+                    tracing::info!("🧠 [paid] Escalating MealIdea to AI Brain for: {:?}", &input[..input.len().min(60)]);
+                    self.ai_brain.handle(input, lang, ctx).await
+                } else {
+                    self.handle_meal_idea(lang, goal, input, ctx).await
+                }
+            }
             Intent::ProductInfo    => self.handle_product_info(input, lang).await,
             Intent::CookingLoss    => self.handle_cooking_loss(input, lang).await,
             // ── Layer 2: AI Brain ── LLM with tool calling for complex queries

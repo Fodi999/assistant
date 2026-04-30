@@ -165,6 +165,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.ai.gemini_api_key.clone(),
     ));
 
+    // Clone Arc for Copilot Brain (gemini_service is moved into LlmAdapter below)
+    let gemini_for_copilot = Arc::clone(&gemini_service);
+
     // Create LLM Adapter (Rule Engine -> Cache -> LLM)
     let llm_adapter = Arc::new(LlmAdapter::new(
         gemini_service,
@@ -259,6 +262,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         r2_client,
         llm_adapter,
         ingredient_cache,
+        gemini_for_copilot,
         cors_origins,
         rate_limit_per_second,
     );
