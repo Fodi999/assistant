@@ -276,9 +276,10 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        // Извлечь аргументы из payload
+        // Извлечь аргументы из payload (Gemini может слать: ingredient_name / ingredient / name)
         let ingredient_name = payload.get("ingredient_name")
             .or_else(|| payload.get("ingredient"))
+            .or_else(|| payload.get("name"))
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::validation("ingredient_name is required in action payload"))?;
 
@@ -366,8 +367,12 @@ fn build_preview_changes(
                     })
                 }).collect();
             }
-            // Вариант 2: плоские args от Gemini = { "ingredient_name", "quantity", "unit" }
-            if let Some(name) = args.get("ingredient_name").or_else(|| args.get("ingredient")).and_then(|v| v.as_str()) {
+            // Вариант 2: плоские args от Gemini = { "ingredient_name"/"ingredient"/"name", "quantity", "unit" }
+            if let Some(name) = args.get("ingredient_name")
+                .or_else(|| args.get("ingredient"))
+                .or_else(|| args.get("name"))
+                .and_then(|v| v.as_str())
+            {
                 let quantity = args.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let unit = args.get("unit").and_then(|v| v.as_str()).unwrap_or("kg");
                 return vec![ActionChange {
