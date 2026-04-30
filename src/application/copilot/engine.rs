@@ -250,7 +250,7 @@ impl CopilotEngine {
             );
 
             let request_body = json!({
-                "model": "gemini-2.0-flash",
+                "model": "gemini-3-flash-preview",
                 "messages": [{"role": "user", "content": synthesis_prompt}],
                 "temperature": 0.3,
                 "max_tokens": 800

@@ -77,7 +77,7 @@ impl CopilotPlanner {
     ) -> Result<ToolPlan, AppError> {
         let system_prompt = self.build_system_prompt(ctx);
         let request_body = serde_json::json!({
-            "model": "gemini-2.0-flash",
+            "model": "gemini-3-flash-preview",
             "messages": [
                 {
                     "role": "system",
