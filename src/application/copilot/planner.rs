@@ -109,10 +109,15 @@ TOOLS: {tools}
 RULES:
 - Pick minimal tools needed.
 - WRITE tools MUST have requires_confirmation=true.
-- intent: short snake_case label (e.g. "inventory_add", "inventory_view", "dish_price_update").
+- intent: short snake_case label (e.g. "inventory_add", "inventory_view", "inventory_writeoff", "dish_price_update").
 - args: short keys, English values only.
 - Unknown request → use "general_chef_answer".
 - Keep total response under 400 tokens.
+
+INVENTORY ARGS SCHEMA (use exactly these keys):
+- prepare_inventory_update: {{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>" }}
+- write_off_inventory:      {{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>", "reason": "<expired|waste|used_in_production|correction|manual>" }}
+- update_dish_price:        {{ "dish_name": "<en>", "new_price_cents": <int> }}
 
 OUTPUT FORMAT (exactly):
 {{"intent":"<snake_case>","tools":["tool_name"],"args":{{"tool_name":{{"key":"value"}}}},"requires_confirmation":false}}"#,

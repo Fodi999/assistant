@@ -284,6 +284,8 @@ impl ToolExecutor {
             .or_else(|| item.get("item_name"))
             .or_else(|| item.get("product_name"))
             .or_else(|| item.get("name"))
+            .or_else(|| item.get("item"))
+            .or_else(|| item.get("product"))
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::validation("ingredient_name is required in action payload"))?
             .to_string();
