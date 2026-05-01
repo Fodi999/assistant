@@ -31,6 +31,7 @@ pub mod usage_service; // ChefOS iOS usage tracking
 pub mod user;
 pub mod preferences_service; // ChefOS user preferences
 pub mod chat_events_service; // 🆕 Chat telemetry (Step 4)
+pub mod purchase_draft;      // 🆕 Purchase drafts (Copilot)
 pub mod copilot;             // 🆕 Copilot — главный LLM Brain над всеми ботами
 
 pub use admin_auth::*;

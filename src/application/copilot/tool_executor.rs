@@ -13,6 +13,9 @@ use crate::application::catalog::CatalogService;
 use crate::application::cook_suggestions::CookSuggestionService;
 use crate::application::dish::DishService;
 use crate::application::inventory::InventoryService;
+use crate::application::purchase_draft::{
+    CreatePurchaseDraftInput, PurchaseDraftItemInput, PurchaseDraftService,
+};
 use crate::application::recipe_v2_service::RecipeV2Service;
 use crate::application::sous_chef::{SousChefPlannerService, PlanRequest};
 use crate::shared::Language;
@@ -40,6 +43,7 @@ pub struct ToolExecutorServices {
     pub cook_suggestions: Arc<CookSuggestionService>,
     pub sous_chef: Arc<SousChefPlannerService>,
     pub catalog: Arc<CatalogService>,
+    pub purchase_drafts: Arc<PurchaseDraftService>,
 }
 
 pub struct ToolExecutor {
@@ -264,6 +268,9 @@ impl ToolExecutor {
             CopilotTool::WriteOffInventory => {
                 self.execute_inventory_writeoff(tenant_id, &plan.payload).await
             }
+            CopilotTool::PreparePurchaseDraft => {
+                self.execute_purchase_draft(user_id, tenant_id, &plan.payload).await
+            }
             _ => {
                 tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
                 Ok(format!("Action {} logged (execution pending implementation).", tool.name()))
@@ -390,6 +397,94 @@ impl ToolExecutor {
         tracing::info!("✅ Copilot write-off: {} {} {} reason={}", quantity, unit, name, reason);
         Ok(format!("Wrote off {} {} of {} (reason: {}).", quantity, unit, name, reason))
     }
+
+    /// Создать purchase draft.
+    /// Payload: { supplier_name?, delivery_date? (YYYY-MM-DD), note?, items: [{ ingredient_name, quantity, unit, price_per_unit_cents? }] }
+    async fn execute_purchase_draft(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        let supplier = payload.get("supplier_name")
+            .or_else(|| payload.get("supplier"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        let delivery_date = payload.get("delivery_date")
+            .or_else(|| payload.get("date"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| {
+                let fmt = time::macros::format_description!("[year]-[month]-[day]");
+                time::Date::parse(s, &fmt).ok()
+            });
+
+        let note = payload.get("note")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .or_else(|| Some("Created by Copilot".to_string()));
+
+        let items_arr = payload.get("items")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| AppError::validation("purchase draft requires 'items' array"))?;
+
+        if items_arr.is_empty() {
+            return Err(AppError::validation("purchase draft must have at least one item"));
+        }
+
+        let mut items_input = Vec::with_capacity(items_arr.len());
+        for raw in items_arr {
+            let name = raw.get("ingredient_name")
+                .or_else(|| raw.get("ingredient"))
+                .or_else(|| raw.get("item_name"))
+                .or_else(|| raw.get("product_name"))
+                .or_else(|| raw.get("name"))
+                .or_else(|| raw.get("item"))
+                .or_else(|| raw.get("product"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| AppError::validation("each item requires ingredient_name"))?
+                .to_string();
+
+            let quantity = raw.get("quantity")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| AppError::validation("each item requires quantity"))?;
+
+            let unit = raw.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
+
+            let price_per_unit_cents = raw.get("price_per_unit_cents")
+                .and_then(|v| v.as_i64());
+
+            // Поиск catalog_id (опционально)
+            let catalog_ingredient_id = self.find_catalog_id(&name).await.ok().map(|c| c.as_uuid());
+
+            items_input.push(PurchaseDraftItemInput {
+                catalog_ingredient_id,
+                ingredient_name: name,
+                quantity,
+                unit,
+                price_per_unit_cents,
+            });
+        }
+
+        let count = items_input.len();
+        let draft_id = self.services.purchase_drafts
+            .create(user_id, tenant_id, CreatePurchaseDraftInput {
+                supplier_name: supplier.clone(),
+                delivery_date,
+                note,
+                items: items_input,
+            })
+            .await?;
+
+        tracing::info!("✅ Copilot purchase draft: id={} items={} supplier={:?}", draft_id, count, supplier);
+
+        Ok(format!(
+            "Purchase draft created with {} item(s){}{}.",
+            count,
+            supplier.map(|s| format!(" for supplier {}", s)).unwrap_or_default(),
+            delivery_date.map(|d| format!(" (delivery {})", d)).unwrap_or_default(),
+        ))
+    }
 }
 
 /// Нормализовать причину списания к одному из допустимых значений.
@@ -478,6 +573,47 @@ fn build_preview_changes(
                 }];
             }
             vec![]
+        }
+        CopilotTool::PreparePurchaseDraft => {
+            let supplier = args.get("supplier_name")
+                .or_else(|| args.get("supplier"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("—");
+            let delivery = args.get("delivery_date")
+                .or_else(|| args.get("date"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("—");
+
+            let items = match args.get("items").and_then(|v| v.as_array()) {
+                Some(arr) => arr.clone(),
+                None => return vec![],
+            };
+
+            let mut changes: Vec<ActionChange> = items.iter().filter_map(|it| {
+                let name = it.get("ingredient_name")
+                    .or_else(|| it.get("ingredient"))
+                    .or_else(|| it.get("name"))
+                    .and_then(|v| v.as_str())?;
+                let qty = it.get("quantity").and_then(|v| v.as_f64())?;
+                let unit = it.get("unit").and_then(|v| v.as_str()).unwrap_or("kg");
+                Some(ActionChange {
+                    entity: format!("Purchase: {}", name),
+                    field: "quantity".to_string(),
+                    before: None,
+                    after: format!("{} {}", qty, unit),
+                    unit: Some(unit.to_string()),
+                })
+            }).collect();
+
+            // Header row
+            changes.insert(0, ActionChange {
+                entity: "Purchase draft".to_string(),
+                field: "supplier / delivery".to_string(),
+                before: None,
+                after: format!("{} / {}", supplier, delivery),
+                unit: None,
+            });
+            changes
         }
         _ => vec![],
     }

@@ -693,6 +693,9 @@ pub fn create_router(
                     AiCacheRepository::new(pool_for_prefs.clone()),
                     (*ingredient_cache).clone(),
                 )),
+                purchase_drafts: Arc::new(
+                    crate::application::purchase_draft::PurchaseDraftService::new(pool_for_prefs.clone())
+                ),
             };
             let copilot_engine = Arc::new(CopilotEngine::new(
                 Arc::clone(&gemini_for_copilot),
