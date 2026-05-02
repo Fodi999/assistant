@@ -118,7 +118,7 @@ INVENTORY ARGS SCHEMA (use exactly these keys):
 - prepare_inventory_update: {{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>" }}
 - adjust_inventory_quantity:{{ "ingredient_name": "<en>", "target_quantity": <number>, "unit": "<kg|l|pcs>", "reason": "<correction|manual_count|inventory_check>" }}
 - write_off_inventory:      {{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>", "reason": "<expired|waste|used_in_production|correction|manual>" }}
-- update_dish_price:        {{ "dish_name": "<en>", "new_price_cents": <int> }}
+- update_dish_price:        {{ "dish_name": "<en or ru, partial ok>", "new_price_cents": <int>, "currency": "EUR" }}
 - prepare_purchase_draft:   {{ "supplier_name": "<str|null>", "delivery_date": "<YYYY-MM-DD|null>", "note": "<str|null>", "items": [{{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>" }}] }}
 - list_purchase_drafts:     {{ "limit": <int, optional, default 10> }}
 - get_purchase_draft:       {{ "id": "<uuid|'last'>" }}
@@ -129,6 +129,11 @@ PURCHASE DRAFT INTENT HINTS:
 - "last / latest / последняя / на завтра" without explicit id → get_purchase_draft with id='last'
 - "создай / сделай / order / create purchase" → prepare_purchase_draft
 - "отправь / подтверди закупку / переведи в sent / send / mark as sent" → send_purchase_order (requires_confirmation=true)
+
+DISH PRICE INTENT HINTS:
+- "Поменяй цену / измени цену / change price / set price / update price / переставь цену / make ... cost" → update_dish_price (requires_confirmation=true)
+- Always pass new_price_cents as int (e.g. "18 евро" → 1800, "9.50€" → 950).
+- dish_name can be partial; backend will resolve and ask for clarification if multiple matches.
 
 INVENTORY ADJUSTMENT INTENT HINTS:
 - "Исправь / поставь / set / должно быть / fix / correct / adjust / должно стать / make it" with a TARGET quantity → adjust_inventory_quantity

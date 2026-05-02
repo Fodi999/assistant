@@ -226,6 +226,43 @@ impl DishService {
     pub async fn delete_dish(&self, id: DishId, tenant_id: TenantId) -> AppResult<bool> {
         self.dish_repo.delete(id, tenant_id).await
     }
+
+    /// Find dishes by case-insensitive name substring. Returns up to `limit` matches.
+    /// Used by Copilot to disambiguate user requests like "поменяй цену цезаря".
+    pub async fn find_dishes_by_name(
+        &self,
+        tenant_id: TenantId,
+        query: &str,
+        active_only: bool,
+        limit: usize,
+    ) -> AppResult<Vec<Dish>> {
+        let pagination = PaginationParams { page: Some(1), per_page: Some(200) };
+        let (all, _total) = self.dish_repo.list_by_tenant(tenant_id, active_only, &pagination).await?;
+        let needle = query.trim().to_lowercase();
+        if needle.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut matches: Vec<Dish> = all
+            .into_iter()
+            .filter(|d| d.name().as_str().to_lowercase().contains(&needle))
+            .collect();
+        matches.truncate(limit);
+        Ok(matches)
+    }
+
+    /// Update only the selling price of a dish (Copilot-friendly wrapper around `update_dish`).
+    /// Re-materializes cost/margin afterwards. Returns updated dish.
+    pub async fn set_selling_price(
+        &self,
+        id: DishId,
+        tenant_id: TenantId,
+        new_price: Money,
+    ) -> AppResult<Dish> {
+        if new_price.as_cents() <= 0 {
+            return Err(AppError::validation("Selling price must be greater than 0"));
+        }
+        self.update_dish(id, tenant_id, None, None, Some(new_price), None).await
+    }
 }
 
 /// Result of batch recalculation

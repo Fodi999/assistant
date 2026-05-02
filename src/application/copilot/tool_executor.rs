@@ -173,6 +173,73 @@ impl ToolExecutor {
             }
         }
 
+        // Для UpdateDishPrice: ищем dish, проверяем noop / multiple / not_found / invalid.
+        if matches!(write_call.tool, CopilotTool::UpdateDishPrice) {
+            match self.resolve_update_dish_price_preview(ctx, &write_call.args).await {
+                DishPriceUpdatePreview::Ok { dish_id, dish_name, new_price_cents, changes: dish_changes } => {
+                    if let Some(obj) = payload.as_object_mut() {
+                        obj.insert("dish_id".to_string(), json!(dish_id.to_string()));
+                        obj.insert("dish_name".to_string(), json!(dish_name));
+                        obj.insert("new_price_cents".to_string(), json!(new_price_cents));
+                    }
+                    changes = dish_changes;
+                }
+                DishPriceUpdatePreview::SamePrice { name, current_cents } => {
+                    let info = ToolResult {
+                        tool_name: "update_dish_price_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "already_at_target",
+                            "dish": name,
+                            "current_price_eur": format!("{:.2}", current_cents as f64 / 100.0),
+                            "explanation": "Dish price is already at the requested value, no change needed.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                DishPriceUpdatePreview::Multiple { query, candidates } => {
+                    let list: Vec<serde_json::Value> = candidates.iter().map(|(n, c)| json!({
+                        "name": n,
+                        "price_eur": format!("{:.2}", *c as f64 / 100.0),
+                    })).collect();
+                    let info = ToolResult {
+                        tool_name: "update_dish_price_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "multiple_matches",
+                            "query": query,
+                            "candidates": list,
+                            "explanation": "Multiple dishes match the query — ask user to specify which one.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                DishPriceUpdatePreview::NotFound { query } => {
+                    let info = ToolResult {
+                        tool_name: "update_dish_price_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "dish_not_found",
+                            "query": query,
+                            "explanation": "No dish found matching the query.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                DishPriceUpdatePreview::Invalid { reason } => {
+                    let info = ToolResult {
+                        tool_name: "update_dish_price_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "invalid_args",
+                            "explanation": reason,
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+            }
+        }
+
         let plan_type = tool_to_plan_type(&write_call.tool);
 
         (Some(ActionPlan {
@@ -183,8 +250,6 @@ impl ToolExecutor {
             payload,
         }), None)
     }
-
-    /// Резолвит payload.id ("last" → uuid) и строит preview из БД.
     async fn resolve_send_purchase_order_preview(
         &self,
         ctx: &CopilotContext,
@@ -294,6 +359,113 @@ impl ToolExecutor {
             unit: Some(unit),
         }];
         AdjustPreview::Ok(changes)
+    }
+
+    /// Pred-validate UpdateDishPrice: ищет dish по имени, считает margin, проверяет noop/invalid/multi-match.
+    async fn resolve_update_dish_price_preview(
+        &self,
+        ctx: &CopilotContext,
+        args: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> DishPriceUpdatePreview {
+        // 1. Парсим dish_name
+        let query = match args.get("dish_name")
+            .or_else(|| args.get("name"))
+            .or_else(|| args.get("dish"))
+            .and_then(|v| v.as_str())
+        {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => return DishPriceUpdatePreview::Invalid { reason: "missing dish_name".into() },
+        };
+
+        // 2. Парсим new_price_cents (приоритет) или new_price (EUR float)
+        let new_price_cents: i64 = if let Some(c) = args.get("new_price_cents").and_then(|v| v.as_i64()) {
+            c
+        } else if let Some(eur) = args.get("new_price")
+            .or_else(|| args.get("price"))
+            .and_then(|v| v.as_f64())
+        {
+            (eur * 100.0).round() as i64
+        } else {
+            return DishPriceUpdatePreview::Invalid { reason: "missing new_price".into() };
+        };
+
+        if new_price_cents <= 0 {
+            return DishPriceUpdatePreview::Invalid {
+                reason: "new price must be greater than 0".into(),
+            };
+        }
+
+        // 3. Ищем блюда по имени
+        let matches = match self.services.dishes
+            .find_dishes_by_name(ctx.tenant_id.clone(), &query, true, 5)
+            .await
+        {
+            Ok(m) => m,
+            Err(_) => return DishPriceUpdatePreview::NotFound { query },
+        };
+
+        if matches.is_empty() {
+            return DishPriceUpdatePreview::NotFound { query };
+        }
+
+        if matches.len() > 1 {
+            let candidates = matches.iter()
+                .map(|d| (d.name().as_str().to_string(), d.selling_price().as_cents()))
+                .collect();
+            return DishPriceUpdatePreview::Multiple { query, candidates };
+        }
+
+        // 4. Ровно одно совпадение
+        let dish = &matches[0];
+        let current_cents = dish.selling_price().as_cents();
+        let dish_name = dish.name().as_str().to_string();
+
+        if current_cents == new_price_cents {
+            return DishPriceUpdatePreview::SamePrice { name: dish_name, current_cents };
+        }
+
+        // 5. Строим preview changes (price + опциональный margin)
+        let mut changes = vec![ActionChange {
+            entity: format!("Dish: {}", dish_name),
+            field: "selling_price".to_string(),
+            before: Some(format!("€{:.2}", current_cents as f64 / 100.0)),
+            after: format!("€{:.2}", new_price_cents as f64 / 100.0),
+            unit: Some("EUR".to_string()),
+        }];
+
+        // Margin preview если есть recipe_cost
+        if let Some(cost_cents) = dish.recipe_cost_cents() {
+            let old_margin_pct = if current_cents > 0 {
+                (current_cents - cost_cents) as f64 * 100.0 / current_cents as f64
+            } else { 0.0 };
+            let new_margin_pct = (new_price_cents - cost_cents) as f64 * 100.0 / new_price_cents as f64;
+
+            changes.push(ActionChange {
+                entity: format!("Dish: {}", dish_name),
+                field: "profit_margin".to_string(),
+                before: Some(format!("{:.1}%", old_margin_pct)),
+                after: format!("{:.1}%", new_margin_pct),
+                unit: Some("%".to_string()),
+            });
+
+            // Warning row если новая цена ниже food cost
+            if new_price_cents < cost_cents {
+                changes.push(ActionChange {
+                    entity: format!("⚠️ Dish: {}", dish_name),
+                    field: "warning".to_string(),
+                    before: Some(format!("food_cost €{:.2}", cost_cents as f64 / 100.0)),
+                    after: format!("new price €{:.2} is BELOW food cost", new_price_cents as f64 / 100.0),
+                    unit: None,
+                });
+            }
+        }
+
+        DishPriceUpdatePreview::Ok {
+            dish_id: dish.id().as_uuid(),
+            dish_name,
+            new_price_cents,
+            changes,
+        }
     }
 
     // ── Private: execute individual read tools ──────────────────────────────
@@ -533,6 +705,9 @@ impl ToolExecutor {
             }
             CopilotTool::SendPurchaseOrder => {
                 self.execute_send_purchase_order(user_id, &plan.payload).await
+            }
+            CopilotTool::UpdateDishPrice => {
+                self.execute_update_dish_price(tenant_id, &plan.payload).await
             }
             _ => {
                 tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
@@ -861,6 +1036,58 @@ impl ToolExecutor {
             name, current, unit, target, unit, diff, unit, reason
         ))
     }
+
+    /// Update dish selling price.
+    /// Payload (resolved by prepare_action_plan): { dish_id: "<uuid>", dish_name, new_price_cents }
+    async fn execute_update_dish_price(
+        &self,
+        tenant_id: TenantId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        let dish_id_str = payload.get("dish_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("update_dish_price requires resolved 'dish_id'"))?;
+        let dish_uuid: Uuid = dish_id_str.parse()
+            .map_err(|_| AppError::validation("invalid UUID for dish_id"))?;
+
+        let new_price_cents = payload.get("new_price_cents")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| AppError::validation("update_dish_price requires 'new_price_cents'"))?;
+
+        if new_price_cents <= 0 {
+            return Err(AppError::validation("new_price_cents must be greater than 0"));
+        }
+
+        let dish_name = payload.get("dish_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("dish")
+            .to_string();
+
+        let new_price = crate::domain::Money::from_cents(new_price_cents)?;
+        let dish_id = crate::domain::DishId::from_uuid(dish_uuid);
+
+        let updated = self.services.dishes
+            .set_selling_price(dish_id, tenant_id, new_price)
+            .await?;
+
+        let margin_str = updated.profit_margin_percent()
+            .map(|m| format!(", new margin {:.1}%", m))
+            .unwrap_or_default();
+
+        tracing::info!(
+            "✅ Copilot update_dish_price: {} → €{:.2}{}",
+            dish_name,
+            new_price_cents as f64 / 100.0,
+            margin_str,
+        );
+
+        Ok(format!(
+            "Updated price of '{}' to €{:.2}{}.",
+            dish_name,
+            new_price_cents as f64 / 100.0,
+            margin_str,
+        ))
+    }
 }
 
 /// Нормализовать причину correction к одному из допустимых значений.
@@ -909,6 +1136,25 @@ enum AdjustPreview {
     /// Целевой остаток уже равен текущему — диффа нет, действие не нужно.
     Noop { name: String, current: f64 },
     NotFound { name: String },
+}
+
+/// Внутренний результат пред-валидации для UpdateDishPrice.
+enum DishPriceUpdatePreview {
+    /// Ровно один matching dish, цена отличается, валидна — готов к подтверждению.
+    Ok {
+        dish_id: Uuid,
+        dish_name: String,
+        new_price_cents: i64,
+        changes: Vec<ActionChange>,
+    },
+    /// Цена уже равна целевой — действие не нужно.
+    SamePrice { name: String, current_cents: i64 },
+    /// Несколько блюд подходят под запрос — нужна disambiguation.
+    Multiple { query: String, candidates: Vec<(String, i64)> },
+    /// Не найдено ни одного блюда.
+    NotFound { query: String },
+    /// new_price ≤ 0 или некорректные args.
+    Invalid { reason: String },
 }
 
 fn tool_to_plan_type(tool: &CopilotTool) -> ActionPlanType {
