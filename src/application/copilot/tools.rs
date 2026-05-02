@@ -61,6 +61,8 @@ pub enum CopilotTool {
     WriteOffInventory,
     /// Отправить заказ поставщику (требует manual confirm).
     SendPurchaseOrder,
+    /// Создать новый рецепт со списком ингредиентов.
+    CreateRecipe,
 
     // ── AI Write tools (AI генерирует + confirmation) ─────────────────────────
     /// BOT 5: сгенерировать рецепт в лаборатории.
@@ -99,6 +101,7 @@ impl CopilotTool {
             CopilotTool::UpdateDishPrice         => ToolKind::Write,
             CopilotTool::WriteOffInventory       => ToolKind::Write,
             CopilotTool::SendPurchaseOrder       => ToolKind::Write,
+            CopilotTool::CreateRecipe            => ToolKind::Write,
             CopilotTool::GenerateLabRecipe       => ToolKind::Write,
             CopilotTool::Generate3DFoodModel     => ToolKind::Write,
             CopilotTool::SimulateLabProduct      => ToolKind::Write,
@@ -138,6 +141,7 @@ impl CopilotTool {
             CopilotTool::UpdateDishPrice         => "update_dish_price",
             CopilotTool::WriteOffInventory       => "write_off_inventory",
             CopilotTool::SendPurchaseOrder       => "send_purchase_order",
+            CopilotTool::CreateRecipe            => "create_recipe",
             CopilotTool::GenerateLabRecipe       => "generate_lab_recipe",
             CopilotTool::Generate3DFoodModel     => "generate_3d_food_model",
             CopilotTool::SimulateLabProduct      => "simulate_lab_product",
@@ -169,6 +173,7 @@ impl CopilotTool {
             CopilotTool::UpdateDishPrice         => "WRITE: update dish selling price — requires confirmation",
             CopilotTool::WriteOffInventory       => "WRITE: write off expired or spoiled inventory items — requires confirmation",
             CopilotTool::SendPurchaseOrder       => "WRITE: mark a purchase draft as 'sent' (status change draft → sent). Does NOT actually email the supplier. Requires confirmation",
+            CopilotTool::CreateRecipe            => "WRITE: create a new recipe with ingredients (name, servings, [{ingredient_name, quantity, unit}]). Looks up each ingredient in catalog. Use when user says 'создай рецепт', 'create recipe', 'add a new recipe with X g of Y'. Requires confirmation",
             CopilotTool::GenerateLabRecipe       => "AI+WRITE: generate new lab recipe from ingredients — requires confirmation",
             CopilotTool::Generate3DFoodModel     => "AI+WRITE: generate 3D food model from photo — requires confirmation",
             CopilotTool::SimulateLabProduct      => "AI+WRITE: simulate lab product shelf life and nutrition — requires confirmation",
@@ -197,6 +202,7 @@ impl CopilotTool {
             CopilotTool::UpdateDishPrice,
             CopilotTool::WriteOffInventory,
             CopilotTool::SendPurchaseOrder,
+            CopilotTool::CreateRecipe,
             CopilotTool::GenerateLabRecipe,
         ];
 

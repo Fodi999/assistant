@@ -122,6 +122,7 @@ pub fn create_router(
     let inventory_service_for_copilot = inventory_service.clone();
     let inventory_service_for_cook = inventory_service_for_copilot.clone();
     let recipe_v2_for_copilot = Arc::clone(&recipe_v2_service);
+    let recipe_v1_for_copilot = recipe_service.clone();
 
     // Auth routes (public) — with rate limiting
     /* ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТОВ
@@ -679,6 +680,7 @@ pub fn create_router(
                 inventory: Arc::new(inventory_service_for_copilot),
                 dishes: Arc::new(dish_service_for_copilot),
                 recipes: recipe_v2_for_copilot,
+                recipes_v1: Arc::new(recipe_v1_for_copilot),
                 catalog: Arc::new(crate::application::catalog::CatalogService::new(pool_for_prefs.clone())),
                 cook_suggestions: Arc::new(
                     crate::application::cook_suggestions::CookSuggestionService::new(

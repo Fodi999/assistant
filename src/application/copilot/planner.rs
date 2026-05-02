@@ -124,6 +124,7 @@ INVENTORY ARGS SCHEMA (use exactly these keys):
 - get_purchase_draft:       {{ "id": "<uuid|'last'>" }}
 - send_purchase_order:      {{ "id": "<uuid|'last'>" }}
 - get_daily_briefing:       {{ "expiring_days": <int, optional, default 3>, "low_stock_threshold": <number, optional, default 1.0> }}
+- create_recipe:            {{ "recipe_name": "<English title>", "servings": <positive int>, "ingredients": [{{ "ingredient_name": "<English catalog name>", "quantity": <number>, "unit": "<g|kg|ml|l|pcs>" }}] }}
 
 DAILY BRIEFING INTENT HINTS (HIGHEST PRIORITY for these phrases):
 - "Что сегодня важно / что важно сегодня / brief me / brief me on today / дневной отчёт / дневной отчет / daily briefing / daily report / что нужно сделать / what should I do today / итоги дня / today summary / overview / обзор / morning briefing / утренний обзор" → get_daily_briefing
@@ -140,6 +141,13 @@ DISH PRICE INTENT HINTS:
 - Always pass new_price_cents as int (e.g. "18 евро" → 1800, "9.50€" → 950).
 - ALWAYS translate dish_name to English keyword(s) (e.g. "Цезарь" → "Caesar", "салат" → "Salad", "борщ" → "Borscht"). Use the most distinctive English keyword. Backend matches by case-insensitive substring against English dish names.
 - dish_name can be partial; backend will resolve and ask for clarification if multiple matches.
+
+CREATE RECIPE INTENT HINTS:
+- "Создай рецепт / create recipe / new recipe / добавь рецепт / make a recipe / receta" + LIST OF INGREDIENTS → create_recipe (requires_confirmation=true)
+- ALWAYS translate recipe_name AND every ingredient_name to English (e.g. "Цезарь" → "Caesar Salad Base", "куриная грудка" → "chicken breast", "сыр пармезан" → "parmesan", "анчоусы" → "anchovy", "салат романо" → "romaine lettuce", "свёкла" → "beetroot", "капуста" → "cabbage", "морковь" → "carrot").
+- Convert all quantities to NUMBERS in the unit specified by the user. Default unit=g for solids, ml for liquids, pcs for items. If user says "100 г курицы" → quantity=100, unit="g". If user says "0.5 кг" → quantity=0.5, unit="kg" (or quantity=500, unit="g" — both work).
+- servings: parse from phrases like "на 4 порции", "4 servings", "порций 4". If absent, default to 1.
+- If user mentions BOTH a recipe and a price ("Создай блюдо Цезарь: 100г курицы..., продаём за 15 евро"), ONLY emit create_recipe for now — dish creation is a separate step.
 
 INVENTORY ADJUSTMENT INTENT HINTS:
 - "Исправь / поставь / set / должно быть / fix / correct / adjust / должно стать / make it" with a TARGET quantity → adjust_inventory_quantity
@@ -227,6 +235,7 @@ fn parse_tool_name(name: &str) -> Option<CopilotTool> {
         "update_dish_price"          => Some(CopilotTool::UpdateDishPrice),
         "write_off_inventory"        => Some(CopilotTool::WriteOffInventory),
         "send_purchase_order"        => Some(CopilotTool::SendPurchaseOrder),
+        "create_recipe"              => Some(CopilotTool::CreateRecipe),
         "generate_lab_recipe"        => Some(CopilotTool::GenerateLabRecipe),
         "generate_3d_food_model"     => Some(CopilotTool::Generate3DFoodModel),
         "simulate_lab_product"       => Some(CopilotTool::SimulateLabProduct),

@@ -16,6 +16,7 @@ use crate::application::inventory::InventoryService;
 use crate::application::purchase_draft::{
     CreatePurchaseDraftInput, PurchaseDraftItemInput, PurchaseDraftService,
 };
+use crate::application::recipe::RecipeService;
 use crate::application::recipe_v2_service::RecipeV2Service;
 use crate::application::sous_chef::{SousChefPlannerService, PlanRequest};
 use crate::shared::Language;
@@ -40,6 +41,7 @@ pub struct ToolExecutorServices {
     pub inventory: Arc<InventoryService>,
     pub dishes: Arc<DishService>,
     pub recipes: Arc<RecipeV2Service>,
+    pub recipes_v1: Arc<RecipeService>,
     pub cook_suggestions: Arc<CookSuggestionService>,
     pub sous_chef: Arc<SousChefPlannerService>,
     pub catalog: Arc<CatalogService>,
@@ -229,6 +231,78 @@ impl ToolExecutor {
                 DishPriceUpdatePreview::Invalid { reason } => {
                     let info = ToolResult {
                         tool_name: "update_dish_price_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "invalid_args",
+                            "explanation": reason,
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+            }
+        }
+
+        // Для CreateRecipe: резолвим каждый ингредиент в catalog, валидируем servings/quantities,
+        // проверяем что рецепт с таким названием ещё не существует.
+        if matches!(write_call.tool, CopilotTool::CreateRecipe) {
+            match self.resolve_create_recipe_preview(ctx, &write_call.args).await {
+                CreateRecipePreview::Ok { recipe_name, servings, resolved, recipe_changes } => {
+                    if let Some(obj) = payload.as_object_mut() {
+                        obj.insert("recipe_name".to_string(), json!(recipe_name));
+                        obj.insert("servings".to_string(), json!(servings));
+                        obj.insert(
+                            "resolved_ingredients".to_string(),
+                            json!(resolved.iter().map(|r| json!({
+                                "catalog_ingredient_id": r.catalog_ingredient_id.to_string(),
+                                "ingredient_name": r.matched_name,
+                                "quantity_in_default_unit": r.quantity_in_default_unit,
+                                "default_unit": r.default_unit,
+                            })).collect::<Vec<_>>()),
+                        );
+                    }
+                    changes = recipe_changes;
+                }
+                CreateRecipePreview::AlreadyExists { name } => {
+                    let info = ToolResult {
+                        tool_name: "create_recipe_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "name_already_exists",
+                            "recipe_name": name,
+                            "explanation": "A recipe with this name already exists for this tenant. Choose a different name or update the existing recipe.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                CreateRecipePreview::IngredientNotFound { query, suggestions } => {
+                    let info = ToolResult {
+                        tool_name: "create_recipe_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "ingredient_not_found",
+                            "query": query,
+                            "suggestions": suggestions,
+                            "explanation": "One of the ingredients was not found in the catalog. Ask user to clarify or pick from suggestions.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                CreateRecipePreview::AmbiguousIngredient { query, candidates } => {
+                    let info = ToolResult {
+                        tool_name: "create_recipe_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "ambiguous_ingredient",
+                            "query": query,
+                            "candidates": candidates,
+                            "explanation": "Multiple catalog ingredients matched the query. Ask user to be more specific.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                CreateRecipePreview::Invalid { reason } => {
+                    let info = ToolResult {
+                        tool_name: "create_recipe_skipped".to_string(),
                         data: json!({
                             "skipped": true,
                             "reason": "invalid_args",
@@ -466,6 +540,213 @@ impl ToolExecutor {
             new_price_cents,
             changes,
         }
+    }
+
+    /// Pre-validate args для CreateRecipe: разрешает ингредиенты по каталогу,
+    /// конвертирует количества в default_unit ингредиента, проверяет уникальность имени.
+    async fn resolve_create_recipe_preview(
+        &self,
+        ctx: &CopilotContext,
+        args: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> CreateRecipePreview {
+        use crate::domain::catalog::Unit;
+
+        // 1. recipe_name
+        let recipe_name = match args.get("recipe_name")
+            .or_else(|| args.get("name"))
+            .and_then(|v| v.as_str())
+        {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => return CreateRecipePreview::Invalid { reason: "missing recipe_name".into() },
+        };
+
+        // 2. servings (default 1, must be > 0 and <= 1000)
+        let servings_n: u32 = match args.get("servings").and_then(|v| v.as_u64()) {
+            Some(n) if n > 0 && n <= 1000 => n as u32,
+            Some(_) => return CreateRecipePreview::Invalid {
+                reason: "servings must be between 1 and 1000".into(),
+            },
+            None => 1,
+        };
+
+        // 3. ingredients[] (required, non-empty)
+        let ingredients_arr = match args.get("ingredients").and_then(|v| v.as_array()) {
+            Some(arr) if !arr.is_empty() => arr.clone(),
+            _ => return CreateRecipePreview::Invalid {
+                reason: "ingredients[] is required and must be non-empty".into(),
+            },
+        };
+
+        // 4. Проверка дубликата по имени (case-insensitive)
+        let pagination = crate::shared::pagination::PaginationParams {
+            page: Some(1),
+            per_page: Some(100),
+        };
+        if let Ok(page) = self.services.recipes_v1.list_recipes(ctx.tenant_id.clone(), &pagination).await {
+            let target = recipe_name.to_lowercase();
+            if page.items.iter().any(|r| r.name().as_str().to_lowercase() == target) {
+                return CreateRecipePreview::AlreadyExists { name: recipe_name };
+            }
+        }
+
+        // 5. Резолвим каждый ингредиент
+        let mut resolved: Vec<ResolvedRecipeIngredient> = Vec::with_capacity(ingredients_arr.len());
+        let mut recipe_changes: Vec<ActionChange> = Vec::new();
+
+        // Header row
+        recipe_changes.push(ActionChange {
+            entity: format!("Recipe: {}", recipe_name),
+            field: "servings".to_string(),
+            before: None,
+            after: servings_n.to_string(),
+            unit: None,
+        });
+
+        for (idx, item) in ingredients_arr.iter().enumerate() {
+            let query = match item.get("ingredient_name")
+                .or_else(|| item.get("name"))
+                .and_then(|v| v.as_str())
+            {
+                Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+                _ => return CreateRecipePreview::Invalid {
+                    reason: format!("ingredients[{}].ingredient_name is required", idx),
+                },
+            };
+
+            let qty_raw = match item.get("quantity").and_then(|v| v.as_f64()) {
+                Some(q) if q > 0.0 => q,
+                Some(_) => return CreateRecipePreview::Invalid {
+                    reason: format!("ingredients[{}].quantity must be > 0", idx),
+                },
+                None => return CreateRecipePreview::Invalid {
+                    reason: format!("ingredients[{}].quantity is required", idx),
+                },
+            };
+
+            let unit_str = item.get("unit").and_then(|v| v.as_str()).unwrap_or("g").trim();
+            let user_unit = match Unit::from_str(unit_str) {
+                Ok(u) => u,
+                Err(_) => return CreateRecipePreview::Invalid {
+                    reason: format!("ingredients[{}].unit '{}' is not a valid unit", idx, unit_str),
+                },
+            };
+
+            // Каталог: EN → RU fallback. Берём список — если >1 без точного совпадения, ambiguous.
+            let mut candidates = self.services.catalog
+                .search_ingredients(&query, Language::En, 5)
+                .await
+                .unwrap_or_default();
+            if candidates.is_empty() {
+                candidates = self.services.catalog
+                    .search_ingredients(&query, Language::Ru, 5)
+                    .await
+                    .unwrap_or_default();
+            }
+
+            if candidates.is_empty() {
+                return CreateRecipePreview::IngredientNotFound {
+                    query,
+                    suggestions: vec![],
+                };
+            }
+
+            // Точное совпадение по name_en/name_ru (case-insensitive)
+            let q_low = query.to_lowercase();
+            let exact_idx = candidates.iter().position(|c| {
+                c.name_en.to_lowercase() == q_low || c.name_ru.to_lowercase() == q_low
+            });
+
+            let chosen = if let Some(i) = exact_idx {
+                candidates.remove(i)
+            } else if candidates.len() == 1 {
+                candidates.remove(0)
+            } else {
+                let names: Vec<String> = candidates.iter()
+                    .map(|c| c.name_en.clone())
+                    .collect();
+                return CreateRecipePreview::AmbiguousIngredient {
+                    query,
+                    candidates: names,
+                };
+            };
+
+            // Конвертируем qty_raw из user_unit в chosen.default_unit
+            let qty_in_default = match convert_quantity(qty_raw, user_unit, chosen.default_unit) {
+                Ok(q) => q,
+                Err(msg) => return CreateRecipePreview::Invalid {
+                    reason: format!("ingredients[{}] ('{}'): {}", idx, query, msg),
+                },
+            };
+
+            recipe_changes.push(ActionChange {
+                entity: format!("Ingredient: {}", chosen.name_en),
+                field: "quantity".to_string(),
+                before: None,
+                after: format!("{} {} (= {:.3} {})", qty_raw, user_unit.as_str(), qty_in_default, chosen.default_unit.as_str()),
+                unit: Some(chosen.default_unit.as_str().to_string()),
+            });
+
+            resolved.push(ResolvedRecipeIngredient {
+                catalog_ingredient_id: chosen.id.as_uuid(),
+                matched_name: chosen.name_en,
+                quantity_in_default_unit: qty_in_default,
+                default_unit: chosen.default_unit.as_str().to_string(),
+            });
+        }
+
+        CreateRecipePreview::Ok {
+            recipe_name,
+            servings: servings_n,
+            resolved,
+            recipe_changes,
+        }
+    }
+
+    /// Создать рецепт из уже резолвнутого payload (после confirmation).
+    async fn execute_create_recipe(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        let name_str = payload.get("recipe_name").and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("recipe_name is required"))?;
+        let servings_n = payload.get("servings").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+
+        let resolved = payload.get("resolved_ingredients").and_then(|v| v.as_array())
+            .ok_or_else(|| AppError::validation(
+                "resolved_ingredients is required (resolver must run before execution)"
+            ))?;
+
+        let recipe_name = crate::domain::RecipeName::new(name_str)?;
+        let servings = crate::domain::Servings::new(servings_n)?;
+
+        let mut ingredients: Vec<crate::domain::RecipeIngredient> = Vec::with_capacity(resolved.len());
+        for r in resolved {
+            let cat_id_str = r.get("catalog_ingredient_id").and_then(|v| v.as_str())
+                .ok_or_else(|| AppError::validation("catalog_ingredient_id is required in resolved_ingredients"))?;
+            let cat_uuid = Uuid::parse_str(cat_id_str)
+                .map_err(|_| AppError::validation("invalid catalog_ingredient_id"))?;
+            let qty_val = r.get("quantity_in_default_unit").and_then(|v| v.as_f64())
+                .ok_or_else(|| AppError::validation("quantity_in_default_unit is required"))?;
+
+            ingredients.push(crate::domain::RecipeIngredient::new(
+                crate::domain::catalog::CatalogIngredientId::from_uuid(cat_uuid),
+                crate::domain::inventory::Quantity::new(qty_val)?,
+            ));
+        }
+
+        let recipe = self.services.recipes_v1
+            .create_recipe(recipe_name, servings, ingredients, vec![], user_id, tenant_id)
+            .await?;
+
+        Ok(format!(
+            "Created recipe '{}' (id: {}) with {} ingredient(s), {} serving(s).",
+            recipe.name().as_str(),
+            recipe.id().as_uuid(),
+            recipe.ingredients().len(),
+            recipe.servings().count(),
+        ))
     }
 
     // ── Private: execute individual read tools ──────────────────────────────
@@ -868,6 +1149,9 @@ impl ToolExecutor {
             }
             CopilotTool::UpdateDishPrice => {
                 self.execute_update_dish_price(tenant_id, &plan.payload).await
+            }
+            CopilotTool::CreateRecipe => {
+                self.execute_create_recipe(user_id, tenant_id, &plan.payload).await
             }
             _ => {
                 tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
@@ -1317,6 +1601,56 @@ enum DishPriceUpdatePreview {
     Invalid { reason: String },
 }
 
+/// Резолвнутый ингредиент рецепта: catalog_id + конвертированное в default_unit количество.
+struct ResolvedRecipeIngredient {
+    catalog_ingredient_id: Uuid,
+    matched_name: String,
+    quantity_in_default_unit: f64,
+    default_unit: String,
+}
+
+/// Внутренний результат пред-валидации для CreateRecipe.
+enum CreateRecipePreview {
+    /// Все ингредиенты резолвлены, имя уникально, готов к подтверждению.
+    Ok {
+        recipe_name: String,
+        servings: u32,
+        resolved: Vec<ResolvedRecipeIngredient>,
+        recipe_changes: Vec<ActionChange>,
+    },
+    /// Рецепт с таким именем уже существует (case-insensitive).
+    AlreadyExists { name: String },
+    /// Один из ингредиентов не найден в каталоге.
+    IngredientNotFound { query: String, suggestions: Vec<String> },
+    /// Несколько вариантов в каталоге — нужна disambiguation.
+    AmbiguousIngredient { query: String, candidates: Vec<String> },
+    /// Некорректные args (servings/quantity ≤ 0, missing fields, bad unit).
+    Invalid { reason: String },
+}
+
+/// Конвертирует quantity из user_unit в target_unit (default_unit ингредиента).
+/// Поддерживает g↔kg и l↔ml. Прочие комбинации требуют точного совпадения юнитов.
+fn convert_quantity(
+    qty: f64,
+    from: crate::domain::catalog::Unit,
+    to: crate::domain::catalog::Unit,
+) -> Result<f64, String> {
+    use crate::domain::catalog::Unit;
+    if from == to {
+        return Ok(qty);
+    }
+    match (from, to) {
+        (Unit::Kilogram, Unit::Gram) => Ok(qty * 1000.0),
+        (Unit::Gram, Unit::Kilogram) => Ok(qty / 1000.0),
+        (Unit::Liter, Unit::Milliliter) => Ok(qty * 1000.0),
+        (Unit::Milliliter, Unit::Liter) => Ok(qty / 1000.0),
+        _ => Err(format!(
+            "cannot convert {} to {} (incompatible unit families)",
+            from.as_str(), to.as_str()
+        )),
+    }
+}
+
 fn tool_to_plan_type(tool: &CopilotTool) -> ActionPlanType {
     match tool {
         CopilotTool::PrepareInventoryUpdate  => ActionPlanType::AddInventoryItems,
@@ -1325,6 +1659,7 @@ fn tool_to_plan_type(tool: &CopilotTool) -> ActionPlanType {
         CopilotTool::PreparePurchaseDraft    => ActionPlanType::CreatePurchaseDraft,
         CopilotTool::SendPurchaseOrder       => ActionPlanType::SendPurchaseOrder,
         CopilotTool::UpdateDishPrice         => ActionPlanType::UpdateDishPrice,
+        CopilotTool::CreateRecipe            => ActionPlanType::CreateRecipe,
         CopilotTool::GenerateLabRecipe       => ActionPlanType::GenerateLabRecipe,
         CopilotTool::GenerateProductReport   => ActionPlanType::GenerateProductReport,
         CopilotTool::SimulateLabProduct      => ActionPlanType::SimulateLabProduct,
