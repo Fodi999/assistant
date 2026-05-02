@@ -26,6 +26,7 @@ pub struct ActionChange {
 pub enum ActionPlanType {
     AddInventoryItems,
     UpdateInventoryItems,
+    AdjustInventoryQuantity,
     WriteOffInventory,
     CreatePurchaseDraft,
     SendPurchaseOrder,

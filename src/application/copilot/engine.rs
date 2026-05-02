@@ -210,13 +210,18 @@ impl CopilotEngine {
         }
 
         // ── Step 4: Execute read tools ────────────────────────────────────────
-        let tool_results = self.executor.run_read_tools(ctx, &plan.tool_calls).await;
+        let mut tool_results = self.executor.run_read_tools(ctx, &plan.tool_calls).await;
         let used_tools: Vec<String> = plan.tools.iter().map(|t| t.name().to_string()).collect();
 
         // ── Step 5: Prepare ActionPlan for write tools ────────────────────────
         let has_write = plan.tools.iter().any(|t| t.is_write());
         let action_plan = if has_write {
-            self.executor.prepare_action_plan(ctx, &plan.tool_calls, &tool_results).await
+            let (plan_opt, extra_result) = self.executor
+                .prepare_action_plan(ctx, &plan.tool_calls, &tool_results).await;
+            if let Some(extra) = extra_result {
+                tool_results.push(extra);
+            }
+            plan_opt
         } else {
             None
         };

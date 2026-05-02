@@ -85,13 +85,19 @@ impl ToolExecutor {
 
     /// Подготовить ActionPlan для первого write tool в списке.
     /// (По одному write tool за раз — пользователь должен подтвердить каждый).
+    ///
+    /// Возвращает (Option<ActionPlan>, Option<ToolResult>):
+    /// - ToolResult генерируется когда write tool не нужно выполнять
+    ///   (например, draft уже sent), и синтезатор ответа должен это объяснить.
     pub async fn prepare_action_plan(
         &self,
         ctx: &CopilotContext,
         tool_calls: &[ToolCall],
         tool_results: &[ToolResult],
-    ) -> Option<ActionPlan> {
-        let write_call = tool_calls.iter().find(|c| c.tool.is_write())?;
+    ) -> (Option<ActionPlan>, Option<ToolResult>) {
+        let Some(write_call) = tool_calls.iter().find(|c| c.tool.is_write()) else {
+            return (None, None);
+        };
 
         // Для SendPurchaseOrder: резолвим "last" → реальный uuid и добавляем
         // позиции в preview из БД.
@@ -99,26 +105,83 @@ impl ToolExecutor {
         let mut changes = build_preview_changes(&write_call.tool, &write_call.args, tool_results);
 
         if matches!(write_call.tool, CopilotTool::SendPurchaseOrder) {
-            if let Some((resolved_id, draft_changes)) = self
-                .resolve_send_purchase_order_preview(ctx, &write_call.args)
-                .await
-            {
-                if let Some(obj) = payload.as_object_mut() {
-                    obj.insert("id".to_string(), json!(resolved_id.to_string()));
+            match self.resolve_send_purchase_order_preview(ctx, &write_call.args).await {
+                SendPreview::Ok(resolved_id, draft_changes) => {
+                    if let Some(obj) = payload.as_object_mut() {
+                        obj.insert("id".to_string(), json!(resolved_id.to_string()));
+                    }
+                    changes = draft_changes;
                 }
-                changes = draft_changes;
+                SendPreview::AlreadyProcessed { id, status } => {
+                    let info = ToolResult {
+                        tool_name: "send_purchase_order_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "already_processed",
+                            "draft_id": id.to_string(),
+                            "current_status": status,
+                            "explanation": "Draft is not in 'draft' state, no action needed.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                SendPreview::NotFound => {
+                    let info = ToolResult {
+                        tool_name: "send_purchase_order_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "no_draft_found",
+                            "explanation": "No purchase drafts to send.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+            }
+        }
+
+        // Для AdjustInventoryQuantity: считаем текущий остаток и формируем preview before→after
+        if matches!(write_call.tool, CopilotTool::AdjustInventoryQuantity) {
+            match self.resolve_adjust_quantity_preview(ctx, &write_call.args).await {
+                AdjustPreview::Ok(adjust_changes) => {
+                    changes = adjust_changes;
+                }
+                AdjustPreview::Noop { name, current } => {
+                    let info = ToolResult {
+                        tool_name: "adjust_inventory_quantity_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "already_at_target",
+                            "ingredient": name,
+                            "current_quantity": current,
+                            "explanation": "Stock is already at the target value, no change needed.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                AdjustPreview::NotFound { name } => {
+                    let info = ToolResult {
+                        tool_name: "adjust_inventory_quantity_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "ingredient_not_found",
+                            "ingredient": name,
+                            "explanation": "Ingredient not found in catalog or inventory.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
             }
         }
 
         let plan_type = tool_to_plan_type(&write_call.tool);
 
-        Some(ActionPlan {
+        (Some(ActionPlan {
             id: Uuid::new_v4(),
             plan_type,
             changes,
             write_tool: Some(write_call.tool.clone()),
             payload,
-        })
+        }), None)
     }
 
     /// Резолвит payload.id ("last" → uuid) и строит preview из БД.
@@ -126,18 +189,35 @@ impl ToolExecutor {
         &self,
         ctx: &CopilotContext,
         args: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Option<(Uuid, Vec<ActionChange>)> {
+    ) -> SendPreview {
         let id_arg = args.get("id").and_then(|v| v.as_str()).unwrap_or("last");
         let target_id: Uuid = if id_arg == "last" || id_arg.is_empty() {
-            let drafts = self.services.purchase_drafts
-                .list(ctx.tenant_id.clone(), 1).await.ok()?;
-            drafts.into_iter().next()?.id
+            let drafts = match self.services.purchase_drafts.list(ctx.tenant_id.clone(), 1).await {
+                Ok(d) => d,
+                Err(_) => return SendPreview::NotFound,
+            };
+            match drafts.into_iter().next() {
+                Some(d) => d.id,
+                None => return SendPreview::NotFound,
+            }
         } else {
-            id_arg.parse::<Uuid>().ok()?
+            match id_arg.parse::<Uuid>() {
+                Ok(u) => u,
+                Err(_) => return SendPreview::NotFound,
+            }
         };
 
-        let draft = self.services.purchase_drafts
-            .get(target_id, ctx.user_id.clone()).await.ok()??;
+        let draft = match self.services.purchase_drafts.get(target_id, ctx.user_id.clone()).await {
+            Ok(Some(d)) => d,
+            _ => return SendPreview::NotFound,
+        };
+
+        if draft.status != "draft" {
+            return SendPreview::AlreadyProcessed {
+                id: target_id,
+                status: draft.status,
+            };
+        }
 
         let mut changes = vec![ActionChange {
             entity: format!("Purchase draft {}", &target_id.to_string()[..8]),
@@ -155,7 +235,65 @@ impl ToolExecutor {
                 unit: Some(it.unit.clone()),
             });
         }
-        Some((target_id, changes))
+        SendPreview::Ok(target_id, changes)
+    }
+
+    /// Считает текущий остаток ингредиента и формирует preview "before → after".
+    async fn resolve_adjust_quantity_preview(
+        &self,
+        ctx: &CopilotContext,
+        args: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> AdjustPreview {
+        let name = match args.get("ingredient_name")
+            .or_else(|| args.get("ingredient"))
+            .or_else(|| args.get("name"))
+            .or_else(|| args.get("item_name"))
+            .or_else(|| args.get("product_name"))
+            .and_then(|v| v.as_str())
+        {
+            Some(n) => n.to_string(),
+            None => return AdjustPreview::NotFound { name: "?".into() },
+        };
+        let target = match args.get("target_quantity")
+            .or_else(|| args.get("quantity"))
+            .and_then(|v| v.as_f64())
+        {
+            Some(q) => q,
+            None => return AdjustPreview::NotFound { name },
+        };
+        let unit = args.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
+
+        let catalog_id = match self.find_catalog_id(&name).await {
+            Ok(id) => id,
+            Err(_) => return AdjustPreview::NotFound { name },
+        };
+        let cat_uuid = catalog_id.as_uuid();
+
+        // Считаем текущий остаток по всем активным batches
+        let items = self.services.inventory
+            .list_products_with_details(ctx.user_id.clone(), ctx.tenant_id.clone(), Language::En)
+            .await
+            .unwrap_or_default();
+        let current: f64 = items.iter()
+            .filter(|i| i.product.id == cat_uuid)
+            .map(|i| i.remaining_quantity)
+            .sum();
+
+        let diff = target - current;
+        if diff.abs() < 0.0001 {
+            return AdjustPreview::Noop { name, current };
+        }
+
+        let arrow = format!("{} {} → {} {} (diff {:+.3} {})",
+            current, unit, target, unit, diff, unit);
+        let changes = vec![ActionChange {
+            entity: format!("Inventory: {}", name),
+            field: "remaining_quantity".to_string(),
+            before: Some(format!("{} {}", current, unit)),
+            after: arrow,
+            unit: Some(unit),
+        }];
+        AdjustPreview::Ok(changes)
     }
 
     // ── Private: execute individual read tools ──────────────────────────────
@@ -386,6 +524,9 @@ impl ToolExecutor {
             }
             CopilotTool::WriteOffInventory => {
                 self.execute_inventory_writeoff(tenant_id, &plan.payload).await
+            }
+            CopilotTool::AdjustInventoryQuantity => {
+                self.execute_adjust_quantity(user_id, tenant_id, &plan.payload).await
             }
             CopilotTool::PreparePurchaseDraft => {
                 self.execute_purchase_draft(user_id, tenant_id, &plan.payload).await
@@ -634,6 +775,104 @@ impl ToolExecutor {
             supplier.map(|s| format!(", supplier {}", s)).unwrap_or_default(),
         ))
     }
+
+    /// Скорректировать остаток до целевого значения.
+    /// Payload: { ingredient_name, target_quantity, unit?, reason? }
+    /// diff = target - current. Если diff > 0 — добавляем batch. Если diff < 0 — deduct_fifo.
+    async fn execute_adjust_quantity(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        let name = payload.get("ingredient_name")
+            .or_else(|| payload.get("ingredient"))
+            .or_else(|| payload.get("name"))
+            .or_else(|| payload.get("item_name"))
+            .or_else(|| payload.get("product_name"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("adjust_inventory_quantity requires 'ingredient_name'"))?;
+
+        let target = payload.get("target_quantity")
+            .or_else(|| payload.get("quantity"))
+            .and_then(|v| v.as_f64())
+            .ok_or_else(|| AppError::validation("adjust_inventory_quantity requires 'target_quantity'"))?;
+
+        if target < 0.0 {
+            return Err(AppError::validation("target_quantity must be non-negative"));
+        }
+
+        let unit = payload.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
+        let reason = payload.get("reason").and_then(|v| v.as_str())
+            .map(normalize_correction_reason)
+            .unwrap_or("correction");
+
+        let catalog_id = self.find_catalog_id(name).await?;
+        let cat_uuid = catalog_id.as_uuid();
+
+        // Текущий остаток
+        let items = self.services.inventory
+            .list_products_with_details(user_id.clone(), tenant_id.clone(), Language::En)
+            .await?;
+        let current: f64 = items.iter()
+            .filter(|i| i.product.id == cat_uuid)
+            .map(|i| i.remaining_quantity)
+            .sum();
+
+        let diff = target - current;
+        if diff.abs() < 0.0001 {
+            return Ok(format!("No change: {} already at {} {}.", name, current, unit));
+        }
+
+        if diff > 0.0 {
+            // Добавляем batch с положительной корректировкой.
+            // price=0 (correction), expires_at = +365 days.
+            let now = time::OffsetDateTime::now_utc();
+            let expires = now + time::Duration::days(365);
+            self.services.inventory
+                .add_product(
+                    user_id.clone(),
+                    tenant_id.clone(),
+                    catalog_id,
+                    0,
+                    diff,
+                    now,
+                    expires,
+                )
+                .await?;
+            tracing::info!("✅ Copilot adjust +{} {} of {} (reason={})", diff, unit, name, reason);
+        } else {
+            // FIFO write-off на |diff|
+            self.services.inventory
+                .deduct_fifo(
+                    tenant_id.clone(),
+                    catalog_id,
+                    diff.abs(),
+                    None,
+                    Some(reason.to_string()),
+                    Some(format!("Copilot correction: {} ({})", name, reason)),
+                )
+                .await?;
+            tracing::info!("✅ Copilot adjust {} {} of {} (reason={})", diff, unit, name, reason);
+        }
+
+        Ok(format!(
+            "Adjusted {}: {} {} → {} {} (diff {:+.3} {}, reason: {}).",
+            name, current, unit, target, unit, diff, unit, reason
+        ))
+    }
+}
+
+/// Нормализовать причину correction к одному из допустимых значений.
+fn normalize_correction_reason(input: &str) -> &'static str {
+    let s = input.to_lowercase();
+    if s.contains("inventory") || s.contains("инвентар") || s.contains("check") || s.contains("audit") {
+        "inventory_check"
+    } else if s.contains("manual") || s.contains("count") || s.contains("ручн") || s.contains("пересчёт") || s.contains("пересчет") {
+        "manual_count"
+    } else {
+        "correction"
+    }
 }
 
 /// Нормализовать причину списания к одному из допустимых значений.
@@ -654,9 +893,28 @@ fn normalize_writeoff_reason(input: &str) -> &'static str {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/// Внутренний результат пред-валидации для SendPurchaseOrder.
+enum SendPreview {
+    /// Готов к подтверждению — есть актуальный draft + сформированный preview.
+    Ok(Uuid, Vec<ActionChange>),
+    /// Draft уже не в статусе 'draft' (sent/cancelled/etc) — write tool пропускается.
+    AlreadyProcessed { id: Uuid, status: String },
+    /// Draft по id или 'last' не найден.
+    NotFound,
+}
+
+/// Внутренний результат пред-валидации для AdjustInventoryQuantity.
+enum AdjustPreview {
+    Ok(Vec<ActionChange>),
+    /// Целевой остаток уже равен текущему — диффа нет, действие не нужно.
+    Noop { name: String, current: f64 },
+    NotFound { name: String },
+}
+
 fn tool_to_plan_type(tool: &CopilotTool) -> ActionPlanType {
     match tool {
         CopilotTool::PrepareInventoryUpdate  => ActionPlanType::AddInventoryItems,
+        CopilotTool::AdjustInventoryQuantity => ActionPlanType::AdjustInventoryQuantity,
         CopilotTool::WriteOffInventory       => ActionPlanType::WriteOffInventory,
         CopilotTool::PreparePurchaseDraft    => ActionPlanType::CreatePurchaseDraft,
         CopilotTool::SendPurchaseOrder       => ActionPlanType::SendPurchaseOrder,

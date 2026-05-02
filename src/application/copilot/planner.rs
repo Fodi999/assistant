@@ -116,6 +116,7 @@ RULES:
 
 INVENTORY ARGS SCHEMA (use exactly these keys):
 - prepare_inventory_update: {{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>" }}
+- adjust_inventory_quantity:{{ "ingredient_name": "<en>", "target_quantity": <number>, "unit": "<kg|l|pcs>", "reason": "<correction|manual_count|inventory_check>" }}
 - write_off_inventory:      {{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>", "reason": "<expired|waste|used_in_production|correction|manual>" }}
 - update_dish_price:        {{ "dish_name": "<en>", "new_price_cents": <int> }}
 - prepare_purchase_draft:   {{ "supplier_name": "<str|null>", "delivery_date": "<YYYY-MM-DD|null>", "note": "<str|null>", "items": [{{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>" }}] }}
@@ -128,6 +129,12 @@ PURCHASE DRAFT INTENT HINTS:
 - "last / latest / последняя / на завтра" without explicit id → get_purchase_draft with id='last'
 - "создай / сделай / order / create purchase" → prepare_purchase_draft
 - "отправь / подтверди закупку / переведи в sent / send / mark as sent" → send_purchase_order (requires_confirmation=true)
+
+INVENTORY ADJUSTMENT INTENT HINTS:
+- "Исправь / поставь / set / должно быть / fix / correct / adjust / должно стать / make it" with a TARGET quantity → adjust_inventory_quantity
+- "After inventory check / после инвентаризации" → adjust_inventory_quantity with reason=inventory_check
+- "Add / Buy / Купи / приехало" (delta, not target) → prepare_inventory_update
+- "Spoiled / expired / списать / выкинь" → write_off_inventory
 
 OUTPUT FORMAT (exactly):
 {{"intent":"<snake_case>","tools":["tool_name"],"args":{{"tool_name":{{"key":"value"}}}},"requires_confirmation":false}}"#,
@@ -203,6 +210,7 @@ fn parse_tool_name(name: &str) -> Option<CopilotTool> {
         "general_chef_answer"        => Some(CopilotTool::GeneralChefAnswer),
         "generate_food_pairing"      => Some(CopilotTool::GenerateFoodPairing),
         "prepare_inventory_update"   => Some(CopilotTool::PrepareInventoryUpdate),
+        "adjust_inventory_quantity"  => Some(CopilotTool::AdjustInventoryQuantity),
         "prepare_purchase_draft"     => Some(CopilotTool::PreparePurchaseDraft),
         "update_dish_price"          => Some(CopilotTool::UpdateDishPrice),
         "write_off_inventory"        => Some(CopilotTool::WriteOffInventory),

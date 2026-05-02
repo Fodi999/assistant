@@ -49,6 +49,8 @@ pub enum CopilotTool {
     // ── Write tools (требуют confirmation перед выполнением) ─────────────────
     /// Добавить / обновить товары на складе.
     PrepareInventoryUpdate,
+    /// Скорректировать остаток товара до целевого значения (correction-движение).
+    AdjustInventoryQuantity,
     /// Создать черновик закупки.
     PreparePurchaseDraft,
     /// Изменить цену блюда.
@@ -89,6 +91,7 @@ impl CopilotTool {
             CopilotTool::GenerateFoodPairing     => ToolKind::Read,
             // Write
             CopilotTool::PrepareInventoryUpdate  => ToolKind::Write,
+            CopilotTool::AdjustInventoryQuantity => ToolKind::Write,
             CopilotTool::PreparePurchaseDraft    => ToolKind::Write,
             CopilotTool::UpdateDishPrice         => ToolKind::Write,
             CopilotTool::WriteOffInventory       => ToolKind::Write,
@@ -126,6 +129,7 @@ impl CopilotTool {
             CopilotTool::GeneralChefAnswer       => "general_chef_answer",
             CopilotTool::GenerateFoodPairing     => "generate_food_pairing",
             CopilotTool::PrepareInventoryUpdate  => "prepare_inventory_update",
+            CopilotTool::AdjustInventoryQuantity => "adjust_inventory_quantity",
             CopilotTool::PreparePurchaseDraft    => "prepare_purchase_draft",
             CopilotTool::UpdateDishPrice         => "update_dish_price",
             CopilotTool::WriteOffInventory       => "write_off_inventory",
@@ -155,6 +159,7 @@ impl CopilotTool {
             CopilotTool::GeneralChefAnswer       => "AI: answer any culinary question using AI Brain",
             CopilotTool::GenerateFoodPairing     => "AI: generate ingredient pairing suggestions for a given product",
             CopilotTool::PrepareInventoryUpdate  => "WRITE: prepare a stock update draft (add/adjust quantities) — requires confirmation",
+            CopilotTool::AdjustInventoryQuantity => "WRITE: set ingredient stock to a TARGET quantity (correction after manual count). Computes diff vs current stock and adjusts. Requires confirmation",
             CopilotTool::PreparePurchaseDraft    => "WRITE: prepare a purchase order draft for missing or low-stock items — requires confirmation",
             CopilotTool::UpdateDishPrice         => "WRITE: update dish selling price — requires confirmation",
             CopilotTool::WriteOffInventory       => "WRITE: write off expired or spoiled inventory items — requires confirmation",
@@ -181,6 +186,7 @@ impl CopilotTool {
             CopilotTool::AnalyzeRecipe,
             CopilotTool::GeneralChefAnswer,
             CopilotTool::PrepareInventoryUpdate,
+            CopilotTool::AdjustInventoryQuantity,
             CopilotTool::PreparePurchaseDraft,
             CopilotTool::UpdateDishPrice,
             CopilotTool::WriteOffInventory,

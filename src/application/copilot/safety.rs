@@ -83,6 +83,7 @@ pub fn validate_write_execution(
     match plan.plan_type {
         ActionPlanType::AddInventoryItems
         | ActionPlanType::UpdateInventoryItems
+        | ActionPlanType::AdjustInventoryQuantity
         | ActionPlanType::WriteOffInventory => {
             if !ctx.has_permission(&CopilotPermission::WriteInventory) {
                 return Err(AppError::authorization("No permission to modify inventory."));
