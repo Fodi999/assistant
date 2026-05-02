@@ -98,6 +98,11 @@ pub fn validate_write_execution(
                 return Err(AppError::authorization("No permission to create purchase drafts."));
             }
         }
+        ActionPlanType::SendPurchaseOrder => {
+            if !ctx.has_permission(&CopilotPermission::WriteInventory) {
+                return Err(AppError::authorization("No permission to send purchase orders."));
+            }
+        }
         ActionPlanType::GenerateLabRecipe
         | ActionPlanType::GenerateProductReport
         | ActionPlanType::SimulateLabProduct => {

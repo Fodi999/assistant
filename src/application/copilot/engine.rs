@@ -216,7 +216,7 @@ impl CopilotEngine {
         // ── Step 5: Prepare ActionPlan for write tools ────────────────────────
         let has_write = plan.tools.iter().any(|t| t.is_write());
         let action_plan = if has_write {
-            self.executor.prepare_action_plan(&plan.tool_calls, &tool_results)
+            self.executor.prepare_action_plan(ctx, &plan.tool_calls, &tool_results).await
         } else {
             None
         };
@@ -299,14 +299,17 @@ impl CopilotEngine {
             .collect();
 
         let synthesis_prompt = format!(
-            "You are ChefOS Copilot. Answer the user in their language ({locale}).\n\
-            Use the tool results below. Do NOT expose raw JSON or field names.\n\
-            Be concise and practical. Use bullet points for lists.\n\
-            If inventory contains expired items, warn clearly at the end.\n\
-            If stock is low, mention it.\n\
-            User intent: {intent}\n\
-            User message: {message}\n\
-            Tool results:\n{data}",
+            "You are ChefOS Copilot. STRICT: answer ONLY in language code '{locale}'. \
+             If '{locale}' is 'en' answer in English. If 'ru' — на русском. If 'pl' — po polsku. If 'uk' — українською.\n\
+             Use the tool results below. Do NOT expose raw JSON, UUIDs, or field names verbatim.\n\
+             Be concise. Use bullet points for lists, but NEVER leave a bullet unfinished.\n\
+             For inventory: warn about expired items at the end if any.\n\
+             For purchase drafts (list_purchase_drafts): show max 5 drafts; for each draft give one line with date, supplier (or '—'), status, and item count.\n\
+             For purchase drafts (get_purchase_draft): show date, supplier, status, note (if any), and ALL items as 'name: quantity unit'.\n\
+             Do NOT invent data not present in tool results.\n\
+             User intent: {intent}\n\
+             User message: {message}\n\
+             Tool results:\n{data}",
             locale = ctx.locale.code(),
             intent = intent,
             message = original_message,
@@ -316,8 +319,8 @@ impl CopilotEngine {
         let request_body = json!({
             "model": "gemini-3-flash-preview",
             "messages": [{"role": "user", "content": synthesis_prompt}],
-            "temperature": 0.4,
-            "max_tokens": 900
+            "temperature": 0.3,
+            "max_tokens": 1200
         });
 
         match self.gemini.send_raw_request(&request_body).await {

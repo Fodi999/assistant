@@ -39,6 +39,10 @@ pub struct CopilotMessageRequest {
 
     /// Сообщение пользователя.
     pub message: String,
+
+    /// Явный locale из запроса (приоритет над user.language).
+    /// Поддерживается: "ru", "en", "pl", "uk".
+    pub locale: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -73,10 +77,15 @@ pub async fn handle_message(
     // Построить CopilotContext из JWT + request.
     // ai_actions_balance — заполним через usage service внутри engine.
     // permissions — owner получает всё (расширить через roles в следующей итерации).
+    // Приоритет language: request.locale > user.language (JWT).
+    let resolved_locale = req.locale.as_deref()
+        .and_then(crate::shared::Language::from_code)
+        .unwrap_or(auth.language);
+
     let ctx = CopilotContext {
         user_id: auth.user_id.clone(),
         tenant_id: auth.tenant_id.clone(),
-        locale: auth.language,
+        locale: resolved_locale,
         screen: req.screen,
         selected_entity_id: req.entity_id,
         ai_actions_balance: 999, // engine обновит через billing

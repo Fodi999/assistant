@@ -85,14 +85,31 @@ impl ToolExecutor {
 
     /// Подготовить ActionPlan для первого write tool в списке.
     /// (По одному write tool за раз — пользователь должен подтвердить каждый).
-    pub fn prepare_action_plan(
+    pub async fn prepare_action_plan(
         &self,
+        ctx: &CopilotContext,
         tool_calls: &[ToolCall],
         tool_results: &[ToolResult],
     ) -> Option<ActionPlan> {
         let write_call = tool_calls.iter().find(|c| c.tool.is_write())?;
 
-        let changes = build_preview_changes(&write_call.tool, &write_call.args, tool_results);
+        // Для SendPurchaseOrder: резолвим "last" → реальный uuid и добавляем
+        // позиции в preview из БД.
+        let mut payload = serde_json::to_value(&write_call.args).unwrap_or(json!({}));
+        let mut changes = build_preview_changes(&write_call.tool, &write_call.args, tool_results);
+
+        if matches!(write_call.tool, CopilotTool::SendPurchaseOrder) {
+            if let Some((resolved_id, draft_changes)) = self
+                .resolve_send_purchase_order_preview(ctx, &write_call.args)
+                .await
+            {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert("id".to_string(), json!(resolved_id.to_string()));
+                }
+                changes = draft_changes;
+            }
+        }
+
         let plan_type = tool_to_plan_type(&write_call.tool);
 
         Some(ActionPlan {
@@ -100,8 +117,45 @@ impl ToolExecutor {
             plan_type,
             changes,
             write_tool: Some(write_call.tool.clone()),
-            payload: serde_json::to_value(&write_call.args).unwrap_or(json!({})),
+            payload,
         })
+    }
+
+    /// Резолвит payload.id ("last" → uuid) и строит preview из БД.
+    async fn resolve_send_purchase_order_preview(
+        &self,
+        ctx: &CopilotContext,
+        args: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Option<(Uuid, Vec<ActionChange>)> {
+        let id_arg = args.get("id").and_then(|v| v.as_str()).unwrap_or("last");
+        let target_id: Uuid = if id_arg == "last" || id_arg.is_empty() {
+            let drafts = self.services.purchase_drafts
+                .list(ctx.tenant_id.clone(), 1).await.ok()?;
+            drafts.into_iter().next()?.id
+        } else {
+            id_arg.parse::<Uuid>().ok()?
+        };
+
+        let draft = self.services.purchase_drafts
+            .get(target_id, ctx.user_id.clone()).await.ok()??;
+
+        let mut changes = vec![ActionChange {
+            entity: format!("Purchase draft {}", &target_id.to_string()[..8]),
+            field: "status".to_string(),
+            before: Some(draft.status.clone()),
+            after: "sent".to_string(),
+            unit: None,
+        }];
+        for it in &draft.items {
+            changes.push(ActionChange {
+                entity: format!("Item: {}", it.ingredient_name),
+                field: "quantity".to_string(),
+                before: None,
+                after: format!("{} {}", it.quantity, it.unit),
+                unit: Some(it.unit.clone()),
+            });
+        }
+        Some((target_id, changes))
     }
 
     // ── Private: execute individual read tools ──────────────────────────────
@@ -336,6 +390,9 @@ impl ToolExecutor {
             CopilotTool::PreparePurchaseDraft => {
                 self.execute_purchase_draft(user_id, tenant_id, &plan.payload).await
             }
+            CopilotTool::SendPurchaseOrder => {
+                self.execute_send_purchase_order(user_id, &plan.payload).await
+            }
             _ => {
                 tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
                 Ok(format!("Action {} logged (execution pending implementation).", tool.name()))
@@ -550,6 +607,33 @@ impl ToolExecutor {
             delivery_date.map(|d| format!(" (delivery {})", d)).unwrap_or_default(),
         ))
     }
+
+    /// Перевести purchase draft в статус 'sent'.
+    /// Payload: { id: "<uuid>" } — резолвится в prepare_action_plan.
+    async fn execute_send_purchase_order(
+        &self,
+        user_id: UserId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        let id_str = payload.get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("send_purchase_order requires 'id'"))?;
+        let draft_id: Uuid = id_str.parse()
+            .map_err(|_| AppError::validation("invalid UUID for purchase draft id"))?;
+
+        let (id, supplier, items_count) = self.services.purchase_drafts
+            .mark_sent(draft_id, user_id)
+            .await?;
+
+        tracing::info!("✅ Copilot send_purchase_order: draft {} sent ({} items)", id, items_count);
+
+        Ok(format!(
+            "Purchase draft {} marked as sent ({} item(s){}). Status: draft → sent.",
+            &id.to_string()[..8],
+            items_count,
+            supplier.map(|s| format!(", supplier {}", s)).unwrap_or_default(),
+        ))
+    }
 }
 
 /// Нормализовать причину списания к одному из допустимых значений.
@@ -575,6 +659,7 @@ fn tool_to_plan_type(tool: &CopilotTool) -> ActionPlanType {
         CopilotTool::PrepareInventoryUpdate  => ActionPlanType::AddInventoryItems,
         CopilotTool::WriteOffInventory       => ActionPlanType::WriteOffInventory,
         CopilotTool::PreparePurchaseDraft    => ActionPlanType::CreatePurchaseDraft,
+        CopilotTool::SendPurchaseOrder       => ActionPlanType::SendPurchaseOrder,
         CopilotTool::UpdateDishPrice         => ActionPlanType::UpdateDishPrice,
         CopilotTool::GenerateLabRecipe       => ActionPlanType::GenerateLabRecipe,
         CopilotTool::GenerateProductReport   => ActionPlanType::GenerateProductReport,

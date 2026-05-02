@@ -28,6 +28,7 @@ pub enum ActionPlanType {
     UpdateInventoryItems,
     WriteOffInventory,
     CreatePurchaseDraft,
+    SendPurchaseOrder,
     UpdateDishPrice,
     GenerateLabRecipe,
     GenerateProductReport,

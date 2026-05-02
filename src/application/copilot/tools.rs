@@ -158,7 +158,7 @@ impl CopilotTool {
             CopilotTool::PreparePurchaseDraft    => "WRITE: prepare a purchase order draft for missing or low-stock items — requires confirmation",
             CopilotTool::UpdateDishPrice         => "WRITE: update dish selling price — requires confirmation",
             CopilotTool::WriteOffInventory       => "WRITE: write off expired or spoiled inventory items — requires confirmation",
-            CopilotTool::SendPurchaseOrder       => "WRITE: send purchase order to supplier — requires manual confirmation",
+            CopilotTool::SendPurchaseOrder       => "WRITE: mark a purchase draft as 'sent' (status change draft → sent). Does NOT actually email the supplier. Requires confirmation",
             CopilotTool::GenerateLabRecipe       => "AI+WRITE: generate new lab recipe from ingredients — requires confirmation",
             CopilotTool::Generate3DFoodModel     => "AI+WRITE: generate 3D food model from photo — requires confirmation",
             CopilotTool::SimulateLabProduct      => "AI+WRITE: simulate lab product shelf life and nutrition — requires confirmation",
@@ -184,6 +184,7 @@ impl CopilotTool {
             CopilotTool::PreparePurchaseDraft,
             CopilotTool::UpdateDishPrice,
             CopilotTool::WriteOffInventory,
+            CopilotTool::SendPurchaseOrder,
             CopilotTool::GenerateLabRecipe,
         ];
 

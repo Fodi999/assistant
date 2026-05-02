@@ -121,11 +121,13 @@ INVENTORY ARGS SCHEMA (use exactly these keys):
 - prepare_purchase_draft:   {{ "supplier_name": "<str|null>", "delivery_date": "<YYYY-MM-DD|null>", "note": "<str|null>", "items": [{{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>" }}] }}
 - list_purchase_drafts:     {{ "limit": <int, optional, default 10> }}
 - get_purchase_draft:       {{ "id": "<uuid|'last'>" }}
+- send_purchase_order:      {{ "id": "<uuid|'last'>" }}
 
 PURCHASE DRAFT INTENT HINTS:
 - "show / list / which drafts / мои черновики / какие закупки" → list_purchase_drafts
 - "last / latest / последняя / на завтра" without explicit id → get_purchase_draft with id='last'
 - "создай / сделай / order / create purchase" → prepare_purchase_draft
+- "отправь / подтверди закупку / переведи в sent / send / mark as sent" → send_purchase_order (requires_confirmation=true)
 
 OUTPUT FORMAT (exactly):
 {{"intent":"<snake_case>","tools":["tool_name"],"args":{{"tool_name":{{"key":"value"}}}},"requires_confirmation":false}}"#,

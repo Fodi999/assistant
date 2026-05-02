@@ -212,6 +212,40 @@ impl PurchaseDraftService {
         }
         Ok(out)
     }
+
+    /// Перевести draft → sent. Возвращает (id, supplier_name).
+    /// Не изменяет, если уже не draft.
+    pub async fn mark_sent(&self, draft_id: Uuid, user_id: UserId) -> AppResult<(Uuid, Option<String>, usize)> {
+        let uid = *user_id.as_uuid();
+
+        // Проверка владельца + статуса
+        let existing = self.get(draft_id, user_id.clone()).await?;
+        let Some(d) = existing else {
+            return Err(AppError::not_found("Purchase draft not found"));
+        };
+        if d.status != "draft" {
+            return Err(AppError::validation(format!(
+                "Cannot send purchase draft: current status is '{}', expected 'draft'", d.status
+            )));
+        }
+
+        let rows = sqlx::query(
+            "UPDATE purchase_drafts SET status = 'sent', updated_at = now() \
+             WHERE id = $1 AND user_id = $2 AND status = 'draft'"
+        )
+        .bind(draft_id)
+        .bind(uid)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+
+        if rows == 0 {
+            return Err(AppError::validation("Draft could not be updated (possibly already sent)"));
+        }
+
+        tracing::info!("📤 Purchase draft {} marked as sent ({} items)", draft_id, d.items.len());
+        Ok((draft_id, d.supplier_name, d.items.len()))
+    }
 }
 
 #[derive(sqlx::FromRow)]
