@@ -33,6 +33,8 @@ pub enum CopilotTool {
     ListPurchaseDrafts,
     /// Показать детали одного purchase draft по id или "last".
     GetPurchaseDraft,
+    /// Дневной операционный брифинг: что важно сделать в ресторане сегодня.
+    GetDailyBriefing,
 
     // ── AI Read tools (требуют AI actions, но не confirmation) ───────────────
     /// BOT 4: предложить блюда из текущего инвентаря (Cook Suggestions).
@@ -84,6 +86,7 @@ impl CopilotTool {
             CopilotTool::GetLabExperiment        => ToolKind::Read,
             CopilotTool::ListPurchaseDrafts      => ToolKind::Read,
             CopilotTool::GetPurchaseDraft        => ToolKind::Read,
+            CopilotTool::GetDailyBriefing        => ToolKind::Read,
             CopilotTool::SuggestCookFromInventory => ToolKind::Read,
             CopilotTool::GenerateMealPlan        => ToolKind::Read,
             CopilotTool::AnalyzeRecipe           => ToolKind::Read,
@@ -123,6 +126,7 @@ impl CopilotTool {
             CopilotTool::GetLabExperiment        => "get_lab_experiment",
             CopilotTool::ListPurchaseDrafts      => "list_purchase_drafts",
             CopilotTool::GetPurchaseDraft        => "get_purchase_draft",
+            CopilotTool::GetDailyBriefing        => "get_daily_briefing",
             CopilotTool::SuggestCookFromInventory => "suggest_cook_from_inventory",
             CopilotTool::GenerateMealPlan        => "generate_meal_plan",
             CopilotTool::AnalyzeRecipe           => "analyze_recipe",
@@ -153,6 +157,7 @@ impl CopilotTool {
             CopilotTool::GetLabExperiment        => "Get lab experiment details by ID",
             CopilotTool::ListPurchaseDrafts      => "List recent purchase drafts (id, supplier, delivery date, status, item count)",
             CopilotTool::GetPurchaseDraft        => "Get full details of one purchase draft by id (or 'last' for the most recent)",
+            CopilotTool::GetDailyBriefing        => "Daily operational briefing: expiring stock, low stock, open drafts, recent purchases, dish margin warnings, recent copilot actions. Use when the user asks 'what's important today', 'daily report', 'brief me', 'что сегодня важно'",
             CopilotTool::SuggestCookFromInventory => "AI: suggest dishes that can be made from current inventory",
             CopilotTool::GenerateMealPlan        => "AI: generate personalized weekly meal plan based on goals and inventory",
             CopilotTool::AnalyzeRecipe           => "AI: analyze recipe for nutrition, technique tips, and substitutions",
@@ -181,6 +186,7 @@ impl CopilotTool {
             CopilotTool::GetRecipes,
             CopilotTool::ListPurchaseDrafts,
             CopilotTool::GetPurchaseDraft,
+            CopilotTool::GetDailyBriefing,
             CopilotTool::SuggestCookFromInventory,
             CopilotTool::GenerateMealPlan,
             CopilotTool::AnalyzeRecipe,

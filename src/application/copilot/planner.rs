@@ -123,6 +123,11 @@ INVENTORY ARGS SCHEMA (use exactly these keys):
 - list_purchase_drafts:     {{ "limit": <int, optional, default 10> }}
 - get_purchase_draft:       {{ "id": "<uuid|'last'>" }}
 - send_purchase_order:      {{ "id": "<uuid|'last'>" }}
+- get_daily_briefing:       {{ "expiring_days": <int, optional, default 3>, "low_stock_threshold": <number, optional, default 1.0> }}
+
+DAILY BRIEFING INTENT HINTS (HIGHEST PRIORITY for these phrases):
+- "Что сегодня важно / что важно сегодня / brief me / brief me on today / дневной отчёт / дневной отчет / daily briefing / daily report / что нужно сделать / what should I do today / итоги дня / today summary / overview / обзор / morning briefing / утренний обзор" → get_daily_briefing
+- This is the PRIMARY tool for any request that asks for an operational overview without specifying a domain.
 
 PURCHASE DRAFT INTENT HINTS:
 - "show / list / which drafts / мои черновики / какие закупки" → list_purchase_drafts
@@ -210,6 +215,7 @@ fn parse_tool_name(name: &str) -> Option<CopilotTool> {
         "get_lab_experiment"         => Some(CopilotTool::GetLabExperiment),
         "list_purchase_drafts"       => Some(CopilotTool::ListPurchaseDrafts),
         "get_purchase_draft"         => Some(CopilotTool::GetPurchaseDraft),
+        "get_daily_briefing"         => Some(CopilotTool::GetDailyBriefing),
         "suggest_cook_from_inventory" => Some(CopilotTool::SuggestCookFromInventory),
         "generate_meal_plan"         => Some(CopilotTool::GenerateMealPlan),
         "analyze_recipe"             => Some(CopilotTool::AnalyzeRecipe),

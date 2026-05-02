@@ -669,6 +669,166 @@ impl ToolExecutor {
                 Ok(ToolResult { tool_name: name, data })
             }
 
+            CopilotTool::GetDailyBriefing => {
+                let expiring_days = args.get("expiring_days").and_then(|v| v.as_i64()).unwrap_or(3).clamp(1, 14);
+                let low_stock_threshold = args.get("low_stock_threshold").and_then(|v| v.as_f64()).unwrap_or(1.0);
+
+                // 1. Inventory snapshot (one query, used for expiring + low stock)
+                let inventory = self.services.inventory
+                    .list_products_with_details(ctx.user_id.clone(), ctx.tenant_id.clone(), Language::En)
+                    .await
+                    .unwrap_or_default();
+
+                let now = time::OffsetDateTime::now_utc();
+                let limit = now + time::Duration::days(expiring_days);
+
+                let expiring: Vec<serde_json::Value> = inventory.iter()
+                    .filter(|i| i.expires_at <= limit && i.remaining_quantity > 0.0)
+                    .take(10)
+                    .map(|i| {
+                        let days_left = (i.expires_at - now).whole_days();
+                        json!({
+                            "name": i.product.name,
+                            "remaining": i.remaining_quantity,
+                            "unit": i.product.base_unit,
+                            "days_left": days_left,
+                            "severity": format!("{:?}", i.severity),
+                            "expires_at": i.expires_at.date().to_string(),
+                        })
+                    })
+                    .collect();
+
+                // 2. Low stock — сгруппируем по catalog_ingredient_id и сравним с min_threshold
+                use std::collections::HashMap;
+                let mut totals: HashMap<uuid::Uuid, (String, String, f64, f64)> = HashMap::new();
+                for i in inventory.iter() {
+                    let entry = totals.entry(i.product.id)
+                        .or_insert((i.product.name.clone(), i.product.base_unit.clone(), 0.0, i.product.min_stock_threshold));
+                    entry.2 += i.remaining_quantity;
+                }
+                let mut low_stock: Vec<serde_json::Value> = totals.values()
+                    .filter(|(_, _, total, min_thr)| {
+                        let threshold = if *min_thr > 0.0 { *min_thr } else { low_stock_threshold };
+                        *total < threshold
+                    })
+                    .map(|(name, unit, total, min_thr)| json!({
+                        "name": name,
+                        "remaining": total,
+                        "unit": unit,
+                        "threshold": if *min_thr > 0.0 { *min_thr } else { low_stock_threshold },
+                    }))
+                    .collect();
+                low_stock.sort_by(|a, b| {
+                    a["remaining"].as_f64().unwrap_or(0.0)
+                        .partial_cmp(&b["remaining"].as_f64().unwrap_or(0.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                low_stock.truncate(10);
+
+                // 3. Purchase drafts (split by status)
+                let drafts = self.services.purchase_drafts
+                    .list(ctx.tenant_id.clone(), 20)
+                    .await
+                    .unwrap_or_default();
+                let open_drafts: Vec<serde_json::Value> = drafts.iter()
+                    .filter(|d| d.status == "draft")
+                    .take(5)
+                    .map(|d| json!({
+                        "id": d.id.to_string()[..8].to_string(),
+                        "supplier": d.supplier_name.clone().unwrap_or_else(|| "—".into()),
+                        "delivery_date": d.delivery_date.map(|x| x.to_string()),
+                        "items_count": d.items.len(),
+                        "total_cost_eur": format!("{:.2}", d.total_cost_cents as f64 / 100.0),
+                    }))
+                    .collect();
+                let recent_sent: Vec<serde_json::Value> = drafts.iter()
+                    .filter(|d| d.status == "sent")
+                    .take(5)
+                    .map(|d| json!({
+                        "id": d.id.to_string()[..8].to_string(),
+                        "supplier": d.supplier_name.clone().unwrap_or_else(|| "—".into()),
+                        "items_count": d.items.len(),
+                        "total_cost_eur": format!("{:.2}", d.total_cost_cents as f64 / 100.0),
+                        "sent_at": d.created_at.date().to_string(),
+                    }))
+                    .collect();
+
+                // 4. Dish margin warnings (food_cost_percent > 35% или цена ниже cost)
+                let pagination = PaginationParams { page: Some(1), per_page: Some(100) };
+                let dish_warnings: Vec<serde_json::Value> = match self.services.dishes
+                    .list_dishes(ctx.tenant_id.clone(), true, &pagination)
+                    .await
+                {
+                    Ok((dishes, _)) => {
+                        let mut warnings: Vec<serde_json::Value> = dishes.iter()
+                            .filter_map(|d| {
+                                let fc_pct = d.food_cost_percent()?;
+                                let margin_pct = d.profit_margin_percent().unwrap_or(0.0);
+                                let level = if fc_pct >= 100.0 {
+                                    "below_cost"
+                                } else if fc_pct > 40.0 {
+                                    "low_margin"
+                                } else if fc_pct > 35.0 {
+                                    "watch"
+                                } else {
+                                    return None;
+                                };
+                                Some(json!({
+                                    "name": d.name().as_str(),
+                                    "selling_price_eur": format!("{:.2}", d.selling_price().as_cents() as f64 / 100.0),
+                                    "food_cost_percent": format!("{:.1}", fc_pct),
+                                    "margin_percent": format!("{:.1}", margin_pct),
+                                    "level": level,
+                                }))
+                            })
+                            .collect();
+                        // Сначала самые проблемные
+                        warnings.sort_by(|a, b| {
+                            let pa = a["food_cost_percent"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                            let pb = b["food_cost_percent"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                            pb.partial_cmp(&pa).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        warnings.truncate(5);
+                        warnings
+                    }
+                    Err(_) => vec![],
+                };
+
+                // 5. Сводка: подсчёт alerts
+                let total_alerts = expiring.len() + low_stock.len() + open_drafts.len() + dish_warnings.len();
+
+                Ok(ToolResult {
+                    tool_name: name,
+                    data: json!({
+                        "briefing": {
+                            "date": now.date().to_string(),
+                            "total_alerts": total_alerts,
+                            "expiring_soon": {
+                                "count": expiring.len(),
+                                "items": expiring,
+                                "days_window": expiring_days,
+                            },
+                            "low_stock": {
+                                "count": low_stock.len(),
+                                "items": low_stock,
+                            },
+                            "open_purchase_drafts": {
+                                "count": open_drafts.len(),
+                                "items": open_drafts,
+                            },
+                            "recent_sent_purchases": {
+                                "count": recent_sent.len(),
+                                "items": recent_sent,
+                            },
+                            "dish_margin_warnings": {
+                                "count": dish_warnings.len(),
+                                "items": dish_warnings,
+                            },
+                        }
+                    }),
+                })
+            }
+
             _ => {
                 // Остальные read tools — заглушка (будут подключены в следующих итерациях)
                 Ok(ToolResult {
