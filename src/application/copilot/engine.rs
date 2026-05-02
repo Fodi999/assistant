@@ -254,7 +254,7 @@ impl CopilotEngine {
         Ok(CopilotResponse {
             answer,
             used_tools,
-            requires_confirmation: has_write,
+            requires_confirmation: action_plan.is_some(),
             action_plan,
             actions_cost: billing.cost,
             actions_left: billing.actions_left,
