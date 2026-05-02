@@ -119,6 +119,13 @@ INVENTORY ARGS SCHEMA (use exactly these keys):
 - write_off_inventory:      {{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>", "reason": "<expired|waste|used_in_production|correction|manual>" }}
 - update_dish_price:        {{ "dish_name": "<en>", "new_price_cents": <int> }}
 - prepare_purchase_draft:   {{ "supplier_name": "<str|null>", "delivery_date": "<YYYY-MM-DD|null>", "note": "<str|null>", "items": [{{ "ingredient_name": "<en>", "quantity": <number>, "unit": "<kg|l|pcs>" }}] }}
+- list_purchase_drafts:     {{ "limit": <int, optional, default 10> }}
+- get_purchase_draft:       {{ "id": "<uuid|'last'>" }}
+
+PURCHASE DRAFT INTENT HINTS:
+- "show / list / which drafts / мои черновики / какие закупки" → list_purchase_drafts
+- "last / latest / последняя / на завтра" without explicit id → get_purchase_draft with id='last'
+- "создай / сделай / order / create purchase" → prepare_purchase_draft
 
 OUTPUT FORMAT (exactly):
 {{"intent":"<snake_case>","tools":["tool_name"],"args":{{"tool_name":{{"key":"value"}}}},"requires_confirmation":false}}"#,
@@ -186,6 +193,8 @@ fn parse_tool_name(name: &str) -> Option<CopilotTool> {
         "get_recipes"                => Some(CopilotTool::GetRecipes),
         "get_recipe_by_id"           => Some(CopilotTool::GetRecipeById),
         "get_lab_experiment"         => Some(CopilotTool::GetLabExperiment),
+        "list_purchase_drafts"       => Some(CopilotTool::ListPurchaseDrafts),
+        "get_purchase_draft"         => Some(CopilotTool::GetPurchaseDraft),
         "suggest_cook_from_inventory" => Some(CopilotTool::SuggestCookFromInventory),
         "generate_meal_plan"         => Some(CopilotTool::GenerateMealPlan),
         "analyze_recipe"             => Some(CopilotTool::AnalyzeRecipe),

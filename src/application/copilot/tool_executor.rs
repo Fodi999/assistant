@@ -240,6 +240,71 @@ impl ToolExecutor {
                 })
             }
 
+            CopilotTool::ListPurchaseDrafts => {
+                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10).clamp(1, 50);
+                let drafts = self.services.purchase_drafts
+                    .list(ctx.tenant_id.clone(), limit)
+                    .await?;
+                let summary: Vec<serde_json::Value> = drafts.iter().map(|d| json!({
+                    "id": d.id,
+                    "supplier_name": d.supplier_name,
+                    "delivery_date": d.delivery_date.map(|x| x.to_string()),
+                    "status": d.status,
+                    "items_count": d.items.len(),
+                    "total_cost_cents": d.total_cost_cents,
+                    "created_at": d.created_at.to_string(),
+                })).collect();
+                Ok(ToolResult {
+                    tool_name: name,
+                    data: json!({ "drafts": summary, "total": drafts.len() }),
+                })
+            }
+
+            CopilotTool::GetPurchaseDraft => {
+                let id_arg = args.get("id").and_then(|v| v.as_str()).unwrap_or("last");
+                let target_id: Uuid = if id_arg == "last" || id_arg.is_empty() {
+                    let drafts = self.services.purchase_drafts
+                        .list(ctx.tenant_id.clone(), 1)
+                        .await?;
+                    let Some(first) = drafts.into_iter().next() else {
+                        return Ok(ToolResult {
+                            tool_name: name,
+                            data: json!({ "draft": null, "note": "no drafts found" }),
+                        });
+                    };
+                    first.id
+                } else {
+                    id_arg.parse::<Uuid>()
+                        .map_err(|_| AppError::validation("invalid UUID for purchase draft id"))?
+                };
+
+                let draft = self.services.purchase_drafts
+                    .get(target_id, ctx.user_id.clone())
+                    .await?;
+
+                let data = match draft {
+                    Some(d) => json!({
+                        "draft": {
+                            "id": d.id,
+                            "supplier_name": d.supplier_name,
+                            "delivery_date": d.delivery_date.map(|x| x.to_string()),
+                            "status": d.status,
+                            "note": d.note,
+                            "total_cost_cents": d.total_cost_cents,
+                            "created_at": d.created_at.to_string(),
+                            "items": d.items.iter().map(|i| json!({
+                                "ingredient_name": i.ingredient_name,
+                                "quantity": i.quantity,
+                                "unit": i.unit,
+                                "price_per_unit_cents": i.price_per_unit_cents,
+                            })).collect::<Vec<_>>(),
+                        }
+                    }),
+                    None => json!({ "draft": null, "note": "draft not found" }),
+                };
+                Ok(ToolResult { tool_name: name, data })
+            }
+
             _ => {
                 // Остальные read tools — заглушка (будут подключены в следующих итерациях)
                 Ok(ToolResult {

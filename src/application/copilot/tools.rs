@@ -29,6 +29,10 @@ pub enum CopilotTool {
     GetRecipeById,
     /// Лаб-эксперимент по ID.
     GetLabExperiment,
+    /// Список черновиков закупок (purchase drafts).
+    ListPurchaseDrafts,
+    /// Показать детали одного purchase draft по id или "last".
+    GetPurchaseDraft,
 
     // ── AI Read tools (требуют AI actions, но не confirmation) ───────────────
     /// BOT 4: предложить блюда из текущего инвентаря (Cook Suggestions).
@@ -76,6 +80,8 @@ impl CopilotTool {
             CopilotTool::GetRecipes              => ToolKind::Read,
             CopilotTool::GetRecipeById           => ToolKind::Read,
             CopilotTool::GetLabExperiment        => ToolKind::Read,
+            CopilotTool::ListPurchaseDrafts      => ToolKind::Read,
+            CopilotTool::GetPurchaseDraft        => ToolKind::Read,
             CopilotTool::SuggestCookFromInventory => ToolKind::Read,
             CopilotTool::GenerateMealPlan        => ToolKind::Read,
             CopilotTool::AnalyzeRecipe           => ToolKind::Read,
@@ -112,6 +118,8 @@ impl CopilotTool {
             CopilotTool::GetRecipes              => "get_recipes",
             CopilotTool::GetRecipeById           => "get_recipe_by_id",
             CopilotTool::GetLabExperiment        => "get_lab_experiment",
+            CopilotTool::ListPurchaseDrafts      => "list_purchase_drafts",
+            CopilotTool::GetPurchaseDraft        => "get_purchase_draft",
             CopilotTool::SuggestCookFromInventory => "suggest_cook_from_inventory",
             CopilotTool::GenerateMealPlan        => "generate_meal_plan",
             CopilotTool::AnalyzeRecipe           => "analyze_recipe",
@@ -139,6 +147,8 @@ impl CopilotTool {
             CopilotTool::GetRecipes              => "Get user's saved recipes",
             CopilotTool::GetRecipeById           => "Get full recipe details by ID",
             CopilotTool::GetLabExperiment        => "Get lab experiment details by ID",
+            CopilotTool::ListPurchaseDrafts      => "List recent purchase drafts (id, supplier, delivery date, status, item count)",
+            CopilotTool::GetPurchaseDraft        => "Get full details of one purchase draft by id (or 'last' for the most recent)",
             CopilotTool::SuggestCookFromInventory => "AI: suggest dishes that can be made from current inventory",
             CopilotTool::GenerateMealPlan        => "AI: generate personalized weekly meal plan based on goals and inventory",
             CopilotTool::AnalyzeRecipe           => "AI: analyze recipe for nutrition, technique tips, and substitutions",
@@ -164,6 +174,8 @@ impl CopilotTool {
             CopilotTool::SearchIngredients,
             CopilotTool::GetDishes,
             CopilotTool::GetRecipes,
+            CopilotTool::ListPurchaseDrafts,
+            CopilotTool::GetPurchaseDraft,
             CopilotTool::SuggestCookFromInventory,
             CopilotTool::GenerateMealPlan,
             CopilotTool::AnalyzeRecipe,
