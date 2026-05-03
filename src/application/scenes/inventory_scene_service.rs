@@ -255,9 +255,9 @@ pub fn build_scene_from_items(
         generated_at,
         camera: SceneCamera {
             preset: CameraPreset::Overview,
-            position: [0.0, 13.0, 17.0],
-            target: [0.0, 0.0, 0.0],
-            fov: 50.0,
+            position: [0.0, 8.0, 13.0],
+            target: [0.0, 1.5, 0.0],
+            fov: 58.0,
         },
         environment: Some(build_environment()),
         hud: SceneHud {
