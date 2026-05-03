@@ -1,25 +1,31 @@
-//! Inventory scene builder — port of
-//! `blog/components/visual/builders/inventorySceneBuilder.ts`.
+//! Inventory scene service — orchestrator only.
 //!
-//! Responsibilities (do NOT leak any of these to the frontend):
-//!   • severity → MaterialTheme mapping
-//!   • storage zone derivation (cold/dry/freezer/risk) from category
-//!   • per-zone product layout (4-column grid)
-//!   • emissive level per severity
-//!   • allowed `EntityAction`s per severity
-//!   • HUD strings (totals, expiring count, low-stock count) — pre-formatted
+//! Responsibilities live in sibling files:
+//!   * `inventory_layout`     — zone placement, slot grid
+//!   * `inventory_prefabs`    — `PrefabKey` + asset / emoji dispatch
+//!   * `inventory_materials`  — severity → theme, category → accent
+//!   * `inventory_mechanics`  — pulse / glow per severity
+//!   * `inventory_actions`    — allowed `EntityAction`s per severity
 //!
-//! The frontend just calls `GET /api/scenes/inventory` and renders.
+//! This file just glues data → entities → SceneState. Frontend never has
+//! to know about layout, severity mapping, or HUD formatting.
 
 use std::sync::Arc;
 use time::OffsetDateTime;
 
+use super::inventory_actions::actions_for_theme;
+use super::inventory_layout::{
+    infer_zone, product_position_in_zone, ZoneKey, CARD_COLS, ROOM_CORNER_RADIUS, ROOM_SIZE,
+    ROOM_WALL_HEIGHT, ROOM_WALL_THICKNESS,
+};
+use super::inventory_materials::{product_material, severity_to_theme, zone_material};
+use super::inventory_mechanics::{mechanics_for_theme, zone_mechanics};
+use super::inventory_prefabs::{category_emoji, infer_asset_key, product_prefab, zone_prefab};
 use crate::application::inventory::{InventoryService, InventoryView};
-use crate::domain::inventory::ExpirationSeverity;
 use crate::domain::scene::{
-    CameraPreset, DomainKind, EntityAction, EntityContent, EntityDataRef, EntityGameplay,
-    EntityGeometry, EntityMaterial, EntityType, GeometryKind, MaterialTheme, SceneCamera,
-    SceneEntity, SceneHud, SceneMode, SceneState, Transform,
+    CameraPreset, DomainKind, EntityContent, EntityDataRef, EntityGameplay, EntityGeometry,
+    EntityType, GeometryKind, MaterialTheme, SceneCamera, SceneEntity, SceneEnvironment, SceneHud,
+    SceneMode, SceneState, Transform,
 };
 use crate::shared::{AppResult, Language, TenantId, UserId};
 
@@ -55,216 +61,11 @@ impl InventorySceneService {
 
 // ── Pure builder (no DB) — easy to unit test ────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum ZoneKey {
-    Cold,
-    Dry,
-    Freezer,
-    Risk,
-}
-
-impl ZoneKey {
-    const ORDER: [ZoneKey; 4] = [Self::Cold, Self::Dry, Self::Freezer, Self::Risk];
-
-    fn id(self) -> &'static str {
-        match self {
-            Self::Cold => "cold",
-            Self::Dry => "dry",
-            Self::Freezer => "freezer",
-            Self::Risk => "risk",
-        }
-    }
-
-    fn meta(self) -> ZoneMeta {
-        match self {
-            Self::Cold => ZoneMeta {
-                label: "Cold Storage",
-                subtitle: "0–4°C",
-                theme: MaterialTheme::Cold,
-                pos: [-6.2, 0.0, 3.5],
-            },
-            Self::Dry => ZoneMeta {
-                label: "Dry Storage",
-                subtitle: "15–20°C",
-                theme: MaterialTheme::Dry,
-                pos: [6.2, 0.0, 3.5],
-            },
-            Self::Freezer => ZoneMeta {
-                label: "Freezer",
-                subtitle: "-18°C",
-                theme: MaterialTheme::Freezer,
-                pos: [-6.2, 0.0, -3.5],
-            },
-            Self::Risk => ZoneMeta {
-                label: "⚠ Risk Zone",
-                subtitle: "Attention required",
-                theme: MaterialTheme::Risk,
-                pos: [6.2, 0.0, -3.5],
-            },
-        }
-    }
-}
-
-struct ZoneMeta {
-    label: &'static str,
-    subtitle: &'static str,
+#[derive(Clone, Copy)]
+struct ItemSlot {
     theme: MaterialTheme,
-    pos: [f32; 3],
-}
-
-fn severity_to_theme(s: ExpirationSeverity) -> MaterialTheme {
-    match s {
-        ExpirationSeverity::Expired => MaterialTheme::Expired,
-        ExpirationSeverity::Critical => MaterialTheme::Critical,
-        ExpirationSeverity::Warning => MaterialTheme::Warning,
-        ExpirationSeverity::Ok | ExpirationSeverity::NoExpiration => MaterialTheme::Ok,
-    }
-}
-
-fn infer_zone(item: &InventoryView, theme: MaterialTheme) -> ZoneKey {
-    if matches!(theme, MaterialTheme::Expired | MaterialTheme::Critical) {
-        return ZoneKey::Risk;
-    }
-    let c = item.product.category.to_lowercase();
-    if contains_any(&c, &["frozen", "мороз", "ice"]) {
-        return ZoneKey::Freezer;
-    }
-    if contains_any(
-        &c,
-        &[
-            "meat", "fish", "dairy", "cheese", "мяс", "рыб", "молоч", "сыр", "яйц", "egg",
-        ],
-    ) {
-        return ZoneKey::Cold;
-    }
-    ZoneKey::Dry
-}
-
-fn infer_asset_key(category: &str) -> &'static str {
-    let c = category.to_lowercase();
-    if contains_any(&c, &["egg", "яйц"]) {
-        return "egg";
-    }
-    if contains_any(&c, &["meat", "chicken", "beef", "pork", "мяс", "курин"]) {
-        return "meat";
-    }
-    if contains_any(&c, &["fish", "рыб", "seafood"]) {
-        return "fish";
-    }
-    if contains_any(&c, &["dairy", "cheese", "milk", "молоч", "сыр"]) {
-        return "dairy";
-    }
-    if contains_any(&c, &["veg", "tomato", "salad", "зелен", "овощ"]) {
-        return "vegetable";
-    }
-    if contains_any(&c, &["fruit", "apple", "berry", "фрукт", "ягод"]) {
-        return "fruit";
-    }
-    if contains_any(&c, &["grain", "rice", "pasta", "flour", "круп", "мук"]) {
-        return "grain";
-    }
-    if contains_any(&c, &["spice", "herb", "special", "спец"]) {
-        return "spice";
-    }
-    if contains_any(&c, &["oil", "масл"]) {
-        return "oil";
-    }
-    if contains_any(&c, &["sauce", "соус"]) {
-        return "sauce";
-    }
-    if contains_any(&c, &["frozen", "мороз", "ice"]) {
-        return "frozen";
-    }
-    if contains_any(&c, &["drink", "water", "juice", "напит", "сок"]) {
-        return "drink";
-    }
-    "generic"
-}
-
-fn contains_any(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|n| haystack.contains(n))
-}
-
-/// Per-category accent color (overrides the severity theme for the card tint).
-/// This makes cards visually distinct by product type even within the same zone.
-fn category_color(category: &str) -> Option<&'static str> {
-    let c = category.to_lowercase();
-    if contains_any(&c, &["meat", "chicken", "beef", "pork", "мяс", "курин"]) {
-        return Some("#f87171"); // red-400
-    }
-    if contains_any(&c, &["fish", "рыб", "seafood"]) {
-        return Some("#38bdf8"); // sky-400
-    }
-    if contains_any(&c, &["dairy", "cheese", "milk", "молоч", "сыр"]) {
-        return Some("#a78bfa"); // violet-400
-    }
-    if contains_any(&c, &["egg", "яйц"]) {
-        return Some("#fde68a"); // amber-200
-    }
-    if contains_any(&c, &["veg", "tomato", "salad", "зелен", "овощ"]) {
-        return Some("#4ade80"); // green-400
-    }
-    if contains_any(&c, &["fruit", "apple", "berry", "фрукт", "ягод"]) {
-        return Some("#fb923c"); // orange-400
-    }
-    if contains_any(&c, &["grain", "rice", "pasta", "flour", "круп", "мук"]) {
-        return Some("#d4a574"); // tan
-    }
-    if contains_any(&c, &["spice", "herb", "special", "спец"]) {
-        return Some("#f472b6"); // pink-400
-    }
-    if contains_any(&c, &["oil", "масл"]) {
-        return Some("#facc15"); // yellow-400
-    }
-    if contains_any(&c, &["drink", "water", "juice", "напит", "сок"]) {
-        return Some("#67e8f9"); // cyan-300
-    }
-    if contains_any(&c, &["frozen", "мороз", "ice"]) {
-        return Some("#93c5fd"); // blue-300
-    }
-    None
-}
-
-/// Category → emoji fallback icon.
-fn category_emoji(category: &str) -> &'static str {
-    let c = category.to_lowercase();
-    if contains_any(&c, &["meat", "chicken", "beef", "pork", "мяс", "курин"]) {
-        return "🥩";
-    }
-    if contains_any(&c, &["fish", "рыб", "seafood"]) {
-        return "🐟";
-    }
-    if contains_any(&c, &["dairy", "cheese", "milk", "молоч", "сыр"]) {
-        return "🧀";
-    }
-    if contains_any(&c, &["egg", "яйц"]) {
-        return "🥚";
-    }
-    if contains_any(&c, &["veg", "tomato", "salad", "зелен", "овощ"]) {
-        return "🥦";
-    }
-    if contains_any(&c, &["fruit", "apple", "berry", "фрукт", "ягод"]) {
-        return "🍎";
-    }
-    if contains_any(&c, &["grain", "rice", "pasta", "flour", "круп", "мук"]) {
-        return "🌾";
-    }
-    if contains_any(&c, &["spice", "herb", "special", "спец"]) {
-        return "🌿";
-    }
-    if contains_any(&c, &["oil", "масл"]) {
-        return "🫙";
-    }
-    if contains_any(&c, &["sauce", "соус"]) {
-        return "🥫";
-    }
-    if contains_any(&c, &["drink", "water", "juice", "напит", "сок"]) {
-        return "🧃";
-    }
-    if contains_any(&c, &["frozen", "мороз", "ice"]) {
-        return "🧊";
-    }
-    "📦"
+    zone: ZoneKey,
+    index_in_zone: usize,
 }
 
 /// Format the expiry countdown as a short human-readable string.
@@ -288,45 +89,87 @@ fn expiry_label(expires_at: OffsetDateTime) -> String {
     format!("{}d left", days)
 }
 
-fn product_position_in_zone(zone: ZoneKey, index_in_zone: usize) -> [f32; 3] {
-    const COLS: usize = 5;
-    const STEP_X: f32 = 1.6;
-    const STEP_Z: f32 = 1.3;
-    let base = zone.meta().pos;
-    let col = (index_in_zone % COLS) as f32;
-    let row = (index_in_zone / COLS) as f32;
-    [
-        base[0] + (col - (COLS as f32 - 1.0) / 2.0) * STEP_X,
-        base[1],
-        base[2] + (row - 1.0) * STEP_Z,
-    ]
-}
-
-fn actions_for_theme(theme: MaterialTheme) -> Vec<EntityAction> {
-    match theme {
-        MaterialTheme::Expired | MaterialTheme::Critical => {
-            vec![EntityAction::WriteOff, EntityAction::OpenDetails]
-        }
-        MaterialTheme::Warning => vec![
-            EntityAction::UseToday,
-            EntityAction::WriteOff,
-            EntityAction::OpenDetails,
-        ],
-        _ => vec![
-            EntityAction::UseToday,
-            EntityAction::OpenDetails,
-            EntityAction::WriteOff,
-        ],
+/// Build a `StorageRoom` entity for the given zone.
+fn build_zone_entity(zone: ZoneKey, count: usize) -> SceneEntity {
+    let meta = zone.meta();
+    SceneEntity {
+        id: format!("zone_{}", zone.id()),
+        entity_type: EntityType::StorageZone,
+        prefab: Some(zone_prefab(zone)),
+        transform: Transform::at(meta.center),
+        geometry: EntityGeometry::new(GeometryKind::StorageRoom)
+            .with_size(ROOM_SIZE)
+            .with_walls(ROOM_WALL_HEIGHT, ROOM_WALL_THICKNESS)
+            .with_corner_radius(ROOM_CORNER_RADIUS),
+        material: zone_material(zone),
+        content: Some(EntityContent {
+            title: Some(meta.label.to_string()),
+            subtitle: Some(meta.subtitle.to_string()),
+            badges: vec![count.to_string()],
+            ..Default::default()
+        }),
+        gameplay: Some(EntityGameplay {
+            selectable: false,
+            hoverable: false,
+            actions: vec![],
+            linked_entity_id: None,
+        }),
+        mechanics: zone_mechanics(meta.theme),
+        data: None,
     }
 }
 
-fn emissive_for_theme(theme: MaterialTheme) -> f32 {
-    match theme {
-        MaterialTheme::Ok => 0.10,
-        MaterialTheme::Warning => 0.28,
-        MaterialTheme::Critical => 0.40,
-        MaterialTheme::Expired => 0.55,
-        _ => 0.12,
+/// Build a `ProductCard` entity for the given inventory item.
+fn build_product_entity(item: &InventoryView, slot: ItemSlot) -> SceneEntity {
+    let position = product_position_in_zone(slot.zone, slot.index_in_zone);
+    let asset_key = infer_asset_key(&item.product.category);
+    let emoji = category_emoji(&item.product.category);
+    let expiry = expiry_label(item.expires_at);
+    let subtitle = format!(
+        "{:.2} {} · {}",
+        item.remaining_quantity, item.product.base_unit, expiry
+    );
+    let item_id = item.id.to_string();
+
+    SceneEntity {
+        id: format!("product_{}", item_id),
+        entity_type: EntityType::InventoryProduct,
+        prefab: Some(product_prefab()),
+        transform: Transform::at(position),
+        geometry: EntityGeometry::new(GeometryKind::ProductCard)
+            .with_size([1.82, 0.82, 0.06])
+            .with_corner_radius(0.055),
+        material: product_material(slot.theme, &item.product.category),
+        content: Some(EntityContent {
+            title: Some(item.product.name.clone()),
+            subtitle: Some(subtitle),
+            asset_key: Some(asset_key.to_string()),
+            image_url: item.product.image_url.clone(),
+            fallback_icon: Some(emoji.to_string()),
+            badges: vec![item.product.category.clone()],
+        }),
+        gameplay: Some(EntityGameplay {
+            selectable: true,
+            hoverable: true,
+            actions: actions_for_theme(slot.theme),
+            linked_entity_id: Some(item_id.clone()),
+        }),
+        mechanics: mechanics_for_theme(slot.theme),
+        data: Some(EntityDataRef {
+            domain: DomainKind::Inventory,
+            entity_id: item_id,
+        }),
+    }
+}
+
+fn build_environment() -> SceneEnvironment {
+    SceneEnvironment {
+        ambient_intensity: Some(0.55),
+        ambient_color: Some("#ffffff".to_string()),
+        key_light_intensity: Some(0.9),
+        background: Some("#06070a".to_string()),
+        fog_color: Some("#06070a".to_string()),
+        fog_density: Some(0.012),
     }
 }
 
@@ -336,121 +179,51 @@ pub fn build_scene_from_items(
     selected_entity_id: Option<String>,
 ) -> SceneState {
     // Bucket by zone so per-zone indices are stable.
-    let mut buckets: [(ZoneKey, Vec<usize>); 4] = [
-        (ZoneKey::Cold, Vec::new()),
-        (ZoneKey::Dry, Vec::new()),
-        (ZoneKey::Freezer, Vec::new()),
-        (ZoneKey::Risk, Vec::new()),
+    let mut bucket_counts: [(ZoneKey, usize); 4] = [
+        (ZoneKey::Cold, 0),
+        (ZoneKey::Dry, 0),
+        (ZoneKey::Freezer, 0),
+        (ZoneKey::Risk, 0),
     ];
 
-    let mut item_meta: Vec<(MaterialTheme, ZoneKey, usize)> = Vec::with_capacity(items.len());
-
-    for (i, item) in items.iter().enumerate() {
+    let mut slots: Vec<ItemSlot> = Vec::with_capacity(items.len());
+    for item in items.iter() {
         let theme = severity_to_theme(item.severity);
         let zone = infer_zone(item, theme);
-        let zone_slot = buckets
+        let bucket = bucket_counts
             .iter_mut()
             .find(|(z, _)| *z == zone)
             .expect("zone exists");
-        let idx_in_zone = zone_slot.1.len();
-        zone_slot.1.push(i);
-        item_meta.push((theme, zone, idx_in_zone));
+        let index_in_zone = bucket.1;
+        bucket.1 += 1;
+        slots.push(ItemSlot {
+            theme,
+            zone,
+            index_in_zone,
+        });
     }
 
     let mut entities: Vec<SceneEntity> = Vec::with_capacity(items.len() + ZoneKey::ORDER.len());
 
-    // Zone entities
+    // Zone entities (rooms)
     for zone in ZoneKey::ORDER {
-        let meta = zone.meta();
-        let count = buckets
+        let count = bucket_counts
             .iter()
             .find(|(z, _)| *z == zone)
-            .map(|(_, v)| v.len())
+            .map(|(_, c)| *c)
             .unwrap_or(0);
-        entities.push(SceneEntity {
-            id: format!("zone_{}", zone.id()),
-            entity_type: EntityType::StorageZone,
-            transform: Transform::at(meta.pos),
-            geometry: EntityGeometry {
-                kind: GeometryKind::StorageRoom,
-            },
-            material: EntityMaterial {
-                theme: meta.theme,
-                color: None,
-                emissive: 0.18,
-                opacity: 1.0,
-            },
-            content: Some(EntityContent {
-                title: Some(meta.label.to_string()),
-                subtitle: Some(meta.subtitle.to_string()),
-                badges: vec![count.to_string()],
-                ..Default::default()
-            }),
-            gameplay: Some(EntityGameplay {
-                selectable: false,
-                hoverable: false,
-                actions: vec![],
-                linked_entity_id: None,
-            }),
-            data: None,
-        });
+        entities.push(build_zone_entity(zone, count));
     }
 
     // Product entities
     for (i, item) in items.iter().enumerate() {
-        let (theme, zone, idx_in_zone) = item_meta[i];
-        let position = product_position_in_zone(zone, idx_in_zone);
-        let asset_key = infer_asset_key(&item.product.category);
-        let emoji = category_emoji(&item.product.category);
-        let expiry = expiry_label(item.expires_at);
-        let short_qty = format!("{:.2} {} · {}", item.remaining_quantity, item.product.base_unit, expiry);
-        let item_id = item.id.to_string();
-        // Category color overrides severity theme — cards look distinct by type.
-        // For expired/critical we keep severity red to keep the warning prominent.
-        let card_color = if matches!(theme, MaterialTheme::Expired | MaterialTheme::Critical) {
-            None
-        } else {
-            category_color(&item.product.category).map(|s| s.to_string())
-        };
-
-        entities.push(SceneEntity {
-            id: format!("product_{}", item_id),
-            entity_type: EntityType::InventoryProduct,
-            transform: Transform::at(position),
-            geometry: EntityGeometry {
-                kind: GeometryKind::ProductCard,
-            },
-            material: EntityMaterial {
-                theme,
-                color: card_color,
-                emissive: emissive_for_theme(theme),
-                opacity: 1.0,
-            },
-            content: Some(EntityContent {
-                title: Some(item.product.name.clone()),
-                subtitle: Some(short_qty),
-                asset_key: Some(asset_key.to_string()),
-                image_url: item.product.image_url.clone(),
-                fallback_icon: Some(emoji.to_string()),
-                badges: vec![item.product.category.clone()],
-            }),
-            gameplay: Some(EntityGameplay {
-                selectable: true,
-                hoverable: true,
-                actions: actions_for_theme(theme),
-                linked_entity_id: Some(item_id.clone()),
-            }),
-            data: Some(EntityDataRef {
-                domain: DomainKind::Inventory,
-                entity_id: item_id,
-            }),
-        });
+        entities.push(build_product_entity(item, slots[i]));
     }
 
     // HUD aggregations
-    let expiring_count = item_meta
+    let expiring_count = slots
         .iter()
-        .filter(|(t, _, _)| *t == MaterialTheme::Warning)
+        .filter(|s| s.theme == MaterialTheme::Warning)
         .count();
     let low_stock_count = items
         .iter()
@@ -458,6 +231,10 @@ pub fn build_scene_from_items(
             it.product.min_stock_threshold > 0.0
                 && it.remaining_quantity <= it.product.min_stock_threshold
         })
+        .count();
+    let risk_count = slots
+        .iter()
+        .filter(|s| matches!(s.theme, MaterialTheme::Critical | MaterialTheme::Expired))
         .count();
     let total_value_cents: i128 = items
         .iter()
@@ -482,14 +259,40 @@ pub fn build_scene_from_items(
             target: [0.0, 0.0, 0.0],
             fov: 50.0,
         },
+        environment: Some(build_environment()),
         hud: SceneHud {
             total_value_label: Some(total_value_label),
             items_label: Some(items.len().to_string()),
             expiring_label: Some(expiring_count.to_string()),
             low_stock_label: Some(low_stock_count.to_string()),
-            risk_label: None,
+            risk_label: if risk_count > 0 {
+                Some(risk_count.to_string())
+            } else {
+                None
+            },
         },
         entities,
+        mechanics: vec![],
         selected_entity_id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_inventory_still_builds_zones() {
+        let scene = build_scene_from_items(&[], None);
+        assert_eq!(scene.entities.len(), ZoneKey::ORDER.len());
+        assert!(scene.entities[0].prefab.is_some());
+        assert!(scene.environment.is_some());
+    }
+
+    #[test]
+    fn card_grid_first_row_z_constant() {
+        let pos_first = product_position_in_zone(ZoneKey::Dry, 0);
+        let pos_last_in_row = product_position_in_zone(ZoneKey::Dry, CARD_COLS - 1);
+        assert!((pos_first[2] - pos_last_in_row[2]).abs() < 0.001);
     }
 }
