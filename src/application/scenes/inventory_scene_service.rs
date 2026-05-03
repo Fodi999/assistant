@@ -81,25 +81,25 @@ impl ZoneKey {
                 label: "Cold Storage",
                 subtitle: "0–4°C",
                 theme: MaterialTheme::Cold,
-                pos: [-4.6, 0.0, 2.4],
+                pos: [-6.2, 0.0, 3.5],
             },
             Self::Dry => ZoneMeta {
                 label: "Dry Storage",
                 subtitle: "15–20°C",
                 theme: MaterialTheme::Dry,
-                pos: [4.6, 0.0, 2.4],
+                pos: [6.2, 0.0, 3.5],
             },
             Self::Freezer => ZoneMeta {
                 label: "Freezer",
                 subtitle: "-18°C",
                 theme: MaterialTheme::Freezer,
-                pos: [-4.6, 0.0, -2.8],
+                pos: [-6.2, 0.0, -3.5],
             },
             Self::Risk => ZoneMeta {
-                label: "Risk Zone",
+                label: "⚠ Risk Zone",
                 subtitle: "Attention required",
                 theme: MaterialTheme::Risk,
-                pos: [4.6, 0.0, -2.8],
+                pos: [6.2, 0.0, -3.5],
             },
         }
     }
@@ -186,9 +186,9 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 }
 
 fn product_position_in_zone(zone: ZoneKey, index_in_zone: usize) -> [f32; 3] {
-    const COLS: usize = 4;
-    const STEP_X: f32 = 1.35;
-    const STEP_Z: f32 = 1.0;
+    const COLS: usize = 5;
+    const STEP_X: f32 = 1.6;
+    const STEP_Z: f32 = 1.3;
     let base = zone.meta().pos;
     let col = (index_in_zone % COLS) as f32;
     let row = (index_in_zone / COLS) as f32;
@@ -219,11 +219,11 @@ fn actions_for_theme(theme: MaterialTheme) -> Vec<EntityAction> {
 
 fn emissive_for_theme(theme: MaterialTheme) -> f32 {
     match theme {
-        MaterialTheme::Ok => 0.08,
-        MaterialTheme::Warning => 0.16,
-        MaterialTheme::Critical => 0.22,
-        MaterialTheme::Expired => 0.28,
-        _ => 0.10,
+        MaterialTheme::Ok => 0.10,
+        MaterialTheme::Warning => 0.28,
+        MaterialTheme::Critical => 0.40,
+        MaterialTheme::Expired => 0.55,
+        _ => 0.12,
     }
 }
 
@@ -366,9 +366,9 @@ pub fn build_scene_from_items(
         generated_at,
         camera: SceneCamera {
             preset: CameraPreset::Overview,
-            position: [0.0, 9.0, 11.0],
-            target: [0.0, 0.5, 0.0],
-            fov: 40.0,
+            position: [0.0, 13.0, 17.0],
+            target: [0.0, 0.0, 0.0],
+            fov: 50.0,
         },
         hud: SceneHud {
             total_value_label: Some(total_value_label),
