@@ -71,10 +71,15 @@ pub const ROOM_WALL_HEIGHT: f32 = 0.85;
 pub const ROOM_WALL_THICKNESS: f32 = 0.10;
 pub const ROOM_CORNER_RADIUS: f32 = 0.22;
 
+/// Y-level of the inner floor surface inside a storage room.
+/// Must match frontend: baseH(0.28) + inner floor thickness(0.05) = 0.33
+pub const ROOM_FLOOR_Y: f32 = 0.33;
+
 /// Card grid configuration inside a zone.
+/// Cartridge size: W=1.15, D=0.18 → step X=1.35, Z=0.40 (tight slot grid).
 pub const CARD_COLS: usize = 5;
-pub const CARD_STEP_X: f32 = 1.6;
-pub const CARD_STEP_Z: f32 = 1.3;
+pub const CARD_STEP_X: f32 = 1.35;
+pub const CARD_STEP_Z: f32 = 0.42;
 
 /// Resolved layout for a single product card.
 #[derive(Debug, Clone, Copy)]
@@ -111,7 +116,7 @@ pub fn product_position_in_zone(zone: ZoneKey, index_in_zone: usize) -> [f32; 3]
     let row = (index_in_zone / CARD_COLS) as f32;
     [
         base[0] + (col - (CARD_COLS as f32 - 1.0) / 2.0) * CARD_STEP_X,
-        base[1],
+        ROOM_FLOOR_Y,   // ← sit ON the inner floor, not floating at y=0
         base[2] + (row - 1.0) * CARD_STEP_Z,
     ]
 }
