@@ -314,6 +314,74 @@ impl ToolExecutor {
             }
         }
 
+        // ── CreateDish: резолвим recipe_name → recipe_id, валидируем цену,
+        // проверяем уникальность имени блюда в рамках тенанта.
+        if matches!(write_call.tool, CopilotTool::CreateDish) {
+            match self.resolve_create_dish_preview(ctx, &write_call.args).await {
+                CreateDishPreview::Ok { dish_name, recipe_id, recipe_name, selling_price_cents, description, dish_changes } => {
+                    if let Some(obj) = payload.as_object_mut() {
+                        obj.insert("dish_name".to_string(), json!(dish_name));
+                        obj.insert("recipe_id".to_string(), json!(recipe_id.to_string()));
+                        obj.insert("selling_price_cents".to_string(), json!(selling_price_cents));
+                        if let Some(d) = description {
+                            obj.insert("description".to_string(), json!(d));
+                        }
+                        // Keep recipe_name for display
+                        obj.insert("recipe_name".to_string(), json!(recipe_name));
+                    }
+                    changes = dish_changes;
+                }
+                CreateDishPreview::RecipeNotFound { query } => {
+                    let info = ToolResult {
+                        tool_name: "create_dish_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "recipe_not_found",
+                            "query": query,
+                            "explanation": format!("No recipe named '{}' found. Create the recipe first or check the name.", query),
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                CreateDishPreview::AmbiguousRecipe { query, candidates } => {
+                    let info = ToolResult {
+                        tool_name: "create_dish_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "ambiguous_recipe",
+                            "query": query,
+                            "candidates": candidates,
+                            "explanation": "Multiple recipes matched. Ask the user to be more specific.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                CreateDishPreview::DuplicateDishName { name } => {
+                    let info = ToolResult {
+                        tool_name: "create_dish_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "dish_name_already_exists",
+                            "dish_name": name,
+                            "explanation": "A dish with this name already exists. Choose a different name or update the existing dish price.",
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+                CreateDishPreview::Invalid { reason } => {
+                    let info = ToolResult {
+                        tool_name: "create_dish_skipped".to_string(),
+                        data: json!({
+                            "skipped": true,
+                            "reason": "invalid_args",
+                            "explanation": reason,
+                        }),
+                    };
+                    return (None, Some(info));
+                }
+            }
+        }
+
         let plan_type = tool_to_plan_type(&write_call.tool);
 
         (Some(ActionPlan {
@@ -749,6 +817,154 @@ impl ToolExecutor {
         ))
     }
 
+    /// Pre-validate args для CreateDish: резолвим recipe_name → recipe_id,
+    /// проверяем selling_price > 0, проверяем уникальность имени блюда.
+    async fn resolve_create_dish_preview(
+        &self,
+        ctx: &CopilotContext,
+        args: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> CreateDishPreview {
+        // 1. dish_name (required)
+        let dish_name = match args.get("dish_name")
+            .or_else(|| args.get("name"))
+            .and_then(|v| v.as_str())
+        {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => return CreateDishPreview::Invalid { reason: "missing dish_name".into() },
+        };
+
+        // 2. selling_price_cents (required, > 0)
+        let selling_price_cents: i64 = if let Some(c) = args.get("selling_price_cents").and_then(|v| v.as_i64()) {
+            c
+        } else if let Some(eur) = args.get("selling_price").and_then(|v| v.as_f64()) {
+            (eur * 100.0).round() as i64
+        } else {
+            return CreateDishPreview::Invalid { reason: "missing selling_price_cents (or selling_price in EUR)".into() };
+        };
+        if selling_price_cents <= 0 {
+            return CreateDishPreview::Invalid { reason: "selling_price must be greater than 0".into() };
+        }
+
+        // 3. recipe_name (required) → resolve to recipe_id
+        let recipe_query = match args.get("recipe_name")
+            .or_else(|| args.get("recipe"))
+            .and_then(|v| v.as_str())
+        {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => return CreateDishPreview::Invalid { reason: "missing recipe_name — which recipe should this dish be based on?".into() },
+        };
+
+        let description = args.get("description").and_then(|v| v.as_str()).map(str::to_string);
+
+        // 4. Search recipes by name (list all, filter case-insensitive)
+        let pagination = crate::shared::pagination::PaginationParams { page: Some(1), per_page: Some(200) };
+        let recipes = match self.services.recipes_v1.list_recipes(ctx.tenant_id.clone(), &pagination).await {
+            Ok(p) => p.items,
+            Err(_) => return CreateDishPreview::Invalid { reason: "could not load recipes".into() },
+        };
+
+        let q_low = recipe_query.to_lowercase();
+        let exact: Vec<_> = recipes.iter().filter(|r| r.name().as_str().to_lowercase() == q_low).collect();
+        let partial: Vec<_> = recipes.iter().filter(|r| r.name().as_str().to_lowercase().contains(&q_low)).collect();
+
+        let chosen_recipe = if exact.len() == 1 {
+            exact[0]
+        } else if exact.is_empty() && partial.len() == 1 {
+            partial[0]
+        } else if exact.is_empty() && partial.is_empty() {
+            return CreateDishPreview::RecipeNotFound { query: recipe_query };
+        } else {
+            let candidates: Vec<String> = if !exact.is_empty() {
+                exact.iter().map(|r| r.name().as_str().to_string()).collect()
+            } else {
+                partial.iter().map(|r| r.name().as_str().to_string()).collect()
+            };
+            return CreateDishPreview::AmbiguousRecipe { query: recipe_query, candidates };
+        };
+
+        let recipe_id = chosen_recipe.id();
+        let recipe_name = chosen_recipe.name().as_str().to_string();
+
+        // 5. Check dish name uniqueness (case-insensitive)
+        let dish_pagination = crate::shared::pagination::PaginationParams { page: Some(1), per_page: Some(200) };
+        if let Ok((existing_dishes, _)) = self.services.dishes.list_dishes(ctx.tenant_id.clone(), false, &dish_pagination).await {
+            let dname_low = dish_name.to_lowercase();
+            if existing_dishes.iter().any(|d| d.name().as_str().to_lowercase() == dname_low) {
+                return CreateDishPreview::DuplicateDishName { name: dish_name };
+            }
+        }
+
+        // 6. Build preview changes
+        let dish_changes = vec![
+            ActionChange {
+                entity: format!("Dish: {}", dish_name),
+                field: "recipe".to_string(),
+                before: None,
+                after: recipe_name.clone(),
+                unit: None,
+            },
+            ActionChange {
+                entity: format!("Dish: {}", dish_name),
+                field: "selling_price".to_string(),
+                before: None,
+                after: format!("€{:.2}", selling_price_cents as f64 / 100.0),
+                unit: Some("EUR".to_string()),
+            },
+        ];
+
+        CreateDishPreview::Ok {
+            dish_name,
+            recipe_id: recipe_id.as_uuid(),
+            recipe_name,
+            selling_price_cents,
+            description,
+            dish_changes,
+        }
+    }
+
+    /// Создать блюдо из уже резолвнутого payload (после confirmation).
+    async fn execute_create_dish(
+        &self,
+        tenant_id: TenantId,
+        payload: &serde_json::Value,
+    ) -> AppResult<String> {
+        let dish_name_str = payload.get("dish_name").and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("dish_name is required"))?;
+        let recipe_id_str = payload.get("recipe_id").and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::validation("recipe_id is required (resolver must run first)"))?;
+        let selling_price_cents = payload.get("selling_price_cents").and_then(|v| v.as_i64())
+            .ok_or_else(|| AppError::validation("selling_price_cents is required"))?;
+        let description = payload.get("description").and_then(|v| v.as_str()).map(str::to_string);
+
+        let recipe_uuid = Uuid::parse_str(recipe_id_str)
+            .map_err(|_| AppError::validation("invalid recipe_id UUID"))?;
+        let recipe_id = crate::domain::RecipeId::from_uuid(recipe_uuid);
+        let dish_name = crate::domain::DishName::new(dish_name_str)?;
+        let selling_price = crate::domain::Money::from_cents(selling_price_cents)?;
+
+        let dish = self.services.dishes
+            .create_dish(tenant_id, recipe_id, dish_name, description, selling_price, None)
+            .await?;
+
+        let margin_info = match dish.profit_margin_percent() {
+            Some(m) => format!(", margin {:.1}%", m),
+            None => String::new(),
+        };
+        let cost_info = match dish.recipe_cost_cents() {
+            Some(c) => format!(", food cost €{:.2}", c as f64 / 100.0),
+            None => String::new(),
+        };
+
+        Ok(format!(
+            "Created dish '{}' (id: {}) linked to recipe. Price: €{:.2}{}{} .",
+            dish.name().as_str(),
+            dish.id().as_uuid(),
+            selling_price_cents as f64 / 100.0,
+            cost_info,
+            margin_info,
+        ))
+    }
+
     // ── Private: execute individual read tools ──────────────────────────────
 
     async fn execute_read_tool(
@@ -1152,6 +1368,9 @@ impl ToolExecutor {
             }
             CopilotTool::CreateRecipe => {
                 self.execute_create_recipe(user_id, tenant_id, &plan.payload).await
+            }
+            CopilotTool::CreateDish => {
+                self.execute_create_dish(tenant_id, &plan.payload).await
             }
             _ => {
                 tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
@@ -1628,6 +1847,27 @@ enum CreateRecipePreview {
     Invalid { reason: String },
 }
 
+/// Внутренний результат пред-валидации для CreateDish.
+enum CreateDishPreview {
+    /// Recipe найден, имя блюда уникально, цена валидна — готов к подтверждению.
+    Ok {
+        dish_name: String,
+        recipe_id: Uuid,
+        recipe_name: String,
+        selling_price_cents: i64,
+        description: Option<String>,
+        dish_changes: Vec<ActionChange>,
+    },
+    /// Рецепт с таким именем не найден.
+    RecipeNotFound { query: String },
+    /// Несколько рецептов подошли под запрос.
+    AmbiguousRecipe { query: String, candidates: Vec<String> },
+    /// Блюдо с таким именем уже существует.
+    DuplicateDishName { name: String },
+    /// Некорректные args (цена ≤ 0, missing fields).
+    Invalid { reason: String },
+}
+
 /// Конвертирует quantity из user_unit в target_unit (default_unit ингредиента).
 /// Поддерживает g↔kg и l↔ml. Прочие комбинации требуют точного совпадения юнитов.
 fn convert_quantity(
@@ -1660,6 +1900,7 @@ fn tool_to_plan_type(tool: &CopilotTool) -> ActionPlanType {
         CopilotTool::SendPurchaseOrder       => ActionPlanType::SendPurchaseOrder,
         CopilotTool::UpdateDishPrice         => ActionPlanType::UpdateDishPrice,
         CopilotTool::CreateRecipe            => ActionPlanType::CreateRecipe,
+        CopilotTool::CreateDish              => ActionPlanType::CreateDish,
         CopilotTool::GenerateLabRecipe       => ActionPlanType::GenerateLabRecipe,
         CopilotTool::GenerateProductReport   => ActionPlanType::GenerateProductReport,
         CopilotTool::SimulateLabProduct      => ActionPlanType::SimulateLabProduct,

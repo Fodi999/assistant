@@ -116,6 +116,11 @@ pub fn validate_write_execution(
                 return Err(AppError::authorization("No permission to create recipes."));
             }
         }
+        ActionPlanType::CreateDish => {
+            if !ctx.has_permission(&CopilotPermission::WriteDishes) {
+                return Err(AppError::authorization("No permission to create dishes."));
+            }
+        }
         ActionPlanType::NoWriteAction => {}
     }
 
@@ -142,6 +147,11 @@ fn check_write_permission(ctx: &CopilotContext, tool: &CopilotTool) -> Option<St
         CopilotTool::CreateRecipe => {
             if !ctx.has_permission(&CopilotPermission::WriteRecipes) {
                 return Some("No permission to create recipes.".to_string());
+            }
+        }
+        CopilotTool::CreateDish => {
+            if !ctx.has_permission(&CopilotPermission::WriteDishes) {
+                return Some("No permission to create dishes.".to_string());
             }
         }
         CopilotTool::GenerateLabRecipe

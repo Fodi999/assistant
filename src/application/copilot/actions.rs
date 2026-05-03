@@ -35,6 +35,7 @@ pub enum ActionPlanType {
     GenerateProductReport,
     SimulateLabProduct,
     CreateRecipe,
+    CreateDish,
     NoWriteAction,
 }
 

@@ -125,6 +125,7 @@ INVENTORY ARGS SCHEMA (use exactly these keys):
 - send_purchase_order:      {{ "id": "<uuid|'last'>" }}
 - get_daily_briefing:       {{ "expiring_days": <int, optional, default 3>, "low_stock_threshold": <number, optional, default 1.0> }}
 - create_recipe:            {{ "recipe_name": "<English title>", "servings": <positive int>, "ingredients": [{{ "ingredient_name": "<English catalog name>", "quantity": <number>, "unit": "<g|kg|ml|l|pcs>" }}] }}
+- create_dish:              {{ "dish_name": "<English name of the dish>", "recipe_name": "<English name of existing recipe>", "selling_price_cents": <positive int>, "description": "<optional str>" }}
 
 DAILY BRIEFING INTENT HINTS (HIGHEST PRIORITY for these phrases):
 - "Что сегодня важно / что важно сегодня / brief me / brief me on today / дневной отчёт / дневной отчет / daily briefing / daily report / что нужно сделать / what should I do today / итоги дня / today summary / overview / обзор / morning briefing / утренний обзор" → get_daily_briefing
@@ -148,6 +149,15 @@ CREATE RECIPE INTENT HINTS:
 - Convert all quantities to NUMBERS in the unit specified by the user. Default unit=g for solids, ml for liquids, pcs for items. If user says "100 г курицы" → quantity=100, unit="g". If user says "0.5 кг" → quantity=0.5, unit="kg" (or quantity=500, unit="g" — both work).
 - servings: parse from phrases like "на 4 порции", "4 servings", "порций 4". If absent, default to 1.
 - If user mentions BOTH a recipe and a price ("Создай блюдо Цезарь: 100г курицы..., продаём за 15 евро"), ONLY emit create_recipe for now — dish creation is a separate step.
+
+CREATE DISH INTENT HINTS:
+- "Создай блюдо / create dish / add dish / добавь в меню / добавь блюдо / put on menu" → create_dish (requires_confirmation=true)
+- dish_name: ALWAYS translate to English (e.g. "Цезарь" → "Caesar Salad", "борщ" → "Borscht").
+- recipe_name: name of EXISTING recipe in the system. Translate to English. Exact or partial match.
+- selling_price_cents: convert price to cents (e.g. "15€" → 1500, "18.50 евро" → 1850).
+- description: optional short description of the dish, translated to English.
+- If user says "create dish Caesar at €18 using Caesar Base recipe" → {{ "dish_name": "Caesar Salad", "recipe_name": "Caesar Base", "selling_price_cents": 1800 }}
+- If recipe_name is unknown or not mentioned, ask user which recipe to link before emitting create_dish.
 
 INVENTORY ADJUSTMENT INTENT HINTS:
 - "Исправь / поставь / set / должно быть / fix / correct / adjust / должно стать / make it" with a TARGET quantity → adjust_inventory_quantity
@@ -236,6 +246,7 @@ fn parse_tool_name(name: &str) -> Option<CopilotTool> {
         "write_off_inventory"        => Some(CopilotTool::WriteOffInventory),
         "send_purchase_order"        => Some(CopilotTool::SendPurchaseOrder),
         "create_recipe"              => Some(CopilotTool::CreateRecipe),
+        "create_dish"                => Some(CopilotTool::CreateDish),
         "generate_lab_recipe"        => Some(CopilotTool::GenerateLabRecipe),
         "generate_3d_food_model"     => Some(CopilotTool::Generate3DFoodModel),
         "simulate_lab_product"       => Some(CopilotTool::SimulateLabProduct),
