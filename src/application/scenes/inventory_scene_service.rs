@@ -185,6 +185,109 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| haystack.contains(n))
 }
 
+/// Per-category accent color (overrides the severity theme for the card tint).
+/// This makes cards visually distinct by product type even within the same zone.
+fn category_color(category: &str) -> Option<&'static str> {
+    let c = category.to_lowercase();
+    if contains_any(&c, &["meat", "chicken", "beef", "pork", "мяс", "курин"]) {
+        return Some("#f87171"); // red-400
+    }
+    if contains_any(&c, &["fish", "рыб", "seafood"]) {
+        return Some("#38bdf8"); // sky-400
+    }
+    if contains_any(&c, &["dairy", "cheese", "milk", "молоч", "сыр"]) {
+        return Some("#a78bfa"); // violet-400
+    }
+    if contains_any(&c, &["egg", "яйц"]) {
+        return Some("#fde68a"); // amber-200
+    }
+    if contains_any(&c, &["veg", "tomato", "salad", "зелен", "овощ"]) {
+        return Some("#4ade80"); // green-400
+    }
+    if contains_any(&c, &["fruit", "apple", "berry", "фрукт", "ягод"]) {
+        return Some("#fb923c"); // orange-400
+    }
+    if contains_any(&c, &["grain", "rice", "pasta", "flour", "круп", "мук"]) {
+        return Some("#d4a574"); // tan
+    }
+    if contains_any(&c, &["spice", "herb", "special", "спец"]) {
+        return Some("#f472b6"); // pink-400
+    }
+    if contains_any(&c, &["oil", "масл"]) {
+        return Some("#facc15"); // yellow-400
+    }
+    if contains_any(&c, &["drink", "water", "juice", "напит", "сок"]) {
+        return Some("#67e8f9"); // cyan-300
+    }
+    if contains_any(&c, &["frozen", "мороз", "ice"]) {
+        return Some("#93c5fd"); // blue-300
+    }
+    None
+}
+
+/// Category → emoji fallback icon.
+fn category_emoji(category: &str) -> &'static str {
+    let c = category.to_lowercase();
+    if contains_any(&c, &["meat", "chicken", "beef", "pork", "мяс", "курин"]) {
+        return "🥩";
+    }
+    if contains_any(&c, &["fish", "рыб", "seafood"]) {
+        return "🐟";
+    }
+    if contains_any(&c, &["dairy", "cheese", "milk", "молоч", "сыр"]) {
+        return "🧀";
+    }
+    if contains_any(&c, &["egg", "яйц"]) {
+        return "🥚";
+    }
+    if contains_any(&c, &["veg", "tomato", "salad", "зелен", "овощ"]) {
+        return "🥦";
+    }
+    if contains_any(&c, &["fruit", "apple", "berry", "фрукт", "ягод"]) {
+        return "🍎";
+    }
+    if contains_any(&c, &["grain", "rice", "pasta", "flour", "круп", "мук"]) {
+        return "🌾";
+    }
+    if contains_any(&c, &["spice", "herb", "special", "спец"]) {
+        return "🌿";
+    }
+    if contains_any(&c, &["oil", "масл"]) {
+        return "🫙";
+    }
+    if contains_any(&c, &["sauce", "соус"]) {
+        return "🥫";
+    }
+    if contains_any(&c, &["drink", "water", "juice", "напит", "сок"]) {
+        return "🧃";
+    }
+    if contains_any(&c, &["frozen", "мороз", "ice"]) {
+        return "🧊";
+    }
+    "📦"
+}
+
+/// Format the expiry countdown as a short human-readable string.
+fn expiry_label(expires_at: OffsetDateTime) -> String {
+    let now = OffsetDateTime::now_utc();
+    let diff = expires_at - now;
+    let days = diff.whole_days();
+    if days < 0 {
+        return "EXPIRED".to_string();
+    }
+    if days == 0 {
+        let hours = diff.whole_hours();
+        if hours <= 0 {
+            return "EXPIRED".to_string();
+        }
+        return format!("{}h left", hours);
+    }
+    if days == 1 {
+        return "tomorrow".to_string();
+    }
+    format!("{}d left", days)
+}
+
 fn product_position_in_zone(zone: ZoneKey, index_in_zone: usize) -> [f32; 3] {
     const COLS: usize = 5;
     const STEP_X: f32 = 1.6;
@@ -298,8 +401,17 @@ pub fn build_scene_from_items(
         let (theme, zone, idx_in_zone) = item_meta[i];
         let position = product_position_in_zone(zone, idx_in_zone);
         let asset_key = infer_asset_key(&item.product.category);
-        let short_qty = format!("{} {}", item.remaining_quantity, item.product.base_unit);
+        let emoji = category_emoji(&item.product.category);
+        let expiry = expiry_label(item.expires_at);
+        let short_qty = format!("{:.2} {} · {}", item.remaining_quantity, item.product.base_unit, expiry);
         let item_id = item.id.to_string();
+        // Category color overrides severity theme — cards look distinct by type.
+        // For expired/critical we keep severity red to keep the warning prominent.
+        let card_color = if matches!(theme, MaterialTheme::Expired | MaterialTheme::Critical) {
+            None
+        } else {
+            category_color(&item.product.category).map(|s| s.to_string())
+        };
 
         entities.push(SceneEntity {
             id: format!("product_{}", item_id),
@@ -310,7 +422,7 @@ pub fn build_scene_from_items(
             },
             material: EntityMaterial {
                 theme,
-                color: None,
+                color: card_color,
                 emissive: emissive_for_theme(theme),
                 opacity: 1.0,
             },
@@ -319,7 +431,7 @@ pub fn build_scene_from_items(
                 subtitle: Some(short_qty),
                 asset_key: Some(asset_key.to_string()),
                 image_url: item.product.image_url.clone(),
-                fallback_icon: None,
+                fallback_icon: Some(emoji.to_string()),
                 badges: vec![item.product.category.clone()],
             }),
             gameplay: Some(EntityGameplay {
