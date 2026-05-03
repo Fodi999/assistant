@@ -26,6 +26,7 @@ pub mod recipe_ai_insights; // AI insights for recipes
 pub mod recipe_v2; // V2 with translations
 pub mod report;
 pub mod routes;
+pub mod scenes; // 🆕 Game-like SceneState endpoints (GET /api/scenes/inventory)
 pub mod smart; // 🆕 SmartService — POST /api/smart/ingredient
 pub mod smart_parse; // 🆕 SmartParse — POST /api/smart/parse
 pub mod tenant_ingredient;

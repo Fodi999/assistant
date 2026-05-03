@@ -508,6 +508,19 @@ pub fn create_router(
                 .route("/inventory/health", get(get_health))
                 .with_state(inventory_service.clone()),
         )
+        // 🆕 Visual Workspace — game-like SceneState (GET /api/scenes/inventory)
+        .merge({
+            let scene_service =
+                crate::application::scenes::InventorySceneService::shared(
+                    inventory_service.clone(),
+                );
+            Router::new()
+                .route(
+                    "/scenes/inventory",
+                    get(crate::interfaces::http::scenes::get_inventory_scene),
+                )
+                .with_state(scene_service)
+        })
         // 🆕 Cook Suggestions — smart recipe suggestions from inventory
         .merge({
             let cook_service = Arc::new(

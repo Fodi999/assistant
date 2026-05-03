@@ -13,6 +13,7 @@ pub mod recipe;
 pub mod recipe_ai_insights; // AI-generated insights
 pub mod recipe_v2; // V2 with translation support
 pub mod report;
+pub mod scene; // 🆕 Game-like SceneState contract (mirrors blog/components/visual/sceneTypes.ts)
 pub mod tenant;
 pub mod tenant_ingredient;
 pub mod tools; // 🆕 Chef tools domain (unit converter, yield, scale)

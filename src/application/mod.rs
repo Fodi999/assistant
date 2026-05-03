@@ -23,6 +23,7 @@ pub mod recipe_v2_service; // V2 recipe service
 pub mod recipe_validator; // Rule-based validator
 pub mod report;
 pub mod rulebot; // 🆕 RuleBot orchestrator — Culinary Intelligence Platform
+pub mod scenes; // 🆕 SceneState builders (game-like architecture for visual workspace)
 pub mod sous_chef; // 🆕 Sous Chef — AI meal planner
 pub mod smart_parse; // 🆕 SmartParse — deterministic text → ingredient parser
 pub mod smart_service; // 🆕 SmartService — intelligent ingredient aggregator
