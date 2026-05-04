@@ -53,7 +53,7 @@ pub fn generate_cube(color_hex: &str) -> Mesh {
     let [front, back, sides] = extrude_polygon(&pts, &opts).expect("cube extrude failed");
     let color = hex_to_rgb(color_hex);
     let mut b = MeshBuilder::new();
-    let g = b.add_group(Material::solid("shape_cube", color).with_pbr(0.35, 0.45).with_class("metal"));
+    let g = b.add_group(Material::solid("shape_cube", color).with_pbr(0.45, 0.0).with_class("opaque"));
     b.add_part(g, &front); b.add_part(g, &back); b.add_part(g, &sides);
     b.build()
 }
