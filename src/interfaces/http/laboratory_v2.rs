@@ -309,6 +309,12 @@ pub async fn tune_surface(
 pub struct DebugGlbQuery {
     #[serde(default)]
     pub quality: Option<String>,
+    /// Override subdivisions for shape_cube (1–5). If absent, quality-derived default is used.
+    #[serde(default)]
+    pub subdivisions: Option<u32>,
+    /// Corner bevel strength 0.0–1.0 for shape_cube.
+    #[serde(default)]
+    pub bevel: Option<f32>,
 }
 
 pub async fn debug_glb(
@@ -320,7 +326,22 @@ pub async fn debug_glb(
     use axum::body::Body;
 
     let quality = GeometryQuality::from_opt(query.quality.as_deref());
-    let mesh    = dispatch_with_quality(&object_type, None, quality)?;
+
+    // Build an optional spec JSON for shape_cube subdivision/bevel overrides.
+    let spec_override: Option<serde_json::Value> = if object_type == "shape_cube"
+        && (query.subdivisions.is_some() || query.bevel.is_some())
+    {
+        Some(serde_json::json!({
+            "shape": {
+                "subdivisions": query.subdivisions,
+                "bevel":        query.bevel,
+            }
+        }))
+    } else {
+        None
+    };
+
+    let mesh    = dispatch_with_quality(&object_type, spec_override.as_ref(), quality)?;
     let export  = export_glb(&mesh)?;
 
     let response = Response::builder()
