@@ -71,20 +71,22 @@ pub fn generate_cube_grid(color_hex: &str, subdivisions: u32, bevel: f32) -> Mes
             .with_class("opaque"),
     );
 
-    // Each face defined by: corner origin + u_step + v_step + face normal
-    // Winding is CCW when viewed from outside.
+    // Each face defined by: corner origin + u_step + v_step + face normal.
+    // Winding is CCW when viewed from *outside* the cube, i.e. the geometric
+    // normal `u_axis × v_axis` MUST equal `face_normal`. Otherwise the face
+    // gets back-face-culled and the cube renders as an open box.
     let face_defs: [([f32;3], [f32;3], [f32;3], [f32;3]); 6] = [
-        // +Z front
+        // +Z front:  u=+X, v=+Y, u×v=+Z ✓
         ([-s, -s,  s], [ 1.0, 0.0, 0.0], [0.0,  1.0, 0.0], [0.0, 0.0,  1.0]),
-        // -Z back  (flipped u so winding stays CCW)
+        // -Z back:   u=-X, v=+Y, u×v=-Z ✓
         ([ s, -s, -s], [-1.0, 0.0, 0.0], [0.0,  1.0, 0.0], [0.0, 0.0, -1.0]),
-        // +X right
-        ([ s, -s, -s], [0.0, 0.0,  1.0], [0.0,  1.0, 0.0], [ 1.0, 0.0, 0.0]),
-        // -X left
-        ([-s, -s,  s], [0.0, 0.0, -1.0], [0.0,  1.0, 0.0], [-1.0, 0.0, 0.0]),
-        // +Y top
+        // +X right:  u=+Y, v=+Z, u×v=+X ✓  (was u=+Z,v=+Y → -X bug)
+        ([ s, -s, -s], [0.0,  1.0, 0.0], [0.0, 0.0,  1.0], [ 1.0, 0.0, 0.0]),
+        // -X left:   u=+Y, v=-Z, u×v=-X ✓  (was u=-Z,v=+Y → +X bug)
+        ([-s, -s,  s], [0.0,  1.0, 0.0], [0.0, 0.0, -1.0], [-1.0, 0.0, 0.0]),
+        // +Y top:    u=+X, v=-Z, u×v=+Y ✓
         ([-s,  s,  s], [ 1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0,  1.0, 0.0]),
-        // -Y bottom
+        // -Y bottom: u=+X, v=+Z, u×v=-Y ✓
         ([-s, -s, -s], [ 1.0, 0.0, 0.0], [0.0, 0.0,  1.0], [0.0, -1.0, 0.0]),
     ];
 
@@ -510,6 +512,35 @@ mod tests {
         assert!((max_sharp - 0.866).abs() < 0.01, "sharp corner len ≈ √3/2, got {max_sharp}");
         assert!(max_smooth < max_sharp - 0.1,
             "bevel=1 must pull corners inward (got {max_smooth} vs {max_sharp})");
+    }
+
+    /// Regression: every triangle's geometric normal (from CCW winding) must
+    /// agree with its declared vertex normal. If any face is wound CW the dot
+    /// product flips sign and back-face culling makes the cube look like an
+    /// open box. (Bug discovered on 2026-05-04 when +X / -X side faces had
+    /// `u_axis × v_axis = -face_normal`.)
+    #[test]
+    fn cube_faces_wound_outward() {
+        for &(n_sub, label) in &[(1u32, "sharp"), (3u32, "subdivided")] {
+            let m = generate_cube_grid("#F472B6", n_sub, 0.0);
+            for (i, tri) in m.faces.iter().enumerate() {
+                let p0 = m.vertices[tri[0]];
+                let p1 = m.vertices[tri[1]];
+                let p2 = m.vertices[tri[2]];
+                let e1 = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
+                let e2 = [p2[0]-p0[0], p2[1]-p0[1], p2[2]-p0[2]];
+                // geometric normal = e1 × e2
+                let geo = [
+                    e1[1]*e2[2] - e1[2]*e2[1],
+                    e1[2]*e2[0] - e1[0]*e2[2],
+                    e1[0]*e2[1] - e1[1]*e2[0],
+                ];
+                let n0 = m.normals[tri[0]];
+                let dot = geo[0]*n0[0] + geo[1]*n0[1] + geo[2]*n0[2];
+                assert!(dot > 0.0,
+                    "{label} cube tri #{i} ({:?}) wound inward: geo·normal = {dot}", tri);
+            }
+        }
     }
 
     // ── Parasolid-style cylinder / cone / torus ──────────────────────────────
