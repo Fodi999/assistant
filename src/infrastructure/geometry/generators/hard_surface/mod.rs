@@ -12,8 +12,10 @@
 
 pub mod card;
 pub mod dock;
+pub mod organic_sphere;
 pub mod sci_fi_card;
 
 pub use card::generate_card;
 pub use dock::generate_dock;
+pub use organic_sphere::generate_organic_sphere;
 pub use sci_fi_card::generate_sci_fi_card;

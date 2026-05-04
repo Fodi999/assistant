@@ -1,13 +1,15 @@
 //! Geometry dispatcher — routes `object_type` string → generator.
 //!
-//! Implemented (PR #4 → PR #26):
-//!   * `sauce_in_bowl`  — bowl frustum + swirl sauce surface (Vision surface params since PR #26)
-//!   * `bottled_sauce`  — body + neck + cap + liquid (glass / plastic)
-//!   * `jar_product`    — wide glass jar + product + metal lid
-//!   * `plate_food`     — ceramic plate + radial food mound (PR #14)
-//!   * `flat_card`      — fallback rectangular card with product photo
-//!
-//! Anything else (`unknown`, …) falls back to `flat_card`.
+//! Implemented:
+//!   * `sauce_in_bowl`   — bowl frustum + swirl sauce surface
+//!   * `bottled_sauce`   — body + neck + cap + liquid
+//!   * `jar_product`     — wide glass jar + product + metal lid
+//!   * `plate_food`      — ceramic plate + radial food mound
+//!   * `product_card`    — rounded-rectangle card
+//!   * `card_dock`       — hard-surface B-Rep-lite slot/cradle
+//!   * `sci_fi_card`     — Plasticity-style precision hard-surface card
+//!   * `organic_sphere`  — ZBrush-style UV sphere (3 material groups)
+//!   * `flat_card`       — fallback rectangular card
 
 use serde_json::Value;
 
@@ -17,6 +19,7 @@ use crate::infrastructure::geometry::generators::food::{
 };
 use crate::infrastructure::geometry::generators::hard_surface::card;
 use crate::infrastructure::geometry::generators::hard_surface::sci_fi_card;
+use crate::infrastructure::geometry::generators::hard_surface::organic_sphere;
 use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::geometry::mesh::Mesh;
 use crate::shared::AppError;
@@ -170,6 +173,21 @@ pub fn dispatch_with_quality(
                 ..SciFiCardSpec::default()
             };
             Ok(generate_sci_fi_card(&spec_obj))
+        }
+        // Organic Sphere — ZBrush-style UV sphere, 3 material groups.
+        // Spec fields (all optional):
+        //   /sphere/radius     — radius m (default 0.12)
+        //   /sphere/color_hex  — base colour (default #B8B8C8)
+        "organic_sphere" => {
+            use organic_sphere::{generate_organic_sphere, OrganicSphereSpec};
+            let spec_obj = OrganicSphereSpec {
+                radius:    extract_f32(spec, "/sphere/radius")     .unwrap_or(0.12),
+                color_hex: extract_str(spec, "/sphere/color_hex")
+                    .unwrap_or("#B8B8C8")
+                    .to_string(),
+                ..OrganicSphereSpec::with_quality(quality)
+            };
+            Ok(generate_organic_sphere(&spec_obj))
         }
         // effect on the simple textured rectangle.
         _ => {
