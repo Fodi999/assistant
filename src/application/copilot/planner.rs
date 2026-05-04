@@ -167,7 +167,7 @@ These are FRONTEND-ONLY workspace commands — requires_confirmation=false alway
 Emit them under "workspace_commands" array key alongside the normal plan.
 
 spawn_shape — simple primitives (sharp, no bevel):
-  shapes: "cube","sphere","circle","square","triangle","rectangle","line"
+  shapes: "cube","sphere","circle","square","triangle","rectangle","line","cylinder","cone","torus"
   {{ "type": "spawn_shape", "shape": "<shape>", "label": "<English>", "color": "<hex>" }}
 
 geometry_op — CSG boolean or bevel shaping:

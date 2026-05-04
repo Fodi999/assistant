@@ -229,6 +229,28 @@ pub fn dispatch_with_quality(
             let c = extract_str(spec, "/shape/color_hex").unwrap_or("#FACC15");
             Ok(prim::generate_sphere(c, quality))
         }
+        "shape_cylinder" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c      = extract_str(spec, "/shape/color_hex").unwrap_or("#38BDF8");
+            let radius = extract_f32(spec, "/shape/radius").unwrap_or(0.5);
+            let height = extract_f32(spec, "/shape/height").unwrap_or(1.0);
+            Ok(prim::generate_cylinder(c, radius, height, quality))
+        }
+        "shape_cone" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c       = extract_str(spec, "/shape/color_hex").unwrap_or("#FB923C");
+            let r_bot   = extract_f32(spec, "/shape/radius_bottom").unwrap_or(0.5);
+            let r_top   = extract_f32(spec, "/shape/radius_top").unwrap_or(0.0);
+            let height  = extract_f32(spec, "/shape/height").unwrap_or(1.0);
+            Ok(prim::generate_cone(c, r_bot, r_top, height, quality))
+        }
+        "shape_torus" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c       = extract_str(spec, "/shape/color_hex").unwrap_or("#A78BFA");
+            let r_major = extract_f32(spec, "/shape/major_radius").unwrap_or(0.5);
+            let r_minor = extract_f32(spec, "/shape/minor_radius").unwrap_or(0.15);
+            Ok(prim::generate_torus(c, r_major, r_minor, quality))
+        }
         "shape_line" => {
             use crate::infrastructure::geometry::generators::primitives as prim;
             let c = extract_str(spec, "/shape/color_hex").unwrap_or("#94A3B8");

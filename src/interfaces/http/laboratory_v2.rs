@@ -315,6 +315,21 @@ pub struct DebugGlbQuery {
     /// Corner bevel strength 0.0–1.0 for shape_cube.
     #[serde(default)]
     pub bevel: Option<f32>,
+    /// Radius for shape_cylinder / shape_cone (bottom radius).
+    #[serde(default)]
+    pub radius: Option<f32>,
+    /// Height for shape_cylinder / shape_cone.
+    #[serde(default)]
+    pub height: Option<f32>,
+    /// Top radius for shape_cone (0.0 = pure tip, > 0 = frustum).
+    #[serde(default)]
+    pub radius_top: Option<f32>,
+    /// Major radius (ring) for shape_torus.
+    #[serde(default)]
+    pub major_radius: Option<f32>,
+    /// Minor radius (tube) for shape_torus.
+    #[serde(default)]
+    pub minor_radius: Option<f32>,
 }
 
 pub async fn debug_glb(
@@ -327,18 +342,42 @@ pub async fn debug_glb(
 
     let quality = GeometryQuality::from_opt(query.quality.as_deref());
 
-    // Build an optional spec JSON for shape_cube subdivision/bevel overrides.
-    let spec_override: Option<serde_json::Value> = if object_type == "shape_cube"
-        && (query.subdivisions.is_some() || query.bevel.is_some())
-    {
-        Some(serde_json::json!({
-            "shape": {
-                "subdivisions": query.subdivisions,
-                "bevel":        query.bevel,
-            }
-        }))
-    } else {
-        None
+    // Build an optional spec JSON for primitive overrides.
+    let spec_override: Option<serde_json::Value> = match object_type.as_str() {
+        "shape_cube" if query.subdivisions.is_some() || query.bevel.is_some() => {
+            Some(serde_json::json!({
+                "shape": {
+                    "subdivisions": query.subdivisions,
+                    "bevel":        query.bevel,
+                }
+            }))
+        }
+        "shape_cylinder" if query.radius.is_some() || query.height.is_some() => {
+            Some(serde_json::json!({
+                "shape": {
+                    "radius": query.radius,
+                    "height": query.height,
+                }
+            }))
+        }
+        "shape_cone" if query.radius.is_some() || query.height.is_some() || query.radius_top.is_some() => {
+            Some(serde_json::json!({
+                "shape": {
+                    "radius_bottom": query.radius,
+                    "radius_top":    query.radius_top,
+                    "height":        query.height,
+                }
+            }))
+        }
+        "shape_torus" if query.major_radius.is_some() || query.minor_radius.is_some() => {
+            Some(serde_json::json!({
+                "shape": {
+                    "major_radius": query.major_radius,
+                    "minor_radius": query.minor_radius,
+                }
+            }))
+        }
+        _ => None,
     };
 
     let mesh    = dispatch_with_quality(&object_type, spec_override.as_ref(), quality)?;

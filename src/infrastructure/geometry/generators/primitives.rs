@@ -199,6 +199,246 @@ pub fn generate_line(color_hex: &str) -> Mesh {
     extrude_single(&pts, 0.03, color_hex, "shape_line", 0.0, 0.6)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Parasolid-style cylinder / cone / torus
+//
+// All three follow the same contract:
+//   • Watertight topology (caps + side meet, no T-junctions).
+//   • Split normals at hard edges (cap/side share position but not normal),
+//     so flat caps stay flat and curved sides stay smooth.
+//   • UVs follow the natural surface parameterisation (u = angle / 2π).
+//   • Dimensions in metres, centred at origin, +Y up.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Capped right cylinder centred at origin, axis = +Y.
+///
+/// * `radius`  — base radius in metres (default 0.5)
+/// * `height`  — full height in metres (default 1.0)
+/// * `quality` — drives radial segment count
+pub fn generate_cylinder(color_hex: &str, radius: f32, height: f32, quality: GeometryQuality) -> Mesh {
+    let r = radius.max(1e-4);
+    let h = height.max(1e-4);
+    let segs = quality.radial_segments().max(8);
+    let half = h * 0.5;
+    let color = hex_to_rgb(color_hex);
+    let mut b = MeshBuilder::new();
+    let g = b.add_group(
+        Material::solid("shape_cylinder", color)
+            .with_pbr(0.45, 0.0)
+            .with_class("opaque"),
+    );
+
+    // ── Side (smooth radial normals, split from caps) ──
+    let mut side_top: Vec<usize> = Vec::with_capacity(segs + 1);
+    let mut side_bot: Vec<usize> = Vec::with_capacity(segs + 1);
+    for i in 0..=segs {
+        let t = i as f32 / segs as f32;
+        let a = t * TAU;
+        let (sa, ca) = (a.sin(), a.cos());
+        let n = [ca, 0.0, sa];
+        side_top.push(b.add_vertex([r * ca,  half, r * sa], n, [t, 1.0]));
+        side_bot.push(b.add_vertex([r * ca, -half, r * sa], n, [t, 0.0]));
+    }
+    for i in 0..segs {
+        b.add_quad(g, side_bot[i], side_bot[i + 1], side_top[i + 1], side_top[i]);
+    }
+
+    // ── Top cap (+Y normal, separate vertex ring) ──
+    let top_center = b.add_vertex([0.0, half, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5]);
+    let mut top_rim: Vec<usize> = Vec::with_capacity(segs + 1);
+    for i in 0..=segs {
+        let t = i as f32 / segs as f32;
+        let a = t * TAU;
+        let (sa, ca) = (a.sin(), a.cos());
+        top_rim.push(b.add_vertex(
+            [r * ca, half, r * sa],
+            [0.0, 1.0, 0.0],
+            [0.5 + 0.5 * ca, 0.5 + 0.5 * sa],
+        ));
+    }
+    for i in 0..segs {
+        b.add_triangle(g, top_center, top_rim[i], top_rim[i + 1]);
+    }
+
+    // ── Bottom cap (-Y normal) ──
+    let bot_center = b.add_vertex([0.0, -half, 0.0], [0.0, -1.0, 0.0], [0.5, 0.5]);
+    let mut bot_rim: Vec<usize> = Vec::with_capacity(segs + 1);
+    for i in 0..=segs {
+        let t = i as f32 / segs as f32;
+        let a = t * TAU;
+        let (sa, ca) = (a.sin(), a.cos());
+        bot_rim.push(b.add_vertex(
+            [r * ca, -half, r * sa],
+            [0.0, -1.0, 0.0],
+            [0.5 + 0.5 * ca, 0.5 - 0.5 * sa],
+        ));
+    }
+    for i in 0..segs {
+        // CCW when viewed from below (= -Y)
+        b.add_triangle(g, bot_center, bot_rim[i + 1], bot_rim[i]);
+    }
+
+    b.build()
+}
+
+/// Cone / frustum centred at origin, axis = +Y.
+///
+/// * `radius_bottom` — bottom radius in metres
+/// * `radius_top`    — top radius in metres (0.0 → pure cone)
+/// * `height`        — full height
+///
+/// Side normals are tilted by the cone half-angle so shading is correct.
+pub fn generate_cone(
+    color_hex: &str,
+    radius_bottom: f32,
+    radius_top: f32,
+    height: f32,
+    quality: GeometryQuality,
+) -> Mesh {
+    let r0 = radius_bottom.max(0.0);
+    let r1 = radius_top.max(0.0);
+    let h  = height.max(1e-4);
+    let segs = quality.radial_segments().max(8);
+    let half = h * 0.5;
+    let color = hex_to_rgb(color_hex);
+    let mut b = MeshBuilder::new();
+    let g = b.add_group(
+        Material::solid("shape_cone", color)
+            .with_pbr(0.45, 0.0)
+            .with_class("opaque"),
+    );
+
+    // Slope vector for normal tilt: dr/dy in the meridian plane.
+    // Side normal at angle a is (cos·cosθ, sinθ, sin·cosθ) where
+    // tanθ = (r0 − r1) / h (cone leans inward at the top when r1 < r0).
+    let dr = r0 - r1;
+    let slope_len = (dr * dr + h * h).sqrt().max(1e-9);
+    let n_y  = dr / slope_len;     // +Y component (positive when narrowing toward top)
+    let n_xz = h  / slope_len;     // radial component
+
+    // ── Side ──
+    let mut top: Vec<usize> = Vec::with_capacity(segs + 1);
+    let mut bot: Vec<usize> = Vec::with_capacity(segs + 1);
+    for i in 0..=segs {
+        let t = i as f32 / segs as f32;
+        let a = t * TAU;
+        let (sa, ca) = (a.sin(), a.cos());
+        let n = [ca * n_xz, n_y, sa * n_xz];
+        top.push(b.add_vertex([r1 * ca,  half, r1 * sa], n, [t, 1.0]));
+        bot.push(b.add_vertex([r0 * ca, -half, r0 * sa], n, [t, 0.0]));
+    }
+    for i in 0..segs {
+        if r1 < 1e-5 {
+            // Pure tip → emit triangle (skip degenerate quad)
+            b.add_triangle(g, bot[i], bot[i + 1], top[i]);
+        } else {
+            b.add_quad(g, bot[i], bot[i + 1], top[i + 1], top[i]);
+        }
+    }
+
+    // ── Bottom cap (always present) ──
+    if r0 > 1e-5 {
+        let center = b.add_vertex([0.0, -half, 0.0], [0.0, -1.0, 0.0], [0.5, 0.5]);
+        let mut rim: Vec<usize> = Vec::with_capacity(segs + 1);
+        for i in 0..=segs {
+            let t = i as f32 / segs as f32;
+            let a = t * TAU;
+            let (sa, ca) = (a.sin(), a.cos());
+            rim.push(b.add_vertex(
+                [r0 * ca, -half, r0 * sa],
+                [0.0, -1.0, 0.0],
+                [0.5 + 0.5 * ca, 0.5 - 0.5 * sa],
+            ));
+        }
+        for i in 0..segs {
+            b.add_triangle(g, center, rim[i + 1], rim[i]);
+        }
+    }
+
+    // ── Top cap (only for frustum) ──
+    if r1 > 1e-5 {
+        let center = b.add_vertex([0.0, half, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5]);
+        let mut rim: Vec<usize> = Vec::with_capacity(segs + 1);
+        for i in 0..=segs {
+            let t = i as f32 / segs as f32;
+            let a = t * TAU;
+            let (sa, ca) = (a.sin(), a.cos());
+            rim.push(b.add_vertex(
+                [r1 * ca, half, r1 * sa],
+                [0.0, 1.0, 0.0],
+                [0.5 + 0.5 * ca, 0.5 + 0.5 * sa],
+            ));
+        }
+        for i in 0..segs {
+            b.add_triangle(g, center, rim[i], rim[i + 1]);
+        }
+    }
+
+    b.build()
+}
+
+/// Torus centred at origin, axis = +Y.
+///
+/// * `major_radius` — distance from origin to ring centre
+/// * `minor_radius` — tube radius
+/// * `quality`      — major segments from quality, minor = ⌈major / 3⌉
+pub fn generate_torus(
+    color_hex: &str,
+    major_radius: f32,
+    minor_radius: f32,
+    quality: GeometryQuality,
+) -> Mesh {
+    let r_major = major_radius.max(1e-4);
+    let r_minor = minor_radius.max(1e-4).min(r_major - 1e-4);
+    let major_segs = quality.radial_segments().max(12);
+    let minor_segs = (major_segs / 3).max(8);
+    let color = hex_to_rgb(color_hex);
+    let mut b = MeshBuilder::new();
+    let g = b.add_group(
+        Material::solid("shape_torus", color)
+            .with_pbr(0.42, 0.05)
+            .with_class("opaque"),
+    );
+
+    // Build (major+1)×(minor+1) grid (closed torus needs duplicate rim for UV seam).
+    let mut grid: Vec<usize> = Vec::with_capacity((major_segs + 1) * (minor_segs + 1));
+    for i in 0..=major_segs {
+        let u = i as f32 / major_segs as f32;
+        let a = u * TAU;
+        let (sa, ca) = (a.sin(), a.cos());
+        let ring_center = [r_major * ca, 0.0, r_major * sa];
+        for j in 0..=minor_segs {
+            let v = j as f32 / minor_segs as f32;
+            let p = v * TAU;
+            let (sp, cp) = (p.sin(), p.cos());
+            // Position: ring_center + minor_radius · (cp · radial + sp · up)
+            let pos = [
+                ring_center[0] + r_minor * cp * ca,
+                ring_center[1] + r_minor * sp,
+                ring_center[2] + r_minor * cp * sa,
+            ];
+            // Smooth normal points from the ring centre outward through pos.
+            let nx = cp * ca;
+            let ny = sp;
+            let nz = cp * sa;
+            grid.push(b.add_vertex(pos, [nx, ny, nz], [u, v]));
+        }
+    }
+
+    let stride = minor_segs + 1;
+    for i in 0..major_segs {
+        for j in 0..minor_segs {
+            let i00 = grid[ i      * stride + j];
+            let i10 = grid[(i + 1) * stride + j];
+            let i11 = grid[(i + 1) * stride + j + 1];
+            let i01 = grid[ i      * stride + j + 1];
+            b.add_quad(g, i00, i10, i11, i01);
+        }
+    }
+
+    b.build()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +450,10 @@ mod tests {
     #[test] fn cube_valid()      { validate_mesh(&generate_cube("#F472B6")).unwrap(); }
     #[test] fn sphere_valid()    { validate_mesh(&generate_sphere("#FACC15", GeometryQuality::Draft)).unwrap(); }
     #[test] fn line_valid()      { validate_mesh(&generate_line("#94A3B8")).unwrap(); }
+    #[test] fn cylinder_valid()  { validate_mesh(&generate_cylinder("#38BDF8", 0.5, 1.0, GeometryQuality::Draft)).unwrap(); }
+    #[test] fn cone_valid()      { validate_mesh(&generate_cone("#FB923C", 0.5, 0.0, 1.0, GeometryQuality::Draft)).unwrap(); }
+    #[test] fn frustum_valid()   { validate_mesh(&generate_cone("#FB923C", 0.5, 0.25, 1.0, GeometryQuality::Draft)).unwrap(); }
+    #[test] fn torus_valid()     { validate_mesh(&generate_torus("#A78BFA", 0.5, 0.15, GeometryQuality::Draft)).unwrap(); }
 
     // ── Plasticity-style cube tests ──────────────────────────────────────────
     #[test]
@@ -266,5 +510,78 @@ mod tests {
         assert!((max_sharp - 0.866).abs() < 0.01, "sharp corner len ≈ √3/2, got {max_sharp}");
         assert!(max_smooth < max_sharp - 0.1,
             "bevel=1 must pull corners inward (got {max_smooth} vs {max_sharp})");
+    }
+
+    // ── Parasolid-style cylinder / cone / torus ──────────────────────────────
+    #[test]
+    fn cylinder_topology() {
+        // Draft → 32 segments. Side: 2·(segs+1) split-seam verts; caps: 2 centres + 2·(segs+1) rim.
+        let m = generate_cylinder("#38BDF8", 0.5, 1.0, GeometryQuality::Draft);
+        validate_mesh(&m).unwrap();
+        let segs = 32_usize;
+        assert_eq!(m.vertices.len(), 2 * (segs + 1) + 2 + 2 * (segs + 1));
+        assert_eq!(m.faces.len(), 4 * segs);
+    }
+
+    #[test]
+    fn cylinder_watertight_height() {
+        let m = generate_cylinder("#38BDF8", 0.5, 2.0, GeometryQuality::Draft);
+        let max_y = m.vertices.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
+        let min_y = m.vertices.iter().map(|p| p[1]).fold(f32::MAX, f32::min);
+        assert!((max_y - 1.0).abs() < 1e-4, "top y must be +half, got {max_y}");
+        assert!((min_y + 1.0).abs() < 1e-4, "bottom y must be -half, got {min_y}");
+    }
+
+    #[test]
+    fn cone_apex_collapses() {
+        let m = generate_cone("#FB923C", 0.5, 0.0, 1.0, GeometryQuality::Draft);
+        validate_mesh(&m).unwrap();
+        let half = 0.5_f32;
+        let apex_count = m.vertices.iter()
+            .filter(|p| p[0].abs() < 1e-5 && p[2].abs() < 1e-5 && (p[1] - half).abs() < 1e-5)
+            .count();
+        assert!(apex_count >= 32, "cone tip must collapse to (0,0) in xz, got {apex_count}");
+    }
+
+    #[test]
+    fn cone_normals_tilted_for_pure_cone() {
+        let m = generate_cone("#FB923C", 0.5, 0.0, 1.0, GeometryQuality::Draft);
+        let positive_y_normals = m.normals.iter().filter(|n| n[1] > 0.1).count();
+        assert!(positive_y_normals > 0,
+            "cone side normals must tilt upward (n.y > 0) when r0 > r1");
+    }
+
+    #[test]
+    fn frustum_has_two_caps() {
+        let m = generate_cone("#FB923C", 0.5, 0.25, 1.0, GeometryQuality::Draft);
+        validate_mesh(&m).unwrap();
+        let up   = m.normals.iter().filter(|n| (n[1] - 1.0).abs() < 1e-3).count();
+        let down = m.normals.iter().filter(|n| (n[1] + 1.0).abs() < 1e-3).count();
+        assert!(up   > 0, "frustum must have +Y normals (top cap)");
+        assert!(down > 0, "frustum must have -Y normals (bottom cap)");
+    }
+
+    #[test]
+    fn torus_topology() {
+        let m = generate_torus("#A78BFA", 0.5, 0.15, GeometryQuality::Draft);
+        validate_mesh(&m).unwrap();
+        let major = 32_usize;
+        let minor = (major / 3).max(8); // 10
+        assert_eq!(m.vertices.len(), (major + 1) * (minor + 1));
+        assert_eq!(m.faces.len(), major * minor * 2);
+    }
+
+    #[test]
+    fn torus_vertices_lie_on_surface() {
+        let r_major = 0.5_f32;
+        let r_minor = 0.15_f32;
+        let m = generate_torus("#A78BFA", r_major, r_minor, GeometryQuality::Draft);
+        for p in &m.vertices {
+            let radial = (p[0] * p[0] + p[2] * p[2]).sqrt();
+            assert!(radial >= r_major - r_minor - 1e-3 && radial <= r_major + r_minor + 1e-3,
+                "torus vertex outside tube: radial={radial}");
+            assert!(p[1].abs() <= r_minor + 1e-3,
+                "torus vertex y outside tube: y={}", p[1]);
+        }
     }
 }
