@@ -46,15 +46,44 @@ pub fn generate_circle(color_hex: &str, quality: GeometryQuality) -> Mesh {
     extrude_single(&pts, 0.05, color_hex, "shape_circle", 0.05, 0.50)
 }
 
+/// Manual box mesh — 24 vertices (4 per face) for proper flat shading.
+/// Avoids extrude_polygon entirely so we get a guaranteed-correct cube.
 pub fn generate_cube(color_hex: &str) -> Mesh {
-    let h = 0.5_f32;  // 1m × 1m × 1m — like Blender default cube
-    let pts = [Point2::new(-h,-h), Point2::new(h,-h), Point2::new(h,h), Point2::new(-h,h)];
-    let opts = ExtrudeOptions { depth: h * 2.0, bevel: 0.02 };
-    let [front, back, sides] = extrude_polygon(&pts, &opts).expect("cube extrude failed");
+    let s = 0.5_f32;  // half-extent → final cube is 1m × 1m × 1m
     let color = hex_to_rgb(color_hex);
     let mut b = MeshBuilder::new();
-    let g = b.add_group(Material::solid("shape_cube", color).with_pbr(0.45, 0.0).with_class("opaque"));
-    b.add_part(g, &front); b.add_part(g, &back); b.add_part(g, &sides);
+    let g = b.add_group(
+        Material::solid("shape_cube", color)
+            .with_pbr(0.45, 0.0)
+            .with_class("opaque"),
+    );
+
+    // Six faces, each as 4 unique vertices with the SAME outward normal
+    // (so faces are flat-shaded, not smoothed across edges).
+    // Winding: CCW when viewed from outside → outward normal.
+    let faces: [(([f32; 3], [f32; 3], [f32; 3], [f32; 3]), [f32; 3]); 6] = [
+        // +Z (front)
+        (([-s,-s, s], [ s,-s, s], [ s, s, s], [-s, s, s]), [0.0, 0.0,  1.0]),
+        // -Z (back)
+        ((  [s,-s,-s], [-s,-s,-s], [-s, s,-s], [ s, s,-s]), [0.0, 0.0, -1.0]),
+        // +X (right)
+        (([ s,-s, s], [ s,-s,-s], [ s, s,-s], [ s, s, s]), [ 1.0, 0.0, 0.0]),
+        // -X (left)
+        (([-s,-s,-s], [-s,-s, s], [-s, s, s], [-s, s,-s]), [-1.0, 0.0, 0.0]),
+        // +Y (top)
+        (([-s, s, s], [ s, s, s], [ s, s,-s], [-s, s,-s]), [0.0,  1.0, 0.0]),
+        // -Y (bottom)
+        (([-s,-s,-s], [ s,-s,-s], [ s,-s, s], [-s,-s, s]), [0.0, -1.0, 0.0]),
+    ];
+
+    for ((p0, p1, p2, p3), n) in faces.iter() {
+        let v0 = b.add_vertex(*p0, *n, [0.0, 0.0]);
+        let v1 = b.add_vertex(*p1, *n, [1.0, 0.0]);
+        let v2 = b.add_vertex(*p2, *n, [1.0, 1.0]);
+        let v3 = b.add_vertex(*p3, *n, [0.0, 1.0]);
+        b.add_quad(g, v0, v1, v2, v3);
+    }
+
     b.build()
 }
 
