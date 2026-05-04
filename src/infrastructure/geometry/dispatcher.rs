@@ -189,6 +189,44 @@ pub fn dispatch_with_quality(
             };
             Ok(generate_organic_sphere(&spec_obj))
         }
+        // ── Copilot primitive shapes ─────────────────────────────────────────
+        // Simple one-material primitives spawnable from the chat.
+        // Optional: /shape/color_hex (default varies per shape)
+        "shape_square" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#38BDF8");
+            Ok(prim::generate_square(c))
+        }
+        "shape_rectangle" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#A78BFA");
+            Ok(prim::generate_rectangle(c))
+        }
+        "shape_triangle" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#FB923C");
+            Ok(prim::generate_triangle(c))
+        }
+        "shape_circle" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#34D399");
+            Ok(prim::generate_circle(c, quality))
+        }
+        "shape_cube" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#F472B6");
+            Ok(prim::generate_cube(c))
+        }
+        "shape_sphere" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#FACC15");
+            Ok(prim::generate_sphere(c, quality))
+        }
+        "shape_line" => {
+            use crate::infrastructure::geometry::generators::primitives as prim;
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#94A3B8");
+            Ok(prim::generate_line(c))
+        }
         // effect on the simple textured rectangle.
         _ => {
             let color = extract_str(spec, "/product/color_hex").unwrap_or("#CCCCCC");

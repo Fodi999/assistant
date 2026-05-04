@@ -12,6 +12,11 @@
 //!   vertex     — Vertex Value Object    (f64 precise, merge-aware)
 //!   face       — TopoFace Entity        (loop of vertex indices, Newell normal)
 //!   shell      — GeometricShell Aggregate Root  (watertight B-Rep)
+//!   edge       — Edge + HalfEdge        (manifold half-edge structure)
+//!   body       — Body Aggregate Root    (solid = outer shell + void shells)
+//!   curve      — ParametricCurve trait + Line, Circle, BezierCurve
+//!   surface    — ParametricSurface trait + Plane, CylindricalSurface, SphericalSurface
+//!   boolean    — Boolean ops stubs (union / subtract / intersect)
 //! ```
 //!
 //! ## Usage pattern
@@ -26,15 +31,25 @@
 //! let part = precision::tessellate(&shell).unwrap();
 //! ```
 
+pub mod boolean;
+pub mod body;
+pub mod curve;
+pub mod edge;
 pub mod face;
 pub mod shell;
+pub mod surface;
 pub mod tolerance;
 pub mod vertex;
 
 /// Convenience re-exports for callers that `use crate::domain::geometry::prelude::*`.
 pub mod prelude {
+    pub use super::body::{Body, BodyError};
+    pub use super::boolean::{BooleanError, BooleanOp};
+    pub use super::curve::{BezierCurve, Circle, Line, ParametricCurve};
+    pub use super::edge::{Edge, EdgeError, HalfEdge};
     pub use super::face::TopoFace;
     pub use super::shell::{GeometricShell, ShellError};
+    pub use super::surface::{CylindricalSurface, ParametricSurface, Plane, SphericalSurface};
     pub use super::tolerance::Tolerance;
     pub use super::vertex::Vertex;
 }

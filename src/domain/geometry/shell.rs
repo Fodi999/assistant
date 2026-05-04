@@ -70,6 +70,7 @@ impl std::error::Error for ShellError {}
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A connected set of faces in precise f64 space, governed by a `Tolerance`.
+#[derive(Debug, Clone)]
 pub struct GeometricShell {
     vertices:  Vec<Vertex>,
     faces:     Vec<TopoFace>,
@@ -257,6 +258,62 @@ impl GeometricShell {
     pub fn tolerance(&self) -> Tolerance   { self.tolerance }
     pub fn vertex_count(&self) -> usize    { self.vertices.len() }
     pub fn face_count(&self) -> usize      { self.faces.len() }
+
+    /// Returns `true` if the shell passes both `validate()` and
+    /// `check_watertight()` — i.e. it is a valid closed manifold.
+    pub fn is_watertight(&self) -> bool {
+        self.validate().is_ok() && self.check_watertight().is_ok()
+    }
+
+    /// Signed volume via the divergence theorem:
+    ///
+    /// `V = (1/6) Σ_face  (v0 · (v1 × v2))`
+    ///
+    /// For an outward-oriented shell this is positive. Flip the sign for
+    /// void (inward-facing) shells to get the absolute void volume.
+    ///
+    /// Requires triangulated faces — quad faces are fan-triangulated
+    /// (consistent with `TopoFace::fan_triangles`).
+    pub fn signed_volume(&self) -> f64 {
+        let mut v = 0.0_f64;
+        for face in &self.faces {
+            let n = face.loop_.len();
+            if n < 3 { continue; }
+            let a = self.vertices[face.loop_[0]];
+            for i in 1..(n - 1) {
+                let b = self.vertices[face.loop_[i]];
+                let c = self.vertices[face.loop_[i + 1]];
+                // Scalar triple product a · (b × c)
+                let bxc = [
+                    b.y * c.z - b.z * c.y,
+                    b.z * c.x - b.x * c.z,
+                    b.x * c.y - b.y * c.x,
+                ];
+                v += a.x * bxc[0] + a.y * bxc[1] + a.z * bxc[2];
+            }
+        }
+        v / 6.0
+    }
+
+    /// Axis-aligned bounding box of all vertices.
+    ///
+    /// Returns `([min_x, min_y, min_z], [max_x, max_y, max_z])`.
+    /// Returns `([0,0,0],[0,0,0])` for an empty shell.
+    pub fn aabb(&self) -> ([f64; 3], [f64; 3]) {
+        if self.vertices.is_empty() {
+            return ([0.0; 3], [0.0; 3]);
+        }
+        let mut min = [f64::MAX; 3];
+        let mut max = [f64::MIN; 3];
+        for v in &self.vertices {
+            let coords = [v.x, v.y, v.z];
+            for i in 0..3 {
+                if coords[i] < min[i] { min[i] = coords[i]; }
+                if coords[i] > max[i] { max[i] = coords[i]; }
+            }
+        }
+        (min, max)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
