@@ -362,7 +362,7 @@ fn pad_to_4(buf: &mut Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::geometry::generators::{
+    use crate::infrastructure::geometry::generators::food::{
         bottled_sauce, jar_product, sauce_in_bowl,
     };
 

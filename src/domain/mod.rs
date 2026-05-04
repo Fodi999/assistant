@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod classification_rules; // 🆕 Added classification rules
 pub mod dish;
 pub mod engines; // 🆕 Culinary Intelligence Platform — 5 engine traits + registry
+pub mod geometry; // 🆕 Precise B-Rep geometry domain (Parasolid-style, f64)
 pub mod inventory;
 pub mod menu_engineering;
 pub mod processing_state; // 🆕 Product states (raw, boiled, fried, etc.)

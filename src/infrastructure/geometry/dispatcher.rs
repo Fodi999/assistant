@@ -12,9 +12,10 @@
 use serde_json::Value;
 
 use crate::application::laboratory_v2::Product3DSpec;
-use crate::infrastructure::geometry::generators::{
+use crate::infrastructure::geometry::generators::food::{
     bottled_sauce, flat_card, jar_product, plate_food, sauce_in_bowl,
 };
+use crate::infrastructure::geometry::generators::hard_surface::card;
 use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::geometry::mesh::Mesh;
 use crate::shared::AppError;
@@ -98,6 +99,53 @@ pub fn dispatch_with_quality(
                 quality,
             ))
         }
+        // Procedural rounded-rectangle card (PR extrude-kernel).
+        // Spec fields:
+        //   /product/color_hex  — front face colour (default #CCCCCC)
+        //   /card/width         — width  in metres  (default 0.10)
+        //   /card/height        — height in metres  (default 0.14)
+        //   /card/thickness     — depth  in metres  (default 0.008)
+        //   /card/corner_radius — arc radius        (default 0.012)
+        //   /card/bevel         — chamfer width     (default 0.001)
+        "product_card" => {
+            use card::{generate_card, CardSpec};
+            let color_hex = extract_str(spec, "/product/color_hex").unwrap_or("#CCCCCC");
+            let width   = extract_f32(spec, "/card/width")         .unwrap_or(0.10);
+            let height  = extract_f32(spec, "/card/height")        .unwrap_or(0.14);
+            let thick   = extract_f32(spec, "/card/thickness")     .unwrap_or(0.008);
+            let radius  = extract_f32(spec, "/card/corner_radius") .unwrap_or(0.012);
+            let bevel   = extract_f32(spec, "/card/bevel")         .unwrap_or(0.001);
+            let card_spec = CardSpec {
+                width, height, thickness: thick,
+                corner_radius: radius, bevel,
+                color_hex, quality,
+            };
+            Ok(generate_card(&card_spec))
+        }
+        // CardDock — hard-surface B-Rep-lite slot/cradle.
+        // Spec fields (all optional, safe defaults apply):
+        //   /dock/width              — outer width  m (default 0.20)
+        //   /dock/depth              — outer depth  m (default 0.58)
+        //   /dock/height             — base height  m (default 0.10)
+        //   /dock/slot_width         — slot opening (default 0.11)
+        //   /dock/slot_depth         — slot depth   (default 0.15)
+        //   /dock/accent_hex         — glow colour  (default #00C8FF)
+        "card_dock" => {
+            use crate::infrastructure::geometry::generators::hard_surface::dock::{
+                generate_dock, CardDockSpec,
+            };
+            let dock_spec = CardDockSpec {
+                width:      extract_f32(spec, "/dock/width")      .unwrap_or(0.20),
+                depth:      extract_f32(spec, "/dock/depth")      .unwrap_or(0.58),
+                height:     extract_f32(spec, "/dock/height")     .unwrap_or(0.10),
+                slot_width: extract_f32(spec, "/dock/slot_width") .unwrap_or(0.11),
+                slot_depth: extract_f32(spec, "/dock/slot_depth") .unwrap_or(0.15),
+                accent_hex: "#00C8FF", // TODO: extract from spec when &'static str is relaxed
+                quality,
+                ..CardDockSpec::default()
+            };
+            Ok(generate_dock(&dock_spec))
+        }
         // Remaining types (flat_card, unknown) → flat_card. Quality has no
         // effect on the simple textured rectangle.
         _ => {
@@ -110,6 +158,11 @@ pub fn dispatch_with_quality(
 /// Extract a string at a JSON Pointer path from an optional `Value`.
 fn extract_str<'a>(spec: Option<&'a Value>, pointer: &str) -> Option<&'a str> {
     spec?.pointer(pointer)?.as_str()
+}
+
+/// Extract an f32 at a JSON Pointer path from an optional `Value`.
+fn extract_f32(spec: Option<&Value>, pointer: &str) -> Option<f32> {
+    spec?.pointer(pointer)?.as_f64().map(|v| v as f32)
 }
 
 #[cfg(test)]

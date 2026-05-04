@@ -163,7 +163,7 @@ fn check_triangle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::geometry::generators::{
+    use crate::infrastructure::geometry::generators::food::{
         bottled_sauce, jar_product, sauce_in_bowl,
     };
 
