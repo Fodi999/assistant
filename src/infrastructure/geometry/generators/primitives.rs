@@ -20,36 +20,36 @@ fn extrude_single(pts: &[Point2], depth: f32, color_hex: &str, group_name: &str,
 }
 
 pub fn generate_square(color_hex: &str) -> Mesh {
-    let h = 0.05_f32;
+    let h = 0.5_f32;  // 1m × 1m, 5cm thick
     let pts = [Point2::new(-h,-h), Point2::new(h,-h), Point2::new(h,h), Point2::new(-h,h)];
-    extrude_single(&pts, 0.005, color_hex, "shape_square", 0.05, 0.55)
+    extrude_single(&pts, 0.05, color_hex, "shape_square", 0.05, 0.55)
 }
 
 pub fn generate_rectangle(color_hex: &str) -> Mesh {
-    let pts = [Point2::new(-0.08,-0.05), Point2::new(0.08,-0.05), Point2::new(0.08,0.05), Point2::new(-0.08,0.05)];
-    extrude_single(&pts, 0.005, color_hex, "shape_rectangle", 0.05, 0.55)
+    let pts = [Point2::new(-0.8,-0.5), Point2::new(0.8,-0.5), Point2::new(0.8,0.5), Point2::new(-0.8,0.5)];
+    extrude_single(&pts, 0.05, color_hex, "shape_rectangle", 0.05, 0.55)
 }
 
 pub fn generate_triangle(color_hex: &str) -> Mesh {
-    let r = 0.12_f32 / 3.0_f32.sqrt();
+    let r = 1.0_f32 / 3.0_f32.sqrt();
     let pts: Vec<Point2> = (0..3).map(|i| {
         let a = PI / 2.0 + i as f32 * TAU / 3.0;
         Point2::new(r * a.cos(), r * a.sin())
     }).collect();
-    extrude_single(&pts, 0.005, color_hex, "shape_triangle", 0.05, 0.55)
+    extrude_single(&pts, 0.05, color_hex, "shape_triangle", 0.05, 0.55)
 }
 
 pub fn generate_circle(color_hex: &str, quality: GeometryQuality) -> Mesh {
-    let segs: usize = match quality { GeometryQuality::Draft => 16, GeometryQuality::Standard => 32, GeometryQuality::High => 48, GeometryQuality::Ultra => 64 };
-    let r = 0.07_f32;
+    let segs: usize = match quality { GeometryQuality::Draft => 32, GeometryQuality::Standard => 48, GeometryQuality::High => 64, GeometryQuality::Ultra => 96 };
+    let r = 0.6_f32;
     let pts: Vec<Point2> = (0..segs).map(|i| { let a = i as f32 * TAU / segs as f32; Point2::new(r * a.cos(), r * a.sin()) }).collect();
-    extrude_single(&pts, 0.005, color_hex, "shape_circle", 0.05, 0.50)
+    extrude_single(&pts, 0.05, color_hex, "shape_circle", 0.05, 0.50)
 }
 
 pub fn generate_cube(color_hex: &str) -> Mesh {
-    let h = 0.05_f32;
+    let h = 0.5_f32;  // 1m × 1m × 1m — like Blender default cube
     let pts = [Point2::new(-h,-h), Point2::new(h,-h), Point2::new(h,h), Point2::new(-h,h)];
-    let opts = ExtrudeOptions { depth: h * 2.0, bevel: 0.002 };
+    let opts = ExtrudeOptions { depth: h * 2.0, bevel: 0.02 };
     let [front, back, sides] = extrude_polygon(&pts, &opts).expect("cube extrude failed");
     let color = hex_to_rgb(color_hex);
     let mut b = MeshBuilder::new();
@@ -60,12 +60,12 @@ pub fn generate_cube(color_hex: &str) -> Mesh {
 
 pub fn generate_sphere(color_hex: &str, quality: GeometryQuality) -> Mesh {
     use crate::infrastructure::geometry::generators::hard_surface::organic_sphere::{generate_organic_sphere, OrganicSphereSpec};
-    generate_organic_sphere(&OrganicSphereSpec { radius: 0.07, color_hex: color_hex.to_string(), ..OrganicSphereSpec::with_quality(quality) })
+    generate_organic_sphere(&OrganicSphereSpec { radius: 0.6, color_hex: color_hex.to_string(), ..OrganicSphereSpec::with_quality(quality) })
 }
 
 pub fn generate_line(color_hex: &str) -> Mesh {
-    let pts = [Point2::new(-0.10,-0.003), Point2::new(0.10,-0.003), Point2::new(0.10,0.003), Point2::new(-0.10,0.003)];
-    extrude_single(&pts, 0.003, color_hex, "shape_line", 0.0, 0.6)
+    let pts = [Point2::new(-1.0,-0.03), Point2::new(1.0,-0.03), Point2::new(1.0,0.03), Point2::new(-1.0,0.03)];
+    extrude_single(&pts, 0.03, color_hex, "shape_line", 0.0, 0.6)
 }
 
 #[cfg(test)]
