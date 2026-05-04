@@ -12,6 +12,8 @@
 
 pub mod card;
 pub mod dock;
+pub mod sci_fi_card;
 
 pub use card::generate_card;
 pub use dock::generate_dock;
+pub use sci_fi_card::generate_sci_fi_card;
