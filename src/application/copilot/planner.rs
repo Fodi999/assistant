@@ -37,6 +37,9 @@ pub struct ToolPlan {
     pub tool_calls: Vec<ToolCall>,
     /// Нужна ли confirmation (если есть write tools — всегда true).
     pub requires_confirmation: bool,
+    /// Immediate workspace/scene commands (geometry_op, spawn_shape, switch_lab, …).
+    /// Executed by the frontend immediately without confirmation.
+    pub workspace_commands: Vec<serde_json::Value>,
 }
 
 impl ToolPlan {
@@ -58,6 +61,7 @@ struct PlannerLlmResponse {
     tools: Vec<String>,
     args: Option<HashMap<String, serde_json::Value>>,
     requires_confirmation: Option<bool>,
+    workspace_commands: Option<Vec<serde_json::Value>>,
 }
 
 pub struct CopilotPlanner {
@@ -100,7 +104,7 @@ impl CopilotPlanner {
     fn build_system_prompt(&self, ctx: &CopilotContext) -> String {
         let tool_catalog = CopilotTool::tool_catalog_prompt();
         format!(
-r#"You are ChefOS Copilot. Output ONLY compact valid JSON. No markdown. No explanations.
+r##"You are ChefOS Copilot. Output ONLY compact valid JSON. No markdown. No explanations.
 
 CONTEXT: {context}
 
@@ -128,45 +132,67 @@ INVENTORY ARGS SCHEMA (use exactly these keys):
 - create_dish:              {{ "dish_name": "<English name of the dish>", "recipe_name": "<English name of existing recipe>", "selling_price_cents": <positive int>, "description": "<optional str>" }}
 
 DAILY BRIEFING INTENT HINTS (HIGHEST PRIORITY for these phrases):
-- "Что сегодня важно / что важно сегодня / brief me / brief me on today / дневной отчёт / дневной отчет / daily briefing / daily report / что нужно сделать / what should I do today / итоги дня / today summary / overview / обзор / morning briefing / утренний обзор" → get_daily_briefing
+- "что сегодня важно / brief me / daily briefing / daily report / что нужно сделать / today summary / overview / morning briefing" → get_daily_briefing
 - This is the PRIMARY tool for any request that asks for an operational overview without specifying a domain.
 
 PURCHASE DRAFT INTENT HINTS:
-- "show / list / which drafts / мои черновики / какие закупки" → list_purchase_drafts
-- "last / latest / последняя / на завтра" without explicit id → get_purchase_draft with id='last'
-- "создай / сделай / order / create purchase" → prepare_purchase_draft
-- "отправь / подтверди закупку / переведи в sent / send / mark as sent" → send_purchase_order (requires_confirmation=true)
+- "show / list / which drafts / my drafts / list purchases" → list_purchase_drafts
+- "last / latest / last draft" without explicit id → get_purchase_draft with id='last'
+- "create / order / make purchase" → prepare_purchase_draft
+- "send / confirm purchase / mark as sent" → send_purchase_order (requires_confirmation=true)
 
 DISH PRICE INTENT HINTS:
-- "Поменяй цену / измени цену / change price / set price / update price / переставь цену / make ... cost" → update_dish_price (requires_confirmation=true)
-- Always pass new_price_cents as int (e.g. "18 евро" → 1800, "9.50€" → 950).
-- ALWAYS translate dish_name to English keyword(s) (e.g. "Цезарь" → "Caesar", "салат" → "Salad", "борщ" → "Borscht"). Use the most distinctive English keyword. Backend matches by case-insensitive substring against English dish names.
-- dish_name can be partial; backend will resolve and ask for clarification if multiple matches.
+- "change price / set price / update price / make cost" → update_dish_price (requires_confirmation=true)
+- Always pass new_price_cents as int (e.g. "18 euro" → 1800, "9.50 euro" → 950).
+- ALWAYS translate dish_name to English keyword(s). Backend matches by case-insensitive substring.
 
 CREATE RECIPE INTENT HINTS:
-- "Создай рецепт / create recipe / new recipe / добавь рецепт / make a recipe / receta" + LIST OF INGREDIENTS → create_recipe (requires_confirmation=true)
-- ALWAYS translate recipe_name AND every ingredient_name to English (e.g. "Цезарь" → "Caesar Salad Base", "куриная грудка" → "chicken breast", "сыр пармезан" → "parmesan", "анчоусы" → "anchovy", "салат романо" → "romaine lettuce", "свёкла" → "beetroot", "капуста" → "cabbage", "морковь" → "carrot").
-- Convert all quantities to NUMBERS in the unit specified by the user. Default unit=g for solids, ml for liquids, pcs for items. If user says "100 г курицы" → quantity=100, unit="g". If user says "0.5 кг" → quantity=0.5, unit="kg" (or quantity=500, unit="g" — both work).
-- servings: parse from phrases like "на 4 порции", "4 servings", "порций 4". If absent, default to 1.
-- If user mentions BOTH a recipe and a price ("Создай блюдо Цезарь: 100г курицы..., продаём за 15 евро"), ONLY emit create_recipe for now — dish creation is a separate step.
+- "create recipe / new recipe / add recipe / make a recipe" + LIST OF INGREDIENTS → create_recipe (requires_confirmation=true)
+- ALWAYS translate recipe_name AND every ingredient_name to English.
+- servings: parse from context, default to 1.
 
 CREATE DISH INTENT HINTS:
-- "Создай блюдо / create dish / add dish / добавь в меню / добавь блюдо / put on menu" → create_dish (requires_confirmation=true)
-- dish_name: ALWAYS translate to English (e.g. "Цезарь" → "Caesar Salad", "борщ" → "Borscht").
-- recipe_name: name of EXISTING recipe in the system. Translate to English. Exact or partial match.
-- selling_price_cents: convert price to cents (e.g. "15€" → 1500, "18.50 евро" → 1850).
-- description: optional short description of the dish, translated to English.
-- If user says "create dish Caesar at €18 using Caesar Base recipe" → {{ "dish_name": "Caesar Salad", "recipe_name": "Caesar Base", "selling_price_cents": 1800 }}
-- If recipe_name is unknown or not mentioned, ask user which recipe to link before emitting create_dish.
+- "create dish / add dish / add to menu / put on menu" → create_dish (requires_confirmation=true)
+- dish_name: translate to English. recipe_name: existing recipe, translate to English.
+- selling_price_cents: convert to cents.
 
 INVENTORY ADJUSTMENT INTENT HINTS:
-- "Исправь / поставь / set / должно быть / fix / correct / adjust / должно стать / make it" with a TARGET quantity → adjust_inventory_quantity
-- "After inventory check / после инвентаризации" → adjust_inventory_quantity with reason=inventory_check
-- "Add / Buy / Купи / приехало" (delta, not target) → prepare_inventory_update
-- "Spoiled / expired / списать / выкинь" → write_off_inventory
+- "fix / set / correct / adjust / should be / make it" with TARGET quantity → adjust_inventory_quantity
+- "after inventory check" → adjust_inventory_quantity with reason=inventory_check
+- "add / buy / arrived" (delta) → prepare_inventory_update
+- "spoiled / expired / write off" → write_off_inventory
+
+LAB 3D GEOMETRY (spawn_shape / geometry_op):
+These are FRONTEND-ONLY workspace commands — requires_confirmation=false always.
+Emit them under "workspace_commands" array key alongside the normal plan.
+
+spawn_shape — simple primitives (sharp, no bevel):
+  shapes: "cube","sphere","circle","square","triangle","rectangle","line"
+  {{ "type": "spawn_shape", "shape": "<shape>", "label": "<English>", "color": "<hex>" }}
+
+geometry_op — CSG boolean or bevel shaping:
+  {{ "type": "geometry_op", "op": {{
+      "operation": "subtract",
+      "target": {{ "type": "shape_cube", "color": "#38BDF8", "subdivisions": 4, "bevel": 0.0 }},
+      "cutter": {{ "type": "cylinder", "radius": 0.2, "height": 1.2, "center": [0,0,0], "cap_color": "#1E40AF" }},
+      "quality": "high",
+      "label": "Cube with hole"
+  }} }}
+
+BEVEL / ROUNDED CORNERS RULES:
+- "round corners / bevel / chamfer / rounded cube / pill shape" → geometry_op with bevel > 0
+  light=0.15 subs=3 | medium=0.35 subs=4 | strong=0.65 subs=5 | sphere=0.95 subs=5
+- ALWAYS set subdivisions >= 3 when bevel > 0 (otherwise corners look jagged).
+- Rounded cube without hole: use operation="union" with tiny dummy cutter:
+  {{ "type": "geometry_op", "op": {{ "operation": "union",
+    "target": {{ "type": "shape_cube", "color": "#38BDF8", "subdivisions": 4, "bevel": 0.35 }},
+    "cutter": {{ "type": "box", "half_extents": [0.001,0.001,0.001] }},
+    "quality": "high", "label": "Rounded cube" }} }}
+- Vision feedback loop shows you the result — if not rounded enough, increase bevel in correction.
+- Plain cube (no rounding) → spawn_shape is sufficient.
 
 OUTPUT FORMAT (exactly):
-{{"intent":"<snake_case>","tools":["tool_name"],"args":{{"tool_name":{{"key":"value"}}}},"requires_confirmation":false}}"#,
+{{"intent":"<snake_case>","tools":["tool_name"],"args":{{"tool_name":{{"key":"value"}}}},"requires_confirmation":false,"workspace_commands":[]}}"##,
             context = ctx.to_prompt_context(),
             tools = tool_catalog,
         )
@@ -197,6 +223,7 @@ OUTPUT FORMAT (exactly):
                     args: HashMap::new(),
                 }],
                 requires_confirmation: false,
+                workspace_commands: parsed.workspace_commands.unwrap_or_default(),
             });
         }
 
@@ -217,6 +244,7 @@ OUTPUT FORMAT (exactly):
             tools,
             tool_calls,
             requires_confirmation,
+            workspace_commands: parsed.workspace_commands.unwrap_or_default(),
         })
     }
 }

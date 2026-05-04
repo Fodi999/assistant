@@ -32,8 +32,9 @@ pub mod validate;
 pub mod disk;
 pub mod decal;
 pub mod extrude;
-pub mod precision; // 🆕 domain GeometricShell → MeshPart tessellator
+pub mod precision;
 pub mod rounded;
+pub mod csg;
 
 pub use decal::{cylindrical_band, flat_patch};
 pub use disk::{disk_fan_down, disk_fan_up};

@@ -196,6 +196,7 @@ impl CopilotEngine {
                         args: std::collections::HashMap::new(),
                     }],
                     requires_confirmation: false,
+                    workspace_commands: vec![],
                 }
             }
         };
@@ -260,6 +261,7 @@ impl CopilotEngine {
             actions_left: billing.actions_left,
             risk_level: safety_result.risk_level,
             billing_warning,
+            workspace_commands: plan.workspace_commands,
         })
     }
 

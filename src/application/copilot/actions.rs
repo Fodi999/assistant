@@ -96,6 +96,9 @@ pub struct CopilotResponse {
     pub risk_level: RiskLevel,
     /// Предупреждение если balance низкий.
     pub billing_warning: Option<String>,
+    /// Immediate workspace/scene commands from the planner (geometry_op, spawn_shape, …).
+    /// Frontend dispatches these without requiring confirmation.
+    pub workspace_commands: Vec<serde_json::Value>,
 }
 
 impl CopilotResponse {
@@ -109,6 +112,7 @@ impl CopilotResponse {
             actions_left,
             risk_level: RiskLevel::Low,
             billing_warning: None,
+            workspace_commands: vec![],
         }
     }
 
@@ -122,6 +126,7 @@ impl CopilotResponse {
             actions_left: 0,
             risk_level: RiskLevel::Low,
             billing_warning: None,
+            workspace_commands: vec![],
         }
     }
 
@@ -136,6 +141,7 @@ impl CopilotResponse {
             actions_left,
             risk_level: RiskLevel::Low,
             billing_warning: None,
+            workspace_commands: vec![],
         }
     }
 }

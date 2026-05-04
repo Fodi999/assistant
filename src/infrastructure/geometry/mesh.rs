@@ -167,6 +167,23 @@ impl Material {
     }
 }
 
+impl Default for Material {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            diffuse_color: [0.8, 0.8, 0.8],
+            texture_file: None,
+            specular: 0.15,
+            shininess: 32.0,
+            texture_url: None,
+            roughness: 0.0,
+            metalness: 0.0,
+            opacity: 1.0,
+            material_class: "opaque".to_string(),
+        }
+    }
+}
+
 /// Parse a `"#RRGGBB"` hex colour string into `[f32; 3]` (0.0..1.0).
 /// Falls back to `[0.8, 0.8, 0.8]` on any parse error.
 pub fn hex_to_rgb(hex: &str) -> [f32; 3] {

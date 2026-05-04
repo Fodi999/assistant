@@ -49,7 +49,20 @@ pub fn generate_circle(color_hex: &str, quality: GeometryQuality) -> Mesh {
 /// Manual box mesh — 24 vertices (4 per face) for proper flat shading.
 /// Avoids extrude_polygon entirely so we get a guaranteed-correct cube.
 pub fn generate_cube(color_hex: &str) -> Mesh {
-    let s = 0.5_f32;  // half-extent → final cube is 1m × 1m × 1m
+    generate_cube_grid(color_hex, 1, 0.0)
+}
+
+/// Subdivided cube with optional corner bevel — Plasticity-style.
+///
+/// * `subdivisions` — number of edge splits per face axis (1 = 2×2 quads/face,
+///   2 = 3×3, 4 = 5×5). Default 1 is equivalent to the old flat cube.
+/// * `bevel` — corner rounding strength 0.0 (sharp) … 1.0 (sphere).
+///   Blends corner vertices toward the circumscribed sphere, producing
+///   smooth chamfered edges exactly like the Plasticity "Bevel" handle.
+pub fn generate_cube_grid(color_hex: &str, subdivisions: u32, bevel: f32) -> Mesh {
+    let s = 0.5_f32; // half-extent → cube is 1 m³
+    let n = subdivisions.max(1) as usize;
+    let bevel = bevel.clamp(0.0, 1.0);
     let color = hex_to_rgb(color_hex);
     let mut b = MeshBuilder::new();
     let g = b.add_group(
@@ -58,33 +71,122 @@ pub fn generate_cube(color_hex: &str) -> Mesh {
             .with_class("opaque"),
     );
 
-    // Six faces, each as 4 unique vertices with the SAME outward normal
-    // (so faces are flat-shaded, not smoothed across edges).
-    // Winding: CCW when viewed from outside → outward normal.
-    let faces: [(([f32; 3], [f32; 3], [f32; 3], [f32; 3]), [f32; 3]); 6] = [
-        // +Z (front)
-        (([-s,-s, s], [ s,-s, s], [ s, s, s], [-s, s, s]), [0.0, 0.0,  1.0]),
-        // -Z (back)
-        ((  [s,-s,-s], [-s,-s,-s], [-s, s,-s], [ s, s,-s]), [0.0, 0.0, -1.0]),
-        // +X (right)
-        (([ s,-s, s], [ s,-s,-s], [ s, s,-s], [ s, s, s]), [ 1.0, 0.0, 0.0]),
-        // -X (left)
-        (([-s,-s,-s], [-s,-s, s], [-s, s, s], [-s, s,-s]), [-1.0, 0.0, 0.0]),
-        // +Y (top)
-        (([-s, s, s], [ s, s, s], [ s, s,-s], [-s, s,-s]), [0.0,  1.0, 0.0]),
-        // -Y (bottom)
-        (([-s,-s,-s], [ s,-s,-s], [ s,-s, s], [-s,-s, s]), [0.0, -1.0, 0.0]),
+    // Each face defined by: corner origin + u_step + v_step + face normal
+    // Winding is CCW when viewed from outside.
+    let face_defs: [([f32;3], [f32;3], [f32;3], [f32;3]); 6] = [
+        // +Z front
+        ([-s, -s,  s], [ 1.0, 0.0, 0.0], [0.0,  1.0, 0.0], [0.0, 0.0,  1.0]),
+        // -Z back  (flipped u so winding stays CCW)
+        ([ s, -s, -s], [-1.0, 0.0, 0.0], [0.0,  1.0, 0.0], [0.0, 0.0, -1.0]),
+        // +X right
+        ([ s, -s, -s], [0.0, 0.0,  1.0], [0.0,  1.0, 0.0], [ 1.0, 0.0, 0.0]),
+        // -X left
+        ([-s, -s,  s], [0.0, 0.0, -1.0], [0.0,  1.0, 0.0], [-1.0, 0.0, 0.0]),
+        // +Y top
+        ([-s,  s,  s], [ 1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0,  1.0, 0.0]),
+        // -Y bottom
+        ([-s, -s, -s], [ 1.0, 0.0, 0.0], [0.0, 0.0,  1.0], [0.0, -1.0, 0.0]),
     ];
 
-    for ((p0, p1, p2, p3), n) in faces.iter() {
-        let v0 = b.add_vertex(*p0, *n, [0.0, 0.0]);
-        let v1 = b.add_vertex(*p1, *n, [1.0, 0.0]);
-        let v2 = b.add_vertex(*p2, *n, [1.0, 1.0]);
-        let v3 = b.add_vertex(*p3, *n, [0.0, 1.0]);
-        b.add_quad(g, v0, v1, v2, v3);
+    let step = 1.0_f32 / n as f32;
+
+    for (origin, u_axis, v_axis, face_normal) in &face_defs {
+        // Build (n+1)×(n+1) vertex grid for this face
+        let mut idx_grid: Vec<usize> = Vec::with_capacity((n + 1) * (n + 1));
+
+        for vi in 0..=(n) {
+            for ui in 0..=(n) {
+                let tu = ui as f32 * step; // 0..1
+                let tv = vi as f32 * step; // 0..1
+
+                // Raw cube position
+                let mut pos = [
+                    origin[0] + u_axis[0] * tu * 2.0 * s + v_axis[0] * tv * 2.0 * s,
+                    origin[1] + u_axis[1] * tu * 2.0 * s + v_axis[1] * tv * 2.0 * s,
+                    origin[2] + u_axis[2] * tu * 2.0 * s + v_axis[2] * tv * 2.0 * s,
+                ];
+
+                // Normal: starts as face normal, blends toward sphere normal at
+                // corners (bevel > 0).
+                let mut normal = *face_normal;
+
+                if bevel > 0.0 {
+                    let (bp, bn) = bevel_vertex(pos, *face_normal, s, bevel);
+                    pos = bp;
+                    normal = bn;
+                }
+
+                idx_grid.push(b.add_vertex(pos, normal, [tu, tv]));
+            }
+        }
+
+        // Emit quads (two triangles each)
+        for vi in 0..n {
+            for ui in 0..n {
+                let i00 = idx_grid[vi       * (n + 1) + ui    ];
+                let i10 = idx_grid[vi       * (n + 1) + ui + 1];
+                let i11 = idx_grid[(vi + 1) * (n + 1) + ui + 1];
+                let i01 = idx_grid[(vi + 1) * (n + 1) + ui    ];
+                b.add_quad(g, i00, i10, i11, i01);
+            }
+        }
     }
 
     b.build()
+}
+
+/// Apply Plasticity-style corner bevel to a cube vertex.
+///
+/// Corners are identified by their proximity to the cube diagonal:
+/// the closer a vertex is to a corner the more it blends toward the
+/// circumscribed sphere (radius = s√3).
+///
+/// Returns `(new_position, new_normal)`.
+fn bevel_vertex(pos: [f32; 3], face_normal: [f32; 3], s: f32, bevel: f32) -> ([f32; 3], [f32; 3]) {
+    // Distance from origin (cube center)
+    let len = (pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]).sqrt();
+    let max_len = s * 1.732_f32; // √3 — distance to a cube corner
+
+    // "Corner factor": 0 at face centre, 1 at pure corner vertex
+    // Face-centre vertices have one coordinate = ±s and the other two = 0.
+    // Corner vertices have all three coordinates = ±s.
+    let corner_factor = ((len - s) / (max_len - s)).clamp(0.0, 1.0);
+    let t = bevel * corner_factor;
+
+    if t < 1e-6 { return (pos, face_normal); }
+
+    // Sphere position: same direction, radius = s (inscribed sphere is s,
+    // but we blend to circumscribed = s√3 normalised back to s to keep
+    // cube size).
+    let sphere_pos = if len > 1e-9 {
+        [pos[0] / len * s * 1.732_f32 / 1.732_f32,   // = pos/len * s
+         pos[1] / len * s,
+         pos[2] / len * s]
+    } else {
+        pos
+    };
+
+    let new_pos = [
+        pos[0] * (1.0 - t) + sphere_pos[0] * t,
+        pos[1] * (1.0 - t) + sphere_pos[1] * t,
+        pos[2] * (1.0 - t) + sphere_pos[2] * t,
+    ];
+
+    // Normal: blend face normal → sphere (radial) normal
+    let sphere_normal = if len > 1e-9 {
+        [pos[0] / len, pos[1] / len, pos[2] / len]
+    } else {
+        face_normal
+    };
+    let blended = [
+        face_normal[0] * (1.0 - t) + sphere_normal[0] * t,
+        face_normal[1] * (1.0 - t) + sphere_normal[1] * t,
+        face_normal[2] * (1.0 - t) + sphere_normal[2] * t,
+    ];
+    let nlen = (blended[0]*blended[0] + blended[1]*blended[1] + blended[2]*blended[2]).sqrt().max(1e-9);
+    let new_normal = [blended[0]/nlen, blended[1]/nlen, blended[2]/nlen];
+
+    (new_pos, new_normal)
 }
 
 pub fn generate_sphere(color_hex: &str, quality: GeometryQuality) -> Mesh {

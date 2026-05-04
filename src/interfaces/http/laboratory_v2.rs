@@ -335,3 +335,41 @@ pub async fn debug_glb(
 
     Ok(response)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `POST /laboratory/geometry-op`
+//
+// Gemini-controlled CSG endpoint.  No auth required (same as debug-glb).
+//
+// Body (JSON):
+//   {
+//     "operation": "subtract",
+//     "target":  { "type": "shape_cube", "color": "#38BDF8" },
+//     "cutter":  { "type": "cylinder", "radius": 0.28, "height": 1.5, "center": [0,0,0] },
+//     "quality": "high"
+//   }
+//
+// Returns raw GLB bytes so the frontend can display immediately.
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn geometry_op(
+    Json(req): Json<crate::infrastructure::geometry::GeometryOpRequest>,
+) -> Result<Response<axum::body::Body>, AppError> {
+    use axum::body::Body;
+    use crate::infrastructure::geometry::execute_geometry_op;
+
+    let glb_bytes = execute_geometry_op(&req)?;
+    let slug = format!("{}_{}", req.operation, req.target.kind);
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "model/gltf-binary")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{slug}.glb\""),
+        )
+        .body(Body::from(glb_bytes))
+        .map_err(|e| AppError::internal(format!("response build error: {e}")))?;
+
+    Ok(response)
+}

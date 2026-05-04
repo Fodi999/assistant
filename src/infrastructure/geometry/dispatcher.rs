@@ -214,8 +214,15 @@ pub fn dispatch_with_quality(
         }
         "shape_cube" => {
             use crate::infrastructure::geometry::generators::primitives as prim;
-            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#F472B6");
-            Ok(prim::generate_cube(c))
+            let c   = extract_str(spec, "/shape/color_hex").unwrap_or("#F472B6");
+            let sub = extract_f32(spec, "/shape/subdivisions").map(|v| v as u32).unwrap_or(match quality {
+                GeometryQuality::Draft    => 1,
+                GeometryQuality::Standard => 2,
+                GeometryQuality::High     => 3,
+                GeometryQuality::Ultra    => 5,
+            });
+            let bevel = extract_f32(spec, "/shape/bevel").unwrap_or(0.0);
+            Ok(prim::generate_cube_grid(c, sub, bevel))
         }
         "shape_sphere" => {
             use crate::infrastructure::geometry::generators::primitives as prim;

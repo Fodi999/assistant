@@ -13,6 +13,7 @@
 
 pub mod dispatcher;
 pub mod generators;
+pub mod geometry_op;
 pub mod gltf_exporter;
 pub mod kernel;
 pub mod mesh;
@@ -20,6 +21,7 @@ pub mod obj_exporter;
 pub mod tessellator;
 
 pub use dispatcher::{dispatch, dispatch_with_quality};
+pub use geometry_op::{execute_geometry_op, GeometryOpRequest};
 pub use gltf_exporter::export_glb;
 pub use mesh::{Material, Mesh};
 pub use obj_exporter::export_obj;
