@@ -210,4 +210,61 @@ mod tests {
     #[test] fn cube_valid()      { validate_mesh(&generate_cube("#F472B6")).unwrap(); }
     #[test] fn sphere_valid()    { validate_mesh(&generate_sphere("#FACC15", GeometryQuality::Draft)).unwrap(); }
     #[test] fn line_valid()      { validate_mesh(&generate_line("#94A3B8")).unwrap(); }
+
+    // ── Plasticity-style cube tests ──────────────────────────────────────────
+    #[test]
+    fn cube_grid_sharp_topology() {
+        // n=1 → 6 faces × 4 vertices = 24 vertices, 12 triangles.
+        let m = generate_cube_grid("#F472B6", 1, 0.0);
+        validate_mesh(&m).unwrap();
+        assert_eq!(m.vertices.len(), 24, "sharp cube should have 24 verts");
+        assert_eq!(m.faces.len(), 12, "sharp cube should have 12 triangles");
+    }
+
+    #[test]
+    fn cube_grid_subdivided_topology() {
+        // n=4 → (5×5)×6 = 150 verts, (4×4×2)×6 = 192 triangles.
+        let m = generate_cube_grid("#F472B6", 4, 0.0);
+        validate_mesh(&m).unwrap();
+        assert_eq!(m.vertices.len(), 5 * 5 * 6);
+        assert_eq!(m.faces.len(), 4 * 4 * 2 * 6);
+    }
+
+    #[test]
+    fn cube_grid_beveled_no_nan() {
+        // Heavy bevel + subdivisions — all coords / normals must be finite.
+        let m = generate_cube_grid("#F472B6", 4, 0.7);
+        validate_mesh(&m).unwrap();
+        for p in &m.vertices {
+            assert!(p.iter().all(|c| c.is_finite()),
+                "position has NaN/Inf: {:?}", p);
+            // Beveled vertex must stay inside the unit cube (corners pull inward).
+            assert!(p.iter().all(|c: &f32| c.abs() <= 0.5 + 1e-4),
+                "beveled vertex outside cube bounds: {:?}", p);
+        }
+        for n in &m.normals {
+            assert!(n.iter().all(|c| c.is_finite()),
+                "normal has NaN/Inf: {:?}", n);
+        }
+    }
+
+    #[test]
+    fn cube_grid_bevel_corners_pull_inward() {
+        // A pure corner vertex (±0.5, ±0.5, ±0.5) on an unbeveled cube has
+        // length √(3)/2 ≈ 0.866. With bevel=1 it should be pulled to length s=0.5.
+        let sharp = generate_cube_grid("#F472B6", 1, 0.0);
+        let smooth = generate_cube_grid("#F472B6", 1, 1.0);
+
+        let max_len = |m: &Mesh| -> f32 {
+            m.vertices.iter()
+                .map(|p| (p[0].powi(2) + p[1].powi(2) + p[2].powi(2)).sqrt())
+                .fold(0.0_f32, f32::max)
+        };
+        let max_sharp = max_len(&sharp);
+        let max_smooth = max_len(&smooth);
+
+        assert!((max_sharp - 0.866).abs() < 0.01, "sharp corner len ≈ √3/2, got {max_sharp}");
+        assert!(max_smooth < max_sharp - 0.1,
+            "bevel=1 must pull corners inward (got {max_smooth} vs {max_sharp})");
+    }
 }
