@@ -16,6 +16,7 @@ use crate::infrastructure::geometry::generators::food::{
     bottled_sauce, flat_card, jar_product, plate_food, sauce_in_bowl,
 };
 use crate::infrastructure::geometry::generators::hard_surface::card;
+use crate::infrastructure::geometry::generators::hard_surface::sci_fi_card;
 use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::geometry::mesh::Mesh;
 use crate::shared::AppError;
@@ -146,7 +147,30 @@ pub fn dispatch_with_quality(
             };
             Ok(generate_dock(&dock_spec))
         }
-        // Remaining types (flat_card, unknown) → flat_card. Quality has no
+        // Sci-Fi Product Card — Plasticity-style precision hard-surface card.
+        // Spec fields (all optional, safe defaults apply):
+        //   /card/width              — width  m (default 0.12)
+        //   /card/height             — height m (default 0.18)
+        //   /card/thickness          — depth  m (default 0.012)
+        //   /card/corner_radius      — arc radius (default 0.012)
+        //   /card/bevel              — chamfer    (default 0.0015)
+        //   /card/accent_hex         — glow colour (default #00C8FF)
+        "sci_fi_card" => {
+            use sci_fi_card::{generate_sci_fi_card, SciFiCardSpec};
+            let spec_obj = SciFiCardSpec {
+                width:     extract_f32(spec, "/card/width")         .unwrap_or(0.12),
+                height:    extract_f32(spec, "/card/height")        .unwrap_or(0.18),
+                thickness: extract_f32(spec, "/card/thickness")     .unwrap_or(0.012),
+                corner_radius: extract_f32(spec, "/card/corner_radius").unwrap_or(0.012),
+                bevel:     extract_f32(spec, "/card/bevel")         .unwrap_or(0.0015),
+                accent_hex: extract_str(spec, "/card/accent_hex")
+                    .unwrap_or("#00C8FF")
+                    .to_string(),
+                quality,
+                ..SciFiCardSpec::default()
+            };
+            Ok(generate_sci_fi_card(&spec_obj))
+        }
         // effect on the simple textured rectangle.
         _ => {
             let color = extract_str(spec, "/product/color_hex").unwrap_or("#CCCCCC");

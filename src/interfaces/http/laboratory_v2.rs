@@ -10,6 +10,7 @@
 use axum::{
     extract::{FromRequest, Multipart, Path, Query, Request, State},
     http::{header, StatusCode},
+    response::Response,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -285,4 +286,52 @@ pub async fn tune_surface(
         .await?;
 
     Ok(Json(TuneSurfaceResponse { asset, surface_info: info }))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `GET /laboratory/debug-glb/:object_type`
+//
+// Development endpoint — NO auth, NO database, NO storage.
+// Generates a GLB directly from the dispatcher and returns raw bytes.
+//
+// Usage:
+//   curl http://localhost:3000/api/laboratory/debug-glb/sci_fi_card -o card.glb
+//   curl http://localhost:3000/api/laboratory/debug-glb/card_dock   -o dock.glb
+//   curl http://localhost:3000/api/laboratory/debug-glb/bottled_sauce -o sauce.glb
+//
+// Then drag card.glb into https://gltf.pmnd.rs to inspect immediately.
+//
+// Optional query params (same as generator spec):
+//   ?quality=draft|standard|high|ultra  (default: high)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DebugGlbQuery {
+    #[serde(default)]
+    pub quality: Option<String>,
+}
+
+pub async fn debug_glb(
+    Path(object_type): Path<String>,
+    Query(query): Query<DebugGlbQuery>,
+) -> Result<Response<axum::body::Body>, AppError> {
+    use crate::infrastructure::geometry::dispatcher::dispatch_with_quality;
+    use crate::infrastructure::geometry::gltf_exporter::export_glb;
+    use axum::body::Body;
+
+    let quality = GeometryQuality::from_opt(query.quality.as_deref());
+    let mesh    = dispatch_with_quality(&object_type, None, quality)?;
+    let export  = export_glb(&mesh)?;
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "model/gltf-binary")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{object_type}.glb\""),
+        )
+        .body(Body::from(export.glb_bytes))
+        .map_err(|e| AppError::internal(format!("response build error: {e}")))?;
+
+    Ok(response)
 }

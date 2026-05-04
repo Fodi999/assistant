@@ -627,6 +627,17 @@ pub fn create_router(
                         )
                         .with_state(vision_for_debug),
                 )
+                .merge(
+                    // ── debug-glb — no auth, no DB, returns raw GLB bytes ──
+                    // GET /api/laboratory/debug-glb/:object_type?quality=high
+                    // Drag the downloaded .glb into https://gltf.pmnd.rs
+                    Router::new().route(
+                        "/laboratory/debug-glb/:object_type",
+                        axum::routing::get(
+                            crate::interfaces::http::laboratory_v2::debug_glb,
+                        ),
+                    ),
+                )
         })
         // Removed separate inventory_alert_service merge
         .merge(
