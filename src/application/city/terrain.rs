@@ -19,18 +19,23 @@ use crate::domain::city::{CityMesh, CityTerrain};
 
 /// Smooth, deterministic terrain height in metres.
 ///
-/// Returns roughly `-10 .. +10` m. Three-octave sum of trigonometric waves
+/// Returns roughly `-30 .. +30` m. Three-octave sum of trigonometric waves
 /// — large macro shape, medium ridges, fine detail — seeded by tenant_id.
 /// Cheap, allocation-free, stable. Tuned for ~1 km city extents.
+///
+/// Amplitude breakdown:
+///   macro  ±25 m  (large rolling hills)
+///   mid     ±8 m  (ridges and valleys)
+///   detail  ±1.2 m (surface texture)
 #[inline]
 pub fn terrain_height(x: f32, z: f32, seed: u64) -> f32 {
     let s = (seed as f32) * 0.000_001;
-    let macro_shape = ((x * 0.004  + s).sin() * 5.0)
-                    + ((z * 0.0035 + s * 1.7).cos() * 4.0);
-    let mid = ((x * 0.012 + z * 0.008 + s).sin() * 1.8)
-            + ((z * 0.015 - x * 0.009 + s).cos() * 1.4);
-    let detail = ((x * 0.05 + z * 0.03 + s).sin() * 0.35)
-               + ((z * 0.06 - x * 0.02 + s).cos() * 0.25);
+    let macro_shape = ((x * 0.004  + s).sin() * 14.0)
+                    + ((z * 0.0035 + s * 1.7).cos() * 11.0);
+    let mid = ((x * 0.012 + z * 0.008 + s).sin() * 4.8)
+            + ((z * 0.015 - x * 0.009 + s).cos() * 3.2);
+    let detail = ((x * 0.05 + z * 0.03 + s).sin() * 0.7)
+               + ((z * 0.06 - x * 0.02 + s).cos() * 0.5);
     macro_shape + mid + detail
 }
 
@@ -309,11 +314,11 @@ mod tests {
 
     #[test]
     fn terrain_height_within_bounds() {
-        // Theoretical max amplitude: 5 + 4 + 1.8 + 1.4 + 0.35 + 0.25 = 12.8
+        // Theoretical max amplitude: 14 + 11 + 4.8 + 3.2 + 0.7 + 0.5 = 34.2
         for i in -500..=500 {
             for j in -500..=500 {
                 let h = terrain_height((i * 2) as f32, (j * 2) as f32, 12345);
-                assert!(h.abs() < 15.0, "height {h} out of range at ({i},{j})");
+                assert!(h.abs() < 40.0, "height {h} out of range at ({i},{j})");
             }
         }
     }
@@ -378,8 +383,8 @@ mod tests {
     fn city_terrain_min_max_consistent() {
         let t = build_city_terrain(1000.0, 1000.0, 8.0, 1);
         assert!(t.min_height <= t.max_height);
-        assert!(t.min_height >= -15.0);
-        assert!(t.max_height <=  15.0);
+        assert!(t.min_height >= -40.0);
+        assert!(t.max_height <=  40.0);
         // On a 1 km square we should actually exercise both signs.
         assert!(t.min_height <  0.0, "expected some negative terrain, got {}", t.min_height);
         assert!(t.max_height >  0.0, "expected some positive terrain, got {}", t.max_height);
