@@ -29,6 +29,28 @@ pub struct CityMap {
     pub districts: Vec<CityDistrict>,
     /// Ground plane config.
     pub ground: CityGround,
+    /// Pre-baked terrain mesh (optional). When present, the frontend renders
+    /// it instead of (or alongside) the flat debug grid.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terrain: Option<CityTerrain>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Terrain — pre-baked landscape mesh from backend
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Indexed triangle mesh for the city terrain plus metadata so the frontend
+/// can size its camera/fog and pick a base colour without inspecting the mesh.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CityTerrain {
+    pub mesh: CityMesh,
+    pub width: f32,
+    pub depth: f32,
+    pub cell_size: f32,
+    pub min_height: f32,
+    pub max_height: f32,
+    pub color: String,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@
 
 pub mod economy_snapshot;
 pub mod city_generation;
+pub mod terrain;
 
 pub use economy_snapshot::EconomySnapshot;
 pub use city_generation::CityGenerator;

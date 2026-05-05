@@ -13,6 +13,7 @@
 /// RNG: LCG seeded from tenant_id — same tenant always gets same layout.
 
 use crate::application::city::economy_snapshot::EconomySnapshot;
+use crate::application::city::terrain::build_city_terrain;
 use crate::domain::city::*;
 use crate::infrastructure::geometry::kernel::extrude::{extrude_polygon, ExtrudeOptions, Point2 as KernelPoint2};
 use crate::shared::TenantId;
@@ -80,11 +81,22 @@ impl Gen {
         let max_col = specs.iter().map(|d| d.col.abs()).max().unwrap_or(1) as f32;
         let max_row = specs.iter().map(|d| d.row.abs()).max().unwrap_or(1) as f32;
 
+        let bounds_w = (max_col * 2.0 + 1.0) * STRIDE_X + CELL_W;
+        let bounds_d = (max_row * 2.0 + 1.0) * STRIDE_Z + CELL_D;
+
+        // ── 5. Terrain mesh ───────────────────────────────────────────────
+        // Pad the terrain a bit beyond the city bounds so the edges of the
+        // map sit comfortably inside the landscape (no visible cliffs).
+        let terrain_width  = bounds_w + 60.0;
+        let terrain_depth  = bounds_d + 60.0;
+        let terrain_cell   = 2.0;
+        let terrain = build_city_terrain(terrain_width, terrain_depth, terrain_cell, seed);
+
         CityMap {
             seed,
             bounds: CityBounds {
-                width: (max_col * 2.0 + 1.0) * STRIDE_X + CELL_W,
-                depth: (max_row * 2.0 + 1.0) * STRIDE_Z + CELL_D,
+                width: bounds_w,
+                depth: bounds_d,
             },
             economy: CityEconomy {
                 inventory_value_cents: econ.inventory_value_cents,
@@ -105,6 +117,7 @@ impl Gen {
                 fog_near: 80.0,
                 fog_far: 220.0,
             },
+            terrain: Some(terrain),
         }
     }
 
