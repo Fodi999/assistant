@@ -28,9 +28,13 @@ impl RecipeRepositoryV2 {
     }
 
     fn row_to_recipe(row: &sqlx::postgres::PgRow) -> AppResult<Recipe> {
-        let language_str: String = row
+        let language_str: Option<String> = row
             .try_get("language_default")
-            .map_err(|e| AppError::internal(&format!("Failed to get language_default: {}", e)))?;
+            .unwrap_or(None);
+        let language_default = language_str
+            .as_deref()
+            .and_then(|s| Language::from_code(s))
+            .unwrap_or(Language::En);
 
         Ok(Recipe {
             id: RecipeId(
@@ -51,7 +55,7 @@ impl RecipeRepositoryV2 {
             instructions_default: row.try_get("instructions_default").map_err(|e| {
                 AppError::internal(&format!("Failed to get instructions_default: {}", e))
             })?,
-            language_default: Language::from_code(&language_str).unwrap_or(Language::En),
+            language_default,
             image_url: row
                 .try_get("image_url")
                 .map_err(|e| AppError::internal(&format!("Failed to get image_url: {}", e)))?,
