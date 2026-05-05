@@ -41,7 +41,8 @@ impl EconomySnapshot {
         .bind(user_id.0)
         .fetch_optional(pool)
         .await
-        .map_err(|e| { error!("city/map: restaurant_name query failed: {e}"); e })?
+        .map_err(|e| { error!("city/map: restaurant_name query failed: {e}"); e })
+        .unwrap_or(None)
         .flatten();
 
         // ── Dish stats ────────────────────────────────────────────────────
