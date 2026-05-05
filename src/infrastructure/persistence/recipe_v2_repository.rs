@@ -50,11 +50,13 @@ impl RecipeRepositoryV2 {
                     .map_err(|e| AppError::internal(&format!("Failed to get tenant_id: {}", e)))?,
             ),
             name_default: row
-                .try_get("name_default")
-                .map_err(|e| AppError::internal(&format!("Failed to get name_default: {}", e)))?,
-            instructions_default: row.try_get("instructions_default").map_err(|e| {
-                AppError::internal(&format!("Failed to get instructions_default: {}", e))
-            })?,
+                .try_get::<Option<String>, _>("name_default")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            instructions_default: row
+                .try_get::<Option<String>, _>("instructions_default")
+                .unwrap_or(None)
+                .unwrap_or_default(),
             language_default,
             image_url: row
                 .try_get("image_url")
