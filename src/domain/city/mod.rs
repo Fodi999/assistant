@@ -33,6 +33,27 @@ pub struct CityMap {
     /// it instead of (or alongside) the flat debug grid.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terrain: Option<CityTerrain>,
+    /// Length-unit metadata. Backend uses meters; frontend may scale down for camera.
+    pub units: CityUnits,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Units — real-world scale convention
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Tells the frontend that one CityMap coordinate unit = `meters_per_unit` metres
+/// and suggests a render scale. The frontend should multiply the whole scene by
+/// `render_scale_hint` (e.g. wrap geometry in `<group scale={renderScaleHint}>`)
+/// so an 800 m city fits comfortably in the camera frustum.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CityUnits {
+    /// Human-readable unit name. Always "meter" in this build.
+    pub length_unit: String,
+    /// Metres per backend unit. Always 1.0 in this build.
+    pub meters_per_unit: f32,
+    /// Recommended `<group scale={...}>` factor for the frontend renderer.
+    pub render_scale_hint: f32,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

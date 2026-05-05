@@ -19,21 +19,27 @@ use crate::domain::city::{CityMesh, CityTerrain};
 
 /// Smooth, deterministic terrain height in metres.
 ///
-/// Returns roughly `-1.2 ..= +1.2`. No real Perlin/Simplex — just a sum of
-/// trigonometric waves seeded by tenant_id. Cheap, allocation-free, stable.
+/// Returns roughly `-10 .. +10` m. Three-octave sum of trigonometric waves
+/// — large macro shape, medium ridges, fine detail — seeded by tenant_id.
+/// Cheap, allocation-free, stable. Tuned for ~1 km city extents.
 #[inline]
 pub fn terrain_height(x: f32, z: f32, seed: u64) -> f32 {
-    // Convert seed to a small phase offset so different tenants get different
-    // (but still smooth) landscapes.
+    // Phase offset so different tenants get different (but smooth) landscapes.
     let s = (seed as f32) * 0.000_001;
 
-    let large = ((x * 0.018 + s).sin() * 0.6)
-              + ((z * 0.014 + s * 1.7).cos() * 0.5);
+    // Macro shape — long wavelengths (~250 m), large amplitude.
+    let macro_shape = ((x * 0.004  + s).sin() * 5.0)
+                    + ((z * 0.0035 + s * 1.7).cos() * 4.0);
 
-    let small = ((x * 0.055 + z * 0.025 + s).sin() * 0.18)
-              + ((z * 0.045 - x * 0.018 + s).cos() * 0.12);
+    // Mid-scale ridges (~80 m).
+    let mid = ((x * 0.012 + z * 0.008 + s).sin() * 1.8)
+            + ((z * 0.015 - x * 0.009 + s).cos() * 1.4);
 
-    (large + small) * 0.9
+    // Fine detail (~20 m).
+    let detail = ((x * 0.05 + z * 0.03 + s).sin() * 0.35)
+               + ((z * 0.06 - x * 0.02 + s).cos() * 0.25);
+
+    macro_shape + mid + detail
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,8 +166,8 @@ pub fn build_city_terrain(width: f32, depth: f32, cell_size: f32, seed: u64) -> 
         if y < min_h { min_h = y; }
         if y > max_h { max_h = y; }
     }
-    if !min_h.is_finite() { min_h = -1.5; }
-    if !max_h.is_finite() { max_h =  1.5; }
+    if !min_h.is_finite() { min_h = -12.0; }
+    if !max_h.is_finite() { max_h =  12.0; }
 
     CityTerrain {
         mesh,
@@ -189,21 +195,21 @@ mod tests {
 
     #[test]
     fn terrain_height_within_bounds() {
-        for i in -50..=50 {
-            for j in -50..=50 {
-                let h = terrain_height(i as f32, j as f32, 12345);
-                assert!(h.abs() < 2.0, "height {h} out of soft range at ({i},{j})");
+        // Theoretical max amplitude: 5 + 4 + 1.8 + 1.4 + 0.35 + 0.25 = 12.8
+        for i in -500..=500 {
+            for j in -500..=500 {
+                let h = terrain_height((i * 2) as f32, (j * 2) as f32, 12345);
+                assert!(h.abs() < 15.0, "height {h} out of range at ({i},{j})");
             }
         }
     }
 
     #[test]
     fn terrain_mesh_shapes() {
-        let mesh = build_terrain_mesh(40.0, 30.0, 5.0, 7);
+        let mesh = build_terrain_mesh(160.0, 120.0, 8.0, 7);
 
-        // cols = 8, rows = 6  → (cols+1)*(rows+1) = 63 verts
-        let cols = (40.0_f32 / 5.0).ceil() as usize;
-        let rows = (30.0_f32 / 5.0).ceil() as usize;
+        let cols = (160.0_f32 / 8.0).ceil() as usize;
+        let rows = (120.0_f32 / 8.0).ceil() as usize;
         let expected_verts = (cols + 1) * (rows + 1);
 
         assert_eq!(mesh.positions.len(), expected_verts * 3);
@@ -214,20 +220,24 @@ mod tests {
 
     #[test]
     fn terrain_mesh_normals_unit_and_up() {
-        let mesh = build_terrain_mesh(20.0, 20.0, 4.0, 99);
+        // Sample a city-scale chunk so normals reflect the gentle slopes.
+        let mesh = build_terrain_mesh(400.0, 400.0, 8.0, 99);
         for n in mesh.normals.chunks_exact(3) {
             let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
             assert!((len - 1.0).abs() < 1e-3, "non-unit normal: {len}");
-            // Soft terrain → normal Y should be strongly positive.
+            // Soft terrain → max slope ≈ 0.06 → cos(slope) > 0.99 → normal.y > 0.5 always
             assert!(n[1] > 0.5, "normal not pointing up enough: {:?}", n);
         }
     }
 
     #[test]
     fn city_terrain_min_max_consistent() {
-        let t = build_city_terrain(60.0, 60.0, 3.0, 1);
+        let t = build_city_terrain(1000.0, 1000.0, 8.0, 1);
         assert!(t.min_height <= t.max_height);
-        assert!(t.min_height >= -2.0);
-        assert!(t.max_height <=  2.0);
+        assert!(t.min_height >= -15.0);
+        assert!(t.max_height <=  15.0);
+        // On a 1 km square we should actually exercise both signs.
+        assert!(t.min_height <  0.0, "expected some negative terrain, got {}", t.min_height);
+        assert!(t.max_height >  0.0, "expected some positive terrain, got {}", t.max_height);
     }
 }

@@ -19,18 +19,42 @@ use crate::infrastructure::geometry::kernel::extrude::{extrude_polygon, ExtrudeO
 use crate::shared::TenantId;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Constants
+// Constants — REAL-WORLD METERS
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// 1 backend unit = 1 metre. Frontend wraps the city in a `<group scale={...}>`
+// to fit the camera (see `CityUnits.render_scale_hint`).
 
-const CELL_W: f32 = 22.0;
-const CELL_D: f32 = 18.0;
-const ROAD_W_PRIMARY: f32 = 5.0;
-const ROAD_W_SECONDARY: f32 = 3.0;
-const STRIDE_X: f32 = CELL_W + ROAD_W_PRIMARY;
-const STRIDE_Z: f32 = CELL_D + ROAD_W_PRIMARY;
+/// District (city block) size in metres.
+pub const DISTRICT_W_M: f32 = 240.0;
+pub const DISTRICT_D_M: f32 = 180.0;
 
-// How much polygon corners are randomly perturbed (organic look)
-const POLYGON_JITTER: f32 = 1.2;
+/// Road widths in metres.
+pub const ROAD_W_PRIMARY: f32 = 16.0;
+pub const ROAD_W_SECONDARY: f32 = 8.0;
+
+/// Floor height for building height calculations.
+pub const FLOOR_H_M: f32 = 3.2;
+
+/// Sidewalk width (reserved for future flatten-pad work).
+pub const SIDEWALK_W_M: f32 = 2.5;
+
+/// Terrain padding around city bounds and grid cell size in metres.
+pub const TERRAIN_MARGIN_M: f32 = 120.0;
+pub const TERRAIN_CELL_M: f32 = 4.0;
+
+/// Suggested `<group scale={...}>` for the frontend (1 m → 0.05 world units).
+pub const RENDER_SCALE_HINT: f32 = 0.05;
+
+const STRIDE_X: f32 = DISTRICT_W_M + ROAD_W_PRIMARY;   // 256
+const STRIDE_Z: f32 = DISTRICT_D_M + ROAD_W_PRIMARY;   // 196
+
+/// How much district polygon corners are randomly perturbed (organic look) — metres.
+const POLYGON_JITTER: f32 = 12.0;
+
+// Backwards-compat aliases (used inside this module).
+const CELL_W: f32 = DISTRICT_W_M;
+const CELL_D: f32 = DISTRICT_D_M;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public entry point
@@ -85,12 +109,11 @@ impl Gen {
         let bounds_d = (max_row * 2.0 + 1.0) * STRIDE_Z + CELL_D;
 
         // ── 5. Terrain mesh ───────────────────────────────────────────────
-        // Pad the terrain a bit beyond the city bounds so the edges of the
-        // map sit comfortably inside the landscape (no visible cliffs).
-        let terrain_width  = bounds_w + 60.0;
-        let terrain_depth  = bounds_d + 60.0;
-        let terrain_cell   = 2.0;
-        let terrain = build_city_terrain(terrain_width, terrain_depth, terrain_cell, seed);
+        // Pad the terrain `TERRAIN_MARGIN_M` beyond the city bounds so map
+        // edges sit comfortably inside the landscape (no visible cliffs).
+        let terrain_width  = bounds_w + TERRAIN_MARGIN_M * 2.0;
+        let terrain_depth  = bounds_d + TERRAIN_MARGIN_M * 2.0;
+        let terrain = build_city_terrain(terrain_width, terrain_depth, TERRAIN_CELL_M, seed);
 
         CityMap {
             seed,
@@ -112,12 +135,17 @@ impl Gen {
             districts,
             ground: CityGround {
                 color: "#5a6048".into(),
-                size: 800.0,
+                size: 1500.0,            // real metres — frontend scales by render_scale_hint
                 fog_color: "#7ab0e8".into(),
-                fog_near: 80.0,
-                fog_far: 220.0,
+                fog_near: 400.0,         // real metres
+                fog_far: 1500.0,         // real metres
             },
             terrain: Some(terrain),
+            units: CityUnits {
+                length_unit: "meter".into(),
+                meters_per_unit: 1.0,
+                render_scale_hint: RENDER_SCALE_HINT,
+            },
         }
     }
 
@@ -213,9 +241,11 @@ impl Gen {
         hw: f32,
         hd: f32,
     ) -> Vec<CityBuilding> {
-        let margin = 2.5;
-        let usable_w = hw - margin;
-        let usable_d = hd - margin;
+        // Reserve room near the road edge for sidewalks + half of the largest
+        // expected building footprint.
+        let margin = 25.0_f32;
+        let usable_w = (hw - margin).max(10.0);
+        let usable_d = (hd - margin).max(10.0);
 
         let count: usize = match spec.kind {
             DistrictKind::Player      => 1,
@@ -251,15 +281,16 @@ impl Gen {
         match kind {
             // ── Player HQ: prominent golden building, centred ────────────
             DistrictKind::Player => {
-                let w = 4.5_f32;
-                let d = 4.5_f32;
-                let h = 3.5_f32;
+                let w = 18.0_f32;
+                let d = 24.0_f32;
+                let floors = 2u32;
+                let h = floors as f32 * FLOOR_H_M;
                 with_mesh(CityBuilding {
                     id: format!("player_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
-                    floors: 2,
+                    floors,
                     kind: "player".into(),
                     color: "#f5c842".into(),
                     roof_color: Some("#e8a020".into()),
@@ -275,10 +306,11 @@ impl Gen {
 
             // ── Office: tall towers, metallic ────────────────────────────
             DistrictKind::Office => {
-                let h = 5.0 + rng.next_f32() * 10.0;
-                let w = 1.8 + rng.next_f32() * 0.8;
-                let d = 1.8 + rng.next_f32() * 0.8;
-                let floors = (h / 2.8).ceil() as u32;
+                // 10–30 floors, footprint 28–45 m
+                let floors = 10 + (rng.next_f32() * 20.0).round() as u32;
+                let h = floors as f32 * FLOOR_H_M;
+                let w = 28.0 + rng.next_f32() * 17.0;
+                let d = 28.0 + rng.next_f32() * 17.0;
                 // Occasionally L-shaped for variety
                 let footprint = if rng.next_f32() > 0.65 {
                     l_shape_footprint(cx, cz, w, d, rng)
@@ -306,9 +338,9 @@ impl Gen {
 
             // ── Market: wide low sheds ────────────────────────────────────
             DistrictKind::Market => {
-                let w = 2.0 + rng.next_f32() * 1.5;
-                let d = 1.5 + rng.next_f32() * 1.0;
-                let h = 1.0 + rng.next_f32() * 1.5;
+                let w = 30.0 + rng.next_f32() * 30.0;   // 30–60 m
+                let d = 25.0 + rng.next_f32() * 15.0;   // 25–40 m
+                let h = 8.0 + rng.next_f32() * 4.0;     // 8–12 m
                 with_mesh(CityBuilding {
                     id: format!("market_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
@@ -328,15 +360,16 @@ impl Gen {
 
             // ── Shops: small low units, coloured roofs ────────────────────
             DistrictKind::Shops => {
-                let w = 1.2 + rng.next_f32() * 0.8;
-                let d = 0.9 + rng.next_f32() * 0.4;
-                let h = 0.8 + rng.next_f32() * 0.6;
+                let w = 8.0 + rng.next_f32() * 8.0;   // 8–16 m
+                let d = 8.0 + rng.next_f32() * 4.0;   // 8–12 m
+                let floors = if rng.next_f32() > 0.5 { 2 } else { 1 };
+                let h = floors as f32 * FLOOR_H_M;
                 with_mesh(CityBuilding {
                     id: format!("shop_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
-                    floors: 1,
+                    floors,
                     kind: "shop".into(),
                     color: pick(rng, &["#c8b09a","#d4b890","#bc9880","#e0c8a0"]).into(),
                     roof_color: Some(pick(rng, &["#d06030","#e04040","#30a060","#4060e0"]).to_string()),
@@ -351,10 +384,10 @@ impl Gen {
             // ── Residential: medium grey blocks ───────────────────────────
             DistrictKind::Residential => {
                 let gray = 130u8 + (rng.next_f32() * 60.0) as u8;
-                let w = 1.4 + rng.next_f32() * 0.8;
-                let d = 1.2 + rng.next_f32() * 0.6;
-                let h = 0.8 + rng.next_f32() * 1.2;
-                let floors = ((h / 1.0).ceil() as u32).max(1);
+                let w = 18.0 + rng.next_f32() * 17.0;   // 18–35 m
+                let d = 16.0 + rng.next_f32() * 14.0;   // 16–30 m
+                let floors = 4 + (rng.next_f32() * 5.0).round() as u32;   // 4–9
+                let h = floors as f32 * FLOOR_H_M;
                 with_mesh(CityBuilding {
                     id: format!("res_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
@@ -375,10 +408,10 @@ impl Gen {
 
             // ── Competitor: red-tinted building ───────────────────────────
             DistrictKind::Competitor => {
-                let w = 2.5 + rng.next_f32() * 1.0;
-                let d = 2.0 + rng.next_f32() * 0.8;
-                let h = 1.8 + rng.next_f32() * 2.0;
-                let floors = (h / 1.8).ceil() as u32;
+                let w = 22.0 + rng.next_f32() * 10.0;  // 22–32 m
+                let d = 18.0 + rng.next_f32() *  8.0;  // 18–26 m
+                let floors = 3 + (rng.next_f32() * 3.0).round() as u32;  // 3–6
+                let h = floors as f32 * FLOOR_H_M;
                 with_mesh(CityBuilding {
                     id: format!("comp_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
@@ -400,9 +433,9 @@ impl Gen {
 
             // ── Industrial: orange warning glow ───────────────────────────
             DistrictKind::Industrial => {
-                let w = 2.5 + rng.next_f32() * 1.5;
-                let d = 2.0 + rng.next_f32() * 1.2;
-                let h = 2.0 + rng.next_f32() * 2.0;
+                let w = 40.0 + rng.next_f32() * 40.0;  // 40–80 m
+                let d = 30.0 + rng.next_f32() * 30.0;  // 30–60 m
+                let h = 6.0  + rng.next_f32() *  4.0;  // 6–10 m
                 with_mesh(CityBuilding {
                     id: format!("ind_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
@@ -497,7 +530,7 @@ fn build_road_network(specs: &[DistrictSpec]) -> Vec<CityRoad> {
         // Horizontal alley
         roads.push(CityRoad {
             id: format!("alley_h_{}_{}", spec.col, spec.row),
-            polyline: vec![[cx - hw + 1.0, cz], [cx + hw - 1.0, cz]],
+            polyline: vec![[cx - hw + 8.0, cz], [cx + hw - 8.0, cz]],
             width: ROAD_W_SECONDARY,
             lanes: 1,
             road_type: "secondary".into(),
@@ -508,7 +541,7 @@ fn build_road_network(specs: &[DistrictSpec]) -> Vec<CityRoad> {
         // Vertical alley
         roads.push(CityRoad {
             id: format!("alley_v_{}_{}", spec.col, spec.row),
-            polyline: vec![[cx, cz - hd + 1.0], [cx, cz + hd - 1.0]],
+            polyline: vec![[cx, cz - hd + 8.0], [cx, cz + hd - 8.0]],
             width: ROAD_W_SECONDARY,
             lanes: 1,
             road_type: "secondary".into(),
@@ -536,12 +569,12 @@ fn fill_lots(
 
     match kind {
         DistrictKind::Park => {
-            // Grass patches
+            // Grass patches (real-world metres)
             for i in 0..4u32 {
                 let lx = cx + (rng.next_f32() * 2.0 - 1.0) * hw * 0.6;
                 let lz = cz + (rng.next_f32() * 2.0 - 1.0) * hd * 0.6;
-                let w = 3.0 + rng.next_f32() * 3.0;
-                let d = 2.5 + rng.next_f32() * 2.0;
+                let w = 30.0 + rng.next_f32() * 30.0;
+                let d = 25.0 + rng.next_f32() * 20.0;
                 lots.push(CityLot {
                     id: format!("grass_{}", i),
                     polygon: rect_footprint(lx, lz, w, d),
@@ -549,10 +582,10 @@ fn fill_lots(
                     color: "#4a7830".into(),
                 });
             }
-            // Small water feature
+            // Pond
             lots.push(CityLot {
                 id: "pond_0".into(),
-                polygon: rect_footprint(cx, cz + hd * 0.3, 2.0, 2.0),
+                polygon: rect_footprint(cx, cz + hd * 0.3, 20.0, 20.0),
                 kind: "water".into(),
                 color: "#2060a0".into(),
             });
@@ -561,7 +594,7 @@ fn fill_lots(
             // Pavement plaza
             lots.push(CityLot {
                 id: "plaza_0".into(),
-                polygon: rect_footprint(cx, cz, 4.0, 3.0),
+                polygon: rect_footprint(cx, cz, 40.0, 30.0),
                 kind: "plaza".into(),
                 color: "#b0a080".into(),
             });
@@ -570,7 +603,7 @@ fn fill_lots(
             // Paved plaza in front
             lots.push(CityLot {
                 id: "pavement_0".into(),
-                polygon: rect_footprint(cx, cz + hd * 0.6, CELL_W - 2.0, 2.5),
+                polygon: rect_footprint(cx, cz + hd * 0.6, CELL_W - 20.0, 25.0),
                 kind: "pavement".into(),
                 color: "#606070".into(),
             });
@@ -625,15 +658,15 @@ fn jitter_rect(cx: f32, cz: f32, hw: f32, hd: f32, jitter: f32, rng: &mut Lcg) -
     ]
 }
 
-/// Parametric dashed markings along a polyline
+/// Parametric dashed markings along a polyline (real-world metres).
 fn polyline_markings(length: f32, _width: f32) -> Vec<RoadMarking> {
-    let dash_every = 4.0_f32;
+    let dash_every = 12.0_f32;
     let count = (length / dash_every) as usize;
     (0..count)
         .map(|i| RoadMarking {
             t: i as f32 * dash_every + dash_every * 0.5,
-            length: 1.2,
-            width: 0.18,
+            length: 3.0,
+            width: 0.4,
         })
         .collect()
 }
