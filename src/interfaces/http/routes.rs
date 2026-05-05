@@ -52,6 +52,7 @@ use crate::interfaces::http::{
     recipe_ai_insights, // AI insights handlers
     recipe_v2,          // V2 handlers with translations
     report::get_summary,
+    city::get_city_map,
     smart::smart_ingredient, // 🆕 SmartService handler
     smart::smart_autocomplete, // 🆕 SmartService autocomplete
     smart_parse::smart_parse, // 🆕 SmartParse handler
@@ -116,6 +117,9 @@ pub fn create_router(
         inventory_service.clone(),
         menu_engineering_service.clone(),
     );
+
+    // 🆕 City Engine
+    let city_engine_service = crate::application::city_engine::CityEngineService::new(pool.clone());
 
     // 🆕 Pre-clone services for Copilot (they are consumed in their own router blocks)
     let dish_service_for_copilot = dish_service.clone();
@@ -660,6 +664,12 @@ pub fn create_router(
             Router::new()
                 .route("/reports/summary", get(get_summary))
                 .with_state(report_service),
+        )
+        .merge(
+            // 🆕 City Engine — frontend renders whatever this returns
+            Router::new()
+                .route("/city/map", get(get_city_map))
+                .with_state(city_engine_service),
         )
         .merge(
             Router::new()

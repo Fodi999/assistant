@@ -2,6 +2,8 @@ pub mod admin_auth;
 pub mod admin_catalog;
 pub mod admin_nutrition;
 pub mod assistant_service;
+pub mod city; // 🆕 City application layer (economy_snapshot + city_generation)
+pub mod city_engine; // thin re-export shim → city::CityEngineService
 pub mod ai_sous_chef; // AI Sous Chef — deterministic state generation
 pub mod public_nutrition;
 pub mod public_seo_content; // 🆕 AI SEO content for programmatic pages

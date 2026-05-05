@@ -9,6 +9,7 @@ pub mod assistant;
 pub mod auth;
 pub mod billing; // 🆕 Stripe Checkout + Webhook
 pub mod catalog;
+pub mod city; // 🆕 City Engine — GET /api/city/map
 pub mod copilot; // 🆕 Copilot — главный LLM Brain (POST /api/copilot/message)
 pub mod chef_reference_public;
 pub mod cook_suggestions; // 🆕 Smart recipe suggestions from inventory

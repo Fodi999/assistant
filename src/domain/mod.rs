@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod ai_ports;  // 🆕 AI abstraction traits (AiClient, AiQuality)
 pub mod assistant;
+pub mod city; // 🆕 City domain — CityMap wire types for Food Empire city renderer
 pub mod auth;
 pub mod catalog;
 pub mod classification_rules; // 🆕 Added classification rules
