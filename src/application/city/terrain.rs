@@ -102,83 +102,136 @@ fn edge_fade(col: usize, row: usize, cols: usize, rows: usize, fade_cells: usize
 // Mesh builder
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Build an indexed grid mesh sampling `terrain_height`.
+/// Build a **solid** indexed mesh for terrain:
 ///
-/// Extras over a plain grid:
-///   - **Vertex colours** (`colors` buffer, flat RGB 0..1) — height-based
-///     colour ramp so the frontend can use `vertexColors: true` without any
-///     extra texture.
-///   - **Edge taper** — border vertices are sunk to `EDGE_SINK_Y` (well below
-///     city ground level) via a smooth Hermite fade so the terrain edge
-///     disappears underground rather than forming a hard visible cliff.
-///   - **Smooth normals** — per-vertex normals from averaged face normals.
+/// ```text
+/// ┌─────────────────────────┐  ← top surface  H(x,z)  (height-coloured)
+/// │  ╲  /╲  /╲  /╲  /╲  / │
+/// │   \/  \/  \/  \/  \/   │
+/// ├─────────────────────────┤  ← edge taper sinks to EDGE_SINK_Y (-30 m)
+/// │  side walls             │  ← dark earth, vertical quads all the way down
+/// └─────────────────────────┘  ← flat bottom cap at BASE_Y (-50 m)
+/// ```
+///
+/// Vertex buffers:
+///   - **positions** — `[x, y, z]` flat list
+///   - **normals**   — smooth for top surface, averaged for walls
+///   - **uvs**       — 0..1 for top, 0 for walls/cap
+///   - **colors**    — height ramp on top; dark `#150f07` on walls/cap
+///   - **indices**   — CCW from outside / +Y
 pub fn build_terrain_mesh(width: f32, depth: f32, cell_size: f32, seed: u64) -> CityMesh {
-    /// How many cells from each edge fade to underground.
+    /// How many cells from each edge taper toward EDGE_SINK_Y.
     const FADE_CELLS: usize = 14;
-    /// Y value edge vertices sink to (below deepest visible ground).
+    /// Y where tapered edge meets the top of the side walls.
     const EDGE_SINK_Y: f32 = -30.0;
+    /// Flat bottom of the solid — the side walls extend from EDGE_SINK_Y to BASE_Y.
+    const BASE_Y: f32 = EDGE_SINK_Y - 20.0; // -50 m
+    /// Dark earth colour for side walls and bottom cap.
+    const DARK_EARTH: [f32; 3] = [0.082, 0.059, 0.027];
 
     let cols = (width  / cell_size).ceil() as usize;
     let rows = (depth  / cell_size).ceil() as usize;
-
     let stride = cols + 1;
-    let vert_count = stride * (rows + 1);
 
-    let mut positions: Vec<f32> = Vec::with_capacity(vert_count * 3);
-    let mut normals:   Vec<f32> = vec![0.0; vert_count * 3];
-    let mut uvs:       Vec<f32> = Vec::with_capacity(vert_count * 2);
-    let mut colors:    Vec<f32> = Vec::with_capacity(vert_count * 3);
-    let mut indices:   Vec<u32> = Vec::with_capacity(rows * cols * 6);
+    let mut positions: Vec<f32> = Vec::new();
+    let mut uvs:       Vec<f32> = Vec::new();
+    let mut colors:    Vec<f32> = Vec::new();
+    let mut indices:   Vec<u32> = Vec::new();
 
     let half_w = width  * 0.5;
     let half_d = depth  * 0.5;
 
-    // 1. Vertex positions, UVs, vertex colours.
+    // ── 1. Top surface ────────────────────────────────────────────────────
+    // top_vert_count = stride * (rows + 1); indices 0..top_vert_count-1
     for row in 0..=rows {
-        for col in 0..cols + 1 {
+        for col in 0..=cols {
             let x = -half_w + (col as f32) * cell_size;
             let z = -half_d + (row as f32) * cell_size;
 
             let h_raw = terrain_height(x, z, seed);
+            let fade  = edge_fade(col, row, cols, rows, FADE_CELLS);
+            let y     = h_raw * fade + EDGE_SINK_Y * (1.0 - fade);
 
-            // Smoothly sink edge vertices underground.
-            let fade = edge_fade(col, row, cols, rows, FADE_CELLS);
-            let y = h_raw * fade + EDGE_SINK_Y * (1.0 - fade);
-
-            positions.push(x);
-            positions.push(y);
-            positions.push(z);
-
-            uvs.push((col as f32) / (cols as f32));
-            uvs.push((row as f32) / (rows as f32));
-
-            // Colour based on raw height (before taper) so edge colour
-            // blends to the darkest wetland stop naturally.
+            positions.extend_from_slice(&[x, y, z]);
+            uvs.extend_from_slice(&[col as f32 / cols as f32,
+                                    row as f32 / rows as f32]);
+            // colour uses tapered height so edges blend toward darkest stop
             let rgb = height_to_rgb(h_raw * fade);
-            colors.push(rgb[0]);
-            colors.push(rgb[1]);
-            colors.push(rgb[2]);
+            colors.extend_from_slice(&rgb);
         }
     }
 
-    // 2. Triangle indices (two per cell, CCW from +Y).
+    // Top surface triangles (CCW from +Y)
     for row in 0..rows {
         for col in 0..cols {
-            let a = (row * stride + col) as u32;
-            let b = (row * stride + col + 1) as u32;
-            let c = ((row + 1) * stride + col) as u32;
+            let a = (row       * stride + col    ) as u32;
+            let b = (row       * stride + col + 1) as u32;
+            let c = ((row + 1) * stride + col    ) as u32;
             let d = ((row + 1) * stride + col + 1) as u32;
-            indices.push(a); indices.push(c); indices.push(b);
-            indices.push(b); indices.push(c); indices.push(d);
+            indices.extend_from_slice(&[a, c, b, b, c, d]);
         }
     }
 
-    // 3. Smooth per-vertex normals via accumulated face normals.
+    // ── 2. Side walls ─────────────────────────────────────────────────────
+    // Perimeter of the top surface, CW when viewed from +Y (so outside is
+    // always to the right of travel direction).
+    let mut perim: Vec<usize> = Vec::new();
+    for col in 0..=cols         { perim.push(0    * stride + col ); } // front
+    for row in 1..=rows         { perim.push(row  * stride + cols); } // right
+    for col in (0..cols).rev()  { perim.push(rows * stride + col ); } // back
+    for row in (1..rows).rev()  { perim.push(row  * stride       ); } // left
+    // Note: first and last share no vertex — the loop closes via (i+1) % n.
+
+    let wall_start = (positions.len() / 3) as u32;
+
+    // Bottom ring: same (x, z) as perimeter top vertices, y = BASE_Y
+    for &pi in &perim {
+        let x = positions[pi * 3    ];
+        let z = positions[pi * 3 + 2];
+        positions.extend_from_slice(&[x, BASE_Y, z]);
+        uvs.extend_from_slice(&[0.0, 0.0]);
+        colors.extend_from_slice(&DARK_EARTH);
+    }
+
+    // Wall quads — winding verified to give outward normals for CW perimeter:
+    //   (top_a, top_b, bot_a)  +  (top_b, bot_b, bot_a)
+    let n = perim.len();
+    for i in 0..n {
+        let next  = (i + 1) % n;
+        let top_a = perim[i]    as u32;
+        let top_b = perim[next] as u32;
+        let bot_a = wall_start  + i    as u32;
+        let bot_b = wall_start  + next as u32;
+        indices.extend_from_slice(&[top_a, top_b, bot_a,
+                                    top_b, bot_b, bot_a]);
+    }
+
+    // ── 3. Bottom cap (flat quad, normal = −Y) ────────────────────────────
+    let cap_start = (positions.len() / 3) as u32;
+    let cap_corners: [[f32; 3]; 4] = [
+        [-half_w, BASE_Y, -half_d],  // 0  front-left
+        [ half_w, BASE_Y, -half_d],  // 1  front-right
+        [ half_w, BASE_Y,  half_d],  // 2  back-right
+        [-half_w, BASE_Y,  half_d],  // 3  back-left
+    ];
+    for &c in &cap_corners {
+        positions.extend_from_slice(&c);
+        uvs.extend_from_slice(&[0.0, 0.0]);
+        colors.extend_from_slice(&DARK_EARTH);
+    }
+    // CCW from −Y: (0,1,3) + (1,2,3)
+    indices.extend_from_slice(&[cap_start,     cap_start + 1, cap_start + 3,
+                                cap_start + 1, cap_start + 2, cap_start + 3]);
+
+    // ── 4. Smooth normals: accumulated face normals over ALL triangles ────
+    let vert_total = positions.len() / 3;
+    let mut normals: Vec<f32> = vec![0.0; vert_total * 3];
+
     for tri in indices.chunks_exact(3) {
         let i0 = tri[0] as usize;
         let i1 = tri[1] as usize;
         let i2 = tri[2] as usize;
-        let p = |i: usize| [positions[i*3], positions[i*3+1], positions[i*3+2]];
+        let p  = |i: usize| [positions[i*3], positions[i*3+1], positions[i*3+2]];
         let p0 = p(i0); let p1 = p(i1); let p2 = p(i2);
         let e1 = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
         let e2 = [p2[0]-p0[0], p2[1]-p0[1], p2[2]-p0[2]];
@@ -186,15 +239,15 @@ pub fn build_terrain_mesh(width: f32, depth: f32, cell_size: f32, seed: u64) -> 
         let ny = e1[2]*e2[0] - e1[0]*e2[2];
         let nz = e1[0]*e2[1] - e1[1]*e2[0];
         for &i in &[i0, i1, i2] {
-            normals[i*3]     += nx;
+            normals[i*3    ] += nx;
             normals[i*3 + 1] += ny;
             normals[i*3 + 2] += nz;
         }
     }
     for n in normals.chunks_exact_mut(3) {
         let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
-        if len > 1e-6 { n[0]/=len; n[1]/=len; n[2]/=len; }
-        else { n[0]=0.0; n[1]=1.0; n[2]=0.0; }
+        if len > 1e-6 { n[0] /= len; n[1] /= len; n[2] /= len; }
+        else           { n[0] = 0.0; n[1] =  1.0; n[2] = 0.0;  }
     }
 
     CityMesh { positions, normals, uvs, indices, colors }
@@ -271,23 +324,53 @@ mod tests {
 
         let cols = (160.0_f32 / 8.0).ceil() as usize;
         let rows = (120.0_f32 / 8.0).ceil() as usize;
-        let expected_verts = (cols + 1) * (rows + 1);
+        let top_verts = (cols + 1) * (rows + 1);
 
-        assert_eq!(mesh.positions.len(), expected_verts * 3);
-        assert_eq!(mesh.normals.len(),   expected_verts * 3);
-        assert_eq!(mesh.uvs.len(),       expected_verts * 2);
-        assert_eq!(mesh.indices.len(),   rows * cols * 6);
+        // Solid mesh has more vertices than the top surface alone
+        // (top + wall bottom-ring + 4 cap corners).
+        let perim_len = 2 * cols + 2 * rows; // perimeter vertex count
+        let expected_total = top_verts + perim_len + 4;
+
+        assert_eq!(mesh.positions.len(), expected_total * 3,
+            "positions len mismatch");
+        assert_eq!(mesh.normals.len(),   expected_total * 3,
+            "normals len mismatch");
+        assert_eq!(mesh.uvs.len(),       expected_total * 2,
+            "uvs len mismatch");
+        assert_eq!(mesh.colors.len(),    expected_total * 3,
+            "colors len mismatch");
+
+        // Index count: top + walls + cap
+        let top_tris  = rows * cols * 6;
+        let wall_tris = perim_len * 6;
+        let cap_tris  = 6;
+        assert_eq!(mesh.indices.len(), top_tris + wall_tris + cap_tris,
+            "indices len mismatch");
     }
 
     #[test]
     fn terrain_mesh_normals_unit_and_up() {
         // Sample a city-scale chunk so normals reflect the gentle slopes.
         let mesh = build_terrain_mesh(400.0, 400.0, 8.0, 99);
+        let cols = (400.0_f32 / 8.0).ceil() as usize;
+        let rows = (400.0_f32 / 8.0).ceil() as usize;
+        let stride = cols + 1;
+
+        // All normals must be unit length.
         for n in mesh.normals.chunks_exact(3) {
             let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
             assert!((len - 1.0).abs() < 1e-3, "non-unit normal: {len}");
-            // Soft terrain → max slope ≈ 0.06 → cos(slope) > 0.99 → normal.y > 0.5 always
-            assert!(n[1] > 0.5, "normal not pointing up enough: {:?}", n);
+        }
+        // Interior top-surface normals must point generally upward.
+        // (Perimeter vertices are shared with side-wall faces so their
+        //  accumulated normals tilt sideways — intentional smooth seam.)
+        for row in 1..rows {
+            for col in 1..cols {
+                let i = row * stride + col;
+                let n = &mesh.normals[i*3..i*3+3];
+                assert!(n[1] > 0.5,
+                    "interior top normal not pointing up at ({col},{row}): {n:?}");
+            }
         }
     }
 
