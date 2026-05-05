@@ -6,6 +6,7 @@
 
 use crate::shared::{AppResult, TenantId, UserId};
 use sqlx::PgPool;
+use tracing::error;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Snapshot
@@ -35,11 +36,12 @@ impl EconomySnapshot {
     pub async fn load(pool: &PgPool, user_id: UserId, tenant_id: TenantId) -> AppResult<Self> {
         // ── Restaurant name ───────────────────────────────────────────────
         let restaurant_name: Option<String> = sqlx::query_scalar(
-            "SELECT restaurant_name FROM users WHERE id = $1",
+            "SELECT COALESCE(display_name, name) FROM users WHERE id = $1",
         )
         .bind(user_id.0)
         .fetch_optional(pool)
-        .await?
+        .await
+        .map_err(|e| { error!("city/map: restaurant_name query failed: {e}"); e })?
         .flatten();
 
         // ── Dish stats ────────────────────────────────────────────────────
@@ -52,6 +54,7 @@ impl EconomySnapshot {
         .bind(tenant_id.0)
         .fetch_one(pool)
         .await
+        .map_err(|e| { error!("city/map: dish_row query failed: {e}"); e })
         .unwrap_or((Some(0), Some(0.0)));
 
         // ── Inventory stats ───────────────────────────────────────────────
@@ -70,16 +73,17 @@ impl EconomySnapshot {
         .bind(tenant_id.0)
         .fetch_one(pool)
         .await
+        .map_err(|e| { error!("city/map: inv_row query failed: {e}"); e })
         .unwrap_or((Some(0), Some(0), Some(0)));
 
         // ── Assistant progress (0-100) ────────────────────────────────────
-        // current_step is TEXT in the state machine — map to a progress integer
         let step_name: Option<String> = sqlx::query_scalar(
             "SELECT current_step FROM assistant_states WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 1",
         )
         .bind(tenant_id.0)
         .fetch_optional(pool)
         .await
+        .map_err(|e| { error!("city/map: assistant_states query failed: {e}"); e })
         .unwrap_or(None);
 
         let assistant_progress = step_to_progress(step_name.as_deref());
@@ -93,6 +97,7 @@ impl EconomySnapshot {
         .bind(tenant_id.0)
         .fetch_optional(pool)
         .await
+        .map_err(|e| { error!("city/map: revenue query failed: {e}"); e })
         .unwrap_or(None);
 
         Ok(EconomySnapshot {
