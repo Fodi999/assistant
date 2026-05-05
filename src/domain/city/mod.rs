@@ -203,6 +203,10 @@ pub struct CityMesh {
     pub uvs: Vec<f32>,
     /// Triangle indices (every 3 = one face)
     pub indices: Vec<u32>,
+    /// Optional per-vertex RGB colours: [r0,g0,b0, r1,g1,b1, …] in 0..1.
+    /// When non-empty the frontend should use `vertexColors: true`.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub colors: Vec<f32>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -842,7 +842,7 @@ fn extrude_footprint_to_mesh(footprint: &[[f32; 2]], base_y: f32, height: f32) -
         base_index += part.vertices.len() as u32;
     }
 
-    Some(CityMesh { positions, normals, uvs, indices })
+    Some(CityMesh { positions, normals, uvs, indices, colors: vec![] })
 }
 
 /// Wrap a CityBuilding: compute its pre-baked mesh from footprint and attach it.
