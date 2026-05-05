@@ -35,8 +35,10 @@ impl EconomySnapshot {
     /// Load all economy data for the tenant in parallel-friendly queries.
     pub async fn load(pool: &PgPool, user_id: UserId, tenant_id: TenantId) -> AppResult<Self> {
         // ── Restaurant name ───────────────────────────────────────────────
+        // users table: id, tenant_id, email, password_hash, display_name, role, created_at
+        // (no "name" column — only display_name, nullable)
         let restaurant_name: Option<String> = sqlx::query_scalar(
-            "SELECT COALESCE(display_name, name) FROM users WHERE id = $1",
+            "SELECT display_name FROM users WHERE id = $1",
         )
         .bind(user_id.0)
         .fetch_optional(pool)
@@ -59,16 +61,18 @@ impl EconomySnapshot {
         .unwrap_or((Some(0), Some(0.0)));
 
         // ── Inventory stats ───────────────────────────────────────────────
+        // Table was renamed from inventory_products → inventory_batches (migration 20260216)
+        // Columns: remaining_quantity (NUMERIC), price_per_unit_cents (BIGINT), expires_at
         let inv_row: (Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
             r#"SELECT
                  COUNT(*)::BIGINT,
-                 COALESCE(SUM(quantity * price_per_unit_cents), 0)::BIGINT,
+                 COALESCE(SUM(remaining_quantity::NUMERIC * price_per_unit_cents::NUMERIC), 0)::BIGINT,
                  COUNT(*) FILTER (
                    WHERE expires_at IS NOT NULL
                      AND expires_at <= NOW() + INTERVAL '3 days'
                      AND expires_at > NOW()
                  )::BIGINT
-               FROM inventory_products
+               FROM inventory_batches
                WHERE tenant_id = $1"#,
         )
         .bind(tenant_id.0)
