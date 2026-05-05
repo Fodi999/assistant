@@ -21,6 +21,7 @@ use crate::application::{
     UserService,
 };
 use crate::infrastructure::JwtService;
+use crate::web::home::home_page;
 use crate::interfaces::http::{
     admin_auth,
     admin_catalog,
@@ -1132,6 +1133,7 @@ pub fn create_router(
 
     // Combine all routes
     let mut router = Router::new()
+        .route("/", get(home_page))
         .merge(health_route)
         .merge(chef_reference_routes)
         // 🆕 Static file serving for Laboratory v2 uploads (no auth).
