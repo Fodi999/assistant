@@ -219,19 +219,22 @@ impl Gen {
             .map(|i| {
                 let bx = cx + (rng.next_f32() * 2.0 - 1.0) * usable_w;
                 let bz = cz + (rng.next_f32() * 2.0 - 1.0) * usable_d;
-                self.make_building(&spec.kind, rng, i, bx, bz)
+                self.make_building(spec, rng, i, bx, bz)
             })
             .collect()
     }
 
     fn make_building(
         &mut self,
-        kind: &DistrictKind,
+        spec: &DistrictSpec,
         rng: &mut Lcg,
         idx: usize,
         cx: f32,
         cz: f32,
     ) -> CityBuilding {
+        // Unique per-district prefix so building ids never collide between districts
+        let kind = &spec.kind;
+        let p = format!("{}_{}_{}", spec.col, spec.row, idx);
         match kind {
             // ── Player HQ: prominent golden building, centred ────────────
             DistrictKind::Player => {
@@ -239,7 +242,7 @@ impl Gen {
                 let d = 4.5_f32;
                 let h = 3.5_f32;
                 with_mesh(CityBuilding {
-                    id: format!("player_{}", idx),
+                    id: format!("player_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
@@ -270,7 +273,7 @@ impl Gen {
                     rect_footprint(cx, cz, w, d)
                 };
                 with_mesh(CityBuilding {
-                    id: format!("office_{}", idx),
+                    id: format!("office_{}", p),
                     footprint,
                     base_y: 0.0,
                     height: h,
@@ -294,7 +297,7 @@ impl Gen {
                 let d = 1.5 + rng.next_f32() * 1.0;
                 let h = 1.0 + rng.next_f32() * 1.5;
                 with_mesh(CityBuilding {
-                    id: format!("market_{}", idx),
+                    id: format!("market_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
@@ -316,7 +319,7 @@ impl Gen {
                 let d = 0.9 + rng.next_f32() * 0.4;
                 let h = 0.8 + rng.next_f32() * 0.6;
                 with_mesh(CityBuilding {
-                    id: format!("shop_{}", idx),
+                    id: format!("shop_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
@@ -340,7 +343,7 @@ impl Gen {
                 let h = 0.8 + rng.next_f32() * 1.2;
                 let floors = ((h / 1.0).ceil() as u32).max(1);
                 with_mesh(CityBuilding {
-                    id: format!("res_{}", idx),
+                    id: format!("res_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
@@ -364,7 +367,7 @@ impl Gen {
                 let h = 1.8 + rng.next_f32() * 2.0;
                 let floors = (h / 1.8).ceil() as u32;
                 with_mesh(CityBuilding {
-                    id: format!("comp_{}", idx),
+                    id: format!("comp_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
@@ -388,7 +391,7 @@ impl Gen {
                 let d = 2.0 + rng.next_f32() * 1.2;
                 let h = 2.0 + rng.next_f32() * 2.0;
                 with_mesh(CityBuilding {
-                    id: format!("ind_{}", idx),
+                    id: format!("ind_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
                     base_y: 0.0,
                     height: h,
@@ -407,7 +410,7 @@ impl Gen {
 
             // Park has no buildings (trees are lots)
             DistrictKind::Park => CityBuilding {
-                id: format!("park_placeholder_{}", idx),
+                id: format!("park_placeholder_{}", p),
                 footprint: vec![],
                 base_y: 0.0, height: 0.0, floors: 0,
                 kind: "none".into(),
