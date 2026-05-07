@@ -1,0 +1,50 @@
+// ── JS assembly: injects WGSL shader source and concatenates all JS fragments ─────
+// Domain: Application — ordered composition of all JS domains.
+
+mod init;
+mod state;
+mod matter_state;
+mod buffers;
+mod pipeline;
+mod hud;
+mod controls;
+mod gizmo;
+mod matter_ui;
+mod benchmark;
+mod render_loop;
+
+/// Assembles the complete JS source, embedding the WGSL shader as `shaderSrc`.
+pub fn assemble(shader: &str) -> String {
+    let mut out = String::with_capacity(
+        init::JS.len()
+            + state::JS.len()
+            + matter_state::JS.len()
+            + buffers::JS.len()
+            + shader.len()
+            + pipeline::JS.len()
+            + hud::JS.len()
+            + controls::JS.len()
+            + gizmo::JS.len()
+            + matter_ui::JS.len()
+            + benchmark::JS.len()
+            + render_loop::JS.len()
+            + 64,
+    );
+    out.push_str(init::JS);
+    out.push_str(state::JS);
+    out.push_str(matter_state::JS);
+    out.push_str(buffers::JS);
+    // ── 6. WGSL ─────────────────────────────────────────────────
+    out.push_str("\n      // ── 6. WGSL ─────────────────────────────────────────────────\n");
+    out.push_str("      const shaderSrc = `\n");
+    out.push_str(shader);
+    out.push_str("\n`;\n");
+    out.push_str(pipeline::JS);
+    out.push_str(hud::JS);
+    out.push_str(controls::JS);
+    out.push_str(gizmo::JS);
+    out.push_str(matter_ui::JS);
+    out.push_str(benchmark::JS);
+    out.push_str(render_loop::JS);
+    out
+}

@@ -260,6 +260,22 @@ pub fn styles() -> &'static str {
       display: none;
     }
 
+    /* Hide every landing-page artifact while the engine is open ─────
+       Old DOM grid/footer/header/nebula must NOT bleed onto the canvas. */
+    body.engine-open .grid,
+    body.engine-open footer,
+    body.engine-open header,
+    body.engine-open .fake-viewport,
+    body.engine-open .render-gradient,
+    body.engine-open .render-grid {
+      display: none !important;
+    }
+    /* Solid neutral background behind the canvas (eliminates any
+       residual gradient bleed-through during shader recompiles). */
+    body.engine-open {
+      background: #1a1a1c !important;
+    }
+
     body.engine-open #render-screen {
       display: block;
     }
