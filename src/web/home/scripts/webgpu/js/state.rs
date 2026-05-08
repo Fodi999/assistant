@@ -139,6 +139,10 @@ pub const JS: &str = r##"
           updateCameraForCount(NUM_SPHERES);
         }
         log(`◇ formation = ${mode}`, '#f0abfc');
+        
+        // Ensure UI stays updated if exists
+        const objPosEl = document.getElementById('ui-obj-pos');
+        if (objPosEl) objPosEl.innerText = `X ${sceneState.objectPosition[0].toFixed(2)} / Y ${sceneState.objectPosition[1].toFixed(2)} / Z ${sceneState.objectPosition[2].toFixed(2)}`;
       }
 
       // ── Cell-SDF (kernel::particle_shape port) ────────────────
@@ -147,8 +151,51 @@ pub const JS: &str = r##"
       // radius    : 0..0.5 corner radius (cell-local units).
       // colorMode : 0 normal · 1 normals-as-RGB · 2 colour-by-SlotKind.
       // hideLow   : true → cull cells with ≤ 1 exposed face (show only edges/corners).
-      const cellSdf = { on: false, radius: 0.25, colorMode: 0, hideLow: false };
+      const cellSdf = { on: true, radius: 0.05, colorMode: 0, hideLow: false };
       const floorGrid = { scale: 1.0 }; // 1.0 = m, 100.0 = cm, 1000.0 = mm
+
+      // ── Cube Grid State ──────────────────────────────────────────
+      const cubeGridState = {
+        side: 1,
+        cellSizeMm: 100
+      };
+
+      window.updateCubeGrid = function updateCubeGrid(newSide) {
+        cubeGridState.side = newSide;
+        
+        // 1. Math calculation for elements
+        const side = cubeGridState.side;
+        const totalCells = side * side * side;
+        const surface = side <= 1 ? 1 : 6 * side * side - 12 * side + 8;
+        const interior = Math.max(0, totalCells - surface);
+        const objSize = side * cubeGridState.cellSizeMm;
+        
+        // 2. Set Engine State
+        NUM_SPHERES = totalCells;
+        
+        // Ensure object position Y sits perfectly on the floor (Y = totalSize/2)
+        // Convert to the scaling required by the engine math:
+        const worldObjSize = (objSize / 1000.0) * floorGrid.scale; 
+        
+        // Update DOM UI elements if they exist
+        const vSide = document.getElementById('ui-cube-side');
+        const vCell = document.getElementById('ui-cube-cell-size');
+        const vObj  = document.getElementById('ui-cube-obj-size');
+        const vSurf = document.getElementById('surfaceValue');
+        const vInt  = document.getElementById('interiorValue');
+
+        if (vSide) vSide.innerText = side;
+        if (vCell) vCell.innerText = cubeGridState.cellSizeMm + ' mm';
+        if (vObj)  vObj.innerText = objSize + ' mm';
+        if (vSurf) vSurf.innerText = String(surface);
+        if (vInt)  vInt.innerText = String(interior);
+
+        // Rebuild particle buffer memory
+        sphereData = buildParticles(NUM_SPHERES);
+        if (globalThis.__rebuildBuffersFlag) globalThis.__rebuildBuffersFlag();
+        
+        log(`◇ Cube Grid: ${side}³ (surface: ${surface}, interior: ${interior})`, '#a78bfa');
+      }
 
       function toggleCellSdf() {
         cellSdf.on = !cellSdf.on;
@@ -218,4 +265,32 @@ pub const JS: &str = r##"
         cam.dist = Math.max(minZ, Math.min(80, cam.dist * factor));
       }, { passive: false });
       canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      // Keyboard move tool
+      document.addEventListener('keydown', (e) => {
+        // Move object along X,Y,Z axes: ←/→ = X, ↑/↓ = Z, Q/E = Y
+        // F = rest to floor, C = focus camera
+        let moved = false;
+        const step = 0.05 * (floorGrid.scale === 1000.0 ? 0.01 : floorGrid.scale === 100.0 ? 0.1 : 1.0);
+        
+        switch (e.key.toLowerCase()) {
+          case 'arrowleft':  sceneState.objectPosition[0] -= step; moved = true; break;
+          case 'arrowright': sceneState.objectPosition[0] += step; moved = true; break;
+          case 'arrowup':    sceneState.objectPosition[2] -= step; moved = true; break;
+          case 'arrowdown':  sceneState.objectPosition[2] += step; moved = true; break;
+          case 'q':          sceneState.objectPosition[1] += step; moved = true; break;
+          case 'e':          sceneState.objectPosition[1] -= Math.min(sceneState.objectPosition[1], step); moved = true; break;
+          case 'f':          sceneState.objectPosition[1] = sceneState.objectScale * FORM_SCALE[formation.mode]; moved = true; break;
+          case 'c':          
+            cam.target = sceneState.objectPosition.slice();
+            log('◇ camera focused on object', '#67e8f9');
+            break;
+        }
+
+        if (moved) {
+          // Sync with DOM easily
+          const objPosEl = document.getElementById('ui-obj-pos');
+          if (objPosEl) objPosEl.innerText = `X ${sceneState.objectPosition[0].toFixed(2)} / Y ${sceneState.objectPosition[1].toFixed(2)} / Z ${sceneState.objectPosition[2].toFixed(2)}`;
+        }
+      });
 "##;

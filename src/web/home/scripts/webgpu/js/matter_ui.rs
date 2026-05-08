@@ -125,6 +125,22 @@ pub const JS: &str = r##"
 
       // ── bind once on startup ──
       function bindMatterUi() {
+        // Setup Grid cube buttons binding
+        const doc = document;
+        const cubeGridBtns = doc.getElementById('ui-cube-sizes-btns');
+        if (cubeGridBtns) {
+          cubeGridBtns.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+              cubeGridBtns.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+              
+              // Run logic from state.rs
+              if (window.updateCubeGrid) window.updateCubeGrid(parseInt(btn.dataset.val, 10));
+              syncMatterUi();
+            });
+          });
+        }
+        
         // tool buttons
         document.querySelectorAll('.tool-btn').forEach(btn => {
           btn.addEventListener('click', () => setTool(btn.dataset.tool));

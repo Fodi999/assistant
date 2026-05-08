@@ -45,7 +45,7 @@ pub const JS: &str = r##"
           r >= 0.45 ? 'octahedron'         :   // n ≈ 1.0  ← «треугольник»
           r >= 0.25 ? 'squircle'           :   // n ∈ (5 .. 12)
           r >  0.05 ? 'rounded-cube'       :   // n ∈ (12 .. 20)
-                      'super-cube';            // n ≈ 22
+                      'super cube';            // n ≈ 22
 
         // ── Cell-SDF formation stats (cube only) ──
         let cellInfo = '';

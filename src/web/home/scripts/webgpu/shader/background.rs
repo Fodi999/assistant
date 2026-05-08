@@ -82,10 +82,10 @@ fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
       // UI scale 1000.0 (миллиметры) => u9.x = 1000.0
       let s = u.u9.x;
       // Усиливаем видимость линий (были слишком слабые: 0.05, 0.12...)
-      let mm  = grid_intensity(p, s * 1000.0, world_lw) * 0.15;
-      let cm  = grid_intensity(p, s * 100.0,  world_lw) * 0.35;
-      let dcm = grid_intensity(p, s * 10.0,   world_lw) * 0.50;
-      let m   = grid_intensity(p, s * 1.0,    world_lw) * 0.80;
+      let mm  = grid_intensity(p, s * 1000.0, world_lw) * 0.04;
+      let cm  = grid_intensity(p, s * 100.0,  world_lw) * 0.08;
+      let dcm = grid_intensity(p, s * 10.0,   world_lw) * 0.18;
+      let m   = grid_intensity(p, s * 1.0,    world_lw) * 0.35;
 
       let combined_grid = clamp(mm + cm + dcm + m, 0.0, 1.0);
 
@@ -99,20 +99,18 @@ fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
       let platformCore = exp(-dObj * dObj * 8.0);
 
       var floorCol = col;
-      floorCol += vec3f(0.00, 0.65, 1.00) * platformGlow * 0.45;
-      floorCol += vec3f(0.40, 0.95, 1.00) * platformCore * 0.55;
+      floorCol += vec3f(0.00, 0.45, 0.85) * platformGlow * 0.10; // Сделали свечение платформы сильно тусклее
+      floorCol += vec3f(0.20, 0.75, 0.95) * platformCore * 0.15;
 
       // Затем рисуем сетку ПОВЕРХ светящегося пола более ярким цветом
       let lineCol = vec3f(0.20, 0.45, 0.75); // чуть более светлый сине-серый
       var gridCol = mix(floorCol, floorCol + lineCol, combined_grid); // Additive смесь, чтобы линии не темнили глоу
-
-      // Яркая подсветка центральных осей (Красный = X, Синий = Z)
-      let axis_x = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.z));
-      let axis_z = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.x));
-      gridCol = mix(gridCol, vec3f(1.00, 0.25, 0.35), axis_x * 0.85);
-      gridCol = mix(gridCol, vec3f(0.20, 0.55, 1.00), axis_z * 0.85);
-
-      // Применяем сетку к фону
+      
+      // Яркая подсветка центральных осей (Красный = X, Синий = Z) - пока отключим оси для чистого режима
+      // let axis_x = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.z));
+      // let axis_z = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.x));
+      // gridCol = mix(gridCol, vec3f(0.85, 0.25, 0.35), axis_x * 0.35);
+      // gridCol = mix(gridCol, vec3f(0.20, 0.55, 0.85), axis_z * 0.35);      // Применяем сетку к фону
       col = mix(col, gridCol, fade);
 
       out.col = vec4f(col, 1.0);

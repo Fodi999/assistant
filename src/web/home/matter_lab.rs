@@ -50,14 +50,81 @@ pub fn matter_lab_section() -> &'static str {
           <button class="tool-btn" data-tool="matter">Matter</button>
         </aside>
 
-        <!-- Right panel: Matter Settings (z=15) -->
+        <!-- Right panel: Object Inspector (z=15) -->
         <aside class="matter-panel">
           <div class="panel-head">
-            <h2>Matter Settings</h2>
+            <h2>OBJECT</h2>
             <button title="advanced">⚙</button>
           </div>
 
           <div class="setting-row">
+            <span>Type:</span>
+            <div class="toggle-group" style="padding: 4px 6px; font-weight: bold; background: none; color: #a78bfa;">Cube Cell</div>
+          </div>
+          
+          <div class="setting-row" style="padding-top: 4px; padding-bottom: 4px;">
+            <span style="width:100%">Position: <span style="float:right; color:#cbd5e1" id="ui-obj-pos">X 0.00 / Y 0.05 / Z 0.00</span></span>
+          </div>
+
+          <div class="setting-row" style="padding-top: 4px; padding-bottom: 4px;">
+            <span>Size:</span>
+            <strong style="color: #67e8f9;">100 mm</strong>
+          </div>
+
+          <div class="setting-row">
+            <span>Render:</span>
+            <strong style="color: #34d399;">Mesh</strong>
+          </div>
+
+          <div class="setting-row">
+            <span>Display:</span>
+            <strong style="color: #fcd34d;">Solid</strong>
+          </div>
+
+          <div class="setting-row">
+            <span>Edges:</span>
+            <strong style="color: #fbbf24;">On</strong>
+          </div>
+
+          <div class="setting-row" style="margin-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px;">
+            <span>CUBE GRID</span>
+          </div>
+
+          <div class="setting-row">
+            <span>Side:</span>
+            <strong style="color: #a78bfa;" id="ui-cube-side">1</strong>
+          </div>
+          
+          <div class="setting-row">
+            <span>Cell size:</span>
+            <strong style="color: #94a3b8;" id="ui-cube-cell-size">100 mm</strong>
+          </div>
+
+          <div class="setting-row">
+            <span>Object size:</span>
+            <strong style="color: #67e8f9;" id="ui-cube-obj-size">100 mm</strong>
+          </div>
+
+          <div class="stats-row">
+            <span>Surface</span>
+            <strong id="surfaceValue">1</strong>
+          </div>
+          <div class="stats-row">
+            <span>Interior</span>
+            <strong id="interiorValue">0</strong>
+          </div>
+
+          <div class="setting-row" style="padding-top: 8px; padding-bottom: 8px;">
+            <div class="toggle-group" id="ui-cube-sizes-btns" style="width:100%; justify-content: space-between;">
+              <button class="active" data-val="1">1&sup3;</button>
+              <button data-val="2">2&sup3;</button>
+              <button data-val="3">3&sup3;</button>
+              <button data-val="5">5&sup3;</button>
+              <button data-val="10">10&sup3;</button>
+            </div>
+          </div>
+
+          <div class="setting-row" style="margin-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px;">
             <span>GRID SCALE</span>
             <div class="toggle-group" id="ui-grid-scale">
               <button data-val="mm">mm</button>

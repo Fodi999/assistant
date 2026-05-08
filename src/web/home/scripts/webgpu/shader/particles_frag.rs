@@ -153,18 +153,25 @@ struct FragOut {
   } // close outer non-mesh else branch
 
   // ── lighting on the real 3D normal ──
-  let L1 = normalize(vec3f( 0.55,  0.75, -0.30));
-  let L2 = normalize(vec3f(-0.40,  0.20,  0.85));
+  // CAD MATTE MATERIAL (Plasticity-style)
+  // Soft, matte gradient lighting:
+  let L1 = normalize(vec3f( 0.45,  0.85, -0.40));
+  let L2 = normalize(vec3f(-0.35,  0.25,  0.65));
+  let L3 = normalize(vec3f( 0.10, -0.50, -0.20)); // Soft bounce light
+
   let v  = -rd;
-  let dA = max(dot(nrm, L1), 0.0);
-  let dB = max(dot(nrm, L2), 0.0) * 0.45;
+  
+  // Soften lambert with wrapping (valve half-lambert style)
+  let dA = pow(max(dot(nrm, L1) * 0.5 + 0.5, 0.0), 1.5) * 1.1; 
+  let dB = max(dot(nrm, L2), 0.0) * 0.35;
+  let dC = max(dot(nrm, L3), 0.0) * 0.20;
 
-  // specular
+  // Reduced specular
   let h  = normalize(L1 + v);
-  let sp = pow(max(dot(nrm, h), 0.0), 48.0);
+  let sp = pow(max(dot(nrm, h), 0.0), 32.0) * 0.15; // low shine
 
-  // Fresnel rim
-  let fr = pow(1.0 - max(dot(nrm, v), 0.0), 3.2);
+  // Soft rim
+  let fr = pow(1.0 - max(dot(nrm, v), 0.0), 2.5) * 0.15;
 
   // ── seam suppression for flush-packed cube cells ──
   // When a face touches a neighbour (cellMask bit not set), this is an internal
@@ -188,20 +195,17 @@ struct FragOut {
     seamMul = select(1.0 - edgeT, 1.0, isExposed);  // exposed face → 1 always
   }
   let hitVz = max(dot(hitW - ro, fwd), 0.05);
-  let t     = u.u0.x;
-  let pulse = 0.85 + 0.15 * sin(t * 2.0 + p.phase);
   let fog   = exp(-hitVz * 0.045);
 
-  var col = p.color * 0.14;                                   // ambient
-  col    += p.color * (dA + dB) * (0.65 + 0.20 * pulse);      // diffuse
-  col    += vec3f(0.95, 0.97, 1.0) * sp * 0.55 * seamMul;     // specular (no seam shine)
-  col    += vec3f(0.10, 0.65, 1.00) * fr * (0.30 + 0.20 * sphereLikeness) * seamMul;
+  let cad_matte_base = vec3f(0.85, 0.88, 0.90); // light gray-blue CAD material
 
-  // subtle emissive bias so far particles do not turn pitch black
-  col    += p.color * 0.05 * pulse;
+  var col = p.color * 0.25;                                    // ambient
+  col    += cad_matte_base * (dA + dB + dC) * 0.85;                // matte diffuse
+  col    += vec3f(0.95, 0.97, 1.0) * sp * seamMul;                 // subtle specular 
+  col    += vec3f(0.80, 0.90, 1.00) * fr * (0.80 + 0.20 * sphereLikeness) * seamMul;
 
   // distance darkening (atmospheric, NOT alpha)
-  col *= 0.55 + 0.45 * fog;
+  col *= 0.65 + 0.35 * fog;
 
   // tone map + gamma
   col = col / (col + vec3f(1.0));
@@ -237,7 +241,7 @@ struct FragOut {
     
     // 1.2 pixels wide edge, with anti-aliasing
     let edgeT = smoothstep(fw * 1.8, fw * 0.4, dEdge);
-    let edgeColor = vec3f(0.08, 0.08, 0.1);
+    let edgeColor = vec3f(0.12, 0.14, 0.17); // Softer edge color, less black
     
     col = mix(col, edgeColor, edgeT);
   }
