@@ -69,7 +69,7 @@ pub fn matter_lab_section() -> &'static str {
           <div class="setting-row">
             <span>PARTICLES</span>
             <div class="toggle-group" id="ui-particles-scale">
-              <button data-val="100">100</button>
+              <button data-val="1">1</button>
               <button data-val="1000">1k</button>
               <button data-val="10000">10k</button>
               <button data-val="100000" style="padding:0 2px;">100k</button>

@@ -22,7 +22,11 @@ struct FragOut {
   @builtin(frag_depth)      depth: f32,
 }
 
-@fragment fn fs_particles(p: Pv) -> FragOut {
+@fragment fn fs_particles(p: Pv, @builtin(front_facing) is_front: bool) -> FragOut {
+  // Compute derivatives at the very top before any discards to preserve uniform control flow
+  let vx = fwidth(p.quadUV.x);
+  let vy = fwidth(p.quadUV.y);
+  
   // ── reconstruct world-space ray through this pixel ──
   // billboard pixel position in world: wCenter + right*qx*size + up*qy*size
   let ro    = u.u1.xyz;
@@ -222,6 +226,21 @@ struct FragOut {
 
   // ── per-pixel depth from real hit point (matches vertex z mapping) ──
   let zNdc = clamp(hitVz / (hitVz + 8.0), 0.0, 0.9999);
+
+  // ── CAD/Plasticity Edge Overlay (mesh mode only) ──
+  if p.meshMode == 1u {
+    let fw = max(vx, vy);
+    
+    let dU = 1.0 - abs(p.quadUV.x);
+    let dV = 1.0 - abs(p.quadUV.y);
+    let dEdge = min(dU, dV);
+    
+    // 1.2 pixels wide edge, with anti-aliasing
+    let edgeT = smoothstep(fw * 1.8, fw * 0.4, dEdge);
+    let edgeColor = vec3f(0.08, 0.08, 0.1);
+    
+    col = mix(col, edgeColor, edgeT);
+  }
 
   var out: FragOut;
   out.color = vec4f(col, 1.0);   // fully opaque

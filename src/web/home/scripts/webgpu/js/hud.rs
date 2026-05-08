@@ -50,8 +50,8 @@ pub const JS: &str = r##"
         // ── Cell-SDF formation stats (cube only) ──
         let cellInfo = '';
         if (formation.mode === 'cube') {
-          const side    = Math.max(2, Math.floor(Math.cbrt(NUM_SPHERES)));
-          const surface = 6 * side * side - 12 * side + 8;       // hollow shell
+          const side    = NUM_SPHERES <= 1 ? 1 : Math.max(2, Math.floor(Math.cbrt(NUM_SPHERES)));
+          const surface = NUM_SPHERES <= 1 ? 1 : 6 * side * side - 12 * side + 8;       // hollow shell
           const drawn   = side * side * side;                    // solid grid
           const interior = drawn - surface;                       // culled inside
           const colorNames = ['normal','normals-RGB','mask-color'];
@@ -89,7 +89,9 @@ pub const JS: &str = r##"
               `style="width:100%;accent-color:#67e8f9"></div>`
             : '') +
           `<div><span style="color:#94a3b8">fps</span> <b style="color:${fps>50?'#34d399':fps>25?'#fbbf24':'#f87171'}">${fps.toFixed(0)}</b>`+
-          ` <span style="color:#94a3b8">· dist</span> <b>${cam.dist.toFixed(2)}</b></div>` +
+          ` <span style="color:#94a3b8">· dist</span> <b style="color:#fcd34d">${cam.dist.toFixed(2)}m</b>` +
+          ` <span style="color:#94a3b8">· obj [X: ${cam.target[0].toFixed(1)}, Y: ${cam.target[1].toFixed(1)}, Z: ${cam.target[2].toFixed(1)}]</span>` +
+          ` <span style="color:#94a3b8">· cam [X: ${(cam.target[0] - (-Math.sin(cam.yaw) * Math.cos(cam.pitch)) * cam.dist).toFixed(1)}, Y: ${(cam.target[1] - (-Math.sin(cam.pitch)) * cam.dist).toFixed(1)}, Z: ${(cam.target[2] - (Math.cos(cam.yaw) * Math.cos(cam.pitch)) * cam.dist).toFixed(1)}]</b></div>` +
           `<div style="margin-top:6px;display:flex;gap:4px;pointer-events:auto">` +
             ['cloud','cube','wall'].map(m =>
               `<button data-form="${m}" style="flex:1;background:${formation.mode===m?'#0e7490':'#1e293b'};` +

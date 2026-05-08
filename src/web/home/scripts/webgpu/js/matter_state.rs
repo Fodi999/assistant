@@ -51,8 +51,8 @@ pub const JS: &str = r##"
         const m = engineState.matter;
         if (m.formation === 'cube') {
           // side³ solid, surface = 6s² − 12s + 8
-          const side = Math.max(2, Math.floor(Math.cbrt(N)));
-          const surf = 6*side*side - 12*side + 8;
+          const side = N <= 1 ? 1 : Math.max(2, Math.floor(Math.cbrt(N)));
+          const surf = N <= 1 ? 1 : 6*side*side - 12*side + 8;
           m.surface  = Math.min(surf, N);
           m.interior = Math.max(0, N - m.surface);
         } else if (m.formation === 'wall') {

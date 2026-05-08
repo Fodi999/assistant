@@ -85,12 +85,15 @@ pub const WGSL: &str = r##"
         formed    = vec3f(0.0);
         targetR   = 0.0;
       } else {
-        // centre at (-1+(2i+1)/side)·formScale
-        let fx = (f32(ix) + 0.5) / formA * 2.0 - 1.0;
-        let fy = (f32(iy) + 0.5) / formA * 2.0 - 1.0;
-        let fz = (f32(iz) + 0.5) / formA * 2.0 - 1.0;
-        formed   = vec3f(fx, fy, fz) * formScale;
-        halfCell = formScale / formA;
+        let cellSize = formScale / formA * 2.0; // fallback if u9 not available, or use fixed scale logic if intended
+        let halfCellWorld = cellSize * 0.5;
+
+        let fx = f32(ix) - (formA - 1.0) * 0.5;
+        let fy = f32(iy) - (formA - 1.0) * 0.5;
+        let fz = f32(iz) - (formA - 1.0) * 0.5;
+
+        formed   = vec3f(fx, fy, fz) * cellSize;
+        halfCell = halfCellWorld;
         cellMask = m;
 
         // imposter mode: radius = halfCell (sphere just touches its 6 neighbours);
@@ -302,29 +305,19 @@ pub const WGSL: &str = r##"
     let mvx  = dot(relV, right);
     let mvy  = dot(relV, upv);
     let mvz  = dot(relV, fwd);
-    if mvz < 0.05 {
-      var dead: Pv;
-      dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
-      dead.quadUV   = vec2f(0.0);
-      dead.color    = vec3f(0.0);
-      dead.depth    = 0.0;
-      dead.phase    = 0.0;
-      dead.wCenter  = vec3f(0.0);
-      dead.size     = 0.0;
-      dead.cellMask = 0u;
-      dead.halfCell = 0.0;
-      dead.meshMode = 0u;
-      dead.meshN    = vec3f(0.0);
-      return dead;
-    }
+    
+    // Do NOT kill the vertex if mvz < 0.05. Hardware near-plane clipping will handle it gracefully.
+    // Otherwise, rotating a large close cube will make its vertices snap to (0,0,-2) and destroy the triangle.
+    let safe_mvz = max(mvz, 0.001); // Prevent division by zero for projection
+    
     let focalM = 1.5;
-    let mcx    = mvx * focalM / mvz / asp;
-    let mcy    = mvy * focalM / mvz;
+    let mcx    = mvx * focalM / safe_mvz / asp;
+    let mcy    = mvy * focalM / safe_mvz;
     let mzNdc  = clamp(mvz / (mvz + 8.0), 0.0, 0.9999);
 
     var o: Pv;
     o.pos      = vec4f(mcx, mcy, mzNdc, 1.0);
-    o.quadUV   = vec2f(0.0);
+    o.quadUV   = cv.uv;
     o.color    = sp.colorP.xyz;
     o.depth    = mvz;
     o.phase    = 0.0;                     // no per-particle rotation in mesh mode

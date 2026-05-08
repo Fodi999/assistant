@@ -16,13 +16,19 @@ pub const JS: &str = r##"
       function buildParticles(count) {
         const data = new Float32Array(count * 8);
         // shrink billboard size as count grows so cloud doesn't become a wall of light
-        const sizeScale = Math.pow(50000 / Math.max(count, 1), 0.42); // ≈1 at 50k, ≈0.30 at 1M
+        // Use min scale clamp so 1 particle doesn't blow up to massive size.
+        const effectiveCount = Math.max(count, 5000); 
+        const sizeScale = Math.pow(50000 / effectiveCount, 0.42); 
         for (let i = 0; i < count; i++) {
           const b = i * 8;
           // sphere-distributed cloud (denser core, soft falloff)
-          const r   = Math.pow(Math.random(), 0.55) * 5.5;
-          const th  = Math.random() * 6.2832;
-          const ph  = Math.acos(2 * Math.random() - 1);
+          // single-particle case: place exactly at origin
+          let r = 0, th = 0, ph = 0;
+          if (count > 1) {
+            r   = Math.pow(Math.random(), 0.55) * 5.5;
+            th  = Math.random() * 6.2832;
+            ph  = Math.acos(2 * Math.random() - 1);
+          }
           data[b + 0] = r * Math.sin(ph) * Math.cos(th);
           data[b + 1] = r * Math.cos(ph) * 0.75;
           data[b + 2] = r * Math.sin(ph) * Math.sin(th);
@@ -106,6 +112,16 @@ pub const JS: &str = r##"
         return 1.0 + 2.0 * (t - 0.5);                  //  1 → 2
       }
 
+      function updateCameraForCount(count) {
+        if (count < 10) {
+          cam.dist = 2.0;
+        } else if (count < 1000) {
+          cam.dist = 2.5;
+        } else {
+          cam.dist = formationDefaults[formation.mode].dist;
+        }
+      }
+
       // ── Formation state ────────────────────────────────────────
       // mode: 'cloud' | 'cube' | 'wall'
       // mix:  0 (cloud) → 1 (fully formed); animated each frame
@@ -119,8 +135,8 @@ pub const JS: &str = r##"
         if (d) {
           sceneState.objectPosition = d.objectPosition.slice();
           sceneState.objectScale    = d.objectScale;
-          cam.dist   = d.dist;
           cam.target = d.target.slice();
+          updateCameraForCount(NUM_SPHERES);
         }
         log(`◇ formation = ${mode}`, '#f0abfc');
       }
@@ -186,7 +202,20 @@ pub const JS: &str = r##"
       canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
         const factor = Math.exp(e.deltaY * 0.001);
-        cam.dist = Math.max(0.5, Math.min(80, cam.dist * factor));
+        
+        // Dynamically compute absolute minimum zoom so we don't pierce inside solid shapes.
+        // formScale = formation scale block size (e.g. wall or cube side length).
+        // We use roughly half that plus a tiny margin to stay outside the model.
+        let minZ = 0.5;
+        if (state.formMix > 0.8) {
+          // If formed, use the form scale. Object scale is state.formScale * state.objScale
+          // So the radius of the megashape bounds is roughly formScale * sqrt(3)/2 * objScale
+          // For a single particle mesh (formScale == 1.0 or single cube), the size is u9.x (cellSize)
+          // We just make sure we are not physically closer than 2.0 * objScale to be super safe. 
+          minZ = Math.max(0.5, 2.5 * state.objScale);
+        }
+
+        cam.dist = Math.max(minZ, Math.min(80, cam.dist * factor));
       }, { passive: false });
       canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 "##;

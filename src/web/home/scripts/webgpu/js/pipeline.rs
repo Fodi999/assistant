@@ -32,7 +32,7 @@ pub const JS: &str = r##"
         vertex:   { module, entryPoint: 'vs_particles' },
         // fully opaque — no blend, write alpha=1 from fragment
         fragment: { module, entryPoint: 'fs_particles', targets: [{ format: fmt }] },
-        primitive: { topology: 'triangle-list' },
+        primitive: { topology: 'triangle-list', cullMode: 'back' },
         depthStencil: { format: DEPTH_FMT, depthWriteEnabled: true, depthCompare: 'less' },
       });
 

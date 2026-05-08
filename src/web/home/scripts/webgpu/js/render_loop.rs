@@ -99,7 +99,8 @@ pub const JS: &str = r##"
           formModeId = 1;
           // side³ ≤ N → every cell of the solid grid has a particle.
           // Surface = 6s²−12s+8 visible; rest culled as interior.
-          paramA = Math.max(2, Math.floor(Math.cbrt(NUM_SPHERES)));
+          // Fix: When particle count is 1, side should be 1 to center it natively
+          paramA = NUM_SPHERES <= 1 ? 1 : Math.max(2, Math.floor(Math.cbrt(NUM_SPHERES)));
           paramB = FORM_SCALE.cube;   // 1.8 — must match FORM_SCALE in state.rs
         } else if (formation.mode === 'wall') {
           formModeId = 2;

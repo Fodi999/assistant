@@ -20,7 +20,7 @@ struct Pv {
 // ─── Cube mesh: 36 verts = 6 faces × 2 tris × 3 verts ─────────
 // Returns (localPos in [-1,1]³, outward face normal, faceBit).
 // Outward CCW winding so back-face culling can be enabled later.
-struct CubeV { pos: vec3f, nrm: vec3f, bit: u32 }
+struct CubeV { pos: vec3f, nrm: vec3f, bit: u32, uv: vec2f }
 fn cubeVert(vi: u32) -> CubeV {
   let faceIdx = vi / 6u;            // 0..5
   let triVi   = vi % 6u;
@@ -33,25 +33,29 @@ fn cubeVert(vi: u32) -> CubeV {
   if (corner == 2u) { tx =  1.0; ty =  1.0; }
   if (corner == 3u) { tx = -1.0; ty =  1.0; }
 
-  let axis  = faceIdx / 2u;                                // 0=X, 1=Y, 2=Z
-  let isPos = (faceIdx & 1u) == 0u;                        // even=+, odd=-
-  let s     = select(-1.0, 1.0, isPos);
+  var nrm = vec3f(0.0);
+  var tan = vec3f(0.0);
+  var bitan = vec3f(0.0);
+  var bitMask = 0u;
 
-  var pos: vec3f;  var nrm: vec3f;  var bit: u32;
-  if (axis == 0u) {
-    // ±X face: outward = ±X. Flip Z on negative face for CCW winding.
-    pos = vec3f(s, ty, tx * s);
-    nrm = vec3f(s, 0.0, 0.0);
-    bit = select(2u, 1u, isPos);
-  } else if (axis == 1u) {
-    pos = vec3f(tx * s, s, ty);
-    nrm = vec3f(0.0, s, 0.0);
-    bit = select(8u, 4u, isPos);
-  } else {
-    pos = vec3f(tx, ty * s, s);
-    nrm = vec3f(0.0, 0.0, s);
-    bit = select(32u, 16u, isPos);
+  // Explicit CCW winding definition for each face. 
+  // From the outside of the cube looking at the face, 
+  // tan goes right, bitan goes up.
+  if faceIdx == 0u {        // +X
+    nrm = vec3f(1.0, 0.0, 0.0); tan = vec3f(0.0, 0.0, -1.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 1u;
+  } else if faceIdx == 1u { // -X
+    nrm = vec3f(-1.0, 0.0, 0.0); tan = vec3f(0.0, 0.0, 1.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 2u;
+  } else if faceIdx == 2u { // +Y
+    nrm = vec3f(0.0, 1.0, 0.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 0.0, -1.0); bitMask = 4u;
+  } else if faceIdx == 3u { // -Y
+    nrm = vec3f(0.0, -1.0, 0.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 0.0, 1.0); bitMask = 8u;
+  } else if faceIdx == 4u { // +Z
+    nrm = vec3f(0.0, 0.0, 1.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 16u;
+  } else if faceIdx == 5u { // -Z
+    nrm = vec3f(0.0, 0.0, -1.0); tan = vec3f(-1.0, 0.0, 0.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 32u;
   }
-  return CubeV(pos, nrm, bit);
+
+  let pos = nrm + tan * tx + bitan * ty;
+  return CubeV(pos, nrm, bitMask, vec2f(tx, ty));
 }
 "##;

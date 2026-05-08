@@ -4,11 +4,12 @@
 pub const JS: &str = r##"
       // ── Particle count switching ────────────────────────────────
       function setParticleCount(n) {
-        n = Math.max(100, Math.min(MAX_PARTICLES, Math.floor(n)));
+        n = Math.max(1, Math.min(MAX_PARTICLES, Math.floor(n)));
         if (n === NUM_SPHERES) return;
         NUM_SPHERES = n;
         sphereData  = buildParticles(n);
         device.queue.writeBuffer(sphereBuf, 0, sphereData);
+        updateCameraForCount(n);
         log(`↻ particles = ${n.toLocaleString()}`, '#a78bfa');
       }
 
