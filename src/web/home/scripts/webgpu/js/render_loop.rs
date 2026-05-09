@@ -25,17 +25,14 @@ pub const JS: &str = r##"
         if (now - lastFpsTime >= 500) {
           fps = fpsAcc * 1000 / (now - lastFpsTime);
           lastFpsTime = now; fpsAcc = 0;
-          // update legacy HUD only when it is visible (toggled by B)
+          // update legacy HUD only when it is visible
           const hudEl = document.getElementById('gpu-hud');
-          if (!bench.running && hudEl && hudEl.style.display !== 'none') updateHud(fps);
+          if (hudEl && hudEl.style.display !== 'none') updateHud(fps);
           if (globalThis.__matterPerf) {
             globalThis.__matterPerf.fps     = fps;
             globalThis.__matterPerf.frameMs = cpuFrameMs;
           }
         }
-
-        // benchmark tick (collect frame times)
-        if (bench.running) benchTick(cpuFrameMs);
 
         // auto-rotate
         if (cam.autoRotate) cam.yaw += dt * 0.25;
@@ -178,10 +175,7 @@ pub const JS: &str = r##"
       }
 
       gpuRafId = requestAnimationFrame(frame);
-      // expose bench controls so HUD inline onclick can reach them
-      window.__gpuBench      = bench;
-      window.__gpuRunBench   = runBenchmark;
-      console.log('%c[WebGPU] 🚀 v1.4 5M particles + benchmark', 'color:#67e8f9;font-weight:bold');
+      console.log('%c[WebGPU] 🚀 v1.4 5M particles', 'color:#67e8f9;font-weight:bold');
       setBadge(`✓ WebGPU · ${fmtN(NUM_SPHERES)} particles`, '#34d399');
 
       // ── 8. Cleanup ──────────────────────────────────────────────
@@ -193,10 +187,7 @@ pub const JS: &str = r##"
         gpuCtx.unconfigure?.();
         window.removeEventListener('resize', resizeCanvas);
         window.removeEventListener('keydown', onKey);
-        document.getElementById('bench-overlay')?.remove();
         hud?.remove();
-        delete window.__gpuBench;
-        delete window.__gpuRunBench;
       }, { once: true });
     }
 "##;

@@ -29,28 +29,9 @@ pub const WGSL: &str = r##"
   let formScale = u.u6.w;
   let driftK    = 1.0 - formMix; // suppress drift while forming
 
-  // animated world position (Lissajous drift) — damped by (1-formMix)
-  var cloudC = vec3f(
-    sp.posR.x + sin(t * 0.28 + ph)        * 0.30 * driftK,
-    sp.posR.y + cos(t * 0.37 + ph * 1.27) * 0.22 * driftK,
-    sp.posR.z + sin(t * 0.21 + ph * 0.73) * 0.18 * driftK,
-  );
-
-  // soft gravity toward scene origin → organic clumps (also damped)
-  let radial   = length(sp.posR.xyz);
-  let pullAmt  = smoothstep(1.5, 5.5, radial) * 0.35 * driftK;
-  let toOrigin = -normalize(sp.posR.xyz + vec3f(1e-4));
-  let swirl    = vec3f(-sp.posR.z, 0.0, sp.posR.x) * 0.02 * driftK;
-  cloudC      += toOrigin * pullAmt * (0.6 + 0.4 * sin(t * 0.5 + ph));
-  cloudC      += swirl    * sin(t * 0.3 + ph * 0.5);
-
   // ── deterministic formation target from instance index ──────
-  // overlap factor depends on shape: spheres need √2 to cover diagonals,
-  // cubes (high n) tile exactly with factor 1.0
-  // n=1 octahedron · n=2 sphere · n→∞ cube
-  let n         = max(u.u5.w, 1.0);
-  let cubeness  = clamp((n - 2.0) / 20.0, 0.0, 1.0); // 0 sphere/octa → 1 cube
-  let coverK    = mix(1.45, 1.02, cubeness);
+  // n=22 cube
+  let n         = 22.0;
 
   var formed     = vec3f(0.0);
   var targetR    = sp.posR.w;     // target radius when fully formed
@@ -58,112 +39,53 @@ pub const WGSL: &str = r##"
   var halfCell   = sp.posR.w;     // cell half-extent in world units
   var cellMask: u32 = 63u;        // default: all faces exposed (cloud / wall)
 
-  if formMode > 0.5 && formMode < 1.5 {
-    // CUBE: solid side³ grid. Every particle is one cell at integer coord
-    // (ix, iy, iz). Adjacent cells differ by exactly 2·halfCell in their
-    // centre, so unexposed faces are perfectly flush — magnetic packing.
-    // Interior cells (mask == 0) are culled; only 6s²−12s+8 stay visible.
-    let side    = u32(formA);
-    let totalCells = side * side * side;
-    if inst < totalCells {
-      let ix = inst % side;
-      let iy = (inst / side) % side;
-      let iz = inst / (side * side);
+  // CUBE: solid side³ grid. Every particle is one cell at integer coord
+  // (ix, iy, iz). Adjacent cells differ by exactly 2·halfCell in their
+  let side    = u32(formA);
+  let totalCells = side * side * side;
+  if inst < totalCells {
+    let ix = inst % side;
+    let iy = (inst / side) % side;
+    let iz = inst / (side * side);
 
-      // mask via direct face-touch test (= particle_shape::CubeGrid::classify)
-      var m: u32 = 0u;
-      if ix == side - 1u { m |=  1u; }
-      if ix == 0u        { m |=  2u; }
-      if iy == side - 1u { m |=  4u; }
-      if iy == 0u        { m |=  8u; }
-      if iz == side - 1u { m |= 16u; }
-      if iz == 0u        { m |= 32u; }
+    // mask via direct face-touch test 
+    var m: u32 = 0u;
+    if ix == side - 1u { m |=  1u; }
+    if ix == 0u        { m |=  2u; }
+    if iy == side - 1u { m |=  4u; }
+    if iy == 0u        { m |=  8u; }
+    if iz == side - 1u { m |= 16u; }
+    if iz == 0u        { m |= 32u; }
 
-      // cull interior — never contributes pixels
-      if m == 0u {
-        aliveForm = false;
-        formed    = vec3f(0.0);
-        targetR   = 0.0;
-      } else {
-        let cellSize = formScale / formA * 2.0; // fallback if u9 not available, or use fixed scale logic if intended
-        let halfCellWorld = cellSize * 0.5;
-
-        let fx = f32(ix) - (formA - 1.0) * 0.5;
-        let fy = f32(iy) - (formA - 1.0) * 0.5;
-        let fz = f32(iz) - (formA - 1.0) * 0.5;
-
-        formed   = vec3f(fx, fy, fz) * cellSize;
-        halfCell = halfCellWorld;
-        cellMask = m;
-
-        // imposter mode: radius = halfCell (sphere just touches its 6 neighbours);
-        // cell-SDF mode: radius = √3·halfCell (billboard bounds the rotated cube).
-        let cellR     = halfCell * 1.7321;
-        let imposterR = halfCell;
-        targetR  = mix(imposterR, cellR, clamp(u.u7.x, 0.0, 1.0));
-
-        // hideLow debug: show only edges & corners
-        if u.u7.w > 0.5 {
-          let nb = countOneBits(cellMask);
-          if nb <= 1u { aliveForm = false; }
-        }
-      }
-    } else {
+    // cull interior — never contributes pixels
+    if m == 0u {
       aliveForm = false;
       formed    = vec3f(0.0);
       targetR   = 0.0;
-    }
-  } else if formMode > 1.5 {
-    // WALL: cols × rows  (cols·rows ≤ N is guaranteed from JS)
-    // Each tile is a real 3D cube with axis-aligned extents:
-    //   X half = scale·aspect/cols    Y half = scale/rows    Z half = min(X,Y)
-    // We expose +Z / -Z always (front + back of wall) and +X/-X/+Y/-Y only
-    // on the outer rim of the rectangle so neighbour seams disappear like the
-    // cube formation. halfCell = min(tileX, tileY) keeps tile cube proportions.
-    let cols       = u32(formA);
-    let rows       = max(formScale, 1.0);
-    let rowsU      = u32(rows);
-    let totalCells = cols * rowsU;
-    if inst < totalCells {
-      let r      = inst / cols;
-      let c      = inst % cols;
-      let scale  = 2.4;
-      let aspect = formA / rows;
-      // Tile centre in world (Z = 0 plane).
-      let uu     = (f32(c) + 0.5) / formA * 2.0 - 1.0;
-      let vv     = (f32(r) + 0.5) / rows  * 2.0 - 1.0;
-      formed     = vec3f(uu * aspect * scale, vv * scale, 0.0);
-
-      // Tile half-extents (X may differ from Y when aspect ≠ 1).
-      let tileX  = scale * aspect / formA;
-      let tileY  = scale / rows;
-      // Use min for cellMask SDF/mesh maths: tile becomes a square slab.
-      halfCell   = min(tileX, tileY);
-      // World-extent radius for billboard fallback (covers the whole tile).
-      targetR    = max(tileX, tileY);
-
-      // Wall cellMask: edges expose ±X / ±Y; front+back (±Z) always exposed.
-      var m: u32 = 16u | 32u;
-      if c == cols - 1u { m |=  1u; }
-      if c == 0u        { m |=  2u; }
-      if r == rowsU - 1u { m |=  4u; }
-      if r == 0u         { m |=  8u; }
-      cellMask = m;
     } else {
-      aliveForm = false;
-      formed    = vec3f(0.0, 0.0, -100.0); // off-screen behind
-      targetR   = 0.0;
+      let cellSize = formScale / formA * 2.0; 
+      let halfCellWorld = cellSize * 0.5;
+
+      let fx = f32(ix) - (formA - 1.0) * 0.5;
+      let fy = f32(iy) - (formA - 1.0) * 0.5;
+      let fz = f32(iz) - (formA - 1.0) * 0.5;
+
+      formed   = vec3f(fx, fy, fz) * cellSize;
+      halfCell = halfCellWorld;
+      cellMask = m;
+
+      let cellR     = halfCell * 1.7321;
+      let imposterR = halfCell;
+      targetR  = mix(imposterR, cellR, clamp(u.u7.x, 0.0, 1.0));
     }
+  } else {
+    aliveForm = false;
+    formed    = vec3f(0.0);
+    targetR   = 0.0;
   }
 
-  // smoothly grow / shrink particle to fill its cell when formed
-  let mixT  = smoothstep(0.0, 1.0, formMix);
-  let size  = mix(sp.posR.w, targetR, mixT);
-
-  // no wobble in formation — particles must lock perfectly still
-  let settle = vec3f(0.0);
-
-  var center = mix(cloudC, formed + settle, smoothstep(0.0, 1.0, formMix));
+  let size  = targetR;
+  var center = formed;
 
   // ── Scene placement: scale & translate the entire formation ──
   // Cloud (formMix=0) keeps original position; the formed object is repositioned

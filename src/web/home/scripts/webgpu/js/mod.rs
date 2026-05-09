@@ -1,7 +1,6 @@
 // ── JS assembly: injects WGSL shader source and concatenates all JS fragments ─────
 // Domain: Application — ordered composition of all JS domains.
 
-mod benchmark;
 mod buffers;
 mod controls;
 mod gizmo;
@@ -26,7 +25,6 @@ pub fn assemble(shader: &str) -> String {
             + controls::JS.len()
             + gizmo::JS.len()
             + matter_ui::JS.len()
-            + benchmark::JS.len()
             + render_loop::JS.len()
             + 64,
     );
@@ -44,7 +42,6 @@ pub fn assemble(shader: &str) -> String {
     out.push_str(controls::JS);
     out.push_str(gizmo::JS);
     out.push_str(matter_ui::JS);
-    out.push_str(benchmark::JS);
     out.push_str(render_loop::JS);
     out
 }

@@ -23,11 +23,9 @@ pub const JS: &str = r##"
     async function startWebGpuScene() {
       const canvas = document.getElementById('webgpu-canvas');
       const badge  = document.getElementById('webgpu-status');
-      const diag   = document.getElementById('gpu-diag');
 
       function log(msg, color = '#e2e8f0') {
         console.log('[WebGPU]', msg);
-        if (diag) diag.innerHTML += `<span style="color:${color}">${msg}</span><br>`;
       }
       function setBadge(text, color) {
         if (badge) { badge.textContent = text; badge.style.color = color; }
@@ -35,10 +33,6 @@ pub const JS: &str = r##"
 
       canvas.width  = window.innerWidth;
       canvas.height = window.innerHeight;
-      if (diag) {
-        diag.style.display = 'block';
-        diag.innerHTML = '<b style="color:#67e8f9">WebGPU Particles v1.3 · 1K…1M · free orbit</b><br>';
-      }
       log(`canvas: ${canvas.width}×${canvas.height} | dpr: ${window.devicePixelRatio}`);
 
       // ── 1. Probe ────────────────────────────────────────────────

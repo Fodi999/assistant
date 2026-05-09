@@ -95,41 +95,35 @@ fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
       // UI scale 100.0 (сантиметры) => u9.x = 100.0
       // UI scale 1000.0 (миллиметры) => u9.x = 1000.0
       let s = u.u9.x;
-      // Усиливаем видимость линий (были слишком слабые: 0.05, 0.12...)
-      let mm  = grid_intensity(p, s * 1000.0, world_lw) * 0.04;
-      let cm  = grid_intensity(p, s * 100.0,  world_lw) * 0.08;
-      let dcm = grid_intensity(p, s * 10.0,   world_lw) * 0.18;
-      let m   = grid_intensity(p, s * 1.0,    world_lw) * 0.35;
+      // Усиливаем видимость базовых линий 1-unit (метровых)
+      let m = grid_intensity(p, u.u9.x * 1.0, world_lw);
 
-      let combined_grid = clamp(mm + cm + dcm + m, 0.0, 1.0);
+      let combined_grid = clamp(m, 0.0, 1.0);
 
       // smooth distance fade (gone by 70 units)
-      let fade = clamp(1.0 - t_hit / 70.0, 0.0, 1.0);
+      let fade = clamp(1.0 - t_hit / 100.0, 0.0, 1.0);
 
-      // Сначала рассчитываем яркое пятно под объектом
-      let objPos = u.u8.xyz;
-      let dObj = length(p.xz - objPos.xz);
-      let platformGlow = exp(-dObj * dObj * 1.85);
-      let platformCore = exp(-dObj * dObj * 8.0);
+      // Рисуем сетку ярким цветом, чтобы точно было видно
+      let lineCol = vec3f(0.6, 0.6, 0.6); // Светло-серая сетка
+      var gridCol = mix(col, lineCol, combined_grid * 0.5); // 50% прозрачность
 
-      var floorCol = col;
-      floorCol += vec3f(0.00, 0.45, 0.85) * platformGlow * 0.10; // Сделали свечение платформы сильно тусклее
-      floorCol += vec3f(0.20, 0.75, 0.95) * platformCore * 0.15;
-
-      // Затем рисуем сетку ПОВЕРХ светящегося пола более ярким цветом
-      let lineCol = vec3f(0.20, 0.45, 0.75); // чуть более светлый сине-серый
-      var gridCol = mix(floorCol, floorCol + lineCol, combined_grid); // Additive смесь, чтобы линии не темнили глоу
+      // Яркие оси как в Blender (Красная = X, Зеленая = Z)
+      let axisLineWidth = world_lw * 2.5; 
+      let axis_x = 1.0 - smoothstep(axisLineWidth * 0.2, axisLineWidth * 1.5, abs(p.z));
+      let axis_z = 1.0 - smoothstep(axisLineWidth * 0.2, axisLineWidth * 1.5, abs(p.x));
       
-      // Яркая подсветка центральных осей (Красный = X, Синий = Z) - пока отключим оси для чистого режима
-      // let axis_x = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.z));
-      // let axis_z = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.x));
-      // gridCol = mix(gridCol, vec3f(0.85, 0.25, 0.35), axis_x * 0.35);
-      // gridCol = mix(gridCol, vec3f(0.20, 0.55, 0.85), axis_z * 0.35);      // Применяем сетку к фону
+      // X = Red 
+      gridCol = mix(gridCol, vec3f(0.9, 0.2, 0.2), axis_x);
+      // Z = Green 
+      gridCol = mix(gridCol, vec3f(0.3, 0.8, 0.3), axis_z);
+
+
+      // Применяем сетку к фону
       col = mix(col, gridCol, fade);
 
       out.col = vec4f(col, 1.0);
-      let hitVz = max(dot(p - ro, fwd), 0.05);
-      out.depth = clamp(hitVz / (hitVz + 8.0), 0.0, 0.9999);
+      // Глубину оставляем 1.0 (глубина фона), чтобы сетка и пол не перекрывали объект снизу
+      // out.depth = ... 
     }
   }
 
