@@ -400,10 +400,7 @@ impl CatalogProfileAdapter {
                             maillard_temp: opt_real(&r, "maillard_temp"),
                             protein_denature_temp: opt_real(&r, "protein_denature_temp"),
                             vitamin_retention_pct: opt_real(&r, "vitamin_retention_pct"),
-                            best_cooking_method: r
-                                .try_get("best_cooking_method_en")
-                                .ok()
-                                .flatten(),
+                            best_cooking_method: r.try_get("best_cooking_method_en").ok().flatten(),
                         },
                     )
                 })
@@ -538,7 +535,10 @@ fn parse_behaviors(raw: Option<JsonValue>) -> Vec<LaboratoryCulinaryBehavior> {
                 .or_else(|| obj.get("category"))
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let trigger = obj.get("trigger").and_then(|v| v.as_str()).map(String::from);
+            let trigger = obj
+                .get("trigger")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let effect = obj.get("effect").and_then(|v| v.as_str()).map(String::from);
             let intensity = obj.get("intensity").and_then(json_as_f64);
             let temperature_c = obj

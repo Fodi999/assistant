@@ -2,14 +2,14 @@
 // Domain: Application state — all runtime state objects and pointer event wiring.
 
 pub const JS: &str = r##"
-      // ── 3. Particle data (rebuildable up to device limit) ───────
       // Each particle = 8 floats = 32 bytes.
       // Cap MAX_PARTICLES at whatever the GPU storage-buffer limit allows.
       const PARTICLE_STRIDE = 32;
       const HARD_CAP        = 5_000_000;
       const deviceCap       = Math.floor(device.limits.maxStorageBufferBindingSize / PARTICLE_STRIDE);
       const MAX_PARTICLES   = Math.min(HARD_CAP, deviceCap);
-      let   NUM_SPHERES     = Math.min(1_000_000, MAX_PARTICLES);
+      // Start with 1 particle (the "default cube"), max up to 1M
+      let   NUM_SPHERES     = 1;
       const CLOUD_VOLUME    = (4 / 3) * Math.PI * Math.pow(5.5, 3);
       log(`✓ MAX_PARTICLES = ${(MAX_PARTICLES/1e6).toFixed(2)}M  (buffer ${(MAX_PARTICLES*32/1048576).toFixed(0)} MB)`, '#a78bfa');
 
@@ -92,11 +92,27 @@ pub const JS: &str = r##"
 
       // ── 4. Camera state ─────────────────────────────────────────
       const cam = {
-        yaw:    0.81,
-        pitch:  0.46,
+        yaw:    0.785,
+        pitch:  -0.615,
         dist:   3.25,
         target: [0.0, halfHeight('cube'), 0.0],
         autoRotate: false,
+        ortho: false,
+      };
+
+      window.setCameraPreset = function(preset) {
+        switch(preset) {
+          case 'front': cam.yaw = 0.0; cam.pitch = 0.0; break;
+          case 'right': cam.yaw = Math.PI * 0.5; cam.pitch = 0.0; break;
+          case 'top':   cam.yaw = 0.0; cam.pitch = -Math.PI * 0.5 + 0.001; break;
+          case 'iso':   cam.yaw = 0.785; cam.pitch = -0.615; break;
+        }
+        log(`◇ camera preset: ${preset}`, '#67e8f9');
+      };
+      
+      window.setCameraProjection = function(mode) {
+        cam.ortho = (mode === 'ortho');
+        log(`◇ projection: ${mode}`, '#67e8f9');
       };
       // shape parameter: 0 = super-cube · 0.5 = octahedron (triangle silhouette) · 1 = super-sphere
       const shape = { roundness: 1.0 };
@@ -154,50 +170,152 @@ pub const JS: &str = r##"
       const cellSdf = { on: true, radius: 0.05, colorMode: 0, hideLow: false };
       const floorGrid = { scale: 1.0 }; // 1.0 = m, 100.0 = cm, 1000.0 = mm
 
-      // ── Cube Grid State ──────────────────────────────────────────
-      const cubeGridState = {
-        side: 1,
-        cellSizeMm: 100
-      };
+        // ── Cube Grid State ──────────────────────────────────────────
+        const cubeGridState = {
+          side: 1,
+          cellSizeMm: 100,
+          cellSizeWorld: 0.1,
+          selectedCellId: null,
+        };
 
-      window.updateCubeGrid = function updateCubeGrid(newSide) {
-        cubeGridState.side = newSide;
-        
-        // 1. Math calculation for elements
-        const side = cubeGridState.side;
-        const totalCells = side * side * side;
-        const surface = side <= 1 ? 1 : 6 * side * side - 12 * side + 8;
-        const interior = Math.max(0, totalCells - surface);
-        const objSize = side * cubeGridState.cellSizeMm;
-        
-        // 2. Set Engine State
-        NUM_SPHERES = totalCells;
-        
-        // Ensure object position Y sits perfectly on the floor (Y = totalSize/2)
-        // Convert to the scaling required by the engine math:
-        const worldObjSize = (objSize / 1000.0) * floorGrid.scale; 
-        
-        // Update DOM UI elements if they exist
-        const vSide = document.getElementById('ui-cube-side');
-        const vCell = document.getElementById('ui-cube-cell-size');
-        const vObj  = document.getElementById('ui-cube-obj-size');
-        const vSurf = document.getElementById('surfaceValue');
-        const vInt  = document.getElementById('interiorValue');
+        function cellId(ix, iy, iz, side) {
+          return ix + iy * side + iz * side * side;
+        }
 
-        if (vSide) vSide.innerText = side;
-        if (vCell) vCell.innerText = cubeGridState.cellSizeMm + ' mm';
-        if (vObj)  vObj.innerText = objSize + ' mm';
-        if (vSurf) vSurf.innerText = String(surface);
-        if (vInt)  vInt.innerText = String(interior);
+        function cellCoord(id, side) {
+          const ix = id % side;
+          const iy = Math.floor(id / side) % side;
+          const iz = Math.floor(id / (side * side));
+          return { ix, iy, iz };
+        }
 
-        // Rebuild particle buffer memory
-        sphereData = buildParticles(NUM_SPHERES);
-        if (globalThis.__rebuildBuffersFlag) globalThis.__rebuildBuffersFlag();
-        
-        log(`◇ Cube Grid: ${side}³ (surface: ${surface}, interior: ${interior})`, '#a78bfa');
-      }
+        window.updateCubeGrid = function updateCubeGrid(newSide) {
+          cubeGridState.side = newSide;
+          cubeGridState.selectedCellId = null; // reset selection on grid change
+          
+          // 1. Math calculation for elements
+          const side = cubeGridState.side;
+          const totalCells = side * side * side;
+          const surface = side <= 1 ? 1 : totalCells - Math.pow(side - 2, 3);
+          const interior = Math.max(0, totalCells - surface);
+          const objSize = side * cubeGridState.cellSizeMm;
+          
+          // 2. Set Engine State
+          NUM_SPHERES = totalCells;
+          
+          // Ensure object position Y sits perfectly on the floor (Y = totalSize/2)
+          // Convert to the scaling required by the engine math:
+          const worldObjSize = (objSize / 1000.0) * floorGrid.scale; 
+          sceneState.objectPosition[1] = worldObjSize / 2.0;
 
-      function toggleCellSdf() {
+          // Update DOM UI elements if they exist
+          const vSide = document.getElementById('ui-cube-side');
+          const vCell = document.getElementById('ui-cube-cell-size');
+          const vObj  = document.getElementById('ui-cube-obj-size');
+          const vSurf = document.getElementById('surfaceValue');
+          const vInt  = document.getElementById('interiorValue');
+
+          if (vSide) vSide.innerText = side;
+          if (vCell) vCell.innerText = cubeGridState.cellSizeMm + ' mm';
+          if (vObj)  vObj.innerText = objSize + ' mm';
+          if (vSurf) vSurf.innerText = String(surface);
+          if (vInt)  vInt.innerText = String(interior);
+
+          // Update Inspector UI reset
+          updateInspectorUi();
+
+          // Rebuild particle buffer memory rigidly ordered for Cube Grid
+          sphereData = new Float32Array(totalCells * 8);
+          // Scale down particle sphere sizes if they get huge or scale evenly based on cell size
+          // The visual size relies on the objectScale and the local coordinate.
+          // Cell size world dictates the local spacing:
+          const cellSizeLocal = 1.0 / side; // Map it into local space range [-0.5, 0.5] if shape uses it, but we can just use 1.0/side spacing.
+          const halfSide = (side - 1) * 0.5;
+
+          for (let id = 0; id < totalCells; id++) {
+            const { ix, iy, iz } = cellCoord(id, side);
+            
+            // X, Y, Z centered around 0,0,0
+            const cx = (ix - halfSide) * cellSizeLocal;
+            const cy = (iy - halfSide) * cellSizeLocal;
+            const cz = (iz - halfSide) * cellSizeLocal;
+
+            const b = id * 8;
+            sphereData[b + 0] = cx;
+            sphereData[b + 1] = cy;
+            sphereData[b + 2] = cz;
+            sphereData[b + 3] = cellSizeLocal * 0.5; // radius is half cell
+
+            // Give alternating checkboard or random colors
+            const isSurface = (ix === 0 || ix === side - 1 || iy === 0 || iy === side - 1 || iz === 0 || iz === side - 1);
+            if (isSurface) {
+              sphereData[b + 4] = 0.8;
+              sphereData[b + 5] = 0.8;
+              sphereData[b + 6] = 0.8;
+            } else {
+              sphereData[b + 4] = 0.3;
+              sphereData[b + 5] = 0.3;
+              sphereData[b + 6] = 0.4;
+            }
+            sphereData[b + 7] = 0.0;
+          }
+
+          if (typeof device !== 'undefined' && typeof sphereBuf !== 'undefined') {
+            device.queue.writeBuffer(sphereBuf, 0, sphereData);
+          }
+          
+          log(`◇ Cube Grid: ${side}³ (surface: ${surface}, interior: ${interior})`, '#a78bfa');
+        }
+
+        window.selectCell = function(id) {
+          if (id === null || id < 0 || id >= NUM_SPHERES) {
+            cubeGridState.selectedCellId = null;
+          } else {
+            cubeGridState.selectedCellId = id;
+          }
+          updateInspectorUi();
+        }
+
+        function updateInspectorUi() {
+          const uiId = document.getElementById('ui-sel-id');
+          const uiGrid = document.getElementById('ui-sel-grid-coords');
+          const uiWorld = document.getElementById('ui-sel-world-coords');
+          const uiSize = document.getElementById('ui-sel-size');
+
+          if (!uiId || !uiGrid || !uiWorld || !uiSize) return;
+
+          const id = cubeGridState.selectedCellId;
+          const side = cubeGridState.side;
+
+          if (id === null) {
+            uiId.innerText = '—';
+            uiGrid.innerText = '—';
+            uiWorld.innerText = '—';
+            uiSize.innerText = '—';
+            return;
+          }
+
+          const { ix, iy, iz } = cellCoord(id, side);
+          uiId.innerText = id;
+          uiGrid.innerText = `X ${ix + 1} / Y ${iy + 1} / Z ${iz + 1}`;
+          
+          // Calculate world position
+          const size = cubeGridState.cellSizeWorld;
+          const halfSide = (side - 1) * 0.5;
+
+          const lx = (ix - halfSide) * size;
+          const ly = (iy - halfSide) * size;
+          const lz = (iz - halfSide) * size;
+          
+          const op = sceneState.objectPosition;
+          
+          const wx = op[0] + lx;
+          const wy = op[1] + ly;
+          const wz = op[2] + lz;
+
+          uiWorld.innerText = `X ${wx.toFixed(2)} / Y ${wy.toFixed(2)} / Z ${wz.toFixed(2)}`;
+          uiSize.innerText = `${cubeGridState.cellSizeMm} mm`;
+        }      function toggleCellSdf() {
         cellSdf.on = !cellSdf.on;
         log(`◇ cell-sdf = ${cellSdf.on ? 'ON' : 'off'}`, '#67e8f9');
       }

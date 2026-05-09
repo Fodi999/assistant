@@ -180,7 +180,8 @@ pub const WGSL: &str = r##"
   let mAct = u.u5.z;
   if mAct > 0.5 {
     let mNdc = vec2f(u.u5.x * asp, u.u5.y);
-    let rdM  = normalize(mNdc.x * right + mNdc.y * upv + 1.5 * fwd);
+    // simple focal length (now fixed 2.414 everywhere)
+    let rdM  = normalize(mNdc.x * right + mNdc.y * upv + 2.414 * fwd);
     let toC      = center - ro;
     let projLen  = dot(toC, rdM);
     let perp     = toC - rdM * projLen;
@@ -192,16 +193,18 @@ pub const WGSL: &str = r##"
     }
   }
 
-  // view-space transform
-  let rel = center - ro;
-  let vx  = dot(rel, right);
-  let vy  = dot(rel, upv);
-  let vz  = dot(rel, fwd);
+  let isOrtho = u.u9.y > 0.5;
+  let orthoHeight = distance(ro, u.u8.xyz) * 0.45;
 
-  // ── Screen-space LOD ──
+  let rel = center - ro;
+  let vx = dot(rel, right);
+  let vy = dot(rel, upv);
+  let vz = dot(rel, fwd);
+  let safe_vz = max(vz, 0.05);
+
   // Project particle radius to pixels: pxR ≈ size · focal / vz · (viewportH / 2)
   let viewH = u.u0.z;
-  let pxR   = size * 1.5 / max(vz, 0.05) * (viewH * 0.5);
+  let pxR   = select( size * 2.414 / safe_vz * (viewH * 0.5), size / orthoHeight * viewH * 1.5, isOrtho );
 
   // CUBE LOD by cellMask popcount (decimation when shell pixels < 1):
   //   pxR ≥ 1.5  → all surface particles (popcount ≥ 1)               · LOD0
@@ -310,9 +313,9 @@ pub const WGSL: &str = r##"
     // Otherwise, rotating a large close cube will make its vertices snap to (0,0,-2) and destroy the triangle.
     let safe_mvz = max(mvz, 0.001); // Prevent division by zero for projection
     
-    let focalM = 1.5;
-    let mcx    = mvx * focalM / safe_mvz / asp;
-    let mcy    = mvy * focalM / safe_mvz;
+    let focalM = 2.414;
+    let mcx    = select(mvx * focalM / safe_mvz / asp, mvx / orthoHeight / asp, isOrtho);
+    let mcy    = select(mvy * focalM / safe_mvz, mvy / orthoHeight, isOrtho);
     let mzNdc  = clamp(mvz / (mvz + 8.0), 0.0, 0.9999);
 
     var o: Pv;
@@ -344,9 +347,9 @@ pub const WGSL: &str = r##"
   let ly   = qy[vi] * billSize;
 
   // perspective project
-  let focal = 1.5;
-  let cx = (vx + lx) * focal / vz / asp;
-  let cy = (vy + ly) * focal / vz;
+  let focal = 2.414;
+  let cx = select((vx + lx) * focal / vz / asp, (vx + lx) / orthoHeight / asp, isOrtho);
+  let cy = select((vy + ly) * focal / vz, (vy + ly) / orthoHeight, isOrtho);
 
   // map view-space z (≥0.05) to NDC depth [0..1) monotonically — used
   // only as a coarse sort key; the fragment shader writes the precise

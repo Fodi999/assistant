@@ -1,0 +1,942 @@
+// ── WGSL: uniform bindings, storage bindings, helper vertex struct ─────────────
+// Domain: GPU interface contract — all shader stages share these declarations.
+
+pub const WGSL: &str = r##"
+struct Uniforms {
+  u0: vec4f,   // time, w, h, pushStrength
+  u1: vec4f,   // ro
+  u2: vec4f,   // right
+  u3: vec4f,   // up
+  u4: vec4f,   // fwd
+  u5: vec4f,   // mouseX, mouseY, mouseActive, shapeExponent
+  u6: vec4f,   // formMix, formMode, formA, formScale
+  u7: vec4f,   // cellSdfOn, cellRadius, colorMode, hideLow
+  u8: vec4f,   // objectX, objectY, objectZ, objectScale  (scene placement)
+  u9: vec4f,   // floorGridScale, _, _, _
+};
+@group(0) @binding(0) var<uniform> u: Uniforms;
+
+struct Sphere { posR: vec4f, colorP: vec4f }
+struct Spheres { data: array<Sphere> }
+@group(0) @binding(1) var<storage, read> spheres: Spheres;
+
+struct Vert { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
+"##;
+
+// ── WGSL: background pass — neutral viewport + clean floor grid ─────────────────
+// Domain: Scene background — follows Blender/Maya/Three.js conventions:
+//   • flat grey gradient (no nebulae, no horizon glow)
+//   • infinite Y=0 floor plane with screen-space-derivative anti-aliasing
+//   • minor grid every 1 unit, major every 10 units
+//   • X-axis red, Z-axis blue (Y-up)
+//   • smooth distance fade — no shimmering at the horizon
+
+pub const WGSL: &str = r##"
+@vertex fn vs_full(@builtin(vertex_index) vi: u32) -> Vert {
+  var p = array<vec2f, 3>(
+    vec2f(-1.0, -1.0),
+    vec2f( 3.0, -1.0),
+    vec2f(-1.0,  3.0)
+  );
+  var o: Vert;
+  o.pos = vec4f(p[vi], 0.0, 1.0);
+  o.uv  = p[vi] * 0.5 + 0.5;
+  return o;
+}
+
+struct BgFragOut {
+  @location(0) col: vec4f,
+  @builtin(frag_depth) depth: f32,
+}
+
+// ── Фрактальная сетка с авто-сокрытием ───────────────────────
+// Плавно скрывает линии, если они становятся "слишком густыми"
+fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
+  let cell_lw = world_lw * scale; 
+  let opacity = smoothstep(1.5, 0.05, cell_lw); // expanded fade range
+  let clamped_lw = min(cell_lw, 0.5);
+  
+  // fract(x + 0.5) - 0.5 centers the grid lines exactly on integer matching: 0.0, 1.0, 2.0
+  let mx = abs(fract(p.x * scale + 0.5) - 0.5);
+  let mz = abs(fract(p.z * scale + 0.5) - 0.5);
+  
+  return max(
+    1.0 - smoothstep(0.0, clamped_lw, mx),
+    1.0 - smoothstep(0.0, clamped_lw, mz)
+  ) * opacity;
+}
+
+@fragment fn fs_bg(in: Vert) -> BgFragOut {
+  let uv  = vec2f(in.uv.x, 1.0 - in.uv.y);
+  let asp = u.u0.y / max(u.u0.z, 1.0);
+
+  // ── Neutral viewport gradient (Blender 4.x default) ─────────
+  let topCol = vec3f(0.235, 0.235, 0.245);
+  let botCol = vec3f(0.105, 0.105, 0.115);
+  var col    = mix(botCol, topCol, uv.y);
+
+  // ── Camera basis from uniforms ──────────────────────────────
+  let ro    = u.u1.xyz;
+  let right = u.u2.xyz;
+  let upv   = u.u3.xyz;
+  let fwd   = u.u4.xyz;
+
+  // Pixel ray (NDC, aspect-corrected, 45° fov → focal length 2.414)
+  let isOrtho = u.u9.y > 0.5;
+
+  let ndcX = (uv.x * 2.0 - 1.0) * asp;
+  let ndcY = -(uv.y * 2.0 - 1.0);
+  let fl   = 2.414;
+  
+  var ro_eff = ro;
+  var rd     = normalize(fwd * fl + right * ndcX + upv * ndcY);
+
+  if isOrtho {
+    // Determine the viewport scale based on camera distance.
+    // To match perspective visually, orthogonal size scales with distance.
+    let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+    
+    // Shift the ray origin offset by NDC to simulate parallel rays.
+    ro_eff = ro + right * ndcX * orthoHeight + upv * ndcY * orthoHeight;
+    rd     = normalize(fwd);
+  }
+
+  var out: BgFragOut;
+  out.col = vec4f(col, 1.0);
+  out.depth = 1.0;
+
+  // ── Floor at Y = 0 ──────────────────────────────────────────
+  // Works from both sides — camera can be above OR below Y=0.
+  if (abs(rd.y) > 0.0005) {
+    let t_hit = -ro_eff.y / rd.y;
+    if ((t_hit > 0.05) && (t_hit < 200.0)) {
+      let p = ro_eff + rd * t_hit;
+
+      // Вычисляем реальную толщину линии в мировых координатах (~1.5px экрана)
+      let world_lw = max((t_hit / 2.414) * (2.0 / 900.0) * 1.5, 0.0001);
+
+      // Иерархия масштабов с учетом настройки UI (u.u9.x):
+      // UI scale 1.0 (метры)      => u9.x = 1.0
+      // UI scale 100.0 (сантиметры) => u9.x = 100.0
+      // UI scale 1000.0 (миллиметры) => u9.x = 1000.0
+      let s = u.u9.x;
+      // Усиливаем видимость линий (были слишком слабые: 0.05, 0.12...)
+      let mm  = grid_intensity(p, s * 1000.0, world_lw) * 0.04;
+      let cm  = grid_intensity(p, s * 100.0,  world_lw) * 0.08;
+      let dcm = grid_intensity(p, s * 10.0,   world_lw) * 0.18;
+      let m   = grid_intensity(p, s * 1.0,    world_lw) * 0.35;
+
+      let combined_grid = clamp(mm + cm + dcm + m, 0.0, 1.0);
+
+      // smooth distance fade (gone by 70 units)
+      let fade = clamp(1.0 - t_hit / 70.0, 0.0, 1.0);
+
+      // Сначала рассчитываем яркое пятно под объектом
+      let objPos = u.u8.xyz;
+      let dObj = length(p.xz - objPos.xz);
+      let platformGlow = exp(-dObj * dObj * 1.85);
+      let platformCore = exp(-dObj * dObj * 8.0);
+
+      var floorCol = col;
+      floorCol += vec3f(0.00, 0.45, 0.85) * platformGlow * 0.10; // Сделали свечение платформы сильно тусклее
+      floorCol += vec3f(0.20, 0.75, 0.95) * platformCore * 0.15;
+
+      // Затем рисуем сетку ПОВЕРХ светящегося пола более ярким цветом
+      let lineCol = vec3f(0.20, 0.45, 0.75); // чуть более светлый сине-серый
+      var gridCol = mix(floorCol, floorCol + lineCol, combined_grid); // Additive смесь, чтобы линии не темнили глоу
+      
+      // Яркая подсветка центральных осей (Красный = X, Синий = Z) - пока отключим оси для чистого режима
+      // let axis_x = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.z));
+      // let axis_z = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.x));
+      // gridCol = mix(gridCol, vec3f(0.85, 0.25, 0.35), axis_x * 0.35);
+      // gridCol = mix(gridCol, vec3f(0.20, 0.55, 0.85), axis_z * 0.35);      // Применяем сетку к фону
+      col = mix(col, gridCol, fade);
+
+      out.col = vec4f(col, 1.0);
+      let hitVz = max(dot(p - ro, fwd), 0.05);
+      out.depth = clamp(hitVz / (hitVz + 8.0), 0.0, 0.9999);
+    }
+  }
+
+  return out;
+}
+
+fn hitSphere(ro: vec3f, rd: vec3f, c: vec3f, r: f32) -> f32 {
+  let oc = ro - c;
+  let b  = dot(oc, rd);
+  let cc = dot(oc, oc) - r * r;
+  let h  = b * b - cc;
+  if (h < 0.0) { return -1.0; }
+  return -b - sqrt(h);
+}
+"##;
+
+// ── WGSL: particle geometry types and cube mesh builder ─────────────────────────
+// Domain: Particle geometry — interpolant struct (Pv) + cube mesh (CubeV, cubeVert).
+
+pub const WGSL: &str = r##"
+// ── Particle pass — instanced billboards as TRUE 3D imposters ─
+struct Pv {
+  @builtin(position) pos:    vec4f,
+  @location(0)       quadUV: vec2f,   // -1..1 inside the quad
+  @location(1)       color:  vec3f,
+  @location(2)       depth:  f32,
+  @location(3)       phase:  f32,
+  @location(4)       wCenter: vec3f,  // world-space particle center
+  @location(5)       size:   f32,     // particle radius (world units)
+  @location(6) @interpolate(flat) cellMask: u32, // exposed-faces bitmask
+  @location(7) @interpolate(flat) halfCell: f32, // cell half-extent (world)
+  @location(8) @interpolate(flat) meshMode: u32, // 1 = cube-mesh path (flat tri), 0 = billboard ray-march
+  @location(9) meshN:    vec3f, // world-space face normal (mesh mode); constant across triangle
+}
+
+// ─── Cube mesh: 36 verts = 6 faces × 2 tris × 3 verts ─────────
+// Returns (localPos in [-1,1]³, outward face normal, faceBit).
+// Outward CCW winding so back-face culling can be enabled later.
+struct CubeV { pos: vec3f, nrm: vec3f, bit: u32, uv: vec2f }
+fn cubeVert(vi: u32) -> CubeV {
+  let faceIdx = vi / 6u;            // 0..5
+  let triVi   = vi % 6u;
+  // Two-triangle quad indices: (0,1,2) and (0,2,3)
+  var quadIdx = array<u32,6>(0u, 1u, 2u, 0u, 2u, 3u);
+  let corner  = quadIdx[triVi];
+  // Tangent-space corners CCW: (-,-) (+,-) (+,+) (-,+)
+  var tx: f32 = -1.0;  var ty: f32 = -1.0;
+  if (corner == 1u) { tx =  1.0; ty = -1.0; }
+  if (corner == 2u) { tx =  1.0; ty =  1.0; }
+  if (corner == 3u) { tx = -1.0; ty =  1.0; }
+
+  var nrm = vec3f(0.0);
+  var tan = vec3f(0.0);
+  var bitan = vec3f(0.0);
+  var bitMask = 0u;
+
+  // Explicit CCW winding definition for each face. 
+  // From the outside of the cube looking at the face, 
+  // tan goes right, bitan goes up.
+  if faceIdx == 0u {        // +X
+    nrm = vec3f(1.0, 0.0, 0.0); tan = vec3f(0.0, 0.0, -1.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 1u;
+  } else if faceIdx == 1u { // -X
+    nrm = vec3f(-1.0, 0.0, 0.0); tan = vec3f(0.0, 0.0, 1.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 2u;
+  } else if faceIdx == 2u { // +Y
+    nrm = vec3f(0.0, 1.0, 0.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 0.0, -1.0); bitMask = 4u;
+  } else if faceIdx == 3u { // -Y
+    nrm = vec3f(0.0, -1.0, 0.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 0.0, 1.0); bitMask = 8u;
+  } else if faceIdx == 4u { // +Z
+    nrm = vec3f(0.0, 0.0, 1.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 16u;
+  } else if faceIdx == 5u { // -Z
+    nrm = vec3f(0.0, 0.0, -1.0); tan = vec3f(-1.0, 0.0, 0.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 32u;
+  }
+
+  let pos = nrm + tan * tx + bitan * ty;
+  return CubeV(pos, nrm, bitMask, vec2f(tx, ty));
+}
+"##;
+
+// ── WGSL: signed-distance functions ─────────────────────────────────────────────
+// Domain: Shape SDF library — cell SDF (particle_shape port) + superquadric family.
+
+pub const WGSL: &str = r##"
+// ─── kernel::particle_shape WGSL port ─────────────────────────
+// Mirrors src/infrastructure/geometry/kernel/particle_shape.rs verbatim.
+// Layout: bit 0 = +X, 1 = -X, 2 = +Y, 3 = -Y, 4 = +Z, 5 = -Z.
+fn maskFromCenter(c: vec3f, halfCell: f32, scale: f32) -> u32 {
+  let eps = halfCell * 1.1;
+  var m: u32 = 0u;
+  if c.x >  scale - eps { m |=  1u; }
+  if c.x < -scale + eps { m |=  2u; }
+  if c.y >  scale - eps { m |=  4u; }
+  if c.y < -scale + eps { m |=  8u; }
+  if c.z >  scale - eps { m |= 16u; }
+  if c.z < -scale + eps { m |= 32u; }
+  return m;
+}
+
+// SDF for one cell in cell-local space [-1, 1]³.
+// Unexposed slabs stay at ±1 (flush); exposed shrink to ±(1-r);
+// length(outside) term auto-rounds edges/corners.
+fn sdfCell(p: vec3f, mask: u32, radius: f32) -> f32 {
+  let r   = clamp(radius, 0.0, 0.5);
+  let sxp = select(0.0, r, (mask &  1u) != 0u);
+  let sxn = select(0.0, r, (mask &  2u) != 0u);
+  let syp = select(0.0, r, (mask &  4u) != 0u);
+  let syn = select(0.0, r, (mask &  8u) != 0u);
+  let szp = select(0.0, r, (mask & 16u) != 0u);
+  let szn = select(0.0, r, (mask & 32u) != 0u);
+  let qx = max(p.x - (1.0 - sxp), -p.x - (1.0 - sxn));
+  let qy = max(p.y - (1.0 - syp), -p.y - (1.0 - syn));
+  let qz = max(p.z - (1.0 - szp), -p.z - (1.0 - szn));
+  let outside = vec3f(max(qx, 0.0), max(qy, 0.0), max(qz, 0.0));
+  let inside  = min(max(qx, max(qy, qz)), 0.0);
+  return length(outside) + inside;
+}
+
+// ── Superquadric SDF (smoothed for ray-march stability) ──
+// |x|ⁿ + |y|ⁿ + |z|ⁿ = 1  → unit superquadric
+// NOT a true distance function (not Lipschitz-1); only used as level-set
+// for medium n. For n→1 (octa) and n→∞ (cube) use exact SDFs below.
+fn sdSuperq(p: vec3f, n: f32) -> f32 {
+  let q = abs(p);
+  let v = pow(q.x, n) + pow(q.y, n) + pow(q.z, n);
+  return pow(v, 1.0 / n) - 1.0;
+}
+
+// ── Exact box SDF (unit cube [-1,1]³) — Lipschitz-1, perfect for ray-march ──
+fn sdBox(p: vec3f) -> f32 {
+  let q = abs(p) - vec3f(1.0);
+  return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// ── Exact octahedron SDF (|x|+|y|+|z|=1) — Lipschitz, sharp triangular faces ──
+fn sdOcta(p: vec3f) -> f32 {
+  let q = abs(p);
+  return (q.x + q.y + q.z - 1.0) * 0.57735027; // 1/√3 normalises gradient to unit
+}
+
+// ── Master shape SDF: dispatch to exact form at extremes ──
+fn sdShape(p: vec3f, n: f32) -> f32 {
+  if (n >= 8.0)  { return sdBox(p);  }   // n≥8 visually indistinguishable from cube
+  if (n <= 1.05) { return sdOcta(p); }   // n≈1 → exact octahedron
+  return sdSuperq(p, n);                 // smooth superquadric for the in-between
+}
+"##;
+
+// ── WGSL: particle vertex shader ─────────────────────────────────────────────────
+// Domain: Particle placement — cloud drift, formation targets (cube/wall),
+//         LOD decimation, billboard inflate, mesh-mode dispatch.
+
+pub const WGSL: &str = r##"
+@vertex fn vs_particles(
+  @builtin(vertex_index)   vi:   u32,
+  @builtin(instance_index) inst: u32,
+) -> Pv {
+  // 6-vert quad in local space (-1..1)
+  var qx = array<f32,6>(-1.0, 1.0,-1.0,  1.0, 1.0,-1.0);
+  var qy = array<f32,6>(-1.0,-1.0, 1.0, -1.0, 1.0, 1.0);
+
+  let t   = u.u0.x;
+  let asp = u.u0.y / u.u0.z;
+
+  let ro    = u.u1.xyz;
+  let right = u.u2.xyz;
+  let upv   = u.u3.xyz;
+  let fwd   = u.u4.xyz;
+
+  let sp = spheres.data[inst];
+  let ph = sp.colorP.w;
+
+  // ── formation parameters ─────────────────────────────────────
+  let formMix   = clamp(u.u6.x, 0.0, 1.0);
+  let formMode  = u.u6.y;       // 0 cloud · 1 cube · 2 wall
+  let formA     = u.u6.z;       // grid side (cube) / row count (wall)
+  let formScale = u.u6.w;
+  let driftK    = 1.0 - formMix; // suppress drift while forming
+
+  // animated world position (Lissajous drift) — damped by (1-formMix)
+  var cloudC = vec3f(
+    sp.posR.x + sin(t * 0.28 + ph)        * 0.30 * driftK,
+    sp.posR.y + cos(t * 0.37 + ph * 1.27) * 0.22 * driftK,
+    sp.posR.z + sin(t * 0.21 + ph * 0.73) * 0.18 * driftK,
+  );
+
+  // soft gravity toward scene origin → organic clumps (also damped)
+  let radial   = length(sp.posR.xyz);
+  let pullAmt  = smoothstep(1.5, 5.5, radial) * 0.35 * driftK;
+  let toOrigin = -normalize(sp.posR.xyz + vec3f(1e-4));
+  let swirl    = vec3f(-sp.posR.z, 0.0, sp.posR.x) * 0.02 * driftK;
+  cloudC      += toOrigin * pullAmt * (0.6 + 0.4 * sin(t * 0.5 + ph));
+  cloudC      += swirl    * sin(t * 0.3 + ph * 0.5);
+
+  // ── deterministic formation target from instance index ──────
+  // overlap factor depends on shape: spheres need √2 to cover diagonals,
+  // cubes (high n) tile exactly with factor 1.0
+  // n=1 octahedron · n=2 sphere · n→∞ cube
+  let n         = max(u.u5.w, 1.0);
+  let cubeness  = clamp((n - 2.0) / 20.0, 0.0, 1.0); // 0 sphere/octa → 1 cube
+  let coverK    = mix(1.45, 1.02, cubeness);
+
+  var formed     = vec3f(0.0);
+  var targetR    = sp.posR.w;     // target radius when fully formed
+  var aliveForm  = true;          // false → particle hidden (extra over grid capacity)
+  var halfCell   = sp.posR.w;     // cell half-extent in world units
+  var cellMask: u32 = 63u;        // default: all faces exposed (cloud / wall)
+
+  if formMode > 0.5 && formMode < 1.5 {
+    // CUBE: solid side³ grid. Every particle is one cell at integer coord
+    // (ix, iy, iz). Adjacent cells differ by exactly 2·halfCell in their
+    // centre, so unexposed faces are perfectly flush — magnetic packing.
+    // Interior cells (mask == 0) are culled; only 6s²−12s+8 stay visible.
+    let side    = u32(formA);
+    let totalCells = side * side * side;
+    if inst < totalCells {
+      let ix = inst % side;
+      let iy = (inst / side) % side;
+      let iz = inst / (side * side);
+
+      // mask via direct face-touch test (= particle_shape::CubeGrid::classify)
+      var m: u32 = 0u;
+      if ix == side - 1u { m |=  1u; }
+      if ix == 0u        { m |=  2u; }
+      if iy == side - 1u { m |=  4u; }
+      if iy == 0u        { m |=  8u; }
+      if iz == side - 1u { m |= 16u; }
+      if iz == 0u        { m |= 32u; }
+
+      // cull interior — never contributes pixels
+      if m == 0u {
+        aliveForm = false;
+        formed    = vec3f(0.0);
+        targetR   = 0.0;
+      } else {
+        let cellSize = formScale / formA * 2.0; // fallback if u9 not available, or use fixed scale logic if intended
+        let halfCellWorld = cellSize * 0.5;
+
+        let fx = f32(ix) - (formA - 1.0) * 0.5;
+        let fy = f32(iy) - (formA - 1.0) * 0.5;
+        let fz = f32(iz) - (formA - 1.0) * 0.5;
+
+        formed   = vec3f(fx, fy, fz) * cellSize;
+        halfCell = halfCellWorld;
+        cellMask = m;
+
+        // imposter mode: radius = halfCell (sphere just touches its 6 neighbours);
+        // cell-SDF mode: radius = √3·halfCell (billboard bounds the rotated cube).
+        let cellR     = halfCell * 1.7321;
+        let imposterR = halfCell;
+        targetR  = mix(imposterR, cellR, clamp(u.u7.x, 0.0, 1.0));
+
+        // hideLow debug: show only edges & corners
+        if u.u7.w > 0.5 {
+          let nb = countOneBits(cellMask);
+          if nb <= 1u { aliveForm = false; }
+        }
+      }
+    } else {
+      aliveForm = false;
+      formed    = vec3f(0.0);
+      targetR   = 0.0;
+    }
+  } else if formMode > 1.5 {
+    // WALL: cols × rows  (cols·rows ≤ N is guaranteed from JS)
+    // Each tile is a real 3D cube with axis-aligned extents:
+    //   X half = scale·aspect/cols    Y half = scale/rows    Z half = min(X,Y)
+    // We expose +Z / -Z always (front + back of wall) and +X/-X/+Y/-Y only
+    // on the outer rim of the rectangle so neighbour seams disappear like the
+    // cube formation. halfCell = min(tileX, tileY) keeps tile cube proportions.
+    let cols       = u32(formA);
+    let rows       = max(formScale, 1.0);
+    let rowsU      = u32(rows);
+    let totalCells = cols * rowsU;
+    if inst < totalCells {
+      let r      = inst / cols;
+      let c      = inst % cols;
+      let scale  = 2.4;
+      let aspect = formA / rows;
+      // Tile centre in world (Z = 0 plane).
+      let uu     = (f32(c) + 0.5) / formA * 2.0 - 1.0;
+      let vv     = (f32(r) + 0.5) / rows  * 2.0 - 1.0;
+      formed     = vec3f(uu * aspect * scale, vv * scale, 0.0);
+
+      // Tile half-extents (X may differ from Y when aspect ≠ 1).
+      let tileX  = scale * aspect / formA;
+      let tileY  = scale / rows;
+      // Use min for cellMask SDF/mesh maths: tile becomes a square slab.
+      halfCell   = min(tileX, tileY);
+      // World-extent radius for billboard fallback (covers the whole tile).
+      targetR    = max(tileX, tileY);
+
+      // Wall cellMask: edges expose ±X / ±Y; front+back (±Z) always exposed.
+      var m: u32 = 16u | 32u;
+      if c == cols - 1u { m |=  1u; }
+      if c == 0u        { m |=  2u; }
+      if r == rowsU - 1u { m |=  4u; }
+      if r == 0u         { m |=  8u; }
+      cellMask = m;
+    } else {
+      aliveForm = false;
+      formed    = vec3f(0.0, 0.0, -100.0); // off-screen behind
+      targetR   = 0.0;
+    }
+  }
+
+  // smoothly grow / shrink particle to fill its cell when formed
+  let mixT  = smoothstep(0.0, 1.0, formMix);
+  let size  = mix(sp.posR.w, targetR, mixT);
+
+  // no wobble in formation — particles must lock perfectly still
+  let settle = vec3f(0.0);
+
+  var center = mix(cloudC, formed + settle, smoothstep(0.0, 1.0, formMix));
+
+  // ── Scene placement: scale & translate the entire formation ──
+  // Cloud (formMix=0) keeps original position; the formed object is repositioned
+  // and resized via uniform u8 = (objectPos, objectScale).
+  let objPos   = u.u8.xyz;
+  let objScale = max(0.001, u.u8.w);
+  // blend toward the placed pose as the formation forms — keeps cloud anchored at origin
+  let placeT   = smoothstep(0.0, 1.0, formMix);
+  let placedC  = center * objScale + objPos;
+  center       = mix(center, placedC, placeT);
+  halfCell     = mix(halfCell, halfCell * objScale, placeT);
+
+  // sand-push along mouse ray (still works in any mode, slightly weaker when formed)
+  let mAct = u.u5.z;
+  if mAct > 0.5 {
+    let mNdc = vec2f(u.u5.x * asp, u.u5.y);
+    // simple focal length (now fixed 2.414 everywhere)
+    let rdM  = normalize(mNdc.x * right + mNdc.y * upv + 2.414 * fwd);
+    let toC      = center - ro;
+    let projLen  = dot(toC, rdM);
+    let perp     = toC - rdM * projLen;
+    let dist     = length(perp);
+    if dist > 0.001 && projLen > 0.0 {
+      let falloff = exp(-dist * 2.2);
+      let dir     = perp / dist;
+      center += dir * falloff * u.u0.w * (1.0 - formMix);
+    }
+  }
+
+  let isOrtho = u.u9.y > 0.5;
+  let orthoHeight = distance(ro, u.u8.xyz) * 0.45;
+
+  let rel = center - ro;
+  let vx = dot(rel, right);
+  let vy = dot(rel, upv);
+  let vz = dot(rel, fwd);
+  let safe_vz = max(vz, 0.05);
+
+  // Project particle radius to pixels: pxR ≈ size · focal / vz · (viewportH / 2)
+  let viewH = u.u0.z;
+  let pxR   = select( size * 2.414 / safe_vz * (viewH * 0.5), size / orthoHeight * viewH * 1.5, isOrtho );
+
+  // CUBE LOD by cellMask popcount (decimation when shell pixels < 1):
+  //   pxR ≥ 1.5  → all surface particles (popcount ≥ 1)               · LOD0
+  //   pxR ∈ [0.8, 1.5)  → drop face-interior, keep edges + corners    · LOD1
+  //   pxR ∈ [0.4, 0.8)  → drop edges, keep 8 corner cells             · LOD2
+  //   pxR < 0.4         → keep only corners with extra inflation       · LOD3
+  // Survivors inflate so total covered area ≈ unchanged ("Вариант 2": 2×2×2 → 1 block).
+  var lodInflate: f32 = 1.0;
+  if formMix > 0.5 && formMode > 0.5 && formMode < 1.5 {
+    let bits = countOneBits(cellMask);
+    if pxR < 0.4 {
+      if bits < 3u { aliveForm = false; }
+      lodInflate = 4.0;
+    } else if pxR < 0.8 {
+      if bits < 2u { aliveForm = false; }
+      lodInflate = 2.0;
+    } else if pxR < 1.5 {
+      lodInflate = 1.4;
+    }
+  }
+
+  // Universal screen-space minimum: never let a particle fall below 1 px (kills subpixel flicker)
+  let curPxR  = pxR * lodInflate;
+  let pxBoost = select(1.0, 1.0 / max(curPxR, 0.001), curPxR < 1.0);
+  // imposter radius also follows the scene scale once formed
+  let sizeScaled = mix(size, size * objScale, placeT);
+  let sizeLod    = sizeScaled * lodInflate * pxBoost;
+
+  if vz < 0.05 || !aliveForm {
+    var dead: Pv;
+    dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+    dead.quadUV   = vec2f(0.0);
+    dead.color    = vec3f(0.0);
+    dead.depth    = 0.0;
+    dead.phase    = 0.0;
+    dead.wCenter  = vec3f(0.0);
+    dead.size     = 0.0;
+    dead.cellMask = 0u;
+    dead.halfCell = 0.0;
+    dead.meshMode = 0u;
+    dead.meshN    = vec3f(0.0);
+    return dead;
+  }
+
+  // ── Choose render path ───────────────────────────────────────
+  // MESH PATH (true 3D cube triangle): activated for fully-formed cube OR
+  // wall when the shape exponent is high enough (n > 8 → virtually a cube).
+  // Hardware-rasterized triangles → zero ray-march artifacts on tilt.
+  let isCubeForm = formMode > 0.5 && formMode < 1.5;
+  let isWallForm = formMode > 1.5;
+  let useMesh    = formMix > 0.95
+                && (isCubeForm || isWallForm)
+                && n > 8.0
+                && halfCell > 0.0001;
+
+  // For non-mesh mode, only the first 6 verts are real (billboard quad).
+  // Verts 6..35 must be killed without affecting depth.
+  if !useMesh && vi >= 6u {
+    var dead: Pv;
+    dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+    dead.quadUV   = vec2f(0.0);
+    dead.color    = vec3f(0.0);
+    dead.depth    = 0.0;
+    dead.phase    = 0.0;
+    dead.wCenter  = vec3f(0.0);
+    dead.size     = 0.0;
+    dead.cellMask = 0u;
+    dead.halfCell = 0.0;
+    dead.meshMode = 0u;
+    dead.meshN    = vec3f(0.0);
+    return dead;
+  }
+
+  if useMesh {
+    // ── True 3D cube mesh: 6 faces × 2 tris × 3 verts = 36 verts ──
+    let cv = cubeVert(vi);
+    // Cull faces that are not exposed (touch a neighbour cube): emit degenerate.
+    if (cellMask & cv.bit) == 0u {
+      var dead: Pv;
+      dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+      dead.quadUV   = vec2f(0.0);
+      dead.color    = vec3f(0.0);
+      dead.depth    = 0.0;
+      dead.phase    = 0.0;
+      dead.wCenter  = vec3f(0.0);
+      dead.size     = 0.0;
+      dead.cellMask = 0u;
+      dead.halfCell = 0.0;
+      dead.meshMode = 0u;
+      dead.meshN    = vec3f(0.0);
+      return dead;
+    }
+
+    // World-space cube vertex (axis-aligned, no per-particle rotation).
+    // halfExt scaled by lodInflate so LOD blocks grow without leaving holes.
+    let halfExt = halfCell * lodInflate;
+    let wp      = center + cv.pos * halfExt;
+
+    // View-space + perspective project (same projection as billboard path).
+    let relV = wp - ro;
+    let mvx  = dot(relV, right);
+    let mvy  = dot(relV, upv);
+    let mvz  = dot(relV, fwd);
+    
+    // Do NOT kill the vertex if mvz < 0.05. Hardware near-plane clipping will handle it gracefully.
+    // Otherwise, rotating a large close cube will make its vertices snap to (0,0,-2) and destroy the triangle.
+    let safe_mvz = max(mvz, 0.001); // Prevent division by zero for projection
+    
+    let focalM = 2.414;
+    let mcx    = select(mvx * focalM / safe_mvz / asp, mvx / orthoHeight / asp, isOrtho);
+    let mcy    = select(mvy * focalM / safe_mvz, mvy / orthoHeight, isOrtho);
+    let mzNdc  = clamp(mvz / (mvz + 8.0), 0.0, 0.9999);
+
+    var o: Pv;
+    o.pos      = vec4f(mcx, mcy, mzNdc, 1.0);
+    o.quadUV   = cv.uv;
+    o.color    = sp.colorP.xyz;
+    o.depth    = mvz;
+    o.phase    = 0.0;                     // no per-particle rotation in mesh mode
+    o.wCenter  = center;
+    o.size     = halfExt;
+    o.cellMask = cellMask;
+    o.halfCell = halfCell;
+    o.meshMode = 1u;                      // → fragment shader: skip ray-march
+    o.meshN    = cv.nrm;                  // world-space face normal (already axis-aligned)
+    return o;
+  }
+
+  // billboard quad scaled to particle radius (world units)
+  // size already lerped above between spawn radius and target cell radius.
+  // sizeLod includes screen-space LOD inflation + min-pixel clamp.
+  // INFLATE for cube-like shapes: a unit cube's corners reach √3 from origin,
+  // so a billboard of half-size R clips the cube into a sphere of radius R.
+  // Sphere (n=2) and octahedron (n=1) fit in unit sphere → inflate = 1.
+  // Cube (n→∞)  → inflate = √3 ≈ 1.732 so corners stay inside the quad.
+  let cubeness2 = clamp((n - 2.0) / 20.0, 0.0, 1.0);
+  let inflate   = mix(1.0, 1.7321, cubeness2);
+  let billSize  = sizeLod * inflate;
+  let lx   = qx[vi] * billSize;
+  let ly   = qy[vi] * billSize;
+
+  // perspective project
+  let focal = 2.414;
+  let cx = select((vx + lx) * focal / vz / asp, (vx + lx) / orthoHeight / asp, isOrtho);
+  let cy = select((vy + ly) * focal / vz, (vy + ly) / orthoHeight, isOrtho);
+
+  // map view-space z (≥0.05) to NDC depth [0..1) monotonically — used
+  // only as a coarse sort key; the fragment shader writes the precise
+  // per-pixel depth based on the actual ray-sphere hit point.
+  let zNdc = clamp(vz / (vz + 8.0), 0.0, 0.9999);
+
+  var o: Pv;
+  o.pos      = vec4f(cx, cy, zNdc, 1.0);
+  o.quadUV   = vec2f(qx[vi], qy[vi]);
+  o.color    = sp.colorP.xyz;
+  o.depth    = vz;
+  // Damp per-particle rotation while forming → cubes/octa/etc align to world
+  // axes when fully formed (phase=0 → rotMat = identity).
+  // Use smoothstep with hard zero past 0.92 so residual lerp can't keep cubes
+  // tilted by a few degrees (which would break face-to-face seam alignment).
+  let phaseDamp = 1.0 - smoothstep(0.0, 0.92, formMix);
+  o.phase    = ph * phaseDamp;
+  o.wCenter  = center;
+  o.size     = billSize;       // billboard half-size in world (used to reconstruct ray pixel)
+  o.cellMask = cellMask;
+  o.halfCell = halfCell;
+  o.meshMode = 0u;
+  o.meshN    = vec3f(0.0);
+  return o;
+}
+"##;
+
+// ── WGSL: particle fragment shader ───────────────────────────────────────────────
+// Domain: Particle shading — rotation matrix, ray-march (cell/superquadric/sphere),
+//         mesh-mode flat shading, lighting, seam suppression, debug overrides.
+
+pub const WGSL: &str = r##"
+// ── Per-particle rotation matrix from phase (cheap, deterministic) ──
+fn rotMat(ph: f32) -> mat3x3f {
+  let cy = cos(ph);
+  let sy = sin(ph);
+  let cp = cos(ph * 1.37);
+  let sp = sin(ph * 1.37);
+  // yaw (around y) · pitch (around x)
+  return mat3x3f(
+    vec3f( cy,    0.0,  sy   ),
+    vec3f( sy*sp, cp,  -cy*sp),
+    vec3f(-sy*cp, sp,   cy*cp),
+  );
+}
+
+struct FragOut {
+  @location(0)              color: vec4f,
+  @builtin(frag_depth)      depth: f32,
+}
+
+@fragment fn fs_particles(p: Pv, @builtin(front_facing) is_front: bool) -> FragOut {
+  // Compute derivatives at the very top before any discards to preserve uniform control flow
+  let vx = fwidth(p.quadUV.x);
+  let vy = fwidth(p.quadUV.y);
+  
+  // ── reconstruct world-space ray through this pixel ──
+  // billboard pixel position in world: wCenter + right*qx*size + up*qy*size
+  let ro    = u.u1.xyz;
+  let right = u.u2.xyz;
+  let upv   = u.u3.xyz;
+  let fwd   = u.u4.xyz;
+
+  let n = max(u.u5.w, 1.0);
+  let sphereLikeness = clamp((22.0 - n) / 20.0, 0.0, 1.0); // 1 at n≤2, 0 at n=22
+
+  let isOrtho = u.u9.y > 0.5;
+  let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+
+  var nrm:   vec3f;
+  var hitW:  vec3f;
+  var rd:    vec3f;
+  let R                  = p.size;
+  let cellOn             = u.u7.x > 0.5 && p.halfCell > 0.0001;
+
+  // ─── MESH PATH (true rasterized cube triangle) ───
+  // The hardware rasterizer already placed this fragment exactly on the cube
+  // face triangle. Use the flat face normal directly. Zero ray-march, zero
+  // depth-precision drama, zero seam artifacts.
+  if p.meshMode == 1u {
+    nrm  = p.meshN;
+    // World-space hit on the face plane (flat shading — face normal is constant).
+    // Approximate hit point as wCenter + halfCell · meshN (face centre);
+    // this is used only for distance fog and fresnel — both flat per face is OK.
+    hitW = p.wCenter + p.meshN * p.halfCell;
+    rd   = select(normalize(hitW - ro), normalize(fwd), isOrtho);
+  } else {
+    // billboard ray reconstruction (only needed in non-mesh paths)
+    let pixelW = p.wCenter + right * p.quadUV.x * p.size + upv * p.quadUV.y * p.size;
+    rd = select(normalize(pixelW - ro), normalize(fwd), isOrtho);
+    let ro_eff = select(ro, pixelW - fwd * 10.0, isOrtho);
+
+    if cellOn {
+      // ── kernel::particle_shape ray-march in cell-local space ──
+      // pL = (pW - wCenter) / halfCell  →  cell occupies [-1, 1]³
+      let h    = p.halfCell;
+      let mask = p.cellMask;
+      let rad  = u.u7.y;
+      let roL  = (ro_eff - p.wCenter) / h;
+    let rdL  = rd;  // unit in world; t parameter is in cell-local units (tw = tl·h)
+
+    // bounding sphere of the unit cube has radius √3 ≈ 1.7321
+    let bL = dot(roL, rdL);
+    let cL = dot(roL, roL) - 3.0;
+    let hL = bL * bL - cL;
+    if hL < 0.0 { discard; }
+    var tCur = max(0.0, -bL - sqrt(hL));
+    let tEnd = -bL + sqrt(hL);
+
+    var hit = false;
+    var tHit: f32 = tCur;
+    for (var i = 0; i < 28; i++) {
+      let pL = roL + rdL * tCur;
+      let d  = sdfCell(pL, mask, rad);
+      if d < 0.0006 { hit = true; tHit = tCur; break; }
+      tCur += max(d * 0.9, 0.0015);
+      if tCur > tEnd { break; }
+    }
+    if !hit { discard; }
+
+    // local-space normal from SDF gradient (central diff)
+    let pL  = roL + rdL * tHit;
+    let eps = 0.0025;
+    let gx  = sdfCell(pL + vec3f(eps,0,0), mask, rad) - sdfCell(pL - vec3f(eps,0,0), mask, rad);
+    let gy  = sdfCell(pL + vec3f(0,eps,0), mask, rad) - sdfCell(pL - vec3f(0,eps,0), mask, rad);
+    let gz  = sdfCell(pL + vec3f(0,0,eps), mask, rad) - sdfCell(pL - vec3f(0,0,eps), mask, rad);
+    nrm  = normalize(vec3f(gx, gy, gz));
+    hitW = ro_eff + rd * (tHit * h);
+  } else if abs(n - 2.0) < 0.05 {
+    // ── analytical sphere intersection (exact n=2 fast-path) ──
+    let oc = ro_eff - p.wCenter;
+    let b  = dot(oc, rd);
+    let c  = dot(oc, oc) - R * R;
+    let h  = b * b - c;
+    if h < 0.0 { discard; }
+    let tHit = -b - sqrt(h);
+    if tHit < 0.0 { discard; }
+    hitW = ro_eff + rd * tHit;
+    nrm  = (hitW - p.wCenter) / R;
+  } else {
+    // ── ray-march superquadric in particle local space ──
+    // p.size is the billboard half-size (inflated). The actual shape half-extent
+    // along axes is shapeR = p.size / inflate, where inflate ∈ [1, √3] depending
+    // on n. We march in unit-shape space [-1,1]³, scaled by shapeR.
+    let cubenessF = clamp((n - 2.0) / 20.0, 0.0, 1.0);
+    let inflateF  = mix(1.0, 1.7321, cubenessF);
+    let shapeR    = R / inflateF;
+
+    let rot = rotMat(p.phase);
+    // transform ray to local space: local = rot · (world - center) / shapeR
+    let roL = rot * (ro_eff - p.wCenter) / shapeR;
+    let rdL = rot * rd;
+
+    // bounding-sphere entry to skip empty space (radius √3 covers unit cube)
+    let bL = dot(roL, rdL);
+    let cL = dot(roL, roL) - 3.0;
+    let hL = bL * bL - cL;
+    if hL < 0.0 { discard; }
+    var tCur = max(0.0, -bL - sqrt(hL));
+    let tEnd = -bL + sqrt(hL);
+
+    var marched = false;
+    var tFinal: f32 = tCur;
+    for (var i = 0; i < 24; i++) {
+      let pL = roL + rdL * tCur;
+      let d  = sdShape(pL, n);
+      if d < 0.0005 { marched = true; tFinal = tCur; break; }
+      tCur += max(d, 0.002);             // sdShape is Lipschitz at extremes → full step is safe
+      if tCur > tEnd { break; }
+    }
+    if !marched { discard; }
+
+    // local-space normal from SDF gradient (central diff)
+    let pL  = roL + rdL * tFinal;
+    let eps = 0.002;
+    let gx  = sdShape(pL + vec3f(eps,0,0), n) - sdShape(pL - vec3f(eps,0,0), n);
+    let gy  = sdShape(pL + vec3f(0,eps,0), n) - sdShape(pL - vec3f(0,eps,0), n);
+    let gz  = sdShape(pL + vec3f(0,0,eps), n) - sdShape(pL - vec3f(0,0,eps), n);
+    let nL  = normalize(vec3f(gx, gy, gz));
+    // back to world space: transpose(rot) = inverse for rotation matrices
+    nrm  = transpose(rot) * nL;
+    // world hit = ro_eff + rd * (tFinal · shapeR)
+    hitW = ro_eff + rd * (tFinal * shapeR);
+  }
+  } // close outer non-mesh else branch
+
+  // ── lighting on the real 3D normal ──
+  // CAD MATTE MATERIAL (Plasticity-style)
+  // Soft, matte gradient lighting:
+  let L1 = normalize(vec3f( 0.45,  0.85, -0.40));
+  let L2 = normalize(vec3f(-0.35,  0.25,  0.65));
+  let L3 = normalize(vec3f( 0.10, -0.50, -0.20)); // Soft bounce light
+
+  let v  = -rd;
+  
+  // Soften lambert with wrapping (valve half-lambert style)
+  let dA = pow(max(dot(nrm, L1) * 0.5 + 0.5, 0.0), 1.5) * 1.1; 
+  let dB = max(dot(nrm, L2), 0.0) * 0.35;
+  let dC = max(dot(nrm, L3), 0.0) * 0.20;
+
+  // Reduced specular
+  let h  = normalize(L1 + v);
+  let sp = pow(max(dot(nrm, h), 0.0), 32.0) * 0.15; // low shine
+
+  // Soft rim
+  let fr = pow(1.0 - max(dot(nrm, v), 0.0), 2.5) * 0.15;
+
+  // ── seam suppression for flush-packed cube cells ──
+  // When a face touches a neighbour (cellMask bit not set), this is an internal
+  // seam, not the outer hull. Kill specular & rim there so the assembled cube
+  // looks like one solid surface instead of a grid of individual cubes.
+  var seamMul: f32 = 1.0;          // 1 = keep highlights, 0 = full suppression
+  if p.halfCell > 0.0001 && p.cellMask != 0u {
+    let absN = abs(nrm);
+    var faceBit: u32 = 0u;
+    if absN.x >= absN.y && absN.x >= absN.z {
+      faceBit = select(2u, 1u, nrm.x > 0.0);     // +X = 1, -X = 2
+    } else if absN.y >= absN.z {
+      faceBit = select(8u, 4u, nrm.y > 0.0);     // +Y = 4, -Y = 8
+    } else {
+      faceBit = select(32u, 16u, nrm.z > 0.0);   // +Z = 16, -Z = 32
+    }
+    let isExposed = (p.cellMask & faceBit) != 0u;
+    // soft transition near edges (where face is ambiguous): max axis dominance
+    let axisDom = max(absN.x, max(absN.y, absN.z));
+    let edgeT   = smoothstep(0.6, 0.95, axisDom);
+    seamMul = select(1.0 - edgeT, 1.0, isExposed);  // exposed face → 1 always
+  }
+  let hitVz = max(dot(hitW - ro, fwd), 0.05);
+  let fog   = exp(-hitVz * 0.045);
+
+  let cad_matte_base = vec3f(0.85, 0.88, 0.90); // light gray-blue CAD material
+
+  var col = p.color * 0.25;                                    // ambient
+  col    += cad_matte_base * (dA + dB + dC) * 0.85;                // matte diffuse
+  col    += vec3f(0.95, 0.97, 1.0) * sp * seamMul;                 // subtle specular 
+  col    += vec3f(0.80, 0.90, 1.00) * fr * (0.80 + 0.20 * sphereLikeness) * seamMul;
+
+  // distance darkening (atmospheric, NOT alpha)
+  col *= 0.65 + 0.35 * fog;
+
+  // tone map + gamma
+  col = col / (col + vec3f(1.0));
+  col = pow(col, vec3f(0.4545));
+
+  // ── debug overrides (after tone-map so colours stay punchy) ──
+  let cmode = u.u7.z;
+  if cmode > 0.5 && cmode < 1.5 {
+    // normals → RGB
+    col = nrm * 0.5 + 0.5;
+  } else if cmode > 1.5 {
+    // colour by SlotKind: gray / cyan / yellow / magenta
+    let bits = countOneBits(p.cellMask);
+    var sc: vec3f;
+    if      bits == 0u { sc = vec3f(0.50, 0.50, 0.50); }      // interior
+    else if bits == 1u { sc = vec3f(0.30, 0.85, 0.95); }      // face   = cyan
+    else if bits == 2u { sc = vec3f(0.95, 0.85, 0.20); }      // edge   = yellow
+    else               { sc = vec3f(0.95, 0.30, 0.85); }      // corner = magenta
+    // shade by lambert so silhouette stays readable
+    col = sc * (0.35 + 0.65 * max(dot(nrm, L1), 0.0));
+  }
+
+  // ── per-pixel depth from real hit point (matches vertex z mapping) ──
+  let zNdc = clamp(hitVz / (hitVz + 8.0), 0.0, 0.9999);
+
+  // ── CAD/Plasticity Edge Overlay (mesh mode only) ──
+  if p.meshMode == 1u {
+    let fw = max(vx, vy);
+    
+    let dU = 1.0 - abs(p.quadUV.x);
+    let dV = 1.0 - abs(p.quadUV.y);
+    let dEdge = min(dU, dV);
+    
+    // 1.2 pixels wide edge, with anti-aliasing
+    let edgeT = smoothstep(fw * 1.8, fw * 0.4, dEdge);
+    let edgeColor = vec3f(0.12, 0.14, 0.17); // Softer edge color, less black
+    
+    col = mix(col, edgeColor, edgeT);
+  }
+
+  var out: FragOut;
+  out.color = vec4f(col, 1.0);   // fully opaque
+  out.depth = zNdc;
+  return out;
+}
+"##;
+

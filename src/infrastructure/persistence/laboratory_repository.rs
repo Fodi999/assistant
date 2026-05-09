@@ -298,15 +298,29 @@ impl LaboratoryRepository {
 
         let merged: bool = rec.try_get("merged").unwrap_or(false);
         let row = LabProjectIngredientRow {
-            id: rec.try_get("id").map_err(|e| AppError::internal(format!("upsert_ingredient row id: {e}")))?,
-            project_id: rec.try_get("project_id").map_err(|e| AppError::internal(format!("upsert_ingredient row project_id: {e}")))?,
-            ingredient_slug: rec.try_get("ingredient_slug").map_err(|e| AppError::internal(format!("upsert_ingredient row slug: {e}")))?,
-            quantity: rec.try_get("quantity").map_err(|e| AppError::internal(format!("upsert_ingredient row quantity: {e}")))?,
-            unit: rec.try_get("unit").map_err(|e| AppError::internal(format!("upsert_ingredient row unit: {e}")))?,
+            id: rec
+                .try_get("id")
+                .map_err(|e| AppError::internal(format!("upsert_ingredient row id: {e}")))?,
+            project_id: rec.try_get("project_id").map_err(|e| {
+                AppError::internal(format!("upsert_ingredient row project_id: {e}"))
+            })?,
+            ingredient_slug: rec
+                .try_get("ingredient_slug")
+                .map_err(|e| AppError::internal(format!("upsert_ingredient row slug: {e}")))?,
+            quantity: rec
+                .try_get("quantity")
+                .map_err(|e| AppError::internal(format!("upsert_ingredient row quantity: {e}")))?,
+            unit: rec
+                .try_get("unit")
+                .map_err(|e| AppError::internal(format!("upsert_ingredient row unit: {e}")))?,
             role: rec.try_get("role").ok(),
-            sort_order: rec.try_get("sort_order").map_err(|e| AppError::internal(format!("upsert_ingredient row sort_order: {e}")))?,
+            sort_order: rec.try_get("sort_order").map_err(|e| {
+                AppError::internal(format!("upsert_ingredient row sort_order: {e}"))
+            })?,
             notes: rec.try_get("notes").ok(),
-            created_at: rec.try_get("created_at").map_err(|e| AppError::internal(format!("upsert_ingredient row created_at: {e}")))?,
+            created_at: rec.try_get("created_at").map_err(|e| {
+                AppError::internal(format!("upsert_ingredient row created_at: {e}"))
+            })?,
         };
         Ok((row, merged))
     }

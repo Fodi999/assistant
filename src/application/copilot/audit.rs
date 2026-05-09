@@ -67,11 +67,15 @@ impl CopilotAuditService {
         requires_confirmation: bool,
     ) -> AppResult<Uuid> {
         // Use action_plan.id so confirm works
-        let id = action_plan.as_ref().map(|p| p.id).unwrap_or_else(Uuid::new_v4);
+        let id = action_plan
+            .as_ref()
+            .map(|p| p.id)
+            .unwrap_or_else(Uuid::new_v4);
         let uid = *user_id.as_uuid();
         let tid = *tenant_id.as_uuid();
         let tools_json = serde_json::to_value(used_tools).unwrap_or_default();
-        let payload = action_plan.as_ref()
+        let payload = action_plan
+            .as_ref()
             .map(|p| serde_json::to_value(p).unwrap_or_default())
             .unwrap_or(serde_json::Value::Null);
         let status = if requires_confirmation {
@@ -103,7 +107,11 @@ impl CopilotAuditService {
     }
 
     /// Получить запись по action_id (для confirm endpoint).
-    pub async fn get(&self, action_id: Uuid, user_id: UserId) -> AppResult<Option<CopilotAuditEntry>> {
+    pub async fn get(
+        &self,
+        action_id: Uuid,
+        user_id: UserId,
+    ) -> AppResult<Option<CopilotAuditEntry>> {
         let uid = *user_id.as_uuid();
         let row = sqlx::query_as::<_, CopilotAuditRow>(
             r#"SELECT id, user_id, tenant_id, screen, input_message, intent,
@@ -125,7 +133,7 @@ impl CopilotAuditService {
         sqlx::query(
             "UPDATE copilot_action_log \
              SET status = 'executed', executed_at = NOW() \
-             WHERE id = $1"
+             WHERE id = $1",
         )
         .bind(action_id)
         .execute(&self.pool)
@@ -138,7 +146,7 @@ impl CopilotAuditService {
         sqlx::query(
             "UPDATE copilot_action_log \
              SET status = 'planned', confirmed_at = NOW() \
-             WHERE id = $1"
+             WHERE id = $1",
         )
         .bind(action_id)
         .execute(&self.pool)
@@ -152,7 +160,7 @@ impl CopilotAuditService {
         sqlx::query(
             "UPDATE copilot_action_log \
              SET status = 'cancelled' \
-             WHERE id = $1 AND user_id = $2"
+             WHERE id = $1 AND user_id = $2",
         )
         .bind(action_id)
         .bind(uid)
@@ -163,12 +171,10 @@ impl CopilotAuditService {
 
     /// Отметить ошибку.
     pub async fn mark_failed(&self, action_id: Uuid, _error: &str) -> AppResult<()> {
-        sqlx::query(
-            "UPDATE copilot_action_log SET status = 'failed' WHERE id = $1"
-        )
-        .bind(action_id)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE copilot_action_log SET status = 'failed' WHERE id = $1")
+            .bind(action_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }
@@ -195,13 +201,19 @@ struct CopilotAuditRow {
 fn row_to_entry(r: CopilotAuditRow) -> CopilotAuditEntry {
     let status = match r.status.as_str() {
         "awaiting_confirmation" => AuditStatus::AwaitingConfirmation,
-        "executed"              => AuditStatus::Executed,
-        "cancelled"             => AuditStatus::Cancelled,
-        "failed"                => AuditStatus::Failed,
-        _                       => AuditStatus::Planned,
+        "executed" => AuditStatus::Executed,
+        "cancelled" => AuditStatus::Cancelled,
+        "failed" => AuditStatus::Failed,
+        _ => AuditStatus::Planned,
     };
-    let used_tools: Vec<String> = r.used_tools.as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+    let used_tools: Vec<String> = r
+        .used_tools
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     CopilotAuditEntry {

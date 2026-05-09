@@ -110,10 +110,7 @@ pub fn analyze_flavor(
         if weight <= 0.0 {
             continue;
         }
-        let Some(p) = profiles
-            .iter()
-            .find(|p| p.slug == ing.ingredient_slug)
-        else {
+        let Some(p) = profiles.iter().find(|p| p.slug == ing.ingredient_slug) else {
             continue;
         };
         profiled_count += 1;
@@ -133,13 +130,8 @@ pub fn analyze_flavor(
         });
     }
 
-    let flavor_result = build_flavor_result(
-        sw.value(),
-        ac.value(),
-        bt.value(),
-        um.value(),
-        ar.value(),
-    );
+    let flavor_result =
+        build_flavor_result(sw.value(), ac.value(), bt.value(), um.value(), ar.value());
 
     // ── Pairing suggestions from culinary_behaviors[].targets ────────────────
     let pairing_suggestions = collect_pairings(profiles, &in_project);
@@ -246,43 +238,74 @@ fn build_flavor_result(
 fn pairing_role_for(slug: &str) -> String {
     let s = slug.to_lowercase();
     // Acids / brightness
-    if s.contains("lemon") || s.contains("lime") || s.contains("vinegar")
-        || s.contains("yogurt") || s.contains("kefir") || s.contains("tamarind")
-        || s.contains("verjuice") || s.contains("cranberry")
+    if s.contains("lemon")
+        || s.contains("lime")
+        || s.contains("vinegar")
+        || s.contains("yogurt")
+        || s.contains("kefir")
+        || s.contains("tamarind")
+        || s.contains("verjuice")
+        || s.contains("cranberry")
     {
         return "кислотность".into();
     }
     // Fats / creaminess
-    if s.contains("cream") || s.contains("butter") || s.contains("oil") || s.contains("ghee")
-        || s.contains("coconut_milk") || s.contains("avocado")
+    if s.contains("cream")
+        || s.contains("butter")
+        || s.contains("oil")
+        || s.contains("ghee")
+        || s.contains("coconut_milk")
+        || s.contains("avocado")
     {
         return "кремовость".into();
     }
     // Sweeteners
-    if s.contains("honey") || s.contains("sugar") || s.contains("maple") || s.contains("agave")
-        || s.contains("molasses") || s.contains("date")
+    if s.contains("honey")
+        || s.contains("sugar")
+        || s.contains("maple")
+        || s.contains("agave")
+        || s.contains("molasses")
+        || s.contains("date")
     {
         return "сладость".into();
     }
     // Texture / nuts / seeds
-    if s.contains("almond") || s.contains("walnut") || s.contains("pecan") || s.contains("seed")
-        || s.contains("pine_nut") || s.contains("cashew") || s.contains("pistachio")
+    if s.contains("almond")
+        || s.contains("walnut")
+        || s.contains("pecan")
+        || s.contains("seed")
+        || s.contains("pine_nut")
+        || s.contains("cashew")
+        || s.contains("pistachio")
         || s.contains("hazelnut")
     {
         return "текстура".into();
     }
     // Aromatics / spices
-    if s.contains("vanilla") || s.contains("cinnamon") || s.contains("cardamom")
-        || s.contains("clove") || s.contains("star_anise") || s.contains("ginger")
-        || s.contains("mint") || s.contains("basil") || s.contains("thyme")
-        || s.contains("rosemary") || s.contains("bay")
+    if s.contains("vanilla")
+        || s.contains("cinnamon")
+        || s.contains("cardamom")
+        || s.contains("clove")
+        || s.contains("star_anise")
+        || s.contains("ginger")
+        || s.contains("mint")
+        || s.contains("basil")
+        || s.contains("thyme")
+        || s.contains("rosemary")
+        || s.contains("bay")
     {
         return "аромат".into();
     }
     // Proteins
-    if s.contains("chicken") || s.contains("beef") || s.contains("pork") || s.contains("tofu")
-        || s.contains("fish") || s.contains("egg") || s.contains("cheese")
-        || s.contains("ricotta") || s.contains("feta")
+    if s.contains("chicken")
+        || s.contains("beef")
+        || s.contains("pork")
+        || s.contains("tofu")
+        || s.contains("fish")
+        || s.contains("egg")
+        || s.contains("cheese")
+        || s.contains("ricotta")
+        || s.contains("feta")
     {
         return "белок".into();
     }
@@ -337,14 +360,16 @@ fn collect_pairings(
 
     let mut out: Vec<LaboratoryPairingSuggestion> = best
         .into_iter()
-        .map(|(slug, (score, _src, reason))| LaboratoryPairingSuggestion {
-            role: Some(pairing_role_for(&slug)),
-            ingredient_slug: Some(slug.clone()),
-            ingredient_name: slug,
-            score,
-            reason: Some(reason),
-            source: "culinary_behavior".into(),
-        })
+        .map(
+            |(slug, (score, _src, reason))| LaboratoryPairingSuggestion {
+                role: Some(pairing_role_for(&slug)),
+                ingredient_slug: Some(slug.clone()),
+                ingredient_name: slug,
+                score,
+                reason: Some(reason),
+                source: "culinary_behavior".into(),
+            },
+        )
         .collect();
 
     // Stable order: highest score first, then alphabetic.
@@ -366,8 +391,8 @@ fn collect_pairings(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::catalog_profile_adapter::LaboratoryCulinaryBehavior;
+    use super::*;
     use rust_decimal::Decimal;
     use std::str::FromStr;
     use time::OffsetDateTime;
@@ -433,7 +458,14 @@ mod tests {
             .iter()
             .map(|p| p.ingredient_name.clone())
             .collect();
-        for expected in ["cream", "yogurt", "mascarpone", "almond", "walnut", "pistachio"] {
+        for expected in [
+            "cream",
+            "yogurt",
+            "mascarpone",
+            "almond",
+            "walnut",
+            "pistachio",
+        ] {
             assert!(names.iter().any(|n| n == expected), "missing {expected}");
         }
         // Score ≈ intensity 0.9 × 100 = 90

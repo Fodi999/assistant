@@ -10,15 +10,19 @@
 //!
 //! Pure math — no IO, no LLM, no cache lookups.
 
-use crate::infrastructure::ingredient_cache::IngredientData;
 use super::meal_builder::CookMethod;
+use super::recipe_engine::{CookingStep, DishType, ResolvedIngredient};
 use super::response_builder::HealthGoal;
-use super::recipe_engine::{ResolvedIngredient, DishType, CookingStep};
+use crate::infrastructure::ingredient_cache::IngredientData;
 
 // ── Build Ingredient ─────────────────────────────────────────────────────────
 
 /// Build a fully-resolved ingredient from a cache product (default dish type).
-pub fn build_ingredient(product: &IngredientData, slug_hint: &str, goal: HealthGoal) -> ResolvedIngredient {
+pub fn build_ingredient(
+    product: &IngredientData,
+    slug_hint: &str,
+    goal: HealthGoal,
+) -> ResolvedIngredient {
     build_ingredient_for_dish(product, slug_hint, goal, DishType::Default)
 }
 
@@ -62,21 +66,25 @@ pub fn build_ingredient_for_dish(
 pub fn override_role(product: &IngredientData) -> &'static str {
     let slug = product.slug.as_str();
     match slug {
-        "garlic" | "ginger" | "chili" | "chili-pepper" | "horseradish"
-        | "turmeric" | "lemongrass" | "shallot" => return "spice",
-        "salt" | "pepper" | "cumin" | "paprika" | "cinnamon" | "nutmeg"
-        | "coriander" | "bay-leaf" | "saffron" | "vanilla" => return "spice",
-        "olive-oil" | "sunflower-oil" | "butter" | "ghee" | "coconut-oil"
-        | "sesame-oil" => return "oil",
-        "soy-sauce" | "vinegar" | "mustard" | "ketchup" | "mayo"
-        | "tomato-paste" | "fish-sauce" | "worcestershire" => return "condiment",
+        "garlic" | "ginger" | "chili" | "chili-pepper" | "horseradish" | "turmeric"
+        | "lemongrass" | "shallot" => return "spice",
+        "salt" | "pepper" | "cumin" | "paprika" | "cinnamon" | "nutmeg" | "coriander"
+        | "bay-leaf" | "saffron" | "vanilla" => return "spice",
+        "olive-oil" | "sunflower-oil" | "butter" | "ghee" | "coconut-oil" | "sesame-oil" => {
+            return "oil"
+        }
+        "soy-sauce" | "vinegar" | "mustard" | "ketchup" | "mayo" | "tomato-paste"
+        | "fish-sauce" | "worcestershire" => return "condiment",
         _ => {}
     }
     // Fruits that act as a binder/base in sweet dishes (banana pancakes, apple cake…).
     // They are the structural/sweetening backbone — not a garnish ("side").
     if product.product_type == "fruit"
-        && ["banana", "apple", "pear", "mango", "date", "fig", "plantain"]
-            .iter().any(|k| slug.contains(k))
+        && [
+            "banana", "apple", "pear", "mango", "date", "fig", "plantain",
+        ]
+        .iter()
+        .any(|k| slug.contains(k))
     {
         return "base";
     }
@@ -120,15 +128,15 @@ pub fn recipe_portion_goal(product: &IngredientData, role: &str, goal: HealthGoa
     let base = recipe_portion(product, role);
     match goal {
         HealthGoal::LowCalorie => match role {
-            "oil"     => 5.0,
+            "oil" => 5.0,
             "protein" => base * 0.8,
-            "side"    => base * 1.2,
+            "side" => base * 1.2,
             "condiment" => base * 0.5,
             _ => base,
         },
         HealthGoal::HighProtein => match role {
             "protein" => base * 1.3,
-            "side"    => base * 0.8,
+            "side" => base * 0.8,
             _ => base,
         },
         HealthGoal::Balanced => base,
@@ -164,7 +172,9 @@ pub fn edible_yield_for(product_type: &str, slug: &str) -> f32 {
         s if s.contains("cabbage") => Some(0.80),
         _ => None,
     };
-    if let Some(y) = specific { return y; }
+    if let Some(y) = specific {
+        return y;
+    }
 
     match product_type {
         "fish" => 0.80,
@@ -177,7 +187,9 @@ pub fn edible_yield_for(product_type: &str, slug: &str) -> f32 {
     }
 }
 
-pub fn round1(v: f32) -> f32 { (v * 10.0).round() / 10.0 }
+pub fn round1(v: f32) -> f32 {
+    (v * 10.0).round() / 10.0
+}
 
 // ── Dish Context Analysis ────────────────────────────────────────────────────
 
@@ -202,12 +214,27 @@ pub fn detect_allergens(ingredients: &[ResolvedIngredient]) -> Vec<String> {
     // Gluten
     if has(&|i| {
         let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        s.contains("wheat") || s.contains("flour") || s.contains("pasta")
-            || s.contains("bread") || s.contains("barley") || s.contains("rye")
-            || s.contains("oat") || s.contains("spaghetti") || s.contains("noodle")
-            || s.contains("couscous") || s.contains("semolina")
-            || (pt == "grain" && !s.contains("rice") && !s.contains("corn") && !s.contains("buckwheat") && !s.contains("quinoa"))
+        let pt = i
+            .product
+            .as_ref()
+            .map(|p| p.product_type.as_str())
+            .unwrap_or("");
+        s.contains("wheat")
+            || s.contains("flour")
+            || s.contains("pasta")
+            || s.contains("bread")
+            || s.contains("barley")
+            || s.contains("rye")
+            || s.contains("oat")
+            || s.contains("spaghetti")
+            || s.contains("noodle")
+            || s.contains("couscous")
+            || s.contains("semolina")
+            || (pt == "grain"
+                && !s.contains("rice")
+                && !s.contains("corn")
+                && !s.contains("buckwheat")
+                && !s.contains("quinoa"))
     }) {
         flags.push("gluten".into());
     }
@@ -217,13 +244,23 @@ pub fn detect_allergens(ingredients: &[ResolvedIngredient]) -> Vec<String> {
     // be flagged — they are cooking fats, not dairy allergens in practice.
     if has(&|i| {
         let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        let is_fat = s.contains("butter") || s.contains("ghee")
-            || pt == "oil" || pt == "fat";
-        if is_fat { return false; }
-        pt == "dairy" || s.contains("milk") || s.contains("cream") || s.contains("cheese")
-            || s.contains("yogurt") || s.contains("kefir")
-            || s.contains("sour-cream") || s.contains("smetana")
+        let pt = i
+            .product
+            .as_ref()
+            .map(|p| p.product_type.as_str())
+            .unwrap_or("");
+        let is_fat = s.contains("butter") || s.contains("ghee") || pt == "oil" || pt == "fat";
+        if is_fat {
+            return false;
+        }
+        pt == "dairy"
+            || s.contains("milk")
+            || s.contains("cream")
+            || s.contains("cheese")
+            || s.contains("yogurt")
+            || s.contains("kefir")
+            || s.contains("sour-cream")
+            || s.contains("smetana")
     }) {
         flags.push("lactose".into());
     }
@@ -231,22 +268,37 @@ pub fn detect_allergens(ingredients: &[ResolvedIngredient]) -> Vec<String> {
     // Nuts
     if has(&|i| {
         let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        pt == "nut" || s.contains("almond") || s.contains("walnut") || s.contains("cashew")
-            || s.contains("peanut") || s.contains("hazelnut") || s.contains("pecan")
-            || s.contains("pistachio") || s.contains("macadamia") || s.contains("pine-nut")
+        let pt = i
+            .product
+            .as_ref()
+            .map(|p| p.product_type.as_str())
+            .unwrap_or("");
+        pt == "nut"
+            || s.contains("almond")
+            || s.contains("walnut")
+            || s.contains("cashew")
+            || s.contains("peanut")
+            || s.contains("hazelnut")
+            || s.contains("pecan")
+            || s.contains("pistachio")
+            || s.contains("macadamia")
+            || s.contains("pine-nut")
     }) {
         flags.push("nuts".into());
     }
 
     // Eggs
-    if has(&|i| { i.slug_hint.to_lowercase().contains("egg") }) {
+    if has(&|i| i.slug_hint.to_lowercase().contains("egg")) {
         flags.push("eggs".into());
     }
 
     // Fish
     if has(&|i| {
-        i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("") == "fish"
+        i.product
+            .as_ref()
+            .map(|p| p.product_type.as_str())
+            .unwrap_or("")
+            == "fish"
     }) {
         flags.push("fish".into());
     }
@@ -254,10 +306,21 @@ pub fn detect_allergens(ingredients: &[ResolvedIngredient]) -> Vec<String> {
     // Shellfish / Seafood
     if has(&|i| {
         let s = i.slug_hint.to_lowercase();
-        let pt = i.product.as_ref().map(|p| p.product_type.as_str()).unwrap_or("");
-        pt == "seafood" || s.contains("shrimp") || s.contains("prawn") || s.contains("crab")
-            || s.contains("lobster") || s.contains("mussel") || s.contains("oyster")
-            || s.contains("squid") || s.contains("octopus") || s.contains("clam")
+        let pt = i
+            .product
+            .as_ref()
+            .map(|p| p.product_type.as_str())
+            .unwrap_or("");
+        pt == "seafood"
+            || s.contains("shrimp")
+            || s.contains("prawn")
+            || s.contains("crab")
+            || s.contains("lobster")
+            || s.contains("mussel")
+            || s.contains("oyster")
+            || s.contains("squid")
+            || s.contains("octopus")
+            || s.contains("clam")
     }) {
         flags.push("shellfish".into());
     }
@@ -282,7 +345,10 @@ pub fn detect_diet_tags(ingredients: &[ResolvedIngredient]) -> Vec<String> {
         .filter_map(|i| i.product.as_ref().map(|p| p.product_type.as_str()))
         .collect();
 
-    let slugs: Vec<String> = ingredients.iter().map(|i| i.slug_hint.to_lowercase()).collect();
+    let slugs: Vec<String> = ingredients
+        .iter()
+        .map(|i| i.slug_hint.to_lowercase())
+        .collect();
 
     let has_meat = types.iter().any(|t| *t == "meat");
     let has_fish = types.iter().any(|t| *t == "fish");
@@ -334,13 +400,19 @@ mod tests {
             carbs_per_100g: 0.0,
             image_url: None,
             product_type: "meat".into(),
-            density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         let resolved = build_ingredient(&product, "beef", HealthGoal::Balanced);
 
         assert_eq!(resolved.role, "protein");
-        assert!(resolved.state == "grilled" || resolved.state == "baked",
-            "meat protein should be grilled/baked, got {}", resolved.state);
+        assert!(
+            resolved.state == "grilled" || resolved.state == "baked",
+            "meat protein should be grilled/baked, got {}",
+            resolved.state
+        );
         assert!((resolved.cooked_net_g - 100.0).abs() < 1.0);
         assert!(resolved.gross_g > resolved.cooked_net_g);
         assert!(resolved.kcal > 0);
@@ -361,7 +433,10 @@ mod tests {
             carbs_per_100g: 9.6,
             image_url: None,
             product_type: "vegetable".into(),
-            density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         let resolved = build_ingredient(&product, "beet", HealthGoal::Balanced);
 
@@ -373,20 +448,40 @@ mod tests {
     #[test]
     fn recipe_portions_are_reasonable() {
         let meat = IngredientData {
-            slug: "chicken-breast".into(), name_en: "Chicken".into(),
-            name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
-            calories_per_100g: 165.0, protein_per_100g: 31.0,
-            fat_per_100g: 3.6, carbs_per_100g: 0.0, image_url: None,
-            product_type: "meat".into(), density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            slug: "chicken-breast".into(),
+            name_en: "Chicken".into(),
+            name_ru: "".into(),
+            name_pl: "".into(),
+            name_uk: "".into(),
+            calories_per_100g: 165.0,
+            protein_per_100g: 31.0,
+            fat_per_100g: 3.6,
+            carbs_per_100g: 0.0,
+            image_url: None,
+            product_type: "meat".into(),
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         assert_eq!(recipe_portion(&meat, "protein"), 100.0);
 
         let oil = IngredientData {
-            slug: "olive-oil".into(), name_en: "Olive Oil".into(),
-            name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
-            calories_per_100g: 884.0, protein_per_100g: 0.0,
-            fat_per_100g: 100.0, carbs_per_100g: 0.0, image_url: None,
-            product_type: "oil".into(), density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            slug: "olive-oil".into(),
+            name_en: "Olive Oil".into(),
+            name_ru: "".into(),
+            name_pl: "".into(),
+            name_uk: "".into(),
+            calories_per_100g: 884.0,
+            protein_per_100g: 0.0,
+            fat_per_100g: 100.0,
+            carbs_per_100g: 0.0,
+            image_url: None,
+            product_type: "oil".into(),
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         assert_eq!(recipe_portion(&oil, "oil"), 15.0);
     }
@@ -394,14 +489,32 @@ mod tests {
     #[test]
     fn garlic_is_spice_not_side() {
         let garlic = IngredientData {
-            slug: "garlic".into(), name_en: "Garlic".into(),
-            name_ru: "Чеснок".into(), name_pl: "Czosnek".into(), name_uk: "Часник".into(),
-            calories_per_100g: 149.0, protein_per_100g: 6.4,
-            fat_per_100g: 0.5, carbs_per_100g: 33.0, image_url: None,
-            product_type: "vegetable".into(), density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            slug: "garlic".into(),
+            name_en: "Garlic".into(),
+            name_ru: "Чеснок".into(),
+            name_pl: "Czosnek".into(),
+            name_uk: "Часник".into(),
+            calories_per_100g: 149.0,
+            protein_per_100g: 6.4,
+            fat_per_100g: 0.5,
+            carbs_per_100g: 33.0,
+            image_url: None,
+            product_type: "vegetable".into(),
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         let resolved = build_ingredient(&garlic, "garlic", HealthGoal::Balanced);
-        assert_eq!(resolved.role, "spice", "garlic should be spice, not {}", resolved.role);
-        assert_eq!(resolved.cooked_net_g, 5.0, "garlic should be 5g, not {}", resolved.cooked_net_g);
+        assert_eq!(
+            resolved.role, "spice",
+            "garlic should be spice, not {}",
+            resolved.role
+        );
+        assert_eq!(
+            resolved.cooked_net_g, 5.0,
+            "garlic should be 5g, not {}",
+            resolved.cooked_net_g
+        );
     }
 }

@@ -1,0 +1,963 @@
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:// ── WGSL: background pass — neutral viewport + clean floor grid ─────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:// Domain: Scene background — follows Blender/Maya/Three.js conventions:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs://   • flat grey gradient (no nebulae, no horizon glow)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs://   • infinite Y=0 floor plane with screen-space-derivative anti-aliasing
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs://   • minor grid every 1 unit, major every 10 units
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs://   • X-axis red, Z-axis blue (Y-up)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs://   • smooth distance fade — no shimmering at the horizon
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:@vertex fn vs_full(@builtin(vertex_index) vi: u32) -> Vert {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  var p = array<vec2f, 3>(
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    vec2f(-1.0, -1.0),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    vec2f( 3.0, -1.0),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    vec2f(-1.0,  3.0)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  );
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  var o: Vert;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  o.pos = vec4f(p[vi], 0.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  o.uv  = p[vi] * 0.5 + 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  return o;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:struct BgFragOut {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  @location(0) col: vec4f,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  @builtin(frag_depth) depth: f32,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:// ── Фрактальная сетка с авто-сокрытием ───────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:// Плавно скрывает линии, если они становятся "слишком густыми"
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let cell_lw = world_lw * scale; 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let opacity = smoothstep(1.5, 0.05, cell_lw); // expanded fade range
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let clamped_lw = min(cell_lw, 0.5);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  // fract(x + 0.5) - 0.5 centers the grid lines exactly on integer matching: 0.0, 1.0, 2.0
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let mx = abs(fract(p.x * scale + 0.5) - 0.5);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let mz = abs(fract(p.z * scale + 0.5) - 0.5);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  return max(
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    1.0 - smoothstep(0.0, clamped_lw, mx),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    1.0 - smoothstep(0.0, clamped_lw, mz)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  ) * opacity;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:@fragment fn fs_bg(in: Vert) -> BgFragOut {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let uv  = vec2f(in.uv.x, 1.0 - in.uv.y);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let asp = u.u0.y / max(u.u0.z, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  // ── Neutral viewport gradient (Blender 4.x default) ─────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let topCol = vec3f(0.235, 0.235, 0.245);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let botCol = vec3f(0.105, 0.105, 0.115);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  var col    = mix(botCol, topCol, uv.y);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  // ── Camera basis from uniforms ──────────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let ro    = u.u1.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let right = u.u2.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let upv   = u.u3.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let fwd   = u.u4.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  // Pixel ray (NDC, aspect-corrected, 45° fov → focal length 2.414)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let isOrtho = u.u9.y > 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let ndcX = (uv.x * 2.0 - 1.0) * asp;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let ndcY = -(uv.y * 2.0 - 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let fl   = 2.414;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  var ro_eff = ro;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  var rd     = normalize(fwd * fl + right * ndcX + upv * ndcY);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  if isOrtho {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    // Determine the viewport scale based on camera distance.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    // To match perspective visually, orthogonal size scales with distance.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    // Shift the ray origin offset by NDC to simulate parallel rays.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    ro_eff = ro + right * ndcX * orthoHeight + upv * ndcY * orthoHeight;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    rd     = normalize(fwd);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  var out: BgFragOut;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  out.col = vec4f(col, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  out.depth = 1.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  // ── Floor at Y = 0 ──────────────────────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  // Works from both sides — camera can be above OR below Y=0.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  if (abs(rd.y) > 0.0005) {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    let t_hit = -ro_eff.y / rd.y;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    if ((t_hit > 0.05) && (t_hit < 200.0)) {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let p = ro_eff + rd * t_hit;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // Вычисляем реальную толщину линии в мировых координатах (~1.5px экрана)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let world_lw = max((t_hit / 2.414) * (2.0 / 900.0) * 1.5, 0.0001);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // Иерархия масштабов с учетом настройки UI (u.u9.x):
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // UI scale 1.0 (метры)      => u9.x = 1.0
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // UI scale 100.0 (сантиметры) => u9.x = 100.0
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // UI scale 1000.0 (миллиметры) => u9.x = 1000.0
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let s = u.u9.x;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // Усиливаем видимость линий (были слишком слабые: 0.05, 0.12...)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let mm  = grid_intensity(p, s * 1000.0, world_lw) * 0.04;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let cm  = grid_intensity(p, s * 100.0,  world_lw) * 0.08;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let dcm = grid_intensity(p, s * 10.0,   world_lw) * 0.18;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let m   = grid_intensity(p, s * 1.0,    world_lw) * 0.35;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let combined_grid = clamp(mm + cm + dcm + m, 0.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // smooth distance fade (gone by 70 units)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let fade = clamp(1.0 - t_hit / 70.0, 0.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // Сначала рассчитываем яркое пятно под объектом
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let objPos = u.u8.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let dObj = length(p.xz - objPos.xz);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let platformGlow = exp(-dObj * dObj * 1.85);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let platformCore = exp(-dObj * dObj * 8.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      var floorCol = col;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      floorCol += vec3f(0.00, 0.45, 0.85) * platformGlow * 0.10; // Сделали свечение платформы сильно тусклее
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      floorCol += vec3f(0.20, 0.75, 0.95) * platformCore * 0.15;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // Затем рисуем сетку ПОВЕРХ светящегося пола более ярким цветом
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let lineCol = vec3f(0.20, 0.45, 0.75); // чуть более светлый сине-серый
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      var gridCol = mix(floorCol, floorCol + lineCol, combined_grid); // Additive смесь, чтобы линии не темнили глоу
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // Яркая подсветка центральных осей (Красный = X, Синий = Z) - пока отключим оси для чистого режима
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // let axis_x = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.z));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // let axis_z = 1.0 - smoothstep(world_lw * 0.5, world_lw * 2.0, abs(p.x));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // gridCol = mix(gridCol, vec3f(0.85, 0.25, 0.35), axis_x * 0.35);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      // gridCol = mix(gridCol, vec3f(0.20, 0.55, 0.85), axis_z * 0.35);      // Применяем сетку к фону
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      col = mix(col, gridCol, fade);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      out.col = vec4f(col, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      let hitVz = max(dot(p - ro, fwd), 0.05);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:      out.depth = clamp(hitVz / (hitVz + 8.0), 0.0, 0.9999);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  return out;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:fn hitSphere(ro: vec3f, rd: vec3f, c: vec3f, r: f32) -> f32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let oc = ro - c;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let b  = dot(oc, rd);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let cc = dot(oc, oc) - r * r;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  let h  = b * b - cc;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  if (h < 0.0) { return -1.0; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:  return -b - sqrt(h);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/background.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:// ── WGSL: particle geometry types and cube mesh builder ─────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:// Domain: Particle geometry — interpolant struct (Pv) + cube mesh (CubeV, cubeVert).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:// ── Particle pass — instanced billboards as TRUE 3D imposters ─
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:struct Pv {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @builtin(position) pos:    vec4f,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(0)       quadUV: vec2f,   // -1..1 inside the quad
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(1)       color:  vec3f,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(2)       depth:  f32,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(3)       phase:  f32,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(4)       wCenter: vec3f,  // world-space particle center
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(5)       size:   f32,     // particle radius (world units)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(6) @interpolate(flat) cellMask: u32, // exposed-faces bitmask
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(7) @interpolate(flat) halfCell: f32, // cell half-extent (world)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(8) @interpolate(flat) meshMode: u32, // 1 = cube-mesh path (flat tri), 0 = billboard ray-march
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  @location(9) meshN:    vec3f, // world-space face normal (mesh mode); constant across triangle
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:// ─── Cube mesh: 36 verts = 6 faces × 2 tris × 3 verts ─────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:// Returns (localPos in [-1,1]³, outward face normal, faceBit).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:// Outward CCW winding so back-face culling can be enabled later.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:struct CubeV { pos: vec3f, nrm: vec3f, bit: u32, uv: vec2f }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:fn cubeVert(vi: u32) -> CubeV {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  let faceIdx = vi / 6u;            // 0..5
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  let triVi   = vi % 6u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  // Two-triangle quad indices: (0,1,2) and (0,2,3)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  var quadIdx = array<u32,6>(0u, 1u, 2u, 0u, 2u, 3u);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  let corner  = quadIdx[triVi];
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  // Tangent-space corners CCW: (-,-) (+,-) (+,+) (-,+)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  var tx: f32 = -1.0;  var ty: f32 = -1.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  if (corner == 1u) { tx =  1.0; ty = -1.0; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  if (corner == 2u) { tx =  1.0; ty =  1.0; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  if (corner == 3u) { tx = -1.0; ty =  1.0; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  var nrm = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  var tan = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  var bitan = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  var bitMask = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  // Explicit CCW winding definition for each face. 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  // From the outside of the cube looking at the face, 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  // tan goes right, bitan goes up.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  if faceIdx == 0u {        // +X
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:    nrm = vec3f(1.0, 0.0, 0.0); tan = vec3f(0.0, 0.0, -1.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 1u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  } else if faceIdx == 1u { // -X
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:    nrm = vec3f(-1.0, 0.0, 0.0); tan = vec3f(0.0, 0.0, 1.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 2u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  } else if faceIdx == 2u { // +Y
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:    nrm = vec3f(0.0, 1.0, 0.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 0.0, -1.0); bitMask = 4u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  } else if faceIdx == 3u { // -Y
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:    nrm = vec3f(0.0, -1.0, 0.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 0.0, 1.0); bitMask = 8u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  } else if faceIdx == 4u { // +Z
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:    nrm = vec3f(0.0, 0.0, 1.0); tan = vec3f(1.0, 0.0, 0.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 16u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  } else if faceIdx == 5u { // -Z
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:    nrm = vec3f(0.0, 0.0, -1.0); tan = vec3f(-1.0, 0.0, 0.0); bitan = vec3f(0.0, 1.0, 0.0); bitMask = 32u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  let pos = nrm + tan * tx + bitan * ty;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:  return CubeV(pos, nrm, bitMask, vec2f(tx, ty));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/geometry.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:// ── Shader assembly: concatenates WGSL fragments in dependency order ─────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:// Domain: GPU shader program — single WGSL source passed to createShaderModule.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:mod background;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:mod geometry;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:mod particles_frag;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:mod particles_vert;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:mod sdf;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:mod uniforms;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:use std::sync::OnceLock;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:static SHADER: OnceLock<String> = OnceLock::new();
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:/// Returns the complete WGSL source, assembled once and cached.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:pub fn wgsl() -> &'static str {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:    SHADER.get_or_init(|| {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:        [
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:            uniforms::WGSL,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:            background::WGSL,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:            geometry::WGSL,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:            sdf::WGSL,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:            particles_vert::WGSL,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:            particles_frag::WGSL,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:        ]
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:        .join("\n")
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:    })
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/mod.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:// ── WGSL: particle fragment shader ───────────────────────────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:// Domain: Particle shading — rotation matrix, ray-march (cell/superquadric/sphere),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs://         mesh-mode flat shading, lighting, seam suppression, debug overrides.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:// ── Per-particle rotation matrix from phase (cheap, deterministic) ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:fn rotMat(ph: f32) -> mat3x3f {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let cy = cos(ph);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let sy = sin(ph);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let cp = cos(ph * 1.37);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let sp = sin(ph * 1.37);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // yaw (around y) · pitch (around x)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  return mat3x3f(
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    vec3f( cy,    0.0,  sy   ),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    vec3f( sy*sp, cp,  -cy*sp),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    vec3f(-sy*cp, sp,   cy*cp),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  );
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:struct FragOut {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  @location(0)              color: vec4f,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  @builtin(frag_depth)      depth: f32,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:@fragment fn fs_particles(p: Pv, @builtin(front_facing) is_front: bool) -> FragOut {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // Compute derivatives at the very top before any discards to preserve uniform control flow
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let vx = fwidth(p.quadUV.x);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let vy = fwidth(p.quadUV.y);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // ── reconstruct world-space ray through this pixel ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // billboard pixel position in world: wCenter + right*qx*size + up*qy*size
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let ro    = u.u1.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let right = u.u2.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let upv   = u.u3.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let fwd   = u.u4.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let n = max(u.u5.w, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let sphereLikeness = clamp((22.0 - n) / 20.0, 0.0, 1.0); // 1 at n≤2, 0 at n=22
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let isOrtho = u.u9.y > 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  var nrm:   vec3f;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  var hitW:  vec3f;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  var rd:    vec3f;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let R                  = p.size;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let cellOn             = u.u7.x > 0.5 && p.halfCell > 0.0001;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // ─── MESH PATH (true rasterized cube triangle) ───
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // The hardware rasterizer already placed this fragment exactly on the cube
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // face triangle. Use the flat face normal directly. Zero ray-march, zero
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // depth-precision drama, zero seam artifacts.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  if p.meshMode == 1u {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    nrm  = p.meshN;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // World-space hit on the face plane (flat shading — face normal is constant).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // Approximate hit point as wCenter + halfCell · meshN (face centre);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // this is used only for distance fog and fresnel — both flat per face is OK.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    hitW = p.wCenter + p.meshN * p.halfCell;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    rd   = select(normalize(hitW - ro), normalize(fwd), isOrtho);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  } else {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // billboard ray reconstruction (only needed in non-mesh paths)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let pixelW = p.wCenter + right * p.quadUV.x * p.size + upv * p.quadUV.y * p.size;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    rd = select(normalize(pixelW - ro), normalize(fwd), isOrtho);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let ro_eff = select(ro, pixelW - fwd * 10.0, isOrtho);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if cellOn {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      // ── kernel::particle_shape ray-march in cell-local space ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      // pL = (pW - wCenter) / halfCell  →  cell occupies [-1, 1]³
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let h    = p.halfCell;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let mask = p.cellMask;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let rad  = u.u7.y;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let roL  = (ro_eff - p.wCenter) / h;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let rdL  = rd;  // unit in world; t parameter is in cell-local units (tw = tl·h)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // bounding sphere of the unit cube has radius √3 ≈ 1.7321
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let bL = dot(roL, rdL);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let cL = dot(roL, roL) - 3.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let hL = bL * bL - cL;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if hL < 0.0 { discard; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var tCur = max(0.0, -bL - sqrt(hL));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let tEnd = -bL + sqrt(hL);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var hit = false;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var tHit: f32 = tCur;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    for (var i = 0; i < 28; i++) {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let pL = roL + rdL * tCur;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let d  = sdfCell(pL, mask, rad);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      if d < 0.0006 { hit = true; tHit = tCur; break; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      tCur += max(d * 0.9, 0.0015);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      if tCur > tEnd { break; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if !hit { discard; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // local-space normal from SDF gradient (central diff)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let pL  = roL + rdL * tHit;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let eps = 0.0025;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let gx  = sdfCell(pL + vec3f(eps,0,0), mask, rad) - sdfCell(pL - vec3f(eps,0,0), mask, rad);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let gy  = sdfCell(pL + vec3f(0,eps,0), mask, rad) - sdfCell(pL - vec3f(0,eps,0), mask, rad);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let gz  = sdfCell(pL + vec3f(0,0,eps), mask, rad) - sdfCell(pL - vec3f(0,0,eps), mask, rad);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    nrm  = normalize(vec3f(gx, gy, gz));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    hitW = ro_eff + rd * (tHit * h);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  } else if abs(n - 2.0) < 0.05 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // ── analytical sphere intersection (exact n=2 fast-path) ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let oc = ro_eff - p.wCenter;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let b  = dot(oc, rd);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let c  = dot(oc, oc) - R * R;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let h  = b * b - c;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if h < 0.0 { discard; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let tHit = -b - sqrt(h);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if tHit < 0.0 { discard; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    hitW = ro_eff + rd * tHit;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    nrm  = (hitW - p.wCenter) / R;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  } else {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // ── ray-march superquadric in particle local space ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // p.size is the billboard half-size (inflated). The actual shape half-extent
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // along axes is shapeR = p.size / inflate, where inflate ∈ [1, √3] depending
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // on n. We march in unit-shape space [-1,1]³, scaled by shapeR.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let cubenessF = clamp((n - 2.0) / 20.0, 0.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let inflateF  = mix(1.0, 1.7321, cubenessF);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let shapeR    = R / inflateF;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let rot = rotMat(p.phase);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // transform ray to local space: local = rot · (world - center) / shapeR
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let roL = rot * (ro_eff - p.wCenter) / shapeR;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let rdL = rot * rd;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // bounding-sphere entry to skip empty space (radius √3 covers unit cube)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let bL = dot(roL, rdL);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let cL = dot(roL, roL) - 3.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let hL = bL * bL - cL;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if hL < 0.0 { discard; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var tCur = max(0.0, -bL - sqrt(hL));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let tEnd = -bL + sqrt(hL);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var marched = false;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var tFinal: f32 = tCur;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    for (var i = 0; i < 24; i++) {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let pL = roL + rdL * tCur;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      let d  = sdShape(pL, n);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      if d < 0.0005 { marched = true; tFinal = tCur; break; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      tCur += max(d, 0.002);             // sdShape is Lipschitz at extremes → full step is safe
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      if tCur > tEnd { break; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if !marched { discard; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // local-space normal from SDF gradient (central diff)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let pL  = roL + rdL * tFinal;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let eps = 0.002;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let gx  = sdShape(pL + vec3f(eps,0,0), n) - sdShape(pL - vec3f(eps,0,0), n);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let gy  = sdShape(pL + vec3f(0,eps,0), n) - sdShape(pL - vec3f(0,eps,0), n);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let gz  = sdShape(pL + vec3f(0,0,eps), n) - sdShape(pL - vec3f(0,0,eps), n);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let nL  = normalize(vec3f(gx, gy, gz));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // back to world space: transpose(rot) = inverse for rotation matrices
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    nrm  = transpose(rot) * nL;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // world hit = ro_eff + rd * (tFinal · shapeR)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    hitW = ro_eff + rd * (tFinal * shapeR);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  } // close outer non-mesh else branch
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // ── lighting on the real 3D normal ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // CAD MATTE MATERIAL (Plasticity-style)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // Soft, matte gradient lighting:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let L1 = normalize(vec3f( 0.45,  0.85, -0.40));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let L2 = normalize(vec3f(-0.35,  0.25,  0.65));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let L3 = normalize(vec3f( 0.10, -0.50, -0.20)); // Soft bounce light
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let v  = -rd;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // Soften lambert with wrapping (valve half-lambert style)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let dA = pow(max(dot(nrm, L1) * 0.5 + 0.5, 0.0), 1.5) * 1.1; 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let dB = max(dot(nrm, L2), 0.0) * 0.35;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let dC = max(dot(nrm, L3), 0.0) * 0.20;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // Reduced specular
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let h  = normalize(L1 + v);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let sp = pow(max(dot(nrm, h), 0.0), 32.0) * 0.15; // low shine
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // Soft rim
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let fr = pow(1.0 - max(dot(nrm, v), 0.0), 2.5) * 0.15;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // ── seam suppression for flush-packed cube cells ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // When a face touches a neighbour (cellMask bit not set), this is an internal
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // seam, not the outer hull. Kill specular & rim there so the assembled cube
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // looks like one solid surface instead of a grid of individual cubes.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  var seamMul: f32 = 1.0;          // 1 = keep highlights, 0 = full suppression
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  if p.halfCell > 0.0001 && p.cellMask != 0u {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let absN = abs(nrm);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var faceBit: u32 = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if absN.x >= absN.y && absN.x >= absN.z {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      faceBit = select(2u, 1u, nrm.x > 0.0);     // +X = 1, -X = 2
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    } else if absN.y >= absN.z {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      faceBit = select(8u, 4u, nrm.y > 0.0);     // +Y = 4, -Y = 8
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    } else {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:      faceBit = select(32u, 16u, nrm.z > 0.0);   // +Z = 16, -Z = 32
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let isExposed = (p.cellMask & faceBit) != 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // soft transition near edges (where face is ambiguous): max axis dominance
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let axisDom = max(absN.x, max(absN.y, absN.z));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let edgeT   = smoothstep(0.6, 0.95, axisDom);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    seamMul = select(1.0 - edgeT, 1.0, isExposed);  // exposed face → 1 always
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let hitVz = max(dot(hitW - ro, fwd), 0.05);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let fog   = exp(-hitVz * 0.045);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let cad_matte_base = vec3f(0.85, 0.88, 0.90); // light gray-blue CAD material
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  var col = p.color * 0.25;                                    // ambient
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  col    += cad_matte_base * (dA + dB + dC) * 0.85;                // matte diffuse
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  col    += vec3f(0.95, 0.97, 1.0) * sp * seamMul;                 // subtle specular 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  col    += vec3f(0.80, 0.90, 1.00) * fr * (0.80 + 0.20 * sphereLikeness) * seamMul;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // distance darkening (atmospheric, NOT alpha)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  col *= 0.65 + 0.35 * fog;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // tone map + gamma
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  col = col / (col + vec3f(1.0));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  col = pow(col, vec3f(0.4545));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // ── debug overrides (after tone-map so colours stay punchy) ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let cmode = u.u7.z;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  if cmode > 0.5 && cmode < 1.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // normals → RGB
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    col = nrm * 0.5 + 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  } else if cmode > 1.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // colour by SlotKind: gray / cyan / yellow / magenta
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let bits = countOneBits(p.cellMask);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    var sc: vec3f;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    if      bits == 0u { sc = vec3f(0.50, 0.50, 0.50); }      // interior
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    else if bits == 1u { sc = vec3f(0.30, 0.85, 0.95); }      // face   = cyan
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    else if bits == 2u { sc = vec3f(0.95, 0.85, 0.20); }      // edge   = yellow
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    else               { sc = vec3f(0.95, 0.30, 0.85); }      // corner = magenta
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // shade by lambert so silhouette stays readable
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    col = sc * (0.35 + 0.65 * max(dot(nrm, L1), 0.0));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // ── per-pixel depth from real hit point (matches vertex z mapping) ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  let zNdc = clamp(hitVz / (hitVz + 8.0), 0.0, 0.9999);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  // ── CAD/Plasticity Edge Overlay (mesh mode only) ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  if p.meshMode == 1u {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let fw = max(vx, vy);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let dU = 1.0 - abs(p.quadUV.x);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let dV = 1.0 - abs(p.quadUV.y);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let dEdge = min(dU, dV);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    // 1.2 pixels wide edge, with anti-aliasing
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let edgeT = smoothstep(fw * 1.8, fw * 0.4, dEdge);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    let edgeColor = vec3f(0.12, 0.14, 0.17); // Softer edge color, less black
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:    col = mix(col, edgeColor, edgeT);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  var out: FragOut;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  out.color = vec4f(col, 1.0);   // fully opaque
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  out.depth = zNdc;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:  return out;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_frag.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:// ── WGSL: particle vertex shader ─────────────────────────────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:// Domain: Particle placement — cloud drift, formation targets (cube/wall),
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs://         LOD decimation, billboard inflate, mesh-mode dispatch.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:@vertex fn vs_particles(
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  @builtin(vertex_index)   vi:   u32,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  @builtin(instance_index) inst: u32,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:) -> Pv {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // 6-vert quad in local space (-1..1)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var qx = array<f32,6>(-1.0, 1.0,-1.0,  1.0, 1.0,-1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var qy = array<f32,6>(-1.0,-1.0, 1.0, -1.0, 1.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let t   = u.u0.x;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let asp = u.u0.y / u.u0.z;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let ro    = u.u1.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let right = u.u2.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let upv   = u.u3.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let fwd   = u.u4.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let sp = spheres.data[inst];
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let ph = sp.colorP.w;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // ── formation parameters ─────────────────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let formMix   = clamp(u.u6.x, 0.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let formMode  = u.u6.y;       // 0 cloud · 1 cube · 2 wall
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let formA     = u.u6.z;       // grid side (cube) / row count (wall)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let formScale = u.u6.w;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let driftK    = 1.0 - formMix; // suppress drift while forming
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // animated world position (Lissajous drift) — damped by (1-formMix)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var cloudC = vec3f(
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    sp.posR.x + sin(t * 0.28 + ph)        * 0.30 * driftK,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    sp.posR.y + cos(t * 0.37 + ph * 1.27) * 0.22 * driftK,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    sp.posR.z + sin(t * 0.21 + ph * 0.73) * 0.18 * driftK,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  );
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // soft gravity toward scene origin → organic clumps (also damped)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let radial   = length(sp.posR.xyz);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let pullAmt  = smoothstep(1.5, 5.5, radial) * 0.35 * driftK;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let toOrigin = -normalize(sp.posR.xyz + vec3f(1e-4));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let swirl    = vec3f(-sp.posR.z, 0.0, sp.posR.x) * 0.02 * driftK;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  cloudC      += toOrigin * pullAmt * (0.6 + 0.4 * sin(t * 0.5 + ph));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  cloudC      += swirl    * sin(t * 0.3 + ph * 0.5);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // ── deterministic formation target from instance index ──────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // overlap factor depends on shape: spheres need √2 to cover diagonals,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // cubes (high n) tile exactly with factor 1.0
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // n=1 octahedron · n=2 sphere · n→∞ cube
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let n         = max(u.u5.w, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let cubeness  = clamp((n - 2.0) / 20.0, 0.0, 1.0); // 0 sphere/octa → 1 cube
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let coverK    = mix(1.45, 1.02, cubeness);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var formed     = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var targetR    = sp.posR.w;     // target radius when fully formed
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var aliveForm  = true;          // false → particle hidden (extra over grid capacity)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var halfCell   = sp.posR.w;     // cell half-extent in world units
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var cellMask: u32 = 63u;        // default: all faces exposed (cloud / wall)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  if formMode > 0.5 && formMode < 1.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // CUBE: solid side³ grid. Every particle is one cell at integer coord
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // (ix, iy, iz). Adjacent cells differ by exactly 2·halfCell in their
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // centre, so unexposed faces are perfectly flush — magnetic packing.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // Interior cells (mask == 0) are culled; only 6s²−12s+8 stay visible.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let side    = u32(formA);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let totalCells = side * side * side;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    if inst < totalCells {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let ix = inst % side;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let iy = (inst / side) % side;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let iz = inst / (side * side);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      // mask via direct face-touch test (= particle_shape::CubeGrid::classify)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      var m: u32 = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if ix == side - 1u { m |=  1u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if ix == 0u        { m |=  2u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if iy == side - 1u { m |=  4u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if iy == 0u        { m |=  8u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if iz == side - 1u { m |= 16u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if iz == 0u        { m |= 32u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      // cull interior — never contributes pixels
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if m == 0u {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        aliveForm = false;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        formed    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        targetR   = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      } else {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        let cellSize = formScale / formA * 2.0; // fallback if u9 not available, or use fixed scale logic if intended
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        let halfCellWorld = cellSize * 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        let fx = f32(ix) - (formA - 1.0) * 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        let fy = f32(iy) - (formA - 1.0) * 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        let fz = f32(iz) - (formA - 1.0) * 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        formed   = vec3f(fx, fy, fz) * cellSize;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        halfCell = halfCellWorld;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        cellMask = m;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        // imposter mode: radius = halfCell (sphere just touches its 6 neighbours);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        // cell-SDF mode: radius = √3·halfCell (billboard bounds the rotated cube).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        let cellR     = halfCell * 1.7321;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        let imposterR = halfCell;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        targetR  = mix(imposterR, cellR, clamp(u.u7.x, 0.0, 1.0));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        // hideLow debug: show only edges & corners
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        if u.u7.w > 0.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:          let nb = countOneBits(cellMask);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:          if nb <= 1u { aliveForm = false; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:        }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    } else {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      aliveForm = false;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      formed    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      targetR   = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  } else if formMode > 1.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // WALL: cols × rows  (cols·rows ≤ N is guaranteed from JS)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // Each tile is a real 3D cube with axis-aligned extents:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    //   X half = scale·aspect/cols    Y half = scale/rows    Z half = min(X,Y)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // We expose +Z / -Z always (front + back of wall) and +X/-X/+Y/-Y only
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // on the outer rim of the rectangle so neighbour seams disappear like the
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // cube formation. halfCell = min(tileX, tileY) keeps tile cube proportions.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let cols       = u32(formA);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let rows       = max(formScale, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let rowsU      = u32(rows);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let totalCells = cols * rowsU;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    if inst < totalCells {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let r      = inst / cols;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let c      = inst % cols;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let scale  = 2.4;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let aspect = formA / rows;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      // Tile centre in world (Z = 0 plane).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let uu     = (f32(c) + 0.5) / formA * 2.0 - 1.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let vv     = (f32(r) + 0.5) / rows  * 2.0 - 1.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      formed     = vec3f(uu * aspect * scale, vv * scale, 0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      // Tile half-extents (X may differ from Y when aspect ≠ 1).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let tileX  = scale * aspect / formA;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let tileY  = scale / rows;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      // Use min for cellMask SDF/mesh maths: tile becomes a square slab.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      halfCell   = min(tileX, tileY);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      // World-extent radius for billboard fallback (covers the whole tile).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      targetR    = max(tileX, tileY);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      // Wall cellMask: edges expose ±X / ±Y; front+back (±Z) always exposed.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      var m: u32 = 16u | 32u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if c == cols - 1u { m |=  1u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if c == 0u        { m |=  2u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if r == rowsU - 1u { m |=  4u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if r == 0u         { m |=  8u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      cellMask = m;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    } else {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      aliveForm = false;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      formed    = vec3f(0.0, 0.0, -100.0); // off-screen behind
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      targetR   = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // smoothly grow / shrink particle to fill its cell when formed
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let mixT  = smoothstep(0.0, 1.0, formMix);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let size  = mix(sp.posR.w, targetR, mixT);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // no wobble in formation — particles must lock perfectly still
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let settle = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var center = mix(cloudC, formed + settle, smoothstep(0.0, 1.0, formMix));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // ── Scene placement: scale & translate the entire formation ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Cloud (formMix=0) keeps original position; the formed object is repositioned
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // and resized via uniform u8 = (objectPos, objectScale).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let objPos   = u.u8.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let objScale = max(0.001, u.u8.w);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // blend toward the placed pose as the formation forms — keeps cloud anchored at origin
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let placeT   = smoothstep(0.0, 1.0, formMix);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let placedC  = center * objScale + objPos;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  center       = mix(center, placedC, placeT);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  halfCell     = mix(halfCell, halfCell * objScale, placeT);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // sand-push along mouse ray (still works in any mode, slightly weaker when formed)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let mAct = u.u5.z;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  if mAct > 0.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mNdc = vec2f(u.u5.x * asp, u.u5.y);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let isOrtho = u.u9.y > 0.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Compute view-space coordinates
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let rel = center - ro;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let vx  = dot(rel, right);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let vy  = dot(rel, upv);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let vz  = dot(rel, fwd);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Safe depth for perspective
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let safe_vz = max(vz, 0.05);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  if pushActive {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // simple focal length (now fixed 2.414 everywhere)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mNdc = vec2f(0.0, 0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let rdM  = normalize(mNdc.x * right + mNdc.y * upv + 2.414 * fwd);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let toC      = center - ro;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let projLen  = dot(toC, rdM);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let perp     = toC - rdM * projLen;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let dist     = length(perp);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    if dist > 0.001 && projLen > 0.0 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let falloff = exp(-dist * 2.2);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      let dir     = perp / dist;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      center += dir * falloff * u.u0.w * (1.0 - formMix);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let rel = center - ro;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let vx = dot(rel, right);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let vy = dot(rel, upv);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let vz = dot(rel, fwd);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let safe_vz = max(vz, 0.05);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Project particle radius to pixels: pxR ≈ size · focal / vz · (viewportH / 2)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let viewH = u.u0.z;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let pxR   = select( size * 2.414 / safe_vz * (viewH * 0.5), size / orthoHeight * viewH * 1.5, isOrtho );
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // CUBE LOD by cellMask popcount (decimation when shell pixels < 1):
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  //   pxR ≥ 1.5  → all surface particles (popcount ≥ 1)               · LOD0
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  //   pxR ∈ [0.8, 1.5)  → drop face-interior, keep edges + corners    · LOD1
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  //   pxR ∈ [0.4, 0.8)  → drop edges, keep 8 corner cells             · LOD2
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  //   pxR < 0.4         → keep only corners with extra inflation       · LOD3
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Survivors inflate so total covered area ≈ unchanged ("Вариант 2": 2×2×2 → 1 block).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var lodInflate: f32 = 1.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  if formMix > 0.5 && formMode > 0.5 && formMode < 1.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let bits = countOneBits(cellMask);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    if pxR < 0.4 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if bits < 3u { aliveForm = false; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      lodInflate = 4.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    } else if pxR < 0.8 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      if bits < 2u { aliveForm = false; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      lodInflate = 2.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    } else if pxR < 1.5 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      lodInflate = 1.4;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Universal screen-space minimum: never let a particle fall below 1 px (kills subpixel flicker)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let curPxR  = pxR * lodInflate;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let pxBoost = select(1.0, 1.0 / max(curPxR, 0.001), curPxR < 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // imposter radius also follows the scene scale once formed
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let sizeScaled = mix(size, size * objScale, placeT);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let sizeLod    = sizeScaled * lodInflate * pxBoost;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  if vz < 0.05 || !aliveForm {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    var dead: Pv;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.quadUV   = vec2f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.color    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.depth    = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.phase    = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.wCenter  = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.size     = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.cellMask = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.halfCell = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.meshMode = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.meshN    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    return dead;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // ── Choose render path ───────────────────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // MESH PATH (true 3D cube triangle): activated for fully-formed cube OR
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // wall when the shape exponent is high enough (n > 8 → virtually a cube).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Hardware-rasterized triangles → zero ray-march artifacts on tilt.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let isCubeForm = formMode > 0.5 && formMode < 1.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let isWallForm = formMode > 1.5;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let useMesh    = formMix > 0.95
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:                && (isCubeForm || isWallForm)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:                && n > 8.0
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:                && halfCell > 0.0001;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // For non-mesh mode, only the first 6 verts are real (billboard quad).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Verts 6..35 must be killed without affecting depth.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  if !useMesh && vi >= 6u {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    var dead: Pv;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.quadUV   = vec2f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.color    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.depth    = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.phase    = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.wCenter  = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.size     = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.cellMask = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.halfCell = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.meshMode = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    dead.meshN    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    return dead;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  if useMesh {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // ── True 3D cube mesh: 6 faces × 2 tris × 3 verts = 36 verts ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let cv = cubeVert(vi);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // Cull faces that are not exposed (touch a neighbour cube): emit degenerate.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    if (cellMask & cv.bit) == 0u {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      var dead: Pv;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.quadUV   = vec2f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.color    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.depth    = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.phase    = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.wCenter  = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.size     = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.cellMask = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.halfCell = 0.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.meshMode = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      dead.meshN    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:      return dead;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // World-space cube vertex (axis-aligned, no per-particle rotation).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // halfExt scaled by lodInflate so LOD blocks grow without leaving holes.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let halfExt = halfCell * lodInflate;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let wp      = center + cv.pos * halfExt;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // View-space + perspective project (same projection as billboard path).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let relV = wp - ro;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mvx  = dot(relV, right);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mvy  = dot(relV, upv);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mvz  = dot(relV, fwd);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // Do NOT kill the vertex if mvz < 0.05. Hardware near-plane clipping will handle it gracefully.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    // Otherwise, rotating a large close cube will make its vertices snap to (0,0,-2) and destroy the triangle.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let safe_mvz = max(mvz, 0.001); // Prevent division by zero for projection
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let focalM = 2.414;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mcx    = select(mvx * focalM / safe_mvz / asp, mvx / orthoHeight / asp, isOrtho);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mcy    = select(mvy * focalM / safe_mvz, mvy / orthoHeight, isOrtho);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    let mzNdc  = clamp(mvz / (mvz + 8.0), 0.0, 0.9999);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    var o: Pv;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.pos      = vec4f(mcx, mcy, mzNdc, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.quadUV   = cv.uv;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.color    = sp.colorP.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.depth    = mvz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.phase    = 0.0;                     // no per-particle rotation in mesh mode
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.wCenter  = center;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.size     = halfExt;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.cellMask = cellMask;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.halfCell = halfCell;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.meshMode = 1u;                      // → fragment shader: skip ray-march
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    o.meshN    = cv.nrm;                  // world-space face normal (already axis-aligned)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:    return o;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // billboard quad scaled to particle radius (world units)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // size already lerped above between spawn radius and target cell radius.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // sizeLod includes screen-space LOD inflation + min-pixel clamp.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // INFLATE for cube-like shapes: a unit cube's corners reach √3 from origin,
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // so a billboard of half-size R clips the cube into a sphere of radius R.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Sphere (n=2) and octahedron (n=1) fit in unit sphere → inflate = 1.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Cube (n→∞)  → inflate = √3 ≈ 1.732 so corners stay inside the quad.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let cubeness2 = clamp((n - 2.0) / 20.0, 0.0, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let inflate   = mix(1.0, 1.7321, cubeness2);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let billSize  = sizeLod * inflate;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let lx   = qx[vi] * billSize;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let ly   = qy[vi] * billSize;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // perspective project
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let focal = 2.414;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let cx = select((vx + lx) * focal / vz / asp, (vx + lx) / orthoHeight / asp, isOrtho);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let cy = select((vy + ly) * focal / vz, (vy + ly) / orthoHeight, isOrtho);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // map view-space z (≥0.05) to NDC depth [0..1) monotonically — used
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // only as a coarse sort key; the fragment shader writes the precise
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // per-pixel depth based on the actual ray-sphere hit point.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let zNdc = clamp(vz / (vz + 8.0), 0.0, 0.9999);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  var o: Pv;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.pos      = vec4f(cx, cy, zNdc, 1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.quadUV   = vec2f(qx[vi], qy[vi]);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.color    = sp.colorP.xyz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.depth    = vz;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Damp per-particle rotation while forming → cubes/octa/etc align to world
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // axes when fully formed (phase=0 → rotMat = identity).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // Use smoothstep with hard zero past 0.92 so residual lerp can't keep cubes
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  // tilted by a few degrees (which would break face-to-face seam alignment).
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  let phaseDamp = 1.0 - smoothstep(0.0, 0.92, formMix);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.phase    = ph * phaseDamp;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.wCenter  = center;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.size     = billSize;       // billboard half-size in world (used to reconstruct ray pixel)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.cellMask = cellMask;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.halfCell = halfCell;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.meshMode = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  o.meshN    = vec3f(0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:  return o;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/particles_vert.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// ── WGSL: signed-distance functions ─────────────────────────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// Domain: Shape SDF library — cell SDF (particle_shape port) + superquadric family.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// ─── kernel::particle_shape WGSL port ─────────────────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// Mirrors src/infrastructure/geometry/kernel/particle_shape.rs verbatim.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// Layout: bit 0 = +X, 1 = -X, 2 = +Y, 3 = -Y, 4 = +Z, 5 = -Z.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:fn maskFromCenter(c: vec3f, halfCell: f32, scale: f32) -> u32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let eps = halfCell * 1.1;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  var m: u32 = 0u;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if c.x >  scale - eps { m |=  1u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if c.x < -scale + eps { m |=  2u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if c.y >  scale - eps { m |=  4u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if c.y < -scale + eps { m |=  8u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if c.z >  scale - eps { m |= 16u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if c.z < -scale + eps { m |= 32u; }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  return m;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// SDF for one cell in cell-local space [-1, 1]³.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// Unexposed slabs stay at ±1 (flush); exposed shrink to ±(1-r);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// length(outside) term auto-rounds edges/corners.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:fn sdfCell(p: vec3f, mask: u32, radius: f32) -> f32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let r   = clamp(radius, 0.0, 0.5);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let sxp = select(0.0, r, (mask &  1u) != 0u);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let sxn = select(0.0, r, (mask &  2u) != 0u);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let syp = select(0.0, r, (mask &  4u) != 0u);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let syn = select(0.0, r, (mask &  8u) != 0u);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let szp = select(0.0, r, (mask & 16u) != 0u);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let szn = select(0.0, r, (mask & 32u) != 0u);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let qx = max(p.x - (1.0 - sxp), -p.x - (1.0 - sxn));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let qy = max(p.y - (1.0 - syp), -p.y - (1.0 - syn));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let qz = max(p.z - (1.0 - szp), -p.z - (1.0 - szn));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let outside = vec3f(max(qx, 0.0), max(qy, 0.0), max(qz, 0.0));
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let inside  = min(max(qx, max(qy, qz)), 0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  return length(outside) + inside;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// ── Superquadric SDF (smoothed for ray-march stability) ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// |x|ⁿ + |y|ⁿ + |z|ⁿ = 1  → unit superquadric
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// NOT a true distance function (not Lipschitz-1); only used as level-set
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// for medium n. For n→1 (octa) and n→∞ (cube) use exact SDFs below.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:fn sdSuperq(p: vec3f, n: f32) -> f32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let q = abs(p);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let v = pow(q.x, n) + pow(q.y, n) + pow(q.z, n);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  return pow(v, 1.0 / n) - 1.0;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// ── Exact box SDF (unit cube [-1,1]³) — Lipschitz-1, perfect for ray-march ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:fn sdBox(p: vec3f) -> f32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let q = abs(p) - vec3f(1.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// ── Exact octahedron SDF (|x|+|y|+|z|=1) — Lipschitz, sharp triangular faces ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:fn sdOcta(p: vec3f) -> f32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  let q = abs(p);
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  return (q.x + q.y + q.z - 1.0) * 0.57735027; // 1/√3 normalises gradient to unit
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:// ── Master shape SDF: dispatch to exact form at extremes ──
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:fn sdShape(p: vec3f, n: f32) -> f32 {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if (n >= 8.0)  { return sdBox(p);  }   // n≥8 visually indistinguishable from cube
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  if (n <= 1.05) { return sdOcta(p); }   // n≈1 → exact octahedron
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:  return sdSuperq(p, n);                 // smooth superquadric for the in-between
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/sdf.rs:}
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:// ── WGSL: uniform bindings, storage bindings, helper vertex struct ─────────────
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:// Domain: GPU interface contract — all shader stages share these declarations.
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:struct Uniforms {
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u0: vec4f,   // time, w, h, pushStrength
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u1: vec4f,   // ro
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u2: vec4f,   // right
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u3: vec4f,   // up
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u4: vec4f,   // fwd
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u5: vec4f,   // mouseX, mouseY, mouseActive, shapeExponent
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u6: vec4f,   // formMix, formMode, formA, formScale
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u7: vec4f,   // cellSdfOn, cellRadius, colorMode, hideLow
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u8: vec4f,   // objectX, objectY, objectZ, objectScale  (scene placement)
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:  u9: vec4f,   // floorGridScale, _, _, _
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:};
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:@group(0) @binding(0) var<uniform> u: Uniforms;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:struct Sphere { posR: vec4f, colorP: vec4f }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:struct Spheres { data: array<Sphere> }
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:@group(0) @binding(1) var<storage, read> spheres: Spheres;
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:
+/Users/dmitrijfomin/Desktop/assistant/src/web/home/scripts/webgpu/shader/uniforms.rs:struct Vert { @builtin(position) pos: vec4f, @location(0) uv: vec2f }

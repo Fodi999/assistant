@@ -8,7 +8,7 @@
 //! Invalidation:
 //!   cache.reload(&pool).await?;   // after admin edits
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -124,7 +124,7 @@ impl IngredientData {
     pub fn meal_role(&self) -> &'static str {
         match self.product_type.as_str() {
             "meat" | "fish" | "seafood" => "protein",
-            "dairy" if self.protein_per_100g >= 10.0 => "protein",  // cottage cheese, eggs
+            "dairy" if self.protein_per_100g >= 10.0 => "protein", // cottage cheese, eggs
             "legume" if self.protein_per_100g >= 15.0 => "protein", // chickpeas, lentils
             "vegetable" | "mushroom" | "fruit" => "side",
             "grain" | "legume" => "base",
@@ -275,7 +275,8 @@ impl IngredientCache {
         let mut map = HashMap::with_capacity(rows.len());
         for row in rows {
             if let Some(slug) = row.slug {
-                let behaviors: Vec<CachedBehavior> = row.behaviors_json
+                let behaviors: Vec<CachedBehavior> = row
+                    .behaviors_json
                     .and_then(|v| serde_json::from_value(v).ok())
                     .unwrap_or_default();
                 let states = states_by_slug.remove(&slug).unwrap_or_default();

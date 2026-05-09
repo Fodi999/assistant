@@ -99,7 +99,20 @@ impl RecipeRepositoryTrait for RecipeRepository {
     /// 🔒 TENANT ISOLATION: find_by_id filters by tenant_id (not user_id)
     async fn find_by_id(&self, id: RecipeId, tenant_id: TenantId) -> AppResult<Option<Recipe>> {
         // Fetch recipe — filtered by tenant_id
-        let recipe_row = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
+        let recipe_row = sqlx::query_as::<
+            _,
+            (
+                uuid::Uuid,
+                uuid::Uuid,
+                uuid::Uuid,
+                String,
+                String,
+                i32,
+                Option<String>,
+                time::OffsetDateTime,
+                time::OffsetDateTime,
+            ),
+        >(
             r#"
             SELECT 
                 id, user_id, tenant_id, 
@@ -110,7 +123,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
                 created_at, updated_at
             FROM recipes
             WHERE id = $1 AND tenant_id = $2
-            "#
+            "#,
         )
         .bind(id.as_uuid())
         .bind(tenant_id.as_uuid())
@@ -201,16 +214,27 @@ impl RecipeRepositoryTrait for RecipeRepository {
         pagination: &PaginationParams,
     ) -> AppResult<PaginatedResponse<Recipe>> {
         // 1. Count total recipes for this tenant
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM recipes WHERE tenant_id = $1",
-        )
-        .bind(tenant_id.as_uuid())
-        .fetch_one(&self.pool)
-        .await
-        .map_err(AppError::Database)?;
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM recipes WHERE tenant_id = $1")
+            .bind(tenant_id.as_uuid())
+            .fetch_one(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
 
         // 2. Fetch paginated recipes
-        let recipe_rows = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, i32, Option<String>, time::OffsetDateTime, time::OffsetDateTime)>(
+        let recipe_rows = sqlx::query_as::<
+            _,
+            (
+                uuid::Uuid,
+                uuid::Uuid,
+                uuid::Uuid,
+                String,
+                String,
+                i32,
+                Option<String>,
+                time::OffsetDateTime,
+                time::OffsetDateTime,
+            ),
+        >(
             r#"
             SELECT 
                 id, user_id, tenant_id, 
@@ -223,7 +247,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
             WHERE tenant_id = $1
             ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
-            "#
+            "#,
         )
         .bind(tenant_id.as_uuid())
         .bind(pagination.limit())
@@ -284,10 +308,7 @@ impl RecipeRepositoryTrait for RecipeRepository {
         let mut components_map: HashMap<uuid::Uuid, Vec<RecipeComponent>> = HashMap::new();
         for (recipe_id, component_id, qty) in all_components {
             let component = RecipeComponent::new(RecipeId::from_uuid(component_id), qty)?;
-            components_map
-                .entry(recipe_id)
-                .or_default()
-                .push(component);
+            components_map.entry(recipe_id).or_default().push(component);
         }
 
         // 6. Assemble Recipe objects

@@ -7,18 +7,17 @@
 
 use std::sync::Arc;
 
-use crate::infrastructure::IngredientCache;
-use crate::infrastructure::llm_adapter::LlmAdapter;
-use crate::domain::tools::unit_converter as uc;
-use crate::application::rulebot::intent_router::ChatLang;
 use crate::application::rulebot::chat_response::{
     Card, ChatResponse, ConversionCard, NutritionCard, ProductCard,
 };
+use crate::application::rulebot::intent_router::ChatLang;
+use crate::domain::tools::unit_converter as uc;
+use crate::infrastructure::llm_adapter::LlmAdapter;
+use crate::infrastructure::IngredientCache;
 
 use super::response_helpers::{
-    format_nutrition_response, no_products_text, fallback_text,
-    build_followup_suggestions, build_meal_plan_suggestions,
-    product_matches_query,
+    build_followup_suggestions, build_meal_plan_suggestions, fallback_text,
+    format_nutrition_response, no_products_text, product_matches_query,
 };
 
 // ── Search Products ──────────────────────────────────────────────────────────
@@ -36,23 +35,35 @@ pub(crate) async fn execute_search(
         return ChatResponse::text_only(
             no_products_text(lang),
             crate::application::rulebot::intent_router::Intent::HealthyProduct,
-            lang, 0,
+            lang,
+            0,
         );
     }
 
     // Score products by goal
-    let mut scored: Vec<(f64, &crate::infrastructure::ingredient_cache::IngredientData)> = all
+    let mut scored: Vec<(
+        f64,
+        &crate::infrastructure::ingredient_cache::IngredientData,
+    )> = all
         .iter()
         .filter(|p| p.calories_per_100g > 0.0 || p.protein_per_100g > 0.0)
         .map(|p| {
             let score = match goal {
-                "high_protein" => p.protein_per_100g as f64 * 2.0 - p.calories_per_100g as f64 * 0.3,
-                "low_calorie"  => 500.0 - p.calories_per_100g as f64 + p.protein_per_100g as f64 * 0.5,
-                _              => p.protein_per_100g as f64 + (300.0 - p.calories_per_100g as f64) * 0.3,
+                "high_protein" => {
+                    p.protein_per_100g as f64 * 2.0 - p.calories_per_100g as f64 * 0.3
+                }
+                "low_calorie" => {
+                    500.0 - p.calories_per_100g as f64 + p.protein_per_100g as f64 * 0.5
+                }
+                _ => p.protein_per_100g as f64 + (300.0 - p.calories_per_100g as f64) * 0.3,
             };
             // Boost if query words appear in product name
             let query_lower = query.to_lowercase();
-            let name_bonus = if product_matches_query(p, &query_lower) { 100.0 } else { 0.0 };
+            let name_bonus = if product_matches_query(p, &query_lower) {
+                100.0
+            } else {
+                0.0
+            };
             (score + name_bonus, p)
         })
         .collect();
@@ -64,42 +75,55 @@ pub(crate) async fn execute_search(
         return ChatResponse::text_only(
             no_products_text(lang),
             crate::application::rulebot::intent_router::Intent::HealthyProduct,
-            lang, 0,
+            lang,
+            0,
         );
     }
 
-    let cards: Vec<Card> = top.iter().map(|(_, p)| {
-        Card::Product(ProductCard {
-            actions: vec![],
-            slug: p.slug.clone(),
-            name: p.name(lang.code()).to_string(),
-            calories_per_100g: p.calories_per_100g,
-            protein_per_100g: p.protein_per_100g,
-            fat_per_100g: p.fat_per_100g,
-            carbs_per_100g: p.carbs_per_100g,
-            image_url: p.image_url.clone(),
-            highlight: None,
-            reason_tag: Some(match goal {
-                "high_protein" => "high_protein",
-                "low_calorie"  => "low_calorie",
-                _              => "balanced",
-            }),
+    let cards: Vec<Card> = top
+        .iter()
+        .map(|(_, p)| {
+            Card::Product(ProductCard {
+                actions: vec![],
+                slug: p.slug.clone(),
+                name: p.name(lang.code()).to_string(),
+                calories_per_100g: p.calories_per_100g,
+                protein_per_100g: p.protein_per_100g,
+                fat_per_100g: p.fat_per_100g,
+                carbs_per_100g: p.carbs_per_100g,
+                image_url: p.image_url.clone(),
+                highlight: None,
+                reason_tag: Some(match goal {
+                    "high_protein" => "high_protein",
+                    "low_calorie" => "low_calorie",
+                    _ => "balanced",
+                }),
+            })
         })
-    }).collect();
+        .collect();
 
     // Ask LLM to format a nice response text using the found products
-    let product_info: Vec<String> = top.iter().map(|(_, p)| {
-        format!("{}: {}kcal, {}g protein, {}g fat, {}g carbs per 100g",
-            p.name(lang.code()), p.calories_per_100g as i32,
-            p.protein_per_100g, p.fat_per_100g, p.carbs_per_100g)
-    }).collect();
+    let product_info: Vec<String> = top
+        .iter()
+        .map(|(_, p)| {
+            format!(
+                "{}: {}kcal, {}g protein, {}g fat, {}g carbs per 100g",
+                p.name(lang.code()),
+                p.calories_per_100g as i32,
+                p.protein_per_100g,
+                p.fat_per_100g,
+                p.carbs_per_100g
+            )
+        })
+        .collect();
 
     let text = format_llm_response(
         llm_adapter,
         query,
         &format!("Found products:\n{}", product_info.join("\n")),
         lang,
-    ).await;
+    )
+    .await;
 
     let mut resp = ChatResponse::with_cards(
         text,
@@ -163,9 +187,15 @@ pub(crate) async fn execute_nutrition(
         &format!("nutrition info about {}", product),
         "Product not in our database. Answer from your culinary knowledge.",
         lang,
-    ).await;
+    )
+    .await;
 
-    ChatResponse::text_only(text, crate::application::rulebot::intent_router::Intent::NutritionInfo, lang, 0)
+    ChatResponse::text_only(
+        text,
+        crate::application::rulebot::intent_router::Intent::NutritionInfo,
+        lang,
+        0,
+    )
 }
 
 // ── Convert Units ────────────────────────────────────────────────────────────
@@ -179,16 +209,34 @@ pub(crate) fn execute_conversion(value: f64, from: &str, to: &str, lang: ChatLan
         format!("{} {} = **{} {}**", value, from, result, to)
     } else {
         match lang {
-            ChatLang::Ru => format!("Не могу конвертировать {} → {}. Попробуй: г, мл, ложки, стаканы, унции.", from, to),
-            ChatLang::En => format!("Can't convert {} → {}. Try: g, ml, tbsp, cups, oz.", from, to),
-            ChatLang::Pl => format!("Nie mogę przeliczyć {} → {}. Spróbuj: g, ml, łyżki, szklanki, uncje.", from, to),
-            ChatLang::Uk => format!("Не можу конвертувати {} → {}. Спробуй: г, мл, ложки, склянки, унції.", from, to),
+            ChatLang::Ru => format!(
+                "Не могу конвертировать {} → {}. Попробуй: г, мл, ложки, стаканы, унции.",
+                from, to
+            ),
+            ChatLang::En => format!(
+                "Can't convert {} → {}. Try: g, ml, tbsp, cups, oz.",
+                from, to
+            ),
+            ChatLang::Pl => format!(
+                "Nie mogę przeliczyć {} → {}. Spróbuj: g, ml, łyżki, szklanki, uncje.",
+                from, to
+            ),
+            ChatLang::Uk => format!(
+                "Не можу конвертувати {} → {}. Спробуй: г, мл, ложки, склянки, унції.",
+                from, to
+            ),
         }
     };
 
     ChatResponse::with_card(
         text,
-        Card::Conversion(ConversionCard { value, from: from.to_string(), to: to.to_string(), result, supported }),
+        Card::Conversion(ConversionCard {
+            value,
+            from: from.to_string(),
+            to: to.to_string(),
+            result,
+            supported,
+        }),
         crate::application::rulebot::intent_router::Intent::Conversion,
         lang,
         0,
@@ -206,20 +254,30 @@ pub(crate) async fn execute_meal_plan(
     lang: ChatLang,
 ) -> ChatResponse {
     let all = ingredient_cache.all().await;
-    let mut scored: Vec<(f64, &crate::infrastructure::ingredient_cache::IngredientData)> = all
+    let mut scored: Vec<(
+        f64,
+        &crate::infrastructure::ingredient_cache::IngredientData,
+    )> = all
         .iter()
         .filter(|p| p.calories_per_100g > 0.0 && p.protein_per_100g > 0.0)
         .map(|p| {
             let score = match goal {
-                g if g.contains("protein") || g.contains("muscle") || g.contains("масс") || g.contains("białk") => {
+                g if g.contains("protein")
+                    || g.contains("muscle")
+                    || g.contains("масс")
+                    || g.contains("białk") =>
+                {
                     p.protein_per_100g as f64 * 2.0 - p.calories_per_100g as f64 * 0.2
                 }
-                g if g.contains("lose") || g.contains("худ") || g.contains("diet") || g.contains("schud") || g.contains("калор") => {
+                g if g.contains("lose")
+                    || g.contains("худ")
+                    || g.contains("diet")
+                    || g.contains("schud")
+                    || g.contains("калор") =>
+                {
                     500.0 - p.calories_per_100g as f64 + p.protein_per_100g as f64 * 1.5
                 }
-                _ => {
-                    p.protein_per_100g as f64 + (300.0 - p.calories_per_100g as f64) * 0.3
-                }
+                _ => p.protein_per_100g as f64 + (300.0 - p.calories_per_100g as f64) * 0.3,
             };
             (score, p)
         })
@@ -230,26 +288,38 @@ pub(crate) async fn execute_meal_plan(
     let top_products: Vec<_> = scored.into_iter().take(meals * 2).collect();
 
     // Build product list for LLM
-    let products_text: String = top_products.iter().map(|(_, p)| {
-        format!("- {} ({}kcal, {}g protein per 100g)",
-            p.name(lang.code()), p.calories_per_100g as i32, p.protein_per_100g)
-    }).collect::<Vec<_>>().join("\n");
+    let products_text: String = top_products
+        .iter()
+        .map(|(_, p)| {
+            format!(
+                "- {} ({}kcal, {}g protein per 100g)",
+                p.name(lang.code()),
+                p.calories_per_100g as i32,
+                p.protein_per_100g
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     // Build cards from top picks
-    let cards: Vec<Card> = top_products.iter().take(meals).map(|(_, p)| {
-        Card::Product(ProductCard {
-            actions: vec![],
-            slug: p.slug.clone(),
-            name: p.name(lang.code()).to_string(),
-            calories_per_100g: p.calories_per_100g,
-            protein_per_100g: p.protein_per_100g,
-            fat_per_100g: p.fat_per_100g,
-            carbs_per_100g: p.carbs_per_100g,
-            image_url: p.image_url.clone(),
-            highlight: None,
-            reason_tag: None,
+    let cards: Vec<Card> = top_products
+        .iter()
+        .take(meals)
+        .map(|(_, p)| {
+            Card::Product(ProductCard {
+                actions: vec![],
+                slug: p.slug.clone(),
+                name: p.name(lang.code()).to_string(),
+                calories_per_100g: p.calories_per_100g,
+                protein_per_100g: p.protein_per_100g,
+                fat_per_100g: p.fat_per_100g,
+                carbs_per_100g: p.carbs_per_100g,
+                image_url: p.image_url.clone(),
+                highlight: None,
+                reason_tag: None,
+            })
         })
-    }).collect();
+        .collect();
 
     // Ask LLM to compose a meal plan using these real products
     let plan_prompt = format!(
@@ -275,7 +345,10 @@ RULES:
         lang = lang.code(),
     );
 
-    let text = match llm_adapter.groq_raw_request_with_model(&plan_prompt, 600, "gemini-3-flash-preview").await {
+    let text = match llm_adapter
+        .groq_raw_request_with_model(&plan_prompt, 600, "gemini-3-flash-preview")
+        .await
+    {
         Ok(t) => t,
         Err(_) => match lang {
             ChatLang::Ru => "Не удалось создать план. Попробуй ещё раз.".to_string(),
@@ -315,10 +388,15 @@ Tool result: {}
 Write a helpful response in {} language. 2-4 sentences max.
 Use **bold** for key data. Be specific and practical. No markdown headers.
 If the tool found nothing, answer from your culinary knowledge."#,
-        user_query, tool_result, lang.code()
+        user_query,
+        tool_result,
+        lang.code()
     );
 
-    match llm_adapter.groq_raw_request_with_model(&prompt, 300, "gemini-3-flash-preview").await {
+    match llm_adapter
+        .groq_raw_request_with_model(&prompt, 300, "gemini-3-flash-preview")
+        .await
+    {
         Ok(text) => text,
         Err(_) => fallback_text(lang).to_string(),
     }
@@ -345,10 +423,18 @@ pub(crate) async fn fallback_response(
         input, lang_name
     );
 
-    let text = match llm_adapter.groq_raw_request_with_model(&prompt, 300, "gemini-3-flash-preview").await {
+    let text = match llm_adapter
+        .groq_raw_request_with_model(&prompt, 300, "gemini-3-flash-preview")
+        .await
+    {
         Ok(t) => t,
         Err(_) => fallback_text(lang).to_string(),
     };
 
-    ChatResponse::text_only(text, crate::application::rulebot::intent_router::Intent::Unknown, lang, 0)
+    ChatResponse::text_only(
+        text,
+        crate::application::rulebot::intent_router::Intent::Unknown,
+        lang,
+        0,
+    )
 }

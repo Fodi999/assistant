@@ -54,19 +54,87 @@ static MULTI_WORDS: &[&[&str]] = &[
 /// Stop-words in EN/RU/UK/PL that carry no ingredient meaning.
 static STOP_WORDS: &[&str] = &[
     // EN
-    "and", "with", "or", "the", "a", "an", "of", "to", "in", "for", "on", "some", "fresh",
-    "chopped", "sliced", "diced", "minced", "grated", "peeled", "optional",
+    "and",
+    "with",
+    "or",
+    "the",
+    "a",
+    "an",
+    "of",
+    "to",
+    "in",
+    "for",
+    "on",
+    "some",
+    "fresh",
+    "chopped",
+    "sliced",
+    "diced",
+    "minced",
+    "grated",
+    "peeled",
+    "optional",
     // RU
-    "и", "с", "или", "на", "для", "по", "из", "не", "от", "до", "без",
-    "немного", "свежий", "свежая", "свежее", "нарезанный", "тёртый",
+    "и",
+    "с",
+    "или",
+    "на",
+    "для",
+    "по",
+    "из",
+    "не",
+    "от",
+    "до",
+    "без",
+    "немного",
+    "свежий",
+    "свежая",
+    "свежее",
+    "нарезанный",
+    "тёртый",
     // UK
-    "та", "або", "для", "від", "до", "без", "трохи", "свіжий", "свіжа",
+    "та",
+    "або",
+    "для",
+    "від",
+    "до",
+    "без",
+    "трохи",
+    "свіжий",
+    "свіжа",
     // PL
-    "i", "z", "lub", "na", "do", "od", "bez", "trochę", "świeży", "świeża",
+    "i",
+    "z",
+    "lub",
+    "na",
+    "do",
+    "od",
+    "bez",
+    "trochę",
+    "świeży",
+    "świeża",
     // Units (often left in text)
-    "g", "gr", "kg", "ml", "l", "oz", "lb", "cup", "tbsp", "tsp",
-    "gram", "grams", "грамм", "грам", "кг", "мл", "литр",
-    "штук", "штуки", "шт", "szt",
+    "g",
+    "gr",
+    "kg",
+    "ml",
+    "l",
+    "oz",
+    "lb",
+    "cup",
+    "tbsp",
+    "tsp",
+    "gram",
+    "grams",
+    "грамм",
+    "грам",
+    "кг",
+    "мл",
+    "литр",
+    "штук",
+    "штуки",
+    "шт",
+    "szt",
 ];
 
 /// Returns true if the word is purely numeric or a number+unit like "100g", "200мл".
@@ -79,11 +147,16 @@ fn is_numeric_token(w: &str) -> bool {
         return true;
     }
     // Number followed by letters: "100g", "200ml", "50мл"
-    let digit_prefix: String = w.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    let digit_prefix: String = w
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
     if !digit_prefix.is_empty() && digit_prefix.len() < w.len() {
         let suffix = &w[digit_prefix.len()..];
         // If the rest is a known unit or very short (≤3 chars), it's numeric
-        let short_units = ["g", "gr", "kg", "ml", "l", "oz", "lb", "гр", "мл", "кг", "л", "szt"];
+        let short_units = [
+            "g", "gr", "kg", "ml", "l", "oz", "lb", "гр", "мл", "кг", "л", "szt",
+        ];
         if suffix.len() <= 3 || short_units.contains(&suffix) {
             return true;
         }
@@ -103,7 +176,9 @@ pub fn tokenize(text: &str, max: usize) -> Vec<String> {
         .chars()
         .map(|c| match c {
             ',' | '.' | ';' | ':' | '/' | '\\' | '\n' | '\t' | '\r' | '(' | ')' | '[' | ']'
-            | '{' | '}' | '"' | '\'' | '!' | '?' | '—' | '–' | '·' | '•' | '…' | '-' => ' ',
+            | '{' | '}' | '"' | '\'' | '!' | '?' | '—' | '–' | '·' | '•' | '…' | '-' => {
+                ' '
+            }
             _ => c,
         })
         .collect();
@@ -163,7 +238,10 @@ mod tests {
 
     #[test]
     fn limit_enforcement() {
-        let input = (0..30).map(|i| format!("word{}", i)).collect::<Vec<_>>().join(" ");
+        let input = (0..30)
+            .map(|i| format!("word{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
         let tokens = tokenize(&input, 15);
         assert_eq!(tokens.len(), 15);
     }

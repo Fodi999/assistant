@@ -7,10 +7,10 @@
 //! Used by `adaptation_engine` to rebalance ingredient quantities
 //! and by `auto_fix` to compensate for removed ingredients.
 
-use std::ops::Range;
-use serde::Serialize;
-use super::meal_builder::CookMethod;
 use super::goal_modifier::HealthModifier;
+use super::meal_builder::CookMethod;
+use serde::Serialize;
+use std::ops::Range;
 
 // ── Goal Strategy ────────────────────────────────────────────────────────────
 
@@ -48,10 +48,15 @@ pub enum ProteinLevel {
 
 /// Classify protein grams per serving.
 pub fn classify_protein(g: f32) -> ProteinLevel {
-    if g < 10.0 { ProteinLevel::None }
-    else if g < 25.0 { ProteinLevel::Low }
-    else if g < 45.0 { ProteinLevel::Optimal }
-    else { ProteinLevel::High }
+    if g < 10.0 {
+        ProteinLevel::None
+    } else if g < 25.0 {
+        ProteinLevel::Low
+    } else if g < 45.0 {
+        ProteinLevel::Optimal
+    } else {
+        ProteinLevel::High
+    }
 }
 
 // ── Goal Profile ─────────────────────────────────────────────────────────────
@@ -86,26 +91,38 @@ impl GoalProfile {
 
     /// How much protein deficit per serving (0 if sufficient).
     pub fn protein_deficit(&self, g: f32) -> f32 {
-        if g >= self.protein_g.start { 0.0 }
-        else { self.protein_g.start - g }
+        if g >= self.protein_g.start {
+            0.0
+        } else {
+            self.protein_g.start - g
+        }
     }
 
     /// How much kcal surplus per serving (0 if within range).
     pub fn kcal_surplus(&self, kcal: f32) -> f32 {
-        if kcal < self.kcal.end { 0.0 }
-        else { kcal - self.kcal.end }
+        if kcal < self.kcal.end {
+            0.0
+        } else {
+            kcal - self.kcal.end
+        }
     }
 
     /// How much fat surplus per serving.
     pub fn fat_surplus(&self, g: f32) -> f32 {
-        if g < self.fat_g.end { 0.0 }
-        else { g - self.fat_g.end }
+        if g < self.fat_g.end {
+            0.0
+        } else {
+            g - self.fat_g.end
+        }
     }
 
     /// How much carbs surplus per serving.
     pub fn carbs_surplus(&self, g: f32) -> f32 {
-        if g < self.carbs_g.end { 0.0 }
-        else { g - self.carbs_g.end }
+        if g < self.carbs_g.end {
+            0.0
+        } else {
+            g - self.carbs_g.end
+        }
     }
 }
 
@@ -263,8 +280,8 @@ mod tests {
     #[test]
     fn kcal_surplus_calculation() {
         let p = profile_for(HealthModifier::LowCalorie);
-        assert_eq!(p.kcal_surplus(400.0), 0.0);    // within range
-        assert!(p.kcal_surplus(600.0) > 0.0);       // above range
+        assert_eq!(p.kcal_surplus(400.0), 0.0); // within range
+        assert!(p.kcal_surplus(600.0) > 0.0); // above range
     }
 
     #[test]

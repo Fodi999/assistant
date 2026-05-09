@@ -3,7 +3,6 @@
 /// This is intentionally a flat struct. When you add delivery/competitors/sales
 /// as separate data sources, add new fields here and extend `load()`.
 /// The city generator only sees this struct — not the DB directly.
-
 use crate::shared::{AppResult, TenantId, UserId};
 use sqlx::PgPool;
 use tracing::error;
@@ -37,15 +36,17 @@ impl EconomySnapshot {
         // ── Restaurant name ───────────────────────────────────────────────
         // users table: id, tenant_id, email, password_hash, display_name, role, created_at
         // (no "name" column — only display_name, nullable)
-        let restaurant_name: Option<String> = sqlx::query_scalar(
-            "SELECT display_name FROM users WHERE id = $1",
-        )
-        .bind(user_id.0)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| { error!("city/map: restaurant_name query failed: {e}"); e })
-        .unwrap_or(None)
-        .flatten();
+        let restaurant_name: Option<String> =
+            sqlx::query_scalar("SELECT display_name FROM users WHERE id = $1")
+                .bind(user_id.0)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| {
+                    error!("city/map: restaurant_name query failed: {e}");
+                    e
+                })
+                .unwrap_or(None)
+                .flatten();
 
         // ── Dish stats ────────────────────────────────────────────────────
         let dish_row: (Option<i64>, Option<f64>) = sqlx::query_as(
@@ -57,7 +58,10 @@ impl EconomySnapshot {
         .bind(tenant_id.0)
         .fetch_one(pool)
         .await
-        .map_err(|e| { error!("city/map: dish_row query failed: {e}"); e })
+        .map_err(|e| {
+            error!("city/map: dish_row query failed: {e}");
+            e
+        })
         .unwrap_or((Some(0), Some(0.0)));
 
         // ── Inventory stats ───────────────────────────────────────────────
@@ -102,7 +106,10 @@ impl EconomySnapshot {
         .bind(tenant_id.0)
         .fetch_optional(pool)
         .await
-        .map_err(|e| { error!("city/map: revenue query failed: {e}"); e })
+        .map_err(|e| {
+            error!("city/map: revenue query failed: {e}");
+            e
+        })
         .unwrap_or(None);
 
         Ok(EconomySnapshot {
@@ -126,15 +133,15 @@ impl EconomySnapshot {
 /// Steps are defined in `migrations/20240102000001_assistant_states.sql`.
 fn step_to_progress(step: Option<&str>) -> i32 {
     match step {
-        None                    => 0,
-        Some("welcome")         => 5,
+        None => 0,
+        Some("welcome") => 5,
         Some("start_inventory") => 15,
-        Some("add_product")     => 30,
-        Some("finish_inventory")=> 45,
-        Some("create_recipe")   => 60,
-        Some("create_dish")     => 75,
-        Some("view_report")     => 90,
-        Some("done")            => 100,
-        Some(_)                 => 10,  // unknown future step
+        Some("add_product") => 30,
+        Some("finish_inventory") => 45,
+        Some("create_recipe") => 60,
+        Some("create_dish") => 75,
+        Some("view_report") => 90,
+        Some("done") => 100,
+        Some(_) => 10, // unknown future step
     }
 }

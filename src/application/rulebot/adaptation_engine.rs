@@ -12,10 +12,10 @@
 //!
 //! Every change is logged in `AdaptationReport` for the UI "Изменения" block.
 
-use serde::Serialize;
-use super::recipe_engine::ResolvedIngredient;
 use super::goal_engine::{GoalProfile, GoalStrategy};
 use super::nutrition_math::round1;
+use super::recipe_engine::ResolvedIngredient;
+use serde::Serialize;
 
 // ── Adaptation Report ────────────────────────────────────────────────────────
 
@@ -68,9 +68,13 @@ pub fn adapt_to_goal(
 
     // ── 3. Strategy-specific portion adjustments ──────────────────────────
     match profile.strategy {
-        GoalStrategy::ReduceCalories => reduce_for_weight_loss(ingredients, profile, servings, &mut report),
+        GoalStrategy::ReduceCalories => {
+            reduce_for_weight_loss(ingredients, profile, servings, &mut report)
+        }
         GoalStrategy::IncreaseProtein => boost_protein(ingredients, profile, servings, &mut report),
-        GoalStrategy::IncreaseCalories => boost_for_muscle(ingredients, profile, servings, &mut report),
+        GoalStrategy::IncreaseCalories => {
+            boost_for_muscle(ingredients, profile, servings, &mut report)
+        }
         GoalStrategy::ReduceCarbs => reduce_carbs(ingredients, profile, servings, &mut report),
         GoalStrategy::Balanced => {} // no extra adjustments
     }
@@ -87,9 +91,9 @@ fn compensate_protein(
     removed_types: &[String],
     report: &mut AdaptationReport,
 ) {
-    let had_animal_protein = removed_types.iter().any(|t| {
-        t == "meat" || t == "fish" || t == "seafood" || t == "dairy"
-    });
+    let had_animal_protein = removed_types
+        .iter()
+        .any(|t| t == "meat" || t == "fish" || t == "seafood" || t == "dairy");
 
     if !had_animal_protein {
         return;
@@ -104,9 +108,12 @@ fn compensate_protein(
     // Check if any existing ingredient is a legume/tofu
     let has_plant_protein = ingredients.iter().any(|i| {
         let slug = slug_lower(i);
-        slug.contains("tofu") || slug.contains("tempeh")
-            || slug.contains("chickpea") || slug.contains("lentil")
-            || slug.contains("bean") || slug.contains("edamame")
+        slug.contains("tofu")
+            || slug.contains("tempeh")
+            || slug.contains("chickpea")
+            || slug.contains("lentil")
+            || slug.contains("bean")
+            || slug.contains("edamame")
             || i.product.as_ref().map(|p| p.product_type.as_str()) == Some("legume")
     });
 
@@ -149,7 +156,9 @@ fn cap_oil(
     report: &mut AdaptationReport,
 ) {
     for ing in ingredients.iter_mut() {
-        if ing.role != "oil" { continue; }
+        if ing.role != "oil" {
+            continue;
+        }
 
         let max = profile.max_oil_g;
         if ing.gross_g > max {
@@ -224,7 +233,9 @@ fn boost_protein(
     // Use goal profile range, not generic ProteinLevel —
     // e.g. HighProtein demands 40g+ even if 25g is "Optimal" generically.
     let deficit = profile.protein_deficit(per_serving);
-    if deficit <= 0.0 { return; }
+    if deficit <= 0.0 {
+        return;
+    }
 
     // Increase protein ingredients by up to 40%
     for ing in ingredients.iter_mut() {
@@ -305,7 +316,10 @@ fn reduce_carbs(
             report.actions.push(AdaptationAction {
                 action: "increased".into(),
                 slug: ing.slug_hint.clone(),
-                detail: format!("{:.0}g → {:.0}g (low carb compensation)", old, ing.cooked_net_g),
+                detail: format!(
+                    "{:.0}g → {:.0}g (low carb compensation)",
+                    old, ing.cooked_net_g
+                ),
             });
         }
     }
@@ -335,10 +349,10 @@ fn slug_lower(ing: &ResolvedIngredient) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::infrastructure::ingredient_cache::IngredientData;
     use super::super::goal_engine::profile_for;
     use super::super::goal_modifier::HealthModifier;
+    use super::*;
+    use crate::infrastructure::ingredient_cache::IngredientData;
 
     fn make_ing(slug: &str, product_type: &str, role: &str, grams: f32) -> ResolvedIngredient {
         let kcal_100 = match product_type {
@@ -366,7 +380,10 @@ mod tests {
                 carbs_per_100g: 10.0,
                 image_url: None,
                 product_type: product_type.into(),
-                density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+                density_g_per_ml: None,
+                typical_portion_g: None,
+                behaviors: vec![],
+                states: vec![],
             }),
             slug_hint: slug.into(),
             resolved_slug: Some(slug.into()),
@@ -396,7 +413,10 @@ mod tests {
 
         let slugs: Vec<&str> = ings.iter().map(|i| i.slug_hint.as_str()).collect();
         assert!(slugs.contains(&"chickpeas"), "should add chickpeas");
-        assert!(report.actions.iter().any(|a| a.action == "added" && a.slug == "chickpeas"));
+        assert!(report
+            .actions
+            .iter()
+            .any(|a| a.action == "added" && a.slug == "chickpeas"));
     }
 
     #[test]
@@ -423,8 +443,15 @@ mod tests {
         let report = adapt_to_goal(&mut ings, &profile, &[], 1);
 
         let oil = ings.iter().find(|i| i.slug_hint == "olive-oil").unwrap();
-        assert!(oil.gross_g <= 5.0, "oil should be capped at 5g, got {}", oil.gross_g);
-        assert!(report.actions.iter().any(|a| a.action == "reduced" && a.slug == "olive-oil"));
+        assert!(
+            oil.gross_g <= 5.0,
+            "oil should be capped at 5g, got {}",
+            oil.gross_g
+        );
+        assert!(report
+            .actions
+            .iter()
+            .any(|a| a.action == "reduced" && a.slug == "olive-oil"));
     }
 
     #[test]
@@ -451,9 +478,15 @@ mod tests {
 
         let report = adapt_to_goal(&mut ings, &profile, &[], 1);
 
-        let chicken = ings.iter().find(|i| i.slug_hint == "chicken-breast").unwrap();
+        let chicken = ings
+            .iter()
+            .find(|i| i.slug_hint == "chicken-breast")
+            .unwrap();
         // Protein was 25g for 100g at 25% — below 40g target, so should be boosted
-        assert!(chicken.cooked_net_g > 100.0, "protein should be increased for high protein goal");
+        assert!(
+            chicken.cooked_net_g > 100.0,
+            "protein should be increased for high protein goal"
+        );
         assert!(report.actions.iter().any(|a| a.action == "increased"));
     }
 
@@ -468,7 +501,10 @@ mod tests {
 
         let report = adapt_to_goal(&mut ings, &profile, &[], 1);
 
-        let chicken = ings.iter().find(|i| i.slug_hint == "chicken-breast").unwrap();
+        let chicken = ings
+            .iter()
+            .find(|i| i.slug_hint == "chicken-breast")
+            .unwrap();
         let rice = ings.iter().find(|i| i.slug_hint == "rice").unwrap();
         assert!(chicken.cooked_net_g > 100.0, "protein increased");
         assert!(rice.cooked_net_g > 60.0, "carbs increased");
@@ -486,7 +522,11 @@ mod tests {
         adapt_to_goal(&mut ings, &profile, &[], 1);
 
         let rice = ings.iter().find(|i| i.slug_hint == "rice").unwrap();
-        assert!((rice.cooked_net_g - 40.0).abs() < 1.0, "rice should be ~40g, got {}", rice.cooked_net_g);
+        assert!(
+            (rice.cooked_net_g - 40.0).abs() < 1.0,
+            "rice should be ~40g, got {}",
+            rice.cooked_net_g
+        );
     }
 
     #[test]
@@ -499,6 +539,9 @@ mod tests {
         let profile = profile_for(HealthModifier::None);
 
         let report = adapt_to_goal(&mut ings, &profile, &[], 1);
-        assert!(report.actions.is_empty(), "balanced should not change anything");
+        assert!(
+            report.actions.is_empty(),
+            "balanced should not change anything"
+        );
     }
 }

@@ -22,24 +22,24 @@ impl Goal {
     pub fn from_str_loose(s: &str) -> Self {
         match s.to_lowercase().replace('-', "_").as_str() {
             "high_protein" | "highprotein" | "protein" => Goal::HighProtein,
-            "low_calorie" | "lowcalorie" | "lowcal"    => Goal::LowCalorie,
-            "keto" | "low_carb" | "lowcarb"             => Goal::Keto,
-            "muscle_gain" | "musclegain" | "muscle"     => Goal::MuscleGain,
-            "diet" | "weight_loss"                      => Goal::Diet,
-            "flavor_boost" | "flavorboost" | "flavor"   => Goal::FlavorBoost,
-            _                                           => Goal::Balanced,
+            "low_calorie" | "lowcalorie" | "lowcal" => Goal::LowCalorie,
+            "keto" | "low_carb" | "lowcarb" => Goal::Keto,
+            "muscle_gain" | "musclegain" | "muscle" => Goal::MuscleGain,
+            "diet" | "weight_loss" => Goal::Diet,
+            "flavor_boost" | "flavorboost" | "flavor" => Goal::FlavorBoost,
+            _ => Goal::Balanced,
         }
     }
 
     /// Human-readable label for the goal.
     pub fn label(&self) -> &'static str {
         match self {
-            Goal::Balanced    => "balanced",
+            Goal::Balanced => "balanced",
             Goal::HighProtein => "high-protein",
-            Goal::LowCalorie  => "low-calorie",
-            Goal::Keto        => "keto",
-            Goal::MuscleGain  => "muscle-gain",
-            Goal::Diet        => "diet",
+            Goal::LowCalorie => "low-calorie",
+            Goal::Keto => "keto",
+            Goal::MuscleGain => "muscle-gain",
+            Goal::Diet => "diet",
             Goal::FlavorBoost => "flavor-boost",
         }
     }
@@ -68,22 +68,22 @@ impl MealType {
     /// Parse from free-text (tolerant).
     pub fn from_str_loose(s: &str) -> Option<Self> {
         match s.to_lowercase().replace('-', "_").as_str() {
-            "breakfast" | "morning"               => Some(MealType::Breakfast),
-            "lunch" | "midday"                    => Some(MealType::Lunch),
-            "dinner" | "evening" | "supper"       => Some(MealType::Dinner),
-            "snack" | "appetizer" | "starter"     => Some(MealType::Snack),
-            "dessert" | "sweet"                   => Some(MealType::Dessert),
-            _                                     => None,
+            "breakfast" | "morning" => Some(MealType::Breakfast),
+            "lunch" | "midday" => Some(MealType::Lunch),
+            "dinner" | "evening" | "supper" => Some(MealType::Dinner),
+            "snack" | "appetizer" | "starter" => Some(MealType::Snack),
+            "dessert" | "sweet" => Some(MealType::Dessert),
+            _ => None,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
             MealType::Breakfast => "breakfast",
-            MealType::Lunch     => "lunch",
-            MealType::Dinner    => "dinner",
-            MealType::Snack     => "snack",
-            MealType::Dessert   => "dessert",
+            MealType::Lunch => "lunch",
+            MealType::Dinner => "dinner",
+            MealType::Snack => "snack",
+            MealType::Dessert => "dessert",
         }
     }
 }
@@ -107,28 +107,33 @@ pub enum Diet {
 impl Diet {
     /// Parse from free-text (tolerant).
     pub fn from_str_loose(s: &str) -> Self {
-        match s.to_lowercase().replace('-', "_").replace(' ', "_").as_str() {
-            "vegetarian" | "veggie"                      => Diet::Vegetarian,
-            "vegan" | "plant_based"                      => Diet::Vegan,
-            "pescatarian" | "pescetarian"                 => Diet::Pescatarian,
-            "gluten_free" | "glutenfree" | "no_gluten"   => Diet::GlutenFree,
+        match s
+            .to_lowercase()
+            .replace('-', "_")
+            .replace(' ', "_")
+            .as_str()
+        {
+            "vegetarian" | "veggie" => Diet::Vegetarian,
+            "vegan" | "plant_based" => Diet::Vegan,
+            "pescatarian" | "pescetarian" => Diet::Pescatarian,
+            "gluten_free" | "glutenfree" | "no_gluten" => Diet::GlutenFree,
             "dairy_free" | "dairyfree" | "no_dairy" | "lactose_free" => Diet::DairyFree,
-            "paleo" | "primal"                           => Diet::Paleo,
-            "mediterranean" | "med"                      => Diet::Mediterranean,
-            _                                            => Diet::None,
+            "paleo" | "primal" => Diet::Paleo,
+            "mediterranean" | "med" => Diet::Mediterranean,
+            _ => Diet::None,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
-            Diet::None           => "none",
-            Diet::Vegetarian     => "vegetarian",
-            Diet::Vegan          => "vegan",
-            Diet::Pescatarian    => "pescatarian",
-            Diet::GlutenFree     => "gluten-free",
-            Diet::DairyFree      => "dairy-free",
-            Diet::Paleo          => "paleo",
-            Diet::Mediterranean  => "mediterranean",
+            Diet::None => "none",
+            Diet::Vegetarian => "vegetarian",
+            Diet::Vegan => "vegan",
+            Diet::Pescatarian => "pescatarian",
+            Diet::GlutenFree => "gluten-free",
+            Diet::DairyFree => "dairy-free",
+            Diet::Paleo => "paleo",
+            Diet::Mediterranean => "mediterranean",
         }
     }
 }
@@ -145,26 +150,31 @@ impl Default for Diet {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CookingTime {
-    Quick,      // ≤ 15 min
-    Medium,     // 15–45 min
-    Long,       // 45+ min
+    Quick,  // ≤ 15 min
+    Medium, // 15–45 min
+    Long,   // 45+ min
 }
 
 impl CookingTime {
     pub fn from_str_loose(s: &str) -> Option<Self> {
-        match s.to_lowercase().replace('-', "_").replace(' ', "_").as_str() {
+        match s
+            .to_lowercase()
+            .replace('-', "_")
+            .replace(' ', "_")
+            .as_str()
+        {
             "quick" | "fast" | "15min" | "15_min" | "express" => Some(CookingTime::Quick),
-            "medium" | "30min" | "30_min" | "normal"          => Some(CookingTime::Medium),
-            "long" | "slow" | "1h" | "60min" | "slow_cook"   => Some(CookingTime::Long),
-            _                                                  => None,
+            "medium" | "30min" | "30_min" | "normal" => Some(CookingTime::Medium),
+            "long" | "slow" | "1h" | "60min" | "slow_cook" => Some(CookingTime::Long),
+            _ => None,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
-            CookingTime::Quick  => "quick",
+            CookingTime::Quick => "quick",
             CookingTime::Medium => "medium",
-            CookingTime::Long   => "long",
+            CookingTime::Long => "long",
         }
     }
 }
@@ -182,18 +192,23 @@ pub enum Budget {
 
 impl Budget {
     pub fn from_str_loose(s: &str) -> Option<Self> {
-        match s.to_lowercase().replace('-', "_").replace(' ', "_").as_str() {
-            "cheap" | "budget" | "affordable" | "low"     => Some(Budget::Cheap),
-            "medium" | "moderate" | "normal" | "mid"      => Some(Budget::Medium),
-            "premium" | "expensive" | "luxury" | "high"   => Some(Budget::Premium),
-            _                                              => None,
+        match s
+            .to_lowercase()
+            .replace('-', "_")
+            .replace(' ', "_")
+            .as_str()
+        {
+            "cheap" | "budget" | "affordable" | "low" => Some(Budget::Cheap),
+            "medium" | "moderate" | "normal" | "mid" => Some(Budget::Medium),
+            "premium" | "expensive" | "luxury" | "high" => Some(Budget::Premium),
+            _ => None,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
-            Budget::Cheap   => "cheap",
-            Budget::Medium  => "medium",
+            Budget::Cheap => "cheap",
+            Budget::Medium => "medium",
             Budget::Premium => "premium",
         }
     }
@@ -218,31 +233,36 @@ pub enum Cuisine {
 
 impl Cuisine {
     pub fn from_str_loose(s: &str) -> Option<Self> {
-        match s.to_lowercase().replace('-', "_").replace(' ', "_").as_str() {
-            "italian" | "italia" | "pasta"                    => Some(Cuisine::Italian),
-            "asian" | "chinese" | "thai" | "korean" | "wok"  => Some(Cuisine::Asian),
-            "mexican" | "tex_mex" | "latin"                  => Some(Cuisine::Mexican),
-            "mediterranean" | "med" | "greek"                 => Some(Cuisine::Mediterranean),
-            "american" | "usa" | "comfort"                    => Some(Cuisine::American),
-            "french" | "france" | "bistro"                    => Some(Cuisine::French),
-            "indian" | "curry" | "masala"                     => Some(Cuisine::Indian),
-            "japanese" | "japan" | "sushi" | "ramen"          => Some(Cuisine::Japanese),
+        match s
+            .to_lowercase()
+            .replace('-', "_")
+            .replace(' ', "_")
+            .as_str()
+        {
+            "italian" | "italia" | "pasta" => Some(Cuisine::Italian),
+            "asian" | "chinese" | "thai" | "korean" | "wok" => Some(Cuisine::Asian),
+            "mexican" | "tex_mex" | "latin" => Some(Cuisine::Mexican),
+            "mediterranean" | "med" | "greek" => Some(Cuisine::Mediterranean),
+            "american" | "usa" | "comfort" => Some(Cuisine::American),
+            "french" | "france" | "bistro" => Some(Cuisine::French),
+            "indian" | "curry" | "masala" => Some(Cuisine::Indian),
+            "japanese" | "japan" | "sushi" | "ramen" => Some(Cuisine::Japanese),
             "middle_eastern" | "arabic" | "lebanese" | "turkish" => Some(Cuisine::MiddleEastern),
-            _                                                  => None,
+            _ => None,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
-            Cuisine::Italian        => "italian",
-            Cuisine::Asian          => "asian",
-            Cuisine::Mexican        => "mexican",
-            Cuisine::Mediterranean  => "mediterranean",
-            Cuisine::American       => "american",
-            Cuisine::French         => "french",
-            Cuisine::Indian         => "indian",
-            Cuisine::Japanese       => "japanese",
-            Cuisine::MiddleEastern  => "middle-eastern",
+            Cuisine::Italian => "italian",
+            Cuisine::Asian => "asian",
+            Cuisine::Mexican => "mexican",
+            Cuisine::Mediterranean => "mediterranean",
+            Cuisine::American => "american",
+            Cuisine::French => "french",
+            Cuisine::Indian => "indian",
+            Cuisine::Japanese => "japanese",
+            Cuisine::MiddleEastern => "middle-eastern",
         }
     }
 }
@@ -313,9 +333,7 @@ impl CulinaryContext {
 
     /// Resolve the MealType from the optional free-text field.
     pub fn resolved_meal_type(&self) -> Option<MealType> {
-        self.meal_type
-            .as_deref()
-            .and_then(MealType::from_str_loose)
+        self.meal_type.as_deref().and_then(MealType::from_str_loose)
     }
 
     /// Resolve the Diet from the optional free-text field.
@@ -328,7 +346,9 @@ impl CulinaryContext {
 
     /// Resolve CookingTime from free-text.
     pub fn resolved_cooking_time(&self) -> Option<CookingTime> {
-        self.cooking_time.as_deref().and_then(CookingTime::from_str_loose)
+        self.cooking_time
+            .as_deref()
+            .and_then(CookingTime::from_str_loose)
     }
 
     /// Resolve Budget from free-text.
@@ -354,10 +374,15 @@ impl CulinaryContext {
         let goal = self.resolved_goal().label();
         let meal = self.resolved_meal_type().map(|m| m.label()).unwrap_or("_");
         let diet = self.resolved_diet().label();
-        let time = self.resolved_cooking_time().map(|t| t.label()).unwrap_or("_");
+        let time = self
+            .resolved_cooking_time()
+            .map(|t| t.label())
+            .unwrap_or("_");
         let budget = self.resolved_budget().map(|b| b.label()).unwrap_or("_");
         let cuisine = self.resolved_cuisine().map(|c| c.label()).unwrap_or("_");
-        format!("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            self.ingredient, state, extras, goal, meal, diet, time, budget, cuisine, self.lang)
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            self.ingredient, state, extras, goal, meal, diet, time, budget, cuisine, self.lang
+        )
     }
 }

@@ -30,7 +30,11 @@ pub struct SafetyCheckResult {
 
 impl SafetyCheckResult {
     pub fn ok(risk: RiskLevel) -> Self {
-        SafetyCheckResult { allowed: true, risk_level: risk, deny_reason: None }
+        SafetyCheckResult {
+            allowed: true,
+            risk_level: risk,
+            deny_reason: None,
+        }
     }
     pub fn deny(reason: &str) -> Self {
         SafetyCheckResult {
@@ -45,7 +49,9 @@ impl SafetyCheckResult {
 pub fn validate_plan(ctx: &CopilotContext, plan: &ToolPlan) -> SafetyCheckResult {
     // 1. Проверить достаточно ли actions
     if ctx.ai_actions_balance <= 0 && plan.requires_ai_tools() {
-        return SafetyCheckResult::deny("Insufficient AI actions balance. Please purchase more actions.");
+        return SafetyCheckResult::deny(
+            "Insufficient AI actions balance. Please purchase more actions.",
+        );
     }
 
     // 2. Проверить write permissions
@@ -67,16 +73,15 @@ pub fn validate_plan(ctx: &CopilotContext, plan: &ToolPlan) -> SafetyCheckResult
 }
 
 /// Проверить ActionPlan перед выполнением write action (после confirmation).
-pub fn validate_write_execution(
-    ctx: &CopilotContext,
-    plan: &ActionPlan,
-) -> Result<(), AppError> {
+pub fn validate_write_execution(ctx: &CopilotContext, plan: &ActionPlan) -> Result<(), AppError> {
     // Нельзя выполнять пустые планы без write_tool
     if plan.changes.is_empty()
         && plan.write_tool.is_none()
         && !matches!(plan.plan_type, ActionPlanType::NoWriteAction)
     {
-        return Err(AppError::validation("Action plan has no changes to execute."));
+        return Err(AppError::validation(
+            "Action plan has no changes to execute.",
+        ));
     }
 
     // Проверить write permission для типа операции
@@ -86,29 +91,39 @@ pub fn validate_write_execution(
         | ActionPlanType::AdjustInventoryQuantity
         | ActionPlanType::WriteOffInventory => {
             if !ctx.has_permission(&CopilotPermission::WriteInventory) {
-                return Err(AppError::authorization("No permission to modify inventory."));
+                return Err(AppError::authorization(
+                    "No permission to modify inventory.",
+                ));
             }
         }
         ActionPlanType::UpdateDishPrice => {
             if !ctx.has_permission(&CopilotPermission::WriteDishes) {
-                return Err(AppError::authorization("No permission to modify dish prices."));
+                return Err(AppError::authorization(
+                    "No permission to modify dish prices.",
+                ));
             }
         }
         ActionPlanType::CreatePurchaseDraft => {
             if !ctx.has_permission(&CopilotPermission::WriteInventory) {
-                return Err(AppError::authorization("No permission to create purchase drafts."));
+                return Err(AppError::authorization(
+                    "No permission to create purchase drafts.",
+                ));
             }
         }
         ActionPlanType::SendPurchaseOrder => {
             if !ctx.has_permission(&CopilotPermission::WriteInventory) {
-                return Err(AppError::authorization("No permission to send purchase orders."));
+                return Err(AppError::authorization(
+                    "No permission to send purchase orders.",
+                ));
             }
         }
         ActionPlanType::GenerateLabRecipe
         | ActionPlanType::GenerateProductReport
         | ActionPlanType::SimulateLabProduct => {
             if !ctx.has_permission(&CopilotPermission::WriteLaboratory) {
-                return Err(AppError::authorization("No permission to modify laboratory data."));
+                return Err(AppError::authorization(
+                    "No permission to modify laboratory data.",
+                ));
             }
         }
         ActionPlanType::CreateRecipe => {
@@ -179,7 +194,8 @@ fn assess_risk(tools: &[CopilotTool]) -> RiskLevel {
         return RiskLevel::High;
     }
     if tools.contains(&CopilotTool::UpdateDishPrice)
-        || tools.contains(&CopilotTool::PrepareInventoryUpdate) {
+        || tools.contains(&CopilotTool::PrepareInventoryUpdate)
+    {
         return RiskLevel::Medium;
     }
     RiskLevel::Low

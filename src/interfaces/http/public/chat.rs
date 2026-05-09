@@ -28,8 +28,10 @@ use std::sync::Arc;
 
 use crate::application::rulebot::chat_engine::ChatEngine;
 use crate::application::rulebot::chat_response::ChatResponse;
+use crate::application::rulebot::intent_router::{
+    detect_language, parse_input_with_context, DialogContext,
+};
 use crate::application::rulebot::session_context::SessionContext;
-use crate::application::rulebot::intent_router::{detect_language, parse_input_with_context, DialogContext};
 use crate::application::usage_service::UsageService;
 use crate::domain::usage::{ActionSource, ActionType};
 use crate::interfaces::http::middleware::AuthUser;
@@ -84,7 +86,11 @@ pub async fn chat_handler(
     // ── Token / action billing — server-truth ─────────────────────────────
     // Try to debit one AiChat action BEFORE running the (expensive) engine.
     // Free tier first; falls back to purchased balance; otherwise 402.
-    let billing = match state.usage.perform_action(auth.user_id.clone(), ActionType::AiChat).await {
+    let billing = match state
+        .usage
+        .perform_action(auth.user_id.clone(), ActionType::AiChat)
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             tracing::error!("usage.perform_action(AiChat) failed: {e}");
@@ -126,24 +132,43 @@ pub async fn chat_handler(
 
     // Extract product slug from first product card in response
     let product_card = response.cards.iter().find_map(|c| {
-        if let crate::application::rulebot::chat_response::Card::Product(p) = c { Some(p) } else { None }
+        if let crate::application::rulebot::chat_response::Card::Product(p) = c {
+            Some(p)
+        } else {
+            None
+        }
     });
     let nutrition_card = response.cards.iter().find_map(|c| {
-        if let crate::application::rulebot::chat_response::Card::Nutrition(n) = c { Some(n) } else { None }
+        if let crate::application::rulebot::chat_response::Card::Nutrition(n) = c {
+            Some(n)
+        } else {
+            None
+        }
     });
 
     let (product_slug, product_name) = match product_card {
         Some(p) => (Some(p.slug.clone()), Some(p.name.clone())),
         None => match nutrition_card {
             Some(n) => (req.context.last_product_slug.clone(), Some(n.name.clone())),
-            None => (req.context.last_product_slug.clone(), req.context.last_product_name.clone()),
+            None => (
+                req.context.last_product_slug.clone(),
+                req.context.last_product_name.clone(),
+            ),
         },
     };
 
     // Collect all product card slugs shown this turn (for "а что ещё?" exclusion)
-    let card_slugs: Vec<String> = response.cards.iter().filter_map(|c| {
-        if let crate::application::rulebot::chat_response::Card::Product(p) = c { Some(p.slug.clone()) } else { None }
-    }).collect();
+    let card_slugs: Vec<String> = response
+        .cards
+        .iter()
+        .filter_map(|c| {
+            if let crate::application::rulebot::chat_response::Card::Product(p) = c {
+                Some(p.slug.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let updated_ctx = req.context.advance(
         response.intent,
@@ -160,10 +185,16 @@ pub async fn chat_handler(
 
     let mut body = serde_json::to_value(&response).unwrap_or_default();
     if let serde_json::Value::Object(ref mut map) = body {
-        map.insert("context".to_string(), serde_json::to_value(&updated_ctx).unwrap_or_default());
+        map.insert(
+            "context".to_string(),
+            serde_json::to_value(&updated_ctx).unwrap_or_default(),
+        );
         // Surface remaining quota so the UI can render counters / nudges
         // without an extra round-trip to /api/usage/today.
-        map.insert("usage".to_string(), serde_json::to_value(&billing.usage).unwrap_or_default());
+        map.insert(
+            "usage".to_string(),
+            serde_json::to_value(&billing.usage).unwrap_or_default(),
+        );
         map.insert(
             "billing_source".to_string(),
             serde_json::Value::String(match billing.source {
@@ -224,5 +255,8 @@ pub async fn chat_event_handler(
         tracing::warn!("chat_event insert failed: {e}");
     }
 
-    (StatusCode::ACCEPTED, Json(serde_json::json!({ "ok": true })))
+    (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "ok": true })),
+    )
 }

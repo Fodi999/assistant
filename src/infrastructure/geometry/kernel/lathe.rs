@@ -53,11 +53,7 @@ impl MeshPart {
     /// negated**. Used for inner walls of bowls / hollow shells where the
     /// surface should face the rotation axis instead of away from it.
     pub fn flipped(&self) -> Self {
-        let normals = self
-            .normals
-            .iter()
-            .map(|n| [-n[0], -n[1], -n[2]])
-            .collect();
+        let normals = self.normals.iter().map(|n| [-n[0], -n[1], -n[2]]).collect();
         let faces = self.faces.iter().map(|f| [f[0], f[2], f[1]]).collect();
         Self {
             vertices: self.vertices.clone(),
@@ -71,10 +67,7 @@ impl MeshPart {
 /// Revolve `profile` around the Y axis with `segments` slices.
 ///
 /// `segments` must be `>= 3`.
-pub fn lathe_profile(
-    profile: &Profile,
-    segments: usize,
-) -> Result<MeshPart, GeometryError> {
+pub fn lathe_profile(profile: &Profile, segments: usize) -> Result<MeshPart, GeometryError> {
     if segments < 3 {
         return Err(GeometryError::InvalidArgument(format!(
             "lathe segments must be >= 3 (got {segments})"
@@ -126,8 +119,7 @@ pub fn lathe_profile(
             vertices.push([cos_t * p.radius, p.y, sin_t * p.radius]);
 
             // Outward 3D normal: rotate (nr, ny) around Y.
-            let n3 =
-                Vec3::new(cos_t * nr, ny, sin_t * nr).normalized();
+            let n3 = Vec3::new(cos_t * nr, ny, sin_t * nr).normalized();
             normals.push(n3.to_array());
 
             uvs.push([t, v]);
@@ -257,7 +249,11 @@ mod tests {
         let mp = lathe_profile(&p, 16).unwrap();
         // For a widening frustum, normals must have a *negative* Y component.
         for n in &mp.normals {
-            assert!(n[1] < 0.0, "frustum normal Y should be negative, got {}", n[1]);
+            assert!(
+                n[1] < 0.0,
+                "frustum normal Y should be negative, got {}",
+                n[1]
+            );
         }
     }
 

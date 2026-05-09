@@ -4,8 +4,8 @@ mod scripts;
 mod styles;
 mod template;
 
-use axum::response::{Html, IntoResponse, Response};
 use axum::http::{header, HeaderValue};
+use axum::response::{Html, IntoResponse, Response};
 
 pub async fn home_page() -> impl IntoResponse {
     let css = format!(
@@ -19,7 +19,10 @@ pub async fn home_page() -> impl IntoResponse {
     );
     let html = template::template(&css, &scripts::all_scripts());
     Response::builder()
-        .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        )
         .header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
         .body(axum::body::Body::from(html))
         .unwrap()

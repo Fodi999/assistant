@@ -53,19 +53,22 @@ pub fn tessellate(shell: &GeometricShell) -> Option<MeshPart> {
     }
 
     let domain_verts = shell.vertices();
-    let faces        = shell.faces();
+    let faces = shell.faces();
 
     // ── 1. Build flat triangle list from face loops ──────────────────────
 
     struct Triangle {
-        indices: [usize; 3],  // into domain_verts
-        face_idx: usize,      // which face this triangle came from
+        indices: [usize; 3], // into domain_verts
+        face_idx: usize,     // which face this triangle came from
     }
 
     let mut triangles: Vec<Triangle> = Vec::new();
     for (fi, face) in faces.iter().enumerate() {
         for tri in face.fan_triangles() {
-            triangles.push(Triangle { indices: tri, face_idx: fi });
+            triangles.push(Triangle {
+                indices: tri,
+                face_idx: fi,
+            });
         }
     }
 
@@ -96,11 +99,15 @@ pub fn tessellate(shell: &GeometricShell) -> Option<MeshPart> {
     let smooth_n: Vec<[f32; 3]> = smooth_n
         .iter()
         .map(|n| {
-            let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             if len > 1e-12 {
-                [(n[0]/len) as f32, (n[1]/len) as f32, (n[2]/len) as f32]
+                [
+                    (n[0] / len) as f32,
+                    (n[1] / len) as f32,
+                    (n[2] / len) as f32,
+                ]
             } else {
-                [0.0, 1.0, 0.0]  // degenerate → UP
+                [0.0, 1.0, 0.0] // degenerate → UP
             }
         })
         .collect();
@@ -136,22 +143,27 @@ pub fn tessellate(shell: &GeometricShell) -> Option<MeshPart> {
         };
 
         // Bounding box of projected coords for this face.
-        let (mut min_u, mut max_u, mut min_v, mut max_v) =
-            (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+        let (mut min_u, mut max_u, mut min_v, mut max_v) = (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        );
         for &idx in &face.loop_ {
             let [pu, pv] = project(domain_verts[idx]);
-            min_u = min_u.min(pu); max_u = max_u.max(pu);
-            min_v = min_v.min(pv); max_v = max_v.max(pv);
+            min_u = min_u.min(pu);
+            max_u = max_u.max(pu);
+            min_v = min_v.min(pv);
+            max_v = max_v.max(pv);
         }
         let du = (max_u - min_u).max(1e-12);
         let dv = (max_v - min_v).max(1e-12);
 
         for &idx in &face.loop_ {
             let [pu, pv] = project(domain_verts[idx]);
-            uv_map.entry(idx).or_insert([
-                ((pu - min_u) / du) as f32,
-                ((pv - min_v) / dv) as f32,
-            ]);
+            uv_map
+                .entry(idx)
+                .or_insert([((pu - min_u) / du) as f32, ((pv - min_v) / dv) as f32]);
         }
     }
 
@@ -162,17 +174,19 @@ pub fn tessellate(shell: &GeometricShell) -> Option<MeshPart> {
     // but acceptable for our convex generators.
 
     let vertices: Vec<[f32; 3]> = domain_verts.iter().map(|v| v.to_f32()).collect();
-    let normals:  Vec<[f32; 3]> = smooth_n;
+    let normals: Vec<[f32; 3]> = smooth_n;
     let uvs: Vec<[f32; 2]> = (0..nv)
         .map(|i| uv_map.get(&i).copied().unwrap_or([0.0, 0.0]))
         .collect();
 
-    let faces_out: Vec<[usize; 3]> = triangles
-        .iter()
-        .map(|t| t.indices)
-        .collect();
+    let faces_out: Vec<[usize; 3]> = triangles.iter().map(|t| t.indices).collect();
 
-    Some(MeshPart { vertices, normals, uvs, faces: faces_out })
+    Some(MeshPart {
+        vertices,
+        normals,
+        uvs,
+        faces: faces_out,
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,11 +201,18 @@ mod tests {
     fn cube_shell() -> GeometricShell {
         let mut s = GeometricShell::default_precision();
         let v: Vec<usize> = [
-            [-0.5_f64, -0.5, -0.5], [ 0.5, -0.5, -0.5],
-            [ 0.5,  0.5, -0.5],     [-0.5,  0.5, -0.5],
-            [-0.5, -0.5,  0.5],     [ 0.5, -0.5,  0.5],
-            [ 0.5,  0.5,  0.5],     [-0.5,  0.5,  0.5],
-        ].iter().map(|&[x, y, z]| s.add_vertex_raw(Vertex::new(x, y, z))).collect();
+            [-0.5_f64, -0.5, -0.5],
+            [0.5, -0.5, -0.5],
+            [0.5, 0.5, -0.5],
+            [-0.5, 0.5, -0.5],
+            [-0.5, -0.5, 0.5],
+            [0.5, -0.5, 0.5],
+            [0.5, 0.5, 0.5],
+            [-0.5, 0.5, 0.5],
+        ]
+        .iter()
+        .map(|&[x, y, z]| s.add_vertex_raw(Vertex::new(x, y, z)))
+        .collect();
 
         for face in [
             [v[0], v[3], v[2], v[1]],
@@ -223,7 +244,7 @@ mod tests {
         let s = cube_shell();
         let part = tessellate(&s).unwrap();
         for n in &part.normals {
-            let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             assert!((len - 1.0).abs() < 1e-5, "non-unit normal: {len}");
         }
     }

@@ -8,23 +8,23 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct SeasonalCalendarRequest {
     pub product_type: Option<String>,
-    pub lang:         Option<String>,
-    pub region:       Option<String>,
+    pub lang: Option<String>,
+    pub region: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BestInSeasonRequest {
-    pub month:        Option<u32>,
+    pub month: Option<u32>,
     pub product_type: Option<String>,
-    pub lang:         Option<String>,
-    pub region:       Option<String>,
-    pub limit:        Option<i64>,
+    pub lang: Option<String>,
+    pub region: Option<String>,
+    pub limit: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ProductSeasonalityRequest {
-    pub slug:   String,
-    pub lang:   Option<String>,
+    pub slug: String,
+    pub lang: Option<String>,
     pub region: Option<String>,
 }
 

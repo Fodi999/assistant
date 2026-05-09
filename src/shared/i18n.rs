@@ -196,8 +196,6 @@ pub fn translate_allergens(allergens: &[String], lang: Language) -> Vec<String> 
         .collect()
 }
 
-
-
 /// Message keys for assistant messages
 #[derive(Debug, Clone, Copy)]
 pub enum AssistantMessage {

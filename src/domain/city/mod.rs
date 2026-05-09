@@ -8,7 +8,6 @@
 ///   - CityRoad      → polyline centerline + width (not a box)
 ///   - CityBuilding  → footprint polygon + height extrude (not x/z/w/d box)
 ///   - CityLot       → polygon ground tile within a district
-
 use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,14 +149,14 @@ pub enum DistrictKind {
 impl DistrictKind {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Player      => "player",
-            Self::Office      => "office",
+            Self::Player => "player",
+            Self::Office => "office",
             Self::Residential => "residential",
-            Self::Market      => "market",
-            Self::Shops       => "shops",
-            Self::Competitor  => "competitor",
-            Self::Park        => "park",
-            Self::Industrial  => "industrial",
+            Self::Market => "market",
+            Self::Shops => "shops",
+            Self::Competitor => "competitor",
+            Self::Park => "park",
+            Self::Industrial => "industrial",
         }
     }
 }

@@ -24,8 +24,8 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export HealthModifier from goal_modifier (single source of truth)
-pub use super::goal_modifier::HealthModifier;
 pub use super::goal_modifier::detect_modifier;
+pub use super::goal_modifier::HealthModifier;
 
 // Import keyword data tables
 use super::intent_keywords as kw;
@@ -77,16 +77,16 @@ pub enum Intent {
 impl Intent {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Greeting       => "greeting",
+            Self::Greeting => "greeting",
             Self::HealthyProduct => "healthy_product",
-            Self::Conversion     => "conversion",
-            Self::RecipeHelp     => "recipe_help",
-            Self::Seasonality    => "seasonality",
-            Self::MealIdea       => "meal_idea",
-            Self::NutritionInfo  => "nutrition_info",
-            Self::ProductInfo    => "product_info",
-            Self::CookingLoss    => "cooking_loss",
-            Self::Unknown        => "unknown",
+            Self::Conversion => "conversion",
+            Self::RecipeHelp => "recipe_help",
+            Self::Seasonality => "seasonality",
+            Self::MealIdea => "meal_idea",
+            Self::NutritionInfo => "nutrition_info",
+            Self::ProductInfo => "product_info",
+            Self::CookingLoss => "cooking_loss",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -147,9 +147,15 @@ pub fn detect_intent_scored(input: &str) -> IntentScore {
     apply_context_boosts(&text, &mut scores);
     let best = scores.iter().max_by_key(|(_, s)| *s).unwrap();
     if best.1 >= MIN_THRESHOLD {
-        IntentScore { intent: best.0, score: best.1 }
+        IntentScore {
+            intent: best.0,
+            score: best.1,
+        }
     } else {
-        IntentScore { intent: Intent::Unknown, score: 0 }
+        IntentScore {
+            intent: Intent::Unknown,
+            score: 0,
+        }
     }
 }
 
@@ -165,12 +171,19 @@ pub fn parse_input(input: &str) -> ParsedInput {
 
     // Best (primary)
     let best = all_scores.iter().max_by_key(|(_, s)| *s).unwrap();
-    let mut primary = if best.1 >= MIN_THRESHOLD { best.0 } else { Intent::Unknown };
+    let mut primary = if best.1 >= MIN_THRESHOLD {
+        best.0
+    } else {
+        Intent::Unknown
+    };
 
     // Category fallback (same logic as parse_input_with_context).
     if primary == Intent::Unknown {
         if let Some(cat) = detect_category(&text) {
-            tracing::debug!("🥗 category fallback (no ctx): Unknown → HealthyProduct (category={})", cat.as_str());
+            tracing::debug!(
+                "🥗 category fallback (no ctx): Unknown → HealthyProduct (category={})",
+                cat.as_str()
+            );
             primary = Intent::HealthyProduct;
             for (intent, score) in all_scores.iter_mut() {
                 if *intent == Intent::HealthyProduct {
@@ -297,7 +310,11 @@ pub fn parse_input_with_context(input: &str, ctx: &DialogContext) -> ParsedInput
 
     // ── 5. Resolve ──────────────────────────────────────────────────────
     let best = all_scores.iter().max_by_key(|(_, s)| *s).unwrap();
-    let mut primary = if best.1 >= MIN_THRESHOLD { best.0 } else { Intent::Unknown };
+    let mut primary = if best.1 >= MIN_THRESHOLD {
+        best.0
+    } else {
+        Intent::Unknown
+    };
 
     // ── 5b. Category-based fallback ────────────────────────────────────
     // If keyword scoring failed (Unknown) but the user mentioned a food
@@ -307,7 +324,10 @@ pub fn parse_input_with_context(input: &str, ctx: &DialogContext) -> ParsedInput
     // "полезн/healthy" keywords but clearly ask for a food recommendation.
     if primary == Intent::Unknown {
         if let Some(cat) = detect_category(&text) {
-            tracing::debug!("🥗 category fallback: Unknown → HealthyProduct (category={})", cat.as_str());
+            tracing::debug!(
+                "🥗 category fallback: Unknown → HealthyProduct (category={})",
+                cat.as_str()
+            );
             primary = Intent::HealthyProduct;
             // Raise the score so multi-intent logic below sees it too.
             for (intent, score) in all_scores.iter_mut() {
@@ -346,13 +366,17 @@ fn is_followup_more(text: &str) -> bool {
 
 /// Check if input is a confirmation ("давай", "да", "ok").
 fn is_confirmation(text: &str) -> bool {
-    kw::CONFIRM_SIGNALS.iter().any(|kw| text == *kw || text.starts_with(&format!("{} ", kw)))
+    kw::CONFIRM_SIGNALS
+        .iter()
+        .any(|kw| text == *kw || text.starts_with(&format!("{} ", kw)))
 }
 
 /// Check if input is a short recipe reference: "а борщ?", "а с курицей?"
 fn is_short_recipe_ref(text: &str) -> bool {
     // "а борщ?", "а если стейк?", "а с рыбой?"
-    kw::SHORT_RECIPE_TRIGGERS.iter().any(|kw| text.starts_with(kw))
+    kw::SHORT_RECIPE_TRIGGERS
+        .iter()
+        .any(|kw| text.starts_with(kw))
 }
 
 /// Boost scores based on active modifier → intent affinity.
@@ -364,19 +388,19 @@ fn is_short_recipe_ref(text: &str) -> bool {
 /// ComfortFood                     → slight boost to RecipeHelp
 fn apply_modifier_boost(modifier: HealthModifier, scores: &mut [(Intent, i32); 9]) {
     let (recipe_boost, healthy_boost) = match modifier {
-        HealthModifier::LowCalorie  => (1, 1),
+        HealthModifier::LowCalorie => (1, 1),
         HealthModifier::HighProtein => (1, 1),
-        HealthModifier::LowCarb     => (1, 1),
-        HealthModifier::HighFiber   => (1, 1),
-        HealthModifier::Quick       => (1, 0),
-        HealthModifier::Budget      => (0, 1),
+        HealthModifier::LowCarb => (1, 1),
+        HealthModifier::HighFiber => (1, 1),
+        HealthModifier::Quick => (1, 0),
+        HealthModifier::Budget => (0, 1),
         HealthModifier::ComfortFood => (1, 0),
-        HealthModifier::None        => (0, 0),
+        HealthModifier::None => (0, 0),
     };
 
     for (intent, score) in scores.iter_mut() {
         match intent {
-            Intent::RecipeHelp     => *score += recipe_boost,
+            Intent::RecipeHelp => *score += recipe_boost,
             Intent::HealthyProduct => *score += healthy_boost,
             _ => {}
         }
@@ -389,21 +413,22 @@ fn apply_modifier_boost(modifier: HealthModifier, scores: &mut [(Intent, i32); 9
 fn score_all_intents(text: &str) -> [(Intent, i32); 9] {
     let hi_base = if text.trim() == "hi" { 3 } else { 0 };
     [
-        (Intent::Greeting,       hi_base + sum_scores(text, kw::GREETING)),
-        (Intent::Conversion,     sum_scores(text, kw::CONVERSION)),
-        (Intent::NutritionInfo,  sum_scores(text, kw::NUTRITION)),
-        (Intent::ProductInfo,    sum_scores(text, kw::PRODUCT_INFO)),
+        (Intent::Greeting, hi_base + sum_scores(text, kw::GREETING)),
+        (Intent::Conversion, sum_scores(text, kw::CONVERSION)),
+        (Intent::NutritionInfo, sum_scores(text, kw::NUTRITION)),
+        (Intent::ProductInfo, sum_scores(text, kw::PRODUCT_INFO)),
         (Intent::HealthyProduct, sum_scores(text, kw::HEALTHY)),
-        (Intent::Seasonality,    sum_scores(text, kw::SEASONALITY)),
-        (Intent::RecipeHelp,     sum_scores(text, kw::RECIPE)),
-        (Intent::MealIdea,       sum_scores(text, kw::MEAL_IDEA)),
-        (Intent::CookingLoss,    sum_scores(text, kw::COOKING_LOSS)),
+        (Intent::Seasonality, sum_scores(text, kw::SEASONALITY)),
+        (Intent::RecipeHelp, sum_scores(text, kw::RECIPE)),
+        (Intent::MealIdea, sum_scores(text, kw::MEAL_IDEA)),
+        (Intent::CookingLoss, sum_scores(text, kw::COOKING_LOSS)),
     ]
 }
 
 /// Sum weights of all matching keywords.
 fn sum_scores(text: &str, keywords: &[kw::ScoredKeyword]) -> i32 {
-    keywords.iter()
+    keywords
+        .iter()
         .filter(|(kw, _)| text.contains(kw))
         .map(|(_, weight)| weight)
         .sum()
@@ -483,17 +508,23 @@ pub fn detect_language(input: &str) -> ChatLang {
     let text = input.to_lowercase();
 
     // Polish-specific characters
-    if text.contains('ą') || text.contains('ę') || text.contains('ś')
-        || text.contains('ć') || text.contains('ź') || text.contains('ż')
-        || text.contains('ł') || text.contains('ń') || text.contains('ó')
+    if text.contains('ą')
+        || text.contains('ę')
+        || text.contains('ś')
+        || text.contains('ć')
+        || text.contains('ź')
+        || text.contains('ż')
+        || text.contains('ł')
+        || text.contains('ń')
+        || text.contains('ó')
     {
         return ChatLang::Pl;
     }
 
     // Ukrainian-specific characters (ї, і, є, ґ)
     // Note: 'і' is U+0456 (Cyrillic і), distinct from Latin 'i' (U+0069)
-    if text.contains('ї') || text.contains('ґ') || text.contains('є')
-        || text.contains('\u{0456}') // Ukrainian 'і'
+    if text.contains('ї') || text.contains('ґ') || text.contains('є') || text.contains('\u{0456}')
+    // Ukrainian 'і'
     {
         return ChatLang::Uk;
     }
@@ -514,111 +545,387 @@ mod tests {
     use super::*;
 
     // ── Greeting ──
-    #[test] fn greeting_ru()     { assert_eq!(detect_intent("Привет!"),                Intent::Greeting); }
-    #[test] fn greeting_en()     { assert_eq!(detect_intent("Hello there"),            Intent::Greeting); }
-    #[test] fn greeting_hi()     { assert_eq!(detect_intent("hi"),                     Intent::Greeting); }
-    #[test] fn greeting_pl()     { assert_eq!(detect_intent("Cześć!"),                 Intent::Greeting); }
+    #[test]
+    fn greeting_ru() {
+        assert_eq!(detect_intent("Привет!"), Intent::Greeting);
+    }
+    #[test]
+    fn greeting_en() {
+        assert_eq!(detect_intent("Hello there"), Intent::Greeting);
+    }
+    #[test]
+    fn greeting_hi() {
+        assert_eq!(detect_intent("hi"), Intent::Greeting);
+    }
+    #[test]
+    fn greeting_pl() {
+        assert_eq!(detect_intent("Cześć!"), Intent::Greeting);
+    }
 
     // ── Healthy Product ──
-    #[test] fn healthy_ru()      { assert_eq!(detect_intent("какой продукт полезный"), Intent::HealthyProduct); }
-    #[test] fn healthy_ru2()     { assert_eq!(detect_intent("что полезного поесть"),   Intent::HealthyProduct); }
-    #[test] fn healthy_en()      { assert_eq!(detect_intent("healthy food please"),    Intent::HealthyProduct); }
-    #[test] fn healthy_super()   { assert_eq!(detect_intent("superfood рекомендации"),Intent::HealthyProduct); }
+    #[test]
+    fn healthy_ru() {
+        assert_eq!(
+            detect_intent("какой продукт полезный"),
+            Intent::HealthyProduct
+        );
+    }
+    #[test]
+    fn healthy_ru2() {
+        assert_eq!(
+            detect_intent("что полезного поесть"),
+            Intent::HealthyProduct
+        );
+    }
+    #[test]
+    fn healthy_en() {
+        assert_eq!(detect_intent("healthy food please"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn healthy_super() {
+        assert_eq!(
+            detect_intent("superfood рекомендации"),
+            Intent::HealthyProduct
+        );
+    }
 
     // ── Category fallback (no explicit "healthy" keyword) ──
-    #[test] fn fallback_meat_best()   { assert_eq!(detect_intent("какое мясо лучше"),     Intent::HealthyProduct); }
-    #[test] fn fallback_fruit_plain() { assert_eq!(detect_intent("посоветуй фрукты"),     Intent::HealthyProduct); }
-    #[test] fn fallback_fish()        { assert_eq!(detect_intent("топ рыбы"),             Intent::HealthyProduct); }
-    #[test] fn fallback_en_veg()      { assert_eq!(detect_intent("best vegetables"),      Intent::HealthyProduct); }
-    #[test] fn fallback_pl_meat()     { assert_eq!(detect_intent("jakie mięso najlepsze"),Intent::HealthyProduct); }
+    #[test]
+    fn fallback_meat_best() {
+        assert_eq!(detect_intent("какое мясо лучше"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn fallback_fruit_plain() {
+        assert_eq!(detect_intent("посоветуй фрукты"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn fallback_fish() {
+        assert_eq!(detect_intent("топ рыбы"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn fallback_en_veg() {
+        assert_eq!(detect_intent("best vegetables"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn fallback_pl_meat() {
+        assert_eq!(
+            detect_intent("jakie mięso najlepsze"),
+            Intent::HealthyProduct
+        );
+    }
     // Guard: generic query without category should stay Unknown (no false positive).
-    #[test] fn no_fallback_empty()    { assert_eq!(detect_intent("asdf qwerty"),          Intent::Unknown); }
+    #[test]
+    fn no_fallback_empty() {
+        assert_eq!(detect_intent("asdf qwerty"), Intent::Unknown);
+    }
 
     // ── Conversion ──
-    #[test] fn conv_ru()         { assert_eq!(detect_intent("200 грамм в ложках"),     Intent::Conversion); }
-    #[test] fn conv_en()         { assert_eq!(detect_intent("convert 100g to ounces"),Intent::Conversion); }
-    #[test] fn conv_how()        { assert_eq!(detect_intent("сколько ложек в стакане"),Intent::Conversion); }
+    #[test]
+    fn conv_ru() {
+        assert_eq!(detect_intent("200 грамм в ложках"), Intent::Conversion);
+    }
+    #[test]
+    fn conv_en() {
+        assert_eq!(detect_intent("convert 100g to ounces"), Intent::Conversion);
+    }
+    #[test]
+    fn conv_how() {
+        assert_eq!(detect_intent("сколько ложек в стакане"), Intent::Conversion);
+    }
 
     // ── Nutrition ──
-    #[test] fn nutr_ru()         { assert_eq!(detect_intent("сколько калорий в яблоке"),Intent::NutritionInfo); }
-    #[test] fn nutr_en()         { assert_eq!(detect_intent("protein in chicken"),     Intent::NutritionInfo); }
-    #[test] fn nutr_bju()        { assert_eq!(detect_intent("бжу шпината"),            Intent::NutritionInfo); }
+    #[test]
+    fn nutr_ru() {
+        assert_eq!(
+            detect_intent("сколько калорий в яблоке"),
+            Intent::NutritionInfo
+        );
+    }
+    #[test]
+    fn nutr_en() {
+        assert_eq!(detect_intent("protein in chicken"), Intent::NutritionInfo);
+    }
+    #[test]
+    fn nutr_bju() {
+        assert_eq!(detect_intent("бжу шпината"), Intent::NutritionInfo);
+    }
 
     // ── Product Info ──
-    #[test] fn prod_info_ru()    { assert_eq!(detect_intent("что такое лосось"),        Intent::ProductInfo); }
-    #[test] fn prod_info_en()    { assert_eq!(detect_intent("what is spinach"),         Intent::ProductInfo); }
-    #[test] fn prod_info_pl()    { assert_eq!(detect_intent("co to jest brokuł"),      Intent::ProductInfo); }
-    #[test] fn prod_info_tell()  { assert_eq!(detect_intent("расскажи о шпинате"),     Intent::ProductInfo); }
+    #[test]
+    fn prod_info_ru() {
+        assert_eq!(detect_intent("что такое лосось"), Intent::ProductInfo);
+    }
+    #[test]
+    fn prod_info_en() {
+        assert_eq!(detect_intent("what is spinach"), Intent::ProductInfo);
+    }
+    #[test]
+    fn prod_info_pl() {
+        assert_eq!(detect_intent("co to jest brokuł"), Intent::ProductInfo);
+    }
+    #[test]
+    fn prod_info_tell() {
+        assert_eq!(detect_intent("расскажи о шпинате"), Intent::ProductInfo);
+    }
 
     // ── Cooking Loss ──
-    #[test] fn loss_ru_boil()    { assert_eq!(detect_intent("сколько морковь теряет при варке"), Intent::CookingLoss); }
-    #[test] fn loss_ru_fry()     { assert_eq!(detect_intent("ужарка говядины в процентах"),      Intent::CookingLoss); }
-    #[test] fn loss_ru_bake()    { assert_eq!(detect_intent("потери при запекании курицы"),      Intent::CookingLoss); }
-    #[test] fn loss_en()         { assert_eq!(detect_intent("cooking loss for chicken breast"),  Intent::CookingLoss); }
-    #[test] fn loss_en_shrink()  { assert_eq!(detect_intent("beef shrinkage after frying"),      Intent::CookingLoss); }
-    #[test] fn loss_pl()         { assert_eq!(detect_intent("ile kurczak traci po ugotowaniu"),  Intent::CookingLoss); }
-    #[test] fn loss_uk()         { assert_eq!(detect_intent("скільки морква втрачає при варінні"),Intent::CookingLoss); }
+    #[test]
+    fn loss_ru_boil() {
+        assert_eq!(
+            detect_intent("сколько морковь теряет при варке"),
+            Intent::CookingLoss
+        );
+    }
+    #[test]
+    fn loss_ru_fry() {
+        assert_eq!(
+            detect_intent("ужарка говядины в процентах"),
+            Intent::CookingLoss
+        );
+    }
+    #[test]
+    fn loss_ru_bake() {
+        assert_eq!(
+            detect_intent("потери при запекании курицы"),
+            Intent::CookingLoss
+        );
+    }
+    #[test]
+    fn loss_en() {
+        assert_eq!(
+            detect_intent("cooking loss for chicken breast"),
+            Intent::CookingLoss
+        );
+    }
+    #[test]
+    fn loss_en_shrink() {
+        assert_eq!(
+            detect_intent("beef shrinkage after frying"),
+            Intent::CookingLoss
+        );
+    }
+    #[test]
+    fn loss_pl() {
+        assert_eq!(
+            detect_intent("ile kurczak traci po ugotowaniu"),
+            Intent::CookingLoss
+        );
+    }
+    #[test]
+    fn loss_uk() {
+        assert_eq!(
+            detect_intent("скільки морква втрачає при варінні"),
+            Intent::CookingLoss
+        );
+    }
 
     // ── Recipe ──
-    #[test] fn recipe_ru()       { assert_eq!(detect_intent("рецепт борща"),            Intent::RecipeHelp); }
-    #[test] fn recipe_en()       { assert_eq!(detect_intent("how to cook pasta"),       Intent::RecipeHelp); }
+    #[test]
+    fn recipe_ru() {
+        assert_eq!(detect_intent("рецепт борща"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_en() {
+        assert_eq!(detect_intent("how to cook pasta"), Intent::RecipeHelp);
+    }
 
     // ── Imperative recipe triggers ──
-    #[test] fn recipe_imperative_ru()  { assert_eq!(detect_intent("приготовь борщ с говядиной"), Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_ru2() { assert_eq!(detect_intent("сделай салат из помидоров"),  Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_ru3() { assert_eq!(detect_intent("свари суп из курицы"),        Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_ru4() { assert_eq!(detect_intent("пожарь стейк из говядины"),   Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_ru5() { assert_eq!(detect_intent("потуши картошку с курицей"),  Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_ru6() { assert_eq!(detect_intent("запеки рыбу в духовке"),      Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_en()  { assert_eq!(detect_intent("cook pasta carbonara"),       Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_en2() { assert_eq!(detect_intent("make chicken stir fry"),      Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_pl()  { assert_eq!(detect_intent("ugotuj barszcz"),             Intent::RecipeHelp); }
-    #[test] fn recipe_imperative_uk()  { assert_eq!(detect_intent("приготуй борщ з яловичиною"), Intent::RecipeHelp); }
+    #[test]
+    fn recipe_imperative_ru() {
+        assert_eq!(
+            detect_intent("приготовь борщ с говядиной"),
+            Intent::RecipeHelp
+        );
+    }
+    #[test]
+    fn recipe_imperative_ru2() {
+        assert_eq!(
+            detect_intent("сделай салат из помидоров"),
+            Intent::RecipeHelp
+        );
+    }
+    #[test]
+    fn recipe_imperative_ru3() {
+        assert_eq!(detect_intent("свари суп из курицы"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_imperative_ru4() {
+        assert_eq!(
+            detect_intent("пожарь стейк из говядины"),
+            Intent::RecipeHelp
+        );
+    }
+    #[test]
+    fn recipe_imperative_ru5() {
+        assert_eq!(
+            detect_intent("потуши картошку с курицей"),
+            Intent::RecipeHelp
+        );
+    }
+    #[test]
+    fn recipe_imperative_ru6() {
+        assert_eq!(detect_intent("запеки рыбу в духовке"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_imperative_en() {
+        assert_eq!(detect_intent("cook pasta carbonara"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_imperative_en2() {
+        assert_eq!(detect_intent("make chicken stir fry"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_imperative_pl() {
+        assert_eq!(detect_intent("ugotuj barszcz"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_imperative_uk() {
+        assert_eq!(
+            detect_intent("приготуй борщ з яловичиною"),
+            Intent::RecipeHelp
+        );
+    }
 
     // ── Goal-based recipe queries (from suggestion buttons) ──
-    #[test] fn recipe_goal_light_ru()  { assert_eq!(detect_intent("приготовь лёгкое блюдо с треска"), Intent::RecipeHelp); }
-    #[test] fn recipe_goal_diet_ru()   { assert_eq!(detect_intent("диетический рецепт борща"),       Intent::RecipeHelp); }
-    #[test] fn recipe_goal_light_en()  { assert_eq!(detect_intent("cook a light dish with cod"),     Intent::RecipeHelp); }
-    #[test] fn recipe_goal_light_uk()  { assert_eq!(detect_intent("приготуй легку страву з тріски"), Intent::RecipeHelp); }
+    #[test]
+    fn recipe_goal_light_ru() {
+        assert_eq!(
+            detect_intent("приготовь лёгкое блюдо с треска"),
+            Intent::RecipeHelp
+        );
+    }
+    #[test]
+    fn recipe_goal_diet_ru() {
+        assert_eq!(
+            detect_intent("диетический рецепт борща"),
+            Intent::RecipeHelp
+        );
+    }
+    #[test]
+    fn recipe_goal_light_en() {
+        assert_eq!(
+            detect_intent("cook a light dish with cod"),
+            Intent::RecipeHelp
+        );
+    }
+    #[test]
+    fn recipe_goal_light_uk() {
+        assert_eq!(
+            detect_intent("приготуй легку страву з тріски"),
+            Intent::RecipeHelp
+        );
+    }
 
     // ── New modifier-aware recipe tests ──
-    #[test] fn recipe_quick_ru()       { assert_eq!(detect_intent("быстрый рецепт салата"),          Intent::RecipeHelp); }
-    #[test] fn recipe_keto_en()        { assert_eq!(detect_intent("keto recipe for chicken"),       Intent::RecipeHelp); }
-    #[test] fn recipe_comfort_ru()     { assert_eq!(detect_intent("приготовь сытное блюдо"),         Intent::RecipeHelp); }
+    #[test]
+    fn recipe_quick_ru() {
+        assert_eq!(detect_intent("быстрый рецепт салата"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_keto_en() {
+        assert_eq!(detect_intent("keto recipe for chicken"), Intent::RecipeHelp);
+    }
+    #[test]
+    fn recipe_comfort_ru() {
+        assert_eq!(detect_intent("приготовь сытное блюдо"), Intent::RecipeHelp);
+    }
 
     // ── Meal Idea ──
-    #[test] fn meal_ru()         { assert_eq!(detect_intent("что приготовить на ужин"), Intent::MealIdea); }
-    #[test] fn meal_en()         { assert_eq!(detect_intent("dinner idea"),             Intent::MealIdea); }
+    #[test]
+    fn meal_ru() {
+        assert_eq!(detect_intent("что приготовить на ужин"), Intent::MealIdea);
+    }
+    #[test]
+    fn meal_en() {
+        assert_eq!(detect_intent("dinner idea"), Intent::MealIdea);
+    }
 
     // ── Seasonality ──
-    #[test] fn season_ru()       { assert_eq!(detect_intent("когда сезон лосося"),      Intent::Seasonality); }
-    #[test] fn season_en()       { assert_eq!(detect_intent("is salmon in season"),     Intent::Seasonality); }
+    #[test]
+    fn season_ru() {
+        assert_eq!(detect_intent("когда сезон лосося"), Intent::Seasonality);
+    }
+    #[test]
+    fn season_en() {
+        assert_eq!(detect_intent("is salmon in season"), Intent::Seasonality);
+    }
 
     // ── Goal phrases → HealthyProduct ──
-    #[test] fn goal_lose_weight_ru()  { assert_eq!(detect_intent("хочу похудеть"),         Intent::HealthyProduct); }
-    #[test] fn goal_lose_weight_pl()  { assert_eq!(detect_intent("chcę schudnąć"),         Intent::HealthyProduct); }
-    #[test] fn goal_lose_weight_en()  { assert_eq!(detect_intent("I want to lose weight"), Intent::HealthyProduct); }
-    #[test] fn goal_muscle_ru()       { assert_eq!(detect_intent("хочу набрать мышечную массу"), Intent::HealthyProduct); }
-    #[test] fn goal_na_massu_ru()     { assert_eq!(detect_intent("что есть на массу"),     Intent::HealthyProduct); }
-    #[test] fn goal_chto_est_ru()     { assert_eq!(detect_intent("что поесть"),             Intent::HealthyProduct); }
-    #[test] fn goal_chto_est_pl()     { assert_eq!(detect_intent("co zjeść"),               Intent::HealthyProduct); }
-    #[test] fn goal_sushka_ru()       { assert_eq!(detect_intent("питание на сушку"),       Intent::HealthyProduct); }
+    #[test]
+    fn goal_lose_weight_ru() {
+        assert_eq!(detect_intent("хочу похудеть"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn goal_lose_weight_pl() {
+        assert_eq!(detect_intent("chcę schudnąć"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn goal_lose_weight_en() {
+        assert_eq!(
+            detect_intent("I want to lose weight"),
+            Intent::HealthyProduct
+        );
+    }
+    #[test]
+    fn goal_muscle_ru() {
+        assert_eq!(
+            detect_intent("хочу набрать мышечную массу"),
+            Intent::HealthyProduct
+        );
+    }
+    #[test]
+    fn goal_na_massu_ru() {
+        assert_eq!(detect_intent("что есть на массу"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn goal_chto_est_ru() {
+        assert_eq!(detect_intent("что поесть"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn goal_chto_est_pl() {
+        assert_eq!(detect_intent("co zjeść"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn goal_sushka_ru() {
+        assert_eq!(detect_intent("питание на сушку"), Intent::HealthyProduct);
+    }
 
     // ── New goal → HealthyProduct tests ──
-    #[test] fn goal_keto_ru()         { assert_eq!(detect_intent("кето продукты"),          Intent::HealthyProduct); }
-    #[test] fn goal_fiber_ru()        { assert_eq!(detect_intent("продукты с клетчаткой"),  Intent::HealthyProduct); }
-    #[test] fn goal_comfort_ru()      { assert_eq!(detect_intent("что-нибудь сытное"),       Intent::HealthyProduct); }
+    #[test]
+    fn goal_keto_ru() {
+        assert_eq!(detect_intent("кето продукты"), Intent::HealthyProduct);
+    }
+    #[test]
+    fn goal_fiber_ru() {
+        assert_eq!(
+            detect_intent("продукты с клетчаткой"),
+            Intent::HealthyProduct
+        );
+    }
+    #[test]
+    fn goal_comfort_ru() {
+        assert_eq!(detect_intent("что-нибудь сытное"), Intent::HealthyProduct);
+    }
 
-    #[test] fn unknown_garbage() { assert_eq!(detect_intent("asdfghjkl"),               Intent::Unknown); }
+    #[test]
+    fn unknown_garbage() {
+        assert_eq!(detect_intent("asdfghjkl"), Intent::Unknown);
+    }
 
     // ── Explicit cook verb + goal → RecipeHelp (NOT HealthyProduct) ──
     #[test]
     fn recipe_with_goal_cook_tomato_soup() {
-        assert_eq!(detect_intent("хочу похудеть, приготовь томатный суп"), Intent::RecipeHelp);
+        assert_eq!(
+            detect_intent("хочу похудеть, приготовь томатный суп"),
+            Intent::RecipeHelp
+        );
     }
     #[test]
     fn recipe_with_goal_make_salad() {
-        assert_eq!(detect_intent("сделай салат для похудения"), Intent::RecipeHelp);
+        assert_eq!(
+            detect_intent("сделай салат для похудения"),
+            Intent::RecipeHelp
+        );
     }
     #[test]
     fn recipe_with_goal_cook_borscht_muscle() {
@@ -630,92 +937,166 @@ mod tests {
     }
     #[test]
     fn recipe_with_goal_cook_keto_en() {
-        assert_eq!(detect_intent("cook a keto chicken dinner"), Intent::RecipeHelp);
+        assert_eq!(
+            detect_intent("cook a keto chicken dinner"),
+            Intent::RecipeHelp
+        );
     }
     #[test]
     fn recipe_with_goal_make_light_soup_pl() {
-        assert_eq!(detect_intent("ugotuj lekką zupę pomidorową"), Intent::RecipeHelp);
+        assert_eq!(
+            detect_intent("ugotuj lekką zupę pomidorową"),
+            Intent::RecipeHelp
+        );
     }
 
     // ── Score-based wins ──
-    #[test] fn ambiguous_healthy_wins() {
+    #[test]
+    fn ambiguous_healthy_wins() {
         let r = detect_intent_scored("полезный белок в шпинате");
         assert_eq!(r.intent, Intent::HealthyProduct);
         assert!(r.score >= 3);
     }
 
     // ── Language detection ──
-    #[test] fn lang_ru()  { assert_eq!(detect_language("привет мир"),       ChatLang::Ru); }
-    #[test] fn lang_en()  { assert_eq!(detect_language("hello world"),      ChatLang::En); }
-    #[test] fn lang_pl()  { assert_eq!(detect_language("cześć świat"),      ChatLang::Pl); }
-    #[test] fn lang_uk()  { assert_eq!(detect_language("привіт світ їжа"), ChatLang::Uk); }
+    #[test]
+    fn lang_ru() {
+        assert_eq!(detect_language("привет мир"), ChatLang::Ru);
+    }
+    #[test]
+    fn lang_en() {
+        assert_eq!(detect_language("hello world"), ChatLang::En);
+    }
+    #[test]
+    fn lang_pl() {
+        assert_eq!(detect_language("cześć świat"), ChatLang::Pl);
+    }
+    #[test]
+    fn lang_uk() {
+        assert_eq!(detect_language("привіт світ їжа"), ChatLang::Uk);
+    }
 
-    #[test] fn score_threshold() {
+    #[test]
+    fn score_threshold() {
         assert_eq!(detect_intent("xyz abc def"), Intent::Unknown);
     }
 
     // ── Context boost tests ──
-    #[test] fn goal_action_meal_ru() {
-        assert_eq!(detect_intent("хочу на массу, что приготовить?"), Intent::MealIdea);
+    #[test]
+    fn goal_action_meal_ru() {
+        assert_eq!(
+            detect_intent("хочу на массу, что приготовить?"),
+            Intent::MealIdea
+        );
     }
-    #[test] fn goal_action_meal_en() {
-        assert_eq!(detect_intent("low calorie dinner for diet"), Intent::MealIdea);
+    #[test]
+    fn goal_action_meal_en() {
+        assert_eq!(
+            detect_intent("low calorie dinner for diet"),
+            Intent::MealIdea
+        );
     }
-    #[test] fn goal_action_eat_ru() {
-        assert_eq!(detect_intent("хочу похудеть, что поесть на ужин?"), Intent::MealIdea);
+    #[test]
+    fn goal_action_eat_ru() {
+        assert_eq!(
+            detect_intent("хочу похудеть, что поесть на ужин?"),
+            Intent::MealIdea
+        );
     }
-    #[test] fn goal_action_muscle_en() {
-        assert_eq!(detect_intent("high protein meal for dinner"), Intent::MealIdea);
+    #[test]
+    fn goal_action_muscle_en() {
+        assert_eq!(
+            detect_intent("high protein meal for dinner"),
+            Intent::MealIdea
+        );
     }
-    #[test] fn goal_action_diet_lunch() {
+    #[test]
+    fn goal_action_diet_lunch() {
         assert_eq!(detect_intent("diet lunch ideas"), Intent::MealIdea);
     }
 
     // ═══ Goal + need → MealIdea (not HealthyProduct) ═════════════════════
-    #[test] fn goal_need_pl() {
-        assert_eq!(detect_intent("chcę schudnąć, ale potrzebuję dużo białka"), Intent::MealIdea);
+    #[test]
+    fn goal_need_pl() {
+        assert_eq!(
+            detect_intent("chcę schudnąć, ale potrzebuję dużo białka"),
+            Intent::MealIdea
+        );
     }
-    #[test] fn goal_need_ru() {
-        assert_eq!(detect_intent("хочу похудеть, но нужно много белка"), Intent::MealIdea);
+    #[test]
+    fn goal_need_ru() {
+        assert_eq!(
+            detect_intent("хочу похудеть, но нужно много белка"),
+            Intent::MealIdea
+        );
     }
-    #[test] fn goal_need_en() {
-        assert_eq!(detect_intent("want to lose weight but need high protein"), Intent::MealIdea);
+    #[test]
+    fn goal_need_en() {
+        assert_eq!(
+            detect_intent("want to lose weight but need high protein"),
+            Intent::MealIdea
+        );
     }
-    #[test] fn goal_need_uk() {
-        assert_eq!(detect_intent("хочу схуднути, але потрібно багато білка"), Intent::MealIdea);
+    #[test]
+    fn goal_need_uk() {
+        assert_eq!(
+            detect_intent("хочу схуднути, але потрібно багато білка"),
+            Intent::MealIdea
+        );
     }
 
     // ═══ Context-aware routing tests ═════════════════════════════════════
 
     fn ctx_with(intent: Intent) -> DialogContext {
-        DialogContext { last_intent: Some(intent), last_modifier: None, turn_count: 1 }
+        DialogContext {
+            last_intent: Some(intent),
+            last_modifier: None,
+            turn_count: 1,
+        }
     }
 
     fn ctx_with_mod(intent: Intent, modifier: HealthModifier) -> DialogContext {
-        DialogContext { last_intent: Some(intent), last_modifier: Some(modifier), turn_count: 1 }
+        DialogContext {
+            last_intent: Some(intent),
+            last_modifier: Some(modifier),
+            turn_count: 1,
+        }
     }
 
     fn empty_ctx() -> DialogContext {
-        DialogContext { last_intent: None, last_modifier: None, turn_count: 0 }
+        DialogContext {
+            last_intent: None,
+            last_modifier: None,
+            turn_count: 0,
+        }
     }
 
     // ── Follow-up "ещё" ──
     #[test]
     fn ctx_followup_more_healthy() {
         let ctx = ctx_with(Intent::HealthyProduct);
-        assert_eq!(parse_input_with_context("ещё", &ctx).intent, Intent::HealthyProduct);
+        assert_eq!(
+            parse_input_with_context("ещё", &ctx).intent,
+            Intent::HealthyProduct
+        );
     }
 
     #[test]
     fn ctx_followup_more_recipe() {
         let ctx = ctx_with(Intent::RecipeHelp);
-        assert_eq!(parse_input_with_context("more", &ctx).intent, Intent::RecipeHelp);
+        assert_eq!(
+            parse_input_with_context("more", &ctx).intent,
+            Intent::RecipeHelp
+        );
     }
 
     #[test]
     fn ctx_followup_drugoe_meal() {
         let ctx = ctx_with(Intent::MealIdea);
-        assert_eq!(parse_input_with_context("другое", &ctx).intent, Intent::MealIdea);
+        assert_eq!(
+            parse_input_with_context("другое", &ctx).intent,
+            Intent::MealIdea
+        );
     }
 
     #[test]
@@ -731,38 +1112,56 @@ mod tests {
     #[test]
     fn ctx_confirm_after_recipe() {
         let ctx = ctx_with(Intent::RecipeHelp);
-        assert_eq!(parse_input_with_context("давай", &ctx).intent, Intent::RecipeHelp);
+        assert_eq!(
+            parse_input_with_context("давай", &ctx).intent,
+            Intent::RecipeHelp
+        );
     }
 
     #[test]
     fn ctx_confirm_yes_after_healthy() {
         let ctx = ctx_with(Intent::HealthyProduct);
-        assert_eq!(parse_input_with_context("да", &ctx).intent, Intent::HealthyProduct);
+        assert_eq!(
+            parse_input_with_context("да", &ctx).intent,
+            Intent::HealthyProduct
+        );
     }
 
     #[test]
     fn ctx_confirm_ok_after_meal() {
         let ctx = ctx_with(Intent::MealIdea);
-        assert_eq!(parse_input_with_context("ok", &ctx).intent, Intent::MealIdea);
+        assert_eq!(
+            parse_input_with_context("ok", &ctx).intent,
+            Intent::MealIdea
+        );
     }
 
     // ── Short recipe ref ──
     #[test]
     fn ctx_short_recipe_ref_borsch() {
         let ctx = ctx_with(Intent::RecipeHelp);
-        assert_eq!(parse_input_with_context("а борщ?", &ctx).intent, Intent::RecipeHelp);
+        assert_eq!(
+            parse_input_with_context("а борщ?", &ctx).intent,
+            Intent::RecipeHelp
+        );
     }
 
     #[test]
     fn ctx_short_recipe_ref_with_chicken() {
         let ctx = ctx_with(Intent::RecipeHelp);
-        assert_eq!(parse_input_with_context("а с курицей?", &ctx).intent, Intent::RecipeHelp);
+        assert_eq!(
+            parse_input_with_context("а с курицей?", &ctx).intent,
+            Intent::RecipeHelp
+        );
     }
 
     #[test]
     fn ctx_short_recipe_ref_what_about() {
         let ctx = ctx_with(Intent::RecipeHelp);
-        assert_eq!(parse_input_with_context("what about steak?", &ctx).intent, Intent::RecipeHelp);
+        assert_eq!(
+            parse_input_with_context("what about steak?", &ctx).intent,
+            Intent::RecipeHelp
+        );
     }
 
     // ── Short ambiguous inherits context ──
@@ -794,18 +1193,27 @@ mod tests {
     #[test]
     fn ctx_no_context_normal_scoring() {
         let ctx = empty_ctx();
-        assert_eq!(parse_input_with_context("привет", &ctx).intent, Intent::Greeting);
+        assert_eq!(
+            parse_input_with_context("привет", &ctx).intent,
+            Intent::Greeting
+        );
     }
 
     #[test]
     fn ctx_no_context_recipe() {
         let ctx = empty_ctx();
-        assert_eq!(parse_input_with_context("приготовь борщ", &ctx).intent, Intent::RecipeHelp);
+        assert_eq!(
+            parse_input_with_context("приготовь борщ", &ctx).intent,
+            Intent::RecipeHelp
+        );
     }
 
     #[test]
     fn ctx_no_context_healthy() {
         let ctx = empty_ctx();
-        assert_eq!(parse_input_with_context("хочу похудеть", &ctx).intent, Intent::HealthyProduct);
+        assert_eq!(
+            parse_input_with_context("хочу похудеть", &ctx).intent,
+            Intent::HealthyProduct
+        );
     }
 }

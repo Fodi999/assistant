@@ -4,7 +4,7 @@ use restaurant_backend::application::{
     TenantIngredientService, UserService,
 };
 use restaurant_backend::infrastructure::{
-    Config, LlmAdapter, JwtService, PasswordHasher, R2Client, Repositories,
+    Config, JwtService, LlmAdapter, PasswordHasher, R2Client, Repositories,
 };
 use restaurant_backend::interfaces::http::routes::create_router;
 use sqlx::postgres::PgPoolOptions;
@@ -69,12 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Clean up any dirty (failed) migration entries so sqlx can re-run them
     // with updated content. This handles checksum mismatches from previously
     // failed migrations that were later fixed.
-    sqlx::query(
-        "DELETE FROM _sqlx_migrations WHERE success = false"
-    )
-    .execute(&pool)
-    .await
-    .ok(); // ignore error if table doesn't exist yet
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE success = false")
+        .execute(&pool)
+        .await
+        .ok(); // ignore error if table doesn't exist yet
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Database migrations completed");
 
@@ -231,9 +229,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         restaurant_backend::infrastructure::IngredientCache::load(&repositories.pool)
             .await
             .unwrap_or_else(|e| {
-                tracing::error!("❌ Failed to load IngredientCache: {}. Chat will have limited data.", e);
+                tracing::error!(
+                    "❌ Failed to load IngredientCache: {}. Chat will have limited data.",
+                    e
+                );
                 restaurant_backend::infrastructure::IngredientCache::empty()
-            })
+            }),
     );
     tracing::info!("✅ IngredientCache loaded for ChefOS Chat");
 

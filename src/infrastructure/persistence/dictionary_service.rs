@@ -104,12 +104,16 @@ impl DictionaryService {
             AppError::internal(&format!("Failed to insert into dictionary: {}", e))
         })?;
 
-        let entry = self.find_by_en(name_en_trimmed).await?.ok_or_else(|| {
-            AppError::internal("Failed to retrieve inserted dictionary entry")
-        })?;
+        let entry = self
+            .find_by_en(name_en_trimmed)
+            .await?
+            .ok_or_else(|| AppError::internal("Failed to retrieve inserted dictionary entry"))?;
 
         if result.rows_affected() > 0 {
-            tracing::info!("✅ Dictionary entry created: {} (manual, active)", entry.name_en);
+            tracing::info!(
+                "✅ Dictionary entry created: {} (manual, active)",
+                entry.name_en
+            );
         }
 
         Ok(entry)
@@ -131,7 +135,10 @@ impl DictionaryService {
 
         // Deduplication: check if ANY entry (active/pending/rejected) exists
         if self.exists_by_en(name_en_trimmed).await? {
-            tracing::info!("📦 Dictionary entry already exists for '{}' — skipping pending insert", name_en_trimmed);
+            tracing::info!(
+                "📦 Dictionary entry already exists for '{}' — skipping pending insert",
+                name_en_trimmed
+            );
             // Return existing entry
             let existing = sqlx::query_as::<_, DictionaryEntryFull>(
                 "SELECT id, name_en, name_pl, name_ru, name_uk, status, source, confidence, created_at, reviewed_at
@@ -177,7 +184,11 @@ impl DictionaryService {
 
         tracing::info!(
             "🟡 Dictionary PENDING: {} → RU:{}, PL:{}, UK:{} (confidence: {:.2})",
-            entry.name_en, entry.name_ru, entry.name_pl, entry.name_uk, confidence
+            entry.name_en,
+            entry.name_ru,
+            entry.name_pl,
+            entry.name_uk,
+            confidence
         );
 
         Ok(entry)
@@ -233,7 +244,11 @@ impl DictionaryService {
         .await
         .map_err(|e| AppError::internal(&format!("Entry not found: {}", e)))?;
 
-        tracing::info!("✅ Dictionary APPROVED: {} ({}→active)", entry.name_en, entry.source);
+        tracing::info!(
+            "✅ Dictionary APPROVED: {} ({}→active)",
+            entry.name_en,
+            entry.source
+        );
         Ok(entry)
     }
 
@@ -268,7 +283,13 @@ impl DictionaryService {
         .await
         .map_err(|e| AppError::internal(&format!("Entry not found: {}", e)))?;
 
-        tracing::info!("✅ Dictionary APPROVED (edited): {} → RU:{}, PL:{}, UK:{}", entry.name_en, entry.name_ru, entry.name_pl, entry.name_uk);
+        tracing::info!(
+            "✅ Dictionary APPROVED (edited): {} → RU:{}, PL:{}, UK:{}",
+            entry.name_en,
+            entry.name_ru,
+            entry.name_pl,
+            entry.name_uk
+        );
         Ok(entry)
     }
 

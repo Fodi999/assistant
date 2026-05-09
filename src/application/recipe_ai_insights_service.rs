@@ -75,7 +75,10 @@ impl RecipeAIInsightsService {
         let prompt = self.build_analysis_prompt(recipe, target_language, &validation_result);
 
         // Call AI via Adapter (handles cache)
-        let ai_response = self.llm_adapter.analyze_recipe(&prompt, &recipe.id.0.to_string()).await?;
+        let ai_response = self
+            .llm_adapter
+            .analyze_recipe(&prompt, &recipe.id.0.to_string())
+            .await?;
 
         // Parse AI response
         let (steps, ai_validation, suggestions, _ai_feasibility_score) =
@@ -84,9 +87,12 @@ impl RecipeAIInsightsService {
         // 🧠 RUST LOGIC: Calculate feasibility and final validation status in Rust (not AI)
         // AI can help with textual validation, but final status depends on our rule engine
         let final_is_valid = validation_result.is_valid && ai_validation.errors.is_empty();
-        
+
         // Feasibility score: 100 - (errors * 30) - (warnings * 10)
-        let feasibility_score = (100 - (validation_result.errors.len() as i32 * 30) - (validation_result.warnings.len() as i32 * 10)).max(0);
+        let feasibility_score = (100
+            - (validation_result.errors.len() as i32 * 30)
+            - (validation_result.warnings.len() as i32 * 10))
+            .max(0);
 
         // Save to database (extract UUID from RecipeId)
         let insights = self

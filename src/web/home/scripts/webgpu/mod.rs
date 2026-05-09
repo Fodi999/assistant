@@ -9,9 +9,9 @@
 //   js/       — JS application  (init, state, buffers, pipeline, hud, controls, benchmark,
 //                                render_loop)
 
+mod js;
 pub mod scene;
 mod shader;
-mod js;
 
 use std::sync::OnceLock;
 

@@ -341,19 +341,29 @@ async fn test_inventory_fifo_full_suite() {
             .execute(&pool).await.ok();
         sqlx::query("DELETE FROM inventory_batches WHERE tenant_id = $1")
             .bind(tid)
-            .execute(&pool).await.ok();
+            .execute(&pool)
+            .await
+            .ok();
         sqlx::query("DELETE FROM users WHERE tenant_id = $1")
             .bind(tid)
-            .execute(&pool).await.ok();
+            .execute(&pool)
+            .await
+            .ok();
         sqlx::query("DELETE FROM tenants WHERE id = $1")
             .bind(tid)
-            .execute(&pool).await.ok();
+            .execute(&pool)
+            .await
+            .ok();
     }
     sqlx::query("DELETE FROM catalog_ingredients WHERE category_id = $1")
         .bind(category_id)
-        .execute(&pool).await.ok();
+        .execute(&pool)
+        .await
+        .ok();
     sqlx::query("DELETE FROM catalog_categories WHERE id = $1")
         .bind(category_id)
-        .execute(&pool).await.ok();
+        .execute(&pool)
+        .await
+        .ok();
     println!("🧹 Test data cleaned up");
 }

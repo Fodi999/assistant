@@ -72,17 +72,17 @@ pub struct CardDockSpec {
 impl Default for CardDockSpec {
     fn default() -> Self {
         Self {
-            width:              0.20,
-            depth:              0.58,
-            height:             0.10,
-            slot_width:         0.11,
-            slot_depth:         0.15,
-            slot_recess:        0.06,
-            corner_radius:      0.015,
+            width: 0.20,
+            depth: 0.58,
+            height: 0.10,
+            slot_width: 0.11,
+            slot_depth: 0.15,
+            slot_recess: 0.06,
+            corner_radius: 0.015,
             slot_corner_radius: 0.008,
-            bevel:              0.002,
-            accent_hex:         "#00C8FF",
-            quality:            GeometryQuality::High,
+            bevel: 0.002,
+            accent_hex: "#00C8FF",
+            quality: GeometryQuality::High,
         }
     }
 }
@@ -97,17 +97,20 @@ impl Default for CardDockSpec {
 /// `dock_base`, `dock_frame`, `dock_slot`, `dock_emissive`.
 pub fn generate_dock(spec: &CardDockSpec) -> Mesh {
     let corner_segs: usize = match spec.quality {
-        GeometryQuality::Draft    =>  4,
-        GeometryQuality::Standard =>  8,
-        GeometryQuality::High     => 16,
-        GeometryQuality::Ultra    => 24,
+        GeometryQuality::Draft => 4,
+        GeometryQuality::Standard => 8,
+        GeometryQuality::High => 16,
+        GeometryQuality::Ultra => 24,
     };
 
     let mut b = MeshBuilder::new();
 
     // ── 1. Base plate ──────────────────────────────────────────────────────
     let base_points = rounded_rect_points(spec.width, spec.depth, spec.corner_radius, corner_segs);
-    let base_opts   = ExtrudeOptions { depth: spec.height, bevel: spec.bevel };
+    let base_opts = ExtrudeOptions {
+        depth: spec.height,
+        bevel: spec.bevel,
+    };
 
     let g_base = b.add_group(
         Material::solid("dock_base", hex_to_rgb("#0D0F12"))
@@ -123,13 +126,16 @@ pub fn generate_dock(spec: &CardDockSpec) -> Mesh {
 
     // ── 2. Raised frame ring ───────────────────────────────────────────────
     let frame_inset = spec.bevel * 4.0;
-    let frame_w     = spec.width - frame_inset * 2.0;
-    let frame_d     = spec.depth - frame_inset * 2.0;
-    let frame_h     = 0.018_f32;
-    let frame_r     = (spec.corner_radius - frame_inset).max(0.002);
+    let frame_w = spec.width - frame_inset * 2.0;
+    let frame_d = spec.depth - frame_inset * 2.0;
+    let frame_h = 0.018_f32;
+    let frame_r = (spec.corner_radius - frame_inset).max(0.002);
 
     let frame_points = rounded_rect_points(frame_w, frame_d, frame_r, corner_segs);
-    let frame_opts   = ExtrudeOptions { depth: frame_h, bevel: spec.bevel };
+    let frame_opts = ExtrudeOptions {
+        depth: frame_h,
+        bevel: spec.bevel,
+    };
 
     let g_frame = b.add_group(
         Material::solid("dock_frame", hex_to_rgb("#1A1D22"))
@@ -141,7 +147,9 @@ pub fn generate_dock(spec: &CardDockSpec) -> Mesh {
         // Offset upward so the frame sits on top of base plate.
         let offset_y = spec.height;
         let shift = |mut part: MeshPart| {
-            for v in part.vertices.iter_mut() { v[1] += offset_y; }
+            for v in part.vertices.iter_mut() {
+                v[1] += offset_y;
+            }
             part
         };
         b.add_part(g_frame, &shift(front));
@@ -156,7 +164,10 @@ pub fn generate_dock(spec: &CardDockSpec) -> Mesh {
         spec.slot_corner_radius,
         corner_segs,
     );
-    let slot_opts = ExtrudeOptions { depth: spec.slot_recess, bevel: spec.bevel * 0.5 };
+    let slot_opts = ExtrudeOptions {
+        depth: spec.slot_recess,
+        bevel: spec.bevel * 0.5,
+    };
 
     let g_slot = b.add_group(
         Material::solid("dock_slot", hex_to_rgb("#07080A"))
@@ -196,10 +207,13 @@ pub fn generate_dock(spec: &CardDockSpec) -> Mesh {
     );
 
     let strip_points = rounded_rect_points(strip_w, strip_d, 0.001, 2);
-    let strip_opts   = ExtrudeOptions { depth: strip_h, bevel: 0.0 };
+    let strip_opts = ExtrudeOptions {
+        depth: strip_h,
+        bevel: 0.0,
+    };
 
     let offsets: [f32; 2] = [
-         spec.depth * 0.5 - strip_d * 0.5 - spec.bevel * 2.0,
+        spec.depth * 0.5 - strip_d * 0.5 - spec.bevel * 2.0,
         -spec.depth * 0.5 + strip_d * 0.5 + spec.bevel * 2.0,
     ];
 
@@ -238,32 +252,54 @@ mod tests {
     #[test]
     fn dock_has_four_material_groups() {
         let mesh = generate_dock(&CardDockSpec::default());
-        let names: Vec<&str> = mesh.groups.iter().map(|g| g.material.name.as_str()).collect();
-        assert!(names.iter().any(|n| *n == "dock_base"),     "missing dock_base");
-        assert!(names.iter().any(|n| *n == "dock_frame"),    "missing dock_frame");
-        assert!(names.iter().any(|n| *n == "dock_slot"),     "missing dock_slot");
-        assert!(names.iter().any(|n| *n == "dock_emissive"), "missing dock_emissive");
+        let names: Vec<&str> = mesh
+            .groups
+            .iter()
+            .map(|g| g.material.name.as_str())
+            .collect();
+        assert!(names.iter().any(|n| *n == "dock_base"), "missing dock_base");
+        assert!(
+            names.iter().any(|n| *n == "dock_frame"),
+            "missing dock_frame"
+        );
+        assert!(names.iter().any(|n| *n == "dock_slot"), "missing dock_slot");
+        assert!(
+            names.iter().any(|n| *n == "dock_emissive"),
+            "missing dock_emissive"
+        );
     }
 
     #[test]
     fn dock_draft_quality_generates() {
-        let spec = CardDockSpec { quality: GeometryQuality::Draft, ..Default::default() };
+        let spec = CardDockSpec {
+            quality: GeometryQuality::Draft,
+            ..Default::default()
+        };
         let mesh = generate_dock(&spec);
         assert!(!mesh.groups.is_empty());
     }
 
     #[test]
     fn dock_ultra_quality_generates() {
-        let spec = CardDockSpec { quality: GeometryQuality::Ultra, ..Default::default() };
+        let spec = CardDockSpec {
+            quality: GeometryQuality::Ultra,
+            ..Default::default()
+        };
         let mesh = generate_dock(&spec);
         assert!(!mesh.groups.is_empty());
     }
 
     #[test]
     fn dock_custom_accent_color() {
-        let spec = CardDockSpec { accent_hex: "#FF6B00", ..Default::default() };
+        let spec = CardDockSpec {
+            accent_hex: "#FF6B00",
+            ..Default::default()
+        };
         let mesh = generate_dock(&spec);
-        let emissive_group = mesh.groups.iter().find(|g| g.material.name == "dock_emissive");
+        let emissive_group = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "dock_emissive");
         assert!(emissive_group.is_some());
         // Emissive material class is set.
         let mat = &emissive_group.unwrap().material;

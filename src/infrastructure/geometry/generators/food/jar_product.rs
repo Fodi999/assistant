@@ -92,15 +92,10 @@ pub fn generate_with_label_and_quality(
     // ── Materials & groups ──────────────────────────────────────────────────
     // Frontend matches by name: `*glass*` → transmissive glass,
     // `*metal*|*lid*|*cap*` → metallic, `*product*|*sauce*|*liquid*` → glossy.
-    let glass_g = b.add_group(
-        Material::solid("jar_glass", JAR_GLASS_COLOR).with_gloss(0.50, 96.0),
-    );
-    let product_g = b.add_group(
-        Material::solid("product_material", product_color).with_gloss(0.45, 64.0),
-    );
-    let lid_g = b.add_group(
-        Material::solid("lid_metal", lid_color).with_gloss(0.65, 80.0),
-    );
+    let glass_g = b.add_group(Material::solid("jar_glass", JAR_GLASS_COLOR).with_gloss(0.50, 96.0));
+    let product_g =
+        b.add_group(Material::solid("product_material", product_color).with_gloss(0.45, 64.0));
+    let lid_g = b.add_group(Material::solid("lid_metal", lid_color).with_gloss(0.65, 80.0));
 
     // ── Glass jar: lathed wall with foot bevel + shoulder ───────────────────
     let jar_bottom = -JAR_HEIGHT / 2.0;
@@ -123,8 +118,8 @@ pub fn generate_with_label_and_quality(
     b.add_part(glass_g, &jar_wall);
 
     // Bottom disk caps the foot opening.
-    let jar_bottom_cap = disk_fan_down(r - JAR_FOOT_BEVEL, jar_bottom, segments)
-        .expect("jar bottom disk");
+    let jar_bottom_cap =
+        disk_fan_down(r - JAR_FOOT_BEVEL, jar_bottom, segments).expect("jar bottom disk");
     b.add_part(glass_g, &jar_bottom_cap);
 
     // ── Product: inset cylinder + meniscus ──────────────────────────────────
@@ -135,12 +130,10 @@ pub fn generate_with_label_and_quality(
         ProfilePoint::new(product_radius, product_top_y),
     ])
     .expect("hard-coded product profile is valid");
-    let product_wall =
-        lathe_profile(&product_profile, segments).expect("lathe product wall");
+    let product_wall = lathe_profile(&product_profile, segments).expect("lathe product wall");
     b.add_part(product_g, &product_wall);
 
-    let meniscus =
-        disk_fan_up(product_radius, product_top_y, segments).expect("meniscus disk");
+    let meniscus = disk_fan_up(product_radius, product_top_y, segments).expect("meniscus disk");
     b.add_part(product_g, &meniscus);
 
     // ── Lid: metal cylinder with overhang + top + underside ─────────────────
@@ -160,14 +153,13 @@ pub fn generate_with_label_and_quality(
     b.add_part(lid_g, &lid_wall);
 
     // Top of lid (sealed disk, faces up).
-    let lid_top_cap = disk_fan_up(lid_radius - LID_RIM_BEVEL, lid_top, segments)
-        .expect("lid top disk");
+    let lid_top_cap =
+        disk_fan_up(lid_radius - LID_RIM_BEVEL, lid_top, segments).expect("lid top disk");
     b.add_part(lid_g, &lid_top_cap);
 
     // Underside of lid (faces down, hidden by jar but keeps the mesh closed).
-    let lid_bottom_cap =
-        disk_fan_down(lid_radius - LID_RIM_BEVEL, lid_bottom, segments)
-            .expect("lid underside disk");
+    let lid_bottom_cap = disk_fan_down(lid_radius - LID_RIM_BEVEL, lid_bottom, segments)
+        .expect("lid underside disk");
     b.add_part(lid_g, &lid_bottom_cap);
 
     // ── Label patch (optional, PR #15) ──────────────────────────────────────
@@ -202,7 +194,11 @@ mod tests {
         assert_eq!(mesh.vertices.len(), mesh.uvs.len());
         assert_eq!(mesh.groups.len(), 3, "glass + product + lid");
         for g in &mesh.groups {
-            assert!(!g.faces.is_empty(), "group {} has no faces", g.material.name);
+            assert!(
+                !g.faces.is_empty(),
+                "group {} has no faces",
+                g.material.name
+            );
         }
     }
 

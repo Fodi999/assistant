@@ -18,15 +18,11 @@
 //! No AI, no DB, no HTTP — pure deterministic functions.
 //! Target: <5ms for 3 variants.
 
-use crate::domain::tools::flavor_graph::{
-    self, FlavorBalance, FlavorIngredient, FlavorVector,
-};
+use crate::domain::tools::flavor_graph::{self, FlavorBalance, FlavorIngredient, FlavorVector};
 use crate::domain::tools::suggestion_engine::Candidate;
 use crate::shared::Language;
 
-use super::response::{
-    DishType, IngredientRole, RecipeVariant, VariantIngredient,
-};
+use super::response::{DishType, IngredientRole, RecipeVariant, VariantIngredient};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -71,10 +67,7 @@ pub fn build_variants(
     let default_pool;
     let classified: Vec<(&Candidate, IngredientRole)> = if usable.is_empty() {
         default_pool = default_sides_for(main_slug, main_product_type);
-        default_pool
-            .iter()
-            .map(|c| (c, infer_role(c)))
-            .collect()
+        default_pool.iter().map(|c| (c, infer_role(c))).collect()
     } else {
         usable.iter().map(|c| (*c, infer_role(c))).collect()
     };
@@ -167,9 +160,14 @@ fn infer_role(c: &Candidate) -> IngredientRole {
     }
 
     // 4. Product-type-aware side detection
-    if pt == "vegetable" || pt == "greens" || pt == "grain"
-        || pt == "cereal" || pt == "pasta" || pt == "legume"
-        || pt == "beans" || pt == "bread"
+    if pt == "vegetable"
+        || pt == "greens"
+        || pt == "grain"
+        || pt == "cereal"
+        || pt == "pasta"
+        || pt == "legume"
+        || pt == "beans"
+        || pt == "bread"
     {
         return IngredientRole::Side;
     }
@@ -191,30 +189,75 @@ fn infer_role(c: &Candidate) -> IngredientRole {
 
 fn is_fat_slug(slug: &str) -> bool {
     const FATS: &[&str] = &[
-        "olive-oil", "sunflower-oil", "coconut-oil", "sesame-oil",
-        "avocado-oil", "butter", "ghee", "lard", "oil",
-        "margarine", "cream-cheese", "sour-cream", "smetana",
+        "olive-oil",
+        "sunflower-oil",
+        "coconut-oil",
+        "sesame-oil",
+        "avocado-oil",
+        "butter",
+        "ghee",
+        "lard",
+        "oil",
+        "margarine",
+        "cream-cheese",
+        "sour-cream",
+        "smetana",
     ];
     FATS.iter().any(|k| slug.contains(k))
 }
 
 fn is_sauce_slug(slug: &str) -> bool {
     const SAUCES: &[&str] = &[
-        "soy-sauce", "teriyaki", "ponzu", "sriracha", "mayo",
-        "mayonnaise", "ketchup", "mustard", "pesto", "hummus",
-        "tahini", "balsamic", "vinegar", "dressing", "sauce",
-        "wasabi", "gochujang", "chimichurri", "salsa",
+        "soy-sauce",
+        "teriyaki",
+        "ponzu",
+        "sriracha",
+        "mayo",
+        "mayonnaise",
+        "ketchup",
+        "mustard",
+        "pesto",
+        "hummus",
+        "tahini",
+        "balsamic",
+        "vinegar",
+        "dressing",
+        "sauce",
+        "wasabi",
+        "gochujang",
+        "chimichurri",
+        "salsa",
     ];
     SAUCES.iter().any(|k| slug.contains(k))
 }
 
 fn is_aromatic_slug(slug: &str) -> bool {
     const AROMATICS: &[&str] = &[
-        "garlic", "ginger", "lemon", "lime", "dill", "parsley",
-        "cilantro", "basil", "rosemary", "thyme", "oregano",
-        "cumin", "paprika", "chili", "pepper", "turmeric",
-        "cinnamon", "mint", "scallion", "green-onion", "shallot",
-        "lemongrass", "star-anise", "bay-leaf", "coriander",
+        "garlic",
+        "ginger",
+        "lemon",
+        "lime",
+        "dill",
+        "parsley",
+        "cilantro",
+        "basil",
+        "rosemary",
+        "thyme",
+        "oregano",
+        "cumin",
+        "paprika",
+        "chili",
+        "pepper",
+        "turmeric",
+        "cinnamon",
+        "mint",
+        "scallion",
+        "green-onion",
+        "shallot",
+        "lemongrass",
+        "star-anise",
+        "bay-leaf",
+        "coriander",
     ];
     AROMATICS.iter().any(|k| slug.contains(k))
 }
@@ -250,23 +293,65 @@ fn product_type_category(pt: Option<&str>) -> FoodCategory {
 fn slug_category(slug: &str) -> FoodCategory {
     let s = slug.to_lowercase();
     // Fish / seafood
-    if ["salmon", "tuna", "cod", "trout", "shrimp", "prawn", "crab",
-        "lobster", "mackerel", "sardine", "anchovy", "sea-bass",
-        "tilapia", "halibut", "swordfish", "catfish", "squid",
-        "octopus", "mussel", "clam", "oyster", "scallop", "fish"]
-        .iter().any(|k| s.contains(k)) {
+    if [
+        "salmon",
+        "tuna",
+        "cod",
+        "trout",
+        "shrimp",
+        "prawn",
+        "crab",
+        "lobster",
+        "mackerel",
+        "sardine",
+        "anchovy",
+        "sea-bass",
+        "tilapia",
+        "halibut",
+        "swordfish",
+        "catfish",
+        "squid",
+        "octopus",
+        "mussel",
+        "clam",
+        "oyster",
+        "scallop",
+        "fish",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
+    {
         return FoodCategory::Fish;
     }
     // Dairy
-    if ["milk", "cheese", "yogurt", "kefir", "cream", "curd", "ricotta",
-        "mozzarella", "parmesan", "feta", "brie", "cheddar", "cottage"]
-        .iter().any(|k| s.contains(k)) {
+    if [
+        "milk",
+        "cheese",
+        "yogurt",
+        "kefir",
+        "cream",
+        "curd",
+        "ricotta",
+        "mozzarella",
+        "parmesan",
+        "feta",
+        "brie",
+        "cheddar",
+        "cottage",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
+    {
         return FoodCategory::Dairy;
     }
     // Meat
-    if ["chicken", "beef", "pork", "lamb", "turkey", "duck", "veal",
-        "ham", "bacon", "sausage", "steak"]
-        .iter().any(|k| s.contains(k)) {
+    if [
+        "chicken", "beef", "pork", "lamb", "turkey", "duck", "veal", "ham", "bacon", "sausage",
+        "steak",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
+    {
         return FoodCategory::Meat;
     }
     FoodCategory::Other
@@ -306,12 +391,28 @@ fn is_liquid_ingredient(slug: &str, product_type: Option<&str>) -> bool {
     let s = slug.to_lowercase();
     // Explicit liquid slugs
     let liquid_slugs = [
-        "milk", "whole-milk", "skim-milk", "oat-milk", "almond-milk",
-        "soy-milk", "coconut-milk", "cream", "heavy-cream",
-        "whipping-cream", "half-and-half", "buttermilk",
-        "orange-juice", "apple-juice", "grape-juice", "juice",
-        "broth", "stock", "chicken-broth", "beef-broth",
-        "vegetable-broth", "water",
+        "milk",
+        "whole-milk",
+        "skim-milk",
+        "oat-milk",
+        "almond-milk",
+        "soy-milk",
+        "coconut-milk",
+        "cream",
+        "heavy-cream",
+        "whipping-cream",
+        "half-and-half",
+        "buttermilk",
+        "orange-juice",
+        "apple-juice",
+        "grape-juice",
+        "juice",
+        "broth",
+        "stock",
+        "chicken-broth",
+        "beef-broth",
+        "vegetable-broth",
+        "water",
     ];
     if liquid_slugs.iter().any(|k| s == *k || s.contains(k)) {
         return true;
@@ -319,7 +420,11 @@ fn is_liquid_ingredient(slug: &str, product_type: Option<&str>) -> bool {
     // product_type based
     if let Some(pt) = product_type {
         let pt_lower = pt.to_lowercase();
-        if pt_lower == "milk" || pt_lower == "liquid" || pt_lower == "beverage" || pt_lower == "juice" {
+        if pt_lower == "milk"
+            || pt_lower == "liquid"
+            || pt_lower == "beverage"
+            || pt_lower == "juice"
+        {
             return true;
         }
     }
@@ -333,19 +438,53 @@ fn is_cross_conflict(main_slug: &str, cand_slug: &str) -> bool {
     let b = cand_slug.to_lowercase();
 
     // Fruit + strong alliums/fish = ❌
-    let is_fruit = |s: &str| ["apple", "mango", "banana", "strawberr", "blueberr",
-        "raspberry", "peach", "pear", "plum", "grape", "melon", "watermelon",
-        "pineapple", "kiwi"].iter().any(|k| s.contains(k));
-    let is_allium = |s: &str| ["garlic", "onion", "shallot", "leek"].iter().any(|k| s.contains(k));
-    let is_raw_fish_slug = |s: &str| ["salmon", "tuna", "mackerel", "sardine",
-        "anchovy", "herring"].iter().any(|k| s.contains(k));
+    let is_fruit = |s: &str| {
+        [
+            "apple",
+            "mango",
+            "banana",
+            "strawberr",
+            "blueberr",
+            "raspberry",
+            "peach",
+            "pear",
+            "plum",
+            "grape",
+            "melon",
+            "watermelon",
+            "pineapple",
+            "kiwi",
+        ]
+        .iter()
+        .any(|k| s.contains(k))
+    };
+    let is_allium = |s: &str| {
+        ["garlic", "onion", "shallot", "leek"]
+            .iter()
+            .any(|k| s.contains(k))
+    };
+    let is_raw_fish_slug = |s: &str| {
+        [
+            "salmon", "tuna", "mackerel", "sardine", "anchovy", "herring",
+        ]
+        .iter()
+        .any(|k| s.contains(k))
+    };
 
-    if is_fruit(&a) && is_allium(&b) { return true; }
-    if is_fruit(&b) && is_allium(&a) { return true; }
+    if is_fruit(&a) && is_allium(&b) {
+        return true;
+    }
+    if is_fruit(&b) && is_allium(&a) {
+        return true;
+    }
 
     // Sweet fruit + raw fish (non-sushi context)
-    if is_fruit(&a) && is_raw_fish_slug(&b) { return true; }
-    if is_fruit(&b) && is_raw_fish_slug(&a) { return true; }
+    if is_fruit(&a) && is_raw_fish_slug(&b) {
+        return true;
+    }
+    if is_fruit(&b) && is_raw_fish_slug(&a) {
+        return true;
+    }
 
     false
 }
@@ -355,51 +494,216 @@ fn is_cross_conflict(main_slug: &str, cand_slug: &str) -> bool {
 fn default_sides_for(main_slug: &str, main_product_type: Option<&str>) -> Vec<Candidate> {
     let cat = product_type_category(main_product_type);
     let slug_cat = slug_category(main_slug);
-    let effective_cat = if cat != FoodCategory::Other { cat } else { slug_cat };
-
-    let mut defaults: Vec<(&str, &str, IngredientRole, f64, f64, f64, f64, f64)> = match effective_cat {
-        // fish → lemon (aromatic) + rice (side) + olive-oil (fat)
-        FoodCategory::Fish => vec![
-            ("lemon",      "Lemon",      IngredientRole::Aromatic, 29.0,  1.1, 0.3, 2.8,  30.0),
-            ("rice",       "Rice",       IngredientRole::Side,     130.0, 2.7, 0.3, 0.4, 150.0),
-            ("olive-oil",  "Olive oil",  IngredientRole::Fat,      884.0, 0.0,100.0,0.0,  10.0),
-        ],
-        // meat/poultry → garlic (aromatic) + potato (side) + olive-oil (fat)
-        FoodCategory::Meat => vec![
-            ("garlic",     "Garlic",     IngredientRole::Aromatic,  149.0, 6.4, 0.5, 2.1,   5.0),
-            ("potato",     "Potato",     IngredientRole::Side,       77.0, 2.0, 0.1, 2.2, 150.0),
-            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
-        ],
-        // grain/pasta → tomato (side) + basil (aromatic) + olive-oil (fat)
-        FoodCategory::Grain => vec![
-            ("tomato",     "Tomato",     IngredientRole::Side,       18.0, 0.9, 0.2, 1.2, 120.0),
-            ("basil",      "Basil",      IngredientRole::Aromatic,   23.0, 3.2, 0.6, 1.6,   5.0),
-            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
-        ],
-        // vegetable → lemon (aromatic) + olive-oil (fat) + hummus (sauce)
-        FoodCategory::Vegetable => vec![
-            ("lemon",      "Lemon",      IngredientRole::Aromatic,   29.0, 1.1, 0.3, 2.8,  30.0),
-            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
-            ("hummus",     "Hummus",     IngredientRole::Sauce,      166.0, 7.9, 9.6, 6.0,  30.0),
-        ],
-        // legume → garlic (aromatic) + olive-oil (fat) + tomato (side)
-        FoodCategory::Legume => vec![
-            ("garlic",     "Garlic",     IngredientRole::Aromatic,  149.0, 6.4, 0.5, 2.1,   5.0),
-            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
-            ("tomato",     "Tomato",     IngredientRole::Side,       18.0, 0.9, 0.2, 1.2, 120.0),
-        ],
-        // default → lemon + olive-oil + garlic
-        _ => vec![
-            ("lemon",      "Lemon",      IngredientRole::Aromatic,   29.0, 1.1, 0.3, 2.8,  30.0),
-            ("olive-oil",  "Olive oil",  IngredientRole::Fat,       884.0, 0.0,100.0,0.0,  10.0),
-            ("garlic",     "Garlic",     IngredientRole::Aromatic,  149.0, 6.4, 0.5, 2.1,   5.0),
-        ],
+    let effective_cat = if cat != FoodCategory::Other {
+        cat
+    } else {
+        slug_cat
     };
 
+    let mut defaults: Vec<(&str, &str, IngredientRole, f64, f64, f64, f64, f64)> =
+        match effective_cat {
+            // fish → lemon (aromatic) + rice (side) + olive-oil (fat)
+            FoodCategory::Fish => vec![
+                (
+                    "lemon",
+                    "Lemon",
+                    IngredientRole::Aromatic,
+                    29.0,
+                    1.1,
+                    0.3,
+                    2.8,
+                    30.0,
+                ),
+                (
+                    "rice",
+                    "Rice",
+                    IngredientRole::Side,
+                    130.0,
+                    2.7,
+                    0.3,
+                    0.4,
+                    150.0,
+                ),
+                (
+                    "olive-oil",
+                    "Olive oil",
+                    IngredientRole::Fat,
+                    884.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    10.0,
+                ),
+            ],
+            // meat/poultry → garlic (aromatic) + potato (side) + olive-oil (fat)
+            FoodCategory::Meat => vec![
+                (
+                    "garlic",
+                    "Garlic",
+                    IngredientRole::Aromatic,
+                    149.0,
+                    6.4,
+                    0.5,
+                    2.1,
+                    5.0,
+                ),
+                (
+                    "potato",
+                    "Potato",
+                    IngredientRole::Side,
+                    77.0,
+                    2.0,
+                    0.1,
+                    2.2,
+                    150.0,
+                ),
+                (
+                    "olive-oil",
+                    "Olive oil",
+                    IngredientRole::Fat,
+                    884.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    10.0,
+                ),
+            ],
+            // grain/pasta → tomato (side) + basil (aromatic) + olive-oil (fat)
+            FoodCategory::Grain => vec![
+                (
+                    "tomato",
+                    "Tomato",
+                    IngredientRole::Side,
+                    18.0,
+                    0.9,
+                    0.2,
+                    1.2,
+                    120.0,
+                ),
+                (
+                    "basil",
+                    "Basil",
+                    IngredientRole::Aromatic,
+                    23.0,
+                    3.2,
+                    0.6,
+                    1.6,
+                    5.0,
+                ),
+                (
+                    "olive-oil",
+                    "Olive oil",
+                    IngredientRole::Fat,
+                    884.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    10.0,
+                ),
+            ],
+            // vegetable → lemon (aromatic) + olive-oil (fat) + hummus (sauce)
+            FoodCategory::Vegetable => vec![
+                (
+                    "lemon",
+                    "Lemon",
+                    IngredientRole::Aromatic,
+                    29.0,
+                    1.1,
+                    0.3,
+                    2.8,
+                    30.0,
+                ),
+                (
+                    "olive-oil",
+                    "Olive oil",
+                    IngredientRole::Fat,
+                    884.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    10.0,
+                ),
+                (
+                    "hummus",
+                    "Hummus",
+                    IngredientRole::Sauce,
+                    166.0,
+                    7.9,
+                    9.6,
+                    6.0,
+                    30.0,
+                ),
+            ],
+            // legume → garlic (aromatic) + olive-oil (fat) + tomato (side)
+            FoodCategory::Legume => vec![
+                (
+                    "garlic",
+                    "Garlic",
+                    IngredientRole::Aromatic,
+                    149.0,
+                    6.4,
+                    0.5,
+                    2.1,
+                    5.0,
+                ),
+                (
+                    "olive-oil",
+                    "Olive oil",
+                    IngredientRole::Fat,
+                    884.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    10.0,
+                ),
+                (
+                    "tomato",
+                    "Tomato",
+                    IngredientRole::Side,
+                    18.0,
+                    0.9,
+                    0.2,
+                    1.2,
+                    120.0,
+                ),
+            ],
+            // default → lemon + olive-oil + garlic
+            _ => vec![
+                (
+                    "lemon",
+                    "Lemon",
+                    IngredientRole::Aromatic,
+                    29.0,
+                    1.1,
+                    0.3,
+                    2.8,
+                    30.0,
+                ),
+                (
+                    "olive-oil",
+                    "Olive oil",
+                    IngredientRole::Fat,
+                    884.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    10.0,
+                ),
+                (
+                    "garlic",
+                    "Garlic",
+                    IngredientRole::Aromatic,
+                    149.0,
+                    6.4,
+                    0.5,
+                    2.1,
+                    5.0,
+                ),
+            ],
+        };
+
     // Remove any default that clashes with the main ingredient itself
-    defaults.retain(|(slug, _, _, _, _, _, _, _)| {
-        !is_cross_conflict(main_slug, slug)
-    });
+    defaults.retain(|(slug, _, _, _, _, _, _, _)| !is_cross_conflict(main_slug, slug));
 
     defaults
         .into_iter()
@@ -647,8 +951,7 @@ fn build_balanced(
                 let p = n.protein_g * 4.0 / n.calories;
                 let f = n.fat_g * 9.0 / n.calories;
                 let c_ratio = n.carbs_g * 4.0 / n.calories;
-                (1.0 - ((p - 0.3).abs() + (f - 0.3).abs() + (c_ratio - 0.4).abs()) / 3.0)
-                    .max(0.0)
+                (1.0 - ((p - 0.3).abs() + (f - 0.3).abs() + (c_ratio - 0.4).abs()) / 3.0).max(0.0)
             } else {
                 0.0
             };
@@ -723,7 +1026,8 @@ fn build_heavy(
             };
 
             let pair_bonus = (c.pair_score / 10.0).min(1.0) * 5.0;
-            let score = fat_score + umami_score + aroma_score + density_bonus + role_bonus + pair_bonus;
+            let score =
+                fat_score + umami_score + aroma_score + density_bonus + role_bonus + pair_bonus;
             (c, role, score)
         })
         .collect();
@@ -788,7 +1092,10 @@ fn compose_dish(
 
 fn detect_dish_type(ingredients: &[VariantIngredient]) -> DishType {
     let has_sauce = ingredients.iter().any(|i| i.role == IngredientRole::Sauce);
-    let side_count = ingredients.iter().filter(|i| i.role == IngredientRole::Side).count();
+    let side_count = ingredients
+        .iter()
+        .filter(|i| i.role == IngredientRole::Side)
+        .count();
     let has_fat = ingredients.iter().any(|i| i.role == IngredientRole::Fat);
     let total_cal: f64 = ingredients.iter().map(|i| i.calories).sum();
 
@@ -801,14 +1108,36 @@ fn detect_dish_type(ingredients: &[VariantIngredient]) -> DishType {
     };
 
     // Bowl: grain base detected
-    if slugs_contain(&["rice", "quinoa", "buckwheat", "bulgur", "couscous", "farro",
-                        "barley", "millet", "noodle", "soba", "udon", "ramen"]) {
+    if slugs_contain(&[
+        "rice",
+        "quinoa",
+        "buckwheat",
+        "bulgur",
+        "couscous",
+        "farro",
+        "barley",
+        "millet",
+        "noodle",
+        "soba",
+        "udon",
+        "ramen",
+    ]) {
         return DishType::Bowl;
     }
 
     // Salad: leafy greens or raw-salad base
-    if slugs_contain(&["lettuce", "spinach", "arugula", "rocket", "kale", "cabbage",
-                        "watercress", "endive", "radicchio", "mixed-greens"]) {
+    if slugs_contain(&[
+        "lettuce",
+        "spinach",
+        "arugula",
+        "rocket",
+        "kale",
+        "cabbage",
+        "watercress",
+        "endive",
+        "radicchio",
+        "mixed-greens",
+    ]) {
         return DishType::Salad;
     }
 
@@ -816,8 +1145,17 @@ fn detect_dish_type(ingredients: &[VariantIngredient]) -> DishType {
     if has_sauce && has_fat {
         return DishType::SauceBased;
     }
-    if has_sauce && slugs_contain(&["pasta", "spaghetti", "penne", "fettuccine",
-                                    "linguine", "rigatoni", "tagliatelle"]) {
+    if has_sauce
+        && slugs_contain(&[
+            "pasta",
+            "spaghetti",
+            "penne",
+            "fettuccine",
+            "linguine",
+            "rigatoni",
+            "tagliatelle",
+        ])
+    {
         return DishType::SauceBased;
     }
 
@@ -847,7 +1185,8 @@ fn build_title(
     }
     let main_name = &ingredients[0].name;
 
-    let sauce_name = ingredients.iter()
+    let sauce_name = ingredients
+        .iter()
         .find(|i| i.role == IngredientRole::Sauce)
         .map(|i| i.name.as_str());
 
@@ -857,7 +1196,8 @@ fn build_title(
         .map(|i| i.name.as_str())
         .collect();
 
-    let aromatic = ingredients.iter()
+    let aromatic = ingredients
+        .iter()
         .find(|i| i.role == IngredientRole::Aromatic)
         .map(|i| i.name.as_str());
 
@@ -872,8 +1212,12 @@ fn build_title(
 // ── RU titles ────────────────────────────────────────────────────────────────
 
 fn build_title_ru(
-    main_name: &str, variant: &str, dish_type: DishType,
-    sauce: Option<&str>, sides: &[&str], aromatic: Option<&str>,
+    main_name: &str,
+    variant: &str,
+    dish_type: DishType,
+    sauce: Option<&str>,
+    sides: &[&str],
+    aromatic: Option<&str>,
 ) -> String {
     let prefix = match variant {
         "healthy" => "Лёгкий",
@@ -893,38 +1237,73 @@ fn build_title_ru(
             }
         }
         DishType::Salad => {
-            let p = if prefix.is_empty() { "Салат:".to_string() } else { format!("{} салат:", prefix) };
+            let p = if prefix.is_empty() {
+                "Салат:".to_string()
+            } else {
+                format!("{} салат:", prefix)
+            };
             fmt_companions_ru(&p, main_name, sides, aromatic)
         }
         DishType::Bowl => {
-            let p = if prefix.is_empty() { "Боул:".to_string() } else { format!("{} боул:", prefix) };
+            let p = if prefix.is_empty() {
+                "Боул:".to_string()
+            } else {
+                format!("{} боул:", prefix)
+            };
             fmt_companions_ru(&p, main_name, sides, aromatic)
         }
         DishType::MainCourse => fmt_companions_ru(prefix, main_name, sides, aromatic),
     }
 }
 
-fn fmt_companions_ru(prefix: &str, main_name: &str, sides: &[&str], aromatic: Option<&str>) -> String {
+fn fmt_companions_ru(
+    prefix: &str,
+    main_name: &str,
+    sides: &[&str],
+    aromatic: Option<&str>,
+) -> String {
     let mut parts: Vec<&str> = sides.to_vec();
-    if let Some(a) = aromatic { parts.push(a); }
-    let base = if prefix.is_empty() { main_name.to_string() } else { format!("{} {}", prefix, main_name.to_lowercase()) };
-    if parts.is_empty() { base }
-    else if parts.len() == 1 { format!("{} с {}", base, parts[0]) }
-    else { let last = parts.pop().unwrap(); format!("{} с {} и {}", base, parts.join(", "), last) }
+    if let Some(a) = aromatic {
+        parts.push(a);
+    }
+    let base = if prefix.is_empty() {
+        main_name.to_string()
+    } else {
+        format!("{} {}", prefix, main_name.to_lowercase())
+    };
+    if parts.is_empty() {
+        base
+    } else if parts.len() == 1 {
+        format!("{} с {}", base, parts[0])
+    } else {
+        let last = parts.pop().unwrap();
+        format!("{} с {} и {}", base, parts.join(", "), last)
+    }
 }
 
 // ── UK titles ────────────────────────────────────────────────────────────────
 
 fn build_title_uk(
-    main_name: &str, variant: &str, dish_type: DishType,
-    sauce: Option<&str>, sides: &[&str], aromatic: Option<&str>,
+    main_name: &str,
+    variant: &str,
+    dish_type: DishType,
+    sauce: Option<&str>,
+    sides: &[&str],
+    aromatic: Option<&str>,
 ) -> String {
-    let prefix = match variant { "healthy" => "Легкий", "heavy" => "Ситний", _ => "" };
+    let prefix = match variant {
+        "healthy" => "Легкий",
+        "heavy" => "Ситний",
+        _ => "",
+    };
     match dish_type {
         DishType::SauceBased => {
             if let Some(s) = sauce {
-                if prefix.is_empty() { format!("{} у соусі {}", main_name, s) }
-                else { format!("{} {} у соусі {}", prefix, main_name.to_lowercase(), s) }
+                if prefix.is_empty() {
+                    format!("{} у соусі {}", main_name, s)
+                } else {
+                    format!("{} {} у соусі {}", prefix, main_name.to_lowercase(), s)
+                }
             } else {
                 fmt_companions_uk(prefix, main_name, sides, aromatic)
             }
@@ -933,27 +1312,54 @@ fn build_title_uk(
     }
 }
 
-fn fmt_companions_uk(prefix: &str, main_name: &str, sides: &[&str], aromatic: Option<&str>) -> String {
+fn fmt_companions_uk(
+    prefix: &str,
+    main_name: &str,
+    sides: &[&str],
+    aromatic: Option<&str>,
+) -> String {
     let mut parts: Vec<&str> = sides.to_vec();
-    if let Some(a) = aromatic { parts.push(a); }
-    let base = if prefix.is_empty() { main_name.to_string() } else { format!("{} {}", prefix, main_name.to_lowercase()) };
-    if parts.is_empty() { base }
-    else if parts.len() == 1 { format!("{} з {}", base, parts[0]) }
-    else { let last = parts.pop().unwrap(); format!("{} з {} та {}", base, parts.join(", "), last) }
+    if let Some(a) = aromatic {
+        parts.push(a);
+    }
+    let base = if prefix.is_empty() {
+        main_name.to_string()
+    } else {
+        format!("{} {}", prefix, main_name.to_lowercase())
+    };
+    if parts.is_empty() {
+        base
+    } else if parts.len() == 1 {
+        format!("{} з {}", base, parts[0])
+    } else {
+        let last = parts.pop().unwrap();
+        format!("{} з {} та {}", base, parts.join(", "), last)
+    }
 }
 
 // ── PL titles ────────────────────────────────────────────────────────────────
 
 fn build_title_pl(
-    main_name: &str, variant: &str, dish_type: DishType,
-    sauce: Option<&str>, sides: &[&str], aromatic: Option<&str>,
+    main_name: &str,
+    variant: &str,
+    dish_type: DishType,
+    sauce: Option<&str>,
+    sides: &[&str],
+    aromatic: Option<&str>,
 ) -> String {
-    let prefix = match variant { "healthy" => "Lekki", "heavy" => "Syty", _ => "" };
+    let prefix = match variant {
+        "healthy" => "Lekki",
+        "heavy" => "Syty",
+        _ => "",
+    };
     match dish_type {
         DishType::SauceBased => {
             if let Some(s) = sauce {
-                if prefix.is_empty() { format!("{} w sosie {}", main_name, s) }
-                else { format!("{} {} w sosie {}", prefix, main_name.to_lowercase(), s) }
+                if prefix.is_empty() {
+                    format!("{} w sosie {}", main_name, s)
+                } else {
+                    format!("{} {} w sosie {}", prefix, main_name.to_lowercase(), s)
+                }
             } else {
                 fmt_companions_pl(prefix, main_name, sides, aromatic)
             }
@@ -962,62 +1368,113 @@ fn build_title_pl(
     }
 }
 
-fn fmt_companions_pl(prefix: &str, main_name: &str, sides: &[&str], aromatic: Option<&str>) -> String {
+fn fmt_companions_pl(
+    prefix: &str,
+    main_name: &str,
+    sides: &[&str],
+    aromatic: Option<&str>,
+) -> String {
     let mut parts: Vec<&str> = sides.to_vec();
-    if let Some(a) = aromatic { parts.push(a); }
-    let base = if prefix.is_empty() { main_name.to_string() } else { format!("{} {}", prefix, main_name.to_lowercase()) };
-    if parts.is_empty() { base }
-    else if parts.len() == 1 { format!("{} z {}", base, parts[0]) }
-    else { let last = parts.pop().unwrap(); format!("{} z {} i {}", base, parts.join(", "), last) }
+    if let Some(a) = aromatic {
+        parts.push(a);
+    }
+    let base = if prefix.is_empty() {
+        main_name.to_string()
+    } else {
+        format!("{} {}", prefix, main_name.to_lowercase())
+    };
+    if parts.is_empty() {
+        base
+    } else if parts.len() == 1 {
+        format!("{} z {}", base, parts[0])
+    } else {
+        let last = parts.pop().unwrap();
+        format!("{} z {} i {}", base, parts.join(", "), last)
+    }
 }
 
 // ── EN titles ────────────────────────────────────────────────────────────────
 
 fn build_title_en(
-    main_name: &str, variant: &str, dish_type: DishType,
-    sauce: Option<&str>, sides: &[&str], aromatic: Option<&str>,
+    main_name: &str,
+    variant: &str,
+    dish_type: DishType,
+    sauce: Option<&str>,
+    sides: &[&str],
+    aromatic: Option<&str>,
 ) -> String {
-    let prefix = match variant { "healthy" => "Light", "heavy" => "Rich", _ => "" };
+    let prefix = match variant {
+        "healthy" => "Light",
+        "heavy" => "Rich",
+        _ => "",
+    };
     match dish_type {
         DishType::SauceBased => {
             if let Some(s) = sauce {
-                if prefix.is_empty() { format!("{} in {} sauce", main_name, s) }
-                else { format!("{} {} in {} sauce", prefix, main_name.to_lowercase(), s) }
+                if prefix.is_empty() {
+                    format!("{} in {} sauce", main_name, s)
+                } else {
+                    format!("{} {} in {} sauce", prefix, main_name.to_lowercase(), s)
+                }
             } else {
                 fmt_companions_en(prefix, main_name, sides, aromatic)
             }
         }
         DishType::Salad => {
-            let p = if prefix.is_empty() { "Salad:".to_string() } else { format!("{} salad:", prefix) };
+            let p = if prefix.is_empty() {
+                "Salad:".to_string()
+            } else {
+                format!("{} salad:", prefix)
+            };
             fmt_companions_en(&p, main_name, sides, aromatic)
         }
         DishType::Bowl => {
-            let p = if prefix.is_empty() { "Bowl:".to_string() } else { format!("{} bowl:", prefix) };
+            let p = if prefix.is_empty() {
+                "Bowl:".to_string()
+            } else {
+                format!("{} bowl:", prefix)
+            };
             fmt_companions_en(&p, main_name, sides, aromatic)
         }
         DishType::MainCourse => fmt_companions_en(prefix, main_name, sides, aromatic),
     }
 }
 
-fn fmt_companions_en(prefix: &str, main_name: &str, sides: &[&str], aromatic: Option<&str>) -> String {
+fn fmt_companions_en(
+    prefix: &str,
+    main_name: &str,
+    sides: &[&str],
+    aromatic: Option<&str>,
+) -> String {
     let mut parts: Vec<&str> = sides.to_vec();
-    if let Some(a) = aromatic { parts.push(a); }
-    let base = if prefix.is_empty() { main_name.to_string() } else { format!("{} {}", prefix, main_name.to_lowercase()) };
-    if parts.is_empty() { base }
-    else if parts.len() == 1 { format!("{} with {}", base, parts[0]) }
-    else { let last = parts.pop().unwrap(); format!("{} with {} and {}", base, parts.join(", "), last) }
+    if let Some(a) = aromatic {
+        parts.push(a);
+    }
+    let base = if prefix.is_empty() {
+        main_name.to_string()
+    } else {
+        format!("{} {}", prefix, main_name.to_lowercase())
+    };
+    if parts.is_empty() {
+        base
+    } else if parts.len() == 1 {
+        format!("{} with {}", base, parts[0])
+    } else {
+        let last = parts.pop().unwrap();
+        format!("{} with {} and {}", base, parts.join(", "), last)
+    }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn dimension_value(fv: &FlavorVector, dim: &str) -> f64 {
     match dim {
-        "sweetness"  => fv.sweetness,
-        "acidity"    => fv.acidity,
+        "sweetness" => fv.sweetness,
+        "acidity" => fv.acidity,
         "bitterness" => fv.bitterness,
-        "umami"      => fv.umami,
-        "aroma"      => fv.aroma,
-        "fat"        => fv.fat,
+        "umami" => fv.umami,
+        "aroma" => fv.aroma,
+        "fat" => fv.fat,
         _ => 0.0,
     }
 }
@@ -1039,8 +1496,10 @@ fn compute_healthy_score(ingredients: &[VariantIngredient], total_cal: f64) -> u
         10.0
     };
     let variety = (ingredients.len() as f64 / 5.0).min(1.0) * 30.0;
-    let roles: std::collections::HashSet<_> = ingredients.iter()
-        .map(|i| std::mem::discriminant(&i.role)).collect();
+    let roles: std::collections::HashSet<_> = ingredients
+        .iter()
+        .map(|i| std::mem::discriminant(&i.role))
+        .collect();
     let role_diversity = (roles.len() as f64 / 4.0).min(1.0) * 10.0;
     let base = cal_score + variety + role_diversity + 15.0;
     base.clamp(0.0, 100.0).round() as u8
@@ -1050,7 +1509,8 @@ fn compute_heavy_score(picks: &[(&Candidate, IngredientRole, f64)]) -> u8 {
     if picks.is_empty() {
         return 50;
     }
-    let avg_umami: f64 = picks.iter().map(|(c, _, _)| c.flavor.umami).sum::<f64>() / picks.len() as f64;
+    let avg_umami: f64 =
+        picks.iter().map(|(c, _, _)| c.flavor.umami).sum::<f64>() / picks.len() as f64;
     let avg_fat: f64 = picks.iter().map(|(c, _, _)| c.flavor.fat).sum::<f64>() / picks.len() as f64;
     let has_sauce = picks.iter().any(|(_, r, _)| *r == IngredientRole::Sauce);
     let sauce_bonus = if has_sauce { 10.0 } else { 0.0 };
@@ -1062,27 +1522,45 @@ fn compute_heavy_score(picks: &[(&Candidate, IngredientRole, f64)]) -> u8 {
 
 fn healthy_explanation(lang: Language) -> String {
     match lang {
-        Language::Ru => "Лёгкий вариант: упор на белок и клетчатку, минимум калорий. Роли: гарнир + аромат.".to_string(),
-        Language::Uk => "Легкий варіант: акцент на білок та клітковину, мінімум калорій.".to_string(),
+        Language::Ru => {
+            "Лёгкий вариант: упор на белок и клетчатку, минимум калорий. Роли: гарнир + аромат."
+                .to_string()
+        }
+        Language::Uk => {
+            "Легкий варіант: акцент на білок та клітковину, мінімум калорій.".to_string()
+        }
         Language::Pl => "Lekka wersja: nacisk na białko i błonnik, minimum kalorii.".to_string(),
-        Language::En => "Light variant: high protein & fiber, minimal calories. Roles: side + aromatic.".to_string(),
+        Language::En => {
+            "Light variant: high protein & fiber, minimal calories. Roles: side + aromatic."
+                .to_string()
+        }
     }
 }
 
 fn balanced_explanation(lang: Language) -> String {
     match lang {
-        Language::Ru => "Сбалансированный вариант: гармония вкуса и нутриентов. Все роли представлены.".to_string(),
+        Language::Ru => {
+            "Сбалансированный вариант: гармония вкуса и нутриентов. Все роли представлены."
+                .to_string()
+        }
         Language::Uk => "Збалансований варіант: гармонія смаку та нутрієнтів.".to_string(),
         Language::Pl => "Zbalansowana wersja: harmonia smaku i składników odżywczych.".to_string(),
-        Language::En => "Balanced variant: flavor harmony and nutrient balance. All roles present.".to_string(),
+        Language::En => {
+            "Balanced variant: flavor harmony and nutrient balance. All roles present.".to_string()
+        }
     }
 }
 
 fn heavy_explanation(lang: Language) -> String {
     match lang {
-        Language::Ru => "Сытный вариант: максимум вкуса, жиров и умами. Соус + жир для насыщенности.".to_string(),
+        Language::Ru => {
+            "Сытный вариант: максимум вкуса, жиров и умами. Соус + жир для насыщенности."
+                .to_string()
+        }
         Language::Uk => "Ситний варіант: максимум смаку, жирів та умамі.".to_string(),
         Language::Pl => "Syta wersja: maksimum smaku, tłuszczu i umami.".to_string(),
-        Language::En => "Rich variant: maximum flavor, fats, and umami. Sauce + fat for richness.".to_string(),
+        Language::En => {
+            "Rich variant: maximum flavor, fats, and umami. Sauce + fat for richness.".to_string()
+        }
     }
 }

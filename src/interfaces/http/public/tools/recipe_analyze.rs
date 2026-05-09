@@ -13,13 +13,13 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
-use crate::domain::tools::flavor_graph::{self, FlavorVector, FlavorIngredient};
+use crate::domain::tools::dish_context;
+use crate::domain::tools::flavor_graph::{self, FlavorIngredient, FlavorVector};
 use crate::domain::tools::nutrition::{self as nut, NutritionBreakdown};
 use crate::domain::tools::recipe_analyzer::{self, DietFlags, RecipeIngredientInput};
+use crate::domain::tools::rule_engine;
 use crate::domain::tools::suggestion_engine::{self, Candidate};
 use crate::domain::tools::unit_converter as uc;
-use crate::domain::tools::rule_engine;
-use crate::domain::tools::dish_context;
 
 // ── Request ──────────────────────────────────────────────────────────────────
 
@@ -32,11 +32,13 @@ pub struct RecipeAnalyzeRequest {
     pub lang: Option<String>,
 }
 
-fn default_portions() -> u32 { 1 }
+fn default_portions() -> u32 {
+    1
+}
 
 #[derive(Debug, Deserialize)]
 pub struct IngredientInput {
-    pub slug:  String,
+    pub slug: String,
     pub grams: f64,
 }
 
@@ -44,13 +46,13 @@ pub struct IngredientInput {
 
 #[derive(Debug, Serialize)]
 pub struct RecipeAnalyzeResponse {
-    pub nutrition:   NutritionSummary,
+    pub nutrition: NutritionSummary,
     pub per_portion: Option<NutritionSummary>,
-    pub portions:    u32,
-    pub macros:      MacrosSummary,
-    pub score:       u8,
-    pub flavor:      FlavorSummary,
-    pub diet:        Vec<String>,
+    pub portions: u32,
+    pub macros: MacrosSummary,
+    pub score: u8,
+    pub flavor: FlavorSummary,
+    pub diet: Vec<String>,
     pub suggestions: Vec<SuggestionItem>,
     pub ingredients: Vec<IngredientDetail>,
     pub flavor_contributions: Vec<FlavorContribution>,
@@ -60,136 +62,136 @@ pub struct RecipeAnalyzeResponse {
 /// Per-ingredient flavor influence: weighted raw values + percentages
 #[derive(Debug, Serialize)]
 pub struct FlavorContribution {
-    pub slug:        String,
-    pub sweetness:   f64,
-    pub acidity:     f64,
-    pub bitterness:  f64,
-    pub umami:       f64,
-    pub fat:         f64,
-    pub aroma:       f64,
+    pub slug: String,
+    pub sweetness: f64,
+    pub acidity: f64,
+    pub bitterness: f64,
+    pub umami: f64,
+    pub fat: f64,
+    pub aroma: f64,
     /// Percentage contribution to each dimension (0–100)
-    pub pct_sweetness:   f64,
-    pub pct_acidity:     f64,
-    pub pct_bitterness:  f64,
-    pub pct_umami:       f64,
-    pub pct_fat:         f64,
-    pub pct_aroma:       f64,
+    pub pct_sweetness: f64,
+    pub pct_acidity: f64,
+    pub pct_bitterness: f64,
+    pub pct_umami: f64,
+    pub pct_fat: f64,
+    pub pct_aroma: f64,
 }
 
 #[derive(Debug, Serialize)]
 pub struct NutritionSummary {
     pub calories: f64,
-    pub protein:  f64,
-    pub fat:      f64,
-    pub carbs:    f64,
-    pub fiber:    f64,
-    pub sugar:    f64,
+    pub protein: f64,
+    pub fat: f64,
+    pub carbs: f64,
+    pub fiber: f64,
+    pub sugar: f64,
 }
 
 #[derive(Debug, Serialize)]
 pub struct MacrosSummary {
     pub protein_pct: f64,
-    pub fat_pct:     f64,
-    pub carbs_pct:   f64,
+    pub fat_pct: f64,
+    pub carbs_pct: f64,
 }
 
 #[derive(Debug, Serialize)]
 pub struct FlavorSummary {
-    pub sweetness:  f64,
-    pub acidity:    f64,
+    pub sweetness: f64,
+    pub acidity: f64,
     pub bitterness: f64,
-    pub umami:      f64,
-    pub fat:        f64,
-    pub aroma:      f64,
+    pub umami: f64,
+    pub fat: f64,
+    pub aroma: f64,
     pub balance_score: u8,
-    pub weak:       Vec<String>,
-    pub strong:     Vec<String>,
+    pub weak: Vec<String>,
+    pub strong: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct SuggestionItem {
-    pub slug:      String,
-    pub name:      String,
-    pub name_en:   String,
-    pub name_ru:   Option<String>,
-    pub name_pl:   Option<String>,
-    pub name_uk:   Option<String>,
+    pub slug: String,
+    pub name: String,
+    pub name_en: String,
+    pub name_ru: Option<String>,
+    pub name_pl: Option<String>,
+    pub name_uk: Option<String>,
     pub image_url: Option<String>,
-    pub score:     u8,
-    pub reasons:   Vec<String>,
-    pub fills:     Vec<String>,
+    pub score: u8,
+    pub reasons: Vec<String>,
+    pub fills: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct IngredientDetail {
-    pub slug:         String,
-    pub name:         String,
-    pub name_en:      String,
-    pub name_ru:      Option<String>,
-    pub name_pl:      Option<String>,
-    pub name_uk:      Option<String>,
-    pub image_url:    Option<String>,
-    pub grams:        f64,
-    pub calories:     f64,
-    pub protein:      f64,
-    pub fat:          f64,
-    pub carbs:        f64,
-    pub fiber:        f64,
-    pub sugar:        f64,
+    pub slug: String,
+    pub name: String,
+    pub name_en: String,
+    pub name_ru: Option<String>,
+    pub name_pl: Option<String>,
+    pub name_uk: Option<String>,
+    pub image_url: Option<String>,
+    pub grams: f64,
+    pub calories: f64,
+    pub protein: f64,
+    pub fat: f64,
+    pub carbs: f64,
+    pub fiber: f64,
+    pub sugar: f64,
     pub product_type: Option<String>,
-    pub found:        bool,
+    pub found: bool,
 }
 
 // ── DB row types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, sqlx::FromRow)]
 struct IngredientRow {
-    slug:          String,
-    name_en:       String,
-    name_ru:       Option<String>,
-    name_pl:       Option<String>,
-    name_uk:       Option<String>,
-    image_url:     Option<String>,
-    product_type:  Option<String>,
+    slug: String,
+    name_en: String,
+    name_ru: Option<String>,
+    name_pl: Option<String>,
+    name_uk: Option<String>,
+    image_url: Option<String>,
+    product_type: Option<String>,
     calories_kcal: Option<f32>,
-    protein_g:     Option<f32>,
-    fat_g:         Option<f32>,
-    carbs_g:       Option<f32>,
-    fiber_g:       Option<f32>,
-    sugar_g:       Option<f32>,
-    sweetness:     Option<f32>,
-    acidity:       Option<f32>,
-    bitterness:    Option<f32>,
-    umami:         Option<f32>,
-    aroma:         Option<f32>,
-    vegan:         Option<bool>,
-    vegetarian:    Option<bool>,
-    keto:          Option<bool>,
-    paleo:         Option<bool>,
-    gluten_free:   Option<bool>,
+    protein_g: Option<f32>,
+    fat_g: Option<f32>,
+    carbs_g: Option<f32>,
+    fiber_g: Option<f32>,
+    sugar_g: Option<f32>,
+    sweetness: Option<f32>,
+    acidity: Option<f32>,
+    bitterness: Option<f32>,
+    umami: Option<f32>,
+    aroma: Option<f32>,
+    vegan: Option<bool>,
+    vegetarian: Option<bool>,
+    keto: Option<bool>,
+    paleo: Option<bool>,
+    gluten_free: Option<bool>,
     mediterranean: Option<bool>,
-    low_carb:      Option<bool>,
+    low_carb: Option<bool>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 struct CandidateRow {
-    slug:          String,
-    name_en:       String,
-    name_ru:       Option<String>,
-    name_pl:       Option<String>,
-    name_uk:       Option<String>,
-    image_url:     Option<String>,
+    slug: String,
+    name_en: String,
+    name_ru: Option<String>,
+    name_pl: Option<String>,
+    name_uk: Option<String>,
+    image_url: Option<String>,
     calories_kcal: Option<f32>,
-    protein_g:     Option<f32>,
-    fat_g:         Option<f32>,
-    carbs_g:       Option<f32>,
-    fiber_g:       Option<f32>,
-    sugar_g:       Option<f32>,
-    sweetness:     Option<f32>,
-    acidity:       Option<f32>,
-    bitterness:    Option<f32>,
-    umami:         Option<f32>,
-    aroma:         Option<f32>,
+    protein_g: Option<f32>,
+    fat_g: Option<f32>,
+    carbs_g: Option<f32>,
+    fiber_g: Option<f32>,
+    sugar_g: Option<f32>,
+    sweetness: Option<f32>,
+    acidity: Option<f32>,
+    bitterness: Option<f32>,
+    umami: Option<f32>,
+    aroma: Option<f32>,
     avg_pair_score: Option<f64>,
 }
 
@@ -206,7 +208,7 @@ fn pick_name(
         "ru" => name_ru.as_deref().unwrap_or(name_en).to_string(),
         "pl" => name_pl.as_deref().unwrap_or(name_en).to_string(),
         "uk" => name_uk.as_deref().unwrap_or(name_en).to_string(),
-        _    => name_en.to_string(),
+        _ => name_en.to_string(),
     }
 }
 
@@ -255,13 +257,14 @@ pub async fn recipe_analyze(
     .await
     .map_err(|e| {
         tracing::error!("recipe_analyze DB error: {e}");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Database error" })))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
     })?;
 
     // Build lookup
-    let find_row = |slug: &str| -> Option<&IngredientRow> {
-        rows.iter().find(|r| r.slug == slug)
-    };
+    let find_row = |slug: &str| -> Option<&IngredientRow> { rows.iter().find(|r| r.slug == slug) };
 
     // ── 2. Build domain inputs ──
     let mut domain_inputs: Vec<RecipeIngredientInput> = Vec::new();
@@ -271,9 +274,15 @@ pub async fn recipe_analyze(
         let row = find_row(&inp.slug);
         let found = row.is_some();
 
-        let cal   = row.and_then(|r| r.calories_kcal).map(|v| v as f64).unwrap_or(0.0);
-        let prot  = row.and_then(|r| r.protein_g).map(|v| v as f64).unwrap_or(0.0);
-        let fat   = row.and_then(|r| r.fat_g).map(|v| v as f64).unwrap_or(0.0);
+        let cal = row
+            .and_then(|r| r.calories_kcal)
+            .map(|v| v as f64)
+            .unwrap_or(0.0);
+        let prot = row
+            .and_then(|r| r.protein_g)
+            .map(|v| v as f64)
+            .unwrap_or(0.0);
+        let fat = row.and_then(|r| r.fat_g).map(|v| v as f64).unwrap_or(0.0);
         let carbs = row.and_then(|r| r.carbs_g).map(|v| v as f64).unwrap_or(0.0);
         let fiber = row.and_then(|r| r.fiber_g).map(|v| v as f64).unwrap_or(0.0);
         let sugar = row.and_then(|r| r.sugar_g).map(|v| v as f64).unwrap_or(0.0);
@@ -282,9 +291,12 @@ pub async fn recipe_analyze(
 
         ingredient_details.push(IngredientDetail {
             slug: inp.slug.clone(),
-            name: row.map(|r| pick_name(&r.name_en, &r.name_ru, &r.name_pl, &r.name_uk, lang))
-                     .unwrap_or_else(|| inp.slug.clone()),
-            name_en: row.map(|r| r.name_en.clone()).unwrap_or_else(|| inp.slug.clone()),
+            name: row
+                .map(|r| pick_name(&r.name_en, &r.name_ru, &r.name_pl, &r.name_uk, lang))
+                .unwrap_or_else(|| inp.slug.clone()),
+            name_en: row
+                .map(|r| r.name_en.clone())
+                .unwrap_or_else(|| inp.slug.clone()),
             name_ru: row.and_then(|r| r.name_ru.clone()),
             name_pl: row.and_then(|r| r.name_pl.clone()),
             name_uk: row.and_then(|r| r.name_uk.clone()),
@@ -311,26 +323,30 @@ pub async fn recipe_analyze(
             sodium_mg: 0.0,
         };
 
-        let flavor = row.map(|r| {
-            flavor_graph::flavor_from_culinary(
-                r.sweetness.map(|v| v as f64).unwrap_or(0.0),
-                r.acidity.map(|v| v as f64).unwrap_or(0.0),
-                r.bitterness.map(|v| v as f64).unwrap_or(0.0),
-                r.umami.map(|v| v as f64).unwrap_or(0.0),
-                r.aroma.map(|v| v as f64).unwrap_or(0.0),
-                fat,
-            )
-        }).unwrap_or(FlavorVector::zero());
+        let flavor = row
+            .map(|r| {
+                flavor_graph::flavor_from_culinary(
+                    r.sweetness.map(|v| v as f64).unwrap_or(0.0),
+                    r.acidity.map(|v| v as f64).unwrap_or(0.0),
+                    r.bitterness.map(|v| v as f64).unwrap_or(0.0),
+                    r.umami.map(|v| v as f64).unwrap_or(0.0),
+                    r.aroma.map(|v| v as f64).unwrap_or(0.0),
+                    fat,
+                )
+            })
+            .unwrap_or(FlavorVector::zero());
 
-        let diet_flags = row.map(|r| DietFlags {
-            vegan: r.vegan.unwrap_or(false),
-            vegetarian: r.vegetarian.unwrap_or(false),
-            keto: r.keto.unwrap_or(false),
-            paleo: r.paleo.unwrap_or(false),
-            gluten_free: r.gluten_free.unwrap_or(false),
-            mediterranean: r.mediterranean.unwrap_or(false),
-            low_carb: r.low_carb.unwrap_or(false),
-        }).unwrap_or_default();
+        let diet_flags = row
+            .map(|r| DietFlags {
+                vegan: r.vegan.unwrap_or(false),
+                vegetarian: r.vegetarian.unwrap_or(false),
+                keto: r.keto.unwrap_or(false),
+                paleo: r.paleo.unwrap_or(false),
+                gluten_free: r.gluten_free.unwrap_or(false),
+                mediterranean: r.mediterranean.unwrap_or(false),
+                low_carb: r.low_carb.unwrap_or(false),
+            })
+            .unwrap_or_default();
 
         domain_inputs.push(RecipeIngredientInput {
             slug: inp.slug.clone(),
@@ -379,44 +395,51 @@ pub async fn recipe_analyze(
     .await
     .unwrap_or_default();
 
-    let candidates: Vec<Candidate> = candidates_rows.iter().map(|r| {
-        let fat_val = r.fat_g.map(|v| v as f64).unwrap_or(0.0);
-        Candidate {
-            slug: r.slug.clone(),
-            name: r.name_en.clone(),
-            image_url: r.image_url.clone(),
-            flavor: flavor_graph::flavor_from_culinary(
-                r.sweetness.map(|v| v as f64).unwrap_or(0.0),
-                r.acidity.map(|v| v as f64).unwrap_or(0.0),
-                r.bitterness.map(|v| v as f64).unwrap_or(0.0),
-                r.umami.map(|v| v as f64).unwrap_or(0.0),
-                r.aroma.map(|v| v as f64).unwrap_or(0.0),
-                fat_val,
-            ),
-            nutrition: NutritionBreakdown {
-                calories: r.calories_kcal.map(|v| v as f64).unwrap_or(0.0),
-                protein_g: r.protein_g.map(|v| v as f64).unwrap_or(0.0),
-                fat_g: fat_val,
-                carbs_g: r.carbs_g.map(|v| v as f64).unwrap_or(0.0),
-                fiber_g: r.fiber_g.map(|v| v as f64).unwrap_or(0.0),
-                sugar_g: r.sugar_g.map(|v| v as f64).unwrap_or(0.0),
-                salt_g: 0.0,
-                sodium_mg: 0.0,
-            },
-            pair_score: r.avg_pair_score.unwrap_or(0.0),
-            typical_g: 30.0, // default suggestion amount
-            product_type: None, // not loaded in this context; slug-based rules still apply
-        }
-    }).collect();
+    let candidates: Vec<Candidate> = candidates_rows
+        .iter()
+        .map(|r| {
+            let fat_val = r.fat_g.map(|v| v as f64).unwrap_or(0.0);
+            Candidate {
+                slug: r.slug.clone(),
+                name: r.name_en.clone(),
+                image_url: r.image_url.clone(),
+                flavor: flavor_graph::flavor_from_culinary(
+                    r.sweetness.map(|v| v as f64).unwrap_or(0.0),
+                    r.acidity.map(|v| v as f64).unwrap_or(0.0),
+                    r.bitterness.map(|v| v as f64).unwrap_or(0.0),
+                    r.umami.map(|v| v as f64).unwrap_or(0.0),
+                    r.aroma.map(|v| v as f64).unwrap_or(0.0),
+                    fat_val,
+                ),
+                nutrition: NutritionBreakdown {
+                    calories: r.calories_kcal.map(|v| v as f64).unwrap_or(0.0),
+                    protein_g: r.protein_g.map(|v| v as f64).unwrap_or(0.0),
+                    fat_g: fat_val,
+                    carbs_g: r.carbs_g.map(|v| v as f64).unwrap_or(0.0),
+                    fiber_g: r.fiber_g.map(|v| v as f64).unwrap_or(0.0),
+                    sugar_g: r.sugar_g.map(|v| v as f64).unwrap_or(0.0),
+                    salt_g: 0.0,
+                    sodium_mg: 0.0,
+                },
+                pair_score: r.avg_pair_score.unwrap_or(0.0),
+                typical_g: 30.0,    // default suggestion amount
+                product_type: None, // not loaded in this context; slug-based rules still apply
+            }
+        })
+        .collect();
 
     // ── 5. Run suggestion engine ──
     let total_grams: f64 = domain_inputs.iter().map(|i| i.grams).sum();
 
     // Pre-compute diagnosis + dish_type for suggestion engine
-    let rule_ingredients: Vec<(String, f64, Option<String>)> = body.ingredients.iter().map(|inp| {
-        let pt = find_row(&inp.slug).and_then(|r| r.product_type.clone());
-        (inp.slug.clone(), inp.grams, pt)
-    }).collect();
+    let rule_ingredients: Vec<(String, f64, Option<String>)> = body
+        .ingredients
+        .iter()
+        .map(|inp| {
+            let pt = find_row(&inp.slug).and_then(|r| r.product_type.clone());
+            (inp.slug.clone(), inp.grams, pt)
+        })
+        .collect();
 
     let pre_rule_ctx = rule_engine::RecipeContext {
         flavor: analysis.flavor.vector.clone(),
@@ -442,47 +465,65 @@ pub async fn recipe_analyze(
         analysis.flavor.vector.umami,
     );
 
-    let suggestion_result = suggestion_engine::suggest_ingredients(
-        &analysis.flavor,
-        &candidates,
-        &slugs,
-        5,
-    );
+    let suggestion_result =
+        suggestion_engine::suggest_ingredients(&analysis.flavor, &candidates, &slugs, 5);
 
-    let suggestions: Vec<SuggestionItem> = suggestion_result.suggestions.iter().map(|s| {
-        // Look up localized names from the candidates DB rows
-        let cand = candidates_rows.iter().find(|c| c.slug == s.slug);
-        SuggestionItem {
-            slug: s.slug.clone(),
-            name: cand.map(|c| pick_name(&c.name_en, &c.name_ru, &c.name_pl, &c.name_uk, lang))
-                      .unwrap_or_else(|| s.name.clone()),
-            name_en: cand.map(|c| c.name_en.clone()).unwrap_or_else(|| s.name.clone()),
-            name_ru: cand.and_then(|c| c.name_ru.clone()),
-            name_pl: cand.and_then(|c| c.name_pl.clone()),
-            name_uk: cand.and_then(|c| c.name_uk.clone()),
-            image_url: s.image_url.clone(),
-            score: s.score,
-            reasons: s.reasons.clone(),
-            fills: s.fills_gaps.clone(),
-        }
-    }).collect();
+    let suggestions: Vec<SuggestionItem> = suggestion_result
+        .suggestions
+        .iter()
+        .map(|s| {
+            // Look up localized names from the candidates DB rows
+            let cand = candidates_rows.iter().find(|c| c.slug == s.slug);
+            SuggestionItem {
+                slug: s.slug.clone(),
+                name: cand
+                    .map(|c| pick_name(&c.name_en, &c.name_ru, &c.name_pl, &c.name_uk, lang))
+                    .unwrap_or_else(|| s.name.clone()),
+                name_en: cand
+                    .map(|c| c.name_en.clone())
+                    .unwrap_or_else(|| s.name.clone()),
+                name_ru: cand.and_then(|c| c.name_ru.clone()),
+                name_pl: cand.and_then(|c| c.name_pl.clone()),
+                name_uk: cand.and_then(|c| c.name_uk.clone()),
+                image_url: s.image_url.clone(),
+                score: s.score,
+                reasons: s.reasons.clone(),
+                fills: s.fills_gaps.clone(),
+            }
+        })
+        .collect();
 
     // ── 6. Compute flavor influence map ──
 
     // Weighted absolute values: flavor_dimension * (grams / total_grams)
-    struct WeightedFlavor { slug: String, s: f64, a: f64, b: f64, u: f64, f: f64, ar: f64 }
-    let weighted: Vec<WeightedFlavor> = domain_inputs.iter().map(|i| {
-        let w = if total_grams > 0.0 { i.grams / total_grams } else { 0.0 };
-        WeightedFlavor {
-            slug: i.slug.clone(),
-            s:  i.flavor.sweetness  * w,
-            a:  i.flavor.acidity    * w,
-            b:  i.flavor.bitterness * w,
-            u:  i.flavor.umami      * w,
-            f:  i.flavor.fat        * w,
-            ar: i.flavor.aroma      * w,
-        }
-    }).collect();
+    struct WeightedFlavor {
+        slug: String,
+        s: f64,
+        a: f64,
+        b: f64,
+        u: f64,
+        f: f64,
+        ar: f64,
+    }
+    let weighted: Vec<WeightedFlavor> = domain_inputs
+        .iter()
+        .map(|i| {
+            let w = if total_grams > 0.0 {
+                i.grams / total_grams
+            } else {
+                0.0
+            };
+            WeightedFlavor {
+                slug: i.slug.clone(),
+                s: i.flavor.sweetness * w,
+                a: i.flavor.acidity * w,
+                b: i.flavor.bitterness * w,
+                u: i.flavor.umami * w,
+                f: i.flavor.fat * w,
+                ar: i.flavor.aroma * w,
+            }
+        })
+        .collect();
 
     // Totals per dimension for percentage calc
     let ts: f64 = weighted.iter().map(|w| w.s).sum();
@@ -493,26 +534,31 @@ pub async fn recipe_analyze(
     let tar: f64 = weighted.iter().map(|w| w.ar).sum();
 
     let pct = |val: f64, total: f64| -> f64 {
-        if total > 0.0 { uc::round_to(val / total * 100.0, 1) } else { 0.0 }
+        if total > 0.0 {
+            uc::round_to(val / total * 100.0, 1)
+        } else {
+            0.0
+        }
     };
 
-    let flavor_contributions: Vec<FlavorContribution> = weighted.iter().map(|w| {
-        FlavorContribution {
+    let flavor_contributions: Vec<FlavorContribution> = weighted
+        .iter()
+        .map(|w| FlavorContribution {
             slug: w.slug.clone(),
-            sweetness:   uc::round_to(w.s,  2),
-            acidity:     uc::round_to(w.a,  2),
-            bitterness:  uc::round_to(w.b,  2),
-            umami:       uc::round_to(w.u,  2),
-            fat:         uc::round_to(w.f,  2),
-            aroma:       uc::round_to(w.ar, 2),
-            pct_sweetness:   pct(w.s,  ts),
-            pct_acidity:     pct(w.a,  ta),
-            pct_bitterness:  pct(w.b,  tb),
-            pct_umami:       pct(w.u,  tu),
-            pct_fat:         pct(w.f,  tf),
-            pct_aroma:       pct(w.ar, tar),
-        }
-    }).collect();
+            sweetness: uc::round_to(w.s, 2),
+            acidity: uc::round_to(w.a, 2),
+            bitterness: uc::round_to(w.b, 2),
+            umami: uc::round_to(w.u, 2),
+            fat: uc::round_to(w.f, 2),
+            aroma: uc::round_to(w.ar, 2),
+            pct_sweetness: pct(w.s, ts),
+            pct_acidity: pct(w.a, ta),
+            pct_bitterness: pct(w.b, tb),
+            pct_umami: pct(w.u, tu),
+            pct_fat: pct(w.f, tf),
+            pct_aroma: pct(w.ar, tar),
+        })
+        .collect();
 
     // ── 7. Build response ──
     let fv = &analysis.flavor.vector;
@@ -553,10 +599,25 @@ pub async fn recipe_analyze(
             fat: fv.fat,
             aroma: fv.aroma,
             balance_score: analysis.flavor.balance_score,
-            weak: analysis.flavor.weak_dimensions.iter().map(|d| d.dimension.clone()).collect(),
-            strong: analysis.flavor.strong_dimensions.iter().map(|d| d.dimension.clone()).collect(),
+            weak: analysis
+                .flavor
+                .weak_dimensions
+                .iter()
+                .map(|d| d.dimension.clone())
+                .collect(),
+            strong: analysis
+                .flavor
+                .strong_dimensions
+                .iter()
+                .map(|d| d.dimension.clone())
+                .collect(),
         },
-        diet: analysis.diet_flags.active_labels().into_iter().map(|s| s.to_string()).collect(),
+        diet: analysis
+            .diet_flags
+            .active_labels()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect(),
         suggestions,
         ingredients: ingredient_details,
         flavor_contributions,

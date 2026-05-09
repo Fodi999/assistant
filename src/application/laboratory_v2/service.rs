@@ -12,9 +12,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::models::{
-    AssetStatus, Laboratory3DAsset, LaboratoryImage, RegisterImagePayload,
-};
+use super::models::{AssetStatus, Laboratory3DAsset, LaboratoryImage, RegisterImagePayload};
 use crate::infrastructure::gemini::GeminiVision3D;
 use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::geometry::{dispatch_with_quality as geometry_dispatch, export_glb};
@@ -163,12 +161,8 @@ impl LaboratoryV2Service {
         image_id: Uuid,
         user_id: Uuid,
     ) -> Result<Laboratory3DAsset, AppError> {
-        self.generate_model_from_image_with_quality(
-            image_id,
-            user_id,
-            GeometryQuality::default(),
-        )
-        .await
+        self.generate_model_from_image_with_quality(image_id, user_id, GeometryQuality::default())
+            .await
     }
 
     /// Same as [`generate_model_from_image`] but with explicit
@@ -247,9 +241,8 @@ impl LaboratoryV2Service {
             .await?;
 
         let effective = spec.effective_object_type();
-        let spec_json = serde_json::to_value(&spec).map_err(|e| {
-            AppError::internal(format!("laboratory_v2: spec serialize: {e}"))
-        })?;
+        let spec_json = serde_json::to_value(&spec)
+            .map_err(|e| AppError::internal(format!("laboratory_v2: spec serialize: {e}")))?;
 
         // 6. save spec + status = generating_model
         self.repo
@@ -292,35 +285,25 @@ impl LaboratoryV2Service {
             let path = PathBuf::from(LOCAL_UPLOADS_ROOT).join(rel_key);
             tracing::debug!("laboratory_v2: reading local image from {path:?}");
             return tokio::fs::read(&path).await.map_err(|e| {
-                AppError::internal(format!(
-                    "laboratory_v2: read local image {path:?}: {e}"
-                ))
+                AppError::internal(format!("laboratory_v2: read local image {path:?}: {e}"))
             });
         }
 
         if image_url.starts_with("http://") || image_url.starts_with("https://") {
             tracing::debug!("laboratory_v2: fetching remote image {image_url}");
-            let res = self
-                .http
-                .get(image_url)
-                .send()
-                .await
-                .map_err(|e| AppError::internal(format!(
-                    "laboratory_v2: GET {image_url}: {e}"
-                )))?;
+            let res =
+                self.http.get(image_url).send().await.map_err(|e| {
+                    AppError::internal(format!("laboratory_v2: GET {image_url}: {e}"))
+                })?;
             if !res.status().is_success() {
                 return Err(AppError::internal(format!(
                     "laboratory_v2: GET {image_url} returned {}",
                     res.status()
                 )));
             }
-            return res
-                .bytes()
-                .await
-                .map(|b| b.to_vec())
-                .map_err(|e| AppError::internal(format!(
-                    "laboratory_v2: read body {image_url}: {e}"
-                )));
+            return res.bytes().await.map(|b| b.to_vec()).map_err(|e| {
+                AppError::internal(format!("laboratory_v2: read body {image_url}: {e}"))
+            });
         }
 
         Err(AppError::internal(format!(
@@ -439,13 +422,15 @@ impl LaboratoryV2Service {
 /// ```
 fn smoothness_to_surface_spec(s: f32) -> (SurfaceTuneInfo, serde_json::Value) {
     #[inline]
-    fn lerp(a: f32, b: f32, t: f32) -> f32 { a + (b - a) * t.clamp(0.0, 1.0) }
+    fn lerp(a: f32, b: f32, t: f32) -> f32 {
+        a + (b - a) * t.clamp(0.0, 1.0)
+    }
 
-    let ridge_height         = lerp(0.85, 0.15, s);
-    let groove_depth         = lerp(0.75, 0.10, s);
-    let center_peak          = lerp(0.80, 0.20, s);
+    let ridge_height = lerp(0.85, 0.15, s);
+    let groove_depth = lerp(0.75, 0.10, s);
+    let center_peak = lerp(0.80, 0.20, s);
     let surface_irregularity = lerp(0.20, 0.02, s);
-    let highlight_strength   = lerp(0.85, 0.65, s);
+    let highlight_strength = lerp(0.85, 0.65, s);
 
     let info = SurfaceTuneInfo {
         smoothness: s,

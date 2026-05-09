@@ -60,7 +60,10 @@ pub async fn create_expertise(
     Json(req): Json<CreateExpertiseRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let row = svc.create_expertise(req).await?;
-    Ok((StatusCode::CREATED, Json(serde_json::to_value(row).unwrap())))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(row).unwrap()),
+    ))
 }
 
 pub async fn update_expertise(
@@ -98,7 +101,10 @@ pub async fn create_experience(
     Json(req): Json<CreateExperienceRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let row = svc.create_experience(req).await?;
-    Ok((StatusCode::CREATED, Json(serde_json::to_value(row).unwrap())))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(row).unwrap()),
+    ))
 }
 
 pub async fn update_experience(
@@ -145,7 +151,10 @@ pub async fn create_gallery(
     Json(req): Json<CreateGalleryRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let row = svc.create_gallery(req).await?;
-    Ok((StatusCode::CREATED, Json(serde_json::to_value(row).unwrap())))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(row).unwrap()),
+    ))
 }
 
 pub async fn update_gallery(
@@ -193,7 +202,10 @@ pub async fn create_article(
     Json(req): Json<CreateArticleRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let row = svc.create_article(req).await?;
-    Ok((StatusCode::CREATED, Json(serde_json::to_value(row).unwrap())))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(row).unwrap()),
+    ))
 }
 
 pub async fn update_article(
@@ -219,7 +231,7 @@ pub async fn delete_article(
 
 #[derive(Deserialize)]
 pub struct UploadQuery {
-    pub folder:       Option<String>,
+    pub folder: Option<String>,
     pub content_type: Option<String>,
 }
 
@@ -230,7 +242,7 @@ pub async fn get_upload_url(
     Query(q): Query<UploadQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let folder       = q.folder.unwrap_or_else(|| "general".to_string());
+    let folder = q.folder.unwrap_or_else(|| "general".to_string());
     let content_type = q.content_type.unwrap_or_else(|| "image/webp".to_string());
     let resp = svc.get_image_upload_url(&folder, &content_type).await?;
     Ok(Json(serde_json::json!({

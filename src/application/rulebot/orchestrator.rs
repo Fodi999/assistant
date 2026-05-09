@@ -4,22 +4,22 @@
 //! It resolves tool ID → engine, validates params, times execution,
 //! wraps result in ToolResponse envelope, and logs analytics.
 
-use std::sync::Arc;
-use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
+use std::sync::Arc;
+use std::time::Instant;
 
-use crate::domain::engines::types::ToolId;
-use crate::domain::engines::response::{ToolResponse, ToolError};
 use crate::domain::engines::registry;
+use crate::domain::engines::response::{ToolError, ToolResponse};
+use crate::domain::engines::types::ToolId;
 
 // ── Request ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct RunToolRequest {
     /// Tool identifier (path-style): "convert", "fish-season-table", etc.
-    pub tool:   String,
+    pub tool: String,
     /// Tool parameters as a JSON object.
     #[serde(default)]
     pub params: Value,
@@ -87,13 +87,13 @@ impl RuleBot {
             // ── Conversion Engine ──
             Convert => {
                 let value = param_f64(params, "value").unwrap_or(0.0);
-                let from  = param_str(params, "from").unwrap_or_default();
-                let to    = param_str(params, "to").unwrap_or_default();
+                let from = param_str(params, "from").unwrap_or_default();
+                let to = param_str(params, "to").unwrap_or_default();
 
                 use crate::domain::tools::unit_converter as uc;
                 let result_raw = uc::convert_units(value, &from, &to);
-                let supported  = result_raw.is_some();
-                let result     = uc::display_round(result_raw.unwrap_or(0.0));
+                let supported = result_raw.is_some();
+                let result = uc::display_round(result_raw.unwrap_or(0.0));
 
                 Ok(serde_json::json!({
                     "value": value,
@@ -114,8 +114,8 @@ impl RuleBot {
 
             Scale => {
                 let value = param_f64(params, "value").unwrap_or(0.0);
-                let from  = param_f64(params, "from_portions").unwrap_or(1.0);
-                let to    = param_f64(params, "to_portions").unwrap_or(1.0);
+                let from = param_f64(params, "from_portions").unwrap_or(1.0);
+                let to = param_f64(params, "to_portions").unwrap_or(1.0);
                 use crate::domain::tools::unit_converter as uc;
                 let scaled = uc::scale(value, from, to);
                 Ok(serde_json::json!({
@@ -127,10 +127,10 @@ impl RuleBot {
             }
 
             Yield => {
-                let raw    = param_f64(params, "raw_weight").unwrap_or(0.0);
+                let raw = param_f64(params, "raw_weight").unwrap_or(0.0);
                 let usable = param_f64(params, "usable_weight").unwrap_or(0.0);
                 use crate::domain::tools::unit_converter as uc;
-                let pct   = uc::yield_percent(raw, usable);
+                let pct = uc::yield_percent(raw, usable);
                 let waste = if raw > 0.0 { raw - usable } else { 0.0 };
                 Ok(serde_json::json!({
                     "raw_weight": raw,
@@ -142,10 +142,10 @@ impl RuleBot {
             }
 
             FoodCost => {
-                let price    = param_f64(params, "price").unwrap_or(0.0);
-                let amount   = param_f64(params, "amount").unwrap_or(0.0);
+                let price = param_f64(params, "price").unwrap_or(0.0);
+                let amount = param_f64(params, "amount").unwrap_or(0.0);
                 let portions = param_f64(params, "portions").unwrap_or(1.0);
-                let sell     = param_f64(params, "sell_price");
+                let sell = param_f64(params, "sell_price");
                 use crate::domain::tools::unit_converter as uc;
                 let total = uc::food_cost(price, amount);
                 let per_p = uc::cost_per_portion(total, portions);
@@ -164,13 +164,12 @@ impl RuleBot {
             }
 
             // ── All other tools: return "not yet migrated" with hint ──
-            other => {
-                Err(format!(
-                    "Tool '{}' is not yet migrated to RuleBot engine layer. \
+            other => Err(format!(
+                "Tool '{}' is not yet migrated to RuleBot engine layer. \
                      Use the legacy endpoint: GET /public/tools/{}",
-                    other.path(), other.path()
-                ))
-            }
+                other.path(),
+                other.path()
+            )),
         }
     }
 }
@@ -185,7 +184,10 @@ fn resolve_tool_id(name: &str) -> Option<ToolId> {
 // ── Param extraction helpers ─────────────────────────────────────────────────
 
 fn param_str(params: &Value, key: &str) -> Option<String> {
-    params.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    params
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 fn param_f64(params: &Value, key: &str) -> Option<f64> {

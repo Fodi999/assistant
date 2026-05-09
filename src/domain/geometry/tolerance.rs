@@ -33,36 +33,46 @@ impl Tolerance {
     /// Parasolid default tolerances. Use this for most geometry operations.
     pub const DEFAULT: Self = Self {
         modeling: 1e-7,
-        fitting:  1e-5,
-        angular:  1e-9,
+        fitting: 1e-5,
+        angular: 1e-9,
     };
 
     /// Loose tolerances — useful for draft-quality previews where speed
     /// matters more than precision.
     pub const DRAFT: Self = Self {
         modeling: 1e-5,
-        fitting:  1e-3,
-        angular:  1e-6,
+        fitting: 1e-3,
+        angular: 1e-6,
     };
 
     /// Ultra tolerances — final-render exports. Stricter than Parasolid
     /// default; catch micro-gaps that would be invisible at draft.
     pub const ULTRA: Self = Self {
         modeling: 1e-8,
-        fitting:  1e-6,
-        angular:  1e-11,
+        fitting: 1e-6,
+        angular: 1e-11,
     };
 
     /// Create a custom tolerance set. Panics in debug builds if any value is
     /// non-positive or non-finite (a zero tolerance would accept every gap).
     pub fn new(modeling: f64, fitting: f64, angular: f64) -> Self {
-        debug_assert!(modeling.is_finite() && modeling > 0.0,
-            "modeling tolerance must be > 0");
-        debug_assert!(fitting.is_finite()  && fitting  > 0.0,
-            "fitting tolerance must be > 0");
-        debug_assert!(angular.is_finite()  && angular  > 0.0,
-            "angular tolerance must be > 0");
-        Self { modeling, fitting, angular }
+        debug_assert!(
+            modeling.is_finite() && modeling > 0.0,
+            "modeling tolerance must be > 0"
+        );
+        debug_assert!(
+            fitting.is_finite() && fitting > 0.0,
+            "fitting tolerance must be > 0"
+        );
+        debug_assert!(
+            angular.is_finite() && angular > 0.0,
+            "angular tolerance must be > 0"
+        );
+        Self {
+            modeling,
+            fitting,
+            angular,
+        }
     }
 
     // ── Tolerance predicates ─────────────────────────────────────────────
@@ -113,33 +123,33 @@ mod tests {
     #[test]
     fn default_is_parasolid_standard() {
         assert_eq!(Tolerance::DEFAULT.modeling, 1e-7);
-        assert_eq!(Tolerance::DEFAULT.fitting,  1e-5);
-        assert_eq!(Tolerance::DEFAULT.angular,  1e-9);
+        assert_eq!(Tolerance::DEFAULT.fitting, 1e-5);
+        assert_eq!(Tolerance::DEFAULT.angular, 1e-9);
     }
 
     #[test]
     fn vertices_coincident_within_tolerance() {
         let t = Tolerance::DEFAULT;
-        assert!( t.vertices_coincident(5e-8));
+        assert!(t.vertices_coincident(5e-8));
         assert!(!t.vertices_coincident(2e-7));
     }
 
     #[test]
     fn approximation_ok_within_tolerance() {
         let t = Tolerance::DEFAULT;
-        assert!( t.approximation_ok(9e-6));
+        assert!(t.approximation_ok(9e-6));
         assert!(!t.approximation_ok(2e-5));
     }
 
     #[test]
     fn draft_is_looser_than_default() {
         assert!(Tolerance::DRAFT.modeling > Tolerance::DEFAULT.modeling);
-        assert!(Tolerance::DRAFT.fitting  > Tolerance::DEFAULT.fitting);
+        assert!(Tolerance::DRAFT.fitting > Tolerance::DEFAULT.fitting);
     }
 
     #[test]
     fn ultra_is_stricter_than_default() {
         assert!(Tolerance::ULTRA.modeling < Tolerance::DEFAULT.modeling);
-        assert!(Tolerance::ULTRA.fitting  < Tolerance::DEFAULT.fitting);
+        assert!(Tolerance::ULTRA.fitting < Tolerance::DEFAULT.fitting);
     }
 }

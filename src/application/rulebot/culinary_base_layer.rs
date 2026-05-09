@@ -14,10 +14,10 @@
 //!
 //! Pure deterministic — no AI, no DB queries (cache only).
 
-use crate::infrastructure::IngredientCache;
-use super::recipe_engine::{ResolvedIngredient, DishType};
-use super::response_builder::HealthGoal;
 use super::ingredient_resolver::resolve_slug;
+use super::recipe_engine::{DishType, ResolvedIngredient};
+use super::response_builder::HealthGoal;
+use crate::infrastructure::IngredientCache;
 
 // ── Weight Analysis ──────────────────────────────────────────────────────────
 
@@ -116,13 +116,26 @@ pub async fn apply_culinary_basics(
     // breakfast dish — black pepper has no place there regardless of protein type.
     let needs_pepper = matches!(
         dish_type,
-        DishType::Soup | DishType::Stew | DishType::StirFry |
-        DishType::Grill | DishType::Bake | DishType::Pasta | DishType::Default
+        DishType::Soup
+            | DishType::Stew
+            | DishType::StirFry
+            | DishType::Grill
+            | DishType::Bake
+            | DishType::Pasta
+            | DishType::Default
     ) && !matches!(dish_type, DishType::Pancake);
     let pepper_ok = !metrics.has_sweet; // strict: ANY sweet ingredient → no pepper
     if needs_pepper && pepper_ok && !has_slug(ingredients, "black-pepper") {
         let pepper_g = (metrics.food_weight_g * 0.001).clamp(0.3, 2.0);
-        ensure_ingredient(ingredients, cache, "black-pepper", pepper_g, "seasoning", "raw").await;
+        ensure_ingredient(
+            ingredients,
+            cache,
+            "black-pepper",
+            pepper_g,
+            "seasoning",
+            "raw",
+        )
+        .await;
     }
 
     // ── 4. GARLIC — only robust dishes, never sweet ──────────────────────
@@ -141,11 +154,13 @@ pub async fn apply_culinary_basics(
         match dish_type {
             DishType::Soup | DishType::Stew => {
                 let onion_g = (metrics.food_weight_g * 0.12).clamp(30.0, 120.0);
-                ensure_ingredient(ingredients, cache, "onion", onion_g, "aromatic", "sauteed").await;
+                ensure_ingredient(ingredients, cache, "onion", onion_g, "aromatic", "sauteed")
+                    .await;
             }
             DishType::StirFry => {
                 let onion_g = (metrics.food_weight_g * 0.08).clamp(20.0, 60.0);
-                ensure_ingredient(ingredients, cache, "onion", onion_g, "aromatic", "sauteed").await;
+                ensure_ingredient(ingredients, cache, "onion", onion_g, "aromatic", "sauteed")
+                    .await;
             }
             _ => {}
         }
@@ -159,7 +174,10 @@ pub async fn apply_culinary_basics(
 
     // ── 7. SWEET-SAVORY BALANCE: bump pepper for contrast ────────────────
     if metrics.has_sweet && !matches!(dish_type, DishType::Salad | DishType::Raw) {
-        if let Some(pepper) = ingredients.iter_mut().find(|i| slug_matches(i, "black-pepper")) {
+        if let Some(pepper) = ingredients
+            .iter_mut()
+            .find(|i| slug_matches(i, "black-pepper"))
+        {
             if pepper.gross_g < 0.5 {
                 pepper.gross_g = 0.5;
                 pepper.cleaned_net_g = 0.5;
@@ -184,7 +202,9 @@ pub fn validate_cooking_logic(
     let metrics = analyze_dish(ingredients);
 
     // 1. Cooking technique check
-    let has_cooked = ingredients.iter().any(|i| !matches!(i.state.as_str(), "raw" | ""));
+    let has_cooked = ingredients
+        .iter()
+        .any(|i| !matches!(i.state.as_str(), "raw" | ""));
     if !has_cooked && !matches!(dish_type, DishType::Salad | DishType::Raw) {
         warnings.push("No cooking technique detected — all ingredients are raw".into());
     }
@@ -221,7 +241,11 @@ pub fn validate_cooking_logic(
 
 // ── Oil Calculation ──────────────────────────────────────────────────────────
 
-fn compute_oil(dish_type: DishType, goal: HealthGoal, metrics: &DishMetrics) -> (&'static str, f32) {
+fn compute_oil(
+    dish_type: DishType,
+    goal: HealthGoal,
+    metrics: &DishMetrics,
+) -> (&'static str, f32) {
     let low_cal = matches!(goal, HealthGoal::LowCalorie);
 
     match dish_type {
@@ -259,7 +283,9 @@ fn compute_oil(dish_type: DishType, goal: HealthGoal, metrics: &DishMetrics) -> 
 // ── Slug Helpers ─────────────────────────────────────────────────────────────
 
 fn has_slug(ingredients: &[ResolvedIngredient], slug: &str) -> bool {
-    ingredients.iter().any(|i| i.resolved_slug.as_deref() == Some(slug) || i.slug_hint == slug)
+    ingredients
+        .iter()
+        .any(|i| i.resolved_slug.as_deref() == Some(slug) || i.slug_hint == slug)
 }
 
 fn slug_matches(i: &ResolvedIngredient, slug: &str) -> bool {
@@ -269,57 +295,129 @@ fn slug_matches(i: &ResolvedIngredient, slug: &str) -> bool {
 fn has_any_oil(ingredients: &[ResolvedIngredient]) -> bool {
     ingredients.iter().any(|i| {
         i.role == "oil"
-            || slug_matches(i, "sunflower-oil") || slug_matches(i, "olive-oil")
-            || slug_matches(i, "rapeseed-oil") || slug_matches(i, "butter")
+            || slug_matches(i, "sunflower-oil")
+            || slug_matches(i, "olive-oil")
+            || slug_matches(i, "rapeseed-oil")
+            || slug_matches(i, "butter")
             || slug_matches(i, "coconut-oil")
-            || i.slug_hint.contains("oil") || i.slug_hint.contains("butter")
+            || i.slug_hint.contains("oil")
+            || i.slug_hint.contains("butter")
     })
 }
 
 fn is_allium_slug(slug: &str) -> bool {
-    slug.contains("onion") || slug.contains("shallot")
-        || slug.contains("leek") || slug.contains("scallion")
+    slug.contains("onion")
+        || slug.contains("shallot")
+        || slug.contains("leek")
+        || slug.contains("scallion")
 }
 
 fn has_acid(ingredients: &[ResolvedIngredient]) -> bool {
     ingredients.iter().any(|i| {
         i.role == "acid"
-            || slug_matches(i, "lemon") || slug_matches(i, "lime")
-            || slug_matches(i, "vinegar") || slug_matches(i, "wine-vinegar")
+            || slug_matches(i, "lemon")
+            || slug_matches(i, "lime")
+            || slug_matches(i, "vinegar")
+            || slug_matches(i, "wine-vinegar")
             || slug_matches(i, "balsamic-vinegar")
-            || i.slug_hint.contains("lemon") || i.slug_hint.contains("lime")
+            || i.slug_hint.contains("lemon")
+            || i.slug_hint.contains("lime")
             || i.slug_hint.contains("vinegar")
     })
 }
 
 fn is_protein_slug(slug: &str) -> bool {
-    ["chicken", "beef", "pork", "lamb", "turkey", "duck",
-     "salmon", "tuna", "cod", "shrimp", "prawn", "squid",
-     "egg", "tofu", "tempeh", "lentil", "chickpea", "bean",
-     "ground-meat", "mince", "sausage", "bacon"]
-        .iter().any(|k| slug.contains(k))
+    [
+        "chicken",
+        "beef",
+        "pork",
+        "lamb",
+        "turkey",
+        "duck",
+        "salmon",
+        "tuna",
+        "cod",
+        "shrimp",
+        "prawn",
+        "squid",
+        "egg",
+        "tofu",
+        "tempeh",
+        "lentil",
+        "chickpea",
+        "bean",
+        "ground-meat",
+        "mince",
+        "sausage",
+        "bacon",
+    ]
+    .iter()
+    .any(|k| slug.contains(k))
 }
 
 fn is_delicate_protein(slug: &str) -> bool {
-    ["salmon", "tuna", "cod", "sole", "trout", "sea-bass",
-     "shrimp", "prawn", "scallop", "crab", "lobster"]
-        .iter().any(|k| slug.contains(k))
+    [
+        "salmon", "tuna", "cod", "sole", "trout", "sea-bass", "shrimp", "prawn", "scallop", "crab",
+        "lobster",
+    ]
+    .iter()
+    .any(|k| slug.contains(k))
 }
 
 fn is_vegetable_slug(slug: &str) -> bool {
-    ["tomato", "onion", "carrot", "pepper", "cabbage", "cucumber",
-     "broccoli", "cauliflower", "spinach", "lettuce", "zucchini",
-     "eggplant", "celery", "beet", "radish", "pea", "corn",
-     "mushroom", "potato", "sweet-potato"]
-        .iter().any(|k| slug.contains(k))
+    [
+        "tomato",
+        "onion",
+        "carrot",
+        "pepper",
+        "cabbage",
+        "cucumber",
+        "broccoli",
+        "cauliflower",
+        "spinach",
+        "lettuce",
+        "zucchini",
+        "eggplant",
+        "celery",
+        "beet",
+        "radish",
+        "pea",
+        "corn",
+        "mushroom",
+        "potato",
+        "sweet-potato",
+    ]
+    .iter()
+    .any(|k| slug.contains(k))
 }
 
 fn is_sweet_slug(slug: &str) -> bool {
-    ["apple", "pear", "peach", "apricot", "mango", "banana",
-     "berry", "strawberry", "raspberry", "blueberry", "cherry",
-     "honey", "sugar", "maple", "date", "fig", "plum",
-     "pineapple", "orange", "melon", "grape", "kiwi"]
-        .iter().any(|s| slug.contains(s))
+    [
+        "apple",
+        "pear",
+        "peach",
+        "apricot",
+        "mango",
+        "banana",
+        "berry",
+        "strawberry",
+        "raspberry",
+        "blueberry",
+        "cherry",
+        "honey",
+        "sugar",
+        "maple",
+        "date",
+        "fig",
+        "plum",
+        "pineapple",
+        "orange",
+        "melon",
+        "grape",
+        "kiwi",
+    ]
+    .iter()
+    .any(|s| slug.contains(s))
 }
 
 async fn ensure_ingredient(
@@ -330,7 +428,9 @@ async fn ensure_ingredient(
     role: &str,
     state: &str,
 ) {
-    if has_slug(ingredients, slug) { return; }
+    if has_slug(ingredients, slug) {
+        return;
+    }
 
     match resolve_slug(cache, slug).await {
         Some(product) => {

@@ -87,6 +87,26 @@ pub fn matter_lab_section() -> &'static str {
           </div>
 
           <div class="setting-row" style="margin-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px;">
+            <span>CAMERA</span>
+          </div>
+          
+          <div class="setting-row" style="padding-top: 4px; padding-bottom: 4px;">
+            <div class="toggle-group" id="ui-camera-presets-btns" style="width:100%; justify-content: space-between;">
+              <button data-val="front">Front</button>
+              <button data-val="right">Right</button>
+              <button data-val="top">Top</button>
+              <button data-val="iso" class="active">Iso</button>
+            </div>
+          </div>
+          
+          <div class="setting-row" style="padding-top: 4px; padding-bottom: 8px;">
+            <div class="toggle-group" id="ui-camera-proj-btns" style="width:100%; justify-content: space-between;">
+              <button data-val="persp" class="active">Persp</button>
+              <button data-val="ortho">Ortho</button>
+            </div>
+          </div>
+
+          <div class="setting-row" style="margin-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px;">
             <span>CUBE GRID</span>
           </div>
 
@@ -122,6 +142,26 @@ pub fn matter_lab_section() -> &'static str {
               <button data-val="5">5&sup3;</button>
               <button data-val="10">10&sup3;</button>
             </div>
+          </div>
+
+          <div class="setting-row" style="margin-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px;">
+            <span style="color: #fbbf24;">SELECTED CELL</span>
+          </div>
+          <div class="setting-row">
+            <span>ID:</span>
+            <strong id="ui-sel-id">—</strong>
+          </div>
+          <div class="setting-row">
+            <span>Grid X/Y/Z:</span>
+            <strong id="ui-sel-grid-coords">—</strong>
+          </div>
+          <div class="setting-row">
+            <span>World X/Y/Z:</span>
+            <strong id="ui-sel-world-coords">—</strong>
+          </div>
+          <div class="setting-row">
+            <span>Size:</span>
+            <strong id="ui-sel-size">—</strong>
           </div>
 
           <div class="setting-row" style="margin-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px;">

@@ -92,14 +92,13 @@ pub async fn create_checkout(
 
     // Pull the user's email for a nicer Checkout pre-fill — non-fatal if
     // missing.
-    let email: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT email FROM users WHERE id = $1",
-    )
-    .bind(auth.user_id.as_uuid())
-    .fetch_optional(&state.pool)
-    .await
-    .ok()
-    .flatten();
+    let email: Option<String> =
+        sqlx::query_scalar::<_, String>("SELECT email FROM users WHERE id = $1")
+            .bind(auth.user_id.as_uuid())
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
 
     let url = state
         .stripe
@@ -137,14 +136,14 @@ pub async fn stripe_webhook(
     }
 
     // 2. Parse event envelope.
-    let event: WebhookEvent = serde_json::from_slice(&body).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("invalid event JSON: {e}"),
-        )
-    })?;
+    let event: WebhookEvent = serde_json::from_slice(&body)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid event JSON: {e}")))?;
 
-    tracing::info!("Stripe webhook event {} type={}", event.id, event.event_type);
+    tracing::info!(
+        "Stripe webhook event {} type={}",
+        event.id,
+        event.event_type
+    );
 
     // 3. Dispatch — only the events we care about right now.
     match event.event_type.as_str() {

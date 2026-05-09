@@ -145,39 +145,89 @@ impl AdminCatalogService {
             if row.image_url.is_none() {
                 missing.push("🖼️ нет фото".into());
             }
-            if row.description_en.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+            if row
+                .description_en
+                .as_ref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
+            {
                 missing.push("📝 description_en".into());
             }
-            if row.description_ru.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+            if row
+                .description_ru
+                .as_ref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
+            {
                 missing.push("📝 description_ru".into());
             }
-            if row.description_pl.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+            if row
+                .description_pl
+                .as_ref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
+            {
                 missing.push("📝 description_pl".into());
             }
-            if row.description_uk.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+            if row
+                .description_uk
+                .as_ref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
+            {
                 missing.push("📝 description_uk".into());
             }
 
             // ── Check catalog macros ──
-            if row.calories_per_100g.is_none() { missing.push("🔢 calories".into()); }
-            if row.protein.is_none() { missing.push("🔢 protein".into()); }
-            if row.fat.is_none() { missing.push("🔢 fat".into()); }
-            if row.carbs.is_none() { missing.push("🔢 carbs".into()); }
+            if row.calories_per_100g.is_none() {
+                missing.push("🔢 calories".into());
+            }
+            if row.protein.is_none() {
+                missing.push("🔢 protein".into());
+            }
+            if row.fat.is_none() {
+                missing.push("🔢 fat".into());
+            }
+            if row.carbs.is_none() {
+                missing.push("🔢 carbs".into());
+            }
 
             // ── Check physical ──
-            if row.density.is_none() { missing.push("⚙️ density".into()); }
-            if row.shelf_life_days.is_none() { missing.push("⚙️ shelf_life_days".into()); }
-            if row.portion.is_none() { missing.push("⚙️ typical_portion".into()); }
+            if row.density.is_none() {
+                missing.push("⚙️ density".into());
+            }
+            if row.shelf_life_days.is_none() {
+                missing.push("⚙️ shelf_life_days".into());
+            }
+            if row.portion.is_none() {
+                missing.push("⚙️ typical_portion".into());
+            }
 
             // ── Check nutrition sub-tables ──
-            if !row.has_macros.unwrap_or(false) { missing.push("📊 macros table".into()); }
-            if !row.has_vitamins.unwrap_or(false) { missing.push("⚗️ vitamins table".into()); }
-            if !row.has_minerals.unwrap_or(false) { missing.push("🪨 minerals table".into()); }
-            if !row.has_fatty_acids.unwrap_or(false) { missing.push("🧈 fatty_acids table".into()); }
-            if !row.has_diet_flags.unwrap_or(false) { missing.push("🥗 diet_flags table".into()); }
-            if !row.has_allergens.unwrap_or(false) { missing.push("⚠️ allergens table".into()); }
-            if !row.has_food_props.unwrap_or(false) { missing.push("🔬 food_properties table".into()); }
-            if !row.has_culinary.unwrap_or(false) { missing.push("🍳 culinary table".into()); }
+            if !row.has_macros.unwrap_or(false) {
+                missing.push("📊 macros table".into());
+            }
+            if !row.has_vitamins.unwrap_or(false) {
+                missing.push("⚗️ vitamins table".into());
+            }
+            if !row.has_minerals.unwrap_or(false) {
+                missing.push("🪨 minerals table".into());
+            }
+            if !row.has_fatty_acids.unwrap_or(false) {
+                missing.push("🧈 fatty_acids table".into());
+            }
+            if !row.has_diet_flags.unwrap_or(false) {
+                missing.push("🥗 diet_flags table".into());
+            }
+            if !row.has_allergens.unwrap_or(false) {
+                missing.push("⚠️ allergens table".into());
+            }
+            if !row.has_food_props.unwrap_or(false) {
+                missing.push("🔬 food_properties table".into());
+            }
+            if !row.has_culinary.unwrap_or(false) {
+                missing.push("🍳 culinary table".into());
+            }
 
             // ── Check availability_months ──
             if row.availability_months.is_none() {
@@ -294,7 +344,8 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
                     products_list = products_list,
                 );
 
-                match self.llm_adapter
+                match self
+                    .llm_adapter
                     .generate_with_quality(&ai_prompt, 8000, AiQuality::Best)
                     .await
                 {
@@ -311,9 +362,16 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
                         if let Ok(items) = parsed {
                             // Cache the result
                             let cache_val = serde_json::to_value(&items).unwrap_or_default();
-                            let _ = self.ai_cache.set(
-                                &cache_key, cache_val, "gemini", "gemini-3.1-pro-preview", AUDIT_CACHE_TTL_DAYS
-                            ).await;
+                            let _ = self
+                                .ai_cache
+                                .set(
+                                    &cache_key,
+                                    cache_val,
+                                    "gemini",
+                                    "gemini-3.1-pro-preview",
+                                    AUDIT_CACHE_TTL_DAYS,
+                                )
+                                .await;
                             ai_warnings = items;
                         }
                     }
@@ -346,7 +404,10 @@ Be strict — only flag errors >40% deviation. Return ONLY the JSON array, no ot
 
         tracing::info!(
             "✅ Audit complete: {}/{} products OK, {} need attention, {} AI warnings",
-            complete_count, total, issues.len(), ai_warnings.len()
+            complete_count,
+            total,
+            issues.len(),
+            ai_warnings.len()
         );
 
         Ok(report)

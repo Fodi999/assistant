@@ -40,34 +40,34 @@ impl AiFeature {
     /// Стоимость в AI actions.
     pub fn action_cost(&self) -> i32 {
         match self {
-            AiFeature::CopilotChat      => 1,
-            AiFeature::GeneralAnswer    => 1,
-            AiFeature::RecipeInsights   => 1,
+            AiFeature::CopilotChat => 1,
+            AiFeature::GeneralAnswer => 1,
+            AiFeature::RecipeInsights => 1,
             AiFeature::RecipeGeneration => 2,
-            AiFeature::CookSuggestions  => 2,
-            AiFeature::FoodPairing      => 2,
-            AiFeature::LabRecipe        => 3,
-            AiFeature::LabSimulation    => 3,
-            AiFeature::MealPlan         => 5,
-            AiFeature::ProductReport    => 5,
-            AiFeature::Vision3D         => 5,
+            AiFeature::CookSuggestions => 2,
+            AiFeature::FoodPairing => 2,
+            AiFeature::LabRecipe => 3,
+            AiFeature::LabSimulation => 3,
+            AiFeature::MealPlan => 5,
+            AiFeature::ProductReport => 5,
+            AiFeature::Vision3D => 5,
         }
     }
 
     /// Человекочитаемое название для ошибок и аудит-лога.
     pub fn display_name(&self) -> &'static str {
         match self {
-            AiFeature::CopilotChat      => "Copilot Chat",
-            AiFeature::GeneralAnswer    => "AI Chef Answer",
-            AiFeature::RecipeInsights   => "Recipe Analysis",
+            AiFeature::CopilotChat => "Copilot Chat",
+            AiFeature::GeneralAnswer => "AI Chef Answer",
+            AiFeature::RecipeInsights => "Recipe Analysis",
             AiFeature::RecipeGeneration => "Recipe Generation",
-            AiFeature::CookSuggestions  => "Cook Suggestions",
-            AiFeature::FoodPairing      => "Food Pairing",
-            AiFeature::LabRecipe        => "Lab Recipe",
-            AiFeature::LabSimulation    => "Lab Simulation",
-            AiFeature::MealPlan         => "Meal Plan",
-            AiFeature::ProductReport    => "Product Report",
-            AiFeature::Vision3D         => "3D Food Model",
+            AiFeature::CookSuggestions => "Cook Suggestions",
+            AiFeature::FoodPairing => "Food Pairing",
+            AiFeature::LabRecipe => "Lab Recipe",
+            AiFeature::LabSimulation => "Lab Simulation",
+            AiFeature::MealPlan => "Meal Plan",
+            AiFeature::ProductReport => "Product Report",
+            AiFeature::Vision3D => "3D Food Model",
         }
     }
 }

@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use crate::application::ai_sous_chef::{
     nutrition_transform::{classify_group, transform_nutrition, BaseNutrition},
     storage_rules::{get_storage_rule, override_shelf_life, state_applicability},
@@ -7,6 +6,7 @@ use crate::application::ai_sous_chef::{
 use crate::domain::ProcessingState;
 use crate::shared::{AppError, AppResult};
 use sqlx::PgPool;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 /// Row from catalog_ingredients with base nutrition
@@ -48,14 +48,13 @@ pub async fn generate_states_for_ingredient(
     .ok_or_else(|| AppError::not_found("Ingredient not found"))?;
 
     // 2. Check which states already exist (HashSet for O(1) lookup)
-    let existing: HashSet<String> = sqlx::query_scalar(
-        "SELECT state::text FROM ingredient_states WHERE ingredient_id = $1",
-    )
-    .bind(ingredient_id)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .collect();
+    let existing: HashSet<String> =
+        sqlx::query_scalar("SELECT state::text FROM ingredient_states WHERE ingredient_id = $1")
+            .bind(ingredient_id)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .collect();
 
     // 3. Build base nutrition — use actual water_percent from DB
     //    If no nutrition data at all → skip generation (would produce all zeros)
@@ -103,8 +102,8 @@ pub async fn generate_states_for_ingredient(
 
         // Get storage rules
         let storage = get_storage_rule(state);
-        let shelf_life = override_shelf_life(&row.product_type, state)
-            .unwrap_or(storage.shelf_life_hours);
+        let shelf_life =
+            override_shelf_life(&row.product_type, state).unwrap_or(storage.shelf_life_hours);
 
         // Get translations
         let suffix = get_state_suffix(state);
@@ -152,7 +151,7 @@ pub async fn generate_states_for_ingredient(
         .bind(storage.state_type)
         .bind(storage.oil_absorption_g)
         .bind(storage.water_loss_percent)
-        .bind(None::<i16>)  // glycemic_index — NULL by default, filled per-product later
+        .bind(None::<i16>) // glycemic_index — NULL by default, filled per-product later
         .bind(storage.cooking_method)
         .bind(suffix.en)
         .bind(suffix.pl)
@@ -167,7 +166,12 @@ pub async fn generate_states_for_ingredient(
         .execute(pool)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to insert state {} for {}: {}", state_str, row.name_en, e);
+            tracing::error!(
+                "Failed to insert state {} for {}: {}",
+                state_str,
+                row.name_en,
+                e
+            );
             AppError::internal("Failed to generate state")
         })?;
 
@@ -193,15 +197,25 @@ fn calculate_data_score(has_nutrition: bool, has_storage: bool, has_translations
 
     // Nutrition fields (50% weight)
     total += 50.0;
-    if has_nutrition { score += 50.0; }
+    if has_nutrition {
+        score += 50.0;
+    }
 
     // Storage fields (25% weight)
     total += 25.0;
-    if has_storage { score += 25.0; }
+    if has_storage {
+        score += 25.0;
+    }
 
     // Translation fields (25% weight)
     total += 25.0;
-    if has_translations { score += 25.0; }
+    if has_translations {
+        score += 25.0;
+    }
 
-    if total > 0.0 { (score / total) * 100.0 } else { 0.0 }
+    if total > 0.0 {
+        (score / total) * 100.0
+    } else {
+        0.0
+    }
 }

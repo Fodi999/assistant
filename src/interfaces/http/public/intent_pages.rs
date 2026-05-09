@@ -11,7 +11,9 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::application::intent_pages::{IntentPage, IntentPagesService, PublicListQuery, PublicSlugQuery, RelatedPage};
+use crate::application::intent_pages::{
+    IntentPage, IntentPagesService, PublicListQuery, PublicSlugQuery, RelatedPage,
+};
 use crate::shared::AppError;
 
 pub type IntentPagesPublicState = Arc<IntentPagesService>;
@@ -58,4 +60,3 @@ pub async fn get_ingredient_intent_pages(
     let pages = service.list_for_ingredient(&slug, locale).await?;
     Ok(Json(pages))
 }
-

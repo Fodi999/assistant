@@ -61,10 +61,13 @@ impl SmartParseService {
             if guard.len() >= MAX_CACHE_ENTRIES {
                 guard.clear();
             }
-            guard.insert(key, CacheEntry {
-                response,
-                created: Instant::now(),
-            });
+            guard.insert(
+                key,
+                CacheEntry {
+                    response,
+                    created: Instant::now(),
+                },
+            );
         }
     }
 
@@ -74,11 +77,7 @@ impl SmartParseService {
     ///
     /// Pipeline: cache check → tokenize → normalize → batch-match → dedup → cache store.
     /// Total DB round-trips: 2 (dictionary UNION + batch LATERAL JOIN), or 0 if cached.
-    pub async fn parse(
-        &self,
-        text: &str,
-        lang: Language,
-    ) -> Result<SmartParseResponse, AppError> {
+    pub async fn parse(&self, text: &str, lang: Language) -> Result<SmartParseResponse, AppError> {
         let t0 = Instant::now();
 
         // 0. Cache check
@@ -152,9 +151,9 @@ impl SmartParseService {
                     if seen_slugs.insert(row.slug.clone()) {
                         let mt = match row.match_type() {
                             "exact" => MatchType::Exact,
-                            "name"  => MatchType::Name,
+                            "name" => MatchType::Name,
                             "ilike" => MatchType::Ilike,
-                            _       => MatchType::Fuzzy,
+                            _ => MatchType::Fuzzy,
                         };
                         found.push(IngredientShort {
                             slug: row.slug.clone(),
@@ -196,10 +195,7 @@ impl SmartParseService {
 
     /// Load dictionary mapping: lowercase local_name → english_slug.
     /// Single DB query (UNION of ingredient_dictionary + catalog_ingredients).
-    async fn load_dictionary(
-        &self,
-        lang: Language,
-    ) -> Result<HashMap<String, String>, AppError> {
+    async fn load_dictionary(&self, lang: Language) -> Result<HashMap<String, String>, AppError> {
         let name_col = match lang {
             Language::En => return Ok(HashMap::new()),
             Language::Ru => "name_ru",

@@ -28,18 +28,18 @@
 //!   audit          — copilot_action_log table CRUD
 //!   engine         — orchestrates all of the above
 
-pub mod context;
-pub mod tools;
-pub mod planner;
-pub mod tool_executor;
 pub mod actions;
-pub mod safety;
-pub mod billing;
 pub mod audit;
+pub mod billing;
+pub mod context;
 pub mod engine;
+pub mod planner;
+pub mod safety;
+pub mod tool_executor;
+pub mod tools;
 
-pub use engine::CopilotEngine;
-pub use context::{CopilotContext, CopilotScreen};
-pub use actions::{ActionPlan, CopilotResponse, ConfirmResult};
+pub use actions::{ActionPlan, ConfirmResult, CopilotResponse};
 pub use audit::CopilotAuditService;
 pub use billing::AiFeature;
+pub use context::{CopilotContext, CopilotScreen};
+pub use engine::CopilotEngine;

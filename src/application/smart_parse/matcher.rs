@@ -17,20 +17,20 @@ impl MatchedRow {
     /// Compute a confidence score 0.0–1.0 from priority + similarity.
     pub fn confidence(&self) -> f32 {
         match self.priority {
-            1     => 1.0,                          // exact slug
-            2..=6 => 0.95,                         // exact name match
+            1 => 1.0,                                           // exact slug
+            2..=6 => 0.95,                                      // exact name match
             7..=9 => (0.70 + self.similarity * 0.20).min(0.90), // ILIKE
-            _     => (self.similarity * 0.9).min(0.65).max(0.10), // fuzzy
+            _ => (self.similarity * 0.9).min(0.65).max(0.10),   // fuzzy
         }
     }
 
     /// Human-readable match type string.
     pub fn match_type(&self) -> &'static str {
         match self.priority {
-            1     => "exact",
+            1 => "exact",
             2..=6 => "name",
             7..=9 => "ilike",
-            _     => "fuzzy",
+            _ => "fuzzy",
         }
     }
 }

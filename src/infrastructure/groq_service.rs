@@ -31,7 +31,7 @@ pub struct UnifiedProductResponse {
     pub category_slug: String, // Категория (dairy_and_eggs, fruits, vegetables, meat, seafood, grains, beverages)
     pub unit: String,          // Unit (piece, kilogram, gram, liter, milliliter)
     #[serde(default = "default_confidence")]
-    pub confidence: f64,       // Уверенность AI (0.0 - 1.0)
+    pub confidence: f64, // Уверенность AI (0.0 - 1.0)
 }
 
 fn default_confidence() -> f64 {

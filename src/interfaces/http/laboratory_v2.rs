@@ -17,11 +17,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::laboratory_v2::{
-    Laboratory3DAsset, LaboratoryImage, LaboratoryV2Service, RegisterImagePayload,
-    SurfaceTuneInfo,
+    Laboratory3DAsset, LaboratoryImage, LaboratoryV2Service, RegisterImagePayload, SurfaceTuneInfo,
 };
-use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::gemini::GeminiVision3D;
+use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppError;
 
@@ -96,10 +95,11 @@ async fn register_image_multipart(
     }
 
     let bytes = bytes.ok_or_else(|| AppError::validation("multipart: missing `file` part"))?;
-    let mime = mime
-        .ok_or_else(|| AppError::validation("multipart: `file` part missing Content-Type"))?;
+    let mime =
+        mime.ok_or_else(|| AppError::validation("multipart: `file` part missing Content-Type"))?;
 
-    svc.upload_and_register(user_id, bytes, mime, filename).await
+    svc.upload_and_register(user_id, bytes, mime, filename)
+        .await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,12 +209,10 @@ pub async fn debug_vision(
     let mime = mime.unwrap_or_else(|| "image/jpeg".to_string());
     let image_size = bytes.len();
 
-    let result = vision
-        .analyze_image_for_3d_with_usage(bytes, &mime)
-        .await?;
+    let result = vision.analyze_image_for_3d_with_usage(bytes, &mime).await?;
 
-    let raw_json: serde_json::Value = serde_json::to_value(&result.spec)
-        .unwrap_or(serde_json::Value::Null);
+    let raw_json: serde_json::Value =
+        serde_json::to_value(&result.spec).unwrap_or(serde_json::Value::Null);
 
     Ok(Json(DebugVisionResponse {
         image_size_bytes: image_size,
@@ -285,7 +283,10 @@ pub async fn tune_surface(
         .tune_surface(asset_id, *auth.user_id.as_uuid(), smoothness, quality)
         .await?;
 
-    Ok(Json(TuneSurfaceResponse { asset, surface_info: info }))
+    Ok(Json(TuneSurfaceResponse {
+        asset,
+        surface_info: info,
+    }))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,7 +361,9 @@ pub async fn debug_glb(
                 }
             }))
         }
-        "shape_cone" if query.radius.is_some() || query.height.is_some() || query.radius_top.is_some() => {
+        "shape_cone"
+            if query.radius.is_some() || query.height.is_some() || query.radius_top.is_some() =>
+        {
             Some(serde_json::json!({
                 "shape": {
                     "radius_bottom": query.radius,
@@ -380,8 +383,8 @@ pub async fn debug_glb(
         _ => None,
     };
 
-    let mesh    = dispatch_with_quality(&object_type, spec_override.as_ref(), quality)?;
-    let export  = export_glb(&mesh)?;
+    let mesh = dispatch_with_quality(&object_type, spec_override.as_ref(), quality)?;
+    let export = export_glb(&mesh)?;
 
     let response = Response::builder()
         .status(StatusCode::OK)
@@ -415,8 +418,8 @@ pub async fn debug_glb(
 pub async fn geometry_op(
     Json(req): Json<crate::infrastructure::geometry::GeometryOpRequest>,
 ) -> Result<Response<axum::body::Body>, AppError> {
-    use axum::body::Body;
     use crate::infrastructure::geometry::execute_geometry_op;
+    use axum::body::Body;
 
     let glb_bytes = execute_geometry_op(&req)?;
     let slug = format!("{}_{}", req.operation, req.target.kind);

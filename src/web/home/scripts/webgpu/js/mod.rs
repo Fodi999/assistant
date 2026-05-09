@@ -1,17 +1,17 @@
 // ── JS assembly: injects WGSL shader source and concatenates all JS fragments ─────
 // Domain: Application — ordered composition of all JS domains.
 
-mod init;
-mod state;
-mod matter_state;
+mod benchmark;
 mod buffers;
-mod pipeline;
-mod hud;
 mod controls;
 mod gizmo;
+mod hud;
+mod init;
+mod matter_state;
 mod matter_ui;
-mod benchmark;
+mod pipeline;
 mod render_loop;
+mod state;
 
 /// Assembles the complete JS source, embedding the WGSL shader as `shaderSrc`.
 pub fn assemble(shader: &str) -> String {

@@ -38,16 +38,16 @@ impl FormationMode {
     pub fn to_shader_id(self) -> f32 {
         match self {
             Self::Cloud => 0.0,
-            Self::Cube  => 1.0,
-            Self::Wall  => 2.0,
+            Self::Cube => 1.0,
+            Self::Wall => 2.0,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Cloud => "cloud",
-            Self::Cube  => "cube",
-            Self::Wall  => "wall",
+            Self::Cube => "cube",
+            Self::Wall => "wall",
         }
     }
 }

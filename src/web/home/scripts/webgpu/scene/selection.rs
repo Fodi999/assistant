@@ -16,8 +16,8 @@ pub enum SelectionState {
 impl SelectionState {
     pub fn is_selected(&self, instance: u32) -> bool {
         match self {
-            Self::None              => false,
-            Self::Single(i)         => *i == instance,
+            Self::None => false,
+            Self::Single(i) => *i == instance,
             Self::Range { start, end } => instance >= *start && instance <= *end,
         }
     }

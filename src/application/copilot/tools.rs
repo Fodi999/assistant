@@ -81,34 +81,34 @@ impl CopilotTool {
     /// Read или Write?
     pub fn kind(&self) -> ToolKind {
         match self {
-            CopilotTool::GetInventory           => ToolKind::Read,
-            CopilotTool::GetExpiringSoon         => ToolKind::Read,
-            CopilotTool::SearchIngredients       => ToolKind::Read,
-            CopilotTool::GetDishes               => ToolKind::Read,
-            CopilotTool::GetRecipes              => ToolKind::Read,
-            CopilotTool::GetRecipeById           => ToolKind::Read,
-            CopilotTool::GetLabExperiment        => ToolKind::Read,
-            CopilotTool::ListPurchaseDrafts      => ToolKind::Read,
-            CopilotTool::GetPurchaseDraft        => ToolKind::Read,
-            CopilotTool::GetDailyBriefing        => ToolKind::Read,
+            CopilotTool::GetInventory => ToolKind::Read,
+            CopilotTool::GetExpiringSoon => ToolKind::Read,
+            CopilotTool::SearchIngredients => ToolKind::Read,
+            CopilotTool::GetDishes => ToolKind::Read,
+            CopilotTool::GetRecipes => ToolKind::Read,
+            CopilotTool::GetRecipeById => ToolKind::Read,
+            CopilotTool::GetLabExperiment => ToolKind::Read,
+            CopilotTool::ListPurchaseDrafts => ToolKind::Read,
+            CopilotTool::GetPurchaseDraft => ToolKind::Read,
+            CopilotTool::GetDailyBriefing => ToolKind::Read,
             CopilotTool::SuggestCookFromInventory => ToolKind::Read,
-            CopilotTool::GenerateMealPlan        => ToolKind::Read,
-            CopilotTool::AnalyzeRecipe           => ToolKind::Read,
-            CopilotTool::GeneralChefAnswer       => ToolKind::Read,
-            CopilotTool::GenerateFoodPairing     => ToolKind::Read,
+            CopilotTool::GenerateMealPlan => ToolKind::Read,
+            CopilotTool::AnalyzeRecipe => ToolKind::Read,
+            CopilotTool::GeneralChefAnswer => ToolKind::Read,
+            CopilotTool::GenerateFoodPairing => ToolKind::Read,
             // Write
-            CopilotTool::PrepareInventoryUpdate  => ToolKind::Write,
+            CopilotTool::PrepareInventoryUpdate => ToolKind::Write,
             CopilotTool::AdjustInventoryQuantity => ToolKind::Write,
-            CopilotTool::PreparePurchaseDraft    => ToolKind::Write,
-            CopilotTool::UpdateDishPrice         => ToolKind::Write,
-            CopilotTool::WriteOffInventory       => ToolKind::Write,
-            CopilotTool::SendPurchaseOrder       => ToolKind::Write,
-            CopilotTool::CreateRecipe            => ToolKind::Write,
-            CopilotTool::CreateDish              => ToolKind::Write,
-            CopilotTool::GenerateLabRecipe       => ToolKind::Write,
-            CopilotTool::Generate3DFoodModel     => ToolKind::Write,
-            CopilotTool::SimulateLabProduct      => ToolKind::Write,
-            CopilotTool::GenerateProductReport   => ToolKind::Write,
+            CopilotTool::PreparePurchaseDraft => ToolKind::Write,
+            CopilotTool::UpdateDishPrice => ToolKind::Write,
+            CopilotTool::WriteOffInventory => ToolKind::Write,
+            CopilotTool::SendPurchaseOrder => ToolKind::Write,
+            CopilotTool::CreateRecipe => ToolKind::Write,
+            CopilotTool::CreateDish => ToolKind::Write,
+            CopilotTool::GenerateLabRecipe => ToolKind::Write,
+            CopilotTool::Generate3DFoodModel => ToolKind::Write,
+            CopilotTool::SimulateLabProduct => ToolKind::Write,
+            CopilotTool::GenerateProductReport => ToolKind::Write,
         }
     }
 
@@ -123,33 +123,33 @@ impl CopilotTool {
     /// Человекочитаемое имя для аудит-лога и промпта.
     pub fn name(&self) -> &'static str {
         match self {
-            CopilotTool::GetInventory            => "get_inventory",
-            CopilotTool::GetExpiringSoon         => "get_expiring_soon",
-            CopilotTool::SearchIngredients       => "search_ingredients",
-            CopilotTool::GetDishes               => "get_dishes",
-            CopilotTool::GetRecipes              => "get_recipes",
-            CopilotTool::GetRecipeById           => "get_recipe_by_id",
-            CopilotTool::GetLabExperiment        => "get_lab_experiment",
-            CopilotTool::ListPurchaseDrafts      => "list_purchase_drafts",
-            CopilotTool::GetPurchaseDraft        => "get_purchase_draft",
-            CopilotTool::GetDailyBriefing        => "get_daily_briefing",
+            CopilotTool::GetInventory => "get_inventory",
+            CopilotTool::GetExpiringSoon => "get_expiring_soon",
+            CopilotTool::SearchIngredients => "search_ingredients",
+            CopilotTool::GetDishes => "get_dishes",
+            CopilotTool::GetRecipes => "get_recipes",
+            CopilotTool::GetRecipeById => "get_recipe_by_id",
+            CopilotTool::GetLabExperiment => "get_lab_experiment",
+            CopilotTool::ListPurchaseDrafts => "list_purchase_drafts",
+            CopilotTool::GetPurchaseDraft => "get_purchase_draft",
+            CopilotTool::GetDailyBriefing => "get_daily_briefing",
             CopilotTool::SuggestCookFromInventory => "suggest_cook_from_inventory",
-            CopilotTool::GenerateMealPlan        => "generate_meal_plan",
-            CopilotTool::AnalyzeRecipe           => "analyze_recipe",
-            CopilotTool::GeneralChefAnswer       => "general_chef_answer",
-            CopilotTool::GenerateFoodPairing     => "generate_food_pairing",
-            CopilotTool::PrepareInventoryUpdate  => "prepare_inventory_update",
+            CopilotTool::GenerateMealPlan => "generate_meal_plan",
+            CopilotTool::AnalyzeRecipe => "analyze_recipe",
+            CopilotTool::GeneralChefAnswer => "general_chef_answer",
+            CopilotTool::GenerateFoodPairing => "generate_food_pairing",
+            CopilotTool::PrepareInventoryUpdate => "prepare_inventory_update",
             CopilotTool::AdjustInventoryQuantity => "adjust_inventory_quantity",
-            CopilotTool::PreparePurchaseDraft    => "prepare_purchase_draft",
-            CopilotTool::UpdateDishPrice         => "update_dish_price",
-            CopilotTool::WriteOffInventory       => "write_off_inventory",
-            CopilotTool::SendPurchaseOrder       => "send_purchase_order",
-            CopilotTool::CreateRecipe            => "create_recipe",
-            CopilotTool::CreateDish              => "create_dish",
-            CopilotTool::GenerateLabRecipe       => "generate_lab_recipe",
-            CopilotTool::Generate3DFoodModel     => "generate_3d_food_model",
-            CopilotTool::SimulateLabProduct      => "simulate_lab_product",
-            CopilotTool::GenerateProductReport   => "generate_product_report",
+            CopilotTool::PreparePurchaseDraft => "prepare_purchase_draft",
+            CopilotTool::UpdateDishPrice => "update_dish_price",
+            CopilotTool::WriteOffInventory => "write_off_inventory",
+            CopilotTool::SendPurchaseOrder => "send_purchase_order",
+            CopilotTool::CreateRecipe => "create_recipe",
+            CopilotTool::CreateDish => "create_dish",
+            CopilotTool::GenerateLabRecipe => "generate_lab_recipe",
+            CopilotTool::Generate3DFoodModel => "generate_3d_food_model",
+            CopilotTool::SimulateLabProduct => "simulate_lab_product",
+            CopilotTool::GenerateProductReport => "generate_product_report",
         }
     }
 
@@ -212,8 +212,19 @@ impl CopilotTool {
             CopilotTool::GenerateLabRecipe,
         ];
 
-        tools.iter().enumerate().map(|(i, t)| {
-            format!("{}. {} [{}] — {}", i + 1, t.name(), if t.is_write() { "WRITE" } else { "READ" }, t.description())
-        }).collect::<Vec<_>>().join("\n")
+        tools
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                format!(
+                    "{}. {} [{}] — {}",
+                    i + 1,
+                    t.name(),
+                    if t.is_write() { "WRITE" } else { "READ" },
+                    t.description()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }

@@ -27,7 +27,11 @@ pub struct Vertex {
 }
 
 impl Vertex {
-    pub const ORIGIN: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
+    pub const ORIGIN: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
 
     #[inline]
     pub const fn new(x: f64, y: f64, z: f64) -> Self {
@@ -87,7 +91,11 @@ impl Vertex {
     /// Upgrade from `[f32; 3]` (e.g. reading legacy mesh data).
     #[inline]
     pub fn from_f32(v: [f32; 3]) -> Self {
-        Self { x: v[0] as f64, y: v[1] as f64, z: v[2] as f64 }
+        Self {
+            x: v[0] as f64,
+            y: v[1] as f64,
+            z: v[2] as f64,
+        }
     }
 }
 
@@ -120,7 +128,7 @@ mod tests {
     fn coincident_within_modeling_tolerance() {
         let a = Vertex::new(0.0, 0.0, 0.0);
         let b = Vertex::new(5e-8, 0.0, 0.0);
-        assert!( a.coincident_with(b, Tolerance::DEFAULT));
+        assert!(a.coincident_with(b, Tolerance::DEFAULT));
         let c = Vertex::new(2e-7, 0.0, 0.0);
         assert!(!a.coincident_with(c, Tolerance::DEFAULT));
     }
@@ -137,7 +145,7 @@ mod tests {
         let a = Vertex::new(0.0, 0.0, 0.0);
         let b = Vertex::new(3.0, 4.0, 0.0); // distance = 5
         let d = a.direction_to(b, Tolerance::DEFAULT).unwrap();
-        let len = (d[0]*d[0] + d[1]*d[1] + d[2]*d[2]).sqrt();
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-12);
     }
 

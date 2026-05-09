@@ -346,7 +346,8 @@ pub async fn get_ingredient_by_slug(
                             "old_slug": slug,
                             "new_slug": new_slug,
                             "location": location,
-                        })).unwrap_or_default()
+                        }))
+                        .unwrap_or_default(),
                     ))
                     .unwrap()
                     .into_response())
@@ -417,7 +418,8 @@ pub async fn get_ingredient_by_slug(
                 og_title: r.og_title,
                 og_description: r.og_description,
                 og_image: r.og_image,
-            }).into_response())
+            })
+            .into_response())
         }
     }
 }
@@ -683,8 +685,8 @@ pub struct AutocompleteQuery {
 #[derive(Serialize, sqlx::FromRow)]
 pub struct AutocompleteItem {
     pub slug: String,
-    pub name: String,       // localised display name
-    pub name_en: String,    // always English for entity_a in generation
+    pub name: String,    // localised display name
+    pub name_en: String, // always English for entity_a in generation
     pub image_url: Option<String>,
     pub category: Option<String>, // localised category name
 }
@@ -843,8 +845,7 @@ pub async fn get_ingredients_states_map(
     })?;
 
     // Group by slug → [states]
-    let mut map: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for row in rows {
         map.entry(row.slug).or_default().push(row.state);
     }
@@ -912,7 +913,10 @@ pub async fn get_ingredients_sitemap_data(
     .await
     .map_err(|e| {
         tracing::error!("DB error fetching sitemap data: {e}");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Database error" })))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
     })?;
 
     // 2. Fetch all states in one query
@@ -937,7 +941,10 @@ pub async fn get_ingredients_sitemap_data(
     .await
     .map_err(|e| {
         tracing::error!("DB error fetching states for sitemap: {e}");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Database error" })))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Database error" })),
+        )
     })?;
 
     // 3. Group states by slug

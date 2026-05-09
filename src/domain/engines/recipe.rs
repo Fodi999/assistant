@@ -8,22 +8,22 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct RecipeAnalyzeRequest {
     pub ingredients: Vec<RecipeIngredientItem>,
-    pub portions:    Option<u32>,
-    pub lang:        Option<String>,
+    pub portions: Option<u32>,
+    pub lang: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RecipeIngredientItem {
-    pub slug:  String,
+    pub slug: String,
     pub grams: f64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ShareRecipeRequest {
-    pub title:       String,
+    pub title: String,
     pub ingredients: Vec<RecipeIngredientItem>,
-    pub portions:    Option<u32>,
-    pub lang:        Option<String>,
+    pub portions: Option<u32>,
+    pub lang: Option<String>,
 }
 
 /// RecipeEngine: analysis, nutrition aggregation, cost, sharing.

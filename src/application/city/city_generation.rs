@@ -11,11 +11,12 @@
 ///   - Lots       → polygon ground tiles
 ///
 /// RNG: LCG seeded from tenant_id — same tenant always gets same layout.
-
 use crate::application::city::economy_snapshot::EconomySnapshot;
 use crate::application::city::terrain::build_city_terrain;
 use crate::domain::city::*;
-use crate::infrastructure::geometry::kernel::extrude::{extrude_polygon, ExtrudeOptions, Point2 as KernelPoint2};
+use crate::infrastructure::geometry::kernel::extrude::{
+    extrude_polygon, ExtrudeOptions, Point2 as KernelPoint2,
+};
 use crate::shared::TenantId;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,8 +47,8 @@ pub const TERRAIN_CELL_M: f32 = 4.0;
 /// Suggested `<group scale={...}>` for the frontend (1 m → 0.05 world units).
 pub const RENDER_SCALE_HINT: f32 = 0.05;
 
-const STRIDE_X: f32 = DISTRICT_W_M + ROAD_W_PRIMARY;   // 256
-const STRIDE_Z: f32 = DISTRICT_D_M + ROAD_W_PRIMARY;   // 196
+const STRIDE_X: f32 = DISTRICT_W_M + ROAD_W_PRIMARY; // 256
+const STRIDE_Z: f32 = DISTRICT_D_M + ROAD_W_PRIMARY; // 196
 
 /// How much district polygon corners are randomly perturbed (organic look) — metres.
 const POLYGON_JITTER: f32 = 12.0;
@@ -65,7 +66,9 @@ pub struct CityGenerator;
 impl CityGenerator {
     pub fn build(econ: &EconomySnapshot, tenant_id: TenantId) -> CityMap {
         let seed = tenant_seed(tenant_id);
-        let mut gen = Gen { rng: Lcg::new(seed) };
+        let mut gen = Gen {
+            rng: Lcg::new(seed),
+        };
         gen.generate(econ, seed)
     }
 }
@@ -89,11 +92,9 @@ impl Gen {
             .map(|spec| {
                 let cx = spec.col as f32 * STRIDE_X;
                 let cz = spec.row as f32 * STRIDE_Z;
-                let mut local = Lcg::new(
-                    self.rng
-                        .next_u64()
-                        .wrapping_add((spec.col.unsigned_abs() * 7 + spec.row.unsigned_abs() * 13 + 1) as u64 * 1000),
-                );
+                let mut local = Lcg::new(self.rng.next_u64().wrapping_add(
+                    (spec.col.unsigned_abs() * 7 + spec.row.unsigned_abs() * 13 + 1) as u64 * 1000,
+                ));
                 self.build_district(spec, cx, cz, &mut local, econ)
             })
             .collect();
@@ -111,8 +112,8 @@ impl Gen {
         // ── 5. Terrain mesh ───────────────────────────────────────────────
         // Pad the terrain `TERRAIN_MARGIN_M` beyond the city bounds so map
         // edges sit comfortably inside the landscape (no visible cliffs).
-        let terrain_width  = bounds_w + TERRAIN_MARGIN_M * 2.0;
-        let terrain_depth  = bounds_d + TERRAIN_MARGIN_M * 2.0;
+        let terrain_width = bounds_w + TERRAIN_MARGIN_M * 2.0;
+        let terrain_depth = bounds_d + TERRAIN_MARGIN_M * 2.0;
         let terrain = build_city_terrain(terrain_width, terrain_depth, TERRAIN_CELL_M, seed);
 
         CityMap {
@@ -135,10 +136,10 @@ impl Gen {
             districts,
             ground: CityGround {
                 color: "#5a6048".into(),
-                size: 1500.0,            // real metres — frontend scales by render_scale_hint
+                size: 1500.0, // real metres — frontend scales by render_scale_hint
                 fog_color: "#7ab0e8".into(),
-                fog_near: 400.0,         // real metres
-                fog_far: 1500.0,         // real metres
+                fog_near: 400.0, // real metres
+                fog_far: 1500.0, // real metres
             },
             terrain: Some(terrain),
             units: CityUnits {
@@ -155,37 +156,81 @@ impl Gen {
         let mut specs = Vec::new();
 
         // Player HQ — always center
-        specs.push(DistrictSpec::new(0, 0, DistrictKind::Player, econ.restaurant_name.clone()));
+        specs.push(DistrictSpec::new(
+            0,
+            0,
+            DistrictKind::Player,
+            econ.restaurant_name.clone(),
+        ));
 
         // Residential — always both sides
-        specs.push(DistrictSpec::new(-1, 0, DistrictKind::Residential, "Жилой район А".into()));
-        specs.push(DistrictSpec::new(1, 0, DistrictKind::Residential, "Жилой район Б".into()));
+        specs.push(DistrictSpec::new(
+            -1,
+            0,
+            DistrictKind::Residential,
+            "Жилой район А".into(),
+        ));
+        specs.push(DistrictSpec::new(
+            1,
+            0,
+            DistrictKind::Residential,
+            "Жилой район Б".into(),
+        ));
 
         // Park — always
-        specs.push(DistrictSpec::new(0, 1, DistrictKind::Park, "Городской парк".into()));
+        specs.push(DistrictSpec::new(
+            0,
+            1,
+            DistrictKind::Park,
+            "Городской парк".into(),
+        ));
 
         // Competitor — always
-        specs.push(DistrictSpec::new(-1, 1, DistrictKind::Competitor, "Rival Kitchen".into()));
+        specs.push(DistrictSpec::new(
+            -1,
+            1,
+            DistrictKind::Competitor,
+            "Rival Kitchen".into(),
+        ));
 
         // Office — unlocked when margins are good OR menu has dishes
         if econ.avg_profit_margin > 20.0 || econ.dish_count >= 2 {
-            specs.push(DistrictSpec::new(0, -1, DistrictKind::Office, "Деловой центр".into()));
+            specs.push(DistrictSpec::new(
+                0,
+                -1,
+                DistrictKind::Office,
+                "Деловой центр".into(),
+            ));
         }
 
         // Market — unlocked when inventory exists
         if econ.inventory_count > 0 {
-            specs.push(DistrictSpec::new(-1, -1, DistrictKind::Market, "Продовольственный рынок".into()));
+            specs.push(DistrictSpec::new(
+                -1,
+                -1,
+                DistrictKind::Market,
+                "Продовольственный рынок".into(),
+            ));
         }
 
         // Shops — unlocked when dishes exist
         if econ.dish_count > 0 {
-            specs.push(DistrictSpec::new(1, -1, DistrictKind::Shops, "Торговая улица".into()));
+            specs.push(DistrictSpec::new(
+                1,
+                -1,
+                DistrictKind::Shops,
+                "Торговая улица".into(),
+            ));
         }
 
         // Industrial — warning district when products are expiring
         if econ.expiring_soon > 0 {
-            specs.push(DistrictSpec::new(1, 1, DistrictKind::Industrial,
-                format!("⚠️ Склад ({} просрочка)", econ.expiring_soon)));
+            specs.push(DistrictSpec::new(
+                1,
+                1,
+                DistrictKind::Industrial,
+                format!("⚠️ Склад ({} просрочка)", econ.expiring_soon),
+            ));
         }
 
         specs
@@ -209,8 +254,8 @@ impl Gen {
         let centroid = [cx, cz];
 
         let (ground_color, accent_color, badge) = district_theme(&spec.kind, econ);
-        let unlocked = !matches!(spec.kind, DistrictKind::Industrial)
-            || econ.assistant_progress >= 30;
+        let unlocked =
+            !matches!(spec.kind, DistrictKind::Industrial) || econ.assistant_progress >= 30;
 
         let buildings = self.fill_buildings(spec, rng, cx, cz, hw, hd);
         let lots = fill_lots(&spec.kind, rng, cx, cz, hw, hd);
@@ -248,14 +293,14 @@ impl Gen {
         let usable_d = (hd - margin).max(10.0);
 
         let count: usize = match spec.kind {
-            DistrictKind::Player      => 1,
-            DistrictKind::Office      => 5,
-            DistrictKind::Market      => 6,
-            DistrictKind::Shops       => 8,
+            DistrictKind::Player => 1,
+            DistrictKind::Office => 5,
+            DistrictKind::Market => 6,
+            DistrictKind::Shops => 8,
             DistrictKind::Residential => 7,
-            DistrictKind::Competitor  => 2,
-            DistrictKind::Park        => 0,
-            DistrictKind::Industrial  => 4,
+            DistrictKind::Competitor => 2,
+            DistrictKind::Park => 0,
+            DistrictKind::Industrial => 4,
         };
 
         (0..count)
@@ -296,7 +341,8 @@ impl Gen {
                     roof_color: Some("#e8a020".into()),
                     emissive: Some("#f5c842".into()),
                     emissive_intensity: 0.35,
-                    metalness: 0.1, roughness: 0.6,
+                    metalness: 0.1,
+                    roughness: 0.6,
                     windows: true,
                     window_color: Some("#fff8d0".into()),
                     cast_shadow: true,
@@ -324,11 +370,12 @@ impl Gen {
                     height: h,
                     floors,
                     kind: "office".into(),
-                    color: pick(rng, &["#6a7888","#7a8898","#8899aa","#5a6878"]).into(),
+                    color: pick(rng, &["#6a7888", "#7a8898", "#8899aa", "#5a6878"]).into(),
                     roof_color: Some("#3a4858".into()),
                     emissive: Some("#4060c0".into()),
                     emissive_intensity: 0.12,
-                    metalness: 0.5, roughness: 0.35,
+                    metalness: 0.5,
+                    roughness: 0.35,
                     windows: true,
                     window_color: Some("#b8d0f0".into()),
                     cast_shadow: true,
@@ -338,9 +385,9 @@ impl Gen {
 
             // ── Market: wide low sheds ────────────────────────────────────
             DistrictKind::Market => {
-                let w = 30.0 + rng.next_f32() * 30.0;   // 30–60 m
-                let d = 25.0 + rng.next_f32() * 15.0;   // 25–40 m
-                let h = 8.0 + rng.next_f32() * 4.0;     // 8–12 m
+                let w = 30.0 + rng.next_f32() * 30.0; // 30–60 m
+                let d = 25.0 + rng.next_f32() * 15.0; // 25–40 m
+                let h = 8.0 + rng.next_f32() * 4.0; // 8–12 m
                 with_mesh(CityBuilding {
                     id: format!("market_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
@@ -348,11 +395,14 @@ impl Gen {
                     height: h,
                     floors: 1,
                     kind: "market".into(),
-                    color: pick(rng, &["#c8b89a","#d0c4a8","#bca890","#d4bc96"]).into(),
+                    color: pick(rng, &["#c8b89a", "#d0c4a8", "#bca890", "#d4bc96"]).into(),
                     roof_color: Some("#e87030".into()),
-                    emissive: None, emissive_intensity: 0.0,
-                    metalness: 0.05, roughness: 0.9,
-                    windows: false, window_color: None,
+                    emissive: None,
+                    emissive_intensity: 0.0,
+                    metalness: 0.05,
+                    roughness: 0.9,
+                    windows: false,
+                    window_color: None,
                     cast_shadow: true,
                     mesh: None,
                 })
@@ -360,8 +410,8 @@ impl Gen {
 
             // ── Shops: small low units, coloured roofs ────────────────────
             DistrictKind::Shops => {
-                let w = 8.0 + rng.next_f32() * 8.0;   // 8–16 m
-                let d = 8.0 + rng.next_f32() * 4.0;   // 8–12 m
+                let w = 8.0 + rng.next_f32() * 8.0; // 8–16 m
+                let d = 8.0 + rng.next_f32() * 4.0; // 8–12 m
                 let floors = if rng.next_f32() > 0.5 { 2 } else { 1 };
                 let h = floors as f32 * FLOOR_H_M;
                 with_mesh(CityBuilding {
@@ -371,11 +421,16 @@ impl Gen {
                     height: h,
                     floors,
                     kind: "shop".into(),
-                    color: pick(rng, &["#c8b09a","#d4b890","#bc9880","#e0c8a0"]).into(),
-                    roof_color: Some(pick(rng, &["#d06030","#e04040","#30a060","#4060e0"]).to_string()),
-                    emissive: None, emissive_intensity: 0.0,
-                    metalness: 0.05, roughness: 0.88,
-                    windows: false, window_color: None,
+                    color: pick(rng, &["#c8b09a", "#d4b890", "#bc9880", "#e0c8a0"]).into(),
+                    roof_color: Some(
+                        pick(rng, &["#d06030", "#e04040", "#30a060", "#4060e0"]).to_string(),
+                    ),
+                    emissive: None,
+                    emissive_intensity: 0.0,
+                    metalness: 0.05,
+                    roughness: 0.88,
+                    windows: false,
+                    window_color: None,
                     cast_shadow: true,
                     mesh: None,
                 })
@@ -384,9 +439,9 @@ impl Gen {
             // ── Residential: medium grey blocks ───────────────────────────
             DistrictKind::Residential => {
                 let gray = 130u8 + (rng.next_f32() * 60.0) as u8;
-                let w = 18.0 + rng.next_f32() * 17.0;   // 18–35 m
-                let d = 16.0 + rng.next_f32() * 14.0;   // 16–30 m
-                let floors = 4 + (rng.next_f32() * 5.0).round() as u32;   // 4–9
+                let w = 18.0 + rng.next_f32() * 17.0; // 18–35 m
+                let d = 16.0 + rng.next_f32() * 14.0; // 16–30 m
+                let floors = 4 + (rng.next_f32() * 5.0).round() as u32; // 4–9
                 let h = floors as f32 * FLOOR_H_M;
                 with_mesh(CityBuilding {
                     id: format!("res_{}", p),
@@ -397,8 +452,10 @@ impl Gen {
                     kind: "residential".into(),
                     color: format!("#{:02x}{:02x}{:02x}", gray, gray, gray.saturating_sub(6)),
                     roof_color: Some("#889070".into()),
-                    emissive: None, emissive_intensity: 0.0,
-                    metalness: 0.05, roughness: 0.85,
+                    emissive: None,
+                    emissive_intensity: 0.0,
+                    metalness: 0.05,
+                    roughness: 0.85,
                     windows: true,
                     window_color: Some("#d0c8a0".into()),
                     cast_shadow: true,
@@ -408,9 +465,9 @@ impl Gen {
 
             // ── Competitor: red-tinted building ───────────────────────────
             DistrictKind::Competitor => {
-                let w = 22.0 + rng.next_f32() * 10.0;  // 22–32 m
-                let d = 18.0 + rng.next_f32() *  8.0;  // 18–26 m
-                let floors = 3 + (rng.next_f32() * 3.0).round() as u32;  // 3–6
+                let w = 22.0 + rng.next_f32() * 10.0; // 22–32 m
+                let d = 18.0 + rng.next_f32() * 8.0; // 18–26 m
+                let floors = 3 + (rng.next_f32() * 3.0).round() as u32; // 3–6
                 let h = floors as f32 * FLOOR_H_M;
                 with_mesh(CityBuilding {
                     id: format!("comp_{}", p),
@@ -423,7 +480,8 @@ impl Gen {
                     roof_color: Some("#c04040".into()),
                     emissive: Some("#c03030".into()),
                     emissive_intensity: 0.2,
-                    metalness: 0.1, roughness: 0.7,
+                    metalness: 0.1,
+                    roughness: 0.7,
                     windows: true,
                     window_color: Some("#ff9090".into()),
                     cast_shadow: true,
@@ -433,9 +491,9 @@ impl Gen {
 
             // ── Industrial: orange warning glow ───────────────────────────
             DistrictKind::Industrial => {
-                let w = 40.0 + rng.next_f32() * 40.0;  // 40–80 m
-                let d = 30.0 + rng.next_f32() * 30.0;  // 30–60 m
-                let h = 6.0  + rng.next_f32() *  4.0;  // 6–10 m
+                let w = 40.0 + rng.next_f32() * 40.0; // 40–80 m
+                let d = 30.0 + rng.next_f32() * 30.0; // 30–60 m
+                let h = 6.0 + rng.next_f32() * 4.0; // 6–10 m
                 with_mesh(CityBuilding {
                     id: format!("ind_{}", p),
                     footprint: rect_footprint(cx, cz, w, d),
@@ -447,8 +505,10 @@ impl Gen {
                     roof_color: Some("#f59020".into()),
                     emissive: Some("#f08020".into()),
                     emissive_intensity: 0.25,
-                    metalness: 0.3, roughness: 0.7,
-                    windows: false, window_color: None,
+                    metalness: 0.3,
+                    roughness: 0.7,
+                    windows: false,
+                    window_color: None,
                     cast_shadow: true,
                     mesh: None,
                 })
@@ -458,12 +518,19 @@ impl Gen {
             DistrictKind::Park => CityBuilding {
                 id: format!("park_placeholder_{}", p),
                 footprint: vec![],
-                base_y: 0.0, height: 0.0, floors: 0,
+                base_y: 0.0,
+                height: 0.0,
+                floors: 0,
                 kind: "none".into(),
                 color: "#000000".into(),
-                roof_color: None, emissive: None, emissive_intensity: 0.0,
-                metalness: 0.0, roughness: 1.0,
-                windows: false, window_color: None, cast_shadow: false,
+                roof_color: None,
+                emissive: None,
+                emissive_intensity: 0.0,
+                metalness: 0.0,
+                roughness: 1.0,
+                windows: false,
+                window_color: None,
+                cast_shadow: false,
                 mesh: None,
             },
         }
@@ -486,9 +553,9 @@ fn build_road_network(specs: &[DistrictSpec]) -> Vec<CityRoad> {
     let max_row = *rows.iter().max().unwrap_or(&0);
 
     let x_start = min_col as f32 * STRIDE_X - STRIDE_X * 0.5;
-    let x_end   = max_col as f32 * STRIDE_X + STRIDE_X * 0.5;
+    let x_end = max_col as f32 * STRIDE_X + STRIDE_X * 0.5;
     let z_start = min_row as f32 * STRIDE_Z - STRIDE_Z * 0.5;
-    let z_end   = max_row as f32 * STRIDE_Z + STRIDE_Z * 0.5;
+    let z_end = max_row as f32 * STRIDE_Z + STRIDE_Z * 0.5;
 
     // ── Horizontal primary roads (one per row boundary) ─────────────────
     for row in min_row..=(max_row + 1) {
@@ -641,8 +708,8 @@ fn l_shape_footprint(cx: f32, cz: f32, w: f32, d: f32, rng: &mut Lcg) -> Vec<[f3
         [cx - hw, cz - hd],
         [cx + hw, cz - hd],
         [cx + hw, cut_z],
-        [cut_x,   cut_z],
-        [cut_x,   cz + hd],
+        [cut_x, cut_z],
+        [cut_x, cz + hd],
         [cx - hw, cz + hd],
     ]
 }
@@ -689,7 +756,12 @@ struct DistrictSpec {
 
 impl DistrictSpec {
     fn new(col: i32, row: i32, kind: DistrictKind, name: String) -> Self {
-        Self { col, row, kind, name }
+        Self {
+            col,
+            row,
+            kind,
+            name,
+        }
     }
 }
 
@@ -702,26 +774,24 @@ fn district_theme(
     econ: &EconomySnapshot,
 ) -> (&'static str, &'static str, Option<String>) {
     let badge = match kind {
-        DistrictKind::Industrial if econ.expiring_soon > 0 =>
-            Some(format!("⚠️ {} просрочка", econ.expiring_soon)),
-        DistrictKind::Office if econ.avg_profit_margin > 40.0 =>
-            Some("⭐ Высокая маржа".into()),
-        DistrictKind::Player =>
-            Some("🏠 Ваш ресторан".into()),
-        DistrictKind::Competitor =>
-            Some("⚔️ Конкурент".into()),
+        DistrictKind::Industrial if econ.expiring_soon > 0 => {
+            Some(format!("⚠️ {} просрочка", econ.expiring_soon))
+        }
+        DistrictKind::Office if econ.avg_profit_margin > 40.0 => Some("⭐ Высокая маржа".into()),
+        DistrictKind::Player => Some("🏠 Ваш ресторан".into()),
+        DistrictKind::Competitor => Some("⚔️ Конкурент".into()),
         _ => None,
     };
 
     let colors = match kind {
-        DistrictKind::Player      => ("#2a2010", "#f5c842"),
-        DistrictKind::Office      => ("#181c22", "#4a80f0"),
-        DistrictKind::Market      => ("#1a1812", "#e87030"),
-        DistrictKind::Shops       => ("#1e1a14", "#d04040"),
+        DistrictKind::Player => ("#2a2010", "#f5c842"),
+        DistrictKind::Office => ("#181c22", "#4a80f0"),
+        DistrictKind::Market => ("#1a1812", "#e87030"),
+        DistrictKind::Shops => ("#1e1a14", "#d04040"),
         DistrictKind::Residential => ("#1a1e18", "#70a050"),
-        DistrictKind::Competitor  => ("#1e1010", "#c03030"),
-        DistrictKind::Park        => ("#1a2818", "#40a840"),
-        DistrictKind::Industrial  => ("#1c1a14", "#f08020"),
+        DistrictKind::Competitor => ("#1e1010", "#c03030"),
+        DistrictKind::Park => ("#1a2818", "#40a840"),
+        DistrictKind::Industrial => ("#1c1a14", "#f08020"),
     };
 
     (colors.0, colors.1, badge)
@@ -733,15 +803,9 @@ fn district_theme(
 
 fn tenant_seed(tenant_id: TenantId) -> u64 {
     let bytes = tenant_id.0.as_bytes();
-    bytes
-        .iter()
-        .enumerate()
-        .fold(0u64, |acc, (i, &b)| {
-            acc.wrapping_add(
-                (b as u64)
-                    .wrapping_mul(6364136223846793005u64.wrapping_pow(i as u32 + 1)),
-            )
-        })
+    bytes.iter().enumerate().fold(0u64, |acc, (i, &b)| {
+        acc.wrapping_add((b as u64).wrapping_mul(6364136223846793005u64.wrapping_pow(i as u32 + 1)))
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -754,7 +818,9 @@ struct Lcg {
 
 impl Lcg {
     fn new(seed: u64) -> Self {
-        Self { state: seed.wrapping_add(1) }
+        Self {
+            state: seed.wrapping_add(1),
+        }
     }
 
     fn next_u64(&mut self) -> u64 {
@@ -796,14 +862,19 @@ impl Lcg {
 ///
 /// Result: mesh Y ∈ [base_y, base_y + height]  ✓
 fn extrude_footprint_to_mesh(footprint: &[[f32; 2]], base_y: f32, height: f32) -> Option<CityMesh> {
-    if footprint.len() < 3 { return None; }
+    if footprint.len() < 3 {
+        return None;
+    }
 
     let points: Vec<KernelPoint2> = footprint
         .iter()
         .map(|p| KernelPoint2::new(p[0], p[1]))
         .collect();
 
-    let opts = ExtrudeOptions { depth: height, bevel: 0.0 };
+    let opts = ExtrudeOptions {
+        depth: height,
+        bevel: 0.0,
+    };
 
     let parts = match extrude_polygon(&points, &opts) {
         Ok(p) => p,
@@ -814,15 +885,15 @@ fn extrude_footprint_to_mesh(footprint: &[[f32; 2]], base_y: f32, height: f32) -
     let half_h = height * 0.5;
 
     let mut positions: Vec<f32> = Vec::new();
-    let mut normals:   Vec<f32> = Vec::new();
-    let mut uvs:       Vec<f32> = Vec::new();
-    let mut indices:   Vec<u32> = Vec::new();
+    let mut normals: Vec<f32> = Vec::new();
+    let mut uvs: Vec<f32> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
     let mut base_index: u32 = 0;
 
     for part in &parts {
         for &[kx, ky, kz] in &part.vertices {
             positions.push(kx);
-            positions.push(kz + base_y + half_h);  // k_z(-h/2..+h/2) → base_y..base_y+h
+            positions.push(kz + base_y + half_h); // k_z(-h/2..+h/2) → base_y..base_y+h
             positions.push(ky);
         }
         for &[nx, ny, nz] in &part.normals {
@@ -842,7 +913,13 @@ fn extrude_footprint_to_mesh(footprint: &[[f32; 2]], base_y: f32, height: f32) -
         base_index += part.vertices.len() as u32;
     }
 
-    Some(CityMesh { positions, normals, uvs, indices, colors: vec![] })
+    Some(CityMesh {
+        positions,
+        normals,
+        uvs,
+        indices,
+        colors: vec![],
+    })
 }
 
 /// Wrap a CityBuilding: compute its pre-baked mesh from footprint and attach it.
@@ -868,12 +945,7 @@ mod tests {
     ///     max: +h/2 + base_y + h/2 = base_y + h    ✓
     #[test]
     fn building_mesh_y_range() {
-        let footprint = vec![
-            [-1.0_f32, -1.0],
-            [ 1.0,     -1.0],
-            [ 1.0,      1.0],
-            [-1.0,      1.0],
-        ];
+        let footprint = vec![[-1.0_f32, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
         let base_y = 0.0_f32;
         let height = 5.0_f32;
 
@@ -881,10 +953,7 @@ mod tests {
             .expect("mesh should be generated for a valid footprint");
 
         // Y values are at positions[1], [4], [7], … (stride 3, offset 1)
-        let ys: Vec<f32> = mesh.positions
-            .chunks(3)
-            .map(|v| v[1])
-            .collect();
+        let ys: Vec<f32> = mesh.positions.chunks(3).map(|v| v[1]).collect();
 
         let min_y = ys.iter().cloned().fold(f32::INFINITY, f32::min);
         let max_y = ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
@@ -903,12 +972,7 @@ mod tests {
     /// Same test with non-zero base_y (elevated building, e.g. on a platform).
     #[test]
     fn building_mesh_y_range_elevated() {
-        let footprint = vec![
-            [0.0_f32, 0.0],
-            [2.0,     0.0],
-            [2.0,     2.0],
-            [0.0,     2.0],
-        ];
+        let footprint = vec![[0.0_f32, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]];
         let base_y = 1.5_f32;
         let height = 3.0_f32;
 
@@ -918,7 +982,14 @@ mod tests {
         let min_y = ys.iter().cloned().fold(f32::INFINITY, f32::min);
         let max_y = ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
 
-        assert!((min_y - base_y).abs() < 1e-4, "min Y={min_y}, expected {base_y}");
-        assert!((max_y - (base_y + height)).abs() < 1e-4, "max Y={max_y}, expected {}", base_y + height);
+        assert!(
+            (min_y - base_y).abs() < 1e-4,
+            "min Y={min_y}, expected {base_y}"
+        );
+        assert!(
+            (max_y - (base_y + height)).abs() < 1e-4,
+            "max Y={max_y}, expected {}",
+            base_y + height
+        );
     }
 }

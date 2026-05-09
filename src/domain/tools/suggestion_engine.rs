@@ -6,27 +6,27 @@
 //! No DB, no HTTP — pure functions. The application layer fetches
 //! candidates from DB and passes them here for scoring.
 
-use serde::{Deserialize, Serialize};
-use crate::domain::tools::unit_converter as uc;
-use crate::domain::tools::flavor_graph::{FlavorVector, FlavorBalance};
+use crate::domain::tools::flavor_graph::{FlavorBalance, FlavorVector};
 use crate::domain::tools::nutrition::NutritionBreakdown;
+use crate::domain::tools::unit_converter as uc;
+use serde::{Deserialize, Serialize};
 
 // ── Input: candidate ingredient ──────────────────────────────────────────────
 
 /// A candidate ingredient that could be added to the recipe.
 #[derive(Debug, Clone)]
 pub struct Candidate {
-    pub slug:        String,
-    pub name:        String,
-    pub image_url:   Option<String>,
+    pub slug: String,
+    pub name: String,
+    pub image_url: Option<String>,
     /// Culinary flavor vector
-    pub flavor:      FlavorVector,
+    pub flavor: FlavorVector,
     /// Nutrition per 100g
-    pub nutrition:   NutritionBreakdown,
+    pub nutrition: NutritionBreakdown,
     /// Pairing score with existing recipe ingredients (avg)
-    pub pair_score:  f64,
+    pub pair_score: f64,
     /// Typical portion to add (grams)
-    pub typical_g:   f64,
+    pub typical_g: f64,
     /// Product category (e.g. "fish", "dairy", "vegetable", "grain", "oil")
     pub product_type: Option<String>,
 }
@@ -35,15 +35,15 @@ pub struct Candidate {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Suggestion {
-    pub slug:           String,
-    pub name:           String,
-    pub image_url:      Option<String>,
+    pub slug: String,
+    pub name: String,
+    pub image_url: Option<String>,
     /// 0–100 overall recommendation score
-    pub score:          u8,
+    pub score: u8,
     /// Why this ingredient is suggested
-    pub reasons:        Vec<String>,
+    pub reasons: Vec<String>,
     /// Which weak dimensions it addresses
-    pub fills_gaps:     Vec<String>,
+    pub fills_gaps: Vec<String>,
     /// Suggested amount in grams
     pub suggested_grams: f64,
 }
@@ -53,7 +53,7 @@ pub struct SuggestionResult {
     /// Current recipe balance (before suggestions)
     pub current_balance: FlavorBalance,
     /// Top suggestions ordered by score
-    pub suggestions:     Vec<Suggestion>,
+    pub suggestions: Vec<Suggestion>,
 }
 
 // ── Scoring weights ──────────────────────────────────────────────────────────
@@ -63,18 +63,18 @@ struct Weights {
     /// How well the candidate fills flavor gaps (0–40 points)
     flavor_gap_fill: f64,
     /// Pairing score with existing ingredients (0–30 points)
-    pairing:         f64,
+    pairing: f64,
     /// Nutritional improvement potential (0–20 points)
-    nutrition:       f64,
+    nutrition: f64,
     /// Aromatic contribution (0–10 points)
-    aroma:           f64,
+    aroma: f64,
 }
 
 const WEIGHTS: Weights = Weights {
     flavor_gap_fill: 40.0,
-    pairing:         30.0,
-    nutrition:       20.0,
-    aroma:           10.0,
+    pairing: 30.0,
+    nutrition: 20.0,
+    aroma: 10.0,
 };
 
 // ── Core suggestion function ─────────────────────────────────────────────────
@@ -126,7 +126,10 @@ fn score_candidate(balance: &FlavorBalance, candidate: &Candidate) -> Suggestion
     let pair_norm = (candidate.pair_score / 10.0).clamp(0.0, 1.0);
     score += pair_norm * WEIGHTS.pairing;
     if candidate.pair_score > 6.0 {
-        reasons.push(format!("strong pairing affinity ({:.1})", candidate.pair_score));
+        reasons.push(format!(
+            "strong pairing affinity ({:.1})",
+            candidate.pair_score
+        ));
     }
 
     // ── 3. Nutritional value (up to 20 points) ──
@@ -196,9 +199,9 @@ fn flavor_gap_score(
 /// Returns 0.0–1.0
 fn nutrition_bonus(n: &NutritionBreakdown) -> f64 {
     let protein_score = (n.protein_g / 25.0).min(1.0) * 0.4;
-    let fiber_score   = (n.fiber_g / 10.0).min(1.0) * 0.3;
+    let fiber_score = (n.fiber_g / 10.0).min(1.0) * 0.3;
     let sugar_penalty = (n.sugar_g / 20.0).min(1.0) * 0.2;
-    let cal_penalty   = if n.calories > 500.0 { 0.1 } else { 0.0 };
+    let cal_penalty = if n.calories > 500.0 { 0.1 } else { 0.0 };
 
     (protein_score + fiber_score - sugar_penalty - cal_penalty).clamp(0.0, 1.0)
 }
@@ -208,23 +211,37 @@ fn nutrition_bonus(n: &NutritionBreakdown) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::tools::flavor_graph::{self, FlavorIngredient, DimensionGap};
+    use crate::domain::tools::flavor_graph::{self, DimensionGap, FlavorIngredient};
 
     fn tomato_recipe_balance() -> FlavorBalance {
         // Simulated: tomato-heavy recipe — weak on fat, strong on umami
         FlavorBalance {
             vector: FlavorVector {
-                sweetness: 4.0, acidity: 6.0, bitterness: 1.0,
-                umami: 7.0, fat: 0.2, aroma: 5.0,
+                sweetness: 4.0,
+                acidity: 6.0,
+                bitterness: 1.0,
+                umami: 7.0,
+                fat: 0.2,
+                aroma: 5.0,
             },
             balance_score: 55,
             weak_dimensions: vec![
-                DimensionGap { dimension: "fat".to_string(), value: 0.2, deviation: -3.63 },
-                DimensionGap { dimension: "bitterness".to_string(), value: 1.0, deviation: -2.83 },
+                DimensionGap {
+                    dimension: "fat".to_string(),
+                    value: 0.2,
+                    deviation: -3.63,
+                },
+                DimensionGap {
+                    dimension: "bitterness".to_string(),
+                    value: 1.0,
+                    deviation: -2.83,
+                },
             ],
-            strong_dimensions: vec![
-                DimensionGap { dimension: "umami".to_string(), value: 7.0, deviation: 3.17 },
-            ],
+            strong_dimensions: vec![DimensionGap {
+                dimension: "umami".to_string(),
+                value: 7.0,
+                deviation: 3.17,
+            }],
         }
     }
 
@@ -234,12 +251,22 @@ mod tests {
             name: "Olive Oil".to_string(),
             image_url: None,
             flavor: FlavorVector {
-                sweetness: 0.5, acidity: 1.0, bitterness: 3.0,
-                umami: 0.0, fat: 10.0, aroma: 6.0,
+                sweetness: 0.5,
+                acidity: 1.0,
+                bitterness: 3.0,
+                umami: 0.0,
+                fat: 10.0,
+                aroma: 6.0,
             },
             nutrition: NutritionBreakdown {
-                calories: 884.0, protein_g: 0.0, fat_g: 100.0, carbs_g: 0.0,
-                fiber_g: 0.0, sugar_g: 0.0, salt_g: 0.0, sodium_mg: 0.0,
+                calories: 884.0,
+                protein_g: 0.0,
+                fat_g: 100.0,
+                carbs_g: 0.0,
+                fiber_g: 0.0,
+                sugar_g: 0.0,
+                salt_g: 0.0,
+                sodium_mg: 0.0,
             },
             pair_score: 8.5,
             typical_g: 15.0,
@@ -253,12 +280,22 @@ mod tests {
             name: "Sugar".to_string(),
             image_url: None,
             flavor: FlavorVector {
-                sweetness: 10.0, acidity: 0.0, bitterness: 0.0,
-                umami: 0.0, fat: 0.0, aroma: 0.0,
+                sweetness: 10.0,
+                acidity: 0.0,
+                bitterness: 0.0,
+                umami: 0.0,
+                fat: 0.0,
+                aroma: 0.0,
             },
             nutrition: NutritionBreakdown {
-                calories: 387.0, protein_g: 0.0, fat_g: 0.0, carbs_g: 100.0,
-                fiber_g: 0.0, sugar_g: 100.0, salt_g: 0.0, sodium_mg: 0.0,
+                calories: 387.0,
+                protein_g: 0.0,
+                fat_g: 0.0,
+                carbs_g: 100.0,
+                fiber_g: 0.0,
+                sugar_g: 100.0,
+                salt_g: 0.0,
+                sodium_mg: 0.0,
             },
             pair_score: 2.0,
             typical_g: 5.0,
@@ -279,8 +316,15 @@ mod tests {
         assert!(!result.suggestions.is_empty(), "should have suggestions");
         let top = &result.suggestions[0];
         assert_eq!(top.slug, "olive-oil", "olive oil should be #1 for fat gap");
-        assert!(top.fills_gaps.contains(&"fat".to_string()), "should fill fat gap");
-        assert!(top.score > 40, "olive oil score should be > 40, got {}", top.score);
+        assert!(
+            top.fills_gaps.contains(&"fat".to_string()),
+            "should fill fat gap"
+        );
+        assert!(
+            top.score > 40,
+            "olive oil score should be > 40, got {}",
+            top.score
+        );
     }
 
     #[test]
@@ -304,9 +348,26 @@ mod tests {
             &[],
             5,
         );
-        let scores: Vec<(&str, u8)> = result.suggestions.iter().map(|s| (s.slug.as_str(), s.score)).collect();
-        let oil_score = scores.iter().find(|(s, _)| *s == "olive-oil").map(|(_, sc)| *sc).unwrap_or(0);
-        let sugar_score = scores.iter().find(|(s, _)| *s == "sugar").map(|(_, sc)| *sc).unwrap_or(0);
-        assert!(oil_score > sugar_score, "olive oil ({}) should score higher than sugar ({})", oil_score, sugar_score);
+        let scores: Vec<(&str, u8)> = result
+            .suggestions
+            .iter()
+            .map(|s| (s.slug.as_str(), s.score))
+            .collect();
+        let oil_score = scores
+            .iter()
+            .find(|(s, _)| *s == "olive-oil")
+            .map(|(_, sc)| *sc)
+            .unwrap_or(0);
+        let sugar_score = scores
+            .iter()
+            .find(|(s, _)| *s == "sugar")
+            .map(|(_, sc)| *sc)
+            .unwrap_or(0);
+        assert!(
+            oil_score > sugar_score,
+            "olive oil ({}) should score higher than sugar ({})",
+            oil_score,
+            sugar_score
+        );
     }
 }

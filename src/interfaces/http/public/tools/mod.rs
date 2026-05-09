@@ -13,16 +13,16 @@
 //!                recipe_nutrition, recipe_cost, best_right_now, list_regions
 //! - platform:    🆕 POST /tools/run (RuleBot), GET /tools/catalog
 
-pub mod shared;
-pub mod units;
-pub mod fish;
-pub mod nutrition;
-pub mod kitchen;
 pub mod categories;
-pub mod seasonality;
+pub mod fish;
+pub mod kitchen;
+pub mod nutrition;
+pub mod platform;
 pub mod recipe_analyze;
+pub mod seasonality;
 pub mod share_recipe;
-pub mod platform; // 🆕 Culinary Intelligence Platform endpoints
+pub mod shared;
+pub mod units; // 🆕 Culinary Intelligence Platform endpoints
 
 // ── Re-exports for routes.rs ──────────────────────────────────────────────────
 
@@ -33,11 +33,13 @@ pub use kitchen::{
     scale_recipe, yield_calc,
 };
 pub use nutrition::{compare_foods, ingredients_db, nutrition, resolve_slug};
+pub use platform::{tools_catalog, tools_run};
 pub use recipe_analyze::recipe_analyze;
-pub use share_recipe::{share_recipe, get_shared_recipe};
 pub use seasonality::{
     best_in_season, best_right_now, in_season_now, list_regions, product_search,
     product_seasonality, products_by_month, recipe_cost, recipe_nutrition, seasonal_calendar,
 };
-pub use units::{convert_units, ingredient_convert, seo_ingredient_convert, ingredient_scale, list_units};
-pub use platform::{tools_run, tools_catalog}; // 🆕
+pub use share_recipe::{get_shared_recipe, share_recipe};
+pub use units::{
+    convert_units, ingredient_convert, ingredient_scale, list_units, seo_ingredient_convert,
+}; // 🆕

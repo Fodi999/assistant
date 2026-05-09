@@ -2,17 +2,13 @@
 //!
 //! 0 SQL at runtime. All data from in-memory cache (loaded at startup).
 
-use crate::infrastructure::ingredient_cache::IngredientCache;
 use super::goal::Goal;
 use super::strategy::strategies_for;
 use super::types::{MealIngredient, MealVariant};
+use crate::infrastructure::ingredient_cache::IngredientCache;
 
 /// Resolve strategies for a goal into fully calculated MealVariants.
-pub async fn build_variants(
-    goal: Goal,
-    lang: &str,
-    cache: &IngredientCache,
-) -> Vec<MealVariant> {
+pub async fn build_variants(goal: Goal, lang: &str, cache: &IngredientCache) -> Vec<MealVariant> {
     let strategies = strategies_for(goal);
     let mut variants = Vec::with_capacity(strategies.len());
 

@@ -85,7 +85,10 @@ mod tests {
         recalculate_smooth_normals(&mut mesh);
         for n in &mesh.normals {
             let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-            assert!((l - 1.0).abs() < 1e-4 || (l - 1.0).abs() < 1e-3, "n_len={l}");
+            assert!(
+                (l - 1.0).abs() < 1e-4 || (l - 1.0).abs() < 1e-3,
+                "n_len={l}"
+            );
         }
     }
 

@@ -79,7 +79,9 @@ pub fn build_visual_story(
     process: &LaboratoryProcessAnalysis,
     target_product_type: Option<&str>,
 ) -> LaboratoryVisualStory {
-    let product_type = target_product_type.map(|s| s.to_string()).or_else(|| infer_product_type(steps));
+    let product_type = target_product_type
+        .map(|s| s.to_string())
+        .or_else(|| infer_product_type(steps));
     let primary = primary_ingredient(ingredients);
 
     let mut scenes: Vec<LaboratorySceneFrame> = Vec::with_capacity(steps.len() + 2);
@@ -105,10 +107,7 @@ pub fn build_visual_story(
     sorted_steps.sort_by_key(|s| s.order_index);
 
     for step in sorted_steps.iter() {
-        let step_effects = process
-            .step_effects
-            .iter()
-            .find(|e| e.step_id == step.id);
+        let step_effects = process.step_effects.iter().find(|e| e.step_id == step.id);
         let frame = scene_for_step(step, step_effects, &primary, order);
         scenes.push(frame);
         order += 1;
@@ -162,11 +161,13 @@ fn scene_for_step(
     let technique = step.technique.to_lowercase();
 
     // Pick the visually dominant effect for this step (highest intensity).
-    let dominant: Option<&LaboratoryEffect> = effects
-        .map(|e| e.effects.as_slice())
-        .and_then(|fx| {
-            fx.iter()
-                .max_by(|a, b| a.intensity.partial_cmp(&b.intensity).unwrap_or(std::cmp::Ordering::Equal))
+    let dominant: Option<&LaboratoryEffect> =
+        effects.map(|e| e.effects.as_slice()).and_then(|fx| {
+            fx.iter().max_by(|a, b| {
+                a.intensity
+                    .partial_cmp(&b.intensity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
     let scene_key = scene_key_for(&technique, dominant);
@@ -295,7 +296,11 @@ fn title_for_step(
     if let Some(eff) = dominant {
         return eff.label.clone();
     }
-    let p = if primary.is_empty() { "продукт".to_string() } else { primary.to_string() };
+    let p = if primary.is_empty() {
+        "продукт".to_string()
+    } else {
+        primary.to_string()
+    };
     match (technique, temp_c) {
         ("heat" | "boil" | "simmer", Some(t)) => format!("Нагрев {p} до {t:.0}°C"),
         ("blend" | "puree", _) => format!("Пюрирование: {p}"),
@@ -321,7 +326,11 @@ fn description_for_step(
             return eff.message.clone();
         }
     }
-    let p = if primary.is_empty() { "продукт".to_string() } else { primary.to_string() };
+    let p = if primary.is_empty() {
+        "продукт".to_string()
+    } else {
+        primary.to_string()
+    };
     let temp = temp_c.map(|t| format!(" при {t:.0}°C")).unwrap_or_default();
     let dur = duration.map(|m| format!(" {m} мин")).unwrap_or_default();
     match technique {
@@ -339,8 +348,22 @@ fn description_for_step(
 fn title_ready(product_type: Option<&str>, primary: &str) -> String {
     match product_type {
         Some("sauce") => format!("Готовый соус из {primary}"),
-        Some("soup") => format!("Готовый суп{}", if primary.is_empty() { String::new() } else { format!(" из {primary}") }),
-        Some("smoothie") => format!("Смузи{}", if primary.is_empty() { String::new() } else { format!(" из {primary}") }),
+        Some("soup") => format!(
+            "Готовый суп{}",
+            if primary.is_empty() {
+                String::new()
+            } else {
+                format!(" из {primary}")
+            }
+        ),
+        Some("smoothie") => format!(
+            "Смузи{}",
+            if primary.is_empty() {
+                String::new()
+            } else {
+                format!(" из {primary}")
+            }
+        ),
         Some("jam") => format!("Готовое варенье из {primary}"),
         Some("dessert") => "Готовый десерт".into(),
         Some("marinade") => "Готовый маринад".into(),
@@ -413,17 +436,23 @@ fn prompt_raw(primary: &str, ingredients: &[LabProjectIngredientDto]) -> String 
     } else {
         names.join(", ")
     };
-    let p = if primary.is_empty() { "fresh produce".to_string() } else { primary.replace('_', " ") };
+    let p = if primary.is_empty() {
+        "fresh produce".to_string()
+    } else {
+        primary.replace('_', " ")
+    };
     format!(
         "photo, fresh {p}, {list} on a rustic wooden board, top-down, soft natural light, food photography, 35mm, shallow depth of field"
     )
 }
 
 fn prompt_for_step(scene_key: &str, technique: &str, temp_c: Option<f64>, primary: &str) -> String {
-    let p = if primary.is_empty() { "ingredient".to_string() } else { primary.replace('_', " ") };
-    let temp = temp_c
-        .map(|t| format!(" at {t:.0}°C"))
-        .unwrap_or_default();
+    let p = if primary.is_empty() {
+        "ingredient".to_string()
+    } else {
+        primary.replace('_', " ")
+    };
+    let temp = temp_c.map(|t| format!(" at {t:.0}°C")).unwrap_or_default();
     match scene_key {
         "heated" => format!("photo, {p} heated{temp} in a saucepan, gentle steam rising, glossy surface, food photography"),
         "juicing" => format!("photo, soft {p} releasing bright juices in a saucepan, droplets pooling, food photography"),
@@ -441,7 +470,11 @@ fn prompt_for_step(scene_key: &str, technique: &str, temp_c: Option<f64>, primar
 }
 
 fn prompt_ready(product_type: Option<&str>, primary: &str) -> String {
-    let p = if primary.is_empty() { "ingredient".to_string() } else { primary.replace('_', " ") };
+    let p = if primary.is_empty() {
+        "ingredient".to_string()
+    } else {
+        primary.replace('_', " ")
+    };
     match product_type {
         Some("sauce") => format!("photo, glossy {p} sauce in a small ceramic bowl, ribbon of sauce on a spoon, hero shot, food photography, soft natural light"),
         Some("soup") => format!("photo, hot {p} soup in a deep bowl, steam, hero plating, food photography"),
@@ -460,10 +493,7 @@ fn prompt_ready(product_type: Option<&str>, primary: &str) -> String {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn infer_product_type(steps: &[LabProcessStepDto]) -> Option<String> {
-    let techniques: Vec<String> = steps
-        .iter()
-        .map(|s| s.technique.to_lowercase())
-        .collect();
+    let techniques: Vec<String> = steps.iter().map(|s| s.technique.to_lowercase()).collect();
     let has = |t: &str| techniques.iter().any(|x| x == t);
     if has("ferment") {
         Some("ferment".into())
@@ -485,18 +515,19 @@ fn infer_product_type(steps: &[LabProcessStepDto]) -> Option<String> {
 /// Pick the "primary" ingredient for narrative purposes — the one tagged
 /// "base" if present, otherwise the heaviest, otherwise the first.
 fn primary_ingredient(ingredients: &[LabProjectIngredientDto]) -> String {
-    if let Some(base) = ingredients.iter().find(|i| i.role.as_deref() == Some("base")) {
+    if let Some(base) = ingredients
+        .iter()
+        .find(|i| i.role.as_deref() == Some("base"))
+    {
         return base.ingredient_slug.replace('_', " ");
     }
-    let heaviest = ingredients
-        .iter()
-        .max_by(|a, b| {
-            a.quantity
-                .to_f64()
-                .unwrap_or(0.0)
-                .partial_cmp(&b.quantity.to_f64().unwrap_or(0.0))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+    let heaviest = ingredients.iter().max_by(|a, b| {
+        a.quantity
+            .to_f64()
+            .unwrap_or(0.0)
+            .partial_cmp(&b.quantity.to_f64().unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     if let Some(h) = heaviest {
         return h.ingredient_slug.replace('_', " ");
     }
@@ -553,7 +584,12 @@ mod tests {
     fn sauce_pipeline_produces_ordered_frames() {
         let ings = vec![ing("apricot", "300", Some("base"))];
         let steps = vec![step(1, "heat", Some(85.0)), step(2, "blend", None)];
-        let story = build_visual_story(&ings, &steps, &LaboratoryProcessAnalysis::default(), Some("sauce"));
+        let story = build_visual_story(
+            &ings,
+            &steps,
+            &LaboratoryProcessAnalysis::default(),
+            Some("sauce"),
+        );
         assert_eq!(story.scenes.len(), 4); // raw + 2 + ready
         assert_eq!(story.scenes[0].scene_key, "raw");
         assert_eq!(story.scenes[1].scene_key, "heated");
@@ -570,13 +606,23 @@ mod tests {
     #[test]
     fn raw_prompt_mentions_primary_ingredient() {
         let ings = vec![ing("strawberry", "200", Some("base"))];
-        let story = build_visual_story(&ings, &[], &LaboratoryProcessAnalysis::default(), Some("sauce"));
-        assert!(story.scenes[0].prompt_hint.to_lowercase().contains("strawberry"));
+        let story = build_visual_story(
+            &ings,
+            &[],
+            &LaboratoryProcessAnalysis::default(),
+            Some("sauce"),
+        );
+        assert!(story.scenes[0]
+            .prompt_hint
+            .to_lowercase()
+            .contains("strawberry"));
     }
 
     #[test]
     fn step_inherits_dominant_effect_label_when_present() {
-        use crate::application::laboratory::process_engine::{LaboratoryEffect, LaboratoryStepEffects};
+        use crate::application::laboratory::process_engine::{
+            LaboratoryEffect, LaboratoryStepEffects,
+        };
         let ings = vec![ing("apricot", "300", Some("base"))];
         let s = step(1, "heat", Some(85.0));
         let analysis = LaboratoryProcessAnalysis {
@@ -604,7 +650,9 @@ mod tests {
         let story = build_visual_story(&ings, &[s], &analysis, Some("sauce"));
         assert_eq!(story.scenes[1].scene_key, "juicing");
         assert_eq!(story.scenes[1].title, "Абрикос — выделение сока");
-        assert!(story.scenes[1].visual_tokens.contains(&"juice_release".to_string()));
+        assert!(story.scenes[1]
+            .visual_tokens
+            .contains(&"juice_release".to_string()));
     }
 
     #[test]
@@ -626,10 +674,7 @@ mod tests {
         // Two identical "heat 85°C" steps in a row → single visual frame
         // tagged with `repeated_count = 2`. Opening/closing untouched.
         let ings = vec![ing("apricot", "300", Some("base"))];
-        let steps = vec![
-            step(1, "heat", Some(85.0)),
-            step(2, "heat", Some(85.0)),
-        ];
+        let steps = vec![step(1, "heat", Some(85.0)), step(2, "heat", Some(85.0))];
         let story = build_visual_story(
             &ings,
             &steps,
@@ -651,10 +696,7 @@ mod tests {
     #[test]
     fn distinct_steps_do_not_collapse() {
         let ings = vec![ing("apricot", "300", Some("base"))];
-        let steps = vec![
-            step(1, "heat", Some(85.0)),
-            step(2, "blend", None),
-        ];
+        let steps = vec![step(1, "heat", Some(85.0)), step(2, "blend", None)];
         let story = build_visual_story(
             &ings,
             &steps,

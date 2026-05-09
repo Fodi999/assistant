@@ -37,12 +37,11 @@ pub enum BodyError {
 impl std::fmt::Display for BodyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BodyError::NoShells =>
-                write!(f, "body has no shells"),
-            BodyError::OuterShellNotClosed =>
-                write!(f, "outer shell is not watertight"),
-            BodyError::VoidShellNotClosed { index } =>
-                write!(f, "void shell {} is not watertight", index),
+            BodyError::NoShells => write!(f, "body has no shells"),
+            BodyError::OuterShellNotClosed => write!(f, "outer shell is not watertight"),
+            BodyError::VoidShellNotClosed { index } => {
+                write!(f, "void shell {} is not watertight", index)
+            }
         }
     }
 }
@@ -65,7 +64,10 @@ impl Body {
 
     /// Create a body from a single outer shell.
     pub fn from_shell(id: u32, outer: GeometricShell) -> Self {
-        Self { id, shells: vec![outer] }
+        Self {
+            id,
+            shells: vec![outer],
+        }
     }
 
     // ── Mutation ─────────────────────────────────────────────────────────────
@@ -91,7 +93,11 @@ impl Body {
 
     /// All void shells (may be empty).
     pub fn void_shells(&self) -> &[GeometricShell] {
-        if self.shells.len() > 1 { &self.shells[1..] } else { &[] }
+        if self.shells.len() > 1 {
+            &self.shells[1..]
+        } else {
+            &[]
+        }
     }
 
     /// Total shell count (outer + voids).

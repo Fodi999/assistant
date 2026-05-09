@@ -10,8 +10,8 @@
 //!
 //! No hardcoded recipes — every combo is built from the live ingredient cache.
 
-use crate::infrastructure::ingredient_cache::IngredientData;
 use super::response_builder::HealthGoal;
+use crate::infrastructure::ingredient_cache::IngredientData;
 
 /// A dynamically assembled meal combo.
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ pub enum CookMethod {
     Boil,
     Steam,
     Fry,
-    Saute,  // зажарка: onion+carrot sautéed in oil before adding to soup
+    Saute, // зажарка: onion+carrot sautéed in oil before adding to soup
     Raw,
 }
 
@@ -183,8 +183,12 @@ pub fn build_combo(
     let mut bases: Vec<&IngredientData> = Vec::new();
 
     for p in all {
-        if exclude_slugs.contains(&p.slug) { continue; }
-        if p.calories_per_100g <= 0.0 && p.protein_per_100g <= 0.0 { continue; }
+        if exclude_slugs.contains(&p.slug) {
+            continue;
+        }
+        if p.calories_per_100g <= 0.0 && p.protein_per_100g <= 0.0 {
+            continue;
+        }
         // Skip spices, condiments, oils, beverages — not standalone meal components
         match p.product_type.as_str() {
             "spice" | "herb" | "condiment" | "oil" | "beverage" | "other" => continue,
@@ -192,9 +196,9 @@ pub fn build_combo(
         }
         match p.meal_role() {
             "protein" => proteins.push(p),
-            "side"    => sides.push(p),
-            "base"    => bases.push(p),
-            _         => {}
+            "side" => sides.push(p),
+            "base" => bases.push(p),
+            _ => {}
         }
     }
 
@@ -205,38 +209,66 @@ pub fn build_combo(
     // ── Goal-aware scoring ────────────────────────────────────────────
     let score_protein = |p: &IngredientData| -> f64 {
         match goal {
-            HealthGoal::HighProtein => p.protein_per_100g as f64 * 2.0 - p.fat_per_100g as f64 * 0.5,
-            HealthGoal::LowCalorie  => p.protein_per_100g as f64 * 1.5 - p.calories_per_100g as f64 * 0.01,
-            HealthGoal::Balanced    => p.protein_per_100g as f64 * 1.2 - p.fat_per_100g as f64 * 0.3,
+            HealthGoal::HighProtein => {
+                p.protein_per_100g as f64 * 2.0 - p.fat_per_100g as f64 * 0.5
+            }
+            HealthGoal::LowCalorie => {
+                p.protein_per_100g as f64 * 1.5 - p.calories_per_100g as f64 * 0.01
+            }
+            HealthGoal::Balanced => p.protein_per_100g as f64 * 1.2 - p.fat_per_100g as f64 * 0.3,
         }
     };
 
     let score_side = |p: &IngredientData| -> f64 {
         match goal {
-            HealthGoal::HighProtein => p.protein_per_100g as f64 + (100.0 - p.calories_per_100g as f64) * 0.02,
-            HealthGoal::LowCalorie  => (100.0 - p.calories_per_100g as f64) * 0.05 + p.protein_per_100g as f64 * 0.5,
-            HealthGoal::Balanced    => (80.0 - p.calories_per_100g as f64) * 0.03 + p.protein_per_100g as f64 * 0.8,
+            HealthGoal::HighProtein => {
+                p.protein_per_100g as f64 + (100.0 - p.calories_per_100g as f64) * 0.02
+            }
+            HealthGoal::LowCalorie => {
+                (100.0 - p.calories_per_100g as f64) * 0.05 + p.protein_per_100g as f64 * 0.5
+            }
+            HealthGoal::Balanced => {
+                (80.0 - p.calories_per_100g as f64) * 0.03 + p.protein_per_100g as f64 * 0.8
+            }
         }
     };
 
     let score_base = |p: &IngredientData| -> f64 {
         match goal {
-            HealthGoal::HighProtein => p.protein_per_100g as f64 * 1.5 + p.carbs_per_100g as f64 * 0.3,
-            HealthGoal::LowCalorie  => (400.0 - p.calories_per_100g as f64) * 0.02 + p.protein_per_100g as f64 * 0.5,
-            HealthGoal::Balanced    => p.protein_per_100g as f64 + p.carbs_per_100g as f64 * 0.5 - p.fat_per_100g as f64 * 0.2,
+            HealthGoal::HighProtein => {
+                p.protein_per_100g as f64 * 1.5 + p.carbs_per_100g as f64 * 0.3
+            }
+            HealthGoal::LowCalorie => {
+                (400.0 - p.calories_per_100g as f64) * 0.02 + p.protein_per_100g as f64 * 0.5
+            }
+            HealthGoal::Balanced => {
+                p.protein_per_100g as f64 + p.carbs_per_100g as f64 * 0.5
+                    - p.fat_per_100g as f64 * 0.2
+            }
         }
     };
 
     // ── 80/20 exploration: sometimes pick 2nd or 3rd instead of always top-1
     let explore_idx = {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-        (secs % 3) as usize  // 0, 1, or 2
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        (secs % 3) as usize // 0, 1, or 2
     };
 
-    let pick_top = |pool: &mut Vec<&IngredientData>, scorer: &dyn Fn(&IngredientData) -> f64| -> Option<IngredientData> {
-        if pool.is_empty() { return None; }
-        pool.sort_by(|a, b| scorer(b).partial_cmp(&scorer(a)).unwrap_or(std::cmp::Ordering::Equal));
+    let pick_top = |pool: &mut Vec<&IngredientData>,
+                    scorer: &dyn Fn(&IngredientData) -> f64|
+     -> Option<IngredientData> {
+        if pool.is_empty() {
+            return None;
+        }
+        pool.sort_by(|a, b| {
+            scorer(b)
+                .partial_cmp(&scorer(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let idx = explore_idx.min(pool.len() - 1);
         Some(pool.remove(idx).clone())
     };
@@ -252,8 +284,8 @@ pub fn build_combo(
     // ── Portion sizes ─────────────────────────────────────────────────
     let (protein_g, side_g, base_g) = match goal {
         HealthGoal::HighProtein => (200.0_f32, 150.0, 100.0),
-        HealthGoal::LowCalorie  => (150.0, 200.0, 0.0),
-        HealthGoal::Balanced    => (150.0, 150.0, 100.0),
+        HealthGoal::LowCalorie => (150.0, 200.0, 0.0),
+        HealthGoal::Balanced => (150.0, 150.0, 100.0),
     };
 
     let actual_base_g = if base.is_some() { base_g } else { 0.0 };
@@ -261,11 +293,17 @@ pub fn build_combo(
     // ── Cooking methods & yield ───────────────────────────────────────
     let protein_method = CookMethod::for_ingredient(&protein.product_type, "protein", goal);
     let side_method = CookMethod::for_ingredient(&side.product_type, "side", goal);
-    let base_method = base.as_ref().map(|b| CookMethod::for_ingredient(&b.product_type, "base", goal)).unwrap_or(CookMethod::Raw);
+    let base_method = base
+        .as_ref()
+        .map(|b| CookMethod::for_ingredient(&b.product_type, "base", goal))
+        .unwrap_or(CookMethod::Raw);
 
     let protein_cooked_g = (protein_g * protein_method.yield_factor(&protein.product_type)).round();
     let side_cooked_g = (side_g * side_method.yield_factor(&side.product_type)).round();
-    let base_cooked_g = base.as_ref().map(|b| (actual_base_g * base_method.yield_factor(&b.product_type)).round()).unwrap_or(0.0);
+    let base_cooked_g = base
+        .as_ref()
+        .map(|b| (actual_base_g * base_method.yield_factor(&b.product_type)).round())
+        .unwrap_or(0.0);
 
     // ── Compute totals ────────────────────────────────────────────────
     let mut total_kcal = 0u32;
@@ -273,17 +311,43 @@ pub fn build_combo(
     let mut total_fat = 0.0_f32;
     let mut total_carbs = 0.0_f32;
 
-    let add = |ing: &IngredientData, grams: f32, kcal: &mut u32, pro: &mut f32, fat: &mut f32, carb: &mut f32| {
+    let add = |ing: &IngredientData,
+               grams: f32,
+               kcal: &mut u32,
+               pro: &mut f32,
+               fat: &mut f32,
+               carb: &mut f32| {
         *kcal += ing.kcal_for(grams);
-        *pro  += ing.protein_for(grams);
-        *fat  += ing.fat_for(grams);
+        *pro += ing.protein_for(grams);
+        *fat += ing.fat_for(grams);
         *carb += ing.carbs_for(grams);
     };
 
-    add(&protein, protein_g, &mut total_kcal, &mut total_protein, &mut total_fat, &mut total_carbs);
-    add(&side, side_g, &mut total_kcal, &mut total_protein, &mut total_fat, &mut total_carbs);
+    add(
+        &protein,
+        protein_g,
+        &mut total_kcal,
+        &mut total_protein,
+        &mut total_fat,
+        &mut total_carbs,
+    );
+    add(
+        &side,
+        side_g,
+        &mut total_kcal,
+        &mut total_protein,
+        &mut total_fat,
+        &mut total_carbs,
+    );
     if let Some(ref b) = base {
-        add(b, actual_base_g, &mut total_kcal, &mut total_protein, &mut total_fat, &mut total_carbs);
+        add(
+            b,
+            actual_base_g,
+            &mut total_kcal,
+            &mut total_protein,
+            &mut total_fat,
+            &mut total_carbs,
+        );
     }
 
     Some(MealCombo {
@@ -312,7 +376,14 @@ pub fn build_combo(
 mod tests {
     use super::*;
 
-    fn make_ingredient(slug: &str, ptype: &str, cal: f32, pro: f32, fat: f32, carbs: f32) -> IngredientData {
+    fn make_ingredient(
+        slug: &str,
+        ptype: &str,
+        cal: f32,
+        pro: f32,
+        fat: f32,
+        carbs: f32,
+    ) -> IngredientData {
         IngredientData {
             slug: slug.into(),
             name_en: slug.into(),
@@ -325,7 +396,10 @@ mod tests {
             carbs_per_100g: carbs,
             image_url: None,
             product_type: ptype.into(),
-            density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         }
     }
 
@@ -342,7 +416,11 @@ mod tests {
         assert_eq!(combo.protein.meal_role(), "protein");
         assert_eq!(combo.side.meal_role(), "side");
         assert!(combo.base.is_some());
-        assert!(combo.total_protein > 50.0, "should have significant protein: {}", combo.total_protein);
+        assert!(
+            combo.total_protein > 50.0,
+            "should have significant protein: {}",
+            combo.total_protein
+        );
         assert!(combo.total_kcal > 0);
     }
 
@@ -355,7 +433,11 @@ mod tests {
         ];
         let combo = build_combo(&pool, HealthGoal::LowCalorie, &[]).unwrap();
         assert!(combo.base.is_none(), "low calorie should skip base grain");
-        assert!(combo.total_kcal < 200, "should be very low cal: {}", combo.total_kcal);
+        assert!(
+            combo.total_kcal < 200,
+            "should be very low cal: {}",
+            combo.total_kcal
+        );
     }
 
     #[test]
@@ -365,7 +447,10 @@ mod tests {
             make_ingredient("spinach", "vegetable", 23.0, 2.9, 0.4, 3.6),
         ];
         let combo = build_combo(&pool, HealthGoal::Balanced, &["salmon".into()]);
-        assert!(combo.is_none(), "only protein was salmon → excluded → no combo");
+        assert!(
+            combo.is_none(),
+            "only protein was salmon → excluded → no combo"
+        );
     }
 
     #[test]
@@ -400,8 +485,11 @@ mod tests {
         ];
         let combo = build_combo(&pool, HealthGoal::LowCalorie, &[]).unwrap();
         // chicken 150g = 247.5 kcal, spinach 200g = 46 kcal → ~293
-        assert!(combo.total_kcal > 250 && combo.total_kcal < 350,
-            "expected ~293 kcal, got {}", combo.total_kcal);
+        assert!(
+            combo.total_kcal > 250 && combo.total_kcal < 350,
+            "expected ~293 kcal, got {}",
+            combo.total_kcal
+        );
     }
 
     // ── Cooking yield tests ──────────────────────────────────────────
@@ -415,10 +503,17 @@ mod tests {
         ];
         let combo = build_combo(&pool, HealthGoal::HighProtein, &[]).unwrap();
         // Meat loses 20-25%: 200g raw → ~150-160g cooked
-        assert!(combo.protein_cooked_g < combo.protein_g,
-            "meat should lose weight: raw={}g cooked={}g", combo.protein_g, combo.protein_cooked_g);
-        assert!(combo.protein_cooked_g >= 140.0 && combo.protein_cooked_g <= 180.0,
-            "meat cooked weight should be ~150-160g, got {}", combo.protein_cooked_g);
+        assert!(
+            combo.protein_cooked_g < combo.protein_g,
+            "meat should lose weight: raw={}g cooked={}g",
+            combo.protein_g,
+            combo.protein_cooked_g
+        );
+        assert!(
+            combo.protein_cooked_g >= 140.0 && combo.protein_cooked_g <= 180.0,
+            "meat cooked weight should be ~150-160g, got {}",
+            combo.protein_cooked_g
+        );
     }
 
     #[test]
@@ -432,8 +527,12 @@ mod tests {
         let base = combo.base.as_ref().expect("balanced should have base");
         if base.product_type == "grain" {
             // Grain absorbs water: 100g raw → ~220g cooked
-            assert!(combo.base_cooked_g > combo.base_g,
-                "grain should absorb water: raw={}g cooked={}g", combo.base_g, combo.base_cooked_g);
+            assert!(
+                combo.base_cooked_g > combo.base_g,
+                "grain should absorb water: raw={}g cooked={}g",
+                combo.base_g,
+                combo.base_cooked_g
+            );
         }
     }
 

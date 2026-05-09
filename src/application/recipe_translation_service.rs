@@ -1,9 +1,9 @@
 // Recipe Translation Service - AI-powered translations via Groq
 use crate::domain::recipe_v2::{RecipeId, RecipeTranslation, TranslationSource};
-use crate::infrastructure::LlmAdapter;
 use crate::infrastructure::persistence::{
     RecipeTranslationRepositoryTrait, RecipeV2RepositoryTrait,
 };
+use crate::infrastructure::LlmAdapter;
 use crate::shared::{AppError, AppResult, Language};
 use std::sync::Arc;
 
@@ -133,7 +133,10 @@ impl RecipeTranslationService {
             }
 
             // Note: In production we might want to use a job queue
-            if let Err(e) = self.translate_recipe(recipe_id, tenant_id, target, force).await {
+            if let Err(e) = self
+                .translate_recipe(recipe_id, tenant_id, target, force)
+                .await
+            {
                 tracing::error!("Translation failed for {}: {}", target.code(), e);
             }
         }

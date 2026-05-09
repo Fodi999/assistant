@@ -35,10 +35,15 @@ impl UsageService {
 
         Ok(match row {
             Some(r) => ServerLimits {
-                plans: r.plans, recipes: r.recipes, scans: r.scans,
-                optimize: r.optimize, chats: r.chats,
-                cost_plan: r.cost_plan, cost_recipe: r.cost_recipe,
-                cost_scan: r.cost_scan, cost_optimize: r.cost_optimize,
+                plans: r.plans,
+                recipes: r.recipes,
+                scans: r.scans,
+                optimize: r.optimize,
+                chats: r.chats,
+                cost_plan: r.cost_plan,
+                cost_recipe: r.cost_recipe,
+                cost_scan: r.cost_scan,
+                cost_optimize: r.cost_optimize,
                 cost_chat: r.cost_chat,
             },
             None => ServerLimits::default(),
@@ -69,7 +74,7 @@ impl UsageService {
         let uid = *user_id.as_uuid();
         let bonus: Option<i64> = sqlx::query_scalar(
             "SELECT COALESCE(SUM(actions), 0) FROM usage_purchases \
-             WHERE user_id = $1 AND source <> 'iap'"
+             WHERE user_id = $1 AND source <> 'iap'",
         )
         .bind(uid)
         .fetch_one(&self.pool)
@@ -86,13 +91,17 @@ impl UsageService {
     ///
     /// Credits come from `usage_purchases`, debits from `usage_action_log`.
     /// Both tables are joined into a single chronological feed via UNION ALL.
-    pub async fn get_history(&self, user_id: UserId, limit: i64) -> AppResult<Vec<WalletTransaction>> {
+    pub async fn get_history(
+        &self,
+        user_id: UserId,
+        limit: i64,
+    ) -> AppResult<Vec<WalletTransaction>> {
         let uid = *user_id.as_uuid();
         let limit = limit.clamp(1, 500);
 
         let credits = sqlx::query_as::<_, CreditRow>(
             "SELECT id, source, actions, created_at \
-             FROM usage_purchases WHERE user_id = $1"
+             FROM usage_purchases WHERE user_id = $1",
         )
         .bind(uid)
         .fetch_all(&self.pool)
@@ -100,7 +109,7 @@ impl UsageService {
 
         let debits = sqlx::query_as::<_, DebitRow>(
             "SELECT id, action_type, cost, paid_from, created_at \
-             FROM usage_action_log WHERE user_id = $1"
+             FROM usage_action_log WHERE user_id = $1",
         )
         .bind(uid)
         .fetch_all(&self.pool)
@@ -138,19 +147,29 @@ impl UsageService {
     // ────────────────────────────────────────────────────────────
 
     pub async fn check_idempotency(&self, key: &str, user_id: Uuid) -> AppResult<Option<String>> {
-        let _ = sqlx::query("DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '24 hours'")
-            .execute(&self.pool).await;
+        let _ = sqlx::query(
+            "DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '24 hours'",
+        )
+        .execute(&self.pool)
+        .await;
 
         let row = sqlx::query_scalar::<_, serde_json::Value>(
-            "SELECT response FROM idempotency_keys WHERE key = $1 AND user_id = $2"
+            "SELECT response FROM idempotency_keys WHERE key = $1 AND user_id = $2",
         )
-        .bind(key).bind(user_id)
-        .fetch_optional(&self.pool).await?;
+        .bind(key)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
 
         Ok(row.map(|v| v.to_string()))
     }
 
-    pub async fn store_idempotency(&self, key: &str, user_id: Uuid, response: &str) -> AppResult<()> {
+    pub async fn store_idempotency(
+        &self,
+        key: &str,
+        user_id: Uuid,
+        response: &str,
+    ) -> AppResult<()> {
         let json: serde_json::Value = serde_json::from_str(response)
             .unwrap_or_else(|_| serde_json::Value::String(response.to_string()));
         sqlx::query("INSERT INTO idempotency_keys (key, user_id, response) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
@@ -214,10 +233,12 @@ impl UsageService {
             // Audit trail (free spend → cost = 0, paid_from = 'free')
             sqlx::query(
                 "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
-                 VALUES ($1, $2, 0, 'free')"
+                 VALUES ($1, $2, 0, 'free')",
             )
-            .bind(uid).bind(action.as_str())
-            .execute(&mut *tx).await?;
+            .bind(uid)
+            .bind(action.as_str())
+            .execute(&mut *tx)
+            .await?;
 
             let remaining_free = limit - used - 1;
             let warning = remaining_free <= 1;
@@ -236,8 +257,14 @@ impl UsageService {
                 message: if remaining_free == 0 {
                     Some(format!("Last free {} for today", action.as_str()))
                 } else if warning {
-                    Some(format!("Only {} free {} left today", remaining_free, action.as_str()))
-                } else { None },
+                    Some(format!(
+                        "Only {} free {} left today",
+                        remaining_free,
+                        action.as_str()
+                    ))
+                } else {
+                    None
+                },
                 usage: snap,
             };
         } else if balance.purchased_actions >= cost {
@@ -251,18 +278,23 @@ impl UsageService {
 
             sqlx::query(
                 "UPDATE user_action_balance SET purchased_actions = purchased_actions - $2, \
-                 total_spent = total_spent + $2, updated_at = NOW() WHERE user_id = $1"
+                 total_spent = total_spent + $2, updated_at = NOW() WHERE user_id = $1",
             )
-            .bind(uid).bind(cost)
-            .execute(&mut *tx).await?;
+            .bind(uid)
+            .bind(cost)
+            .execute(&mut *tx)
+            .await?;
 
             // Audit trail (purchased spend)
             sqlx::query(
                 "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
-                 VALUES ($1, $2, $3, 'purchased')"
+                 VALUES ($1, $2, $3, 'purchased')",
             )
-            .bind(uid).bind(action.as_str()).bind(cost)
-            .execute(&mut *tx).await?;
+            .bind(uid)
+            .bind(action.as_str())
+            .bind(cost)
+            .execute(&mut *tx)
+            .await?;
 
             let new_purchased = balance.purchased_actions - cost;
             let mut snap = build_snapshot(&usage, &limits);
@@ -292,11 +324,19 @@ impl UsageService {
             result = ActionResult {
                 allowed: false,
                 source: ActionSource::Denied,
-                reason: Some(if used >= limit { DenyReason::DailyLimitReached } else { DenyReason::InsufficientActions }),
+                reason: Some(if used >= limit {
+                    DenyReason::DailyLimitReached
+                } else {
+                    DenyReason::InsufficientActions
+                }),
                 remaining_free: 0,
                 purchased_actions_left: balance.purchased_actions,
                 warning: false,
-                message: Some(format!("No free {}s left and not enough actions (need {})", action.as_str(), cost)),
+                message: Some(format!(
+                    "No free {}s left and not enough actions (need {})",
+                    action.as_str(),
+                    cost
+                )),
                 usage: snap,
             };
         }
@@ -346,14 +386,18 @@ impl UsageService {
                 increment_row(&mut usage_row, *action);
                 sqlx::query(
                     "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
-                     VALUES ($1, $2, 0, 'free')"
+                     VALUES ($1, $2, 0, 'free')",
                 )
-                .bind(uid).bind(action.as_str())
-                .execute(&mut *tx).await?;
+                .bind(uid)
+                .bind(action.as_str())
+                .execute(&mut *tx)
+                .await?;
                 items.push(BatchActionItem {
                     action: action.as_str().to_string(),
-                    allowed: true, source: ActionSource::FreeTier,
-                    reason: None, message: None,
+                    allowed: true,
+                    source: ActionSource::FreeTier,
+                    reason: None,
+                    message: None,
                 });
             } else if balance_row.purchased_actions >= cost {
                 increment_row(&mut usage_row, *action);
@@ -361,20 +405,30 @@ impl UsageService {
                 balance_row.total_spent += cost;
                 sqlx::query(
                     "INSERT INTO usage_action_log (user_id, action_type, cost, paid_from) \
-                     VALUES ($1, $2, $3, 'purchased')"
+                     VALUES ($1, $2, $3, 'purchased')",
                 )
-                .bind(uid).bind(action.as_str()).bind(cost)
-                .execute(&mut *tx).await?;
+                .bind(uid)
+                .bind(action.as_str())
+                .bind(cost)
+                .execute(&mut *tx)
+                .await?;
                 items.push(BatchActionItem {
                     action: action.as_str().to_string(),
-                    allowed: true, source: ActionSource::Purchased,
-                    reason: None, message: Some(format!("Used {} actions", cost)),
+                    allowed: true,
+                    source: ActionSource::Purchased,
+                    reason: None,
+                    message: Some(format!("Used {} actions", cost)),
                 });
             } else {
                 items.push(BatchActionItem {
                     action: action.as_str().to_string(),
-                    allowed: false, source: ActionSource::Denied,
-                    reason: Some(if used >= limit { DenyReason::DailyLimitReached } else { DenyReason::InsufficientActions }),
+                    allowed: false,
+                    source: ActionSource::Denied,
+                    reason: Some(if used >= limit {
+                        DenyReason::DailyLimitReached
+                    } else {
+                        DenyReason::InsufficientActions
+                    }),
                     message: Some(format!("Need {} actions", cost)),
                 });
             }
@@ -382,13 +436,17 @@ impl UsageService {
 
         sqlx::query(
             "UPDATE user_usage SET plans_used=$3, recipes_used=$4, scans_used=$5, \
-             optimize_used=$6, chats_used=$7, updated_at=NOW() WHERE user_id=$1 AND date=$2"
+             optimize_used=$6, chats_used=$7, updated_at=NOW() WHERE user_id=$1 AND date=$2",
         )
-        .bind(uid).bind(today)
-        .bind(usage_row.plans_used).bind(usage_row.recipes_used)
-        .bind(usage_row.scans_used).bind(usage_row.optimize_used)
+        .bind(uid)
+        .bind(today)
+        .bind(usage_row.plans_used)
+        .bind(usage_row.recipes_used)
+        .bind(usage_row.scans_used)
+        .bind(usage_row.optimize_used)
         .bind(usage_row.chats_used)
-        .execute(&mut *tx).await?;
+        .execute(&mut *tx)
+        .await?;
 
         sqlx::query(
             "UPDATE user_action_balance SET purchased_actions=$2, total_spent=$3, updated_at=NOW() WHERE user_id=$1"
@@ -408,7 +466,10 @@ impl UsageService {
             purchased_actions: balance_row.purchased_actions,
         };
 
-        Ok(BatchActionResult { results: items, usage: snap })
+        Ok(BatchActionResult {
+            results: items,
+            usage: snap,
+        })
     }
 
     // ────────────────────────────────────────────────────────────
@@ -431,8 +492,12 @@ impl UsageService {
         let mut tx = self.pool.begin().await?;
         sqlx::query(
             "UPDATE user_action_balance SET purchased_actions = purchased_actions + $2, \
-             total_purchased = total_purchased + $2, updated_at = NOW() WHERE user_id = $1"
-        ).bind(uid).bind(actions).execute(&mut *tx).await?;
+             total_purchased = total_purchased + $2, updated_at = NOW() WHERE user_id = $1",
+        )
+        .bind(uid)
+        .bind(actions)
+        .execute(&mut *tx)
+        .await?;
 
         sqlx::query(
             "INSERT INTO usage_purchases (user_id, actions, source, receipt_id) VALUES ($1, $2, $3, $4)"
@@ -450,14 +515,19 @@ impl UsageService {
     pub async fn grant_welcome_bonus(&self, user_id: UserId) -> AppResult<ActionBalance> {
         let uid = *user_id.as_uuid();
         let balance = self.get_or_create_balance(uid).await?;
-        if balance.welcome_bonus { return Ok(balance); }
+        if balance.welcome_bonus {
+            return Ok(balance);
+        }
 
         let mut tx = self.pool.begin().await?;
         sqlx::query(
             "UPDATE user_action_balance SET purchased_actions = purchased_actions + 20, \
              total_purchased = total_purchased + 20, welcome_bonus = TRUE, updated_at = NOW() \
-             WHERE user_id = $1 AND welcome_bonus = FALSE"
-        ).bind(uid).execute(&mut *tx).await?;
+             WHERE user_id = $1 AND welcome_bonus = FALSE",
+        )
+        .bind(uid)
+        .execute(&mut *tx)
+        .await?;
 
         sqlx::query(
             "INSERT INTO usage_purchases (user_id, actions, source) VALUES ($1, 20, 'welcome_bonus')"
@@ -480,19 +550,27 @@ impl UsageService {
     pub async fn check_weekly_bonus(&self, user_id: UserId) -> AppResult<Option<ActionBalance>> {
         let uid = *user_id.as_uuid();
         let today = OffsetDateTime::now_utc().date();
-        if today.weekday() != time::Weekday::Monday { return Ok(None); }
+        if today.weekday() != time::Weekday::Monday {
+            return Ok(None);
+        }
 
         let balance = self.get_or_create_balance(uid).await?;
         if let Some(last) = balance.last_weekly_bonus {
-            if last == today { return Ok(None); }
+            if last == today {
+                return Ok(None);
+            }
         }
 
         let mut tx = self.pool.begin().await?;
         let rows = sqlx::query(
             "UPDATE user_action_balance SET purchased_actions = purchased_actions + 5, \
              total_purchased = total_purchased + 5, last_weekly_bonus = $2, updated_at = NOW() \
-             WHERE user_id = $1 AND (last_weekly_bonus IS NULL OR last_weekly_bonus < $2)"
-        ).bind(uid).bind(today).execute(&mut *tx).await?;
+             WHERE user_id = $1 AND (last_weekly_bonus IS NULL OR last_weekly_bonus < $2)",
+        )
+        .bind(uid)
+        .bind(today)
+        .execute(&mut *tx)
+        .await?;
 
         if rows.rows_affected() > 0 {
             sqlx::query(
@@ -592,18 +670,24 @@ struct DebitRow {
 
 fn daily_from_row(r: &DailyUsageRow) -> DailyUsage {
     DailyUsage {
-        user_id: r.user_id, date: r.date,
-        plans_used: r.plans_used, recipes_used: r.recipes_used,
-        scans_used: r.scans_used, optimize_used: r.optimize_used,
+        user_id: r.user_id,
+        date: r.date,
+        plans_used: r.plans_used,
+        recipes_used: r.recipes_used,
+        scans_used: r.scans_used,
+        optimize_used: r.optimize_used,
         chats_used: r.chats_used,
     }
 }
 
 fn balance_from_row(r: &ActionBalanceRow) -> ActionBalance {
     ActionBalance {
-        user_id: r.user_id, purchased_actions: r.purchased_actions,
-        total_purchased: r.total_purchased, total_spent: r.total_spent,
-        welcome_bonus: r.welcome_bonus, last_weekly_bonus: r.last_weekly_bonus,
+        user_id: r.user_id,
+        purchased_actions: r.purchased_actions,
+        total_purchased: r.total_purchased,
+        total_spent: r.total_spent,
+        welcome_bonus: r.welcome_bonus,
+        last_weekly_bonus: r.last_weekly_bonus,
     }
 }
 

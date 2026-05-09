@@ -62,11 +62,7 @@ impl SlugAliasRepository {
     }
 
     /// Save an old slug as an alias for an ingredient.
-    pub async fn save_alias(
-        &self,
-        ingredient_id: Uuid,
-        old_slug: &str,
-    ) -> Result<(), sqlx::Error> {
+    pub async fn save_alias(&self, ingredient_id: Uuid, old_slug: &str) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO slug_aliases (ingredient_id, old_slug)
                VALUES ($1, $2)

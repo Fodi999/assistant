@@ -94,9 +94,7 @@ pub fn validate_mesh(mesh: &Mesh) -> Result<(), GeometryError> {
     }
     for (i, uv) in mesh.uvs.iter().enumerate() {
         if !uv[0].is_finite() || !uv[1].is_finite() {
-            return Err(GeometryError::InvalidMesh(format!(
-                "uv {i} is not finite"
-            )));
+            return Err(GeometryError::InvalidMesh(format!("uv {i} is not finite")));
         }
     }
 

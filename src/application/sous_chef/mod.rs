@@ -10,14 +10,14 @@
 //! - gemini.rs    — LLM prompt builder & response parser
 //! - service.rs   — orchestrator
 
-pub mod types;
-pub mod goal;
-pub mod strategy;
-pub mod resolver;
 pub mod gemini;
+pub mod goal;
+pub mod resolver;
 pub mod service;
+pub mod strategy;
+pub mod types;
 
 // Re-exports for external consumers
-pub use types::{MealPlan, MealVariant, MealIngredient, PlanRequest};
 pub use goal::normalize_for_cache;
 pub use service::SousChefPlannerService;
+pub use types::{MealIngredient, MealPlan, MealVariant, PlanRequest};

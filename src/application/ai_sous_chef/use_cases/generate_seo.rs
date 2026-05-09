@@ -96,7 +96,8 @@ Rules:
 
         // ── Call AI via trait (Flash = gemini-3-flash-preview) ──
         // Thinking models use ~80% of token budget for chain-of-thought
-        let raw = match self.llm_adapter
+        let raw = match self
+            .llm_adapter
             .generate_with_quality(&prompt, 8000, AiQuality::Fast)
             .await
         {
@@ -110,20 +111,41 @@ Rules:
         };
 
         // ── Log raw response for debugging ──
-        let preview_end = raw.char_indices().nth(400).map(|(i, _)| i).unwrap_or(raw.len());
-        tracing::info!("🤖 AI SEO raw response for {} ({}): {}", id, name_en, &raw[..preview_end]);
+        let preview_end = raw
+            .char_indices()
+            .nth(400)
+            .map(|(i, _)| i)
+            .unwrap_or(raw.len());
+        tracing::info!(
+            "🤖 AI SEO raw response for {} ({}): {}",
+            id,
+            name_en,
+            &raw[..preview_end]
+        );
 
         // ── Parse JSON ──
         let result = parse_json_response(&raw)?;
 
         // ── Cache result ──
-        if let Err(e) = self.ai_cache.set(
-            &cache_key, result.clone(), "gemini", "gemini-3-flash-preview", SEO_CACHE_TTL_DAYS
-        ).await {
+        if let Err(e) = self
+            .ai_cache
+            .set(
+                &cache_key,
+                result.clone(),
+                "gemini",
+                "gemini-3-flash-preview",
+                SEO_CACHE_TTL_DAYS,
+            )
+            .await
+        {
             tracing::warn!("Failed to cache SEO result: {}", e);
         }
 
-        tracing::info!("✅ AI SEO generated for product {} ({}) (cached)", id, name_en);
+        tracing::info!(
+            "✅ AI SEO generated for product {} ({}) (cached)",
+            id,
+            name_en
+        );
         Ok(result)
     }
 }
@@ -178,7 +200,10 @@ fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
     }
 
     let preview = &raw[..raw.len().min(300)];
-    tracing::error!("Failed to parse AI SEO response: No JSON found | raw preview: {}", preview);
+    tracing::error!(
+        "Failed to parse AI SEO response: No JSON found | raw preview: {}",
+        preview
+    );
     Err(AppError::internal("AI returned invalid JSON"))
 }
 

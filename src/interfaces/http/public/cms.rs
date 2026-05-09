@@ -15,9 +15,7 @@ pub struct GalleryQuery {
 
 // ── ABOUT PAGE ────────────────────────────────────────────────────────────────
 
-pub async fn get_about(
-    State(svc): State<CmsService>,
-) -> Result<Json<serde_json::Value>, AppError> {
+pub async fn get_about(State(svc): State<CmsService>) -> Result<Json<serde_json::Value>, AppError> {
     let row = svc.get_about().await?;
     Ok(Json(serde_json::to_value(row).unwrap()))
 }

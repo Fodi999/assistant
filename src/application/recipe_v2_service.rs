@@ -111,16 +111,24 @@ impl RecipeV2Service {
         content_type: &str,
     ) -> AppResult<String> {
         // Verify recipe belongs to tenant
-        let exists = self.recipe_repo.find_by_id(recipe_id, tenant_id).await?.is_some();
+        let exists = self
+            .recipe_repo
+            .find_by_id(recipe_id, tenant_id)
+            .await?
+            .is_some();
         if !exists {
             return Err(AppError::not_found("Recipe"));
         }
 
-        let key = format!("recipes/{}/{}.webp", tenant_id.as_uuid(), recipe_id.as_uuid());
-        
+        let key = format!(
+            "recipes/{}/{}.webp",
+            tenant_id.as_uuid(),
+            recipe_id.as_uuid()
+        );
+
         // Use Bytes to avoid unnecessary copies (R2Client uses bytes::Bytes)
         let bytes = bytes::Bytes::from(file_data);
-        
+
         let image_url = self
             .r2_client
             .upload_image(&key, bytes, content_type)
@@ -160,9 +168,16 @@ impl RecipeV2Service {
         tenant_id: TenantId,
         content_type: &str,
     ) -> AppResult<crate::application::user::AvatarUploadResponse> {
-        let key = format!("recipes/{}/{}.webp", tenant_id.as_uuid(), recipe_id.as_uuid());
-        
-        let upload_url = self.r2_client.generate_presigned_upload_url(&key, content_type).await?;
+        let key = format!(
+            "recipes/{}/{}.webp",
+            tenant_id.as_uuid(),
+            recipe_id.as_uuid()
+        );
+
+        let upload_url = self
+            .r2_client
+            .generate_presigned_upload_url(&key, content_type)
+            .await?;
         let public_url = self.r2_client.get_public_url(&key);
 
         Ok(crate::application::user::AvatarUploadResponse {
@@ -307,7 +322,10 @@ impl RecipeV2Service {
             .ok_or_else(|| AppError::not_found("Recipe"))?;
 
         let (name, instructions) = if language == recipe.language_default {
-            (recipe.name_default.clone(), recipe.instructions_default.clone())
+            (
+                recipe.name_default.clone(),
+                recipe.instructions_default.clone(),
+            )
         } else {
             // Find translation
             let translation = sqlx::query(
@@ -319,11 +337,11 @@ impl RecipeV2Service {
             .await?;
 
             match translation {
-                Some(row) => (
-                    row.try_get("name")?,
-                    row.try_get("instructions")?,
+                Some(row) => (row.try_get("name")?, row.try_get("instructions")?),
+                None => (
+                    recipe.name_default.clone(),
+                    recipe.instructions_default.clone(),
                 ),
-                None => (recipe.name_default.clone(), recipe.instructions_default.clone()),
             }
         };
 
@@ -359,7 +377,10 @@ impl RecipeV2Service {
         let mut results = Vec::new();
         for recipe in recipes {
             let (name, instructions) = if language == recipe.language_default {
-                (recipe.name_default.clone(), recipe.instructions_default.clone())
+                (
+                    recipe.name_default.clone(),
+                    recipe.instructions_default.clone(),
+                )
             } else {
                 // Find translation (cached/pre-calculated if possible, but keep it simple for now)
                 let translation = sqlx::query(
@@ -371,11 +392,11 @@ impl RecipeV2Service {
                 .await?;
 
                 match translation {
-                    Some(row) => (
-                        row.try_get("name")?,
-                        row.try_get("instructions")?,
+                    Some(row) => (row.try_get("name")?, row.try_get("instructions")?),
+                    None => (
+                        recipe.name_default.clone(),
+                        recipe.instructions_default.clone(),
                     ),
-                    None => (recipe.name_default.clone(), recipe.instructions_default.clone()),
                 }
             };
 
@@ -542,7 +563,7 @@ impl RecipeV2Service {
         _language: Language,
     ) -> AppResult<Vec<RecipeIngredientResponseDto>> {
         let ingredients = self.ingredient_repo.find_by_recipe_id(recipe_id).await?;
-        
+
         Ok(ingredients
             .into_iter()
             .map(|i| RecipeIngredientResponseDto {

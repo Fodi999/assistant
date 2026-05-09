@@ -19,15 +19,15 @@
 //! - Target: <100ms without cache, <1ms with cache
 //! - Clean Architecture: isolated from admin / Telegram logic
 
-pub mod context;
-pub mod response;
-pub mod pipeline;
 pub mod cache;
-pub mod service;
-pub mod recipe_builder;
+pub mod context;
 pub mod culinary_rules;
+pub mod pipeline;
+pub mod recipe_builder;
+pub mod response;
+pub mod service;
 
 pub use context::CulinaryContext;
-pub use context::{MealType, Diet, CookingTime, Budget, Cuisine};
+pub use context::{Budget, CookingTime, Cuisine, Diet, MealType};
 pub use response::SmartResponse;
 pub use service::SmartService;

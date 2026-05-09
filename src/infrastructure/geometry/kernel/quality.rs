@@ -34,10 +34,10 @@ impl GeometryQuality {
     #[inline]
     pub fn radial_segments(self) -> usize {
         match self {
-            GeometryQuality::Draft    => 32,
+            GeometryQuality::Draft => 32,
             GeometryQuality::Standard => 48,
-            GeometryQuality::High     => 144,
-            GeometryQuality::Ultra    => 192,
+            GeometryQuality::High => 144,
+            GeometryQuality::Ultra => 192,
         }
     }
 
@@ -45,10 +45,10 @@ impl GeometryQuality {
     #[inline]
     pub fn surface_rings(self) -> usize {
         match self {
-            GeometryQuality::Draft    => 8,
+            GeometryQuality::Draft => 8,
             GeometryQuality::Standard => 14,
-            GeometryQuality::High     => 48,
-            GeometryQuality::Ultra    => 64,
+            GeometryQuality::High => 48,
+            GeometryQuality::Ultra => 64,
         }
     }
 
@@ -107,17 +107,32 @@ mod tests {
 
     #[test]
     fn from_str_ci_is_case_insensitive() {
-        assert_eq!(GeometryQuality::from_str_ci("HIGH"), Some(GeometryQuality::High));
-        assert_eq!(GeometryQuality::from_str_ci(" Ultra "), Some(GeometryQuality::Ultra));
-        assert_eq!(GeometryQuality::from_str_ci("std"), Some(GeometryQuality::Standard));
+        assert_eq!(
+            GeometryQuality::from_str_ci("HIGH"),
+            Some(GeometryQuality::High)
+        );
+        assert_eq!(
+            GeometryQuality::from_str_ci(" Ultra "),
+            Some(GeometryQuality::Ultra)
+        );
+        assert_eq!(
+            GeometryQuality::from_str_ci("std"),
+            Some(GeometryQuality::Standard)
+        );
         assert_eq!(GeometryQuality::from_str_ci("nope"), None);
     }
 
     #[test]
     fn from_opt_falls_back_to_default() {
         assert_eq!(GeometryQuality::from_opt(None), GeometryQuality::High);
-        assert_eq!(GeometryQuality::from_opt(Some("garbage")), GeometryQuality::High);
-        assert_eq!(GeometryQuality::from_opt(Some("draft")), GeometryQuality::Draft);
+        assert_eq!(
+            GeometryQuality::from_opt(Some("garbage")),
+            GeometryQuality::High
+        );
+        assert_eq!(
+            GeometryQuality::from_opt(Some("draft")),
+            GeometryQuality::Draft
+        );
     }
 
     #[test]

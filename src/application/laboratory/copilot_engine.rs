@@ -85,210 +85,1818 @@ struct KeywordEntry {
 
 const KEYWORD_MAP: &[(&str, KeywordEntry)] = &[
     // ── Fruits ──────────────────────────────────────────────────────────────
-    ("strawberry",  KeywordEntry { slug: "strawberry",  role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("клубника",    KeywordEntry { slug: "strawberry",  role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("клубніка",    KeywordEntry { slug: "strawberry",  role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("truskawka",   KeywordEntry { slug: "strawberry",  role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("apricot",     KeywordEntry { slug: "apricot",     role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("абрикос",     KeywordEntry { slug: "apricot",     role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("абрикосовый", KeywordEntry { slug: "apricot",     role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("абрикосовий", KeywordEntry { slug: "apricot",     role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("morela",      KeywordEntry { slug: "apricot",     role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("mango",       KeywordEntry { slug: "mango",       role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("манго",       KeywordEntry { slug: "mango",       role: "base",    quantity_g: 300.0, unit: "g", category: "fruit" }),
-    ("raspberry",   KeywordEntry { slug: "raspberry",   role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("малина",      KeywordEntry { slug: "raspberry",   role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("malina",      KeywordEntry { slug: "raspberry",   role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("lemon",       KeywordEntry { slug: "lemon",       role: "acid",    quantity_g:  30.0, unit: "g", category: "citrus" }),
-    ("лимон",       KeywordEntry { slug: "lemon",       role: "acid",    quantity_g:  30.0, unit: "g", category: "citrus" }),
-    ("cytryna",     KeywordEntry { slug: "lemon",       role: "acid",    quantity_g:  30.0, unit: "g", category: "citrus" }),
-    ("lime",        KeywordEntry { slug: "lime",        role: "acid",    quantity_g:  20.0, unit: "g", category: "citrus" }),
-    ("лайм",        KeywordEntry { slug: "lime",        role: "acid",    quantity_g:  20.0, unit: "g", category: "citrus" }),
-    ("apple",       KeywordEntry { slug: "apple",       role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("яблоко",      KeywordEntry { slug: "apple",       role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("jabłko",      KeywordEntry { slug: "apple",       role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("яблуко",      KeywordEntry { slug: "apple",       role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("pear",        KeywordEntry { slug: "pear",        role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("груша",       KeywordEntry { slug: "pear",        role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("gruszka",     KeywordEntry { slug: "pear",        role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("cherry",      KeywordEntry { slug: "cherry",      role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("вишня",       KeywordEntry { slug: "cherry",      role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("wiśnia",      KeywordEntry { slug: "cherry",      role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("banana",      KeywordEntry { slug: "banana",      role: "base",    quantity_g: 150.0, unit: "g", category: "fruit" }),
-    ("банан",       KeywordEntry { slug: "banana",      role: "base",    quantity_g: 150.0, unit: "g", category: "fruit" }),
-    ("peach",       KeywordEntry { slug: "peach",       role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("персик",      KeywordEntry { slug: "peach",       role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("brzoskwinia", KeywordEntry { slug: "peach",       role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("pineapple",   KeywordEntry { slug: "pineapple",   role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("ананас",      KeywordEntry { slug: "pineapple",   role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("ananas",      KeywordEntry { slug: "pineapple",   role: "base",    quantity_g: 250.0, unit: "g", category: "fruit" }),
-    ("blueberry",   KeywordEntry { slug: "blueberry",   role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("черника",     KeywordEntry { slug: "blueberry",   role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-    ("jagoda",      KeywordEntry { slug: "blueberry",   role: "base",    quantity_g: 200.0, unit: "g", category: "fruit" }),
-
+    (
+        "strawberry",
+        KeywordEntry {
+            slug: "strawberry",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "клубника",
+        KeywordEntry {
+            slug: "strawberry",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "клубніка",
+        KeywordEntry {
+            slug: "strawberry",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "truskawka",
+        KeywordEntry {
+            slug: "strawberry",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "apricot",
+        KeywordEntry {
+            slug: "apricot",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "абрикос",
+        KeywordEntry {
+            slug: "apricot",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "абрикосовый",
+        KeywordEntry {
+            slug: "apricot",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "абрикосовий",
+        KeywordEntry {
+            slug: "apricot",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "morela",
+        KeywordEntry {
+            slug: "apricot",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "mango",
+        KeywordEntry {
+            slug: "mango",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "манго",
+        KeywordEntry {
+            slug: "mango",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "raspberry",
+        KeywordEntry {
+            slug: "raspberry",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "малина",
+        KeywordEntry {
+            slug: "raspberry",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "malina",
+        KeywordEntry {
+            slug: "raspberry",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "lemon",
+        KeywordEntry {
+            slug: "lemon",
+            role: "acid",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "citrus",
+        },
+    ),
+    (
+        "лимон",
+        KeywordEntry {
+            slug: "lemon",
+            role: "acid",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "citrus",
+        },
+    ),
+    (
+        "cytryna",
+        KeywordEntry {
+            slug: "lemon",
+            role: "acid",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "citrus",
+        },
+    ),
+    (
+        "lime",
+        KeywordEntry {
+            slug: "lime",
+            role: "acid",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "citrus",
+        },
+    ),
+    (
+        "лайм",
+        KeywordEntry {
+            slug: "lime",
+            role: "acid",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "citrus",
+        },
+    ),
+    (
+        "apple",
+        KeywordEntry {
+            slug: "apple",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "яблоко",
+        KeywordEntry {
+            slug: "apple",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "jabłko",
+        KeywordEntry {
+            slug: "apple",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "яблуко",
+        KeywordEntry {
+            slug: "apple",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "pear",
+        KeywordEntry {
+            slug: "pear",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "груша",
+        KeywordEntry {
+            slug: "pear",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "gruszka",
+        KeywordEntry {
+            slug: "pear",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "cherry",
+        KeywordEntry {
+            slug: "cherry",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "вишня",
+        KeywordEntry {
+            slug: "cherry",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "wiśnia",
+        KeywordEntry {
+            slug: "cherry",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "banana",
+        KeywordEntry {
+            slug: "banana",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "банан",
+        KeywordEntry {
+            slug: "banana",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "peach",
+        KeywordEntry {
+            slug: "peach",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "персик",
+        KeywordEntry {
+            slug: "peach",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "brzoskwinia",
+        KeywordEntry {
+            slug: "peach",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "pineapple",
+        KeywordEntry {
+            slug: "pineapple",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "ананас",
+        KeywordEntry {
+            slug: "pineapple",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "ananas",
+        KeywordEntry {
+            slug: "pineapple",
+            role: "base",
+            quantity_g: 250.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "blueberry",
+        KeywordEntry {
+            slug: "blueberry",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "черника",
+        KeywordEntry {
+            slug: "blueberry",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
+    (
+        "jagoda",
+        KeywordEntry {
+            slug: "blueberry",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "fruit",
+        },
+    ),
     // ── Vegetables ──────────────────────────────────────────────────────────
-    ("tomato",      KeywordEntry { slug: "tomato",      role: "base",    quantity_g: 300.0, unit: "g", category: "vegetable" }),
-    ("томат",       KeywordEntry { slug: "tomato",      role: "base",    quantity_g: 300.0, unit: "g", category: "vegetable" }),
-    ("помидор",     KeywordEntry { slug: "tomato",      role: "base",    quantity_g: 300.0, unit: "g", category: "vegetable" }),
-    ("pomidor",     KeywordEntry { slug: "tomato",      role: "base",    quantity_g: 300.0, unit: "g", category: "vegetable" }),
-    ("onion",       KeywordEntry { slug: "onion",       role: "aromatic",quantity_g: 100.0, unit: "g", category: "vegetable" }),
-    ("лук",         KeywordEntry { slug: "onion",       role: "aromatic",quantity_g: 100.0, unit: "g", category: "vegetable" }),
-    ("cebula",      KeywordEntry { slug: "onion",       role: "aromatic",quantity_g: 100.0, unit: "g", category: "vegetable" }),
-    ("garlic",      KeywordEntry { slug: "garlic",      role: "aromatic",quantity_g:  10.0, unit: "g", category: "vegetable" }),
-    ("чеснок",      KeywordEntry { slug: "garlic",      role: "aromatic",quantity_g:  10.0, unit: "g", category: "vegetable" }),
-    ("czosnek",     KeywordEntry { slug: "garlic",      role: "aromatic",quantity_g:  10.0, unit: "g", category: "vegetable" }),
-    ("czosn",       KeywordEntry { slug: "garlic",      role: "aromatic",quantity_g:  10.0, unit: "g", category: "vegetable" }),
-    ("часник",      KeywordEntry { slug: "garlic",      role: "aromatic",quantity_g:  10.0, unit: "g", category: "vegetable" }),
-    ("carrot",      KeywordEntry { slug: "carrot",      role: "base",    quantity_g: 150.0, unit: "g", category: "vegetable" }),
-    ("морковь",     KeywordEntry { slug: "carrot",      role: "base",    quantity_g: 150.0, unit: "g", category: "vegetable" }),
-    ("marchewka",   KeywordEntry { slug: "carrot",      role: "base",    quantity_g: 150.0, unit: "g", category: "vegetable" }),
-    ("морква",      KeywordEntry { slug: "carrot",      role: "base",    quantity_g: 150.0, unit: "g", category: "vegetable" }),
-    ("pepper",      KeywordEntry { slug: "bell_pepper", role: "base",    quantity_g: 150.0, unit: "g", category: "vegetable" }),
-    ("перец",       KeywordEntry { slug: "bell_pepper", role: "base",    quantity_g: 150.0, unit: "g", category: "vegetable" }),
-    ("papryka",     KeywordEntry { slug: "bell_pepper", role: "base",    quantity_g: 150.0, unit: "g", category: "vegetable" }),
-    ("spinach",     KeywordEntry { slug: "spinach",     role: "base",    quantity_g: 100.0, unit: "g", category: "vegetable" }),
-    ("шпинат",      KeywordEntry { slug: "spinach",     role: "base",    quantity_g: 100.0, unit: "g", category: "vegetable" }),
-    ("szpinak",     KeywordEntry { slug: "spinach",     role: "base",    quantity_g: 100.0, unit: "g", category: "vegetable" }),
-    ("cucumber",    KeywordEntry { slug: "cucumber",    role: "base",    quantity_g: 200.0, unit: "g", category: "vegetable" }),
-    ("огурец",      KeywordEntry { slug: "cucumber",    role: "base",    quantity_g: 200.0, unit: "g", category: "vegetable" }),
-    ("ogórek",      KeywordEntry { slug: "cucumber",    role: "base",    quantity_g: 200.0, unit: "g", category: "vegetable" }),
-    ("брокколи",    KeywordEntry { slug: "broccoli",    role: "base",    quantity_g: 200.0, unit: "g", category: "vegetable" }),
-    ("broccoli",    KeywordEntry { slug: "broccoli",    role: "base",    quantity_g: 200.0, unit: "g", category: "vegetable" }),
-    ("brokuł",      KeywordEntry { slug: "broccoli",    role: "base",    quantity_g: 200.0, unit: "g", category: "vegetable" }),
-
+    (
+        "tomato",
+        KeywordEntry {
+            slug: "tomato",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "томат",
+        KeywordEntry {
+            slug: "tomato",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "помидор",
+        KeywordEntry {
+            slug: "tomato",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "pomidor",
+        KeywordEntry {
+            slug: "tomato",
+            role: "base",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "onion",
+        KeywordEntry {
+            slug: "onion",
+            role: "aromatic",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "лук",
+        KeywordEntry {
+            slug: "onion",
+            role: "aromatic",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "cebula",
+        KeywordEntry {
+            slug: "onion",
+            role: "aromatic",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "garlic",
+        KeywordEntry {
+            slug: "garlic",
+            role: "aromatic",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "чеснок",
+        KeywordEntry {
+            slug: "garlic",
+            role: "aromatic",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "czosnek",
+        KeywordEntry {
+            slug: "garlic",
+            role: "aromatic",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "czosn",
+        KeywordEntry {
+            slug: "garlic",
+            role: "aromatic",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "часник",
+        KeywordEntry {
+            slug: "garlic",
+            role: "aromatic",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "carrot",
+        KeywordEntry {
+            slug: "carrot",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "морковь",
+        KeywordEntry {
+            slug: "carrot",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "marchewka",
+        KeywordEntry {
+            slug: "carrot",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "морква",
+        KeywordEntry {
+            slug: "carrot",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "pepper",
+        KeywordEntry {
+            slug: "bell_pepper",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "перец",
+        KeywordEntry {
+            slug: "bell_pepper",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "papryka",
+        KeywordEntry {
+            slug: "bell_pepper",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "spinach",
+        KeywordEntry {
+            slug: "spinach",
+            role: "base",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "шпинат",
+        KeywordEntry {
+            slug: "spinach",
+            role: "base",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "szpinak",
+        KeywordEntry {
+            slug: "spinach",
+            role: "base",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "cucumber",
+        KeywordEntry {
+            slug: "cucumber",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "огурец",
+        KeywordEntry {
+            slug: "cucumber",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "ogórek",
+        KeywordEntry {
+            slug: "cucumber",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "брокколи",
+        KeywordEntry {
+            slug: "broccoli",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "broccoli",
+        KeywordEntry {
+            slug: "broccoli",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
+    (
+        "brokuł",
+        KeywordEntry {
+            slug: "broccoli",
+            role: "base",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "vegetable",
+        },
+    ),
     // ── Dairy ────────────────────────────────────────────────────────────────
-    ("cream",       KeywordEntry { slug: "cream",       role: "fat",     quantity_g: 100.0, unit: "ml", category: "dairy" }),
-    ("сливки",      KeywordEntry { slug: "cream",       role: "fat",     quantity_g: 100.0, unit: "ml", category: "dairy" }),
-    ("śmietana",    KeywordEntry { slug: "cream",       role: "fat",     quantity_g: 100.0, unit: "ml", category: "dairy" }),
-    ("вершки",      KeywordEntry { slug: "cream",       role: "fat",     quantity_g: 100.0, unit: "ml", category: "dairy" }),
-    ("yogurt",      KeywordEntry { slug: "yogurt",      role: "fat",     quantity_g: 150.0, unit: "g",  category: "dairy" }),
-    ("йогурт",      KeywordEntry { slug: "yogurt",      role: "fat",     quantity_g: 150.0, unit: "g",  category: "dairy" }),
-    ("jogurt",      KeywordEntry { slug: "yogurt",      role: "fat",     quantity_g: 150.0, unit: "g",  category: "dairy" }),
-    ("butter",      KeywordEntry { slug: "butter",      role: "fat",     quantity_g:  30.0, unit: "g",  category: "dairy" }),
-    ("масло",       KeywordEntry { slug: "butter",      role: "fat",     quantity_g:  30.0, unit: "g",  category: "dairy" }),
-    ("masło",       KeywordEntry { slug: "butter",      role: "fat",     quantity_g:  30.0, unit: "g",  category: "dairy" }),
-    ("масло",       KeywordEntry { slug: "butter",      role: "fat",     quantity_g:  30.0, unit: "g",  category: "dairy" }),
-    ("milk",        KeywordEntry { slug: "milk",        role: "liquid",  quantity_g: 200.0, unit: "ml", category: "dairy" }),
-    ("молоко",      KeywordEntry { slug: "milk",        role: "liquid",  quantity_g: 200.0, unit: "ml", category: "dairy" }),
-    ("mleko",       KeywordEntry { slug: "milk",        role: "liquid",  quantity_g: 200.0, unit: "ml", category: "dairy" }),
-    ("cheese",      KeywordEntry { slug: "cheese",      role: "fat",     quantity_g:  80.0, unit: "g",  category: "dairy" }),
-    ("сыр",         KeywordEntry { slug: "cheese",      role: "fat",     quantity_g:  80.0, unit: "g",  category: "dairy" }),
-    ("ser",         KeywordEntry { slug: "cheese",      role: "fat",     quantity_g:  80.0, unit: "g",  category: "dairy" }),
-    ("mascarpone",  KeywordEntry { slug: "mascarpone",  role: "fat",     quantity_g: 100.0, unit: "g",  category: "dairy" }),
-    ("ricotta",     KeywordEntry { slug: "ricotta",     role: "fat",     quantity_g: 100.0, unit: "g",  category: "dairy" }),
-
+    (
+        "cream",
+        KeywordEntry {
+            slug: "cream",
+            role: "fat",
+            quantity_g: 100.0,
+            unit: "ml",
+            category: "dairy",
+        },
+    ),
+    (
+        "сливки",
+        KeywordEntry {
+            slug: "cream",
+            role: "fat",
+            quantity_g: 100.0,
+            unit: "ml",
+            category: "dairy",
+        },
+    ),
+    (
+        "śmietana",
+        KeywordEntry {
+            slug: "cream",
+            role: "fat",
+            quantity_g: 100.0,
+            unit: "ml",
+            category: "dairy",
+        },
+    ),
+    (
+        "вершки",
+        KeywordEntry {
+            slug: "cream",
+            role: "fat",
+            quantity_g: 100.0,
+            unit: "ml",
+            category: "dairy",
+        },
+    ),
+    (
+        "yogurt",
+        KeywordEntry {
+            slug: "yogurt",
+            role: "fat",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "йогурт",
+        KeywordEntry {
+            slug: "yogurt",
+            role: "fat",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "jogurt",
+        KeywordEntry {
+            slug: "yogurt",
+            role: "fat",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "butter",
+        KeywordEntry {
+            slug: "butter",
+            role: "fat",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "масло",
+        KeywordEntry {
+            slug: "butter",
+            role: "fat",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "masło",
+        KeywordEntry {
+            slug: "butter",
+            role: "fat",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "масло",
+        KeywordEntry {
+            slug: "butter",
+            role: "fat",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "milk",
+        KeywordEntry {
+            slug: "milk",
+            role: "liquid",
+            quantity_g: 200.0,
+            unit: "ml",
+            category: "dairy",
+        },
+    ),
+    (
+        "молоко",
+        KeywordEntry {
+            slug: "milk",
+            role: "liquid",
+            quantity_g: 200.0,
+            unit: "ml",
+            category: "dairy",
+        },
+    ),
+    (
+        "mleko",
+        KeywordEntry {
+            slug: "milk",
+            role: "liquid",
+            quantity_g: 200.0,
+            unit: "ml",
+            category: "dairy",
+        },
+    ),
+    (
+        "cheese",
+        KeywordEntry {
+            slug: "cheese",
+            role: "fat",
+            quantity_g: 80.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "сыр",
+        KeywordEntry {
+            slug: "cheese",
+            role: "fat",
+            quantity_g: 80.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "ser",
+        KeywordEntry {
+            slug: "cheese",
+            role: "fat",
+            quantity_g: 80.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "mascarpone",
+        KeywordEntry {
+            slug: "mascarpone",
+            role: "fat",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
+    (
+        "ricotta",
+        KeywordEntry {
+            slug: "ricotta",
+            role: "fat",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "dairy",
+        },
+    ),
     // ── Proteins ─────────────────────────────────────────────────────────────
-    ("chicken",     KeywordEntry { slug: "chicken",     role: "protein", quantity_g: 300.0, unit: "g",  category: "protein" }),
-    ("курица",      KeywordEntry { slug: "chicken",     role: "protein", quantity_g: 300.0, unit: "g",  category: "protein" }),
-    ("kurczak",     KeywordEntry { slug: "chicken",     role: "protein", quantity_g: 300.0, unit: "g",  category: "protein" }),
-    ("курятина",    KeywordEntry { slug: "chicken",     role: "protein", quantity_g: 300.0, unit: "g",  category: "protein" }),
-    ("beef",        KeywordEntry { slug: "beef",        role: "protein", quantity_g: 300.0, unit: "g",  category: "protein" }),
-    ("говядина",    KeywordEntry { slug: "beef",        role: "protein", quantity_g: 300.0, unit: "g",  category: "protein" }),
-    ("wołowina",    KeywordEntry { slug: "beef",        role: "protein", quantity_g: 300.0, unit: "g",  category: "protein" }),
-    ("salmon",      KeywordEntry { slug: "salmon",      role: "protein", quantity_g: 200.0, unit: "g",  category: "protein" }),
-    ("лосось",      KeywordEntry { slug: "salmon",      role: "protein", quantity_g: 200.0, unit: "g",  category: "protein" }),
-    ("łosoś",       KeywordEntry { slug: "salmon",      role: "protein", quantity_g: 200.0, unit: "g",  category: "protein" }),
-    ("egg",         KeywordEntry { slug: "egg",         role: "binder",  quantity_g:  60.0, unit: "g",  category: "protein" }),
-    ("яйцо",        KeywordEntry { slug: "egg",         role: "binder",  quantity_g:  60.0, unit: "g",  category: "protein" }),
-    ("яйце",        KeywordEntry { slug: "egg",         role: "binder",  quantity_g:  60.0, unit: "g",  category: "protein" }),
-    ("jajko",       KeywordEntry { slug: "egg",         role: "binder",  quantity_g:  60.0, unit: "g",  category: "protein" }),
-    ("tofu",        KeywordEntry { slug: "tofu",        role: "protein", quantity_g: 200.0, unit: "g",  category: "protein" }),
-    ("тофу",        KeywordEntry { slug: "tofu",        role: "protein", quantity_g: 200.0, unit: "g",  category: "protein" }),
-
+    (
+        "chicken",
+        KeywordEntry {
+            slug: "chicken",
+            role: "protein",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "курица",
+        KeywordEntry {
+            slug: "chicken",
+            role: "protein",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "kurczak",
+        KeywordEntry {
+            slug: "chicken",
+            role: "protein",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "курятина",
+        KeywordEntry {
+            slug: "chicken",
+            role: "protein",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "beef",
+        KeywordEntry {
+            slug: "beef",
+            role: "protein",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "говядина",
+        KeywordEntry {
+            slug: "beef",
+            role: "protein",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "wołowina",
+        KeywordEntry {
+            slug: "beef",
+            role: "protein",
+            quantity_g: 300.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "salmon",
+        KeywordEntry {
+            slug: "salmon",
+            role: "protein",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "лосось",
+        KeywordEntry {
+            slug: "salmon",
+            role: "protein",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "łosoś",
+        KeywordEntry {
+            slug: "salmon",
+            role: "protein",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "egg",
+        KeywordEntry {
+            slug: "egg",
+            role: "binder",
+            quantity_g: 60.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "яйцо",
+        KeywordEntry {
+            slug: "egg",
+            role: "binder",
+            quantity_g: 60.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "яйце",
+        KeywordEntry {
+            slug: "egg",
+            role: "binder",
+            quantity_g: 60.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "jajko",
+        KeywordEntry {
+            slug: "egg",
+            role: "binder",
+            quantity_g: 60.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "tofu",
+        KeywordEntry {
+            slug: "tofu",
+            role: "protein",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
+    (
+        "тофу",
+        KeywordEntry {
+            slug: "tofu",
+            role: "protein",
+            quantity_g: 200.0,
+            unit: "g",
+            category: "protein",
+        },
+    ),
     // ── Nuts & seeds ─────────────────────────────────────────────────────────
-    ("almond",      KeywordEntry { slug: "almond",      role: "texture", quantity_g:  30.0, unit: "g",  category: "nut" }),
-    ("миндаль",     KeywordEntry { slug: "almond",      role: "texture", quantity_g:  30.0, unit: "g",  category: "nut" }),
-    ("migdał",      KeywordEntry { slug: "almond",      role: "texture", quantity_g:  30.0, unit: "g",  category: "nut" }),
-    ("walnut",      KeywordEntry { slug: "walnut",      role: "texture", quantity_g:  30.0, unit: "g",  category: "nut" }),
-    ("грецкий",     KeywordEntry { slug: "walnut",      role: "texture", quantity_g:  30.0, unit: "g",  category: "nut" }),
-    ("orzech",      KeywordEntry { slug: "walnut",      role: "texture", quantity_g:  30.0, unit: "g",  category: "nut" }),
-    ("pistachio",   KeywordEntry { slug: "pistachio",   role: "texture", quantity_g:  20.0, unit: "g",  category: "nut" }),
-    ("фисташка",    KeywordEntry { slug: "pistachio",   role: "texture", quantity_g:  20.0, unit: "g",  category: "nut" }),
-    ("pistacja",    KeywordEntry { slug: "pistachio",   role: "texture", quantity_g:  20.0, unit: "g",  category: "nut" }),
-
+    (
+        "almond",
+        KeywordEntry {
+            slug: "almond",
+            role: "texture",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "миндаль",
+        KeywordEntry {
+            slug: "almond",
+            role: "texture",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "migdał",
+        KeywordEntry {
+            slug: "almond",
+            role: "texture",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "walnut",
+        KeywordEntry {
+            slug: "walnut",
+            role: "texture",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "грецкий",
+        KeywordEntry {
+            slug: "walnut",
+            role: "texture",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "orzech",
+        KeywordEntry {
+            slug: "walnut",
+            role: "texture",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "pistachio",
+        KeywordEntry {
+            slug: "pistachio",
+            role: "texture",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "фисташка",
+        KeywordEntry {
+            slug: "pistachio",
+            role: "texture",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
+    (
+        "pistacja",
+        KeywordEntry {
+            slug: "pistachio",
+            role: "texture",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "nut",
+        },
+    ),
     // ── Sweeteners ───────────────────────────────────────────────────────────
-    ("sugar",       KeywordEntry { slug: "sugar",       role: "sweet",   quantity_g:  50.0, unit: "g",  category: "sweetener" }),
-    ("сахар",       KeywordEntry { slug: "sugar",       role: "sweet",   quantity_g:  50.0, unit: "g",  category: "sweetener" }),
-    ("cukier",      KeywordEntry { slug: "sugar",       role: "sweet",   quantity_g:  50.0, unit: "g",  category: "sweetener" }),
-    ("цукор",       KeywordEntry { slug: "sugar",       role: "sweet",   quantity_g:  50.0, unit: "g",  category: "sweetener" }),
-    ("honey",       KeywordEntry { slug: "honey",       role: "sweet",   quantity_g:  30.0, unit: "g",  category: "sweetener" }),
-    ("мёд",         KeywordEntry { slug: "honey",       role: "sweet",   quantity_g:  30.0, unit: "g",  category: "sweetener" }),
-    ("мед",         KeywordEntry { slug: "honey",       role: "sweet",   quantity_g:  30.0, unit: "g",  category: "sweetener" }),
-    ("miód",        KeywordEntry { slug: "honey",       role: "sweet",   quantity_g:  30.0, unit: "g",  category: "sweetener" }),
-    ("maple",       KeywordEntry { slug: "maple_syrup", role: "sweet",   quantity_g:  25.0, unit: "g",  category: "sweetener" }),
-    ("кленовый",    KeywordEntry { slug: "maple_syrup", role: "sweet",   quantity_g:  25.0, unit: "g",  category: "sweetener" }),
-    ("клен",        KeywordEntry { slug: "maple_syrup", role: "sweet",   quantity_g:  25.0, unit: "g",  category: "sweetener" }),
-
+    (
+        "sugar",
+        KeywordEntry {
+            slug: "sugar",
+            role: "sweet",
+            quantity_g: 50.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "сахар",
+        KeywordEntry {
+            slug: "sugar",
+            role: "sweet",
+            quantity_g: 50.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "cukier",
+        KeywordEntry {
+            slug: "sugar",
+            role: "sweet",
+            quantity_g: 50.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "цукор",
+        KeywordEntry {
+            slug: "sugar",
+            role: "sweet",
+            quantity_g: 50.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "honey",
+        KeywordEntry {
+            slug: "honey",
+            role: "sweet",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "мёд",
+        KeywordEntry {
+            slug: "honey",
+            role: "sweet",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "мед",
+        KeywordEntry {
+            slug: "honey",
+            role: "sweet",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "miód",
+        KeywordEntry {
+            slug: "honey",
+            role: "sweet",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "maple",
+        KeywordEntry {
+            slug: "maple_syrup",
+            role: "sweet",
+            quantity_g: 25.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "кленовый",
+        KeywordEntry {
+            slug: "maple_syrup",
+            role: "sweet",
+            quantity_g: 25.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
+    (
+        "клен",
+        KeywordEntry {
+            slug: "maple_syrup",
+            role: "sweet",
+            quantity_g: 25.0,
+            unit: "g",
+            category: "sweetener",
+        },
+    ),
     // ── Fats & oils ──────────────────────────────────────────────────────────
-    ("olive",       KeywordEntry { slug: "olive_oil",   role: "fat",     quantity_g:  20.0, unit: "ml", category: "fat" }),
-    ("оливковое",   KeywordEntry { slug: "olive_oil",   role: "fat",     quantity_g:  20.0, unit: "ml", category: "fat" }),
-    ("oliwa",       KeywordEntry { slug: "olive_oil",   role: "fat",     quantity_g:  20.0, unit: "ml", category: "fat" }),
-    ("coconut",     KeywordEntry { slug: "coconut_oil", role: "fat",     quantity_g:  20.0, unit: "ml", category: "fat" }),
-    ("кокосовое",   KeywordEntry { slug: "coconut_oil", role: "fat",     quantity_g:  20.0, unit: "ml", category: "fat" }),
-    ("kokos",       KeywordEntry { slug: "coconut_oil", role: "fat",     quantity_g:  20.0, unit: "ml", category: "fat" }),
-
+    (
+        "olive",
+        KeywordEntry {
+            slug: "olive_oil",
+            role: "fat",
+            quantity_g: 20.0,
+            unit: "ml",
+            category: "fat",
+        },
+    ),
+    (
+        "оливковое",
+        KeywordEntry {
+            slug: "olive_oil",
+            role: "fat",
+            quantity_g: 20.0,
+            unit: "ml",
+            category: "fat",
+        },
+    ),
+    (
+        "oliwa",
+        KeywordEntry {
+            slug: "olive_oil",
+            role: "fat",
+            quantity_g: 20.0,
+            unit: "ml",
+            category: "fat",
+        },
+    ),
+    (
+        "coconut",
+        KeywordEntry {
+            slug: "coconut_oil",
+            role: "fat",
+            quantity_g: 20.0,
+            unit: "ml",
+            category: "fat",
+        },
+    ),
+    (
+        "кокосовое",
+        KeywordEntry {
+            slug: "coconut_oil",
+            role: "fat",
+            quantity_g: 20.0,
+            unit: "ml",
+            category: "fat",
+        },
+    ),
+    (
+        "kokos",
+        KeywordEntry {
+            slug: "coconut_oil",
+            role: "fat",
+            quantity_g: 20.0,
+            unit: "ml",
+            category: "fat",
+        },
+    ),
     // ── Spices & herbs ───────────────────────────────────────────────────────
-    ("ginger",      KeywordEntry { slug: "ginger",      role: "spice",   quantity_g:  10.0, unit: "g",  category: "spice" }),
-    ("имбирь",      KeywordEntry { slug: "ginger",      role: "spice",   quantity_g:  10.0, unit: "g",  category: "spice" }),
-    ("imbir",       KeywordEntry { slug: "ginger",      role: "spice",   quantity_g:  10.0, unit: "g",  category: "spice" }),
-    ("cinnamon",    KeywordEntry { slug: "cinnamon",    role: "spice",   quantity_g:   3.0, unit: "g",  category: "spice" }),
-    ("корица",      KeywordEntry { slug: "cinnamon",    role: "spice",   quantity_g:   3.0, unit: "g",  category: "spice" }),
-    ("cynamon",     KeywordEntry { slug: "cinnamon",    role: "spice",   quantity_g:   3.0, unit: "g",  category: "spice" }),
-    ("vanilla",     KeywordEntry { slug: "vanilla",     role: "spice",   quantity_g:   2.0, unit: "g",  category: "spice" }),
-    ("ваниль",      KeywordEntry { slug: "vanilla",     role: "spice",   quantity_g:   2.0, unit: "g",  category: "spice" }),
-    ("wanilia",     KeywordEntry { slug: "vanilla",     role: "spice",   quantity_g:   2.0, unit: "g",  category: "spice" }),
-    ("mint",        KeywordEntry { slug: "mint",        role: "spice",   quantity_g:   5.0, unit: "g",  category: "herb" }),
-    ("мята",        KeywordEntry { slug: "mint",        role: "spice",   quantity_g:   5.0, unit: "g",  category: "herb" }),
-    ("mięta",       KeywordEntry { slug: "mint",        role: "spice",   quantity_g:   5.0, unit: "g",  category: "herb" }),
-    ("basil",       KeywordEntry { slug: "basil",       role: "spice",   quantity_g:   5.0, unit: "g",  category: "herb" }),
-    ("базилик",     KeywordEntry { slug: "basil",       role: "spice",   quantity_g:   5.0, unit: "g",  category: "herb" }),
-    ("bazylia",     KeywordEntry { slug: "basil",       role: "spice",   quantity_g:   5.0, unit: "g",  category: "herb" }),
-
+    (
+        "ginger",
+        KeywordEntry {
+            slug: "ginger",
+            role: "spice",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "имбирь",
+        KeywordEntry {
+            slug: "ginger",
+            role: "spice",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "imbir",
+        KeywordEntry {
+            slug: "ginger",
+            role: "spice",
+            quantity_g: 10.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "cinnamon",
+        KeywordEntry {
+            slug: "cinnamon",
+            role: "spice",
+            quantity_g: 3.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "корица",
+        KeywordEntry {
+            slug: "cinnamon",
+            role: "spice",
+            quantity_g: 3.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "cynamon",
+        KeywordEntry {
+            slug: "cinnamon",
+            role: "spice",
+            quantity_g: 3.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "vanilla",
+        KeywordEntry {
+            slug: "vanilla",
+            role: "spice",
+            quantity_g: 2.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "ваниль",
+        KeywordEntry {
+            slug: "vanilla",
+            role: "spice",
+            quantity_g: 2.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "wanilia",
+        KeywordEntry {
+            slug: "vanilla",
+            role: "spice",
+            quantity_g: 2.0,
+            unit: "g",
+            category: "spice",
+        },
+    ),
+    (
+        "mint",
+        KeywordEntry {
+            slug: "mint",
+            role: "spice",
+            quantity_g: 5.0,
+            unit: "g",
+            category: "herb",
+        },
+    ),
+    (
+        "мята",
+        KeywordEntry {
+            slug: "mint",
+            role: "spice",
+            quantity_g: 5.0,
+            unit: "g",
+            category: "herb",
+        },
+    ),
+    (
+        "mięta",
+        KeywordEntry {
+            slug: "mint",
+            role: "spice",
+            quantity_g: 5.0,
+            unit: "g",
+            category: "herb",
+        },
+    ),
+    (
+        "basil",
+        KeywordEntry {
+            slug: "basil",
+            role: "spice",
+            quantity_g: 5.0,
+            unit: "g",
+            category: "herb",
+        },
+    ),
+    (
+        "базилик",
+        KeywordEntry {
+            slug: "basil",
+            role: "spice",
+            quantity_g: 5.0,
+            unit: "g",
+            category: "herb",
+        },
+    ),
+    (
+        "bazylia",
+        KeywordEntry {
+            slug: "basil",
+            role: "spice",
+            quantity_g: 5.0,
+            unit: "g",
+            category: "herb",
+        },
+    ),
     // ── Starch / thickeners ──────────────────────────────────────────────────
-    ("starch",      KeywordEntry { slug: "corn_starch", role: "thickener", quantity_g: 15.0, unit: "g", category: "starch" }),
-    ("крахмал",     KeywordEntry { slug: "corn_starch", role: "thickener", quantity_g: 15.0, unit: "g", category: "starch" }),
-    ("skrobia",     KeywordEntry { slug: "corn_starch", role: "thickener", quantity_g: 15.0, unit: "g", category: "starch" }),
-    ("flour",       KeywordEntry { slug: "wheat_flour", role: "thickener", quantity_g: 30.0, unit: "g", category: "starch" }),
-    ("мука",        KeywordEntry { slug: "wheat_flour", role: "thickener", quantity_g: 30.0, unit: "g", category: "starch" }),
-    ("mąka",        KeywordEntry { slug: "wheat_flour", role: "thickener", quantity_g: 30.0, unit: "g", category: "starch" }),
-
+    (
+        "starch",
+        KeywordEntry {
+            slug: "corn_starch",
+            role: "thickener",
+            quantity_g: 15.0,
+            unit: "g",
+            category: "starch",
+        },
+    ),
+    (
+        "крахмал",
+        KeywordEntry {
+            slug: "corn_starch",
+            role: "thickener",
+            quantity_g: 15.0,
+            unit: "g",
+            category: "starch",
+        },
+    ),
+    (
+        "skrobia",
+        KeywordEntry {
+            slug: "corn_starch",
+            role: "thickener",
+            quantity_g: 15.0,
+            unit: "g",
+            category: "starch",
+        },
+    ),
+    (
+        "flour",
+        KeywordEntry {
+            slug: "wheat_flour",
+            role: "thickener",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "starch",
+        },
+    ),
+    (
+        "мука",
+        KeywordEntry {
+            slug: "wheat_flour",
+            role: "thickener",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "starch",
+        },
+    ),
+    (
+        "mąka",
+        KeywordEntry {
+            slug: "wheat_flour",
+            role: "thickener",
+            quantity_g: 30.0,
+            unit: "g",
+            category: "starch",
+        },
+    ),
     // ── Liquids ──────────────────────────────────────────────────────────────
-    ("water",       KeywordEntry { slug: "water",       role: "liquid",  quantity_g: 200.0, unit: "ml", category: "liquid" }),
-    ("вода",        KeywordEntry { slug: "water",       role: "liquid",  quantity_g: 200.0, unit: "ml", category: "liquid" }),
-    ("woda",        KeywordEntry { slug: "water",       role: "liquid",  quantity_g: 200.0, unit: "ml", category: "liquid" }),
-    ("broth",       KeywordEntry { slug: "chicken_broth", role: "liquid", quantity_g: 300.0, unit: "ml", category: "liquid" }),
-    ("бульон",      KeywordEntry { slug: "chicken_broth", role: "liquid", quantity_g: 300.0, unit: "ml", category: "liquid" }),
-    ("bulion",      KeywordEntry { slug: "chicken_broth", role: "liquid", quantity_g: 300.0, unit: "ml", category: "liquid" }),
-    ("wine",        KeywordEntry { slug: "white_wine",  role: "liquid",  quantity_g:  80.0, unit: "ml", category: "liquid" }),
-    ("вино",        KeywordEntry { slug: "white_wine",  role: "liquid",  quantity_g:  80.0, unit: "ml", category: "liquid" }),
-    ("wino",        KeywordEntry { slug: "white_wine",  role: "liquid",  quantity_g:  80.0, unit: "ml", category: "liquid" }),
-
+    (
+        "water",
+        KeywordEntry {
+            slug: "water",
+            role: "liquid",
+            quantity_g: 200.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "вода",
+        KeywordEntry {
+            slug: "water",
+            role: "liquid",
+            quantity_g: 200.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "woda",
+        KeywordEntry {
+            slug: "water",
+            role: "liquid",
+            quantity_g: 200.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "broth",
+        KeywordEntry {
+            slug: "chicken_broth",
+            role: "liquid",
+            quantity_g: 300.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "бульон",
+        KeywordEntry {
+            slug: "chicken_broth",
+            role: "liquid",
+            quantity_g: 300.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "bulion",
+        KeywordEntry {
+            slug: "chicken_broth",
+            role: "liquid",
+            quantity_g: 300.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "wine",
+        KeywordEntry {
+            slug: "white_wine",
+            role: "liquid",
+            quantity_g: 80.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "вино",
+        KeywordEntry {
+            slug: "white_wine",
+            role: "liquid",
+            quantity_g: 80.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
+    (
+        "wino",
+        KeywordEntry {
+            slug: "white_wine",
+            role: "liquid",
+            quantity_g: 80.0,
+            unit: "ml",
+            category: "liquid",
+        },
+    ),
     // ── Grains / legumes ─────────────────────────────────────────────────────
-    ("rice",        KeywordEntry { slug: "rice",        role: "base",    quantity_g: 150.0, unit: "g",  category: "grain" }),
-    ("рис",         KeywordEntry { slug: "rice",        role: "base",    quantity_g: 150.0, unit: "g",  category: "grain" }),
-    ("oats",        KeywordEntry { slug: "oats",        role: "base",    quantity_g: 100.0, unit: "g",  category: "grain" }),
-    ("овёс",        KeywordEntry { slug: "oats",        role: "base",    quantity_g: 100.0, unit: "g",  category: "grain" }),
-    ("овсянка",     KeywordEntry { slug: "oats",        role: "base",    quantity_g: 100.0, unit: "g",  category: "grain" }),
-    ("płatki",      KeywordEntry { slug: "oats",        role: "base",    quantity_g: 100.0, unit: "g",  category: "grain" }),
-    ("lentil",      KeywordEntry { slug: "lentil",      role: "protein", quantity_g: 100.0, unit: "g",  category: "legume" }),
-    ("чечевица",    KeywordEntry { slug: "lentil",      role: "protein", quantity_g: 100.0, unit: "g",  category: "legume" }),
-    ("soczewica",   KeywordEntry { slug: "lentil",      role: "protein", quantity_g: 100.0, unit: "g",  category: "legume" }),
-    ("chickpea",    KeywordEntry { slug: "chickpea",    role: "protein", quantity_g: 100.0, unit: "g",  category: "legume" }),
-    ("нут",         KeywordEntry { slug: "chickpea",    role: "protein", quantity_g: 100.0, unit: "g",  category: "legume" }),
-    ("ciecierzyca", KeywordEntry { slug: "chickpea",    role: "protein", quantity_g: 100.0, unit: "g",  category: "legume" }),
-
+    (
+        "rice",
+        KeywordEntry {
+            slug: "rice",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "grain",
+        },
+    ),
+    (
+        "рис",
+        KeywordEntry {
+            slug: "rice",
+            role: "base",
+            quantity_g: 150.0,
+            unit: "g",
+            category: "grain",
+        },
+    ),
+    (
+        "oats",
+        KeywordEntry {
+            slug: "oats",
+            role: "base",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "grain",
+        },
+    ),
+    (
+        "овёс",
+        KeywordEntry {
+            slug: "oats",
+            role: "base",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "grain",
+        },
+    ),
+    (
+        "овсянка",
+        KeywordEntry {
+            slug: "oats",
+            role: "base",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "grain",
+        },
+    ),
+    (
+        "płatki",
+        KeywordEntry {
+            slug: "oats",
+            role: "base",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "grain",
+        },
+    ),
+    (
+        "lentil",
+        KeywordEntry {
+            slug: "lentil",
+            role: "protein",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "legume",
+        },
+    ),
+    (
+        "чечевица",
+        KeywordEntry {
+            slug: "lentil",
+            role: "protein",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "legume",
+        },
+    ),
+    (
+        "soczewica",
+        KeywordEntry {
+            slug: "lentil",
+            role: "protein",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "legume",
+        },
+    ),
+    (
+        "chickpea",
+        KeywordEntry {
+            slug: "chickpea",
+            role: "protein",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "legume",
+        },
+    ),
+    (
+        "нут",
+        KeywordEntry {
+            slug: "chickpea",
+            role: "protein",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "legume",
+        },
+    ),
+    (
+        "ciecierzyca",
+        KeywordEntry {
+            slug: "chickpea",
+            role: "protein",
+            quantity_g: 100.0,
+            unit: "g",
+            category: "legume",
+        },
+    ),
     // ── Chocolate / cocoa ────────────────────────────────────────────────────
-    ("chocolate",   KeywordEntry { slug: "dark_chocolate", role: "flavor", quantity_g: 50.0, unit: "g", category: "sweet" }),
-    ("шоколад",     KeywordEntry { slug: "dark_chocolate", role: "flavor", quantity_g: 50.0, unit: "g", category: "sweet" }),
-    ("czekolada",   KeywordEntry { slug: "dark_chocolate", role: "flavor", quantity_g: 50.0, unit: "g", category: "sweet" }),
-    ("cocoa",       KeywordEntry { slug: "cocoa_powder",role: "flavor", quantity_g:  20.0, unit: "g",  category: "sweet" }),
-    ("какао",       KeywordEntry { slug: "cocoa_powder",role: "flavor", quantity_g:  20.0, unit: "g",  category: "sweet" }),
-    ("kakao",       KeywordEntry { slug: "cocoa_powder",role: "flavor", quantity_g:  20.0, unit: "g",  category: "sweet" }),
-
+    (
+        "chocolate",
+        KeywordEntry {
+            slug: "dark_chocolate",
+            role: "flavor",
+            quantity_g: 50.0,
+            unit: "g",
+            category: "sweet",
+        },
+    ),
+    (
+        "шоколад",
+        KeywordEntry {
+            slug: "dark_chocolate",
+            role: "flavor",
+            quantity_g: 50.0,
+            unit: "g",
+            category: "sweet",
+        },
+    ),
+    (
+        "czekolada",
+        KeywordEntry {
+            slug: "dark_chocolate",
+            role: "flavor",
+            quantity_g: 50.0,
+            unit: "g",
+            category: "sweet",
+        },
+    ),
+    (
+        "cocoa",
+        KeywordEntry {
+            slug: "cocoa_powder",
+            role: "flavor",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "sweet",
+        },
+    ),
+    (
+        "какао",
+        KeywordEntry {
+            slug: "cocoa_powder",
+            role: "flavor",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "sweet",
+        },
+    ),
+    (
+        "kakao",
+        KeywordEntry {
+            slug: "cocoa_powder",
+            role: "flavor",
+            quantity_g: 20.0,
+            unit: "g",
+            category: "sweet",
+        },
+    ),
     // ── Acids ────────────────────────────────────────────────────────────────
-    ("vinegar",     KeywordEntry { slug: "apple_vinegar", role: "acid",  quantity_g:  10.0, unit: "ml", category: "acid" }),
-    ("уксус",       KeywordEntry { slug: "apple_vinegar", role: "acid",  quantity_g:  10.0, unit: "ml", category: "acid" }),
-    ("ocet",        KeywordEntry { slug: "apple_vinegar", role: "acid",  quantity_g:  10.0, unit: "ml", category: "acid" }),
+    (
+        "vinegar",
+        KeywordEntry {
+            slug: "apple_vinegar",
+            role: "acid",
+            quantity_g: 10.0,
+            unit: "ml",
+            category: "acid",
+        },
+    ),
+    (
+        "уксус",
+        KeywordEntry {
+            slug: "apple_vinegar",
+            role: "acid",
+            quantity_g: 10.0,
+            unit: "ml",
+            category: "acid",
+        },
+    ),
+    (
+        "ocet",
+        KeywordEntry {
+            slug: "apple_vinegar",
+            role: "acid",
+            quantity_g: 10.0,
+            unit: "ml",
+            category: "acid",
+        },
+    ),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -297,39 +1905,38 @@ const KEYWORD_MAP: &[(&str, KeywordEntry)] = &[
 
 /// Words that introduce a negation ("without X", "no X", "без X", …).
 const NEGATION_TRIGGERS: &[&str] = &[
-    "without", "no", "not", "non",
-    "без",  "не",   // Russian
-    "без",  "ні",   // Ukrainian
-    "bez",  "nie",  // Polish
-    "ohne",          // German
+    "without", "no", "not", "non", "без", "не", // Russian
+    "без", "ні", // Ukrainian
+    "bez", "nie",  // Polish
+    "ohne", // German
 ];
 
 /// Maps a content-type word (coming after a negation) to the category it
 /// blocks. E.g. "sugar" → "sweetener", "dairy" → "dairy".
 const EXCLUSION_MAP: &[(&str, &str)] = &[
-    ("sugar",    "sweetener"),
-    ("сахара",   "sweetener"),
-    ("сахар",    "sweetener"),
-    ("цукру",    "sweetener"),
-    ("cukru",    "sweetener"),
-    ("dairy",    "dairy"),
-    ("lactose",  "dairy"),
+    ("sugar", "sweetener"),
+    ("сахара", "sweetener"),
+    ("сахар", "sweetener"),
+    ("цукру", "sweetener"),
+    ("cukru", "sweetener"),
+    ("dairy", "dairy"),
+    ("lactose", "dairy"),
     ("молочных", "dairy"),
-    ("молочного","dairy"),
-    ("gluten",   "starch"),
-    ("глютена",  "starch"),
-    ("glutenu",  "starch"),
-    ("fat",      "fat"),
-    ("жира",     "fat"),
-    ("жирного",  "fat"),
-    ("alcohol",  "liquid"),    // approximation: wine etc.
+    ("молочного", "dairy"),
+    ("gluten", "starch"),
+    ("глютена", "starch"),
+    ("glutenu", "starch"),
+    ("fat", "fat"),
+    ("жира", "fat"),
+    ("жирного", "fat"),
+    ("alcohol", "liquid"), // approximation: wine etc.
     ("алкоголя", "liquid"),
     ("alkoholu", "liquid"),
-    ("meat",     "protein"),
-    ("мяса",     "protein"),
-    ("mięsa",    "protein"),
-    ("nuts",     "nut"),
-    ("орехов",   "nut"),
+    ("meat", "protein"),
+    ("мяса", "protein"),
+    ("mięsa", "protein"),
+    ("nuts", "nut"),
+    ("орехов", "nut"),
     ("orzechów", "nut"),
 ];
 
@@ -353,45 +1960,45 @@ enum ProductType {
 impl ProductType {
     fn as_str(&self) -> &'static str {
         match self {
-            Self::Sauce     => "sauce",
-            Self::Soup      => "soup",
-            Self::Smoothie  => "smoothie",
-            Self::Marinade  => "marinade",
-            Self::Dressing  => "dressing",
-            Self::Jam       => "jam",
-            Self::Dessert   => "dessert",
-            Self::Drink     => "drink",
-            Self::Unknown   => "other",
+            Self::Sauce => "sauce",
+            Self::Soup => "soup",
+            Self::Smoothie => "smoothie",
+            Self::Marinade => "marinade",
+            Self::Dressing => "dressing",
+            Self::Jam => "jam",
+            Self::Dessert => "dessert",
+            Self::Drink => "drink",
+            Self::Unknown => "other",
         }
     }
 }
 
 const PRODUCT_TYPE_KEYWORDS: &[(&str, ProductType)] = &[
-    ("sauce",    ProductType::Sauce),
-    ("соус",     ProductType::Sauce),
-    ("sos",      ProductType::Sauce),
-    ("soup",     ProductType::Soup),
-    ("суп",      ProductType::Soup),
-    ("zupa",     ProductType::Soup),
+    ("sauce", ProductType::Sauce),
+    ("соус", ProductType::Sauce),
+    ("sos", ProductType::Sauce),
+    ("soup", ProductType::Soup),
+    ("суп", ProductType::Soup),
+    ("zupa", ProductType::Soup),
     ("smoothie", ProductType::Smoothie),
-    ("смузи",    ProductType::Smoothie),
-    ("koktajl",  ProductType::Smoothie),
+    ("смузи", ProductType::Smoothie),
+    ("koktajl", ProductType::Smoothie),
     ("marinade", ProductType::Marinade),
-    ("маринад",  ProductType::Marinade),
+    ("маринад", ProductType::Marinade),
     ("marynata", ProductType::Marinade),
     ("dressing", ProductType::Dressing),
     ("заправка", ProductType::Dressing),
-    ("jam",      ProductType::Jam),
-    ("джем",     ProductType::Jam),
-    ("варенье",  ProductType::Jam),
-    ("dżem",     ProductType::Jam),
+    ("jam", ProductType::Jam),
+    ("джем", ProductType::Jam),
+    ("варенье", ProductType::Jam),
+    ("dżem", ProductType::Jam),
     ("конфитюр", ProductType::Jam),
-    ("dessert",  ProductType::Dessert),
-    ("десерт",   ProductType::Dessert),
-    ("deser",    ProductType::Dessert),
-    ("drink",    ProductType::Drink),
-    ("напиток",  ProductType::Drink),
-    ("napój",    ProductType::Drink),
+    ("dessert", ProductType::Dessert),
+    ("десерт", ProductType::Dessert),
+    ("deser", ProductType::Dessert),
+    ("drink", ProductType::Drink),
+    ("напиток", ProductType::Drink),
+    ("napój", ProductType::Drink),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -401,35 +2008,71 @@ const PRODUCT_TYPE_KEYWORDS: &[(&str, ProductType)] = &[
 /// Returns (technique, temperature_c, duration_min, note).
 fn steps_for(pt: &ProductType) -> Vec<(String, Option<f64>, Option<u32>, String)> {
     match pt {
-        ProductType::Sauce => vec![
-            ("heat".into(),  Some(85.0), Some(15), "Bring to 85 °C, stirring.".into()),
-        ],
+        ProductType::Sauce => vec![(
+            "heat".into(),
+            Some(85.0),
+            Some(15),
+            "Bring to 85 °C, stirring.".into(),
+        )],
         ProductType::Soup => vec![
-            ("heat".into(),  Some(100.0), Some(30), "Simmer until all vegetables are soft.".into()),
-            ("blend".into(), None,        Some(2),  "Blend until smooth, season.".into()),
+            (
+                "heat".into(),
+                Some(100.0),
+                Some(30),
+                "Simmer until all vegetables are soft.".into(),
+            ),
+            (
+                "blend".into(),
+                None,
+                Some(2),
+                "Blend until smooth, season.".into(),
+            ),
         ],
-        ProductType::Smoothie => vec![
-            ("blend".into(), None,       Some(2),  "Blend all ingredients cold.".into()),
-        ],
-        ProductType::Marinade => vec![
-            ("mix".into(),   None,       Some(3),  "Mix all marinade components thoroughly.".into()),
-        ],
-        ProductType::Dressing => vec![
-            ("mix".into(),   None,       Some(5),  "Emulsify oil and acid, season.".into()),
-        ],
-        ProductType::Jam => vec![
-            ("heat".into(),  Some(104.0), Some(25), "Bring to setting point 104 °C.".into()),
-        ],
+        ProductType::Smoothie => vec![(
+            "blend".into(),
+            None,
+            Some(2),
+            "Blend all ingredients cold.".into(),
+        )],
+        ProductType::Marinade => vec![(
+            "mix".into(),
+            None,
+            Some(3),
+            "Mix all marinade components thoroughly.".into(),
+        )],
+        ProductType::Dressing => vec![(
+            "mix".into(),
+            None,
+            Some(5),
+            "Emulsify oil and acid, season.".into(),
+        )],
+        ProductType::Jam => vec![(
+            "heat".into(),
+            Some(104.0),
+            Some(25),
+            "Bring to setting point 104 °C.".into(),
+        )],
         ProductType::Dessert => vec![
-            ("mix".into(),   None,        Some(5),  "Combine all ingredients.".into()),
-            ("cool".into(),  Some(4.0),   Some(60), "Chill in refrigerator until set.".into()),
+            (
+                "mix".into(),
+                None,
+                Some(5),
+                "Combine all ingredients.".into(),
+            ),
+            (
+                "cool".into(),
+                Some(4.0),
+                Some(60),
+                "Chill in refrigerator until set.".into(),
+            ),
         ],
-        ProductType::Drink => vec![
-            ("blend".into(), None,        Some(2),  "Blend until smooth.".into()),
-        ],
-        ProductType::Unknown => vec![
-            ("mix".into(),   None,        Some(5),  "Combine and adjust seasoning.".into()),
-        ],
+        ProductType::Drink => vec![("blend".into(), None, Some(2), "Blend until smooth.".into())],
+        ProductType::Unknown => vec![(
+            "mix".into(),
+            None,
+            Some(5),
+            "Combine and adjust seasoning.".into(),
+        )],
     }
 }
 
@@ -465,8 +2108,7 @@ pub fn suggest(prompt: &str) -> CopilotDraft {
         .unwrap_or(ProductType::Unknown);
 
     // 3. Build exclusion set.
-    let mut excluded_categories: std::collections::HashSet<&str> =
-        std::collections::HashSet::new();
+    let mut excluded_categories: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for i in 0..tokens.len() {
         if NEGATION_TRIGGERS.contains(&tokens[i]) {
             // Look ahead up to 2 tokens.
@@ -486,10 +2128,8 @@ pub fn suggest(prompt: &str) -> CopilotDraft {
 
     // 4. Match ingredients, dedup by slug.
     let mut matched: Vec<CopilotDraftIngredient> = Vec::new();
-    let mut matched_slugs: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
-    let mut matched_tokens: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut matched_slugs: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut matched_tokens: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for token in &tokens {
         if let Some((_, entry)) = KEYWORD_MAP.iter().find(|(kw, _)| kw_matches(kw, token)) {
@@ -511,16 +2151,39 @@ pub fn suggest(prompt: &str) -> CopilotDraft {
 
     // 5. Unmatched tokens (filter noise words).
     let noise: &[&str] = &[
-        "i", "a", "the", "with", "and", "or", "make", "want", "need",
-        "хочу", "хочется", "нужен", "нужна", "хочу", "зробити", "зроблю",
-        "chcę", "chciałbym", "chciałabym", "zrobić",
-        "я", "мне", "мне", "мне", "me",
+        "i",
+        "a",
+        "the",
+        "with",
+        "and",
+        "or",
+        "make",
+        "want",
+        "need",
+        "хочу",
+        "хочется",
+        "нужен",
+        "нужна",
+        "хочу",
+        "зробити",
+        "зроблю",
+        "chcę",
+        "chciałbym",
+        "chciałabym",
+        "zrobić",
+        "я",
+        "мне",
+        "мне",
+        "мне",
+        "me",
     ];
     let unmatched: Vec<String> = tokens
         .iter()
         .filter(|t| {
             !matched_tokens.contains(**t)
-                && !PRODUCT_TYPE_KEYWORDS.iter().any(|(kw, _)| kw_matches(kw, t))
+                && !PRODUCT_TYPE_KEYWORDS
+                    .iter()
+                    .any(|(kw, _)| kw_matches(kw, t))
                 && !NEGATION_TRIGGERS.contains(t)
                 && !EXCLUSION_MAP.iter().any(|(kw, _)| kw_matches(kw, t))
                 && !noise.contains(t)
@@ -554,7 +2217,9 @@ pub fn suggest(prompt: &str) -> CopilotDraft {
             .iter()
             .filter(|t| {
                 KEYWORD_MAP.iter().any(|(kw, _)| kw_matches(kw, t))
-                    || PRODUCT_TYPE_KEYWORDS.iter().any(|(kw, _)| kw_matches(kw, t))
+                    || PRODUCT_TYPE_KEYWORDS
+                        .iter()
+                        .any(|(kw, _)| kw_matches(kw, t))
             })
             .count();
         (matched_count as f64 / meaningful_tokens.len() as f64).min(1.0)
@@ -611,11 +2276,7 @@ fn empty_draft() -> CopilotDraft {
     }
 }
 
-fn build_name(
-    ingredients: &[CopilotDraftIngredient],
-    pt: &ProductType,
-    original: &str,
-) -> String {
+fn build_name(ingredients: &[CopilotDraftIngredient], pt: &ProductType, original: &str) -> String {
     // Take the first "base" ingredient slug and capitalise it; otherwise the
     // first matched ingredient of any role.
     let base = ingredients
@@ -737,7 +2398,11 @@ mod tests {
     #[test]
     fn no_duplicate_slugs() {
         let d = suggest("strawberry strawberry strawberry sauce");
-        let count = d.ingredients.iter().filter(|i| i.slug == "strawberry").count();
+        let count = d
+            .ingredients
+            .iter()
+            .filter(|i| i.slug == "strawberry")
+            .count();
         assert_eq!(count, 1);
     }
 

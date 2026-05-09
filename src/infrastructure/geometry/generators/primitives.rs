@@ -6,13 +6,23 @@ use crate::infrastructure::geometry::kernel::extrude::{extrude_polygon, ExtrudeO
 use crate::infrastructure::geometry::kernel::{GeometryQuality, MeshBuilder};
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
-fn extrude_single(pts: &[Point2], depth: f32, color_hex: &str, group_name: &str, metalness: f32, roughness: f32) -> Mesh {
+fn extrude_single(
+    pts: &[Point2],
+    depth: f32,
+    color_hex: &str,
+    group_name: &str,
+    metalness: f32,
+    roughness: f32,
+) -> Mesh {
     let opts = ExtrudeOptions { depth, bevel: 0.0 };
-    let [front, back, sides] = extrude_polygon(pts, &opts)
-        .expect("primitives: degenerate polygon");
+    let [front, back, sides] = extrude_polygon(pts, &opts).expect("primitives: degenerate polygon");
     let color = hex_to_rgb(color_hex);
     let mut b = MeshBuilder::new();
-    let g = b.add_group(Material::solid(group_name, color).with_pbr(roughness, metalness).with_class("opaque"));
+    let g = b.add_group(
+        Material::solid(group_name, color)
+            .with_pbr(roughness, metalness)
+            .with_class("opaque"),
+    );
     b.add_part(g, &front);
     b.add_part(g, &back);
     b.add_part(g, &sides);
@@ -20,29 +30,51 @@ fn extrude_single(pts: &[Point2], depth: f32, color_hex: &str, group_name: &str,
 }
 
 pub fn generate_square(color_hex: &str) -> Mesh {
-    let h = 0.5_f32;  // 1m × 1m, 5cm thick
-    let pts = [Point2::new(-h,-h), Point2::new(h,-h), Point2::new(h,h), Point2::new(-h,h)];
+    let h = 0.5_f32; // 1m × 1m, 5cm thick
+    let pts = [
+        Point2::new(-h, -h),
+        Point2::new(h, -h),
+        Point2::new(h, h),
+        Point2::new(-h, h),
+    ];
     extrude_single(&pts, 0.05, color_hex, "shape_square", 0.05, 0.55)
 }
 
 pub fn generate_rectangle(color_hex: &str) -> Mesh {
-    let pts = [Point2::new(-0.8,-0.5), Point2::new(0.8,-0.5), Point2::new(0.8,0.5), Point2::new(-0.8,0.5)];
+    let pts = [
+        Point2::new(-0.8, -0.5),
+        Point2::new(0.8, -0.5),
+        Point2::new(0.8, 0.5),
+        Point2::new(-0.8, 0.5),
+    ];
     extrude_single(&pts, 0.05, color_hex, "shape_rectangle", 0.05, 0.55)
 }
 
 pub fn generate_triangle(color_hex: &str) -> Mesh {
     let r = 1.0_f32 / 3.0_f32.sqrt();
-    let pts: Vec<Point2> = (0..3).map(|i| {
-        let a = PI / 2.0 + i as f32 * TAU / 3.0;
-        Point2::new(r * a.cos(), r * a.sin())
-    }).collect();
+    let pts: Vec<Point2> = (0..3)
+        .map(|i| {
+            let a = PI / 2.0 + i as f32 * TAU / 3.0;
+            Point2::new(r * a.cos(), r * a.sin())
+        })
+        .collect();
     extrude_single(&pts, 0.05, color_hex, "shape_triangle", 0.05, 0.55)
 }
 
 pub fn generate_circle(color_hex: &str, quality: GeometryQuality) -> Mesh {
-    let segs: usize = match quality { GeometryQuality::Draft => 32, GeometryQuality::Standard => 48, GeometryQuality::High => 64, GeometryQuality::Ultra => 96 };
+    let segs: usize = match quality {
+        GeometryQuality::Draft => 32,
+        GeometryQuality::Standard => 48,
+        GeometryQuality::High => 64,
+        GeometryQuality::Ultra => 96,
+    };
     let r = 0.6_f32;
-    let pts: Vec<Point2> = (0..segs).map(|i| { let a = i as f32 * TAU / segs as f32; Point2::new(r * a.cos(), r * a.sin()) }).collect();
+    let pts: Vec<Point2> = (0..segs)
+        .map(|i| {
+            let a = i as f32 * TAU / segs as f32;
+            Point2::new(r * a.cos(), r * a.sin())
+        })
+        .collect();
     extrude_single(&pts, 0.05, color_hex, "shape_circle", 0.05, 0.50)
 }
 
@@ -75,19 +107,49 @@ pub fn generate_cube_grid(color_hex: &str, subdivisions: u32, bevel: f32) -> Mes
     // Winding is CCW when viewed from *outside* the cube, i.e. the geometric
     // normal `u_axis × v_axis` MUST equal `face_normal`. Otherwise the face
     // gets back-face-culled and the cube renders as an open box.
-    let face_defs: [([f32;3], [f32;3], [f32;3], [f32;3]); 6] = [
+    let face_defs: [([f32; 3], [f32; 3], [f32; 3], [f32; 3]); 6] = [
         // +Z front:  u=+X, v=+Y, u×v=+Z ✓
-        ([-s, -s,  s], [ 1.0, 0.0, 0.0], [0.0,  1.0, 0.0], [0.0, 0.0,  1.0]),
+        (
+            [-s, -s, s],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ),
         // -Z back:   u=-X, v=+Y, u×v=-Z ✓
-        ([ s, -s, -s], [-1.0, 0.0, 0.0], [0.0,  1.0, 0.0], [0.0, 0.0, -1.0]),
+        (
+            [s, -s, -s],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, -1.0],
+        ),
         // +X right:  u=+Y, v=+Z, u×v=+X ✓  (was u=+Z,v=+Y → -X bug)
-        ([ s, -s, -s], [0.0,  1.0, 0.0], [0.0, 0.0,  1.0], [ 1.0, 0.0, 0.0]),
+        (
+            [s, -s, -s],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ),
         // -X left:   u=+Y, v=-Z, u×v=-X ✓  (was u=-Z,v=+Y → +X bug)
-        ([-s, -s,  s], [0.0,  1.0, 0.0], [0.0, 0.0, -1.0], [-1.0, 0.0, 0.0]),
+        (
+            [-s, -s, s],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [-1.0, 0.0, 0.0],
+        ),
         // +Y top:    u=+X, v=-Z, u×v=+Y ✓
-        ([-s,  s,  s], [ 1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0,  1.0, 0.0]),
+        (
+            [-s, s, s],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0],
+        ),
         // -Y bottom: u=+X, v=+Z, u×v=-Y ✓
-        ([-s, -s, -s], [ 1.0, 0.0, 0.0], [0.0, 0.0,  1.0], [0.0, -1.0, 0.0]),
+        (
+            [-s, -s, -s],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0],
+        ),
     ];
 
     let step = 1.0_f32 / n as f32;
@@ -125,10 +187,10 @@ pub fn generate_cube_grid(color_hex: &str, subdivisions: u32, bevel: f32) -> Mes
         // Emit quads (two triangles each)
         for vi in 0..n {
             for ui in 0..n {
-                let i00 = idx_grid[vi       * (n + 1) + ui    ];
-                let i10 = idx_grid[vi       * (n + 1) + ui + 1];
+                let i00 = idx_grid[vi * (n + 1) + ui];
+                let i10 = idx_grid[vi * (n + 1) + ui + 1];
                 let i11 = idx_grid[(vi + 1) * (n + 1) + ui + 1];
-                let i01 = idx_grid[(vi + 1) * (n + 1) + ui    ];
+                let i01 = idx_grid[(vi + 1) * (n + 1) + ui];
                 b.add_quad(g, i00, i10, i11, i01);
             }
         }
@@ -146,7 +208,7 @@ pub fn generate_cube_grid(color_hex: &str, subdivisions: u32, bevel: f32) -> Mes
 /// Returns `(new_position, new_normal)`.
 fn bevel_vertex(pos: [f32; 3], face_normal: [f32; 3], s: f32, bevel: f32) -> ([f32; 3], [f32; 3]) {
     // Distance from origin (cube center)
-    let len = (pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]).sqrt();
+    let len = (pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]).sqrt();
     let max_len = s * 1.732_f32; // √3 — distance to a cube corner
 
     // "Corner factor": 0 at face centre, 1 at pure corner vertex
@@ -155,15 +217,19 @@ fn bevel_vertex(pos: [f32; 3], face_normal: [f32; 3], s: f32, bevel: f32) -> ([f
     let corner_factor = ((len - s) / (max_len - s)).clamp(0.0, 1.0);
     let t = bevel * corner_factor;
 
-    if t < 1e-6 { return (pos, face_normal); }
+    if t < 1e-6 {
+        return (pos, face_normal);
+    }
 
     // Sphere position: same direction, radius = s (inscribed sphere is s,
     // but we blend to circumscribed = s√3 normalised back to s to keep
     // cube size).
     let sphere_pos = if len > 1e-9 {
-        [pos[0] / len * s * 1.732_f32 / 1.732_f32,   // = pos/len * s
-         pos[1] / len * s,
-         pos[2] / len * s]
+        [
+            pos[0] / len * s * 1.732_f32 / 1.732_f32, // = pos/len * s
+            pos[1] / len * s,
+            pos[2] / len * s,
+        ]
     } else {
         pos
     };
@@ -185,19 +251,32 @@ fn bevel_vertex(pos: [f32; 3], face_normal: [f32; 3], s: f32, bevel: f32) -> ([f
         face_normal[1] * (1.0 - t) + sphere_normal[1] * t,
         face_normal[2] * (1.0 - t) + sphere_normal[2] * t,
     ];
-    let nlen = (blended[0]*blended[0] + blended[1]*blended[1] + blended[2]*blended[2]).sqrt().max(1e-9);
-    let new_normal = [blended[0]/nlen, blended[1]/nlen, blended[2]/nlen];
+    let nlen = (blended[0] * blended[0] + blended[1] * blended[1] + blended[2] * blended[2])
+        .sqrt()
+        .max(1e-9);
+    let new_normal = [blended[0] / nlen, blended[1] / nlen, blended[2] / nlen];
 
     (new_pos, new_normal)
 }
 
 pub fn generate_sphere(color_hex: &str, quality: GeometryQuality) -> Mesh {
-    use crate::infrastructure::geometry::generators::hard_surface::organic_sphere::{generate_organic_sphere, OrganicSphereSpec};
-    generate_organic_sphere(&OrganicSphereSpec { radius: 0.6, color_hex: color_hex.to_string(), ..OrganicSphereSpec::with_quality(quality) })
+    use crate::infrastructure::geometry::generators::hard_surface::organic_sphere::{
+        generate_organic_sphere, OrganicSphereSpec,
+    };
+    generate_organic_sphere(&OrganicSphereSpec {
+        radius: 0.6,
+        color_hex: color_hex.to_string(),
+        ..OrganicSphereSpec::with_quality(quality)
+    })
 }
 
 pub fn generate_line(color_hex: &str) -> Mesh {
-    let pts = [Point2::new(-1.0,-0.03), Point2::new(1.0,-0.03), Point2::new(1.0,0.03), Point2::new(-1.0,0.03)];
+    let pts = [
+        Point2::new(-1.0, -0.03),
+        Point2::new(1.0, -0.03),
+        Point2::new(1.0, 0.03),
+        Point2::new(-1.0, 0.03),
+    ];
     extrude_single(&pts, 0.03, color_hex, "shape_line", 0.0, 0.6)
 }
 
@@ -217,7 +296,12 @@ pub fn generate_line(color_hex: &str) -> Mesh {
 /// * `radius`  — base radius in metres (default 0.5)
 /// * `height`  — full height in metres (default 1.0)
 /// * `quality` — drives radial segment count
-pub fn generate_cylinder(color_hex: &str, radius: f32, height: f32, quality: GeometryQuality) -> Mesh {
+pub fn generate_cylinder(
+    color_hex: &str,
+    radius: f32,
+    height: f32,
+    quality: GeometryQuality,
+) -> Mesh {
     let r = radius.max(1e-4);
     let h = height.max(1e-4);
     let segs = quality.radial_segments().max(8);
@@ -238,11 +322,17 @@ pub fn generate_cylinder(color_hex: &str, radius: f32, height: f32, quality: Geo
         let a = t * TAU;
         let (sa, ca) = (a.sin(), a.cos());
         let n = [ca, 0.0, sa];
-        side_top.push(b.add_vertex([r * ca,  half, r * sa], n, [t, 1.0]));
+        side_top.push(b.add_vertex([r * ca, half, r * sa], n, [t, 1.0]));
         side_bot.push(b.add_vertex([r * ca, -half, r * sa], n, [t, 0.0]));
     }
     for i in 0..segs {
-        b.add_quad(g, side_bot[i], side_bot[i + 1], side_top[i + 1], side_top[i]);
+        b.add_quad(
+            g,
+            side_bot[i],
+            side_bot[i + 1],
+            side_top[i + 1],
+            side_top[i],
+        );
     }
 
     // ── Top cap (+Y normal, separate vertex ring) ──
@@ -299,7 +389,7 @@ pub fn generate_cone(
 ) -> Mesh {
     let r0 = radius_bottom.max(0.0);
     let r1 = radius_top.max(0.0);
-    let h  = height.max(1e-4);
+    let h = height.max(1e-4);
     let segs = quality.radial_segments().max(8);
     let half = h * 0.5;
     let color = hex_to_rgb(color_hex);
@@ -315,8 +405,8 @@ pub fn generate_cone(
     // tanθ = (r0 − r1) / h (cone leans inward at the top when r1 < r0).
     let dr = r0 - r1;
     let slope_len = (dr * dr + h * h).sqrt().max(1e-9);
-    let n_y  = dr / slope_len;     // +Y component (positive when narrowing toward top)
-    let n_xz = h  / slope_len;     // radial component
+    let n_y = dr / slope_len; // +Y component (positive when narrowing toward top)
+    let n_xz = h / slope_len; // radial component
 
     // ── Side ──
     let mut top: Vec<usize> = Vec::with_capacity(segs + 1);
@@ -326,7 +416,7 @@ pub fn generate_cone(
         let a = t * TAU;
         let (sa, ca) = (a.sin(), a.cos());
         let n = [ca * n_xz, n_y, sa * n_xz];
-        top.push(b.add_vertex([r1 * ca,  half, r1 * sa], n, [t, 1.0]));
+        top.push(b.add_vertex([r1 * ca, half, r1 * sa], n, [t, 1.0]));
         bot.push(b.add_vertex([r0 * ca, -half, r0 * sa], n, [t, 0.0]));
     }
     for i in 0..segs {
@@ -430,10 +520,10 @@ pub fn generate_torus(
     let stride = minor_segs + 1;
     for i in 0..major_segs {
         for j in 0..minor_segs {
-            let i00 = grid[ i      * stride + j];
+            let i00 = grid[i * stride + j];
             let i10 = grid[(i + 1) * stride + j];
             let i11 = grid[(i + 1) * stride + j + 1];
-            let i01 = grid[ i      * stride + j + 1];
+            let i01 = grid[i * stride + j + 1];
             b.add_quad(g, i00, i10, i11, i01);
         }
     }
@@ -445,17 +535,76 @@ pub fn generate_torus(
 mod tests {
     use super::*;
     use crate::infrastructure::geometry::kernel::validate::validate_mesh;
-    #[test] fn square_valid()    { validate_mesh(&generate_square("#38BDF8")).unwrap(); }
-    #[test] fn rectangle_valid() { validate_mesh(&generate_rectangle("#A78BFA")).unwrap(); }
-    #[test] fn triangle_valid()  { validate_mesh(&generate_triangle("#FB923C")).unwrap(); }
-    #[test] fn circle_valid()    { validate_mesh(&generate_circle("#34D399", GeometryQuality::Draft)).unwrap(); }
-    #[test] fn cube_valid()      { validate_mesh(&generate_cube("#F472B6")).unwrap(); }
-    #[test] fn sphere_valid()    { validate_mesh(&generate_sphere("#FACC15", GeometryQuality::Draft)).unwrap(); }
-    #[test] fn line_valid()      { validate_mesh(&generate_line("#94A3B8")).unwrap(); }
-    #[test] fn cylinder_valid()  { validate_mesh(&generate_cylinder("#38BDF8", 0.5, 1.0, GeometryQuality::Draft)).unwrap(); }
-    #[test] fn cone_valid()      { validate_mesh(&generate_cone("#FB923C", 0.5, 0.0, 1.0, GeometryQuality::Draft)).unwrap(); }
-    #[test] fn frustum_valid()   { validate_mesh(&generate_cone("#FB923C", 0.5, 0.25, 1.0, GeometryQuality::Draft)).unwrap(); }
-    #[test] fn torus_valid()     { validate_mesh(&generate_torus("#A78BFA", 0.5, 0.15, GeometryQuality::Draft)).unwrap(); }
+    #[test]
+    fn square_valid() {
+        validate_mesh(&generate_square("#38BDF8")).unwrap();
+    }
+    #[test]
+    fn rectangle_valid() {
+        validate_mesh(&generate_rectangle("#A78BFA")).unwrap();
+    }
+    #[test]
+    fn triangle_valid() {
+        validate_mesh(&generate_triangle("#FB923C")).unwrap();
+    }
+    #[test]
+    fn circle_valid() {
+        validate_mesh(&generate_circle("#34D399", GeometryQuality::Draft)).unwrap();
+    }
+    #[test]
+    fn cube_valid() {
+        validate_mesh(&generate_cube("#F472B6")).unwrap();
+    }
+    #[test]
+    fn sphere_valid() {
+        validate_mesh(&generate_sphere("#FACC15", GeometryQuality::Draft)).unwrap();
+    }
+    #[test]
+    fn line_valid() {
+        validate_mesh(&generate_line("#94A3B8")).unwrap();
+    }
+    #[test]
+    fn cylinder_valid() {
+        validate_mesh(&generate_cylinder(
+            "#38BDF8",
+            0.5,
+            1.0,
+            GeometryQuality::Draft,
+        ))
+        .unwrap();
+    }
+    #[test]
+    fn cone_valid() {
+        validate_mesh(&generate_cone(
+            "#FB923C",
+            0.5,
+            0.0,
+            1.0,
+            GeometryQuality::Draft,
+        ))
+        .unwrap();
+    }
+    #[test]
+    fn frustum_valid() {
+        validate_mesh(&generate_cone(
+            "#FB923C",
+            0.5,
+            0.25,
+            1.0,
+            GeometryQuality::Draft,
+        ))
+        .unwrap();
+    }
+    #[test]
+    fn torus_valid() {
+        validate_mesh(&generate_torus(
+            "#A78BFA",
+            0.5,
+            0.15,
+            GeometryQuality::Draft,
+        ))
+        .unwrap();
+    }
 
     // ── Plasticity-style cube tests ──────────────────────────────────────────
     #[test]
@@ -482,15 +631,24 @@ mod tests {
         let m = generate_cube_grid("#F472B6", 4, 0.7);
         validate_mesh(&m).unwrap();
         for p in &m.vertices {
-            assert!(p.iter().all(|c| c.is_finite()),
-                "position has NaN/Inf: {:?}", p);
+            assert!(
+                p.iter().all(|c| c.is_finite()),
+                "position has NaN/Inf: {:?}",
+                p
+            );
             // Beveled vertex must stay inside the unit cube (corners pull inward).
-            assert!(p.iter().all(|c: &f32| c.abs() <= 0.5 + 1e-4),
-                "beveled vertex outside cube bounds: {:?}", p);
+            assert!(
+                p.iter().all(|c: &f32| c.abs() <= 0.5 + 1e-4),
+                "beveled vertex outside cube bounds: {:?}",
+                p
+            );
         }
         for n in &m.normals {
-            assert!(n.iter().all(|c| c.is_finite()),
-                "normal has NaN/Inf: {:?}", n);
+            assert!(
+                n.iter().all(|c| c.is_finite()),
+                "normal has NaN/Inf: {:?}",
+                n
+            );
         }
     }
 
@@ -502,16 +660,22 @@ mod tests {
         let smooth = generate_cube_grid("#F472B6", 1, 1.0);
 
         let max_len = |m: &Mesh| -> f32 {
-            m.vertices.iter()
+            m.vertices
+                .iter()
                 .map(|p| (p[0].powi(2) + p[1].powi(2) + p[2].powi(2)).sqrt())
                 .fold(0.0_f32, f32::max)
         };
         let max_sharp = max_len(&sharp);
         let max_smooth = max_len(&smooth);
 
-        assert!((max_sharp - 0.866).abs() < 0.01, "sharp corner len ≈ √3/2, got {max_sharp}");
-        assert!(max_smooth < max_sharp - 0.1,
-            "bevel=1 must pull corners inward (got {max_smooth} vs {max_sharp})");
+        assert!(
+            (max_sharp - 0.866).abs() < 0.01,
+            "sharp corner len ≈ √3/2, got {max_sharp}"
+        );
+        assert!(
+            max_smooth < max_sharp - 0.1,
+            "bevel=1 must pull corners inward (got {max_smooth} vs {max_sharp})"
+        );
     }
 
     /// Regression: every triangle's geometric normal (from CCW winding) must
@@ -527,18 +691,21 @@ mod tests {
                 let p0 = m.vertices[tri[0]];
                 let p1 = m.vertices[tri[1]];
                 let p2 = m.vertices[tri[2]];
-                let e1 = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
-                let e2 = [p2[0]-p0[0], p2[1]-p0[1], p2[2]-p0[2]];
+                let e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+                let e2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
                 // geometric normal = e1 × e2
                 let geo = [
-                    e1[1]*e2[2] - e1[2]*e2[1],
-                    e1[2]*e2[0] - e1[0]*e2[2],
-                    e1[0]*e2[1] - e1[1]*e2[0],
+                    e1[1] * e2[2] - e1[2] * e2[1],
+                    e1[2] * e2[0] - e1[0] * e2[2],
+                    e1[0] * e2[1] - e1[1] * e2[0],
                 ];
                 let n0 = m.normals[tri[0]];
-                let dot = geo[0]*n0[0] + geo[1]*n0[1] + geo[2]*n0[2];
-                assert!(dot > 0.0,
-                    "{label} cube tri #{i} ({:?}) wound inward: geo·normal = {dot}", tri);
+                let dot = geo[0] * n0[0] + geo[1] * n0[1] + geo[2] * n0[2];
+                assert!(
+                    dot > 0.0,
+                    "{label} cube tri #{i} ({:?}) wound inward: geo·normal = {dot}",
+                    tri
+                );
             }
         }
     }
@@ -559,8 +726,14 @@ mod tests {
         let m = generate_cylinder("#38BDF8", 0.5, 2.0, GeometryQuality::Draft);
         let max_y = m.vertices.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
         let min_y = m.vertices.iter().map(|p| p[1]).fold(f32::MAX, f32::min);
-        assert!((max_y - 1.0).abs() < 1e-4, "top y must be +half, got {max_y}");
-        assert!((min_y + 1.0).abs() < 1e-4, "bottom y must be -half, got {min_y}");
+        assert!(
+            (max_y - 1.0).abs() < 1e-4,
+            "top y must be +half, got {max_y}"
+        );
+        assert!(
+            (min_y + 1.0).abs() < 1e-4,
+            "bottom y must be -half, got {min_y}"
+        );
     }
 
     #[test]
@@ -568,27 +741,42 @@ mod tests {
         let m = generate_cone("#FB923C", 0.5, 0.0, 1.0, GeometryQuality::Draft);
         validate_mesh(&m).unwrap();
         let half = 0.5_f32;
-        let apex_count = m.vertices.iter()
+        let apex_count = m
+            .vertices
+            .iter()
             .filter(|p| p[0].abs() < 1e-5 && p[2].abs() < 1e-5 && (p[1] - half).abs() < 1e-5)
             .count();
-        assert!(apex_count >= 32, "cone tip must collapse to (0,0) in xz, got {apex_count}");
+        assert!(
+            apex_count >= 32,
+            "cone tip must collapse to (0,0) in xz, got {apex_count}"
+        );
     }
 
     #[test]
     fn cone_normals_tilted_for_pure_cone() {
         let m = generate_cone("#FB923C", 0.5, 0.0, 1.0, GeometryQuality::Draft);
         let positive_y_normals = m.normals.iter().filter(|n| n[1] > 0.1).count();
-        assert!(positive_y_normals > 0,
-            "cone side normals must tilt upward (n.y > 0) when r0 > r1");
+        assert!(
+            positive_y_normals > 0,
+            "cone side normals must tilt upward (n.y > 0) when r0 > r1"
+        );
     }
 
     #[test]
     fn frustum_has_two_caps() {
         let m = generate_cone("#FB923C", 0.5, 0.25, 1.0, GeometryQuality::Draft);
         validate_mesh(&m).unwrap();
-        let up   = m.normals.iter().filter(|n| (n[1] - 1.0).abs() < 1e-3).count();
-        let down = m.normals.iter().filter(|n| (n[1] + 1.0).abs() < 1e-3).count();
-        assert!(up   > 0, "frustum must have +Y normals (top cap)");
+        let up = m
+            .normals
+            .iter()
+            .filter(|n| (n[1] - 1.0).abs() < 1e-3)
+            .count();
+        let down = m
+            .normals
+            .iter()
+            .filter(|n| (n[1] + 1.0).abs() < 1e-3)
+            .count();
+        assert!(up > 0, "frustum must have +Y normals (top cap)");
         assert!(down > 0, "frustum must have -Y normals (bottom cap)");
     }
 
@@ -609,10 +797,15 @@ mod tests {
         let m = generate_torus("#A78BFA", r_major, r_minor, GeometryQuality::Draft);
         for p in &m.vertices {
             let radial = (p[0] * p[0] + p[2] * p[2]).sqrt();
-            assert!(radial >= r_major - r_minor - 1e-3 && radial <= r_major + r_minor + 1e-3,
-                "torus vertex outside tube: radial={radial}");
-            assert!(p[1].abs() <= r_minor + 1e-3,
-                "torus vertex y outside tube: y={}", p[1]);
+            assert!(
+                radial >= r_major - r_minor - 1e-3 && radial <= r_major + r_minor + 1e-3,
+                "torus vertex outside tube: radial={radial}"
+            );
+            assert!(
+                p[1].abs() <= r_minor + 1e-3,
+                "torus vertex y outside tube: y={}",
+                p[1]
+            );
         }
     }
 }

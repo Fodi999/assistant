@@ -42,7 +42,11 @@ pub struct HalfEdge {
 
 impl HalfEdge {
     pub fn new(face: u32) -> Self {
-        Self { face, prev: None, next: None }
+        Self {
+            face,
+            prev: None,
+            next: None,
+        }
     }
 }
 
@@ -73,7 +77,13 @@ impl Edge {
     /// to complete it for a watertight shell.
     pub fn new(id: u32, a: usize, b: usize, face: u32) -> Self {
         let (v0, v1) = if a <= b { (a, b) } else { (b, a) };
-        Self { id, v0, v1, he0: HalfEdge::new(face), he1: None }
+        Self {
+            id,
+            v0,
+            v1,
+            he0: HalfEdge::new(face),
+            he1: None,
+        }
     }
 
     /// Attach the second bordering face. Returns `Err` if already complete.
@@ -117,8 +127,10 @@ pub enum EdgeError {
 impl std::fmt::Display for EdgeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EdgeError::NonManifold { edge_id } =>
-                write!(f, "edge {edge_id} already has two bordering faces (non-manifold)"),
+            EdgeError::NonManifold { edge_id } => write!(
+                f,
+                "edge {edge_id} already has two bordering faces (non-manifold)"
+            ),
         }
     }
 }

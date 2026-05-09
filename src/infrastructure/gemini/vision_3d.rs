@@ -478,12 +478,22 @@ mod tests {
             serde_json::from_str(CLEAN_JSON).expect("should parse clean JSON");
         assert_eq!(spec.object_type, Product3DObjectType::SauceInBowl);
         assert!((spec.confidence - 0.92).abs() < 1e-4);
-        let container = spec.container.as_ref().expect("container should be present");
+        let container = spec
+            .container
+            .as_ref()
+            .expect("container should be present");
         assert_eq!(container.kind, "ceramic_bowl");
         assert_eq!(container.diameter_mm, Some(120.0));
         assert_eq!(spec.product.color_hex, "#B8321F");
-        assert_eq!(spec.effective_object_type(), Product3DObjectType::SauceInBowl);
-        let surface = spec.product.surface.as_ref().expect("surface should be present");
+        assert_eq!(
+            spec.effective_object_type(),
+            Product3DObjectType::SauceInBowl
+        );
+        let surface = spec
+            .product
+            .surface
+            .as_ref()
+            .expect("surface should be present");
         assert_eq!(surface.pattern.as_deref(), Some("spiral_swirl"));
         assert_eq!(surface.swirl_arms, Some(4));
         assert!((surface.ridge_height.unwrap() - 0.8).abs() < 1e-4);

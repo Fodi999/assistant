@@ -55,8 +55,8 @@ pub struct Repositories {
     pub recipe_ingredient: RecipeIngredientRepository,
     pub recipe_translation: RecipeTranslationRepository,
     pub tenant_ingredient: TenantIngredientRepository, // 🆕 Re-adding tenant_ingredient
-    pub ai_cache: AiCacheRepository, // 🆕 AI cache repository
-    pub ai_usage_stats: AiUsageStatsRepository, // 🆕 AI usage stats
+    pub ai_cache: AiCacheRepository,                   // 🆕 AI cache repository
+    pub ai_usage_stats: AiUsageStatsRepository,        // 🆕 AI usage stats
     pub recipe_ai_insights: RecipeAIInsightsRepository,
 }
 

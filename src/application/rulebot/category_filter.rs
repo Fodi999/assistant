@@ -21,78 +21,201 @@ pub fn detect_category(text: &str) -> Option<ProductCategory> {
     // seafood before fish, etc.) to avoid false positives.
     const RULES: &[(ProductCategory, &[&str])] = &[
         // ── Vegetables ────────────────────────────────────────────────────
-        (ProductCategory::Vegetable, &[
-            // RU
-            "овощ", "овощи", "овощн",
-            // EN
-            "vegetable", "veggie", "veggies", "veg ",
-            // PL
-            "warzyw", "warzywa",
-            // UK
-            "овоч",
-        ]),
+        (
+            ProductCategory::Vegetable,
+            &[
+                // RU
+                "овощ",
+                "овощи",
+                "овощн",
+                // EN
+                "vegetable",
+                "veggie",
+                "veggies",
+                "veg ",
+                // PL
+                "warzyw",
+                "warzywa",
+                // UK
+                "овоч",
+            ],
+        ),
         // ── Fruits ────────────────────────────────────────────────────────
-        (ProductCategory::Fruit, &[
-            "фрукт", "фрукты", "fruit", "fruits", "owoc", "owoce", "овоч.фрукт",
-        ]),
+        (
+            ProductCategory::Fruit,
+            &[
+                "фрукт",
+                "фрукты",
+                "fruit",
+                "fruits",
+                "owoc",
+                "owoce",
+                "овоч.фрукт",
+            ],
+        ),
         // ── Berries (separate from fruit in our taxonomy) ────────────────
-        (ProductCategory::Berry, &[
-            "ягод", "berry", "berries", "jagod", "ягід",
-        ]),
+        (
+            ProductCategory::Berry,
+            &["ягод", "berry", "berries", "jagod", "ягід"],
+        ),
         // ── Seafood (check BEFORE fish — seafood is more specific) ───────
-        (ProductCategory::Seafood, &[
-            "морепродукт", "креветк", "кальмар", "мидии", "устриц",
-            "seafood", "shrimp", "squid", "mussels", "oysters",
-            "owoce morza", "krewetk", "kalmar",
-            "морепродукт", "креветок",
-        ]),
+        (
+            ProductCategory::Seafood,
+            &[
+                "морепродукт",
+                "креветк",
+                "кальмар",
+                "мидии",
+                "устриц",
+                "seafood",
+                "shrimp",
+                "squid",
+                "mussels",
+                "oysters",
+                "owoce morza",
+                "krewetk",
+                "kalmar",
+                "морепродукт",
+                "креветок",
+            ],
+        ),
         // ── Fish ─────────────────────────────────────────────────────────
-        (ProductCategory::Fish, &[
-            "рыб", "fish", "ryb", "риб",
-        ]),
+        (ProductCategory::Fish, &["рыб", "fish", "ryb", "риб"]),
         // ── Meat ─────────────────────────────────────────────────────────
-        (ProductCategory::Meat, &[
-            "мяс", "курин", "говяд", "свинин", "баран", "индейк",
-            "meat", "chicken", "beef", "pork", "lamb", "turkey",
-            "mięs", "wołowin", "wieprzowin", "kurczak",
-            "м'яс", "куряч", "яловичин", "свинин",
-        ]),
+        (
+            ProductCategory::Meat,
+            &[
+                "мяс",
+                "курин",
+                "говяд",
+                "свинин",
+                "баран",
+                "индейк",
+                "meat",
+                "chicken",
+                "beef",
+                "pork",
+                "lamb",
+                "turkey",
+                "mięs",
+                "wołowin",
+                "wieprzowin",
+                "kurczak",
+                "м'яс",
+                "куряч",
+                "яловичин",
+                "свинин",
+            ],
+        ),
         // ── Dairy ────────────────────────────────────────────────────────
-        (ProductCategory::Dairy, &[
-            "молочн", "сыр", "творог", "йогурт", "кефир", "молоко",
-            "dairy", "cheese", "yogurt", "yoghurt", "milk", "cottage",
-            "nabiał", "ser", "jogurt", "mleko",
-            "молочн", "сир", "йогурт", "кефір", "молоко",
-        ]),
+        (
+            ProductCategory::Dairy,
+            &[
+                "молочн",
+                "сыр",
+                "творог",
+                "йогурт",
+                "кефир",
+                "молоко",
+                "dairy",
+                "cheese",
+                "yogurt",
+                "yoghurt",
+                "milk",
+                "cottage",
+                "nabiał",
+                "ser",
+                "jogurt",
+                "mleko",
+                "молочн",
+                "сир",
+                "йогурт",
+                "кефір",
+                "молоко",
+            ],
+        ),
         // ── Grains ───────────────────────────────────────────────────────
-        (ProductCategory::Grain, &[
-            "крупа", "крупы", "зерн", "каша", "рис", "гречк", "овсян", "макарон",
-            "grain", "cereal", "rice", "oats", "pasta", "buckwheat",
-            "kasza", "zboż", "ryż", "owsian", "makaron",
-            "крупа", "зерн", "каша", "рис", "гречк", "вівсян",
-        ]),
+        (
+            ProductCategory::Grain,
+            &[
+                "крупа",
+                "крупы",
+                "зерн",
+                "каша",
+                "рис",
+                "гречк",
+                "овсян",
+                "макарон",
+                "grain",
+                "cereal",
+                "rice",
+                "oats",
+                "pasta",
+                "buckwheat",
+                "kasza",
+                "zboż",
+                "ryż",
+                "owsian",
+                "makaron",
+                "крупа",
+                "зерн",
+                "каша",
+                "рис",
+                "гречк",
+                "вівсян",
+            ],
+        ),
         // ── Legumes ──────────────────────────────────────────────────────
-        (ProductCategory::Legume, &[
-            "бобов", "фасол", "чечевиц", "нут", "горох",
-            "legume", "beans", "lentil", "chickpea",
-            "strączk", "fasol", "soczewic", "ciecierzyc",
-            "бобов", "квасол", "сочевиц",
-        ]),
+        (
+            ProductCategory::Legume,
+            &[
+                "бобов",
+                "фасол",
+                "чечевиц",
+                "нут",
+                "горох",
+                "legume",
+                "beans",
+                "lentil",
+                "chickpea",
+                "strączk",
+                "fasol",
+                "soczewic",
+                "ciecierzyc",
+                "бобов",
+                "квасол",
+                "сочевиц",
+            ],
+        ),
         // ── Nuts & seeds ─────────────────────────────────────────────────
-        (ProductCategory::Nut, &[
-            "орех", "семечк", "семена",
-            "nut ", "nuts", "seed", "seeds", "almond", "walnut",
-            "orzech", "nasion",
-            "горіх", "насінн",
-        ]),
+        (
+            ProductCategory::Nut,
+            &[
+                "орех",
+                "семечк",
+                "семена",
+                "nut ",
+                "nuts",
+                "seed",
+                "seeds",
+                "almond",
+                "walnut",
+                "orzech",
+                "nasion",
+                "горіх",
+                "насінн",
+            ],
+        ),
         // ── Mushrooms ────────────────────────────────────────────────────
-        (ProductCategory::Mushroom, &[
-            "гриб", "mushroom", "grzyb", "гриб",
-        ]),
+        (
+            ProductCategory::Mushroom,
+            &["гриб", "mushroom", "grzyb", "гриб"],
+        ),
         // ── Herbs / spices ───────────────────────────────────────────────
-        (ProductCategory::Herb, &[
-            "зелен", "травы", "herb", "zioł", "зелень", "трав",
-        ]),
+        (
+            ProductCategory::Herb,
+            &["зелен", "травы", "herb", "zioł", "зелень", "трав"],
+        ),
     ];
 
     for (cat, keywords) in RULES {
@@ -131,17 +254,17 @@ impl ProductCategory {
     pub fn product_types(self) -> &'static [&'static str] {
         match self {
             ProductCategory::Vegetable => &["vegetable"],
-            ProductCategory::Fruit     => &["fruit"],
-            ProductCategory::Berry     => &["berry", "fruit"], // fall back to fruit if no berries tagged
-            ProductCategory::Fish      => &["fish", "seafood"],
-            ProductCategory::Seafood   => &["seafood", "fish"],
-            ProductCategory::Meat      => &["meat"],
-            ProductCategory::Dairy     => &["dairy"],
-            ProductCategory::Grain     => &["grain"],
-            ProductCategory::Legume    => &["legume"],
-            ProductCategory::Nut       => &["nut"],
-            ProductCategory::Mushroom  => &["mushroom"],
-            ProductCategory::Herb      => &["herb", "spice"],
+            ProductCategory::Fruit => &["fruit"],
+            ProductCategory::Berry => &["berry", "fruit"], // fall back to fruit if no berries tagged
+            ProductCategory::Fish => &["fish", "seafood"],
+            ProductCategory::Seafood => &["seafood", "fish"],
+            ProductCategory::Meat => &["meat"],
+            ProductCategory::Dairy => &["dairy"],
+            ProductCategory::Grain => &["grain"],
+            ProductCategory::Legume => &["legume"],
+            ProductCategory::Nut => &["nut"],
+            ProductCategory::Mushroom => &["mushroom"],
+            ProductCategory::Herb => &["herb", "spice"],
         }
     }
 
@@ -149,17 +272,17 @@ impl ProductCategory {
     pub fn as_str(self) -> &'static str {
         match self {
             ProductCategory::Vegetable => "vegetable",
-            ProductCategory::Fruit     => "fruit",
-            ProductCategory::Berry     => "berry",
-            ProductCategory::Fish      => "fish",
-            ProductCategory::Seafood   => "seafood",
-            ProductCategory::Meat      => "meat",
-            ProductCategory::Dairy     => "dairy",
-            ProductCategory::Grain     => "grain",
-            ProductCategory::Legume    => "legume",
-            ProductCategory::Nut       => "nut",
-            ProductCategory::Mushroom  => "mushroom",
-            ProductCategory::Herb      => "herb",
+            ProductCategory::Fruit => "fruit",
+            ProductCategory::Berry => "berry",
+            ProductCategory::Fish => "fish",
+            ProductCategory::Seafood => "seafood",
+            ProductCategory::Meat => "meat",
+            ProductCategory::Dairy => "dairy",
+            ProductCategory::Grain => "grain",
+            ProductCategory::Legume => "legume",
+            ProductCategory::Nut => "nut",
+            ProductCategory::Mushroom => "mushroom",
+            ProductCategory::Herb => "herb",
         }
     }
 
@@ -178,18 +301,18 @@ impl ProductCategory {
     /// - Fruit / Berry / Herb → None (don't suggest, they stand alone)
     pub fn complement(self) -> Option<ProductCategory> {
         match self {
-            ProductCategory::Fish      => Some(ProductCategory::Vegetable),
-            ProductCategory::Seafood   => Some(ProductCategory::Vegetable),
-            ProductCategory::Meat      => Some(ProductCategory::Vegetable),
-            ProductCategory::Grain     => Some(ProductCategory::Vegetable),
-            ProductCategory::Legume    => Some(ProductCategory::Vegetable),
+            ProductCategory::Fish => Some(ProductCategory::Vegetable),
+            ProductCategory::Seafood => Some(ProductCategory::Vegetable),
+            ProductCategory::Meat => Some(ProductCategory::Vegetable),
+            ProductCategory::Grain => Some(ProductCategory::Vegetable),
+            ProductCategory::Legume => Some(ProductCategory::Vegetable),
             ProductCategory::Vegetable => Some(ProductCategory::Meat),
-            ProductCategory::Mushroom  => Some(ProductCategory::Meat),
-            ProductCategory::Dairy     => Some(ProductCategory::Fruit),
-            ProductCategory::Nut       => Some(ProductCategory::Fruit),
-            ProductCategory::Fruit     => None,
-            ProductCategory::Berry     => None,
-            ProductCategory::Herb      => None,
+            ProductCategory::Mushroom => Some(ProductCategory::Meat),
+            ProductCategory::Dairy => Some(ProductCategory::Fruit),
+            ProductCategory::Nut => Some(ProductCategory::Fruit),
+            ProductCategory::Fruit => None,
+            ProductCategory::Berry => None,
+            ProductCategory::Herb => None,
         }
     }
 }
@@ -200,21 +323,42 @@ mod tests {
 
     #[test]
     fn detects_ru_vegetable() {
-        assert_eq!(detect_category("какой овощ полезный"), Some(ProductCategory::Vegetable));
-        assert_eq!(detect_category("какие овощи полезны"), Some(ProductCategory::Vegetable));
-        assert_eq!(detect_category("посоветуй овощей"), Some(ProductCategory::Vegetable));
+        assert_eq!(
+            detect_category("какой овощ полезный"),
+            Some(ProductCategory::Vegetable)
+        );
+        assert_eq!(
+            detect_category("какие овощи полезны"),
+            Some(ProductCategory::Vegetable)
+        );
+        assert_eq!(
+            detect_category("посоветуй овощей"),
+            Some(ProductCategory::Vegetable)
+        );
     }
 
     #[test]
     fn detects_en_vegetable() {
-        assert_eq!(detect_category("what vegetables are healthy"), Some(ProductCategory::Vegetable));
-        assert_eq!(detect_category("recommend a veggie"), Some(ProductCategory::Vegetable));
+        assert_eq!(
+            detect_category("what vegetables are healthy"),
+            Some(ProductCategory::Vegetable)
+        );
+        assert_eq!(
+            detect_category("recommend a veggie"),
+            Some(ProductCategory::Vegetable)
+        );
     }
 
     #[test]
     fn detects_fish_before_seafood_collision() {
-        assert_eq!(detect_category("какая рыба полезна"), Some(ProductCategory::Fish));
-        assert_eq!(detect_category("креветки полезны?"), Some(ProductCategory::Seafood));
+        assert_eq!(
+            detect_category("какая рыба полезна"),
+            Some(ProductCategory::Fish)
+        );
+        assert_eq!(
+            detect_category("креветки полезны?"),
+            Some(ProductCategory::Seafood)
+        );
     }
 
     #[test]
@@ -225,31 +369,70 @@ mod tests {
 
     #[test]
     fn detects_meat() {
-        assert_eq!(detect_category("какое мясо выбрать"), Some(ProductCategory::Meat));
-        assert_eq!(detect_category("best chicken breast"), Some(ProductCategory::Meat));
+        assert_eq!(
+            detect_category("какое мясо выбрать"),
+            Some(ProductCategory::Meat)
+        );
+        assert_eq!(
+            detect_category("best chicken breast"),
+            Some(ProductCategory::Meat)
+        );
     }
 
     #[test]
     fn detects_dairy() {
-        assert_eq!(detect_category("полезные молочные продукты"), Some(ProductCategory::Dairy));
-        assert_eq!(detect_category("what cheese is best"), Some(ProductCategory::Dairy));
+        assert_eq!(
+            detect_category("полезные молочные продукты"),
+            Some(ProductCategory::Dairy)
+        );
+        assert_eq!(
+            detect_category("what cheese is best"),
+            Some(ProductCategory::Dairy)
+        );
     }
 
     #[test]
     fn complement_pairs_are_sensible() {
         // Proteins take a vegetable side
-        assert_eq!(ProductCategory::Fish.complement(), Some(ProductCategory::Vegetable));
-        assert_eq!(ProductCategory::Seafood.complement(), Some(ProductCategory::Vegetable));
-        assert_eq!(ProductCategory::Meat.complement(), Some(ProductCategory::Vegetable));
+        assert_eq!(
+            ProductCategory::Fish.complement(),
+            Some(ProductCategory::Vegetable)
+        );
+        assert_eq!(
+            ProductCategory::Seafood.complement(),
+            Some(ProductCategory::Vegetable)
+        );
+        assert_eq!(
+            ProductCategory::Meat.complement(),
+            Some(ProductCategory::Vegetable)
+        );
         // Carbs / legumes also pair with vegetables
-        assert_eq!(ProductCategory::Grain.complement(), Some(ProductCategory::Vegetable));
-        assert_eq!(ProductCategory::Legume.complement(), Some(ProductCategory::Vegetable));
+        assert_eq!(
+            ProductCategory::Grain.complement(),
+            Some(ProductCategory::Vegetable)
+        );
+        assert_eq!(
+            ProductCategory::Legume.complement(),
+            Some(ProductCategory::Vegetable)
+        );
         // Vegetables and mushrooms pair with protein
-        assert_eq!(ProductCategory::Vegetable.complement(), Some(ProductCategory::Meat));
-        assert_eq!(ProductCategory::Mushroom.complement(), Some(ProductCategory::Meat));
+        assert_eq!(
+            ProductCategory::Vegetable.complement(),
+            Some(ProductCategory::Meat)
+        );
+        assert_eq!(
+            ProductCategory::Mushroom.complement(),
+            Some(ProductCategory::Meat)
+        );
         // Dairy / nuts pair with fruit
-        assert_eq!(ProductCategory::Dairy.complement(), Some(ProductCategory::Fruit));
-        assert_eq!(ProductCategory::Nut.complement(), Some(ProductCategory::Fruit));
+        assert_eq!(
+            ProductCategory::Dairy.complement(),
+            Some(ProductCategory::Fruit)
+        );
+        assert_eq!(
+            ProductCategory::Nut.complement(),
+            Some(ProductCategory::Fruit)
+        );
         // Fruits / berries / herbs — stand alone
         assert_eq!(ProductCategory::Fruit.complement(), None);
         assert_eq!(ProductCategory::Berry.complement(), None);

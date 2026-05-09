@@ -20,22 +20,26 @@ use super::recipe_engine::DishType;
 /// Semantic role of an ingredient in a dish.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IngredientRole {
-    Protein,    // meat, fish, eggs, tofu
-    Vegetable,  // potato, cabbage, beet, tomato…
-    Aromatic,   // onion, carrot (зажарка in soups)
-    Base,       // grain, pasta, legume
-    Spice,      // garlic, pepper, herbs
-    Oil,        // olive oil, butter, ghee
-    Condiment,  // soy sauce, tomato paste, vinegar
-    Liquid,     // broth, water, wine (future)
+    Protein,   // meat, fish, eggs, tofu
+    Vegetable, // potato, cabbage, beet, tomato…
+    Aromatic,  // onion, carrot (зажарка in soups)
+    Base,      // grain, pasta, legume
+    Spice,     // garlic, pepper, herbs
+    Oil,       // olive oil, butter, ghee
+    Condiment, // soy sauce, tomato paste, vinegar
+    Liquid,    // broth, water, wine (future)
 }
 
 impl IngredientRole {
     /// Convert from the old string-based role system.
     pub fn from_str_role(role: &str, slug: &str) -> Self {
         // Aromatics: onion & carrot are special in soups/stews
-        if slug.contains("onion") || slug.contains("carrot") || slug.contains("celery")
-            || slug.contains("leek") || slug.contains("shallot") {
+        if slug.contains("onion")
+            || slug.contains("carrot")
+            || slug.contains("celery")
+            || slug.contains("leek")
+            || slug.contains("shallot")
+        {
             return IngredientRole::Aromatic;
         }
         match role {
@@ -70,31 +74,31 @@ impl IngredientRole {
 /// Named step type — the engine generates text from this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepType {
-    BoilProtein,      // "Отварить говядину до готовности"
-    BraiseProtein,    // "Потушить мясо до мягкости"
-    SearProtein,      // "Обжарить до корочки"
-    GrillProtein,     // "Обжарить на гриле"
-    MarinateProtein,  // "Замариновать"
-    SauteAromatics,   // "Сделать зажарку: спассеровать лук и морковь"
-    AddRoots,         // "Добавить картофель, свёклу, варить"
-    AddVegetables,    // "Добавить капусту, помидор"
-    AddAromatics,     // "Добавить зажарку в суп"
-    BoilBase,         // "Отварить рис/пасту"
-    AddBase,          // "Добавить крупу"
-    AddLiquid,        // "Залить водой, довести до кипения"
-    AddSpices,        // "Добавить специи, довести до вкуса"
-    Combine,          // "Соединить всё" / "Смешать"
-    Rest,             // "Дать настояться 5 минут, подавать"
-    PreheatOven,      // "Разогреть духовку до 180°C"
-    BakeAll,          // "Запекать до готовности"
-    PreheatWok,       // "Разогреть масло в воке"
-    PreheatGrill,     // "Разогреть гриль"
-    ChopAll,          // "Нарезать" (salad)
-    Dress,            // "Заправить" (salad)
-    ServeFresh,       // "Подать свежим"
-    MashBase,         // "Размять банан/яблоко до пюре" (pancake)
-    MixBatter,        // "Смешать яйца с пюре и щепоткой соли" (pancake)
-    FryPancakes,      // "Жарить небольшие порции на среднем огне" (pancake)
+    BoilProtein,     // "Отварить говядину до готовности"
+    BraiseProtein,   // "Потушить мясо до мягкости"
+    SearProtein,     // "Обжарить до корочки"
+    GrillProtein,    // "Обжарить на гриле"
+    MarinateProtein, // "Замариновать"
+    SauteAromatics,  // "Сделать зажарку: спассеровать лук и морковь"
+    AddRoots,        // "Добавить картофель, свёклу, варить"
+    AddVegetables,   // "Добавить капусту, помидор"
+    AddAromatics,    // "Добавить зажарку в суп"
+    BoilBase,        // "Отварить рис/пасту"
+    AddBase,         // "Добавить крупу"
+    AddLiquid,       // "Залить водой, довести до кипения"
+    AddSpices,       // "Добавить специи, довести до вкуса"
+    Combine,         // "Соединить всё" / "Смешать"
+    Rest,            // "Дать настояться 5 минут, подавать"
+    PreheatOven,     // "Разогреть духовку до 180°C"
+    BakeAll,         // "Запекать до готовности"
+    PreheatWok,      // "Разогреть масло в воке"
+    PreheatGrill,    // "Разогреть гриль"
+    ChopAll,         // "Нарезать" (salad)
+    Dress,           // "Заправить" (salad)
+    ServeFresh,      // "Подать свежим"
+    MashBase,        // "Размять банан/яблоко до пюре" (pancake)
+    MixBatter,       // "Смешать яйца с пюре и щепоткой соли" (pancake)
+    FryPancakes,     // "Жарить небольшие порции на среднем огне" (pancake)
 }
 
 // ── Rule Structs ─────────────────────────────────────────────────────────────
@@ -129,12 +133,30 @@ pub struct StepRule {
 
 /// Shorthand to create a StepRule without temp/tip (most steps).
 fn sr(step: StepType, roles: Vec<IngredientRole>, time_min: Option<u16>) -> StepRule {
-    StepRule { step, roles, time_min, temp_c: None, tip: None }
+    StepRule {
+        step,
+        roles,
+        time_min,
+        temp_c: None,
+        tip: None,
+    }
 }
 
 /// Shorthand to create a StepRule with temperature.
-fn sr_t(step: StepType, roles: Vec<IngredientRole>, time_min: Option<u16>, temp_c: u16, tip: Option<&'static str>) -> StepRule {
-    StepRule { step, roles, time_min, temp_c: Some(temp_c), tip }
+fn sr_t(
+    step: StepType,
+    roles: Vec<IngredientRole>,
+    time_min: Option<u16>,
+    temp_c: u16,
+    tip: Option<&'static str>,
+) -> StepRule {
+    StepRule {
+        step,
+        roles,
+        time_min,
+        temp_c: Some(temp_c),
+        tip,
+    }
 }
 
 /// Constraint key for dish-level limits.
@@ -193,7 +215,8 @@ pub fn load_rule(dish_type: DishType) -> DishRule {
 /// Resolve cooking method for a role using the dish rule.
 /// Falls back to Raw if no rule matches.
 pub fn method_for_role(rule: &DishRule, role: IngredientRole) -> CookMethod {
-    rule.methods.iter()
+    rule.methods
+        .iter()
         .find(|m| m.role == role)
         .map(|m| m.method)
         .unwrap_or(CookMethod::Raw)
@@ -207,42 +230,118 @@ fn soup_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Soup,
         roles: vec![
-            RoleRule { role: Protein,   min: 0, max: 1, required: false },
-            RoleRule { role: Vegetable, min: 2, max: 6, required: true },
-            RoleRule { role: Aromatic,  min: 1, max: 3, required: true },
-            RoleRule { role: Base,      min: 0, max: 1, required: false },
-            RoleRule { role: Liquid,    min: 1, max: 1, required: true },
-            RoleRule { role: Spice,     min: 0, max: 4, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
-            RoleRule { role: Condiment, min: 0, max: 2, required: false },
+            RoleRule {
+                role: Protein,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 2,
+                max: 6,
+                required: true,
+            },
+            RoleRule {
+                role: Aromatic,
+                min: 1,
+                max: 3,
+                required: true,
+            },
+            RoleRule {
+                role: Base,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Liquid,
+                min: 1,
+                max: 1,
+                required: true,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 4,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Condiment,
+                min: 0,
+                max: 2,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Boil },
-            MethodRule { role: Vegetable, method: CookMethod::Boil },
-            MethodRule { role: Aromatic,  method: CookMethod::Saute },
-            MethodRule { role: Base,      method: CookMethod::Boil },
-            MethodRule { role: Liquid,    method: CookMethod::Boil },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
-            MethodRule { role: Condiment, method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Aromatic,
+                method: CookMethod::Saute,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Liquid,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Condiment,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
             // CORRECT order: protein → aromatics → liquid → roots → leafy → base → spice
-            sr_t(BoilProtein,     vec![Protein],   Some(40), 100, Some("foam")),
-            sr_t(SauteAromatics,  vec![Aromatic],  Some(7),  160, Some("golden")),
-            sr(AddLiquid,       vec![Liquid],    Some(5)),
-            sr(AddRoots,        vec![Vegetable], Some(15)),
-            sr(AddVegetables,   vec![Vegetable], Some(10)),
-            sr(AddAromatics,    vec![Aromatic],  Some(2)),
-            sr(AddBase,         vec![Base],      Some(10)),
-            sr(AddSpices,       vec![Spice, Condiment], Some(5)),
-            sr(Rest,            vec![],          Some(5)),
+            sr_t(BoilProtein, vec![Protein], Some(40), 100, Some("foam")),
+            sr_t(SauteAromatics, vec![Aromatic], Some(7), 160, Some("golden")),
+            sr(AddLiquid, vec![Liquid], Some(5)),
+            sr(AddRoots, vec![Vegetable], Some(15)),
+            sr(AddVegetables, vec![Vegetable], Some(10)),
+            sr(AddAromatics, vec![Aromatic], Some(2)),
+            sr(AddBase, vec![Base], Some(10)),
+            sr(AddSpices, vec![Spice, Condiment], Some(5)),
+            sr(Rest, vec![], Some(5)),
         ],
         constraints: vec![
-            ConstraintRule { key: ConstraintKey::RequiresLiquid,  value: 1.0 },
-            ConstraintRule { key: ConstraintKey::RequiresAromatic, value: 1.0 },
-            ConstraintRule { key: ConstraintKey::MaxFatPercent,   value: 15.0 },
-            ConstraintRule { key: ConstraintKey::MaxOilGrams,     value: 15.0 },
+            ConstraintRule {
+                key: ConstraintKey::RequiresLiquid,
+                value: 1.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::RequiresAromatic,
+                value: 1.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxFatPercent,
+                value: 15.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxOilGrams,
+                value: 15.0,
+            },
         ],
     }
 }
@@ -255,40 +354,122 @@ fn stew_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Stew,
         roles: vec![
-            RoleRule { role: Protein,   min: 0, max: 2, required: false },
-            RoleRule { role: Vegetable, min: 2, max: 6, required: true },
-            RoleRule { role: Aromatic,  min: 1, max: 3, required: true },
-            RoleRule { role: Base,      min: 0, max: 1, required: false },
-            RoleRule { role: Liquid,    min: 1, max: 1, required: true },
-            RoleRule { role: Spice,     min: 0, max: 4, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
-            RoleRule { role: Condiment, min: 0, max: 2, required: false },
+            RoleRule {
+                role: Protein,
+                min: 0,
+                max: 2,
+                required: false,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 2,
+                max: 6,
+                required: true,
+            },
+            RoleRule {
+                role: Aromatic,
+                min: 1,
+                max: 3,
+                required: true,
+            },
+            RoleRule {
+                role: Base,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Liquid,
+                min: 1,
+                max: 1,
+                required: true,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 4,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Condiment,
+                min: 0,
+                max: 2,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Boil },
-            MethodRule { role: Vegetable, method: CookMethod::Boil },
-            MethodRule { role: Aromatic,  method: CookMethod::Saute },
-            MethodRule { role: Base,      method: CookMethod::Boil },
-            MethodRule { role: Liquid,    method: CookMethod::Boil },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
-            MethodRule { role: Condiment, method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Aromatic,
+                method: CookMethod::Saute,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Liquid,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Condiment,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr_t(BraiseProtein,   vec![Protein],   Some(45), 160, Some("sear_first")),
-            sr_t(SauteAromatics,  vec![Aromatic],  Some(7),  150, Some("golden")),
-            sr(AddLiquid,       vec![Liquid],    Some(5)),
-            sr(AddVegetables,   vec![Vegetable], Some(20)),
-            sr(AddAromatics,    vec![Aromatic],  Some(2)),
-            sr(AddBase,         vec![Base],      Some(10)),
-            sr(AddSpices,       vec![Spice, Condiment], Some(5)),
-            sr(Rest,            vec![],          Some(5)),
+            sr_t(
+                BraiseProtein,
+                vec![Protein],
+                Some(45),
+                160,
+                Some("sear_first"),
+            ),
+            sr_t(SauteAromatics, vec![Aromatic], Some(7), 150, Some("golden")),
+            sr(AddLiquid, vec![Liquid], Some(5)),
+            sr(AddVegetables, vec![Vegetable], Some(20)),
+            sr(AddAromatics, vec![Aromatic], Some(2)),
+            sr(AddBase, vec![Base], Some(10)),
+            sr(AddSpices, vec![Spice, Condiment], Some(5)),
+            sr(Rest, vec![], Some(5)),
         ],
         constraints: vec![
-            ConstraintRule { key: ConstraintKey::RequiresLiquid,   value: 1.0 },
-            ConstraintRule { key: ConstraintKey::RequiresAromatic, value: 1.0 },
-            ConstraintRule { key: ConstraintKey::MaxFatPercent,    value: 20.0 },
-            ConstraintRule { key: ConstraintKey::MaxOilGrams,      value: 20.0 },
+            ConstraintRule {
+                key: ConstraintKey::RequiresLiquid,
+                value: 1.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::RequiresAromatic,
+                value: 1.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxFatPercent,
+                value: 20.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxOilGrams,
+                value: 20.0,
+            },
         ],
     }
 }
@@ -301,27 +482,73 @@ fn salad_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Salad,
         roles: vec![
-            RoleRule { role: Protein,   min: 0, max: 1, required: false },
-            RoleRule { role: Vegetable, min: 2, max: 8, required: true },
-            RoleRule { role: Spice,     min: 0, max: 3, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
-            RoleRule { role: Condiment, min: 0, max: 2, required: false },
+            RoleRule {
+                role: Protein,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 2,
+                max: 8,
+                required: true,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 3,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Condiment,
+                min: 0,
+                max: 2,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Raw },
-            MethodRule { role: Vegetable, method: CookMethod::Raw },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
-            MethodRule { role: Condiment, method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Condiment,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr(ChopAll,    vec![Vegetable, Protein], None),
-            sr(Combine,    vec![],                   None),
-            sr(Dress,      vec![Spice, Condiment, Oil], None),
+            sr(ChopAll, vec![Vegetable, Protein], None),
+            sr(Combine, vec![], None),
+            sr(Dress, vec![Spice, Condiment, Oil], None),
         ],
         constraints: vec![
-            ConstraintRule { key: ConstraintKey::MaxOilGrams,        value: 20.0 },
-            ConstraintRule { key: ConstraintKey::MaxKcalPerServing,  value: 350.0 },
+            ConstraintRule {
+                key: ConstraintKey::MaxOilGrams,
+                value: 20.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxKcalPerServing,
+                value: 350.0,
+            },
         ],
     }
 }
@@ -334,31 +561,85 @@ fn stir_fry_rule() -> DishRule {
     DishRule {
         dish_type: DishType::StirFry,
         roles: vec![
-            RoleRule { role: Protein,   min: 1, max: 2, required: true },
-            RoleRule { role: Vegetable, min: 2, max: 6, required: true },
-            RoleRule { role: Base,      min: 0, max: 1, required: false },
-            RoleRule { role: Spice,     min: 0, max: 3, required: false },
-            RoleRule { role: Oil,       min: 1, max: 1, required: true },
-            RoleRule { role: Condiment, min: 0, max: 2, required: false },
+            RoleRule {
+                role: Protein,
+                min: 1,
+                max: 2,
+                required: true,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 2,
+                max: 6,
+                required: true,
+            },
+            RoleRule {
+                role: Base,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 3,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 1,
+                max: 1,
+                required: true,
+            },
+            RoleRule {
+                role: Condiment,
+                min: 0,
+                max: 2,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Fry },
-            MethodRule { role: Vegetable, method: CookMethod::Fry },
-            MethodRule { role: Base,      method: CookMethod::Boil },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
-            MethodRule { role: Condiment, method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Fry,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Fry,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Condiment,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr_t(PreheatWok,    vec![Oil],       Some(2), 230, Some("smoking")),
-            sr_t(SearProtein,   vec![Protein],   Some(5), 200, Some("no_move")),
+            sr_t(PreheatWok, vec![Oil], Some(2), 230, Some("smoking")),
+            sr_t(SearProtein, vec![Protein], Some(5), 200, Some("no_move")),
             sr(AddVegetables, vec![Vegetable], Some(5)),
-            sr(AddSpices,     vec![Spice, Condiment], Some(2)),
-            sr(AddBase,       vec![Base],      None),
+            sr(AddSpices, vec![Spice, Condiment], Some(2)),
+            sr(AddBase, vec![Base], None),
         ],
         constraints: vec![
-            ConstraintRule { key: ConstraintKey::MaxFatPercent, value: 25.0 },
-            ConstraintRule { key: ConstraintKey::MaxOilGrams,   value: 20.0 },
+            ConstraintRule {
+                key: ConstraintKey::MaxFatPercent,
+                value: 25.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxOilGrams,
+                value: 20.0,
+            },
         ],
     }
 }
@@ -371,29 +652,81 @@ fn grill_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Grill,
         roles: vec![
-            RoleRule { role: Protein,   min: 1, max: 2, required: true },
-            RoleRule { role: Vegetable, min: 0, max: 4, required: false },
-            RoleRule { role: Base,      min: 0, max: 1, required: false },
-            RoleRule { role: Spice,     min: 0, max: 3, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
+            RoleRule {
+                role: Protein,
+                min: 1,
+                max: 2,
+                required: true,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 0,
+                max: 4,
+                required: false,
+            },
+            RoleRule {
+                role: Base,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 3,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Grill },
-            MethodRule { role: Vegetable, method: CookMethod::Grill },
-            MethodRule { role: Base,      method: CookMethod::Boil },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Grill,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Grill,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr(MarinateProtein, vec![Protein],   Some(30)),
-            sr_t(PreheatGrill,    vec![],          Some(5), 220, None),
-            sr_t(GrillProtein,    vec![Protein],   Some(10), 220, Some("rest_after")),
-            sr(AddVegetables,   vec![Vegetable], Some(8)),
-            sr(BoilBase,        vec![Base],      Some(10)),
+            sr(MarinateProtein, vec![Protein], Some(30)),
+            sr_t(PreheatGrill, vec![], Some(5), 220, None),
+            sr_t(
+                GrillProtein,
+                vec![Protein],
+                Some(10),
+                220,
+                Some("rest_after"),
+            ),
+            sr(AddVegetables, vec![Vegetable], Some(8)),
+            sr(BoilBase, vec![Base], Some(10)),
         ],
         constraints: vec![
-            ConstraintRule { key: ConstraintKey::MinProteinPerServing, value: 25.0 },
-            ConstraintRule { key: ConstraintKey::MaxOilGrams,          value: 10.0 },
+            ConstraintRule {
+                key: ConstraintKey::MinProteinPerServing,
+                value: 25.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxOilGrams,
+                value: 10.0,
+            },
         ],
     }
 }
@@ -406,27 +739,68 @@ fn bake_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Bake,
         roles: vec![
-            RoleRule { role: Protein,   min: 0, max: 2, required: false },
-            RoleRule { role: Vegetable, min: 0, max: 6, required: false },
-            RoleRule { role: Base,      min: 0, max: 1, required: false },
-            RoleRule { role: Spice,     min: 0, max: 3, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
+            RoleRule {
+                role: Protein,
+                min: 0,
+                max: 2,
+                required: false,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 0,
+                max: 6,
+                required: false,
+            },
+            RoleRule {
+                role: Base,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 3,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Bake },
-            MethodRule { role: Vegetable, method: CookMethod::Bake },
-            MethodRule { role: Base,      method: CookMethod::Bake },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Bake,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Bake,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Bake,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr_t(PreheatOven,     vec![],                 Some(10), 180, None),
-            sr(ChopAll,         vec![Protein, Vegetable], None),
-            sr_t(BakeAll,         vec![],                 Some(30), 180, Some("check_color")),
+            sr_t(PreheatOven, vec![], Some(10), 180, None),
+            sr(ChopAll, vec![Protein, Vegetable], None),
+            sr_t(BakeAll, vec![], Some(30), 180, Some("check_color")),
         ],
-        constraints: vec![
-            ConstraintRule { key: ConstraintKey::MaxOilGrams, value: 15.0 },
-        ],
+        constraints: vec![ConstraintRule {
+            key: ConstraintKey::MaxOilGrams,
+            value: 15.0,
+        }],
     }
 }
 
@@ -438,31 +812,85 @@ fn pasta_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Pasta,
         roles: vec![
-            RoleRule { role: Protein,   min: 0, max: 1, required: false },
-            RoleRule { role: Vegetable, min: 0, max: 4, required: false },
-            RoleRule { role: Base,      min: 1, max: 1, required: true },
-            RoleRule { role: Spice,     min: 0, max: 3, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
-            RoleRule { role: Condiment, min: 0, max: 2, required: false },
+            RoleRule {
+                role: Protein,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 0,
+                max: 4,
+                required: false,
+            },
+            RoleRule {
+                role: Base,
+                min: 1,
+                max: 1,
+                required: true,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 3,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Condiment,
+                min: 0,
+                max: 2,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Fry },
-            MethodRule { role: Vegetable, method: CookMethod::Fry },
-            MethodRule { role: Base,      method: CookMethod::Boil },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
-            MethodRule { role: Condiment, method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Fry,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Fry,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Condiment,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr_t(BoilBase,        vec![Base],      Some(10), 100, Some("al_dente")),
-            sr_t(SearProtein,     vec![Protein],   Some(8),  180, None),
-            sr(AddVegetables,   vec![Vegetable], Some(5)),
-            sr(Combine,         vec![],          Some(2)),
-            sr(AddSpices,       vec![Spice, Condiment], None),
+            sr_t(BoilBase, vec![Base], Some(10), 100, Some("al_dente")),
+            sr_t(SearProtein, vec![Protein], Some(8), 180, None),
+            sr(AddVegetables, vec![Vegetable], Some(5)),
+            sr(Combine, vec![], Some(2)),
+            sr(AddSpices, vec![Spice, Condiment], None),
         ],
         constraints: vec![
-            ConstraintRule { key: ConstraintKey::MinProteinPerServing, value: 15.0 },
-            ConstraintRule { key: ConstraintKey::MaxOilGrams,          value: 20.0 },
+            ConstraintRule {
+                key: ConstraintKey::MinProteinPerServing,
+                value: 15.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxOilGrams,
+                value: 20.0,
+            },
         ],
     }
 }
@@ -475,25 +903,63 @@ fn raw_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Raw,
         roles: vec![
-            RoleRule { role: Protein,   min: 1, max: 1, required: true },
-            RoleRule { role: Vegetable, min: 0, max: 4, required: false },
-            RoleRule { role: Spice,     min: 0, max: 3, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
+            RoleRule {
+                role: Protein,
+                min: 1,
+                max: 1,
+                required: true,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 0,
+                max: 4,
+                required: false,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 3,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Raw },
-            MethodRule { role: Vegetable, method: CookMethod::Raw },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr(ChopAll,    vec![Protein, Vegetable], None),
-            sr(Dress,      vec![Spice, Oil],         None),
-            sr(ServeFresh,  vec![],                   None),
+            sr(ChopAll, vec![Protein, Vegetable], None),
+            sr(Dress, vec![Spice, Oil], None),
+            sr(ServeFresh, vec![], None),
         ],
         constraints: vec![
-            ConstraintRule { key: ConstraintKey::MaxOilGrams,       value: 10.0 },
-            ConstraintRule { key: ConstraintKey::MaxKcalPerServing, value: 300.0 },
+            ConstraintRule {
+                key: ConstraintKey::MaxOilGrams,
+                value: 10.0,
+            },
+            ConstraintRule {
+                key: ConstraintKey::MaxKcalPerServing,
+                value: 300.0,
+            },
         ],
     }
 }
@@ -513,25 +979,71 @@ fn pancake_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Pancake,
         roles: vec![
-            RoleRule { role: Protein,   min: 1, max: 2, required: true  },  // eggs
-            RoleRule { role: Base,      min: 0, max: 2, required: false },  // banana, apple
-            RoleRule { role: Spice,     min: 0, max: 2, required: false },  // salt, cinnamon
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
-            RoleRule { role: Condiment, min: 0, max: 1, required: false },
+            RoleRule {
+                role: Protein,
+                min: 1,
+                max: 2,
+                required: true,
+            }, // eggs
+            RoleRule {
+                role: Base,
+                min: 0,
+                max: 2,
+                required: false,
+            }, // banana, apple
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 2,
+                required: false,
+            }, // salt, cinnamon
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Condiment,
+                min: 0,
+                max: 1,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Fry   },
-            MethodRule { role: Base,      method: CookMethod::Raw   }, // mashed, not cooked
-            MethodRule { role: Spice,     method: CookMethod::Raw   },
-            MethodRule { role: Oil,       method: CookMethod::Raw   },
-            MethodRule { role: Condiment, method: CookMethod::Raw   },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Fry,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Raw,
+            }, // mashed, not cooked
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Condiment,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr(MashBase,    vec![Base],                Some(2)),
-            sr(MixBatter,   vec![Protein, Base],       Some(2)),
-            sr(AddSpices,   vec![Spice, Condiment],    None),
-            sr_t(FryPancakes, vec![Protein, Base, Oil], Some(8), 160, Some("no_move")),
-            sr(Rest,        vec![],                    Some(1)),
+            sr(MashBase, vec![Base], Some(2)),
+            sr(MixBatter, vec![Protein, Base], Some(2)),
+            sr(AddSpices, vec![Spice, Condiment], None),
+            sr_t(
+                FryPancakes,
+                vec![Protein, Base, Oil],
+                Some(8),
+                160,
+                Some("no_move"),
+            ),
+            sr(Rest, vec![], Some(1)),
         ],
         constraints: vec![],
     }
@@ -545,26 +1057,74 @@ fn default_rule() -> DishRule {
     DishRule {
         dish_type: DishType::Default,
         roles: vec![
-            RoleRule { role: Protein,   min: 0, max: 2, required: false },
-            RoleRule { role: Vegetable, min: 0, max: 6, required: false },
-            RoleRule { role: Base,      min: 0, max: 1, required: false },
-            RoleRule { role: Spice,     min: 0, max: 4, required: false },
-            RoleRule { role: Oil,       min: 0, max: 1, required: false },
-            RoleRule { role: Condiment, min: 0, max: 2, required: false },
+            RoleRule {
+                role: Protein,
+                min: 0,
+                max: 2,
+                required: false,
+            },
+            RoleRule {
+                role: Vegetable,
+                min: 0,
+                max: 6,
+                required: false,
+            },
+            RoleRule {
+                role: Base,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Spice,
+                min: 0,
+                max: 4,
+                required: false,
+            },
+            RoleRule {
+                role: Oil,
+                min: 0,
+                max: 1,
+                required: false,
+            },
+            RoleRule {
+                role: Condiment,
+                min: 0,
+                max: 2,
+                required: false,
+            },
         ],
         methods: vec![
-            MethodRule { role: Protein,   method: CookMethod::Grill },
-            MethodRule { role: Vegetable, method: CookMethod::Steam },
-            MethodRule { role: Base,      method: CookMethod::Boil },
-            MethodRule { role: Spice,     method: CookMethod::Raw },
-            MethodRule { role: Oil,       method: CookMethod::Raw },
-            MethodRule { role: Condiment, method: CookMethod::Raw },
+            MethodRule {
+                role: Protein,
+                method: CookMethod::Grill,
+            },
+            MethodRule {
+                role: Vegetable,
+                method: CookMethod::Steam,
+            },
+            MethodRule {
+                role: Base,
+                method: CookMethod::Boil,
+            },
+            MethodRule {
+                role: Spice,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Oil,
+                method: CookMethod::Raw,
+            },
+            MethodRule {
+                role: Condiment,
+                method: CookMethod::Raw,
+            },
         ],
         steps: vec![
-            sr_t(SearProtein,     vec![Protein],   Some(15), 180, None),
-            sr(BoilBase,        vec![Base],      Some(10)),
-            sr(AddVegetables,   vec![Vegetable], Some(10)),
-            sr(AddSpices,       vec![Spice, Condiment], None),
+            sr_t(SearProtein, vec![Protein], Some(15), 180, None),
+            sr(BoilBase, vec![Base], Some(10)),
+            sr(AddVegetables, vec![Vegetable], Some(10)),
+            sr(AddSpices, vec![Spice, Condiment], None),
         ],
         constraints: vec![],
     }
@@ -624,7 +1184,9 @@ pub fn apply_constraints(
 
             // ── RequiresAromatic: зажарка is mandatory ───────────────
             ConstraintKey::RequiresAromatic => {
-                let has_aromatic = ingredients.iter().any(|i| i.role == IngredientRole::Aromatic);
+                let has_aromatic = ingredients
+                    .iter()
+                    .any(|i| i.role == IngredientRole::Aromatic);
                 if !has_aromatic {
                     violations.push(ConstraintViolation {
                         key: c.key,
@@ -670,7 +1232,10 @@ pub fn apply_constraints(
                         }
                         violations.push(ConstraintViolation {
                             key: c.key,
-                            message: format!("Fat reduced from {:.1}% to ≤{:.0}%", fat_pct, c.value),
+                            message: format!(
+                                "Fat reduced from {:.1}% to ≤{:.0}%",
+                                fat_pct, c.value
+                            ),
                             auto_fixed: true,
                         });
                     }
@@ -684,7 +1249,10 @@ pub fn apply_constraints(
                 if per_serving > c.value {
                     violations.push(ConstraintViolation {
                         key: c.key,
-                        message: format!("Per-serving kcal ({:.0}) exceeds max ({:.0})", per_serving, c.value),
+                        message: format!(
+                            "Per-serving kcal ({:.0}) exceeds max ({:.0})",
+                            per_serving, c.value
+                        ),
                         auto_fixed: false,
                     });
                 }
@@ -697,7 +1265,10 @@ pub fn apply_constraints(
                 if per_serving < c.value {
                     violations.push(ConstraintViolation {
                         key: c.key,
-                        message: format!("Per-serving protein ({:.1}g) below min ({:.0}g)", per_serving, c.value),
+                        message: format!(
+                            "Per-serving protein ({:.1}g) below min ({:.0}g)",
+                            per_serving, c.value
+                        ),
                         auto_fixed: false,
                     });
                 }
@@ -750,7 +1321,7 @@ pub fn step_text(step: StepType, names: &str, lang: &str) -> String {
         "en" => step_text_en(step, names),
         "pl" => step_text_pl(step, names),
         "uk" => step_text_uk(step, names),
-        _    => step_text_ru(step, names),
+        _ => step_text_ru(step, names),
     }
 }
 
@@ -878,9 +1449,12 @@ fn step_text_uk(step: StepType, n: &str) -> String {
 
 /// Is this slug a root vegetable? (used for Soup step splitting: roots vs leafy)
 pub fn is_root_vegetable(slug: &str) -> bool {
-    slug.contains("potato") || slug.contains("beet")
-        || slug.contains("turnip") || slug.contains("parsnip")
-        || slug.contains("rutabaga") || slug.contains("yam")
+    slug.contains("potato")
+        || slug.contains("beet")
+        || slug.contains("turnip")
+        || slug.contains("parsnip")
+        || slug.contains("rutabaga")
+        || slug.contains("yam")
         || slug.contains("sweet-potato")
 }
 
@@ -893,9 +1467,15 @@ mod tests {
     #[test]
     fn all_dish_types_have_rules() {
         let types = [
-            DishType::Soup, DishType::Stew, DishType::Salad,
-            DishType::StirFry, DishType::Grill, DishType::Bake,
-            DishType::Pasta, DishType::Raw, DishType::Default,
+            DishType::Soup,
+            DishType::Stew,
+            DishType::Salad,
+            DishType::StirFry,
+            DishType::Grill,
+            DishType::Bake,
+            DishType::Pasta,
+            DishType::Raw,
+            DishType::Default,
         ];
         for dt in &types {
             let rule = load_rule(*dt);
@@ -922,7 +1502,12 @@ mod tests {
     fn salad_everything_raw() {
         let rule = load_rule(DishType::Salad);
         for mr in &rule.methods {
-            assert_eq!(mr.method, CookMethod::Raw, "salad {:?} should be raw", mr.role);
+            assert_eq!(
+                mr.method,
+                CookMethod::Raw,
+                "salad {:?} should be raw",
+                mr.role
+            );
         }
     }
 
@@ -949,17 +1534,26 @@ mod tests {
 
     #[test]
     fn role_detection_onion_is_aromatic() {
-        assert_eq!(IngredientRole::from_str_role("side", "onion"), IngredientRole::Aromatic);
+        assert_eq!(
+            IngredientRole::from_str_role("side", "onion"),
+            IngredientRole::Aromatic
+        );
     }
 
     #[test]
     fn role_detection_carrot_is_aromatic() {
-        assert_eq!(IngredientRole::from_str_role("side", "carrot"), IngredientRole::Aromatic);
+        assert_eq!(
+            IngredientRole::from_str_role("side", "carrot"),
+            IngredientRole::Aromatic
+        );
     }
 
     #[test]
     fn role_detection_potato_is_vegetable() {
-        assert_eq!(IngredientRole::from_str_role("side", "potato"), IngredientRole::Vegetable);
+        assert_eq!(
+            IngredientRole::from_str_role("side", "potato"),
+            IngredientRole::Vegetable
+        );
     }
 
     #[test]
@@ -1006,21 +1600,36 @@ mod tests {
     fn step_text_static_steps_all_langs() {
         // Steps without ingredient names (static text) — check they are non-empty
         let statics = [
-            StepType::AddAromatics, StepType::AddLiquid, StepType::Combine,
-            StepType::Rest, StepType::PreheatOven, StepType::BakeAll,
-            StepType::PreheatWok, StepType::PreheatGrill, StepType::ServeFresh,
+            StepType::AddAromatics,
+            StepType::AddLiquid,
+            StepType::Combine,
+            StepType::Rest,
+            StepType::PreheatOven,
+            StepType::BakeAll,
+            StepType::PreheatWok,
+            StepType::PreheatGrill,
+            StepType::ServeFresh,
         ];
         for st in statics {
             for lang in &["ru", "en", "pl", "uk"] {
                 let text = step_text(st, "", lang);
-                assert!(!text.is_empty(), "step_text({st:?}, \"\", {lang}) must be non-empty");
+                assert!(
+                    !text.is_empty(),
+                    "step_text({st:?}, \"\", {lang}) must be non-empty"
+                );
             }
         }
     }
 
     // ═══ Constraint Engine Tests ═════════════════════════════════════════
 
-    fn make_snapshot(slug: &str, role: IngredientRole, gross_g: f32, fat_g: f32, protein_g: f32) -> IngredientSnapshot {
+    fn make_snapshot(
+        slug: &str,
+        role: IngredientRole,
+        gross_g: f32,
+        fat_g: f32,
+        protein_g: f32,
+    ) -> IngredientSnapshot {
         IngredientSnapshot {
             slug: slug.into(),
             role,
@@ -1041,7 +1650,9 @@ mod tests {
             make_snapshot("onion", IngredientRole::Aromatic, 30.0, 0.0, 1.0),
         ];
         let violations = apply_constraints(&rule, &mut ings, 1);
-        assert!(violations.iter().any(|v| v.key == ConstraintKey::RequiresLiquid && v.auto_fixed));
+        assert!(violations
+            .iter()
+            .any(|v| v.key == ConstraintKey::RequiresLiquid && v.auto_fixed));
         assert!(ings.iter().any(|i| i.role == IngredientRole::Liquid));
     }
 
@@ -1054,7 +1665,9 @@ mod tests {
             make_snapshot("onion", IngredientRole::Aromatic, 30.0, 0.0, 1.0),
         ];
         let violations = apply_constraints(&rule, &mut ings, 1);
-        assert!(!violations.iter().any(|v| v.key == ConstraintKey::RequiresLiquid));
+        assert!(!violations
+            .iter()
+            .any(|v| v.key == ConstraintKey::RequiresLiquid));
     }
 
     #[test]
@@ -1069,7 +1682,9 @@ mod tests {
         let violations = apply_constraints(&rule, &mut ings, 1);
         let oil = ings.iter().find(|i| i.role == IngredientRole::Oil).unwrap();
         assert_eq!(oil.gross_g, 15.0);
-        assert!(violations.iter().any(|v| v.key == ConstraintKey::MaxOilGrams && v.auto_fixed));
+        assert!(violations
+            .iter()
+            .any(|v| v.key == ConstraintKey::MaxOilGrams && v.auto_fixed));
     }
 
     #[test]
@@ -1079,7 +1694,9 @@ mod tests {
             make_snapshot("spaghetti", IngredientRole::Base, 100.0, 1.0, 5.0), // only 5g protein
         ];
         let violations = apply_constraints(&rule, &mut ings, 1);
-        assert!(violations.iter().any(|v| v.key == ConstraintKey::MinProteinPerServing && !v.auto_fixed));
+        assert!(violations
+            .iter()
+            .any(|v| v.key == ConstraintKey::MinProteinPerServing && !v.auto_fixed));
     }
 
     #[test]
@@ -1095,7 +1712,9 @@ mod tests {
         ];
         let violations = apply_constraints(&rule, &mut ings, 1);
         // Should NOT trigger fat% reduction (3.5% < 15%)
-        assert!(!violations.iter().any(|v| v.key == ConstraintKey::MaxFatPercent));
+        assert!(!violations
+            .iter()
+            .any(|v| v.key == ConstraintKey::MaxFatPercent));
     }
 
     #[test]
@@ -1109,7 +1728,9 @@ mod tests {
         // Salad has no RequiresLiquid → no liquid added
         assert!(!ings.iter().any(|i| i.role == IngredientRole::Liquid));
         // But salad HAS MaxOilGrams and MaxKcalPerServing
-        assert!(!violations.iter().any(|v| v.key == ConstraintKey::RequiresLiquid));
+        assert!(!violations
+            .iter()
+            .any(|v| v.key == ConstraintKey::RequiresLiquid));
     }
 
     #[test]
@@ -1149,17 +1770,39 @@ mod tests {
     #[test]
     fn soup_step_order_aromatics_before_liquid() {
         let rule = load_rule(DishType::Soup);
-        let saute_idx = rule.steps.iter().position(|s| s.step == StepType::SauteAromatics).unwrap();
-        let liquid_idx = rule.steps.iter().position(|s| s.step == StepType::AddLiquid).unwrap();
-        assert!(saute_idx < liquid_idx, "SauteAromatics should come BEFORE AddLiquid in soup");
+        let saute_idx = rule
+            .steps
+            .iter()
+            .position(|s| s.step == StepType::SauteAromatics)
+            .unwrap();
+        let liquid_idx = rule
+            .steps
+            .iter()
+            .position(|s| s.step == StepType::AddLiquid)
+            .unwrap();
+        assert!(
+            saute_idx < liquid_idx,
+            "SauteAromatics should come BEFORE AddLiquid in soup"
+        );
     }
 
     #[test]
     fn stew_step_order_aromatics_before_liquid() {
         let rule = load_rule(DishType::Stew);
-        let saute_idx = rule.steps.iter().position(|s| s.step == StepType::SauteAromatics).unwrap();
-        let liquid_idx = rule.steps.iter().position(|s| s.step == StepType::AddLiquid).unwrap();
-        assert!(saute_idx < liquid_idx, "SauteAromatics should come BEFORE AddLiquid in stew");
+        let saute_idx = rule
+            .steps
+            .iter()
+            .position(|s| s.step == StepType::SauteAromatics)
+            .unwrap();
+        let liquid_idx = rule
+            .steps
+            .iter()
+            .position(|s| s.step == StepType::AddLiquid)
+            .unwrap();
+        assert!(
+            saute_idx < liquid_idx,
+            "SauteAromatics should come BEFORE AddLiquid in stew"
+        );
     }
 
     // ═══ Constraint presence tests ═══════════════════════════════════════
@@ -1167,7 +1810,10 @@ mod tests {
     #[test]
     fn soup_has_liquid_constraint() {
         let rule = load_rule(DishType::Soup);
-        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::RequiresLiquid));
+        assert!(rule
+            .constraints
+            .iter()
+            .any(|c| c.key == ConstraintKey::RequiresLiquid));
     }
 
     #[test]
@@ -1175,7 +1821,10 @@ mod tests {
         let rule = load_rule(DishType::Soup);
         let liquid_role = rule.roles.iter().find(|r| r.role == IngredientRole::Liquid);
         assert!(liquid_role.is_some(), "Soup must have Liquid role");
-        assert!(liquid_role.unwrap().required, "Liquid must be required in soup");
+        assert!(
+            liquid_role.unwrap().required,
+            "Liquid must be required in soup"
+        );
     }
 
     #[test]
@@ -1189,18 +1838,27 @@ mod tests {
     #[test]
     fn stir_fry_has_fat_constraint() {
         let rule = load_rule(DishType::StirFry);
-        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::MaxFatPercent));
+        assert!(rule
+            .constraints
+            .iter()
+            .any(|c| c.key == ConstraintKey::MaxFatPercent));
     }
 
     #[test]
     fn grill_has_protein_constraint() {
         let rule = load_rule(DishType::Grill);
-        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::MinProteinPerServing));
+        assert!(rule
+            .constraints
+            .iter()
+            .any(|c| c.key == ConstraintKey::MinProteinPerServing));
     }
 
     #[test]
     fn pasta_has_protein_constraint() {
         let rule = load_rule(DishType::Pasta);
-        assert!(rule.constraints.iter().any(|c| c.key == ConstraintKey::MinProteinPerServing));
+        assert!(rule
+            .constraints
+            .iter()
+            .any(|c| c.key == ConstraintKey::MinProteinPerServing));
     }
 }

@@ -7,8 +7,8 @@
 //!
 //! No DB, no HTTP — only data structures and math.
 
-use serde::{Deserialize, Serialize};
 use crate::domain::tools::unit_converter as uc;
+use serde::{Deserialize, Serialize};
 
 // ── Flavor Vector ────────────────────────────────────────────────────────────
 
@@ -16,48 +16,55 @@ use crate::domain::tools::unit_converter as uc;
 /// All values are 0.0–10.0 scale.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlavorVector {
-    pub sweetness:  f64,
-    pub acidity:    f64,
+    pub sweetness: f64,
+    pub acidity: f64,
     pub bitterness: f64,
-    pub umami:      f64,
-    pub fat:        f64,   // richness / fattiness
-    pub aroma:      f64,
+    pub umami: f64,
+    pub fat: f64, // richness / fattiness
+    pub aroma: f64,
 }
 
 impl FlavorVector {
     pub fn zero() -> Self {
-        Self { sweetness: 0.0, acidity: 0.0, bitterness: 0.0, umami: 0.0, fat: 0.0, aroma: 0.0 }
+        Self {
+            sweetness: 0.0,
+            acidity: 0.0,
+            bitterness: 0.0,
+            umami: 0.0,
+            fat: 0.0,
+            aroma: 0.0,
+        }
     }
 
     /// Weighted add: accumulate another vector scaled by weight (grams / total grams)
     pub fn add_weighted(&mut self, other: &FlavorVector, weight: f64) {
-        self.sweetness  += other.sweetness  * weight;
-        self.acidity    += other.acidity    * weight;
+        self.sweetness += other.sweetness * weight;
+        self.acidity += other.acidity * weight;
         self.bitterness += other.bitterness * weight;
-        self.umami      += other.umami      * weight;
-        self.fat        += other.fat        * weight;
-        self.aroma      += other.aroma      * weight;
+        self.umami += other.umami * weight;
+        self.fat += other.fat * weight;
+        self.aroma += other.aroma * weight;
     }
 
     /// Round all values to 2 decimal places
     pub fn round(&mut self) {
-        self.sweetness  = uc::round_to(self.sweetness, 2);
-        self.acidity    = uc::round_to(self.acidity, 2);
+        self.sweetness = uc::round_to(self.sweetness, 2);
+        self.acidity = uc::round_to(self.acidity, 2);
         self.bitterness = uc::round_to(self.bitterness, 2);
-        self.umami      = uc::round_to(self.umami, 2);
-        self.fat        = uc::round_to(self.fat, 2);
-        self.aroma      = uc::round_to(self.aroma, 2);
+        self.umami = uc::round_to(self.umami, 2);
+        self.fat = uc::round_to(self.fat, 2);
+        self.aroma = uc::round_to(self.aroma, 2);
     }
 
     /// Return all dimensions as (name, value) pairs
     pub fn dimensions(&self) -> Vec<(&'static str, f64)> {
         vec![
-            ("sweetness",  self.sweetness),
-            ("acidity",    self.acidity),
+            ("sweetness", self.sweetness),
+            ("acidity", self.acidity),
             ("bitterness", self.bitterness),
-            ("umami",      self.umami),
-            ("fat",        self.fat),
-            ("aroma",      self.aroma),
+            ("umami", self.umami),
+            ("fat", self.fat),
+            ("aroma", self.aroma),
         ]
     }
 
@@ -72,7 +79,8 @@ impl FlavorVector {
     pub fn std_dev(&self) -> f64 {
         let m = self.mean();
         let dims = self.dimensions();
-        let variance: f64 = dims.iter().map(|(_, v)| (v - m).powi(2)).sum::<f64>() / dims.len() as f64;
+        let variance: f64 =
+            dims.iter().map(|(_, v)| (v - m).powi(2)).sum::<f64>() / dims.len() as f64;
         variance.sqrt()
     }
 }
@@ -82,9 +90,9 @@ impl FlavorVector {
 /// One ingredient in a recipe with its weight and flavor profile.
 #[derive(Debug, Clone)]
 pub struct FlavorIngredient {
-    pub slug:    String,
-    pub grams:   f64,
-    pub flavor:  FlavorVector,
+    pub slug: String,
+    pub grams: f64,
+    pub flavor: FlavorVector,
 }
 
 // ── Flavor Balance ───────────────────────────────────────────────────────────
@@ -105,7 +113,7 @@ pub struct FlavorBalance {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionGap {
     pub dimension: String,
-    pub value:     f64,
+    pub value: f64,
     /// How far from the mean (negative = below, positive = above)
     pub deviation: f64,
 }
@@ -157,8 +165,16 @@ pub fn analyze_balance(ingredients: &[FlavorIngredient]) -> FlavorBalance {
     }
 
     // Sort: weakest first, strongest first
-    weak_dimensions.sort_by(|a, b| a.deviation.partial_cmp(&b.deviation).unwrap_or(std::cmp::Ordering::Equal));
-    strong_dimensions.sort_by(|a, b| b.deviation.partial_cmp(&a.deviation).unwrap_or(std::cmp::Ordering::Equal));
+    weak_dimensions.sort_by(|a, b| {
+        a.deviation
+            .partial_cmp(&b.deviation)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    strong_dimensions.sort_by(|a, b| {
+        b.deviation
+            .partial_cmp(&a.deviation)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     FlavorBalance {
         vector,
@@ -232,8 +248,12 @@ mod tests {
             slug: "tomato".to_string(),
             grams: 200.0,
             flavor: FlavorVector {
-                sweetness: 4.0, acidity: 6.0, bitterness: 1.0,
-                umami: 7.0, fat: 0.2, aroma: 5.0,
+                sweetness: 4.0,
+                acidity: 6.0,
+                bitterness: 1.0,
+                umami: 7.0,
+                fat: 0.2,
+                aroma: 5.0,
             },
         }
     }
@@ -243,8 +263,12 @@ mod tests {
             slug: "olive-oil".to_string(),
             grams: 30.0,
             flavor: FlavorVector {
-                sweetness: 0.5, acidity: 1.0, bitterness: 3.0,
-                umami: 0.0, fat: 10.0, aroma: 6.0,
+                sweetness: 0.5,
+                acidity: 1.0,
+                bitterness: 3.0,
+                umami: 0.0,
+                fat: 10.0,
+                aroma: 6.0,
             },
         }
     }
@@ -254,8 +278,12 @@ mod tests {
             slug: "garlic".to_string(),
             grams: 10.0,
             flavor: FlavorVector {
-                sweetness: 1.0, acidity: 0.5, bitterness: 2.0,
-                umami: 4.0, fat: 0.1, aroma: 9.0,
+                sweetness: 1.0,
+                acidity: 0.5,
+                bitterness: 2.0,
+                umami: 4.0,
+                fat: 0.1,
+                aroma: 9.0,
             },
         }
     }
@@ -265,7 +293,10 @@ mod tests {
         let ingredients = vec![tomato(), olive_oil(), garlic()];
         let result = aggregate_flavors(&ingredients);
         // Tomato dominates (200g of 240g total = 83%)
-        assert!(result.sweetness > 3.0, "sweetness should be close to tomato's 4.0");
+        assert!(
+            result.sweetness > 3.0,
+            "sweetness should be close to tomato's 4.0"
+        );
         assert!(result.umami > 5.0, "umami should be high from tomato");
         assert!(result.fat < 2.0, "fat should be low (mostly tomato)");
     }
@@ -274,16 +305,32 @@ mod tests {
     fn balance_score_reasonable() {
         let ingredients = vec![tomato(), olive_oil(), garlic()];
         let balance = analyze_balance(&ingredients);
-        assert!(balance.balance_score > 30, "balance should be >30, got {}", balance.balance_score);
-        assert!(balance.balance_score < 90, "balance should be <90, got {}", balance.balance_score);
+        assert!(
+            balance.balance_score > 30,
+            "balance should be >30, got {}",
+            balance.balance_score
+        );
+        assert!(
+            balance.balance_score < 90,
+            "balance should be <90, got {}",
+            balance.balance_score
+        );
     }
 
     #[test]
     fn weak_dimensions_detected() {
         let ingredients = vec![tomato()]; // pure tomato: low fat, low bitterness
         let balance = analyze_balance(&ingredients);
-        let weak_names: Vec<&str> = balance.weak_dimensions.iter().map(|d| d.dimension.as_str()).collect();
-        assert!(weak_names.contains(&"fat"), "fat should be weak for tomato, weak={:?}", weak_names);
+        let weak_names: Vec<&str> = balance
+            .weak_dimensions
+            .iter()
+            .map(|d| d.dimension.as_str())
+            .collect();
+        assert!(
+            weak_names.contains(&"fat"),
+            "fat should be weak for tomato, weak={:?}",
+            weak_names
+        );
     }
 
     #[test]
@@ -296,14 +343,26 @@ mod tests {
     #[test]
     fn compatibility_complement() {
         let tomato_v = FlavorVector {
-            sweetness: 4.0, acidity: 6.0, bitterness: 1.0,
-            umami: 7.0, fat: 0.2, aroma: 5.0,
+            sweetness: 4.0,
+            acidity: 6.0,
+            bitterness: 1.0,
+            umami: 7.0,
+            fat: 0.2,
+            aroma: 5.0,
         };
         let cream = FlavorVector {
-            sweetness: 3.0, acidity: 1.0, bitterness: 0.0,
-            umami: 1.0, fat: 9.0, aroma: 2.0,
+            sweetness: 3.0,
+            acidity: 1.0,
+            bitterness: 0.0,
+            umami: 1.0,
+            fat: 9.0,
+            aroma: 2.0,
         };
         let score = flavor_compatibility(&tomato_v, &cream);
-        assert!(score > 0.3, "tomato + cream should complement (fat fills gap), got {}", score);
+        assert!(
+            score > 0.3,
+            "tomato + cream should complement (fat fills gap), got {}",
+            score
+        );
     }
 }

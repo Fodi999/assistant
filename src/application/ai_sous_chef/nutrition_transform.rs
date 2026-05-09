@@ -81,8 +81,8 @@ struct TransformCoefficients {
     fat: f64,
     carbs: f64,
     fiber: f64,
-    fat_add: f64,      // absolute fat addition (g/100g) — mainly for frying
-    water_delta: f64,  // absolute change in water % (negative = loss)
+    fat_add: f64,     // absolute fat addition (g/100g) — mainly for frying
+    water_delta: f64, // absolute change in water % (negative = loss)
 }
 
 impl TransformCoefficients {
@@ -115,38 +115,78 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         // High water content → big concentration on drying
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::WateryProduce, ProcessingState::Boiled) => TransformCoefficients {
-            calories: 0.95, protein: 0.90, fat: 0.95, carbs: 0.95, fiber: 0.90,
-            fat_add: 0.0, water_delta: 3.0,
+            calories: 0.95,
+            protein: 0.90,
+            fat: 0.95,
+            carbs: 0.95,
+            fiber: 0.90,
+            fat_add: 0.0,
+            water_delta: 3.0,
         },
         (ProductGroup::WateryProduce, ProcessingState::Steamed) => TransformCoefficients {
-            calories: 0.98, protein: 0.95, fat: 1.0, carbs: 0.98, fiber: 0.95,
-            fat_add: 0.0, water_delta: 1.0,
+            calories: 0.98,
+            protein: 0.95,
+            fat: 1.0,
+            carbs: 0.98,
+            fiber: 0.95,
+            fat_add: 0.0,
+            water_delta: 1.0,
         },
         (ProductGroup::WateryProduce, ProcessingState::Baked) => TransformCoefficients {
-            calories: 1.10, protein: 1.0, fat: 1.0, carbs: 1.08, fiber: 1.0,
-            fat_add: 0.0, water_delta: -10.0,
+            calories: 1.10,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.08,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -10.0,
         },
         (ProductGroup::WateryProduce, ProcessingState::Grilled) => TransformCoefficients {
-            calories: 1.08, protein: 1.0, fat: 0.90, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -12.0,
+            calories: 1.08,
+            protein: 1.0,
+            fat: 0.90,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -12.0,
         },
         (ProductGroup::WateryProduce, ProcessingState::Fried) => TransformCoefficients {
-            calories: 1.30, protein: 0.95, fat: 1.0, carbs: 1.05, fiber: 0.90,
-            fat_add: 8.0, water_delta: -20.0,
+            calories: 1.30,
+            protein: 0.95,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 0.90,
+            fat_add: 8.0,
+            water_delta: -20.0,
         },
         (ProductGroup::WateryProduce, ProcessingState::Smoked) => TransformCoefficients {
-            calories: 1.15, protein: 1.10, fat: 1.05, carbs: 1.10, fiber: 1.0,
-            fat_add: 0.0, water_delta: -20.0,
+            calories: 1.15,
+            protein: 1.10,
+            fat: 1.05,
+            carbs: 1.10,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -20.0,
         },
         // Dried: water-based concentration — calculated dynamically below
         (ProductGroup::WateryProduce, ProcessingState::Dried) => TransformCoefficients {
             // placeholder — overridden by water-based drying logic
-            calories: 1.0, protein: 1.0, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: 0.0,
+            calories: 1.0,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 0.0,
         },
         (ProductGroup::WateryProduce, ProcessingState::Pickled) => TransformCoefficients {
-            calories: 0.90, protein: 0.85, fat: 1.0, carbs: 1.15, fiber: 0.85,
-            fat_add: 0.0, water_delta: 3.0,
+            calories: 0.90,
+            protein: 0.85,
+            fat: 1.0,
+            carbs: 1.15,
+            fiber: 0.85,
+            fat_add: 0.0,
+            water_delta: 3.0,
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -154,37 +194,77 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         // Moderate water, starchy → absorbs oil well when fried
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::DensePlant, ProcessingState::Boiled) => TransformCoefficients {
-            calories: 1.02, protein: 0.95, fat: 0.95, carbs: 1.0, fiber: 0.95,
-            fat_add: 0.0, water_delta: 5.0,
+            calories: 1.02,
+            protein: 0.95,
+            fat: 0.95,
+            carbs: 1.0,
+            fiber: 0.95,
+            fat_add: 0.0,
+            water_delta: 5.0,
         },
         (ProductGroup::DensePlant, ProcessingState::Steamed) => TransformCoefficients {
-            calories: 1.01, protein: 0.98, fat: 1.0, carbs: 1.0, fiber: 0.98,
-            fat_add: 0.0, water_delta: 2.0,
+            calories: 1.01,
+            protein: 0.98,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 0.98,
+            fat_add: 0.0,
+            water_delta: 2.0,
         },
         (ProductGroup::DensePlant, ProcessingState::Baked) => TransformCoefficients {
-            calories: 1.12, protein: 1.05, fat: 1.0, carbs: 1.10, fiber: 1.0,
-            fat_add: 0.0, water_delta: -12.0,
+            calories: 1.12,
+            protein: 1.05,
+            fat: 1.0,
+            carbs: 1.10,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -12.0,
         },
         (ProductGroup::DensePlant, ProcessingState::Grilled) => TransformCoefficients {
-            calories: 1.08, protein: 1.05, fat: 0.90, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -14.0,
+            calories: 1.08,
+            protein: 1.05,
+            fat: 0.90,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -14.0,
         },
         (ProductGroup::DensePlant, ProcessingState::Fried) => TransformCoefficients {
-            calories: 1.35, protein: 1.0, fat: 1.0, carbs: 1.05, fiber: 0.95,
-            fat_add: 10.0, water_delta: -25.0,
+            calories: 1.35,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 0.95,
+            fat_add: 10.0,
+            water_delta: -25.0,
         },
         (ProductGroup::DensePlant, ProcessingState::Smoked) => TransformCoefficients {
-            calories: 1.20, protein: 1.15, fat: 1.10, carbs: 1.10, fiber: 1.0,
-            fat_add: 0.0, water_delta: -22.0,
+            calories: 1.20,
+            protein: 1.15,
+            fat: 1.10,
+            carbs: 1.10,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -22.0,
         },
         (ProductGroup::DensePlant, ProcessingState::Dried) => TransformCoefficients {
             // placeholder — overridden by water-based drying
-            calories: 1.0, protein: 1.0, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: 0.0,
+            calories: 1.0,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 0.0,
         },
         (ProductGroup::DensePlant, ProcessingState::Pickled) => TransformCoefficients {
-            calories: 0.95, protein: 0.90, fat: 1.0, carbs: 1.10, fiber: 0.90,
-            fat_add: 0.0, water_delta: 3.0,
+            calories: 0.95,
+            protein: 0.90,
+            fat: 1.0,
+            carbs: 1.10,
+            fiber: 0.90,
+            fat_add: 0.0,
+            water_delta: 3.0,
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -193,39 +273,79 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         // Very high fat → frying adds little relative change
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::NutsSeeds, ProcessingState::Boiled) => TransformCoefficients {
-            calories: 1.02, protein: 0.98, fat: 1.0, carbs: 1.0, fiber: 0.98,
-            fat_add: 0.0, water_delta: 2.0,
+            calories: 1.02,
+            protein: 0.98,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 0.98,
+            fat_add: 0.0,
+            water_delta: 2.0,
         },
         (ProductGroup::NutsSeeds, ProcessingState::Steamed) => TransformCoefficients {
-            calories: 1.0, protein: 1.0, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: 1.0,
+            calories: 1.0,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 1.0,
         },
         (ProductGroup::NutsSeeds, ProcessingState::Baked) => TransformCoefficients {
             // Roasting nuts: slight water loss, flavor concentration
-            calories: 1.05, protein: 1.02, fat: 1.02, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -2.0,
+            calories: 1.05,
+            protein: 1.02,
+            fat: 1.02,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -2.0,
         },
         (ProductGroup::NutsSeeds, ProcessingState::Grilled) => TransformCoefficients {
-            calories: 1.05, protein: 1.02, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -2.0,
+            calories: 1.05,
+            protein: 1.02,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -2.0,
         },
         (ProductGroup::NutsSeeds, ProcessingState::Fried) => TransformCoefficients {
             // Nuts already have 50-65g fat; frying adds minimal extra
-            calories: 1.10, protein: 1.0, fat: 1.0, carbs: 1.02, fiber: 0.98,
-            fat_add: 3.0, water_delta: -2.0,
+            calories: 1.10,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.02,
+            fiber: 0.98,
+            fat_add: 3.0,
+            water_delta: -2.0,
         },
         (ProductGroup::NutsSeeds, ProcessingState::Smoked) => TransformCoefficients {
-            calories: 1.10, protein: 1.05, fat: 1.05, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -2.0,
+            calories: 1.10,
+            protein: 1.05,
+            fat: 1.05,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -2.0,
         },
         (ProductGroup::NutsSeeds, ProcessingState::Dried) => TransformCoefficients {
             // Already dry (4% water) → almost no change
-            calories: 1.02, protein: 1.02, fat: 1.01, carbs: 1.02, fiber: 1.02,
-            fat_add: 0.0, water_delta: -2.0,
+            calories: 1.02,
+            protein: 1.02,
+            fat: 1.01,
+            carbs: 1.02,
+            fiber: 1.02,
+            fat_add: 0.0,
+            water_delta: -2.0,
         },
         (ProductGroup::NutsSeeds, ProcessingState::Pickled) => TransformCoefficients {
-            calories: 1.03, protein: 0.95, fat: 1.0, carbs: 1.05, fiber: 0.95,
-            fat_add: 0.0, water_delta: 2.0,
+            calories: 1.03,
+            protein: 0.95,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 0.95,
+            fat_add: 0.0,
+            water_delta: 2.0,
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -234,37 +354,77 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         // Grilling drips fat, frying adds fat
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::MeatFish, ProcessingState::Boiled) => TransformCoefficients {
-            calories: 1.05, protein: 1.05, fat: 0.90, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: 2.0,
+            calories: 1.05,
+            protein: 1.05,
+            fat: 0.90,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 2.0,
         },
         (ProductGroup::MeatFish, ProcessingState::Steamed) => TransformCoefficients {
-            calories: 1.03, protein: 1.03, fat: 0.95, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: 1.0,
+            calories: 1.03,
+            protein: 1.03,
+            fat: 0.95,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 1.0,
         },
         (ProductGroup::MeatFish, ProcessingState::Baked) => TransformCoefficients {
-            calories: 1.15, protein: 1.15, fat: 1.05, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -15.0,
+            calories: 1.15,
+            protein: 1.15,
+            fat: 1.05,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -15.0,
         },
         (ProductGroup::MeatFish, ProcessingState::Grilled) => TransformCoefficients {
-            calories: 1.10, protein: 1.20, fat: 0.80, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -18.0,
+            calories: 1.10,
+            protein: 1.20,
+            fat: 0.80,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -18.0,
         },
         (ProductGroup::MeatFish, ProcessingState::Fried) => TransformCoefficients {
-            calories: 1.25, protein: 1.10, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 8.0, water_delta: -22.0,
+            calories: 1.25,
+            protein: 1.10,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 8.0,
+            water_delta: -22.0,
         },
         (ProductGroup::MeatFish, ProcessingState::Smoked) => TransformCoefficients {
-            calories: 1.30, protein: 1.25, fat: 1.15, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -25.0,
+            calories: 1.30,
+            protein: 1.25,
+            fat: 1.15,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -25.0,
         },
         (ProductGroup::MeatFish, ProcessingState::Dried) => TransformCoefficients {
             // placeholder — overridden by water-based drying
-            calories: 1.0, protein: 1.0, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: 0.0,
+            calories: 1.0,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 0.0,
         },
         (ProductGroup::MeatFish, ProcessingState::Pickled) => TransformCoefficients {
-            calories: 0.95, protein: 0.95, fat: 1.0, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: 3.0,
+            calories: 0.95,
+            protein: 0.95,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 3.0,
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -275,59 +435,114 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         (ProductGroup::DryGoods, ProcessingState::Boiled) => TransformCoefficients {
             // weight_ratio ≈ 2.5 → coeff = 1/2.5 = 0.40
             // Rice 360 raw / 2.5 = 144 kcal cooked ≈ USDA 130 kcal ✓
-            calories: 0.40, protein: 0.40, fat: 0.30, carbs: 0.40, fiber: 0.40,
-            fat_add: 0.0, water_delta: 55.0,
+            calories: 0.40,
+            protein: 0.40,
+            fat: 0.30,
+            carbs: 0.40,
+            fiber: 0.40,
+            fat_add: 0.0,
+            water_delta: 55.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Steamed) => TransformCoefficients {
             // weight_ratio ≈ 2.2 for steaming (slightly less water)
-            calories: 0.45, protein: 0.42, fat: 0.35, carbs: 0.45, fiber: 0.45,
-            fat_add: 0.0, water_delta: 50.0,
+            calories: 0.45,
+            protein: 0.42,
+            fat: 0.35,
+            carbs: 0.45,
+            fiber: 0.45,
+            fat_add: 0.0,
+            water_delta: 50.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Baked) => TransformCoefficients {
-            calories: 1.05, protein: 1.02, fat: 1.0, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -3.0,
+            calories: 1.05,
+            protein: 1.02,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -3.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Grilled) => TransformCoefficients {
-            calories: 1.05, protein: 1.0, fat: 0.95, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -3.0,
+            calories: 1.05,
+            protein: 1.0,
+            fat: 0.95,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -3.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Fried) => TransformCoefficients {
-            calories: 1.20, protein: 1.0, fat: 1.0, carbs: 1.05, fiber: 0.95,
-            fat_add: 6.0, water_delta: -5.0,
+            calories: 1.20,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 0.95,
+            fat_add: 6.0,
+            water_delta: -5.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Smoked) => TransformCoefficients {
-            calories: 1.08, protein: 1.05, fat: 1.02, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -5.0,
+            calories: 1.08,
+            protein: 1.05,
+            fat: 1.02,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -5.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Dried) => TransformCoefficients {
             // Already dry → negligible change
-            calories: 1.02, protein: 1.02, fat: 1.0, carbs: 1.02, fiber: 1.02,
-            fat_add: 0.0, water_delta: -3.0,
+            calories: 1.02,
+            protein: 1.02,
+            fat: 1.0,
+            carbs: 1.02,
+            fiber: 1.02,
+            fat_add: 0.0,
+            water_delta: -3.0,
         },
         (ProductGroup::DryGoods, ProcessingState::Pickled) => TransformCoefficients {
-            calories: 0.95, protein: 0.90, fat: 1.0, carbs: 1.05, fiber: 0.90,
-            fat_add: 0.0, water_delta: 5.0,
+            calories: 0.95,
+            protein: 0.90,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 0.90,
+            fat_add: 0.0,
+            water_delta: 5.0,
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // OILS & FATS (water 0–16%)
         // Cooking barely changes pure fats
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        (ProductGroup::OilsFats, ProcessingState::Boiled)  => TransformCoefficients::identity(),
+        (ProductGroup::OilsFats, ProcessingState::Boiled) => TransformCoefficients::identity(),
         (ProductGroup::OilsFats, ProcessingState::Steamed) => TransformCoefficients::identity(),
-        (ProductGroup::OilsFats, ProcessingState::Baked)   => TransformCoefficients {
-            calories: 1.0, protein: 1.0, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -5.0,
+        (ProductGroup::OilsFats, ProcessingState::Baked) => TransformCoefficients {
+            calories: 1.0,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -5.0,
         },
         (ProductGroup::OilsFats, ProcessingState::Grilled) => TransformCoefficients::identity(),
-        (ProductGroup::OilsFats, ProcessingState::Fried)   => TransformCoefficients::identity(),
-        (ProductGroup::OilsFats, ProcessingState::Smoked)  => TransformCoefficients {
-            calories: 1.02, protein: 1.0, fat: 1.02, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -5.0,
+        (ProductGroup::OilsFats, ProcessingState::Fried) => TransformCoefficients::identity(),
+        (ProductGroup::OilsFats, ProcessingState::Smoked) => TransformCoefficients {
+            calories: 1.02,
+            protein: 1.0,
+            fat: 1.02,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -5.0,
         },
-        (ProductGroup::OilsFats, ProcessingState::Dried)   => TransformCoefficients {
-            calories: 1.0, protein: 1.0, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: -10.0,
+        (ProductGroup::OilsFats, ProcessingState::Dried) => TransformCoefficients {
+            calories: 1.0,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -10.0,
         },
         (ProductGroup::OilsFats, ProcessingState::Pickled) => TransformCoefficients::identity(),
 
@@ -335,35 +550,70 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         // SPICES (water ~10%, used in small quantities)
         // Minimal change — spices are flavoring, not bulk
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        (ProductGroup::Spices, ProcessingState::Boiled)  => TransformCoefficients {
-            calories: 0.95, protein: 0.90, fat: 1.0, carbs: 0.95, fiber: 0.90,
-            fat_add: 0.0, water_delta: 5.0,
+        (ProductGroup::Spices, ProcessingState::Boiled) => TransformCoefficients {
+            calories: 0.95,
+            protein: 0.90,
+            fat: 1.0,
+            carbs: 0.95,
+            fiber: 0.90,
+            fat_add: 0.0,
+            water_delta: 5.0,
         },
         (ProductGroup::Spices, ProcessingState::Steamed) => TransformCoefficients::identity(),
-        (ProductGroup::Spices, ProcessingState::Baked)   => TransformCoefficients {
-            calories: 1.05, protein: 1.0, fat: 1.0, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -3.0,
+        (ProductGroup::Spices, ProcessingState::Baked) => TransformCoefficients {
+            calories: 1.05,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -3.0,
         },
         (ProductGroup::Spices, ProcessingState::Grilled) => TransformCoefficients {
-            calories: 1.05, protein: 1.0, fat: 1.0, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -3.0,
+            calories: 1.05,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -3.0,
         },
-        (ProductGroup::Spices, ProcessingState::Fried)   => TransformCoefficients {
-            calories: 1.10, protein: 1.0, fat: 1.0, carbs: 1.05, fiber: 0.95,
-            fat_add: 2.0, water_delta: -3.0,
+        (ProductGroup::Spices, ProcessingState::Fried) => TransformCoefficients {
+            calories: 1.10,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 0.95,
+            fat_add: 2.0,
+            water_delta: -3.0,
         },
-        (ProductGroup::Spices, ProcessingState::Smoked)  => TransformCoefficients {
-            calories: 1.05, protein: 1.0, fat: 1.0, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -5.0,
+        (ProductGroup::Spices, ProcessingState::Smoked) => TransformCoefficients {
+            calories: 1.05,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -5.0,
         },
-        (ProductGroup::Spices, ProcessingState::Dried)   => TransformCoefficients {
+        (ProductGroup::Spices, ProcessingState::Dried) => TransformCoefficients {
             // Already mostly dry
-            calories: 1.05, protein: 1.05, fat: 1.0, carbs: 1.05, fiber: 1.05,
-            fat_add: 0.0, water_delta: -5.0,
+            calories: 1.05,
+            protein: 1.05,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 1.05,
+            fat_add: 0.0,
+            water_delta: -5.0,
         },
         (ProductGroup::Spices, ProcessingState::Pickled) => TransformCoefficients {
-            calories: 0.95, protein: 0.90, fat: 1.0, carbs: 1.10, fiber: 0.90,
-            fat_add: 0.0, water_delta: 5.0,
+            calories: 0.95,
+            protein: 0.90,
+            fat: 1.0,
+            carbs: 1.10,
+            fiber: 0.90,
+            fat_add: 0.0,
+            water_delta: 5.0,
         },
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -371,37 +621,77 @@ fn get_coefficients(group: ProductGroup, state: ProcessingState) -> TransformCoe
         // Moderate / generic coefficients
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (ProductGroup::Other, ProcessingState::Boiled) => TransformCoefficients {
-            calories: 1.02, protein: 0.95, fat: 0.95, carbs: 1.0, fiber: 0.95,
-            fat_add: 0.0, water_delta: 3.0,
+            calories: 1.02,
+            protein: 0.95,
+            fat: 0.95,
+            carbs: 1.0,
+            fiber: 0.95,
+            fat_add: 0.0,
+            water_delta: 3.0,
         },
         (ProductGroup::Other, ProcessingState::Steamed) => TransformCoefficients {
-            calories: 1.01, protein: 0.98, fat: 1.0, carbs: 1.0, fiber: 0.98,
-            fat_add: 0.0, water_delta: 1.0,
+            calories: 1.01,
+            protein: 0.98,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 0.98,
+            fat_add: 0.0,
+            water_delta: 1.0,
         },
         (ProductGroup::Other, ProcessingState::Baked) => TransformCoefficients {
-            calories: 1.10, protein: 1.05, fat: 1.02, carbs: 1.08, fiber: 1.0,
-            fat_add: 0.0, water_delta: -10.0,
+            calories: 1.10,
+            protein: 1.05,
+            fat: 1.02,
+            carbs: 1.08,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -10.0,
         },
         (ProductGroup::Other, ProcessingState::Grilled) => TransformCoefficients {
-            calories: 1.08, protein: 1.05, fat: 0.90, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -12.0,
+            calories: 1.08,
+            protein: 1.05,
+            fat: 0.90,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -12.0,
         },
         (ProductGroup::Other, ProcessingState::Fried) => TransformCoefficients {
-            calories: 1.25, protein: 1.0, fat: 1.0, carbs: 1.05, fiber: 0.95,
-            fat_add: 7.0, water_delta: -15.0,
+            calories: 1.25,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.05,
+            fiber: 0.95,
+            fat_add: 7.0,
+            water_delta: -15.0,
         },
         (ProductGroup::Other, ProcessingState::Smoked) => TransformCoefficients {
-            calories: 1.15, protein: 1.10, fat: 1.05, carbs: 1.05, fiber: 1.0,
-            fat_add: 0.0, water_delta: -15.0,
+            calories: 1.15,
+            protein: 1.10,
+            fat: 1.05,
+            carbs: 1.05,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: -15.0,
         },
         (ProductGroup::Other, ProcessingState::Dried) => TransformCoefficients {
             // placeholder — overridden by water-based drying
-            calories: 1.0, protein: 1.0, fat: 1.0, carbs: 1.0, fiber: 1.0,
-            fat_add: 0.0, water_delta: 0.0,
+            calories: 1.0,
+            protein: 1.0,
+            fat: 1.0,
+            carbs: 1.0,
+            fiber: 1.0,
+            fat_add: 0.0,
+            water_delta: 0.0,
         },
         (ProductGroup::Other, ProcessingState::Pickled) => TransformCoefficients {
-            calories: 0.95, protein: 0.90, fat: 1.0, carbs: 1.10, fiber: 0.90,
-            fat_add: 0.0, water_delta: 3.0,
+            calories: 0.95,
+            protein: 0.90,
+            fat: 1.0,
+            carbs: 1.10,
+            fiber: 0.90,
+            fat_add: 0.0,
+            water_delta: 3.0,
         },
     }
 }
@@ -426,9 +716,9 @@ fn drying_factor(water_percent: f64) -> f64 {
     let water_before = water_percent.clamp(0.0, 99.0);
     // Target water after drying: 8% for very wet, down to (water-2)% for dry
     let water_after = if water_before > 50.0 {
-        8.0  // standard dried product moisture
+        8.0 // standard dried product moisture
     } else if water_before > 20.0 {
-        6.0  // drier target for moderate-water products
+        6.0 // drier target for moderate-water products
     } else {
         // Already quite dry — remove just a couple percent
         (water_before - 2.0).max(1.0)
@@ -532,7 +822,10 @@ pub fn transform_nutrition(
         // For wet groups, we compute dynamically from water content.
         let use_water_based = matches!(
             group,
-            ProductGroup::WateryProduce | ProductGroup::DensePlant | ProductGroup::MeatFish | ProductGroup::Other
+            ProductGroup::WateryProduce
+                | ProductGroup::DensePlant
+                | ProductGroup::MeatFish
+                | ProductGroup::Other
         );
 
         if use_water_based {
@@ -680,8 +973,15 @@ mod tests {
         let result = transform_nutrition(&base, ProductGroup::DensePlant, ProcessingState::Fried);
         // Potato: 0.1g fat + 10g absorbed oil = ~10.1g fat
         assert!(result.fat_per_100g > 5.0, "fried potato should gain fat");
-        assert!(result.fat_per_100g < 20.0, "fried potato fat should be < 20g, got {}", result.fat_per_100g);
-        assert!(result.calories_per_100g > base.calories, "frying increases calories");
+        assert!(
+            result.fat_per_100g < 20.0,
+            "fried potato fat should be < 20g, got {}",
+            result.fat_per_100g
+        );
+        assert!(
+            result.calories_per_100g > base.calories,
+            "frying increases calories"
+        );
     }
 
     // ── Walnut dried: should barely change (already 4% water) ──
@@ -691,9 +991,21 @@ mod tests {
         let base = sample_walnut();
         let result = transform_nutrition(&base, ProductGroup::NutsSeeds, ProcessingState::Dried);
         // Should be very close to raw values
-        assert!(result.fat_per_100g < 70.0, "walnut dried fat should be < 70g, got {}", result.fat_per_100g);
-        assert!(result.fat_per_100g > 60.0, "walnut dried fat should be > 60g, got {}", result.fat_per_100g);
-        assert!(result.calories_per_100g < 700.0, "walnut dried cal < 700, got {}", result.calories_per_100g);
+        assert!(
+            result.fat_per_100g < 70.0,
+            "walnut dried fat should be < 70g, got {}",
+            result.fat_per_100g
+        );
+        assert!(
+            result.fat_per_100g > 60.0,
+            "walnut dried fat should be > 60g, got {}",
+            result.fat_per_100g
+        );
+        assert!(
+            result.calories_per_100g < 700.0,
+            "walnut dried cal < 700, got {}",
+            result.calories_per_100g
+        );
     }
 
     // ── Tomato dried: should concentrate a lot (94% water → ~8%) ──
@@ -701,14 +1013,27 @@ mod tests {
     #[test]
     fn tomato_dried_concentrates_properly() {
         let base = sample_tomato();
-        let result = transform_nutrition(&base, ProductGroup::WateryProduce, ProcessingState::Dried);
+        let result =
+            transform_nutrition(&base, ProductGroup::WateryProduce, ProcessingState::Dried);
         // factor = (100-8)/(100-94) = 92/6 ≈ 15.3, but capped at 8×
-        assert!(result.calories_per_100g > base.calories * 5.0, "tomato dried should concentrate a lot");
-        assert!(result.calories_per_100g <= base.calories * 8.5, "tomato dried capped at 8×, got {}", result.calories_per_100g);
-        assert!(result.water_percent < 10.0, "dried tomato should be < 10% water");
+        assert!(
+            result.calories_per_100g > base.calories * 5.0,
+            "tomato dried should concentrate a lot"
+        );
+        assert!(
+            result.calories_per_100g <= base.calories * 8.5,
+            "tomato dried capped at 8×, got {}",
+            result.calories_per_100g
+        );
+        assert!(
+            result.water_percent < 10.0,
+            "dried tomato should be < 10% water"
+        );
         // Macros should not exceed 100
-        assert!(result.protein_per_100g + result.fat_per_100g + result.carbs_per_100g <= 100.0,
-            "macro sum should be ≤ 100g");
+        assert!(
+            result.protein_per_100g + result.fat_per_100g + result.carbs_per_100g <= 100.0,
+            "macro sum should be ≤ 100g"
+        );
     }
 
     // ── Salmon grilled: reasonable protein concentration ──
@@ -717,9 +1042,19 @@ mod tests {
     fn salmon_grilled_reasonable() {
         let base = sample_salmon();
         let result = transform_nutrition(&base, ProductGroup::MeatFish, ProcessingState::Grilled);
-        assert!(result.protein_per_100g > base.protein, "grilled salmon should have more protein per 100g");
-        assert!(result.fat_per_100g < base.fat, "grilled salmon should lose some fat");
-        assert!(result.protein_per_100g < 35.0, "grilled salmon protein < 35g, got {}", result.protein_per_100g);
+        assert!(
+            result.protein_per_100g > base.protein,
+            "grilled salmon should have more protein per 100g"
+        );
+        assert!(
+            result.fat_per_100g < base.fat,
+            "grilled salmon should lose some fat"
+        );
+        assert!(
+            result.protein_per_100g < 35.0,
+            "grilled salmon protein < 35g, got {}",
+            result.protein_per_100g
+        );
     }
 
     // ── Rice boiled: should dilute significantly ──
@@ -729,9 +1064,20 @@ mod tests {
         let base = sample_rice();
         let result = transform_nutrition(&base, ProductGroup::DryGoods, ProcessingState::Boiled);
         // Cooked rice is ~130 kcal/100g vs 360 raw
-        assert!(result.calories_per_100g < 200.0, "boiled rice should be < 200 kcal, got {}", result.calories_per_100g);
-        assert!(result.calories_per_100g > 100.0, "boiled rice should be > 100 kcal, got {}", result.calories_per_100g);
-        assert!(result.water_percent > 60.0, "boiled rice should have high water");
+        assert!(
+            result.calories_per_100g < 200.0,
+            "boiled rice should be < 200 kcal, got {}",
+            result.calories_per_100g
+        );
+        assert!(
+            result.calories_per_100g > 100.0,
+            "boiled rice should be > 100 kcal, got {}",
+            result.calories_per_100g
+        );
+        assert!(
+            result.water_percent > 60.0,
+            "boiled rice should have high water"
+        );
     }
 
     // ── Validation: macros can't exceed 100g total ──
@@ -747,8 +1093,10 @@ mod tests {
             water_percent: 10.0,
         };
         let v = validate_nutrition(extreme);
-        assert!(v.protein_per_100g + v.fat_per_100g + v.carbs_per_100g <= 100.01,
-            "macro sum should be ≤ 100g after validation");
+        assert!(
+            v.protein_per_100g + v.fat_per_100g + v.carbs_per_100g <= 100.01,
+            "macro sum should be ≤ 100g after validation"
+        );
     }
 
     // ── Drying factor calculations ──
@@ -771,7 +1119,11 @@ mod tests {
     fn drying_factor_potato() {
         // 79% water → 8% target → factor = 92/21 ≈ 4.38
         let f = drying_factor(79.0);
-        assert!(f > 4.0 && f < 5.0, "potato drying factor should be ~4.4, got {}", f);
+        assert!(
+            f > 4.0 && f < 5.0,
+            "potato drying factor should be ~4.4, got {}",
+            f
+        );
     }
 
     // ── Calorie safety guard ──
@@ -789,6 +1141,10 @@ mod tests {
         let v = validate_nutrition(bad);
         // Atwater: 10*4 + 20*4 + 5*9 = 40+80+45 = 165
         // 1000 vs 165 → deviation ~5× → should recalculate
-        assert!(v.calories_per_100g < 200.0, "calories should be recalculated to ~165, got {}", v.calories_per_100g);
+        assert!(
+            v.calories_per_100g < 200.0,
+            "calories should be recalculated to ~165, got {}",
+            v.calories_per_100g
+        );
     }
 }

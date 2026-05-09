@@ -103,8 +103,14 @@ pub async fn data_quality(
                 rows.iter().map(|r| r.weighted_score).sum::<f64>() / rows.len() as f64
             };
             let complete = rows.iter().filter(|r| r.status == "complete").count();
-            let critical = rows.iter().filter(|r| r.status == "critical_missing").count();
-            let optional = rows.iter().filter(|r| r.status == "optional_missing").count();
+            let critical = rows
+                .iter()
+                .filter(|r| r.status == "critical_missing")
+                .count();
+            let optional = rows
+                .iter()
+                .filter(|r| r.status == "optional_missing")
+                .count();
             Ok(Json(serde_json::json!({
                 "ok": true,
                 "total": rows.len(),

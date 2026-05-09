@@ -14,20 +14,12 @@ use super::lathe::MeshPart;
 use super::validate::GeometryError;
 
 /// Disk facing `+Y` (top of liquid, top of lid).
-pub fn disk_fan_up(
-    radius: f32,
-    y: f32,
-    segments: usize,
-) -> Result<MeshPart, GeometryError> {
+pub fn disk_fan_up(radius: f32, y: f32, segments: usize) -> Result<MeshPart, GeometryError> {
     disk_fan(radius, y, segments, true)
 }
 
 /// Disk facing `-Y` (jar bottom, lid underside).
-pub fn disk_fan_down(
-    radius: f32,
-    y: f32,
-    segments: usize,
-) -> Result<MeshPart, GeometryError> {
+pub fn disk_fan_down(radius: f32, y: f32, segments: usize) -> Result<MeshPart, GeometryError> {
     disk_fan(radius, y, segments, false)
 }
 

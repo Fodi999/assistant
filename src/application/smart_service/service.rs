@@ -1,10 +1,10 @@
 //! SmartService v3 — public API, owns cache + pool + sessions.
 
+use crate::shared::AppResult;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
-use sqlx::PgPool;
-use crate::shared::AppResult;
 
 use super::cache::SmartCache;
 use super::context::CulinaryContext;
@@ -26,8 +26,8 @@ const MAX_SESSIONS: usize = 5000;
 const SESSION_TTL_SECS: u64 = 1800; // 30 minutes
 
 pub struct SmartService {
-    pool:     PgPool,
-    cache:    SmartCache,
+    pool: PgPool,
+    cache: SmartCache,
     sessions: Mutex<HashMap<String, SessionData>>,
 }
 
@@ -86,7 +86,8 @@ impl SmartService {
                 map.retain(|_, v| now.duration_since(v.updated).as_secs() < SESSION_TTL_SECS);
                 // If still too many, clear oldest half
                 if map.len() >= MAX_SESSIONS {
-                    let mut entries: Vec<(String, Instant)> = map.iter().map(|(k, v)| (k.clone(), v.updated)).collect();
+                    let mut entries: Vec<(String, Instant)> =
+                        map.iter().map(|(k, v)| (k.clone(), v.updated)).collect();
                     entries.sort_by_key(|(_, t)| *t);
                     let to_remove = entries.len() / 2;
                     for (k, _) in entries.into_iter().take(to_remove) {
@@ -95,10 +96,12 @@ impl SmartService {
                 }
             }
 
-            let entry = map.entry(session_id.to_string()).or_insert_with(|| SessionData {
-                recent_ingredients: Vec::new(),
-                updated: Instant::now(),
-            });
+            let entry = map
+                .entry(session_id.to_string())
+                .or_insert_with(|| SessionData {
+                    recent_ingredients: Vec::new(),
+                    updated: Instant::now(),
+                });
 
             // Remove if already present, then push to front
             entry.recent_ingredients.retain(|s| s != ingredient);

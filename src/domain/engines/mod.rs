@@ -10,11 +10,11 @@
 //! Each engine is a trait that defines pure operations.
 //! Implementations live in the application layer (with DB access).
 
-pub mod types;
 pub mod conversion;
-pub mod nutrition;
-pub mod seasonality;
-pub mod recipe;
 pub mod kitchen;
+pub mod nutrition;
+pub mod recipe;
 pub mod registry;
 pub mod response;
+pub mod seasonality;
+pub mod types;

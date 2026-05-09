@@ -15,10 +15,10 @@
 use std::f32::consts::PI;
 
 use crate::application::laboratory_v2::ProductSurfaceSpec;
+use crate::infrastructure::geometry::kernel::normals::recalculate_smooth_normals;
 use crate::infrastructure::geometry::kernel::{
     disk_fan_down, lathe_profile, GeometryQuality, MeshBuilder, Profile, ProfilePoint,
 };
-use crate::infrastructure::geometry::kernel::normals::recalculate_smooth_normals;
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
 // ── Plate dimensions (metres) ───────────────────────────────────────────────
@@ -73,10 +73,10 @@ pub struct FoodMoundParams {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FoodPattern {
-    SmoothMound,  // purée, hummus, cream, risotto
-    ChunkyMound,  // salad, roasted veg, potatoes, grains
-    SwirlMound,   // sauce drizzled on plate, mashed-with-swirl
-    FlatSpread,   // flatbread, pizza, thin galette
+    SmoothMound, // purée, hummus, cream, risotto
+    ChunkyMound, // salad, roasted veg, potatoes, grains
+    SwirlMound,  // sauce drizzled on plate, mashed-with-swirl
+    FlatSpread,  // flatbread, pizza, thin galette
 }
 
 impl Default for FoodMoundParams {
@@ -102,9 +102,9 @@ pub fn mound_params_from_spec(surface: Option<&ProductSurfaceSpec>) -> FoodMound
 
     let pattern = match s.pattern.as_deref().unwrap_or("unknown") {
         "chunky" | "chunky_mound" | "waves" => FoodPattern::ChunkyMound,
-        "swirl" | "spiral_swirl"            => FoodPattern::SwirlMound,
-        "flat"                              => FoodPattern::FlatSpread,
-        _                                   => FoodPattern::SmoothMound,
+        "swirl" | "spiral_swirl" => FoodPattern::SwirlMound,
+        "flat" => FoodPattern::FlatSpread,
+        _ => FoodPattern::SmoothMound,
     };
 
     let apex_m = lerp_f32(
@@ -114,11 +114,19 @@ pub fn mound_params_from_spec(surface: Option<&ProductSurfaceSpec>) -> FoodMound
     );
     let spread_ratio = s.fill_radius_ratio.unwrap_or(0.88).clamp(0.55, 1.0);
     let irregularity = s.surface_irregularity.unwrap_or(0.25).clamp(0.0, 1.0);
-    let chunk_freq   = lerp_f32(3.0, 12.0, irregularity);
-    let roughness    = lerp_f32(0.20, 0.80, irregularity);
-    let gloss        = lerp_f32(0.55, 0.10, irregularity);
+    let chunk_freq = lerp_f32(3.0, 12.0, irregularity);
+    let roughness = lerp_f32(0.20, 0.80, irregularity);
+    let gloss = lerp_f32(0.55, 0.10, irregularity);
 
-    FoodMoundParams { pattern, apex_m, spread_ratio, irregularity, chunk_freq, roughness, gloss }
+    FoodMoundParams {
+        pattern,
+        apex_m,
+        spread_ratio,
+        irregularity,
+        chunk_freq,
+        roughness,
+        gloss,
+    }
 }
 
 #[inline]
@@ -157,12 +165,14 @@ pub fn generate_with_surface_and_quality(
     quality: GeometryQuality,
 ) -> Mesh {
     let product_color = hex_to_rgb(product_color_hex);
-    let plate_color   = plate_color_hex.map(hex_to_rgb).unwrap_or(PLATE_DEFAULT_COLOR);
-    let params        = mound_params_from_spec(surface);
+    let plate_color = plate_color_hex
+        .map(hex_to_rgb)
+        .unwrap_or(PLATE_DEFAULT_COLOR);
+    let params = mound_params_from_spec(surface);
 
-    let segments       = quality.radial_segments();
+    let segments = quality.radial_segments();
     let mound_segments = quality.radial_segments();
-    let mound_rings    = quality.surface_rings();
+    let mound_rings = quality.surface_rings();
 
     let mut b = MeshBuilder::new();
 
@@ -200,10 +210,38 @@ pub fn generate_with_surface_and_quality(
     // ── Food mound ──────────────────────────────────────────────────────────
     let food_radius = FOOD_MAX_RADIUS * params.spread_ratio;
     match params.pattern {
-        FoodPattern::SmoothMound => add_smooth_mound(&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
-        FoodPattern::ChunkyMound => add_chunky_mound(&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
-        FoodPattern::SwirlMound  => add_swirl_mound (&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
-        FoodPattern::FlatSpread  => add_flat_spread  (&mut b, food_g, mound_segments, mound_rings, &params, food_radius),
+        FoodPattern::SmoothMound => add_smooth_mound(
+            &mut b,
+            food_g,
+            mound_segments,
+            mound_rings,
+            &params,
+            food_radius,
+        ),
+        FoodPattern::ChunkyMound => add_chunky_mound(
+            &mut b,
+            food_g,
+            mound_segments,
+            mound_rings,
+            &params,
+            food_radius,
+        ),
+        FoodPattern::SwirlMound => add_swirl_mound(
+            &mut b,
+            food_g,
+            mound_segments,
+            mound_rings,
+            &params,
+            food_radius,
+        ),
+        FoodPattern::FlatSpread => add_flat_spread(
+            &mut b,
+            food_g,
+            mound_segments,
+            mound_rings,
+            &params,
+            food_radius,
+        ),
     }
 
     // PR #32: smooth normals on food mound so heightfield facets disappear.
@@ -242,13 +280,14 @@ fn add_smooth_mound(
         let noise_w = (edge_lo * edge_hi).clamp(0.0, 1.0);
 
         for seg in 0..=segments {
-            let t     = seg as f32 / segments as f32;
+            let t = seg as f32 / segments as f32;
             let theta = t * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
 
-            let dome  = params.apex_m * (1.0 - r_ratio * r_ratio);
-            let noise = FOOD_NOISE * params.irregularity
+            let dome = params.apex_m * (1.0 - r_ratio * r_ratio);
+            let noise = FOOD_NOISE
+                * params.irregularity
                 * (3.0 * theta + 8.0 * r_ratio).sin()
                 * (7.0 * theta).sin()
                 * noise_w;
@@ -290,15 +329,15 @@ fn add_chunky_mound(
         let edge_w = (1.0 - smoothstep(0.80, 1.00, r_ratio)).clamp(0.0, 1.0);
 
         for seg in 0..=segments {
-            let t     = seg as f32 / segments as f32;
+            let t = seg as f32 / segments as f32;
             let theta = t * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
 
             // Bell envelope + chunky high-frequency noise.
-            let dome   = params.apex_m * (1.0 - r_ratio * r_ratio);
-            let freq   = params.chunk_freq;
-            let chunk  = (freq * theta).sin().abs() * 0.4
+            let dome = params.apex_m * (1.0 - r_ratio * r_ratio);
+            let freq = params.chunk_freq;
+            let chunk = (freq * theta).sin().abs() * 0.4
                 + (freq * 1.3 * theta + r_ratio * 5.0).cos().abs() * 0.35
                 + (freq * 0.7 * theta - r_ratio * 3.0).sin() * 0.25;
             let noise = FOOD_NOISE * 2.5 * params.irregularity * chunk * edge_w;
@@ -343,14 +382,14 @@ fn add_swirl_mound(
         let edge_falloff = (1.0 - (r_ratio - 0.80).max(0.0) / 0.20).clamp(0.0, 1.0);
 
         for seg in 0..=segments {
-            let t     = seg as f32 / segments as f32;
+            let t = seg as f32 / segments as f32;
             let theta = t * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
 
-            let dome  = params.apex_m * (1.0 - r_ratio * r_ratio);
+            let dome = params.apex_m * (1.0 - r_ratio * r_ratio);
             let phase = swirl_arms * theta + r_ratio * 2.0 * PI * 1.2;
-            let wave  = phase.sin();
+            let wave = phase.sin();
             let ridge = wave.max(0.0).powf(2.2) * ridge_m * edge_falloff;
             let y = PLATE_TOP_Y + dome + ridge;
 
@@ -391,17 +430,23 @@ fn add_flat_spread(
         let edge_drop = smoothstep(0.88, 1.00, r_ratio);
 
         for seg in 0..=segments {
-            let t     = seg as f32 / segments as f32;
+            let t = seg as f32 / segments as f32;
             let theta = t * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
 
             // Mostly flat with a slight edge crisp.
-            let y = PLATE_TOP_Y + flat_apex * (1.0 - edge_drop * 0.9)
-                + FOOD_NOISE * 0.4 * params.irregularity
-                    * (5.0 * theta + r_ratio * 4.0).sin();
+            let y = PLATE_TOP_Y
+                + flat_apex * (1.0 - edge_drop * 0.9)
+                + FOOD_NOISE * 0.4 * params.irregularity * (5.0 * theta + r_ratio * 4.0).sin();
 
-            let (nx, ny, nz) = approximate_normal(cos_t, sin_t, r, -flat_apex * 2.0 * r_ratio / food_radius.max(1e-6), 0.0);
+            let (nx, ny, nz) = approximate_normal(
+                cos_t,
+                sin_t,
+                r,
+                -flat_apex * 2.0 * r_ratio / food_radius.max(1e-6),
+                0.0,
+            );
 
             b.add_vertex(
                 [cos_t * r, y, sin_t * r],
@@ -449,7 +494,13 @@ fn stitch_rings(
 }
 
 /// Approximate surface normal from the radial slope and tangential slope.
-fn approximate_normal(cos_t: f32, sin_t: f32, r: f32, d_y_d_r: f32, slope_tang: f32) -> (f32, f32, f32) {
+fn approximate_normal(
+    cos_t: f32,
+    sin_t: f32,
+    r: f32,
+    d_y_d_r: f32,
+    slope_tang: f32,
+) -> (f32, f32, f32) {
     let tr = [cos_t, d_y_d_r, sin_t];
     let tt = [-sin_t, if r > 1e-5 { slope_tang / r } else { 0.0 }, cos_t];
     let nx = tr[1] * tt[2] - tr[2] * tt[1];
@@ -477,7 +528,11 @@ mod tests {
         assert_eq!(mesh.vertices.len(), mesh.normals.len());
         assert_eq!(mesh.vertices.len(), mesh.uvs.len());
         for g in &mesh.groups {
-            assert!(!g.faces.is_empty(), "group {} has no faces", g.material.name);
+            assert!(
+                !g.faces.is_empty(),
+                "group {} has no faces",
+                g.material.name
+            );
         }
     }
 
@@ -608,8 +663,16 @@ mod tests {
     #[test]
     fn plate_food_pbr_material_class_is_set() {
         let mesh = generate("#A85B12", None);
-        let ceramic = mesh.groups.iter().find(|g| g.material.name == "plate_ceramic").unwrap();
-        let food    = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        let ceramic = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "plate_ceramic")
+            .unwrap();
+        let food = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "food_material")
+            .unwrap();
         assert_eq!(ceramic.material.material_class, "ceramic");
         assert_eq!(food.material.material_class, "food");
     }
@@ -617,10 +680,21 @@ mod tests {
     #[test]
     fn plate_food_pbr_roughness_fields_are_set() {
         let mesh = generate("#A85B12", None);
-        let ceramic = mesh.groups.iter().find(|g| g.material.name == "plate_ceramic").unwrap();
-        let food    = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        let ceramic = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "plate_ceramic")
+            .unwrap();
+        let food = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "food_material")
+            .unwrap();
         let cr = ceramic.material.roughness;
-        assert!((cr - 0.52).abs() < 0.01, "plate_ceramic roughness should be ~0.52, got {cr}");
+        assert!(
+            (cr - 0.52).abs() < 0.01,
+            "plate_ceramic roughness should be ~0.52, got {cr}"
+        );
         let fr = food.material.roughness;
         assert!(fr > 0.0 && fr <= 1.0, "food roughness out of range: {fr}");
     }
@@ -641,7 +715,11 @@ mod tests {
             crate::infrastructure::geometry::kernel::GeometryQuality::default(),
         );
         validate_mesh(&mesh).expect("chunky mound passes validation");
-        let food = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        let food = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "food_material")
+            .unwrap();
         assert!(!food.faces.is_empty());
     }
 
@@ -677,15 +755,28 @@ mod tests {
         );
         validate_mesh(&mesh).expect("flat spread passes validation");
         // Flat spread must have a much smaller height range than the default dome.
-        let food = mesh.groups.iter().find(|g| g.material.name == "food_material").unwrap();
+        let food = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "food_material")
+            .unwrap();
         let mut indices = std::collections::HashSet::new();
-        for [a, b, c] in &food.faces { indices.insert(*a); indices.insert(*b); indices.insert(*c); }
-        let (min_y, max_y) = indices.iter().fold(
-            (f32::INFINITY, f32::NEG_INFINITY),
-            |(mn, mx), &i| (mn.min(mesh.vertices[i][1]), mx.max(mesh.vertices[i][1])),
-        );
+        for [a, b, c] in &food.faces {
+            indices.insert(*a);
+            indices.insert(*b);
+            indices.insert(*c);
+        }
+        let (min_y, max_y) = indices
+            .iter()
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(mn, mx), &i| {
+                (mn.min(mesh.vertices[i][1]), mx.max(mesh.vertices[i][1]))
+            });
         // flat spread apex ~ apex_m * 0.18 * default_apex → much less than 12 mm
-        assert!(max_y - min_y < 0.010, "flat spread height range should be < 10 mm (got {})", max_y - min_y);
+        assert!(
+            max_y - min_y < 0.010,
+            "flat spread height range should be < 10 mm (got {})",
+            max_y - min_y
+        );
     }
 
     #[test]
@@ -697,6 +788,10 @@ mod tests {
         };
         let p = mound_params_from_spec(Some(&surface));
         assert_eq!(p.pattern, FoodPattern::ChunkyMound);
-        assert!(p.roughness > 0.60, "high irregularity → rough food (got {})", p.roughness);
+        assert!(
+            p.roughness > 0.60,
+            "high irregularity → rough food (got {})",
+            p.roughness
+        );
     }
 }

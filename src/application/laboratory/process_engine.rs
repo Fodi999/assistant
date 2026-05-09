@@ -280,7 +280,7 @@ fn behavior_to_effect(
     let message = match (step_temp, behavior.temperature_c) {
         (Some(t), Some(threshold)) => natural_effect_message(&effect_type, display, threshold, t),
         (Some(t), None) => natural_effect_message_no_threshold(&effect_type, display, t),
-        _ => format!("{display}: активируется эффект «{label}».")
+        _ => format!("{display}: активируется эффект «{label}»."),
     };
 
     Some(LaboratoryEffect {
@@ -360,9 +360,7 @@ fn processing_effects_for(
                 kind: "smoke_point_exceeded".to_string(),
                 severity: "warning".to_string(),
                 ingredient_slug: Some(slug.to_string()),
-                message: format!(
-                    "{display} перегревается: {t}°C ≥ точки дымления {smoke}°C."
-                ),
+                message: format!("{display} перегревается: {t}°C ≥ точки дымления {smoke}°C."),
             });
         }
     }
@@ -379,9 +377,7 @@ fn processing_effects_for(
                     0.7,
                     Some(100.0),
                     Some(t),
-                    format!(
-                        "{display}: потеря витаминов (сохраняется {retention}%)."
-                    ),
+                    format!("{display}: потеря витаминов (сохраняется {retention}%)."),
                 ));
             }
         }
@@ -427,15 +423,11 @@ fn natural_effect_message(effect_type: &str, display: &str, threshold: f64, actu
 
 fn natural_effect_message_no_threshold(effect_type: &str, display: &str, actual: f64) -> String {
     match effect_type {
-        "softening" | "texture_breakdown" => format!(
-            "При {actual}°C {display} размягчается."
-        ),
-        "moisture_release" | "juice_release" => format!(
-            "При нагреве {display} выделяет сок — консистенция разжижается."
-        ),
-        "caramelization" => format!(
-            "При {actual}°C начинается карамелизация {display}."
-        ),
+        "softening" | "texture_breakdown" => format!("При {actual}°C {display} размягчается."),
+        "moisture_release" | "juice_release" => {
+            format!("При нагреве {display} выделяет сок — консистенция разжижается.")
+        }
+        "caramelization" => format!("При {actual}°C начинается карамелизация {display}."),
         _ => format!(
             "При {actual}°C в {display} активируется эффект «{}».",
             label_for_effect(effect_type)
@@ -491,10 +483,7 @@ fn technique_effect(
     };
 
     let (slug, name) = match targets.first() {
-        Some(s) if targets.len() == 1 => (
-            Some((*s).to_string()),
-            display_names.get(*s).cloned(),
-        ),
+        Some(s) if targets.len() == 1 => (Some((*s).to_string()), display_names.get(*s).cloned()),
         _ => (None, None),
     };
 
@@ -646,7 +635,12 @@ mod tests {
         }
     }
 
-    fn step(order: i32, technique: &str, temp: Option<f64>, targets: Vec<&str>) -> LabProcessStepDto {
+    fn step(
+        order: i32,
+        technique: &str,
+        temp: Option<f64>,
+        targets: Vec<&str>,
+    ) -> LabProcessStepDto {
         LabProcessStepDto {
             id: Uuid::new_v4(),
             order_index: order,
@@ -659,7 +653,10 @@ mod tests {
         }
     }
 
-    fn profile(slug: &str, behaviors: Vec<LaboratoryCulinaryBehavior>) -> LaboratoryIngredientProfile {
+    fn profile(
+        slug: &str,
+        behaviors: Vec<LaboratoryCulinaryBehavior>,
+    ) -> LaboratoryIngredientProfile {
         LaboratoryIngredientProfile {
             slug: slug.into(),
             name: slug.into(),
@@ -770,11 +767,7 @@ mod tests {
 
     #[test]
     fn technique_fallback_emits_visual_token() {
-        let analysis = analyze_process(
-            &[ing("apricot")],
-            &[step(0, "blend", None, vec![])],
-            &[],
-        );
+        let analysis = analyze_process(&[ing("apricot")], &[step(0, "blend", None, vec![])], &[]);
         let tokens: Vec<_> = analysis.step_effects[0]
             .effects
             .iter()

@@ -8,9 +8,9 @@
 //! 3. Кеширует результат через AiCacheRepository
 //! 4. Возвращает результат
 
+pub mod audit;
 pub mod autofill;
 pub mod create_product_draft;
 pub mod generate_seo;
-pub mod audit;
 pub mod pairing;
 pub mod suggest_products;

@@ -124,9 +124,9 @@ pub const JS: &str = r##"
         ubo[33] = sceneState.objectPosition[1];
         ubo[34] = sceneState.objectPosition[2];
         ubo[35] = sceneState.objectScale;
-        // u9: floor settings
+        // u9: floor settings + camera projection
         ubo[36] = floorGrid.scale;
-        ubo[37] = 0;
+        ubo[37] = cam.ortho ? 1.0 : 0.0;
         ubo[38] = 0;
         ubo[39] = 0;
         device.queue.writeBuffer(uniformBuf, 0, ubo);

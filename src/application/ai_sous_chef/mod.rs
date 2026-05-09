@@ -74,9 +74,9 @@ pub struct DataQualityRow {
 pub struct NextAction {
     pub field: &'static str,
     pub label_ru: &'static str,
-    pub priority: &'static str,    // "high" | "medium" | "low"
+    pub priority: &'static str, // "high" | "medium" | "low"
     pub reason: &'static str,
-    pub fix_hint: &'static str,    // auto-fix suggestion
+    pub fix_hint: &'static str, // auto-fix suggestion
 }
 
 /// A single missing field with metadata
@@ -84,8 +84,8 @@ pub struct NextAction {
 pub struct MissingField {
     pub field: &'static str,
     pub label_ru: &'static str,
-    pub group: &'static str,      // "basic" | "nutrition" | "seo" | "relations"
-    pub severity: &'static str,   // "critical" | "recommended" | "optional"
+    pub group: &'static str,    // "basic" | "nutrition" | "seo" | "relations"
+    pub severity: &'static str, // "critical" | "recommended" | "optional"
 }
 
 /// A field that is not applicable to this product type (excluded from score)
@@ -278,7 +278,11 @@ impl AiSousChefService {
         .fetch_one(&self.pool)
         .await?;
 
-        tracing::info!("✏️ Admin edited state {} / {} → generated_by=admin_edit", ingredient_id, state_name);
+        tracing::info!(
+            "✏️ Admin edited state {} / {} → generated_by=admin_edit",
+            ingredient_id,
+            state_name
+        );
 
         Ok(updated)
     }
@@ -297,14 +301,14 @@ impl AiSousChefService {
         .await?
         .ok_or_else(|| crate::shared::AppError::not_found("Ingredient not found"))?;
 
-        let created = generate_states::generate_states_for_ingredient(&self.pool, ingredient_id).await?;
+        let created =
+            generate_states::generate_states_for_ingredient(&self.pool, ingredient_id).await?;
 
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM ingredient_states WHERE ingredient_id = $1",
-        )
-        .bind(ingredient_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let total: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM ingredient_states WHERE ingredient_id = $1")
+                .bind(ingredient_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         Ok(GenerateStatesResult {
             ingredient_id,
@@ -337,7 +341,10 @@ impl AiSousChefService {
 
         tracing::info!(
             "✅ Bulk generation complete: {}/{} processed, {} states created, {} errors",
-            processed, total, total_created, errors.len()
+            processed,
+            total,
+            total_created,
+            errors.len()
         );
 
         Ok(BulkGenerateResult {
@@ -370,7 +377,10 @@ impl AiSousChefService {
     }
 
     /// Fetch raw quality booleans from DB
-    async fn fetch_quality_raw(pool: &PgPool, product_id: Option<Uuid>) -> AppResult<Vec<DataQualityRaw>> {
+    async fn fetch_quality_raw(
+        pool: &PgPool,
+        product_id: Option<Uuid>,
+    ) -> AppResult<Vec<DataQualityRaw>> {
         let rows = sqlx::query_as::<_, DataQualityRaw>(
             r#"
             SELECT
@@ -432,18 +442,25 @@ impl AiSousChefService {
 
     /// Animal products — fiber is not applicable
     const ANIMAL_TYPES: &'static [&'static str] = &[
-        "fish", "seafood", "meat", "poultry", "eggs", "dairy",
-        "fish_and_seafood", "meat_and_poultry", "dairy_and_eggs",
+        "fish",
+        "seafood",
+        "meat",
+        "poultry",
+        "eggs",
+        "dairy",
+        "fish_and_seafood",
+        "meat_and_poultry",
+        "dairy_and_eggs",
     ];
 
     /// Aquatic products — water_type / wild_farmed / sushi_grade are applicable
-    const AQUATIC_TYPES: &'static [&'static str] = &[
-        "fish", "seafood", "fish_and_seafood",
-    ];
+    const AQUATIC_TYPES: &'static [&'static str] = &["fish", "seafood", "fish_and_seafood"];
 
     /// Check if product_type matches any of the given categories
     fn type_matches(product_type: &str, categories: &[&str]) -> bool {
-        categories.iter().any(|&cat| product_type.eq_ignore_ascii_case(cat))
+        categories
+            .iter()
+            .any(|&cat| product_type.eq_ignore_ascii_case(cat))
     }
 
     /// ─── Field Requirement Rules Engine ─────────────────────────────────
@@ -456,14 +473,23 @@ impl AiSousChefService {
             "fiber_per_100g" => {
                 if Self::type_matches(product_type, Self::ANIMAL_TYPES) {
                     Some(Requirement::NotApplicable)
-                } else if Self::type_matches(product_type, &[
-                    // singular (DB values) + plural (legacy/AI slugs)
-                    "vegetable", "vegetables",
-                    "fruit", "fruits",
-                    "grain", "grains", "grains_and_pasta",
-                    "legume", "legumes",
-                    "nut", "nuts",
-                ]) {
+                } else if Self::type_matches(
+                    product_type,
+                    &[
+                        // singular (DB values) + plural (legacy/AI slugs)
+                        "vegetable",
+                        "vegetables",
+                        "fruit",
+                        "fruits",
+                        "grain",
+                        "grains",
+                        "grains_and_pasta",
+                        "legume",
+                        "legumes",
+                        "nut",
+                        "nuts",
+                    ],
+                ) {
                     Some(Requirement::Required)
                 } else {
                     None // use default (recommended)
@@ -496,46 +522,256 @@ impl AiSousChefService {
 
         // Define all fields: (has_value, field, label_ru, group, default_severity)
         // default_severity is used when field_requirement() returns Required (placeholder)
-        let all_fields: Vec<(bool, &'static str, &'static str, &'static str, &'static str, &'static str)> = vec![
+        let all_fields: Vec<(
+            bool,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+        )> = vec![
             // (has_value, field_key, label_ru, group, default_severity, na_reason)
             // ── basic (critical) ──
-            (r.has_image,          "image_url",       "Фото",          "basic",     "critical",    ""),
-            (r.has_name_ru,        "name_ru",         "Название RU",   "basic",     "critical",    ""),
-            (r.has_name_pl,        "name_pl",         "Название PL",   "basic",     "critical",    ""),
-            (r.has_name_uk,        "name_uk",         "Название UK",   "basic",     "critical",    ""),
-            (r.has_description_en, "description_en",  "Описание EN",   "basic",     "critical",    ""),
-            (r.has_description_ru, "description_ru",  "Описание RU",   "basic",     "critical",    ""),
-            (r.has_slug,           "slug",            "Slug",          "basic",     "critical",    ""),
+            (r.has_image, "image_url", "Фото", "basic", "critical", ""),
+            (
+                r.has_name_ru,
+                "name_ru",
+                "Название RU",
+                "basic",
+                "critical",
+                "",
+            ),
+            (
+                r.has_name_pl,
+                "name_pl",
+                "Название PL",
+                "basic",
+                "critical",
+                "",
+            ),
+            (
+                r.has_name_uk,
+                "name_uk",
+                "Название UK",
+                "basic",
+                "critical",
+                "",
+            ),
+            (
+                r.has_description_en,
+                "description_en",
+                "Описание EN",
+                "basic",
+                "critical",
+                "",
+            ),
+            (
+                r.has_description_ru,
+                "description_ru",
+                "Описание RU",
+                "basic",
+                "critical",
+                "",
+            ),
+            (r.has_slug, "slug", "Slug", "basic", "critical", ""),
             // ── nutrition (critical) ──
-            (r.has_calories,       "calories_per_100g", "Калории",     "nutrition", "critical",    ""),
-            (r.has_protein,        "protein_per_100g",  "Белки",       "nutrition", "critical",    ""),
-            (r.has_fat,            "fat_per_100g",      "Жиры",        "nutrition", "critical",    ""),
-            (r.has_carbs,          "carbs_per_100g",    "Углеводы",    "nutrition", "critical",    ""),
+            (
+                r.has_calories,
+                "calories_per_100g",
+                "Калории",
+                "nutrition",
+                "critical",
+                "",
+            ),
+            (
+                r.has_protein,
+                "protein_per_100g",
+                "Белки",
+                "nutrition",
+                "critical",
+                "",
+            ),
+            (
+                r.has_fat,
+                "fat_per_100g",
+                "Жиры",
+                "nutrition",
+                "critical",
+                "",
+            ),
+            (
+                r.has_carbs,
+                "carbs_per_100g",
+                "Углеводы",
+                "nutrition",
+                "critical",
+                "",
+            ),
             // ── nutrition (context-aware) ──
-            (r.has_fiber,          "fiber_per_100g",    "Клетчатка",   "nutrition", "recommended", "Животный продукт — клетчатка = 0"),
-            (r.has_density,        "density_g_per_ml",  "Плотность",   "nutrition", "recommended", ""),
-            (r.has_shelf_life,     "shelf_life_days",   "Срок годности", "nutrition", "recommended", ""),
-            (r.has_typical_portion,"typical_portion_g", "Типичная порция","nutrition","recommended", ""),
+            (
+                r.has_fiber,
+                "fiber_per_100g",
+                "Клетчатка",
+                "nutrition",
+                "recommended",
+                "Животный продукт — клетчатка = 0",
+            ),
+            (
+                r.has_density,
+                "density_g_per_ml",
+                "Плотность",
+                "nutrition",
+                "recommended",
+                "",
+            ),
+            (
+                r.has_shelf_life,
+                "shelf_life_days",
+                "Срок годности",
+                "nutrition",
+                "recommended",
+                "",
+            ),
+            (
+                r.has_typical_portion,
+                "typical_portion_g",
+                "Типичная порция",
+                "nutrition",
+                "recommended",
+                "",
+            ),
             // ── fish/seafood-specific (context-aware) ──
-            (r.has_water_type,     "water_type",        "Тип воды",      "nutrition", "recommended", "Только для рыбы/морепродуктов"),
-            (r.has_wild_farmed,    "wild_farmed",       "Дикий/фермерский","nutrition","recommended", "Только для рыбы/морепродуктов"),
-            (r.has_sushi_grade,    "sushi_grade",       "Сашими-качество","nutrition", "optional",    "Только для рыбы/морепродуктов"),
+            (
+                r.has_water_type,
+                "water_type",
+                "Тип воды",
+                "nutrition",
+                "recommended",
+                "Только для рыбы/морепродуктов",
+            ),
+            (
+                r.has_wild_farmed,
+                "wild_farmed",
+                "Дикий/фермерский",
+                "nutrition",
+                "recommended",
+                "Только для рыбы/морепродуктов",
+            ),
+            (
+                r.has_sushi_grade,
+                "sushi_grade",
+                "Сашими-качество",
+                "nutrition",
+                "optional",
+                "Только для рыбы/морепродуктов",
+            ),
             // ── seo (recommended) ──
-            (r.has_seo_title,      "seo_title",       "SEO Title",    "seo",       "recommended", ""),
+            (
+                r.has_seo_title,
+                "seo_title",
+                "SEO Title",
+                "seo",
+                "recommended",
+                "",
+            ),
             // ── relations (optional) ──
-            (r.has_macros,         "nutrition_macros",  "Макронутриенты (таблица)", "relations", "optional", ""),
-            (r.has_vitamins,       "nutrition_vitamins","Витамины",     "relations", "optional", ""),
-            (r.has_minerals,       "nutrition_minerals","Минералы",     "relations", "optional", ""),
-            (r.has_allergens,      "product_allergens", "Аллергены",    "relations", "optional", ""),
-            (r.has_diet_flags,     "diet_flags",        "Диет-флаги",   "relations", "optional", ""),
-            (r.has_culinary,       "food_culinary",     "Кулинарные свойства", "relations", "optional", ""),
-            (r.has_food_props,     "food_properties",   "Свойства продукта",   "relations", "optional", ""),
-            (r.has_states,         "ingredient_states", "Состояния (≥10)", "relations", "optional", ""),
+            (
+                r.has_macros,
+                "nutrition_macros",
+                "Макронутриенты (таблица)",
+                "relations",
+                "optional",
+                "",
+            ),
+            (
+                r.has_vitamins,
+                "nutrition_vitamins",
+                "Витамины",
+                "relations",
+                "optional",
+                "",
+            ),
+            (
+                r.has_minerals,
+                "nutrition_minerals",
+                "Минералы",
+                "relations",
+                "optional",
+                "",
+            ),
+            (
+                r.has_allergens,
+                "product_allergens",
+                "Аллергены",
+                "relations",
+                "optional",
+                "",
+            ),
+            (
+                r.has_diet_flags,
+                "diet_flags",
+                "Диет-флаги",
+                "relations",
+                "optional",
+                "",
+            ),
+            (
+                r.has_culinary,
+                "food_culinary",
+                "Кулинарные свойства",
+                "relations",
+                "optional",
+                "",
+            ),
+            (
+                r.has_food_props,
+                "food_properties",
+                "Свойства продукта",
+                "relations",
+                "optional",
+                "",
+            ),
+            (
+                r.has_states,
+                "ingredient_states",
+                "Состояния (≥10)",
+                "relations",
+                "optional",
+                "",
+            ),
             // ── health profile (recommended) ──
-            (r.has_health_profile,     "health_profile",      "Профиль здоровья",     "health", "recommended", ""),
-            (r.has_sugar_profile,      "sugar_profile",       "Сахарный профиль",     "health", "recommended", ""),
-            (r.has_processing_effects, "processing_effects",  "Эффекты обработки",    "health", "recommended", ""),
-            (r.has_culinary_behavior,  "culinary_behavior",   "Поведение в кулинарии","relations", "optional", ""),
+            (
+                r.has_health_profile,
+                "health_profile",
+                "Профиль здоровья",
+                "health",
+                "recommended",
+                "",
+            ),
+            (
+                r.has_sugar_profile,
+                "sugar_profile",
+                "Сахарный профиль",
+                "health",
+                "recommended",
+                "",
+            ),
+            (
+                r.has_processing_effects,
+                "processing_effects",
+                "Эффекты обработки",
+                "health",
+                "recommended",
+                "",
+            ),
+            (
+                r.has_culinary_behavior,
+                "culinary_behavior",
+                "Поведение в кулинарии",
+                "relations",
+                "optional",
+                "",
+            ),
         ];
 
         let mut total: i64 = 0;
@@ -646,45 +882,54 @@ impl AiSousChefService {
     /// Weight multiplier per severity level
     fn severity_weight(severity: &str) -> f64 {
         match severity {
-            "critical"    => 1.0,
+            "critical" => 1.0,
             "recommended" => 0.6,
-            "optional"    => 0.3,
-            _             => 0.5,
+            "optional" => 0.3,
+            _ => 0.5,
         }
     }
 
     /// Build top-5 prioritised next actions from missing fields
     fn build_next_actions(missing: &[MissingField]) -> Vec<NextAction> {
-        let mut actions: Vec<NextAction> = missing.iter().map(|m| {
-            let (priority, reason, fix_hint) = match m.severity {
-                "critical" => (
-                    "high",
-                    Self::field_reason(m.field, "critical"),
-                    Self::field_fix_hint(m.field),
-                ),
-                "recommended" => (
-                    "medium",
-                    Self::field_reason(m.field, "recommended"),
-                    Self::field_fix_hint(m.field),
-                ),
-                _ => (
-                    "low",
-                    Self::field_reason(m.field, "optional"),
-                    Self::field_fix_hint(m.field),
-                ),
-            };
-            NextAction {
-                field: m.field,
-                label_ru: m.label_ru,
-                priority,
-                reason,
-                fix_hint,
-            }
-        }).collect();
+        let mut actions: Vec<NextAction> = missing
+            .iter()
+            .map(|m| {
+                let (priority, reason, fix_hint) = match m.severity {
+                    "critical" => (
+                        "high",
+                        Self::field_reason(m.field, "critical"),
+                        Self::field_fix_hint(m.field),
+                    ),
+                    "recommended" => (
+                        "medium",
+                        Self::field_reason(m.field, "recommended"),
+                        Self::field_fix_hint(m.field),
+                    ),
+                    _ => (
+                        "low",
+                        Self::field_reason(m.field, "optional"),
+                        Self::field_fix_hint(m.field),
+                    ),
+                };
+                NextAction {
+                    field: m.field,
+                    label_ru: m.label_ru,
+                    priority,
+                    reason,
+                    fix_hint,
+                }
+            })
+            .collect();
 
         // Sort: high → medium → low
         actions.sort_by(|a, b| {
-            let ord = |p: &str| -> u8 { match p { "high" => 0, "medium" => 1, _ => 2 } };
+            let ord = |p: &str| -> u8 {
+                match p {
+                    "high" => 0,
+                    "medium" => 1,
+                    _ => 2,
+                }
+            };
             ord(a.priority).cmp(&ord(b.priority))
         });
 
@@ -695,27 +940,29 @@ impl AiSousChefService {
     /// Human-readable reason why a field matters
     fn field_reason(field: &str, severity: &str) -> &'static str {
         match field {
-            "image_url"        => "Фото — первое впечатление, критично для каталога",
-            "name_ru"          => "Название RU — необходимо для русскоязычных пользователей",
-            "name_pl"          => "Название PL — необходимо для польскоязычных пользователей",
-            "name_uk"          => "Название UK — необходимо для украиноязычных пользователей",
-            "description_en"   => "Описание EN — базовый контент продукта",
-            "description_ru"   => "Описание RU — контент для русскоязычной аудитории",
-            "slug"             => "Slug — нужен для SEO и ссылок",
-            "calories_per_100g"=> "Калории — главный показатель пищевой ценности",
+            "image_url" => "Фото — первое впечатление, критично для каталога",
+            "name_ru" => "Название RU — необходимо для русскоязычных пользователей",
+            "name_pl" => "Название PL — необходимо для польскоязычных пользователей",
+            "name_uk" => "Название UK — необходимо для украиноязычных пользователей",
+            "description_en" => "Описание EN — базовый контент продукта",
+            "description_ru" => "Описание RU — контент для русскоязычной аудитории",
+            "slug" => "Slug — нужен для SEO и ссылок",
+            "calories_per_100g" => "Калории — главный показатель пищевой ценности",
             "protein_per_100g" => "Белки — один из трёх макронутриентов",
-            "fat_per_100g"     => "Жиры — один из трёх макронутриентов",
-            "carbs_per_100g"   => "Углеводы — один из трёх макронутриентов",
-            "fiber_per_100g"   => "Клетчатка — важно для растительных продуктов",
+            "fat_per_100g" => "Жиры — один из трёх макронутриентов",
+            "carbs_per_100g" => "Углеводы — один из трёх макронутриентов",
+            "fiber_per_100g" => "Клетчатка — важно для растительных продуктов",
             "density_g_per_ml" => "Плотность — нужна для пересчёта объёмов",
-            "shelf_life_days"  => "Срок годности — планирование хранения",
-            "typical_portion_g"=> "Типичная порция — удобство для пользователей",
-            "water_type"       => "Тип воды — пресноводная/морская рыба",
-            "wild_farmed"      => "Дикий/фермерский — качество рыбы/морепродуктов",
-            "sushi_grade"      => "Сашими-качество — можно есть сырым",
-            "seo_title"        => "SEO Title — поисковая оптимизация",
-            "health_profile"   => "Профиль здоровья — биоактивные соединения, эффекты, противопоказания",
-            "sugar_profile"    => "Сахарный профиль — детальная разбивка сахаров",
+            "shelf_life_days" => "Срок годности — планирование хранения",
+            "typical_portion_g" => "Типичная порция — удобство для пользователей",
+            "water_type" => "Тип воды — пресноводная/морская рыба",
+            "wild_farmed" => "Дикий/фермерский — качество рыбы/морепродуктов",
+            "sushi_grade" => "Сашими-качество — можно есть сырым",
+            "seo_title" => "SEO Title — поисковая оптимизация",
+            "health_profile" => {
+                "Профиль здоровья — биоактивные соединения, эффекты, противопоказания"
+            }
+            "sugar_profile" => "Сахарный профиль — детальная разбивка сахаров",
             "processing_effects" => "Эффекты обработки — как готовка влияет на нутриенты",
             _ => match severity {
                 "critical" => "Критическое поле — без него продукт неполный",
@@ -728,41 +975,42 @@ impl AiSousChefService {
     /// Auto-fix suggestion for a missing field
     fn field_fix_hint(field: &str) -> &'static str {
         match field {
-            "image_url"        => "Загрузите фото через админку или AI-генерацию",
-            "name_ru" | "name_pl" | "name_uk"
-                               => "Запустите AI-автоперевод (/autofill)",
-            "description_en" | "description_ru"
-                               => "Запустите AI-автозаполнение (/autofill)",
-            "slug"             => "Генерируется автоматически при создании",
-            "calories_per_100g" | "protein_per_100g" | "fat_per_100g" | "carbs_per_100g"
-                               => "Запустите AI-автозаполнение (/autofill) — USDA данные",
-            "fiber_per_100g"   => "Запустите AI-автозаполнение (/autofill)",
+            "image_url" => "Загрузите фото через админку или AI-генерацию",
+            "name_ru" | "name_pl" | "name_uk" => "Запустите AI-автоперевод (/autofill)",
+            "description_en" | "description_ru" => "Запустите AI-автозаполнение (/autofill)",
+            "slug" => "Генерируется автоматически при создании",
+            "calories_per_100g" | "protein_per_100g" | "fat_per_100g" | "carbs_per_100g" => {
+                "Запустите AI-автозаполнение (/autofill) — USDA данные"
+            }
+            "fiber_per_100g" => "Запустите AI-автозаполнение (/autofill)",
             "density_g_per_ml" => "Запустите AI-автозаполнение или введите вручную",
-            "shelf_life_days"  => "Укажите типичный срок годности в днях",
-            "typical_portion_g"=> "Запустите AI-автозаполнение (/autofill)",
-            "water_type"       => "Укажите: freshwater / saltwater / brackish",
-            "wild_farmed"      => "Укажите: wild / farmed / both",
-            "sushi_grade"      => "Укажите: true / false",
-            "seo_title"        => "Заполните SEO-поля для поисковой выдачи",
-            "nutrition_macros" | "nutrition_vitamins" | "nutrition_minerals"
-                               => "Запустите AI-автозаполнение — создаст связанные таблицы",
-            "product_allergens" | "diet_flags"
-                               => "Запустите AI-автозаполнение — заполнит аллергены и диет-флаги",
-            "food_culinary" | "food_properties"
-                               => "Запустите AI-автозаполнение — создаст кулинарные/физические свойства",
-            "health_profile"   => "Запустите AI-автозаполнение — заполнит биоактивы, эффекты, противопоказания",
-            "sugar_profile"    => "Запустите AI-автозаполнение — создаст детальный сахарный профиль",
+            "shelf_life_days" => "Укажите типичный срок годности в днях",
+            "typical_portion_g" => "Запустите AI-автозаполнение (/autofill)",
+            "water_type" => "Укажите: freshwater / saltwater / brackish",
+            "wild_farmed" => "Укажите: wild / farmed / both",
+            "sushi_grade" => "Укажите: true / false",
+            "seo_title" => "Заполните SEO-поля для поисковой выдачи",
+            "nutrition_macros" | "nutrition_vitamins" | "nutrition_minerals" => {
+                "Запустите AI-автозаполнение — создаст связанные таблицы"
+            }
+            "product_allergens" | "diet_flags" => {
+                "Запустите AI-автозаполнение — заполнит аллергены и диет-флаги"
+            }
+            "food_culinary" | "food_properties" => {
+                "Запустите AI-автозаполнение — создаст кулинарные/физические свойства"
+            }
+            "health_profile" => {
+                "Запустите AI-автозаполнение — заполнит биоактивы, эффекты, противопоказания"
+            }
+            "sugar_profile" => "Запустите AI-автозаполнение — создаст детальный сахарный профиль",
             "processing_effects" => "Запустите AI-автозаполнение — заполнит эффекты обработки",
-            "ingredient_states"=> "Запустите генерацию состояний (/generate-states)",
-            _                  => "Заполните вручную или запустите AI-автозаполнение",
+            "ingredient_states" => "Запустите генерацию состояний (/generate-states)",
+            _ => "Заполните вручную или запустите AI-автозаполнение",
         }
     }
 
     /// Get states for a specific ingredient
-    pub async fn get_states(
-        &self,
-        ingredient_id: Uuid,
-    ) -> AppResult<Vec<IngredientStateRow>> {
+    pub async fn get_states(&self, ingredient_id: Uuid) -> AppResult<Vec<IngredientStateRow>> {
         let rows = sqlx::query_as::<_, IngredientStateRow>(
             r#"SELECT
                 id, ingredient_id, state::text as state,

@@ -102,7 +102,16 @@ pub fn infer_zone(item: &InventoryView, theme: MaterialTheme) -> ZoneKey {
     if contains_any(
         &c,
         &[
-            "meat", "fish", "dairy", "cheese", "мяс", "рыб", "молоч", "сыр", "яйц", "egg",
+            "meat",
+            "fish",
+            "dairy",
+            "cheese",
+            "мяс",
+            "рыб",
+            "молоч",
+            "сыр",
+            "яйц",
+            "egg",
         ],
     ) {
         return ZoneKey::Cold;
@@ -116,7 +125,7 @@ pub fn product_position_in_zone(zone: ZoneKey, index_in_zone: usize) -> [f32; 3]
     let row = (index_in_zone / CARD_COLS) as f32;
     [
         base[0] + (col - (CARD_COLS as f32 - 1.0) / 2.0) * CARD_STEP_X,
-        ROOM_FLOOR_Y,   // ← sit ON the inner floor, not floating at y=0
+        ROOM_FLOOR_Y, // ← sit ON the inner floor, not floating at y=0
         base[2] + (row - 1.0) * CARD_STEP_Z,
     ]
 }

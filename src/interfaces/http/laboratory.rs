@@ -15,9 +15,8 @@ use uuid::Uuid;
 
 use crate::application::laboratory::{
     AddLabIngredientRequest, AddLabStepRequest, CopilotSuggestRequest, CopilotSuggestResponse,
-    CreateLabProjectRequest, LabProcessStepDto,
-    LabProjectFull, LabProjectIngredientDto, LabProjectSummary, LaboratoryService,
-    LaboratoryVisualStory,
+    CreateLabProjectRequest, LabProcessStepDto, LabProjectFull, LabProjectIngredientDto,
+    LabProjectSummary, LaboratoryService, LaboratoryVisualStory,
 };
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::{AppError, Language};
@@ -61,7 +60,8 @@ pub async fn delete_project(
     State(svc): State<LaboratoryService>,
     Path(project_id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    svc.delete_project(*auth.user_id.as_uuid(), project_id).await?;
+    svc.delete_project(*auth.user_id.as_uuid(), project_id)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -216,4 +216,3 @@ pub async fn generate_scenes(
         .ok_or_else(|| AppError::not_found("Laboratory project not found"))?;
     Ok(Json(story))
 }
-

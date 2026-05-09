@@ -23,8 +23,16 @@ pub struct ServerLimits {
 impl Default for ServerLimits {
     fn default() -> Self {
         Self {
-            plans: 2, recipes: 2, scans: 1, optimize: 1, chats: 10,
-            cost_plan: 5, cost_recipe: 3, cost_scan: 2, cost_optimize: 4, cost_chat: 1,
+            plans: 2,
+            recipes: 2,
+            scans: 1,
+            optimize: 1,
+            chats: 10,
+            cost_plan: 5,
+            cost_recipe: 3,
+            cost_scan: 2,
+            cost_optimize: 4,
+            cost_chat: 1,
         }
     }
 }

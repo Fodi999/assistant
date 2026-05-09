@@ -57,10 +57,24 @@ fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
   let fwd   = u.u4.xyz;
 
   // Pixel ray (NDC, aspect-corrected, 45° fov → focal length 2.414)
+  let isOrtho = u.u9.y > 0.5;
+
   let ndcX = (uv.x * 2.0 - 1.0) * asp;
   let ndcY = -(uv.y * 2.0 - 1.0);
   let fl   = 2.414;
-  let rd   = normalize(fwd * fl + right * ndcX + upv * ndcY);
+  
+  var ro_eff = ro;
+  var rd     = normalize(fwd * fl + right * ndcX + upv * ndcY);
+
+  if isOrtho {
+    // Determine the viewport scale based on camera distance.
+    // To match perspective visually, orthogonal size scales with distance.
+    let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+    
+    // Shift the ray origin offset by NDC to simulate parallel rays.
+    ro_eff = ro + right * ndcX * orthoHeight + upv * ndcY * orthoHeight;
+    rd     = normalize(fwd);
+  }
 
   var out: BgFragOut;
   out.col = vec4f(col, 1.0);
@@ -69,9 +83,9 @@ fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
   // ── Floor at Y = 0 ──────────────────────────────────────────
   // Works from both sides — camera can be above OR below Y=0.
   if (abs(rd.y) > 0.0005) {
-    let t_hit = -ro.y / rd.y;
+    let t_hit = -ro_eff.y / rd.y;
     if ((t_hit > 0.05) && (t_hit < 200.0)) {
-      let p = ro + rd * t_hit;
+      let p = ro_eff + rd * t_hit;
 
       // Вычисляем реальную толщину линии в мировых координатах (~1.5px экрана)
       let world_lw = max((t_hit / 2.414) * (2.0 / 900.0) * 1.5, 0.0001);

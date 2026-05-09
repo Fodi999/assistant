@@ -25,8 +25,12 @@ pub struct ListProductsQuery {
     pub search: Option<String>,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_limit() -> i64 { 50 }
+fn default_page() -> i64 {
+    1
+}
+fn default_limit() -> i64 {
+    50
+}
 
 // ── Paginated response ────────────────────────────────
 

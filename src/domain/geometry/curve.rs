@@ -84,7 +84,7 @@ pub trait ParametricCurve: Send + Sync {
 /// Straight line segment from `start` to `end`.
 pub struct Line {
     pub start: Vertex,
-    pub end:   Vertex,
+    pub end: Vertex,
 }
 
 impl Line {
@@ -116,21 +116,31 @@ impl ParametricCurve for Line {
 /// `angle_start` and `angle_end` are in radians. For a full circle use
 /// `0.0` and `std::f64::consts::TAU`.
 pub struct Circle {
-    pub centre:      Vertex,
-    pub radius:      f64,
+    pub centre: Vertex,
+    pub radius: f64,
     pub angle_start: f64,
-    pub angle_end:   f64,
+    pub angle_end: f64,
 }
 
 impl Circle {
     /// Full circle in the XZ plane centred at `centre`.
     pub fn full(centre: Vertex, radius: f64) -> Self {
-        Self { centre, radius, angle_start: 0.0, angle_end: std::f64::consts::TAU }
+        Self {
+            centre,
+            radius,
+            angle_start: 0.0,
+            angle_end: std::f64::consts::TAU,
+        }
     }
 
     /// Arc from `start_rad` to `end_rad` (CCW).
     pub fn arc(centre: Vertex, radius: f64, start_rad: f64, end_rad: f64) -> Self {
-        Self { centre, radius, angle_start: start_rad, angle_end: end_rad }
+        Self {
+            centre,
+            radius,
+            angle_start: start_rad,
+            angle_end: end_rad,
+        }
     }
 }
 
@@ -147,11 +157,7 @@ impl ParametricCurve for Circle {
     fn tangent_at(&self, t: f64) -> [f64; 3] {
         let a = self.angle_start + t * (self.angle_end - self.angle_start);
         let da = self.angle_end - self.angle_start;
-        [
-            -self.radius * a.sin() * da,
-            0.0,
-            self.radius * a.cos() * da,
-        ]
+        [-self.radius * a.sin() * da, 0.0, self.radius * a.cos() * da]
     }
 }
 
@@ -178,7 +184,7 @@ impl BezierCurve {
 
 impl ParametricCurve for BezierCurve {
     fn point_at(&self, t: f64) -> Vertex {
-        let u  = 1.0 - t;
+        let u = 1.0 - t;
         let u2 = u * u;
         let u3 = u2 * u;
         let t2 = t * t;

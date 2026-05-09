@@ -8,8 +8,8 @@
 //! - `lang`        — detected language
 //! - `timing_ms`   — processing time
 
-use serde::Serialize;
 use super::intent_router::{ChatLang, Intent};
+use serde::Serialize;
 
 // ── Chat Response ────────────────────────────────────────────────────────────
 
@@ -82,7 +82,12 @@ pub struct SuggestionBlock {
 
 impl ChatResponse {
     /// Quick text-only response (no cards).
-    pub fn text_only(text: impl Into<String>, intent: Intent, lang: ChatLang, timing_ms: u64) -> Self {
+    pub fn text_only(
+        text: impl Into<String>,
+        intent: Intent,
+        lang: ChatLang,
+        timing_ms: u64,
+    ) -> Self {
         Self {
             text: text.into(),
             cards: vec![],
@@ -173,26 +178,18 @@ impl ChatResponse {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
     /// Add a recipe to today's meal plan.
-    AddToPlan {
-        recipe_id: String,
-    },
+    AddToPlan { recipe_id: String },
     /// Start guided cooking flow for this recipe.
-    StartCooking {
-        recipe_id: String,
-    },
+    StartCooking { recipe_id: String },
     /// Suggest an alternative for a single ingredient in a recipe.
     SwapIngredient {
         recipe_id: String,
         ingredient_slug: String,
     },
     /// Add product to the shopping list.
-    AddToShopping {
-        product_slug: String,
-    },
+    AddToShopping { product_slug: String },
     /// Trigger a new chat query asking for recipes that use this product.
-    ShowRecipesFor {
-        product_slug: String,
-    },
+    ShowRecipesFor { product_slug: String },
 }
 
 // ── Card Types ───────────────────────────────────────────────────────────────

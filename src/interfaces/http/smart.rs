@@ -30,7 +30,9 @@ pub async fn smart_ingredient(
         return Err(AppError::validation("ingredient slug too long"));
     }
     if ctx.additional_ingredients.len() > 20 {
-        return Err(AppError::validation("too many additional ingredients (max 20)"));
+        return Err(AppError::validation(
+            "too many additional ingredients (max 20)",
+        ));
     }
 
     let response = service.get_smart_ingredient(ctx).await?;
@@ -51,8 +53,12 @@ pub struct AutocompleteQuery {
     pub limit: i64,
 }
 
-fn default_lang() -> String { "en".to_string() }
-fn default_limit() -> i64 { 10 }
+fn default_lang() -> String {
+    "en".to_string()
+}
+fn default_limit() -> i64 {
+    10
+}
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct AutocompleteItem {
@@ -102,10 +108,10 @@ pub async fn smart_autocomplete(
     );
 
     let items: Vec<AutocompleteItem> = sqlx::query_as(&sql)
-        .bind(&pattern)          // $1: %query%
-        .bind(&q)                // $2: exact match
+        .bind(&pattern) // $1: %query%
+        .bind(&q) // $2: exact match
         .bind(format!("{}%", q)) // $3: prefix match
-        .bind(limit)             // $4: limit
+        .bind(limit) // $4: limit
         .fetch_all(&pool)
         .await
         .map_err(|e| {

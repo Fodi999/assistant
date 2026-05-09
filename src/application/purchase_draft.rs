@@ -67,15 +67,22 @@ impl PurchaseDraftService {
         input: CreatePurchaseDraftInput,
     ) -> AppResult<Uuid> {
         if input.items.is_empty() {
-            return Err(AppError::validation("Purchase draft must contain at least one item"));
+            return Err(AppError::validation(
+                "Purchase draft must contain at least one item",
+            ));
         }
 
         let draft_id = Uuid::new_v4();
         let uid = *user_id.as_uuid();
         let tid = *tenant_id.as_uuid();
 
-        let total: i64 = input.items.iter()
-            .filter_map(|i| i.price_per_unit_cents.map(|p| (p as f64 * i.quantity) as i64))
+        let total: i64 = input
+            .items
+            .iter()
+            .filter_map(|i| {
+                i.price_per_unit_cents
+                    .map(|p| (p as f64 * i.quantity) as i64)
+            })
             .sum();
 
         let mut tx = self.pool.begin().await?;
@@ -137,7 +144,9 @@ impl PurchaseDraftService {
         .fetch_optional(&self.pool)
         .await?;
 
-        let Some(r) = row else { return Ok(None); };
+        let Some(r) = row else {
+            return Ok(None);
+        };
 
         let items: Vec<ItemRow> = sqlx::query_as::<_, ItemRow>(
             "SELECT id, catalog_ingredient_id, ingredient_name, quantity, unit, price_per_unit_cents \
@@ -157,14 +166,17 @@ impl PurchaseDraftService {
             status: r.status,
             total_cost_cents: r.total_cost_cents,
             created_at: r.created_at,
-            items: items.into_iter().map(|i| PurchaseDraftItem {
-                id: i.id,
-                catalog_ingredient_id: i.catalog_ingredient_id,
-                ingredient_name: i.ingredient_name,
-                quantity: i.quantity,
-                unit: i.unit,
-                price_per_unit_cents: i.price_per_unit_cents,
-            }).collect(),
+            items: items
+                .into_iter()
+                .map(|i| PurchaseDraftItem {
+                    id: i.id,
+                    catalog_ingredient_id: i.catalog_ingredient_id,
+                    ingredient_name: i.ingredient_name,
+                    quantity: i.quantity,
+                    unit: i.unit,
+                    price_per_unit_cents: i.price_per_unit_cents,
+                })
+                .collect(),
         }))
     }
 
@@ -200,14 +212,17 @@ impl PurchaseDraftService {
                 status: r.status,
                 total_cost_cents: r.total_cost_cents,
                 created_at: r.created_at,
-                items: items.into_iter().map(|i| PurchaseDraftItem {
-                    id: i.id,
-                    catalog_ingredient_id: i.catalog_ingredient_id,
-                    ingredient_name: i.ingredient_name,
-                    quantity: i.quantity,
-                    unit: i.unit,
-                    price_per_unit_cents: i.price_per_unit_cents,
-                }).collect(),
+                items: items
+                    .into_iter()
+                    .map(|i| PurchaseDraftItem {
+                        id: i.id,
+                        catalog_ingredient_id: i.catalog_ingredient_id,
+                        ingredient_name: i.ingredient_name,
+                        quantity: i.quantity,
+                        unit: i.unit,
+                        price_per_unit_cents: i.price_per_unit_cents,
+                    })
+                    .collect(),
             });
         }
         Ok(out)
@@ -215,7 +230,11 @@ impl PurchaseDraftService {
 
     /// Перевести draft → sent. Возвращает (id, supplier_name).
     /// Не изменяет, если уже не draft.
-    pub async fn mark_sent(&self, draft_id: Uuid, user_id: UserId) -> AppResult<(Uuid, Option<String>, usize)> {
+    pub async fn mark_sent(
+        &self,
+        draft_id: Uuid,
+        user_id: UserId,
+    ) -> AppResult<(Uuid, Option<String>, usize)> {
         let uid = *user_id.as_uuid();
 
         // Проверка владельца + статуса
@@ -225,13 +244,14 @@ impl PurchaseDraftService {
         };
         if d.status != "draft" {
             return Err(AppError::validation(format!(
-                "Cannot send purchase draft: current status is '{}', expected 'draft'", d.status
+                "Cannot send purchase draft: current status is '{}', expected 'draft'",
+                d.status
             )));
         }
 
         let rows = sqlx::query(
             "UPDATE purchase_drafts SET status = 'sent', updated_at = now() \
-             WHERE id = $1 AND user_id = $2 AND status = 'draft'"
+             WHERE id = $1 AND user_id = $2 AND status = 'draft'",
         )
         .bind(draft_id)
         .bind(uid)
@@ -240,10 +260,16 @@ impl PurchaseDraftService {
         .rows_affected();
 
         if rows == 0 {
-            return Err(AppError::validation("Draft could not be updated (possibly already sent)"));
+            return Err(AppError::validation(
+                "Draft could not be updated (possibly already sent)",
+            ));
         }
 
-        tracing::info!("📤 Purchase draft {} marked as sent ({} items)", draft_id, d.items.len());
+        tracing::info!(
+            "📤 Purchase draft {} marked as sent ({} items)",
+            draft_id,
+            d.items.len()
+        );
         Ok((draft_id, d.supplier_name, d.items.len()))
     }
 }

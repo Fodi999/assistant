@@ -13,7 +13,11 @@ pub struct Color {
 }
 
 impl Color {
-    pub const WHITE: Self = Self { r: 1.0, g: 1.0, b: 1.0 };
+    pub const WHITE: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+    };
 
     pub fn new(r: f32, g: f32, b: f32) -> Self {
         Self { r, g, b }
@@ -47,9 +51,9 @@ impl CellMask {
 #[derive(Debug, Clone)]
 pub struct SceneObject {
     pub transform: Transform,
-    pub color:     Color,
+    pub color: Color,
     /// World-space radius of this particle's billboard / cell half-extent.
-    pub radius:    f32,
+    pub radius: f32,
     /// Exposed-face bitmask (used for seam culling and mesh-mode face dispatch).
     pub cell_mask: CellMask,
 }

@@ -37,7 +37,11 @@ impl TopoFace {
     /// Construct a new face. `id` is assigned by the parent shell.
     pub fn new(id: u32, loop_: Vec<usize>) -> Self {
         debug_assert!(loop_.len() >= 3, "face must have at least 3 vertices");
-        Self { id, loop_, normal: None }
+        Self {
+            id,
+            loop_,
+            normal: None,
+        }
     }
 
     /// Number of vertices in this face's loop.
@@ -53,11 +57,7 @@ impl TopoFace {
     /// to get shell-global indices.
     pub fn fan_triangles(&self) -> impl Iterator<Item = [usize; 3]> + '_ {
         let n = self.loop_.len();
-        (1..n - 1).map(|i| [
-            self.loop_[0],
-            self.loop_[i],
-            self.loop_[i + 1],
-        ])
+        (1..n - 1).map(|i| [self.loop_[0], self.loop_[i], self.loop_[i + 1]])
     }
 
     /// Recompute and cache the face normal from the provided vertex array.
@@ -126,10 +126,10 @@ mod tests {
 
     fn square_verts() -> Vec<Vertex> {
         vec![
-            Vertex::new( 1.0,  0.0,  1.0),
-            Vertex::new(-1.0,  0.0,  1.0),
-            Vertex::new(-1.0,  0.0, -1.0),
-            Vertex::new( 1.0,  0.0, -1.0),
+            Vertex::new(1.0, 0.0, 1.0),
+            Vertex::new(-1.0, 0.0, 1.0),
+            Vertex::new(-1.0, 0.0, -1.0),
+            Vertex::new(1.0, 0.0, -1.0),
         ]
     }
 
@@ -140,9 +140,9 @@ mod tests {
         let n = face.compute_normal(&verts, Tolerance::DEFAULT).unwrap();
         // Square in XZ plane — Newell should give Y-up (or Y-down depending
         // on winding). We care that it's along Y.
-        assert!( n[1].abs() > 0.99, "expected Y-aligned normal, got {n:?}");
-        assert!( n[0].abs() < 1e-10);
-        assert!( n[2].abs() < 1e-10);
+        assert!(n[1].abs() > 0.99, "expected Y-aligned normal, got {n:?}");
+        assert!(n[0].abs() < 1e-10);
+        assert!(n[2].abs() < 1e-10);
     }
 
     #[test]
@@ -152,7 +152,7 @@ mod tests {
         face.compute_normal(&verts, Tolerance::DEFAULT);
         let orig_n = face.normal.unwrap();
         face.flip();
-        assert_eq!(face.loop_[0], 3);  // reversed
+        assert_eq!(face.loop_[0], 3); // reversed
         let flipped_n = face.normal.unwrap();
         assert!((orig_n[0] + flipped_n[0]).abs() < 1e-12);
         assert!((orig_n[1] + flipped_n[1]).abs() < 1e-12);

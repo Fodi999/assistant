@@ -78,7 +78,9 @@ pub async fn handle_message(
     // ai_actions_balance — заполним через usage service внутри engine.
     // permissions — owner получает всё (расширить через roles в следующей итерации).
     // Приоритет language: request.locale > user.language (JWT).
-    let resolved_locale = req.locale.as_deref()
+    let resolved_locale = req
+        .locale
+        .as_deref()
         .and_then(crate::shared::Language::from_code)
         .unwrap_or(auth.language);
 
@@ -142,7 +144,10 @@ pub async fn cancel_action(
         action_id,
     );
 
-    let result = state.engine.cancel_action(auth.user_id.clone(), action_id).await?;
+    let result = state
+        .engine
+        .cancel_action(auth.user_id.clone(), action_id)
+        .await?;
     Ok(Json(result))
 }
 

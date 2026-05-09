@@ -230,9 +230,8 @@ pub fn export_glb(mesh: &Mesh) -> Result<GltfExport, AppError> {
         "buffers": [{ "byteLength": bin.len() }],
     });
 
-    let json_text = serde_json::to_string(&gltf_json).map_err(|e| {
-        AppError::internal(format!("export_glb: serialize json: {e}"))
-    })?;
+    let json_text = serde_json::to_string(&gltf_json)
+        .map_err(|e| AppError::internal(format!("export_glb: serialize json: {e}")))?;
     let mut json_bytes = json_text.into_bytes();
     // Pad JSON chunk with spaces to 4-byte alignment.
     while json_bytes.len() % 4 != 0 {
@@ -245,7 +244,7 @@ pub fn export_glb(mesh: &Mesh) -> Result<GltfExport, AppError> {
     // ── 3. Assemble the GLB container ───────────────────────────────────────
     let total_length = 12              // header
         + 8 + json_bytes.len()         // JSON chunk header + data
-        + 8 + bin.len();               // BIN chunk header + data
+        + 8 + bin.len(); // BIN chunk header + data
 
     let mut glb: Vec<u8> = Vec::with_capacity(total_length);
     glb.extend_from_slice(&GLB_MAGIC.to_le_bytes());
@@ -312,7 +311,7 @@ fn material_to_gltf(mat: &Material) -> Value {
             srgb_to_linear(r),
             srgb_to_linear(g),
             srgb_to_linear(b),
-            (1.0 - alpha).clamp(0.05, 0.45),   // glass body is mostly transparent
+            (1.0 - alpha).clamp(0.05, 0.45), // glass body is mostly transparent
         ]);
     }
 
@@ -401,17 +400,14 @@ mod tests {
 
     #[test]
     fn glb_json_describes_one_material_per_group() {
-        let mesh = bottled_sauce::generate(
-            "#FF0000",
-            bottled_sauce::BottleKind::Glass,
-            None,
-        );
+        let mesh = bottled_sauce::generate("#FF0000", bottled_sauce::BottleKind::Glass, None);
         let export = export_glb(&mesh).unwrap();
         let b = &export.glb_bytes;
 
         let json_len = read_u32_le(b, 12) as usize;
-        let json_text =
-            std::str::from_utf8(&b[20..20 + json_len]).unwrap().trim_end();
+        let json_text = std::str::from_utf8(&b[20..20 + json_len])
+            .unwrap()
+            .trim_end();
         let v: Value = serde_json::from_str(json_text.trim_end_matches('\0').trim()).unwrap();
 
         let materials = v["materials"].as_array().unwrap();
@@ -424,7 +420,9 @@ mod tests {
             .iter()
             .map(|m| m["name"].as_str().unwrap())
             .collect();
-        assert!(names.iter().any(|n| n.contains("glass") || n.contains("plastic")));
+        assert!(names
+            .iter()
+            .any(|n| n.contains("glass") || n.contains("plastic")));
         assert!(names.contains(&"liquid_material"));
         assert!(names.contains(&"cap_metal"));
     }

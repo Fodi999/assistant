@@ -74,7 +74,10 @@ pub struct PublicSeoContentService {
 
 impl PublicSeoContentService {
     pub fn new(llm_adapter: Arc<LlmAdapter>, ai_cache: AiCacheRepository) -> Self {
-        Self { llm_adapter, ai_cache }
+        Self {
+            llm_adapter,
+            ai_cache,
+        }
     }
 
     /// Invalidate AI cache for a specific entity so next generate() calls LLM fresh.
@@ -83,17 +86,29 @@ impl PublicSeoContentService {
         let intent = req.intent_type.to_lowercase();
         let locale = req.locale.to_lowercase();
         let entity_a = req.entity_a.trim().to_lowercase();
-        let entity_b = req.entity_b.as_deref().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+        let entity_b = req
+            .entity_b
+            .as_deref()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty());
 
         // Invalidate generic prompt cache
         let fingerprint = format!(
             "seo_content:{}:{}:{}:{}",
-            intent, entity_a, entity_b.as_deref().unwrap_or(""), locale,
+            intent,
+            entity_a,
+            entity_b.as_deref().unwrap_or(""),
+            locale,
         );
         let cache_key = format!("uc:seo_content:{}", hash(&fingerprint));
         let _ = self.ai_cache.delete(&cache_key).await;
 
-        tracing::info!("🗑️ SEO cache invalidated: {} / {} / {}", intent, entity_a, locale);
+        tracing::info!(
+            "🗑️ SEO cache invalidated: {} / {} / {}",
+            intent,
+            entity_a,
+            locale
+        );
     }
 
     /// Invalidate AI cache for a specific entity+query (targeted sub-intents).
@@ -101,11 +116,19 @@ impl PublicSeoContentService {
         let intent = req.intent_type.to_lowercase();
         let locale = req.locale.to_lowercase();
         let entity_a = req.entity_a.trim().to_lowercase();
-        let entity_b = req.entity_b.as_deref().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+        let entity_b = req
+            .entity_b
+            .as_deref()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty());
 
         let fingerprint = format!(
             "seo_content_q:{}:{}:{}:{}:{}",
-            intent, entity_a, entity_b.as_deref().unwrap_or(""), locale, search_query,
+            intent,
+            entity_a,
+            entity_b.as_deref().unwrap_or(""),
+            locale,
+            search_query,
         );
         let cache_key = format!("uc:seo_content:{}", hash(&fingerprint));
         let _ = self.ai_cache.delete(&cache_key).await;
@@ -141,14 +164,15 @@ impl PublicSeoContentService {
             return Err(AppError::validation("entity_a must be 1-100 characters"));
         }
 
-        let entity_b = req.entity_b
+        let entity_b = req
+            .entity_b
             .as_deref()
             .map(|s| s.trim().to_lowercase())
             .filter(|s| !s.is_empty());
 
         if intent == "comparison" && entity_b.is_none() {
             return Err(AppError::validation(
-                "entity_b is required for intent_type 'comparison'"
+                "entity_b is required for intent_type 'comparison'",
             ));
         }
 
@@ -164,7 +188,12 @@ impl PublicSeoContentService {
 
         if let Ok(Some(cached)) = self.ai_cache.get(&cache_key).await {
             if let Ok(response) = serde_json::from_value::<SeoContentResponse>(cached) {
-                tracing::info!("📦 SEO content cache hit: {} / {} / {}", intent, entity_a, locale);
+                tracing::info!(
+                    "📦 SEO content cache hit: {} / {} / {}",
+                    intent,
+                    entity_a,
+                    locale
+                );
                 return Ok(response);
             }
         }
@@ -173,7 +202,8 @@ impl PublicSeoContentService {
         let prompt = build_prompt(&intent, &entity_a, entity_b.as_deref(), &locale);
 
         // ── 4. Call LLM (Fast model — cheap) ──
-        let raw = self.llm_adapter
+        let raw = self
+            .llm_adapter
             .groq_raw_request_with_model(&prompt, 3200, "gemini-3-flash-preview")
             .await?;
 
@@ -185,20 +215,26 @@ impl PublicSeoContentService {
 
         // ── 6. Cache ──
         if let Ok(val) = serde_json::to_value(&response) {
-            if let Err(e) = self.ai_cache.set(
-                &cache_key,
-                val,
-                "gemini",
-                "gemini-3-flash-preview",
-                SEO_CONTENT_CACHE_TTL_DAYS,
-            ).await {
+            if let Err(e) = self
+                .ai_cache
+                .set(
+                    &cache_key,
+                    val,
+                    "gemini",
+                    "gemini-3-flash-preview",
+                    SEO_CONTENT_CACHE_TTL_DAYS,
+                )
+                .await
+            {
                 tracing::warn!("Failed to cache SEO content: {}", e);
             }
         }
 
         tracing::info!(
             "✅ SEO content generated: {} / {} / {} (cached 30d)",
-            intent, entity_a, locale
+            intent,
+            entity_a,
+            locale
         );
 
         Ok(response)
@@ -208,13 +244,18 @@ impl PublicSeoContentService {
     ///
     /// Instead of generic "question about salmon", this answers a specific query like
     /// "Is salmon good for weight loss?" — producing much better long-tail SEO content.
-    pub async fn generate_with_query(&self, req: &SeoContentRequest, search_query: &str) -> AppResult<SeoContentResponse> {
+    pub async fn generate_with_query(
+        &self,
+        req: &SeoContentRequest,
+        search_query: &str,
+    ) -> AppResult<SeoContentResponse> {
         // ── 1. Validate (same as generate) ──
         let intent = req.intent_type.to_lowercase();
         if !VALID_INTENTS.contains(&intent.as_str()) {
             return Err(AppError::validation(&format!(
                 "Invalid intent_type '{}'. Must be one of: {}",
-                intent, VALID_INTENTS.join(", ")
+                intent,
+                VALID_INTENTS.join(", ")
             )));
         }
 
@@ -222,17 +263,26 @@ impl PublicSeoContentService {
         if !VALID_LOCALES.contains(&locale.as_str()) {
             return Err(AppError::validation(&format!(
                 "Invalid locale '{}'. Must be one of: {}",
-                locale, VALID_LOCALES.join(", ")
+                locale,
+                VALID_LOCALES.join(", ")
             )));
         }
 
         let entity_a = req.entity_a.trim().to_lowercase();
-        let entity_b = req.entity_b.as_deref().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+        let entity_b = req
+            .entity_b
+            .as_deref()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty());
 
         // ── 2. Cache check (include search_query in fingerprint) ──
         let fingerprint = format!(
             "seo_content_q:{}:{}:{}:{}:{}",
-            intent, entity_a, entity_b.as_deref().unwrap_or(""), locale, search_query,
+            intent,
+            entity_a,
+            entity_b.as_deref().unwrap_or(""),
+            locale,
+            search_query,
         );
         let cache_key = format!("uc:seo_content:{}", hash(&fingerprint));
 
@@ -244,10 +294,17 @@ impl PublicSeoContentService {
         }
 
         // ── 3. Build targeted prompt ──
-        let prompt = build_targeted_prompt(&intent, &entity_a, entity_b.as_deref(), &locale, search_query);
+        let prompt = build_targeted_prompt(
+            &intent,
+            &entity_a,
+            entity_b.as_deref(),
+            &locale,
+            search_query,
+        );
 
         // ── 4. Call LLM ──
-        let raw = self.llm_adapter
+        let raw = self
+            .llm_adapter
             .groq_raw_request_with_model(&prompt, 3200, "gemini-3-flash-preview")
             .await?;
 
@@ -259,10 +316,23 @@ impl PublicSeoContentService {
 
         // ── 6. Cache ──
         if let Ok(val) = serde_json::to_value(&response) {
-            let _ = self.ai_cache.set(&cache_key, val, "gemini", "gemini-3-flash-preview", SEO_CONTENT_CACHE_TTL_DAYS).await;
+            let _ = self
+                .ai_cache
+                .set(
+                    &cache_key,
+                    val,
+                    "gemini",
+                    "gemini-3-flash-preview",
+                    SEO_CONTENT_CACHE_TTL_DAYS,
+                )
+                .await;
         }
 
-        tracing::info!("✅ SEO content generated: '{}' / {} (cached 30d)", search_query, locale);
+        tracing::info!(
+            "✅ SEO content generated: '{}' / {} (cached 30d)",
+            search_query,
+            locale
+        );
         Ok(response)
     }
 }
@@ -430,7 +500,13 @@ Return ONLY the JSON, no other text."#,
 
 /// Build a TARGETED prompt for a specific user search query.
 /// This produces much better long-tail SEO content than the generic prompt.
-fn build_targeted_prompt(intent: &str, entity_a: &str, entity_b: Option<&str>, locale: &str, search_query: &str) -> String {
+fn build_targeted_prompt(
+    intent: &str,
+    entity_a: &str,
+    entity_b: Option<&str>,
+    locale: &str,
+    search_query: &str,
+) -> String {
     let entity_b_line = match entity_b {
         Some(b) => format!("Secondary Ingredient: {}", b),
         None => "Secondary Ingredient: none".to_string(),
@@ -600,8 +676,16 @@ fn parse_response(raw: &str) -> AppResult<SeoContentResponse> {
     };
 
     serde_json::from_str::<SeoContentResponse>(json_str).map_err(|e| {
-        let end = raw.char_indices().nth(200).map(|(i, _)| i).unwrap_or(raw.len());
-        tracing::error!("Failed to parse AI SEO content response: {} | raw: {}", e, &raw[..end]);
+        let end = raw
+            .char_indices()
+            .nth(200)
+            .map(|(i, _)| i)
+            .unwrap_or(raw.len());
+        tracing::error!(
+            "Failed to parse AI SEO content response: {} | raw: {}",
+            e,
+            &raw[..end]
+        );
         AppError::internal("AI returned invalid JSON for SEO content")
     })
 }
@@ -622,14 +706,20 @@ fn enforce_seo_limits(mut resp: SeoContentResponse) -> SeoContentResponse {
     // ── Title: hard cap at 60 chars ──
     if resp.title.chars().count() > MAX_TITLE_CHARS {
         resp.title = smart_truncate(&resp.title, MAX_TITLE_CHARS);
-        tracing::info!("✂️ SEO title truncated to {} chars", resp.title.chars().count());
+        tracing::info!(
+            "✂️ SEO title truncated to {} chars",
+            resp.title.chars().count()
+        );
     }
 
     // ── Description: 120-155 chars ──
     let desc_len = resp.description.chars().count();
     if desc_len > MAX_DESCRIPTION_CHARS {
         resp.description = smart_truncate(&resp.description, MAX_DESCRIPTION_CHARS);
-        tracing::info!("✂️ SEO description truncated to {} chars", resp.description.chars().count());
+        tracing::info!(
+            "✂️ SEO description truncated to {} chars",
+            resp.description.chars().count()
+        );
     }
 
     // ── Answer: cap at 800 chars ──
@@ -638,9 +728,15 @@ fn enforce_seo_limits(mut resp: SeoContentResponse) -> SeoContentResponse {
     }
 
     // ── OG description: derive from description if AI didn't provide one ──
-    if resp.og_description.is_none() || resp.og_description.as_deref().map_or(true, |s| s.trim().is_empty()) {
+    if resp.og_description.is_none()
+        || resp
+            .og_description
+            .as_deref()
+            .map_or(true, |s| s.trim().is_empty())
+    {
         // Take first sentence of description, cap at 100 chars
-        let first_sentence = resp.description
+        let first_sentence = resp
+            .description
             .split_once(". ")
             .map(|(s, _)| format!("{}.", s))
             .unwrap_or_else(|| resp.description.clone());
@@ -649,7 +745,11 @@ fn enforce_seo_limits(mut resp: SeoContentResponse) -> SeoContentResponse {
 
     // ── H1 from content_blocks: ensure exists and ≤60 chars ──
     if let Some(blocks) = resp.content_blocks.first_mut() {
-        if let ContentBlock::Heading { level: 1, ref mut text } = blocks {
+        if let ContentBlock::Heading {
+            level: 1,
+            ref mut text,
+        } = blocks
+        {
             if text.chars().count() > MAX_TITLE_CHARS {
                 *text = smart_truncate(text, MAX_TITLE_CHARS);
             }
@@ -696,6 +796,7 @@ fn smart_truncate(s: &str, max_chars: usize) -> String {
     }
 
     // Remove trailing punctuation before ellipsis
-    let trimmed = result.trim_end_matches(|c: char| c == ',' || c == ';' || c == ':' || c == '-' || c == ' ');
+    let trimmed =
+        result.trim_end_matches(|c: char| c == ',' || c == ';' || c == ':' || c == '-' || c == ' ');
     format!("{}…", trimmed)
 }

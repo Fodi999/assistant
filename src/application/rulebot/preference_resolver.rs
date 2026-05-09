@@ -35,7 +35,9 @@ pub async fn resolve(prefs: &UserPreferences, cache: &IngredientCache) -> Prefer
     // ── Hard exclusions: allergies + intolerances + dislikes ──────────────
     let mut excludes = Vec::<String>::new();
 
-    for entry in prefs.allergies.iter()
+    for entry in prefs
+        .allergies
+        .iter()
         .chain(prefs.intolerances.iter())
         .chain(prefs.dislikes.iter())
     {
@@ -82,7 +84,8 @@ fn match_entry(entry: &str, all: &[IngredientData]) -> Vec<String> {
     // of that product_type. These keywords are intentionally shorter than
     // stem-matching thresholds so they take precedence.
     if let Some(group) = match_group(&needle) {
-        return all.iter()
+        return all
+            .iter()
             .filter(|p| p.product_type.eq_ignore_ascii_case(group))
             .map(|p| p.slug.clone())
             .collect();
@@ -102,7 +105,9 @@ fn match_entry(entry: &str, all: &[IngredientData]) -> Vec<String> {
         ];
 
         for name in &names {
-            if name.len() < 3 { continue; } // avoid false positives on "рис"/"oat"
+            if name.len() < 3 {
+                continue;
+            } // avoid false positives on "рис"/"oat"
             if needle.contains(name.as_str()) || name.contains(needle.as_str()) {
                 if !hits.contains(&p.slug) {
                     hits.push(p.slug.clone());
@@ -119,33 +124,31 @@ fn match_entry(entry: &str, all: &[IngredientData]) -> Vec<String> {
 /// Returns None if the word isn't a known group name.
 fn match_group(needle: &str) -> Option<&'static str> {
     // Dairy
-    if matches!(needle,
-        "dairy" | "молочка" | "молочное" | "молочные" | "молоко"
-      | "nabiał" | "молочні"
+    if matches!(
+        needle,
+        "dairy" | "молочка" | "молочное" | "молочные" | "молоко" | "nabiał" | "молочні"
     ) {
         return Some("dairy");
     }
     // Nuts
-    if matches!(needle,
+    if matches!(
+        needle,
         "nuts" | "орехи" | "орех" | "орехов" | "orzechy" | "горіхи" | "горіх"
     ) {
         return Some("nut");
     }
     // Fish (FYI most allergy lists say "fish" separately from "seafood")
-    if matches!(needle,
-        "fish" | "рыба" | "рыбу" | "ryby" | "ryba" | "риба"
-    ) {
+    if matches!(needle, "fish" | "рыба" | "рыбу" | "ryby" | "ryba" | "риба") {
         return Some("fish");
     }
-    if matches!(needle,
+    if matches!(
+        needle,
         "seafood" | "морепродукты" | "морепродукт" | "owoce morza" | "морепродукти"
     ) {
         return Some("seafood");
     }
     // Legumes
-    if matches!(needle,
-        "legumes" | "бобовые" | "бобові" | "strączki"
-    ) {
+    if matches!(needle, "legumes" | "бобовые" | "бобові" | "strączki") {
         return Some("legume");
     }
     None

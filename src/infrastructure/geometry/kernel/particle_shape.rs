@@ -69,20 +69,23 @@ impl Axis {
     #[inline]
     pub fn normal(self) -> Vec3 {
         match self {
-            Axis::PosX => Vec3::new( 1.0,  0.0,  0.0),
-            Axis::NegX => Vec3::new(-1.0,  0.0,  0.0),
-            Axis::PosY => Vec3::new( 0.0,  1.0,  0.0),
-            Axis::NegY => Vec3::new( 0.0, -1.0,  0.0),
-            Axis::PosZ => Vec3::new( 0.0,  0.0,  1.0),
-            Axis::NegZ => Vec3::new( 0.0,  0.0, -1.0),
+            Axis::PosX => Vec3::new(1.0, 0.0, 0.0),
+            Axis::NegX => Vec3::new(-1.0, 0.0, 0.0),
+            Axis::PosY => Vec3::new(0.0, 1.0, 0.0),
+            Axis::NegY => Vec3::new(0.0, -1.0, 0.0),
+            Axis::PosZ => Vec3::new(0.0, 0.0, 1.0),
+            Axis::NegZ => Vec3::new(0.0, 0.0, -1.0),
         }
     }
 
     /// All six axes in canonical order.
     pub const ALL: [Axis; 6] = [
-        Axis::PosX, Axis::NegX,
-        Axis::PosY, Axis::NegY,
-        Axis::PosZ, Axis::NegZ,
+        Axis::PosX,
+        Axis::NegX,
+        Axis::PosY,
+        Axis::NegY,
+        Axis::PosZ,
+        Axis::NegZ,
     ];
 }
 
@@ -98,7 +101,7 @@ pub struct ExposedMask(pub u8);
 
 impl ExposedMask {
     pub const NONE: ExposedMask = ExposedMask(0);
-    pub const ALL:  ExposedMask = ExposedMask(0b0011_1111);
+    pub const ALL: ExposedMask = ExposedMask(0b0011_1111);
 
     /// Build from an explicit list of axes.
     pub fn from_axes(axes: &[Axis]) -> Self {
@@ -174,27 +177,43 @@ impl CubeGrid {
     /// Faces touching the outer hull of the cube are exposed; everything
     /// inside is `Interior`.
     pub fn classify(&self, ix: u32, iy: u32, iz: u32) -> ExposedMask {
-        debug_assert!(ix < self.side && iy < self.side && iz < self.side,
-            "CubeGrid::classify out of bounds");
+        debug_assert!(
+            ix < self.side && iy < self.side && iz < self.side,
+            "CubeGrid::classify out of bounds"
+        );
         let last = self.side.saturating_sub(1);
         let mut m: u8 = 0;
-        if ix == last { m |= 1 << Axis::PosX.bit(); }
-        if ix == 0    { m |= 1 << Axis::NegX.bit(); }
-        if iy == last { m |= 1 << Axis::PosY.bit(); }
-        if iy == 0    { m |= 1 << Axis::NegY.bit(); }
-        if iz == last { m |= 1 << Axis::PosZ.bit(); }
-        if iz == 0    { m |= 1 << Axis::NegZ.bit(); }
+        if ix == last {
+            m |= 1 << Axis::PosX.bit();
+        }
+        if ix == 0 {
+            m |= 1 << Axis::NegX.bit();
+        }
+        if iy == last {
+            m |= 1 << Axis::PosY.bit();
+        }
+        if iy == 0 {
+            m |= 1 << Axis::NegY.bit();
+        }
+        if iz == last {
+            m |= 1 << Axis::PosZ.bit();
+        }
+        if iz == 0 {
+            m |= 1 << Axis::NegZ.bit();
+        }
         ExposedMask(m)
     }
 
     /// Walk every surface cell (all cells with `count() > 0`).
     pub fn surface_cells(&self) -> impl Iterator<Item = (u32, u32, u32, ExposedMask)> + '_ {
         let s = self.side;
-        (0..s).flat_map(move |iz| {
-            (0..s).flat_map(move |iy| {
-                (0..s).map(move |ix| (ix, iy, iz, self.classify(ix, iy, iz)))
+        (0..s)
+            .flat_map(move |iz| {
+                (0..s).flat_map(move |iy| {
+                    (0..s).map(move |ix| (ix, iy, iz, self.classify(ix, iy, iz)))
+                })
             })
-        }).filter(|(_, _, _, m)| m.count() > 0)
+            .filter(|(_, _, _, m)| m.count() > 0)
     }
 }
 
@@ -214,13 +233,23 @@ impl WallGrid {
     }
 
     pub fn classify(&self, ix: u32, iy: u32) -> ExposedMask {
-        debug_assert!(ix < self.cols && iy < self.rows,
-            "WallGrid::classify out of bounds");
+        debug_assert!(
+            ix < self.cols && iy < self.rows,
+            "WallGrid::classify out of bounds"
+        );
         let mut m: u8 = (1 << Axis::PosZ.bit()) | (1 << Axis::NegZ.bit());
-        if ix == self.cols - 1 { m |= 1 << Axis::PosX.bit(); }
-        if ix == 0             { m |= 1 << Axis::NegX.bit(); }
-        if iy == self.rows - 1 { m |= 1 << Axis::PosY.bit(); }
-        if iy == 0             { m |= 1 << Axis::NegY.bit(); }
+        if ix == self.cols - 1 {
+            m |= 1 << Axis::PosX.bit();
+        }
+        if ix == 0 {
+            m |= 1 << Axis::NegX.bit();
+        }
+        if iy == self.rows - 1 {
+            m |= 1 << Axis::PosY.bit();
+        }
+        if iy == 0 {
+            m |= 1 << Axis::NegY.bit();
+        }
         ExposedMask(m)
     }
 }
@@ -282,7 +311,7 @@ pub fn sdf_cell(p: Vec3, mask: ExposedMask, radius: f32) -> f32 {
     // Standard sharp-or-anisotropic box SDF — `length(outside)` term gives
     // the smooth corner whenever two/three exposed slabs meet.
     let outside = Vec3::new(qx.max(0.0), qy.max(0.0), qz.max(0.0));
-    let inside  = qx.max(qy).max(qz).min(0.0);
+    let inside = qx.max(qy).max(qz).min(0.0);
     outside.length() + inside
 }
 
@@ -292,11 +321,11 @@ pub fn sdf_cell(p: Vec3, mask: ExposedMask, radius: f32) -> f32 {
 pub fn cell_normal(p: Vec3, mask: ExposedMask, radius: f32) -> Vec3 {
     const EPS: f32 = 1.0e-3;
     let dx = sdf_cell(Vec3::new(p.x + EPS, p.y, p.z), mask, radius)
-           - sdf_cell(Vec3::new(p.x - EPS, p.y, p.z), mask, radius);
+        - sdf_cell(Vec3::new(p.x - EPS, p.y, p.z), mask, radius);
     let dy = sdf_cell(Vec3::new(p.x, p.y + EPS, p.z), mask, radius)
-           - sdf_cell(Vec3::new(p.x, p.y - EPS, p.z), mask, radius);
+        - sdf_cell(Vec3::new(p.x, p.y - EPS, p.z), mask, radius);
     let dz = sdf_cell(Vec3::new(p.x, p.y, p.z + EPS), mask, radius)
-           - sdf_cell(Vec3::new(p.x, p.y, p.z - EPS), mask, radius);
+        - sdf_cell(Vec3::new(p.x, p.y, p.z - EPS), mask, radius);
     let len2 = dx * dx + dy * dy + dz * dz;
     if len2 < 1.0e-12 {
         Vec3::UP
@@ -344,9 +373,9 @@ mod tests {
     #[test]
     fn mask_exposed_lookup() {
         let m = ExposedMask::from_axes(&[Axis::PosX, Axis::NegZ]);
-        assert!( m.exposed(Axis::PosX));
+        assert!(m.exposed(Axis::PosX));
         assert!(!m.exposed(Axis::NegX));
-        assert!( m.exposed(Axis::NegZ));
+        assert!(m.exposed(Axis::NegZ));
         assert!(!m.exposed(Axis::PosZ));
     }
 
@@ -392,7 +421,8 @@ mod tests {
     #[test]
     fn cube_grid_corner_count_is_eight() {
         let g = CubeGrid::new(5);
-        let corners = g.surface_cells()
+        let corners = g
+            .surface_cells()
             .filter(|(_, _, _, m)| m.slot_kind() == SlotKind::Corner)
             .count();
         assert_eq!(corners, 8);
@@ -432,11 +462,27 @@ mod tests {
         // Centre is fully inside.
         assert!(close(sdf_cell(Vec3::ZERO, m, 0.10), -1.0, 1e-6));
         // Right on a face → SDF = 0.
-        assert!(close(sdf_cell(Vec3::new(1.0,  0.0, 0.0), m, 0.10), 0.0, 1e-6));
-        assert!(close(sdf_cell(Vec3::new(0.0,  1.0, 0.0), m, 0.10), 0.0, 1e-6));
-        assert!(close(sdf_cell(Vec3::new(0.0,  0.0, 1.0), m, 0.10), 0.0, 1e-6));
+        assert!(close(
+            sdf_cell(Vec3::new(1.0, 0.0, 0.0), m, 0.10),
+            0.0,
+            1e-6
+        ));
+        assert!(close(
+            sdf_cell(Vec3::new(0.0, 1.0, 0.0), m, 0.10),
+            0.0,
+            1e-6
+        ));
+        assert!(close(
+            sdf_cell(Vec3::new(0.0, 0.0, 1.0), m, 0.10),
+            0.0,
+            1e-6
+        ));
         // Outside on a face → SDF = positive distance to face.
-        assert!(close(sdf_cell(Vec3::new(1.5, 0.0, 0.0), m, 0.10), 0.5, 1e-6));
+        assert!(close(
+            sdf_cell(Vec3::new(1.5, 0.0, 0.0), m, 0.10),
+            0.5,
+            1e-6
+        ));
     }
 
     #[test]
@@ -446,13 +492,15 @@ mod tests {
         let m = ExposedMask::from_axes(&[Axis::PosX]);
         for r in [0.0, 0.1, 0.25, 0.5] {
             for &p in &[
-                Vec3::new(-1.0,  0.0,  0.0),
-                Vec3::new(-1.0,  0.5, -0.5),
-                Vec3::new(-1.0, -0.5,  0.5),
+                Vec3::new(-1.0, 0.0, 0.0),
+                Vec3::new(-1.0, 0.5, -0.5),
+                Vec3::new(-1.0, -0.5, 0.5),
             ] {
                 let d = sdf_cell(p, m, r);
-                assert!(d.abs() < 0.02,
-                    "unexposed −X face must be flush with x=-1 (r={r}, d={d})");
+                assert!(
+                    d.abs() < 0.02,
+                    "unexposed −X face must be flush with x=-1 (r={r}, d={d})"
+                );
             }
         }
     }
@@ -465,13 +513,17 @@ mod tests {
         // the point (0, 1, 0) lies *outside* (positive SDF).
         let m = ExposedMask::from_axes(&[Axis::PosY]);
         let d_at_top = sdf_cell(Vec3::new(0.0, 1.0, 0.0), m, 0.20);
-        assert!(d_at_top > 0.0,
-            "Face cell: exposed +Y top must shrink inward (got d={d_at_top})");
+        assert!(
+            d_at_top > 0.0,
+            "Face cell: exposed +Y top must shrink inward (got d={d_at_top})"
+        );
 
         // and the unexposed −Y face must still touch y = -1
         let d_bot = sdf_cell(Vec3::new(0.0, -1.0, 0.0), m, 0.20);
-        assert!(d_bot.abs() < 0.02,
-            "Face cell: unexposed −Y face must stay flush (d={d_bot})");
+        assert!(
+            d_bot.abs() < 0.02,
+            "Face cell: unexposed −Y face must stay flush (d={d_bot})"
+        );
     }
 
     #[test]
@@ -481,18 +533,19 @@ mod tests {
         // The diagonal point (1, 1, 1) must be clearly outside.
         let m = ExposedMask::from_axes(&[Axis::PosX, Axis::PosY, Axis::PosZ]);
         let d = sdf_cell(Vec3::new(1.0, 1.0, 1.0), m, 0.5);
-        assert!(d > 0.5,
-            "corner is rounded: outer apex must be far outside (d={d})");
+        assert!(
+            d > 0.5,
+            "corner is rounded: outer apex must be far outside (d={d})"
+        );
 
         // And the unexposed faces stay flush.
         for &p in &[
             Vec3::new(-1.0, 0.0, 0.0),
-            Vec3::new( 0.0,-1.0, 0.0),
-            Vec3::new( 0.0, 0.0,-1.0),
+            Vec3::new(0.0, -1.0, 0.0),
+            Vec3::new(0.0, 0.0, -1.0),
         ] {
             let d = sdf_cell(p, m, 0.5);
-            assert!(d.abs() < 0.02,
-                "unexposed face flush at {:?} (d={d})", p);
+            assert!(d.abs() < 0.02, "unexposed face flush at {:?} (d={d})", p);
         }
     }
 
@@ -509,14 +562,19 @@ mod tests {
             (Vec3::new(0.0, 3.0, 0.0), 2.5),
             (Vec3::new(1.0, 1.0, 1.0), (3.0_f32 * 0.25).sqrt()),
             (Vec3::new(1.5, 0.5, 0.7), {
-                let qx = 1.0_f32; let qy = 0.0_f32; let qz = 0.2_f32;
-                (qx*qx + qy*qy + qz*qz).sqrt()
+                let qx = 1.0_f32;
+                let qy = 0.0_f32;
+                let qz = 0.2_f32;
+                (qx * qx + qy * qy + qz * qz).sqrt()
             }),
         ];
         for &(p, expected) in cases {
             let d = sdf_cell(p, m, 0.5);
-            assert!(close(d, expected, 0.02),
-                "fully-open r=0.5 cell at {:?}: sdf={d}, expected≈{expected}", p);
+            assert!(
+                close(d, expected, 0.02),
+                "fully-open r=0.5 cell at {:?}: sdf={d}, expected≈{expected}",
+                p
+            );
         }
     }
 
@@ -529,12 +587,16 @@ mod tests {
         let m = ExposedMask::ALL;
         let r = 0.5_f32;
         let inner = Vec3::new(1.0 - r, 1.0 - r, 1.0 - r);
-        let p     = Vec3::new(0.7, 0.7, 0.7);                 // outside inner
-        let dx = p.x - inner.x; let dy = p.y - inner.y; let dz = p.z - inner.z;
-        let radial = (dx*dx + dy*dy + dz*dz).sqrt();
+        let p = Vec3::new(0.7, 0.7, 0.7); // outside inner
+        let dx = p.x - inner.x;
+        let dy = p.y - inner.y;
+        let dz = p.z - inner.z;
+        let radial = (dx * dx + dy * dy + dz * dz).sqrt();
         let sdf = sdf_cell(p, m, r);
-        assert!(close(sdf, radial, 1e-5),
-            "rounded corner is a sphere: sdf={sdf}, expected={radial}");
+        assert!(
+            close(sdf, radial, 1e-5),
+            "rounded corner is a sphere: sdf={sdf}, expected={radial}"
+        );
     }
 
     // ── cell_normal ──────────────────────────────────────────────────────
@@ -553,8 +615,11 @@ mod tests {
         let m = ExposedMask::from_axes(&[Axis::PosX, Axis::PosY, Axis::PosZ]);
         let p = Vec3::new(0.6, 0.6, 0.6);
         let n = cell_normal(p, m, 0.30);
-        assert!(n.x > 0.3 && n.y > 0.3 && n.z > 0.3,
-            "diagonal corner normal should be roughly (+,+,+) (got {:?})", n);
+        assert!(
+            n.x > 0.3 && n.y > 0.3 && n.z > 0.3,
+            "diagonal corner normal should be roughly (+,+,+) (got {:?})",
+            n
+        );
     }
 
     // ── single particle integration ──────────────────────────────────────
@@ -563,7 +628,7 @@ mod tests {
         // Take ONE particle on the (3,3,3) corner of a 4-cube grid, classify
         // it, then sample its SDF and normal. This is the canonical
         // single-particle path that the WGSL shader will mirror verbatim.
-        let g    = CubeGrid::new(4);
+        let g = CubeGrid::new(4);
         let mask = g.classify(3, 3, 3);
         assert_eq!(mask.slot_kind(), SlotKind::Corner);
 

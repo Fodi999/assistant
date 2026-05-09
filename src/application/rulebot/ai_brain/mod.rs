@@ -18,24 +18,26 @@
 //! Cost: ~$0.001-0.003 per request (Gemini Flash)
 //! Latency: ~200-500ms
 
-mod tool_types;
 mod off_topic_gate;
-mod tool_executors;
-mod response_helpers;
 mod parsing;
+mod response_helpers;
+mod tool_executors;
+mod tool_types;
 
 use std::sync::Arc;
 
-use crate::infrastructure::IngredientCache;
-use crate::infrastructure::llm_adapter::LlmAdapter;
-use super::intent_router::ChatLang;
 use super::chat_response::ChatResponse;
+use super::intent_router::ChatLang;
 use super::session_context::SessionContext;
+use crate::infrastructure::llm_adapter::LlmAdapter;
+use crate::infrastructure::IngredientCache;
 
-use tool_types::{ToolChoice, action_name};
-use off_topic_gate::{classify_off_topic, OffTopicTier, respond_low_quality, respond_out_of_scope, respond_borderline};
-use response_helpers::{truncate, build_context_hint};
+use off_topic_gate::{
+    classify_off_topic, respond_borderline, respond_low_quality, respond_out_of_scope, OffTopicTier,
+};
 use parsing::parse_ai_action;
+use response_helpers::{build_context_hint, truncate};
+use tool_types::{action_name, ToolChoice};
 
 // ── AI Brain ─────────────────────────────────────────────────────────────────
 
@@ -46,7 +48,10 @@ pub struct AiBrain {
 
 impl AiBrain {
     pub fn new(ingredient_cache: Arc<IngredientCache>, llm_adapter: Arc<LlmAdapter>) -> Self {
-        Self { ingredient_cache, llm_adapter }
+        Self {
+            ingredient_cache,
+            llm_adapter,
+        }
     }
 
     /// Main entry point — called when Layer 1 returns Intent::Unknown.
@@ -58,15 +63,24 @@ impl AiBrain {
         // ── Step 0: Off-Topic Gate — filter garbage/irrelevant BEFORE LLM ──
         match classify_off_topic(input) {
             OffTopicTier::LowQuality => {
-                tracing::info!("🚫 Off-topic gate: LowQuality → {:?}", &input[..input.len().min(40)]);
+                tracing::info!(
+                    "🚫 Off-topic gate: LowQuality → {:?}",
+                    &input[..input.len().min(40)]
+                );
                 return respond_low_quality(lang);
             }
             OffTopicTier::OutOfScope => {
-                tracing::info!("🚫 Off-topic gate: OutOfScope → {:?}", &input[..input.len().min(40)]);
+                tracing::info!(
+                    "🚫 Off-topic gate: OutOfScope → {:?}",
+                    &input[..input.len().min(40)]
+                );
                 return respond_out_of_scope(lang);
             }
             OffTopicTier::Borderline => {
-                tracing::info!("🔀 Off-topic gate: Borderline → {:?}", &input[..input.len().min(40)]);
+                tracing::info!(
+                    "🔀 Off-topic gate: Borderline → {:?}",
+                    &input[..input.len().min(40)]
+                );
                 return respond_borderline(input, lang);
             }
             OffTopicTier::Pass => {
@@ -93,15 +107,23 @@ impl AiBrain {
         match action.tool {
             ToolChoice::SearchProducts { query, goal, limit } => {
                 tool_executors::execute_search(
-                    &self.ingredient_cache, &self.llm_adapter,
-                    &query, &goal, limit.min(5), lang,
-                ).await
+                    &self.ingredient_cache,
+                    &self.llm_adapter,
+                    &query,
+                    &goal,
+                    limit.min(5),
+                    lang,
+                )
+                .await
             }
             ToolChoice::GetNutrition { product } => {
                 tool_executors::execute_nutrition(
-                    &self.ingredient_cache, &self.llm_adapter,
-                    &product, lang,
-                ).await
+                    &self.ingredient_cache,
+                    &self.llm_adapter,
+                    &product,
+                    lang,
+                )
+                .await
             }
             ToolChoice::ConvertUnits { value, from, to } => {
                 tool_executors::execute_conversion(value, &from, &to, lang)
@@ -111,9 +133,14 @@ impl AiBrain {
             }
             ToolChoice::MealPlan { goal, meals } => {
                 tool_executors::execute_meal_plan(
-                    &self.ingredient_cache, &self.llm_adapter,
-                    input, &goal, meals.min(5), lang,
-                ).await
+                    &self.ingredient_cache,
+                    &self.llm_adapter,
+                    input,
+                    &goal,
+                    meals.min(5),
+                    lang,
+                )
+                .await
             }
         }
     }
@@ -187,7 +214,8 @@ OUTPUT FORMAT (strict JSON, no other text):
             catalog_summary = catalog_summary,
         );
 
-        let raw = self.llm_adapter
+        let raw = self
+            .llm_adapter
             .groq_raw_request_with_model(&prompt, 500, "gemini-3-flash-preview")
             .await
             .map_err(|e| format!("LLM error: {}", e))?;
@@ -204,24 +232,37 @@ OUTPUT FORMAT (strict JSON, no other text):
             return "No products loaded.".to_string();
         }
 
-        let mut by_protein: Vec<_> = all.iter()
-            .filter(|p| p.protein_per_100g > 15.0)
-            .collect();
-        by_protein.sort_by(|a, b| b.protein_per_100g.partial_cmp(&a.protein_per_100g).unwrap_or(std::cmp::Ordering::Equal));
+        let mut by_protein: Vec<_> = all.iter().filter(|p| p.protein_per_100g > 15.0).collect();
+        by_protein.sort_by(|a, b| {
+            b.protein_per_100g
+                .partial_cmp(&a.protein_per_100g)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-        let mut low_cal: Vec<_> = all.iter()
+        let mut low_cal: Vec<_> = all
+            .iter()
             .filter(|p| p.calories_per_100g > 0.0 && p.calories_per_100g < 80.0)
             .collect();
-        low_cal.sort_by(|a, b| a.calories_per_100g.partial_cmp(&b.calories_per_100g).unwrap_or(std::cmp::Ordering::Equal));
+        low_cal.sort_by(|a, b| {
+            a.calories_per_100g
+                .partial_cmp(&b.calories_per_100g)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut lines = Vec::new();
         lines.push("High protein:".to_string());
         for p in by_protein.iter().take(5) {
-            lines.push(format!("  {} — {}g protein, {}kcal", p.name_en, p.protein_per_100g, p.calories_per_100g as i32));
+            lines.push(format!(
+                "  {} — {}g protein, {}kcal",
+                p.name_en, p.protein_per_100g, p.calories_per_100g as i32
+            ));
         }
         lines.push("Low calorie:".to_string());
         for p in low_cal.iter().take(5) {
-            lines.push(format!("  {} — {}kcal, {}g protein", p.name_en, p.calories_per_100g as i32, p.protein_per_100g));
+            lines.push(format!(
+                "  {} — {}kcal, {}g protein",
+                p.name_en, p.calories_per_100g as i32, p.protein_per_100g
+            ));
         }
 
         lines.join("\n")

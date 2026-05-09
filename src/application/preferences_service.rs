@@ -29,13 +29,12 @@ impl PreferencesService {
         .map_err(|e| AppError::internal(format!("DB error: {e}")))?;
 
         // Load language from users table (set via PUT /profile/language)
-        let language: Option<String> = sqlx::query_scalar(
-            "SELECT language FROM users WHERE id = $1"
-        )
-        .bind(user_id.as_uuid())
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
+        let language: Option<String> =
+            sqlx::query_scalar("SELECT language FROM users WHERE id = $1")
+                .bind(user_id.as_uuid())
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None);
 
         let mut prefs = match row {
             Some(r) => r.into_domain(),

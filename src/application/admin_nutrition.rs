@@ -639,7 +639,8 @@ impl AdminNutritionService {
             .await
             .map_err(AppError::from)?;
             row.map(|r| {
-                let behaviors: Vec<CookingBehavior> = r.behaviors
+                let behaviors: Vec<CookingBehavior> = r
+                    .behaviors
                     .and_then(|v| serde_json::from_value(v).ok())
                     .unwrap_or_default();
                 CulinaryBehaviorDto { behaviors }
@@ -685,11 +686,7 @@ impl AdminNutritionService {
     }
 
     // ── Update basic fields ───────────────────────────
-    pub async fn update_basic(
-        &self,
-        id: Uuid,
-        req: UpdateProductBasicRequest,
-    ) -> AppResult<()> {
+    pub async fn update_basic(&self, id: Uuid, req: UpdateProductBasicRequest) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE products SET
@@ -745,9 +742,11 @@ impl AdminNutritionService {
         // ── Sync physical fields → catalog_ingredients for data-quality audit ──
         // The data-quality endpoint reads density/portion/shelf_life from
         // catalog_ingredients, so we must keep them in sync with the products table.
-        let density_dec: Option<rust_decimal::Decimal> = req.density_g_per_ml
+        let density_dec: Option<rust_decimal::Decimal> = req
+            .density_g_per_ml
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
-        let portion_dec: Option<rust_decimal::Decimal> = req.typical_portion_g
+        let portion_dec: Option<rust_decimal::Decimal> = req
+            .typical_portion_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
 
         if let Err(e) = sqlx::query(
@@ -777,15 +776,15 @@ impl AdminNutritionService {
     // ── Upsert macros ─────────────────────────────────
     pub async fn upsert_macros(&self, id: Uuid, dto: MacrosDto) -> AppResult<()> {
         // Round to 2 decimal places to avoid IEEE 754 display artifacts
-        let calories  = round_opt(dto.calories_kcal, 1);
-        let protein   = round_opt(dto.protein_g, 2);
-        let fat       = round_opt(dto.fat_g, 2);
-        let carbs     = round_opt(dto.carbs_g, 2);
-        let fiber     = round_opt(dto.fiber_g, 2);
-        let sugar     = round_opt(dto.sugar_g, 2);
-        let starch    = round_opt(dto.starch_g, 2);
-        let water     = round_opt(dto.water_g, 1);
-        let alcohol   = round_opt(dto.alcohol_g, 2);
+        let calories = round_opt(dto.calories_kcal, 1);
+        let protein = round_opt(dto.protein_g, 2);
+        let fat = round_opt(dto.fat_g, 2);
+        let carbs = round_opt(dto.carbs_g, 2);
+        let fiber = round_opt(dto.fiber_g, 2);
+        let sugar = round_opt(dto.sugar_g, 2);
+        let starch = round_opt(dto.starch_g, 2);
+        let water = round_opt(dto.water_g, 1);
+        let alcohol = round_opt(dto.alcohol_g, 2);
 
         sqlx::query(
             r#"
@@ -823,13 +822,17 @@ impl AdminNutritionService {
         // directly from catalog_ingredients, so we must keep them in sync.
         // The data-quality audit also reads fiber_per_100g from catalog_ingredients.
         let cal_i32: Option<i32> = dto.calories_kcal.map(|v| v.round() as i32);
-        let protein_dec: Option<rust_decimal::Decimal> = dto.protein_g
+        let protein_dec: Option<rust_decimal::Decimal> = dto
+            .protein_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
-        let fat_dec: Option<rust_decimal::Decimal> = dto.fat_g
+        let fat_dec: Option<rust_decimal::Decimal> = dto
+            .fat_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
-        let carbs_dec: Option<rust_decimal::Decimal> = dto.carbs_g
+        let carbs_dec: Option<rust_decimal::Decimal> = dto
+            .carbs_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
-        let fiber_dec: Option<rust_decimal::Decimal> = dto.fiber_g
+        let fiber_dec: Option<rust_decimal::Decimal> = dto
+            .fiber_g
             .and_then(|v| rust_decimal::Decimal::try_from(v).ok());
 
         if let Err(e) = sqlx::query(
@@ -862,18 +865,18 @@ impl AdminNutritionService {
 
     // ── Upsert vitamins ───────────────────────────────
     pub async fn upsert_vitamins(&self, id: Uuid, dto: VitaminsDto) -> AppResult<()> {
-        let vitamin_a   = round_opt(dto.vitamin_a, 2);
-        let vitamin_c   = round_opt(dto.vitamin_c, 2);
-        let vitamin_d   = round_opt(dto.vitamin_d, 2);
-        let vitamin_e   = round_opt(dto.vitamin_e, 2);
-        let vitamin_k   = round_opt(dto.vitamin_k, 2);
-        let vitamin_b1  = round_opt(dto.vitamin_b1, 2);
-        let vitamin_b2  = round_opt(dto.vitamin_b2, 2);
-        let vitamin_b3  = round_opt(dto.vitamin_b3, 2);
-        let vitamin_b5  = round_opt(dto.vitamin_b5, 2);
-        let vitamin_b6  = round_opt(dto.vitamin_b6, 2);
-        let vitamin_b7  = round_opt(dto.vitamin_b7, 2);
-        let vitamin_b9  = round_opt(dto.vitamin_b9, 2);
+        let vitamin_a = round_opt(dto.vitamin_a, 2);
+        let vitamin_c = round_opt(dto.vitamin_c, 2);
+        let vitamin_d = round_opt(dto.vitamin_d, 2);
+        let vitamin_e = round_opt(dto.vitamin_e, 2);
+        let vitamin_k = round_opt(dto.vitamin_k, 2);
+        let vitamin_b1 = round_opt(dto.vitamin_b1, 2);
+        let vitamin_b2 = round_opt(dto.vitamin_b2, 2);
+        let vitamin_b3 = round_opt(dto.vitamin_b3, 2);
+        let vitamin_b5 = round_opt(dto.vitamin_b5, 2);
+        let vitamin_b6 = round_opt(dto.vitamin_b6, 2);
+        let vitamin_b7 = round_opt(dto.vitamin_b7, 2);
+        let vitamin_b9 = round_opt(dto.vitamin_b9, 2);
         let vitamin_b12 = round_opt(dto.vitamin_b12, 2);
 
         sqlx::query(
@@ -921,16 +924,16 @@ impl AdminNutritionService {
 
     // ── Upsert minerals ───────────────────────────────
     pub async fn upsert_minerals(&self, id: Uuid, dto: MineralsDto) -> AppResult<()> {
-        let calcium    = round_opt(dto.calcium, 2);
-        let iron       = round_opt(dto.iron, 2);
-        let magnesium  = round_opt(dto.magnesium, 2);
+        let calcium = round_opt(dto.calcium, 2);
+        let iron = round_opt(dto.iron, 2);
+        let magnesium = round_opt(dto.magnesium, 2);
         let phosphorus = round_opt(dto.phosphorus, 2);
-        let potassium  = round_opt(dto.potassium, 2);
-        let sodium     = round_opt(dto.sodium, 2);
-        let zinc       = round_opt(dto.zinc, 2);
-        let copper     = round_opt(dto.copper, 2);
-        let manganese  = round_opt(dto.manganese, 2);
-        let selenium   = round_opt(dto.selenium, 2);
+        let potassium = round_opt(dto.potassium, 2);
+        let sodium = round_opt(dto.sodium, 2);
+        let zinc = round_opt(dto.zinc, 2);
+        let copper = round_opt(dto.copper, 2);
+        let manganese = round_opt(dto.manganese, 2);
+        let selenium = round_opt(dto.selenium, 2);
 
         sqlx::query(
             r#"
@@ -970,13 +973,13 @@ impl AdminNutritionService {
 
     // ── Upsert fatty acids ────────────────────────────
     pub async fn upsert_fatty_acids(&self, id: Uuid, dto: FattyAcidsDto) -> AppResult<()> {
-        let saturated       = round_opt(dto.saturated_fat, 2);
+        let saturated = round_opt(dto.saturated_fat, 2);
         let monounsaturated = round_opt(dto.monounsaturated_fat, 2);
         let polyunsaturated = round_opt(dto.polyunsaturated_fat, 2);
-        let omega3          = round_opt(dto.omega3, 2);
-        let omega6          = round_opt(dto.omega6, 2);
-        let epa             = round_opt(dto.epa, 2);
-        let dha             = round_opt(dto.dha, 2);
+        let omega3 = round_opt(dto.omega3, 2);
+        let omega6 = round_opt(dto.omega6, 2);
+        let epa = round_opt(dto.epa, 2);
+        let dha = round_opt(dto.dha, 2);
 
         sqlx::query(
             r#"
@@ -1089,7 +1092,7 @@ impl AdminNutritionService {
         let gi = round_opt(dto.glycemic_index, 1);
         let gl = round_opt(dto.glycemic_load, 1);
         let ph = round_opt(dto.ph, 2);
-        let smoke_point    = round_opt(dto.smoke_point, 1);
+        let smoke_point = round_opt(dto.smoke_point, 1);
         let water_activity = round_opt(dto.water_activity, 2);
 
         sqlx::query(
@@ -1119,11 +1122,11 @@ impl AdminNutritionService {
 
     // ── Upsert culinary ───────────────────────────────
     pub async fn upsert_culinary(&self, id: Uuid, dto: CulinaryDto) -> AppResult<()> {
-        let sweetness  = round_opt(dto.sweetness, 1);
-        let acidity    = round_opt(dto.acidity, 1);
+        let sweetness = round_opt(dto.sweetness, 1);
+        let acidity = round_opt(dto.acidity, 1);
         let bitterness = round_opt(dto.bitterness, 1);
-        let umami      = round_opt(dto.umami, 1);
-        let aroma      = round_opt(dto.aroma, 1);
+        let umami = round_opt(dto.umami, 1);
+        let aroma = round_opt(dto.aroma, 1);
 
         sqlx::query(
             r#"
@@ -1155,8 +1158,7 @@ impl AdminNutritionService {
     // ── Upsert health profile (i18n) ────────────────────
     pub async fn upsert_health_profile(&self, id: Uuid, dto: HealthProfileDto) -> AppResult<()> {
         fn to_json(v: Option<Vec<String>>) -> serde_json::Value {
-            serde_json::to_value(&v.unwrap_or_default())
-                .unwrap_or(serde_json::Value::Array(vec![]))
+            serde_json::to_value(&v.unwrap_or_default()).unwrap_or(serde_json::Value::Array(vec![]))
         }
 
         sqlx::query(
@@ -1252,7 +1254,11 @@ impl AdminNutritionService {
     }
 
     // ── Upsert processing effects (i18n) ────────────────
-    pub async fn upsert_processing_effects(&self, id: Uuid, dto: ProcessingEffectsDto) -> AppResult<()> {
+    pub async fn upsert_processing_effects(
+        &self,
+        id: Uuid,
+        dto: ProcessingEffectsDto,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             INSERT INTO product_processing_effects
@@ -1297,9 +1303,12 @@ impl AdminNutritionService {
     }
 
     // ── Upsert culinary behavior (structured JSONB) ────
-    pub async fn upsert_culinary_behavior(&self, id: Uuid, dto: CulinaryBehaviorDto) -> AppResult<()> {
-        let json = serde_json::to_value(&dto.behaviors)
-            .unwrap_or(serde_json::Value::Array(vec![]));
+    pub async fn upsert_culinary_behavior(
+        &self,
+        id: Uuid,
+        dto: CulinaryBehaviorDto,
+    ) -> AppResult<()> {
+        let json = serde_json::to_value(&dto.behaviors).unwrap_or(serde_json::Value::Array(vec![]));
 
         sqlx::query(
             r#"

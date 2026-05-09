@@ -8,22 +8,22 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct NutritionRequest {
     pub ingredient: String,
-    pub amount:     Option<f64>,
-    pub unit:       Option<String>,
-    pub lang:       Option<String>,
+    pub amount: Option<f64>,
+    pub unit: Option<String>,
+    pub lang: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CompareRequest {
-    pub a:    String,
-    pub b:    String,
+    pub a: String,
+    pub b: String,
     pub lang: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct IngredientsSearchRequest {
-    pub q:     Option<String>,
-    pub lang:  Option<String>,
+    pub q: Option<String>,
+    pub lang: Option<String>,
     pub limit: Option<i64>,
 }
 

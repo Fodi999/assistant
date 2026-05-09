@@ -37,6 +37,9 @@ struct FragOut {
   let n = max(u.u5.w, 1.0);
   let sphereLikeness = clamp((22.0 - n) / 20.0, 0.0, 1.0); // 1 at n≤2, 0 at n=22
 
+  let isOrtho = u.u9.y > 0.5;
+  let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+
   var nrm:   vec3f;
   var hitW:  vec3f;
   var rd:    vec3f;
@@ -53,11 +56,12 @@ struct FragOut {
     // Approximate hit point as wCenter + halfCell · meshN (face centre);
     // this is used only for distance fog and fresnel — both flat per face is OK.
     hitW = p.wCenter + p.meshN * p.halfCell;
-    rd   = normalize(hitW - ro);
+    rd   = select(normalize(hitW - ro), normalize(fwd), isOrtho);
   } else {
     // billboard ray reconstruction (only needed in non-mesh paths)
     let pixelW = p.wCenter + right * p.quadUV.x * p.size + upv * p.quadUV.y * p.size;
-    rd = normalize(pixelW - ro);
+    rd = select(normalize(pixelW - ro), normalize(fwd), isOrtho);
+    let ro_eff = select(ro, pixelW - fwd * 10.0, isOrtho);
 
     if cellOn {
       // ── kernel::particle_shape ray-march in cell-local space ──
@@ -65,7 +69,7 @@ struct FragOut {
       let h    = p.halfCell;
       let mask = p.cellMask;
       let rad  = u.u7.y;
-      let roL  = (ro - p.wCenter) / h;
+      let roL  = (ro_eff - p.wCenter) / h;
     let rdL  = rd;  // unit in world; t parameter is in cell-local units (tw = tl·h)
 
     // bounding sphere of the unit cube has radius √3 ≈ 1.7321
@@ -87,23 +91,24 @@ struct FragOut {
     }
     if !hit { discard; }
 
+    // local-space normal from SDF gradient (central diff)
     let pL  = roL + rdL * tHit;
     let eps = 0.0025;
     let gx  = sdfCell(pL + vec3f(eps,0,0), mask, rad) - sdfCell(pL - vec3f(eps,0,0), mask, rad);
     let gy  = sdfCell(pL + vec3f(0,eps,0), mask, rad) - sdfCell(pL - vec3f(0,eps,0), mask, rad);
     let gz  = sdfCell(pL + vec3f(0,0,eps), mask, rad) - sdfCell(pL - vec3f(0,0,eps), mask, rad);
     nrm  = normalize(vec3f(gx, gy, gz));
-    hitW = ro + rd * (tHit * h);
+    hitW = ro_eff + rd * (tHit * h);
   } else if abs(n - 2.0) < 0.05 {
     // ── analytical sphere intersection (exact n=2 fast-path) ──
-    let oc = ro - p.wCenter;
+    let oc = ro_eff - p.wCenter;
     let b  = dot(oc, rd);
     let c  = dot(oc, oc) - R * R;
     let h  = b * b - c;
     if h < 0.0 { discard; }
     let tHit = -b - sqrt(h);
     if tHit < 0.0 { discard; }
-    hitW = ro + rd * tHit;
+    hitW = ro_eff + rd * tHit;
     nrm  = (hitW - p.wCenter) / R;
   } else {
     // ── ray-march superquadric in particle local space ──
@@ -116,7 +121,7 @@ struct FragOut {
 
     let rot = rotMat(p.phase);
     // transform ray to local space: local = rot · (world - center) / shapeR
-    let roL = rot * (ro - p.wCenter) / shapeR;
+    let roL = rot * (ro_eff - p.wCenter) / shapeR;
     let rdL = rot * rd;
 
     // bounding-sphere entry to skip empty space (radius √3 covers unit cube)
@@ -147,8 +152,8 @@ struct FragOut {
     let nL  = normalize(vec3f(gx, gy, gz));
     // back to world space: transpose(rot) = inverse for rotation matrices
     nrm  = transpose(rot) * nL;
-    // world hit = ro + rd * (tFinal · shapeR)
-    hitW = ro + rd * (tFinal * shapeR);
+    // world hit = ro_eff + rd * (tFinal · shapeR)
+    hitW = ro_eff + rd * (tFinal * shapeR);
   }
   } // close outer non-mesh else branch
 

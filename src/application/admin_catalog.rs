@@ -1,9 +1,8 @@
+use crate::infrastructure::persistence::{
+    AiCacheRepository, CatalogCategoryRepository, CatalogIngredientRepository,
+};
 use crate::infrastructure::R2Client;
 use crate::infrastructure::{DictionaryService, LlmAdapter};
-use crate::infrastructure::persistence::{
-    AiCacheRepository,
-    CatalogCategoryRepository, CatalogIngredientRepository,
-};
 use crate::shared::{AppError, AppResult, UnitType};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -85,7 +84,9 @@ fn product_type_to_category(product_type: &str) -> Option<&'static str> {
         "grain" | "grains" | "grains_and_pasta" | "pasta" | "cereal" => Some("Grains & Pasta"),
         "legume" | "legumes" => Some("Legumes"),
         "nut" | "nuts" | "seeds" | "nut_seed" => Some("Nuts & Seeds"),
-        "spice" | "spices" | "herb" | "herbs" | "herb_spice" | "seasoning" => Some("Spices & Herbs"),
+        "spice" | "spices" | "herb" | "herbs" | "herb_spice" | "seasoning" => {
+            Some("Spices & Herbs")
+        }
         "oil" | "oils" | "fat" | "fats" | "fat_oil" => Some("Oils & Fats"),
         "beverage" | "beverages" | "drink" => Some("Beverages"),
         "condiment" | "condiments" | "sauce" | "sauces" => Some("Condiments & Sauces"),
@@ -182,8 +183,8 @@ pub struct UpdateProductRequest {
     pub salt_per_100g: Option<f64>,
 
     // Fish / seafood attributes
-    pub water_type: Option<String>,   // "sea" | "freshwater" | "both"
-    pub wild_farmed: Option<String>,  // "wild" | "farmed" | "both"
+    pub water_type: Option<String>,  // "sea" | "freshwater" | "both"
+    pub wild_farmed: Option<String>, // "wild" | "farmed" | "both"
     pub sushi_grade: Option<bool>,
 
     // SEO fields
@@ -342,46 +343,53 @@ impl AdminCatalogService {
         // ==========================================
         // If user provided explicit values, use them (don't call AI)
         // Otherwise, call unified processing which returns EVERYTHING at once
-        let (name_en, name_pl, name_uk, name_ru, category_slug, unit_str, confidence) = if !req
-            .name_en
-            .is_empty()
-            && !req.name_pl.is_empty()
-            && !req.name_ru.is_empty()
-            && !req.name_uk.is_empty()
-        {
-            // All fields provided explicitly - no AI needed
-            tracing::info!("All translations provided explicitly, skipping AI");
-            (
-                req.name_en.trim().to_string(),
-                req.name_pl.trim().to_string(),
-                req.name_uk.trim().to_string(),
-                req.name_ru.trim().to_string(),
-                "vegetables".to_string(), // Will be overridden below if provided
-                "piece".to_string(),      // Will be overridden below if provided
-                1.0,                      // 100% confident since user provided it
-            )
-        } else {
-            // Use unified processing: ONE call returns everything
-            tracing::info!("Running unified AI processing for: {}", name_input);
+        let (name_en, name_pl, name_uk, name_ru, category_slug, unit_str, confidence) =
+            if !req.name_en.is_empty()
+                && !req.name_pl.is_empty()
+                && !req.name_ru.is_empty()
+                && !req.name_uk.is_empty()
+            {
+                // All fields provided explicitly - no AI needed
+                tracing::info!("All translations provided explicitly, skipping AI");
+                (
+                    req.name_en.trim().to_string(),
+                    req.name_pl.trim().to_string(),
+                    req.name_uk.trim().to_string(),
+                    req.name_ru.trim().to_string(),
+                    "vegetables".to_string(), // Will be overridden below if provided
+                    "piece".to_string(),      // Will be overridden below if provided
+                    1.0,                      // 100% confident since user provided it
+                )
+            } else {
+                // Use unified processing: ONE call returns everything
+                tracing::info!("Running unified AI processing for: {}", name_input);
 
-            // 1️⃣ Unified AI processing (Rule Engine -> Cache -> LLM)
-            let ai_result = self.llm_adapter.process_unified(name_input).await?;
+                // 1️⃣ Unified AI processing (Rule Engine -> Cache -> LLM)
+                let ai_result = self.llm_adapter.process_unified(name_input).await?;
 
-            (
-                ai_result.name_en,
-                ai_result.name_pl,
-                ai_result.name_uk,
-                ai_result.name_ru,
-                ai_result.category_slug,
-                ai_result.unit,
-                ai_result.confidence,
-            )
-        };
+                (
+                    ai_result.name_en,
+                    ai_result.name_pl,
+                    ai_result.name_uk,
+                    ai_result.name_ru,
+                    ai_result.category_slug,
+                    ai_result.unit,
+                    ai_result.confidence,
+                )
+            };
 
-        tracing::info!("Canonical English: {} (Confidence: {:.2})", name_en, confidence);
-        
+        tracing::info!(
+            "Canonical English: {} (Confidence: {:.2})",
+            name_en,
+            confidence
+        );
+
         if confidence < 0.8 {
-            tracing::warn!("⚠️ Low AI confidence ({:.2}) for product '{}'. Consider manual review.", confidence, name_en);
+            tracing::warn!(
+                "⚠️ Low AI confidence ({:.2}) for product '{}'. Consider manual review.",
+                confidence,
+                name_en
+            );
             // In a real app, we might return a specific status code or flag to the frontend
             // to show a confirmation dialog. For now, we just log it.
         }
@@ -441,10 +449,7 @@ impl AdminCatalogService {
             let pt = normalize_product_type(pt_raw)?;
 
             let category_name = product_type_to_category(&pt).ok_or_else(|| {
-                AppError::validation(&format!(
-                    "Cannot map product_type '{}' to a category",
-                    pt
-                ))
+                AppError::validation(&format!("Cannot map product_type '{}' to a category", pt))
             })?;
 
             let cat_id = sqlx::query_scalar::<_, Uuid>(
@@ -454,7 +459,11 @@ impl AdminCatalogService {
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| {
-                tracing::error!("DB error resolving category for product_type '{}': {}", pt, e);
+                tracing::error!(
+                    "DB error resolving category for product_type '{}': {}",
+                    pt,
+                    e
+                );
                 AppError::internal("Failed to resolve category")
             })?
             .ok_or_else(|| {
@@ -487,7 +496,8 @@ impl AdminCatalogService {
                     "oil" | "beverage" => "liter",
                     _ => "kilogram",
                 };
-                UnitType::from_string(default_unit).unwrap_or(UnitType::from_string("kilogram").unwrap())
+                UnitType::from_string(default_unit)
+                    .unwrap_or(UnitType::from_string("kilogram").unwrap())
             };
 
             (cat_id, unit_resolved, pt)
@@ -783,12 +793,21 @@ impl AdminCatalogService {
 
         // Guard: if description_en contains Cyrillic, move it to description_ru and translate to EN
         if let Some(ref en_text) = description_en {
-            let has_cyrillic = en_text.chars().any(|c| matches!(c, '\u{0400}'..='\u{04FF}'));
+            let has_cyrillic = en_text
+                .chars()
+                .any(|c| matches!(c, '\u{0400}'..='\u{04FF}'));
             if has_cyrillic {
                 let trimmed = en_text.trim().to_string();
-                tracing::warn!("description_en contains Cyrillic for product, auto-fixing: {:?}", &trimmed);
+                tracing::warn!(
+                    "description_en contains Cyrillic for product, auto-fixing: {:?}",
+                    &trimmed
+                );
                 // Move to description_ru if RU is empty
-                if description_ru.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+                if description_ru
+                    .as_ref()
+                    .map(|s| s.trim().is_empty())
+                    .unwrap_or(true)
+                {
                     description_ru = Some(trimmed.clone());
                 }
                 // Translate to English
@@ -809,25 +828,52 @@ impl AdminCatalogService {
             if let Some(ref en_text) = description_en {
                 let en_trimmed = en_text.trim();
                 if !en_trimmed.is_empty() {
-                    let needs_pl = description_pl.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true);
-                    let needs_ru = description_ru.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true);
-                    let needs_uk = description_uk.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true);
+                    let needs_pl = description_pl
+                        .as_ref()
+                        .map(|s| s.trim().is_empty())
+                        .unwrap_or(true);
+                    let needs_ru = description_ru
+                        .as_ref()
+                        .map(|s| s.trim().is_empty())
+                        .unwrap_or(true);
+                    let needs_uk = description_uk
+                        .as_ref()
+                        .map(|s| s.trim().is_empty())
+                        .unwrap_or(true);
 
                     if needs_pl {
-                        match self.llm_adapter.translate_to_language(en_trimmed, "pl").await {
-                            Ok(t) if !t.trim().is_empty() => { description_pl = Some(t); }
+                        match self
+                            .llm_adapter
+                            .translate_to_language(en_trimmed, "pl")
+                            .await
+                        {
+                            Ok(t) if !t.trim().is_empty() => {
+                                description_pl = Some(t);
+                            }
                             _ => {}
                         }
                     }
                     if needs_ru {
-                        match self.llm_adapter.translate_to_language(en_trimmed, "ru").await {
-                            Ok(t) if !t.trim().is_empty() => { description_ru = Some(t); }
+                        match self
+                            .llm_adapter
+                            .translate_to_language(en_trimmed, "ru")
+                            .await
+                        {
+                            Ok(t) if !t.trim().is_empty() => {
+                                description_ru = Some(t);
+                            }
                             _ => {}
                         }
                     }
                     if needs_uk {
-                        match self.llm_adapter.translate_to_language(en_trimmed, "uk").await {
-                            Ok(t) if !t.trim().is_empty() => { description_uk = Some(t); }
+                        match self
+                            .llm_adapter
+                            .translate_to_language(en_trimmed, "uk")
+                            .await
+                        {
+                            Ok(t) if !t.trim().is_empty() => {
+                                description_uk = Some(t);
+                            }
                             _ => {}
                         }
                     }
@@ -836,16 +882,20 @@ impl AdminCatalogService {
         }
 
         let calories = req.calories_per_100g.or(product.calories_per_100g);
-        let protein: Option<rust_decimal::Decimal> = req.protein_per_100g
+        let protein: Option<rust_decimal::Decimal> = req
+            .protein_per_100g
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.protein_per_100g);
-        let fat: Option<rust_decimal::Decimal> = req.fat_per_100g
+        let fat: Option<rust_decimal::Decimal> = req
+            .fat_per_100g
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.fat_per_100g);
-        let carbs: Option<rust_decimal::Decimal> = req.carbs_per_100g
+        let carbs: Option<rust_decimal::Decimal> = req
+            .carbs_per_100g
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.carbs_per_100g);
-        let density: Option<rust_decimal::Decimal> = req.density_g_per_ml
+        let density: Option<rust_decimal::Decimal> = req
+            .density_g_per_ml
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.density_g_per_ml);
 
@@ -854,10 +904,12 @@ impl AdminCatalogService {
         let allergens_val: Option<Vec<String>> = req.allergens;
         let availability_months_val: Option<Vec<bool>> = req.availability_months;
         let shelf_life = req.shelf_life_days.or(product.shelf_life_days);
-        let edible_yield: Option<rust_decimal::Decimal> = req.edible_yield_percent
+        let edible_yield: Option<rust_decimal::Decimal> = req
+            .edible_yield_percent
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.edible_yield_percent);
-        let typical_portion: Option<rust_decimal::Decimal> = req.typical_portion_g
+        let typical_portion: Option<rust_decimal::Decimal> = req
+            .typical_portion_g
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.typical_portion_g);
         let subst_group = req.substitution_group.or(product.substitution_group);
@@ -878,7 +930,11 @@ impl AdminCatalogService {
                 match normalize_product_type(&raw) {
                     Ok(normalized) => normalized,
                     Err(_) => {
-                        tracing::warn!("Unknown product_type '{}' for product {}, keeping as-is", raw, id);
+                        tracing::warn!(
+                            "Unknown product_type '{}' for product {}, keeping as-is",
+                            raw,
+                            id
+                        );
                         raw
                     }
                 }
@@ -920,11 +976,14 @@ impl AdminCatalogService {
         };
 
         // New nutrition fields — use COALESCE in SQL so None keeps existing value
-        let fiber: Option<rust_decimal::Decimal> = req.fiber_per_100g
+        let fiber: Option<rust_decimal::Decimal> = req
+            .fiber_per_100g
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default());
-        let sugar: Option<rust_decimal::Decimal> = req.sugar_per_100g
+        let sugar: Option<rust_decimal::Decimal> = req
+            .sugar_per_100g
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default());
-        let salt: Option<rust_decimal::Decimal> = req.salt_per_100g
+        let salt: Option<rust_decimal::Decimal> = req
+            .salt_per_100g
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default());
         let water_type_val = req.water_type;
         let wild_farmed_val = req.wild_farmed;
@@ -1058,7 +1117,8 @@ impl AdminCatalogService {
         if !old_slug.is_empty() && !new_slug.is_empty() && old_slug != new_slug {
             tracing::info!(
                 "🔀 Slug auto-updated: '{}' → '{}' (old slug saved as alias for 301 redirect)",
-                old_slug, new_slug
+                old_slug,
+                new_slug
             );
         }
 
@@ -1269,19 +1329,23 @@ impl AdminCatalogService {
         if product_type == "other" {
             let en_low = product.name_en.to_lowercase();
             let ru_low = product.name_ru.as_deref().unwrap_or("").to_lowercase();
-            if let Some(inferred) = crate::application::ai_sous_chef::product_dictionary::infer_product_type(&en_low, &ru_low) {
+            if let Some(inferred) =
+                crate::application::ai_sous_chef::product_dictionary::infer_product_type(
+                    &en_low, &ru_low,
+                )
+            {
                 tracing::info!(
                     "🔧 Publish auto-fix product_type: 'other' → '{}' for '{}'",
-                    inferred, product.name_en
+                    inferred,
+                    product.name_en
                 );
                 product_type = inferred.to_string();
-                let _ = sqlx::query(
-                    "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
-                )
-                .bind(&product_type)
-                .bind(id)
-                .execute(&self.pool)
-                .await;
+                let _ =
+                    sqlx::query("UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2")
+                        .bind(&product_type)
+                        .bind(id)
+                        .execute(&self.pool)
+                        .await;
             }
         }
 
@@ -1319,7 +1383,11 @@ impl AdminCatalogService {
             AppError::internal("Failed to publish product")
         })?;
 
-        tracing::info!("✅ Product {} ('{}') published to blog", id, product.name_en);
+        tracing::info!(
+            "✅ Product {} ('{}') published to blog",
+            id,
+            product.name_en
+        );
 
         // Ping blog to revalidate sitemap + product pages immediately
         let slug = product.slug.clone();
@@ -1334,16 +1402,14 @@ impl AdminCatalogService {
         // Verify exists
         let product = self.get_product_by_id(id).await?;
 
-        sqlx::query(
-            "UPDATE catalog_ingredients SET is_published = false WHERE id = $1"
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("DB error unpublishing product {}: {}", id, e);
-            AppError::internal("Failed to unpublish product")
-        })?;
+        sqlx::query("UPDATE catalog_ingredients SET is_published = false WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error unpublishing product {}: {}", id, e);
+                AppError::internal("Failed to unpublish product")
+            })?;
 
         tracing::info!("Product {} unpublished from blog", id);
 
@@ -1503,8 +1569,8 @@ impl AdminCatalogService {
 ///   BLOG_URL                (default: https://dima-fomin.pl)
 ///   BLOG_REVALIDATE_SECRET  (default: fodi-revalidate-2025-secret)
 pub async fn revalidate_blog(slug: Option<String>) {
-    let blog_url = std::env::var("BLOG_URL")
-        .unwrap_or_else(|_| "https://dima-fomin.pl".to_string());
+    let blog_url =
+        std::env::var("BLOG_URL").unwrap_or_else(|_| "https://dima-fomin.pl".to_string());
     let secret = std::env::var("BLOG_REVALIDATE_SECRET")
         .unwrap_or_else(|_| "fodi-revalidate-2025-secret".to_string());
 
@@ -1536,7 +1602,9 @@ pub async fn revalidate_blog(slug: Option<String>) {
     {
         Ok(resp) => tracing::info!(
             "🔄 Blog revalidated (tags={:?}, paths={:?}) → {}",
-            tags, paths, resp.status()
+            tags,
+            paths,
+            resp.status()
         ),
         Err(e) => tracing::warn!("⚠️ Blog revalidate failed: {}", e),
     }

@@ -9,7 +9,7 @@
 //! Reuses the same slug/product_type matching patterns from `nutrition_math::detect_allergens()`.
 
 use super::recipe_engine::ResolvedIngredient;
-use super::user_constraints::{UserConstraints, DietaryMode};
+use super::user_constraints::{DietaryMode, UserConstraints};
 
 /// Result of applying constraints: what was removed, what was substituted.
 #[derive(Debug, Clone, Default)]
@@ -77,7 +77,9 @@ fn apply_dietary_mode(
     };
 
     ingredients.retain(|ing| {
-        let pt = ing.product.as_ref()
+        let pt = ing
+            .product
+            .as_ref()
             .map(|p| p.product_type.as_str())
             .unwrap_or("");
         let slug = slug_lower(ing);
@@ -85,10 +87,15 @@ fn apply_dietary_mode(
         let should_remove = match mode {
             DietaryMode::Vegan => {
                 // Remove: meat, fish, seafood, dairy, eggs
-                pt == "meat" || pt == "fish" || pt == "seafood" || pt == "dairy"
+                pt == "meat"
+                    || pt == "fish"
+                    || pt == "seafood"
+                    || pt == "dairy"
                     || slug.contains("egg")
-                    || slug.contains("butter") || slug.contains("cream")
-                    || slug.contains("cheese") || slug.contains("milk")
+                    || slug.contains("butter")
+                    || slug.contains("cream")
+                    || slug.contains("cheese")
+                    || slug.contains("milk")
                     || slug.contains("honey")
             }
             DietaryMode::Vegetarian => {
@@ -104,7 +111,9 @@ fn apply_dietary_mode(
         if should_remove {
             let name = &ing.slug_hint;
             report.removed.push((name.clone(), reason.into()));
-            report.messages.push(format!("Removed {} ({})", name, reason));
+            report
+                .messages
+                .push(format!("Removed {} ({})", name, reason));
             false
         } else {
             true
@@ -135,7 +144,9 @@ fn apply_allergen_exclusion(
     // Apply substitutions (mark for the report, but actual substitute product
     // requires cache lookup which happens at the caller level)
     for (_, sub) in &substitutions {
-        report.messages.push(format!("Consider substituting with {}", sub));
+        report
+            .messages
+            .push(format!("Consider substituting with {}", sub));
     }
 
     // Remove violating ingredients
@@ -143,7 +154,9 @@ fn apply_allergen_exclusion(
         if matches_allergen(ing, allergen) {
             let name = &ing.slug_hint;
             report.removed.push((name.clone(), reason.clone()));
-            report.messages.push(format!("Removed {} ({})", name, reason));
+            report
+                .messages
+                .push(format!("Removed {} ({})", name, reason));
             false
         } else {
             true
@@ -155,48 +168,73 @@ fn apply_allergen_exclusion(
 /// Reuses the same patterns from `nutrition_math::detect_allergens()`.
 fn matches_allergen(ing: &ResolvedIngredient, allergen: &str) -> bool {
     let slug = slug_lower(ing);
-    let pt = ing.product.as_ref()
+    let pt = ing
+        .product
+        .as_ref()
         .map(|p| p.product_type.as_str())
         .unwrap_or("");
 
     match allergen {
         "lactose" => {
-            pt == "dairy" || slug.contains("milk") || slug.contains("cream")
-                || slug.contains("cheese") || slug.contains("butter")
-                || slug.contains("yogurt") || slug.contains("kefir")
-                || slug.contains("sour-cream") || slug.contains("smetana")
+            pt == "dairy"
+                || slug.contains("milk")
+                || slug.contains("cream")
+                || slug.contains("cheese")
+                || slug.contains("butter")
+                || slug.contains("yogurt")
+                || slug.contains("kefir")
+                || slug.contains("sour-cream")
+                || slug.contains("smetana")
         }
         "gluten" => {
-            slug.contains("wheat") || slug.contains("flour") || slug.contains("pasta")
-                || slug.contains("bread") || slug.contains("barley") || slug.contains("rye")
-                || slug.contains("oat") || slug.contains("spaghetti") || slug.contains("noodle")
-                || slug.contains("couscous") || slug.contains("semolina")
-                || (pt == "grain" && !slug.contains("rice") && !slug.contains("corn")
-                    && !slug.contains("buckwheat") && !slug.contains("quinoa"))
+            slug.contains("wheat")
+                || slug.contains("flour")
+                || slug.contains("pasta")
+                || slug.contains("bread")
+                || slug.contains("barley")
+                || slug.contains("rye")
+                || slug.contains("oat")
+                || slug.contains("spaghetti")
+                || slug.contains("noodle")
+                || slug.contains("couscous")
+                || slug.contains("semolina")
+                || (pt == "grain"
+                    && !slug.contains("rice")
+                    && !slug.contains("corn")
+                    && !slug.contains("buckwheat")
+                    && !slug.contains("quinoa"))
         }
         "nuts" => {
-            pt == "nut" || slug.contains("almond") || slug.contains("walnut")
-                || slug.contains("cashew") || slug.contains("peanut")
-                || slug.contains("hazelnut") || slug.contains("pecan")
-                || slug.contains("pistachio") || slug.contains("macadamia")
+            pt == "nut"
+                || slug.contains("almond")
+                || slug.contains("walnut")
+                || slug.contains("cashew")
+                || slug.contains("peanut")
+                || slug.contains("hazelnut")
+                || slug.contains("pecan")
+                || slug.contains("pistachio")
+                || slug.contains("macadamia")
                 || slug.contains("pine-nut")
         }
-        "eggs" => {
-            slug.contains("egg")
-        }
-        "fish" => {
-            pt == "fish"
-        }
+        "eggs" => slug.contains("egg"),
+        "fish" => pt == "fish",
         "shellfish" => {
-            pt == "seafood" || slug.contains("shrimp") || slug.contains("prawn")
-                || slug.contains("crab") || slug.contains("lobster")
-                || slug.contains("mussel") || slug.contains("oyster")
-                || slug.contains("squid") || slug.contains("octopus")
+            pt == "seafood"
+                || slug.contains("shrimp")
+                || slug.contains("prawn")
+                || slug.contains("crab")
+                || slug.contains("lobster")
+                || slug.contains("mussel")
+                || slug.contains("oyster")
+                || slug.contains("squid")
+                || slug.contains("octopus")
                 || slug.contains("clam")
         }
         "soy" => {
-            slug.contains("soy") || slug.contains("tofu")
-                || slug.contains("edamame") || slug.contains("tempeh")
+            slug.contains("soy")
+                || slug.contains("tofu")
+                || slug.contains("edamame")
+                || slug.contains("tempeh")
         }
         _ => false,
     }
@@ -223,7 +261,10 @@ fn suggest_substitution(ing: &ResolvedIngredient, allergen: &str) -> Option<Stri
         "gluten" => {
             if slug.contains("flour") || slug.contains("wheat") {
                 Some("rice-flour".into()) // or buckwheat-flour
-            } else if slug.contains("pasta") || slug.contains("spaghetti") || slug.contains("noodle") {
+            } else if slug.contains("pasta")
+                || slug.contains("spaghetti")
+                || slug.contains("noodle")
+            {
                 Some("rice-noodle".into())
             } else if slug.contains("bread") {
                 None // too varied
@@ -258,7 +299,9 @@ fn apply_slug_ban(
         let slug = slug_lower(ing);
         if slug.contains(banned_slug) {
             report.removed.push((ing.slug_hint.clone(), reason.clone()));
-            report.messages.push(format!("Removed {} ({})", ing.slug_hint, reason));
+            report
+                .messages
+                .push(format!("Removed {} ({})", ing.slug_hint, reason));
             false
         } else {
             true
@@ -273,12 +316,16 @@ fn apply_type_ban(
 ) {
     let reason = format!("excluded type: {}", banned_type);
     ingredients.retain(|ing| {
-        let pt = ing.product.as_ref()
+        let pt = ing
+            .product
+            .as_ref()
             .map(|p| p.product_type.as_str())
             .unwrap_or("");
         if pt == banned_type {
             report.removed.push((ing.slug_hint.clone(), reason.clone()));
-            report.messages.push(format!("Removed {} ({})", ing.slug_hint, reason));
+            report
+                .messages
+                .push(format!("Removed {} ({})", ing.slug_hint, reason));
             false
         } else {
             true
@@ -316,7 +363,10 @@ mod tests {
                 carbs_per_100g: 10.0,
                 image_url: None,
                 product_type: product_type.into(),
-                density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+                density_g_per_ml: None,
+                typical_portion_g: None,
+                behaviors: vec![],
+                states: vec![],
             }),
             slug_hint: slug.into(),
             resolved_slug: Some(slug.into()),
@@ -442,10 +492,7 @@ mod tests {
 
     #[test]
     fn sugar_ban() {
-        let mut ings = vec![
-            make_ing("sugar", "other"),
-            make_ing("beet", "vegetable"),
-        ];
+        let mut ings = vec![make_ing("sugar", "other"), make_ing("beet", "vegetable")];
         let constraints = UserConstraints {
             exclude_slugs: vec!["sugar".into()],
             ..Default::default()
@@ -478,10 +525,7 @@ mod tests {
 
     #[test]
     fn empty_constraints_noop() {
-        let mut ings = vec![
-            make_ing("beef", "meat"),
-            make_ing("butter", "dairy"),
-        ];
+        let mut ings = vec![make_ing("beef", "meat"), make_ing("butter", "dairy")];
         let constraints = UserConstraints::default();
         let report = apply_dietary_constraints(&mut ings, &constraints);
         assert_eq!(ings.len(), 2);
@@ -491,9 +535,15 @@ mod tests {
     #[test]
     fn substitution_suggestions() {
         let ing = make_ing("butter", "dairy");
-        assert_eq!(suggest_substitution(&ing, "lactose"), Some("olive-oil".into()));
+        assert_eq!(
+            suggest_substitution(&ing, "lactose"),
+            Some("olive-oil".into())
+        );
 
         let flour = make_ing("wheat-flour", "grain");
-        assert_eq!(suggest_substitution(&flour, "gluten"), Some("rice-flour".into()));
+        assert_eq!(
+            suggest_substitution(&flour, "gluten"),
+            Some("rice-flour".into())
+        );
     }
 }

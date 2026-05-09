@@ -1,0 +1,389 @@
+  1  0 // ── WGSL: particle vertex shader ─────────────────────────────────────────────────
+  2  0 // Domain: Particle placement — cloud drift, formation targets (cube/wall),
+  3  0 //         LOD decimation, billboard inflate, mesh-mode dispatch.
+  4  0 
+  5  0 pub const WGSL: &str = r##"
+  6  0 @vertex fn vs_particles(
+  7  0   @builtin(vertex_index)   vi:   u32,
+  8  0   @builtin(instance_index) inst: u32,
+  9  1 ) -> Pv {
+ 10  1   // 6-vert quad in local space (-1..1)
+ 11  1   var qx = array<f32,6>(-1.0, 1.0,-1.0,  1.0, 1.0,-1.0);
+ 12  1   var qy = array<f32,6>(-1.0,-1.0, 1.0, -1.0, 1.0, 1.0);
+ 13  1 
+ 14  1   let t   = u.u0.x;
+ 15  1   let asp = u.u0.y / u.u0.z;
+ 16  1 
+ 17  1   let ro    = u.u1.xyz;
+ 18  1   let right = u.u2.xyz;
+ 19  1   let upv   = u.u3.xyz;
+ 20  1   let fwd   = u.u4.xyz;
+ 21  1 
+ 22  1   let sp = spheres.data[inst];
+ 23  1   let ph = sp.colorP.w;
+ 24  1 
+ 25  1   // ── formation parameters ─────────────────────────────────────
+ 26  1   let formMix   = clamp(u.u6.x, 0.0, 1.0);
+ 27  1   let formMode  = u.u6.y;       // 0 cloud · 1 cube · 2 wall
+ 28  1   let formA     = u.u6.z;       // grid side (cube) / row count (wall)
+ 29  1   let formScale = u.u6.w;
+ 30  1   let driftK    = 1.0 - formMix; // suppress drift while forming
+ 31  1 
+ 32  1   // animated world position (Lissajous drift) — damped by (1-formMix)
+ 33  1   var cloudC = vec3f(
+ 34  1     sp.posR.x + sin(t * 0.28 + ph)        * 0.30 * driftK,
+ 35  1     sp.posR.y + cos(t * 0.37 + ph * 1.27) * 0.22 * driftK,
+ 36  1     sp.posR.z + sin(t * 0.21 + ph * 0.73) * 0.18 * driftK,
+ 37  1   );
+ 38  1 
+ 39  1   // soft gravity toward scene origin → organic clumps (also damped)
+ 40  1   let radial   = length(sp.posR.xyz);
+ 41  1   let pullAmt  = smoothstep(1.5, 5.5, radial) * 0.35 * driftK;
+ 42  1   let toOrigin = -normalize(sp.posR.xyz + vec3f(1e-4));
+ 43  1   let swirl    = vec3f(-sp.posR.z, 0.0, sp.posR.x) * 0.02 * driftK;
+ 44  1   cloudC      += toOrigin * pullAmt * (0.6 + 0.4 * sin(t * 0.5 + ph));
+ 45  1   cloudC      += swirl    * sin(t * 0.3 + ph * 0.5);
+ 46  1 
+ 47  1   // ── deterministic formation target from instance index ──────
+ 48  1   // overlap factor depends on shape: spheres need √2 to cover diagonals,
+ 49  1   // cubes (high n) tile exactly with factor 1.0
+ 50  1   // n=1 octahedron · n=2 sphere · n→∞ cube
+ 51  1   let n         = max(u.u5.w, 1.0);
+ 52  1   let cubeness  = clamp((n - 2.0) / 20.0, 0.0, 1.0); // 0 sphere/octa → 1 cube
+ 53  1   let coverK    = mix(1.45, 1.02, cubeness);
+ 54  1 
+ 55  1   var formed     = vec3f(0.0);
+ 56  1   var targetR    = sp.posR.w;     // target radius when fully formed
+ 57  1   var aliveForm  = true;          // false → particle hidden (extra over grid capacity)
+ 58  1   var halfCell   = sp.posR.w;     // cell half-extent in world units
+ 59  1   var cellMask: u32 = 63u;        // default: all faces exposed (cloud / wall)
+ 60  1 
+ 61  2   if formMode > 0.5 && formMode < 1.5 {
+ 62  2     // CUBE: solid side³ grid. Every particle is one cell at integer coord
+ 63  2     // (ix, iy, iz). Adjacent cells differ by exactly 2·halfCell in their
+ 64  2     // centre, so unexposed faces are perfectly flush — magnetic packing.
+ 65  2     // Interior cells (mask == 0) are culled; only 6s²−12s+8 stay visible.
+ 66  2     let side    = u32(formA);
+ 67  2     let totalCells = side * side * side;
+ 68  3     if inst < totalCells {
+ 69  3       let ix = inst % side;
+ 70  3       let iy = (inst / side) % side;
+ 71  3       let iz = inst / (side * side);
+ 72  3 
+ 73  3       // mask via direct face-touch test (= particle_shape::CubeGrid::classify)
+ 74  3       var m: u32 = 0u;
+ 75  3       if ix == side - 1u { m |=  1u; }
+ 76  3       if ix == 0u        { m |=  2u; }
+ 77  3       if iy == side - 1u { m |=  4u; }
+ 78  3       if iy == 0u        { m |=  8u; }
+ 79  3       if iz == side - 1u { m |= 16u; }
+ 80  3       if iz == 0u        { m |= 32u; }
+ 81  3 
+ 82  3       // cull interior — never contributes pixels
+ 83  4       if m == 0u {
+ 84  4         aliveForm = false;
+ 85  4         formed    = vec3f(0.0);
+ 86  4         targetR   = 0.0;
+ 87  4       } else {
+ 88  4         let cellSize = formScale / formA * 2.0; // fallback if u9 not available, or use fixed scale logic if intended
+ 89  4         let halfCellWorld = cellSize * 0.5;
+ 90  4 
+ 91  4         let fx = f32(ix) - (formA - 1.0) * 0.5;
+ 92  4         let fy = f32(iy) - (formA - 1.0) * 0.5;
+ 93  4         let fz = f32(iz) - (formA - 1.0) * 0.5;
+ 94  4 
+ 95  4         formed   = vec3f(fx, fy, fz) * cellSize;
+ 96  4         halfCell = halfCellWorld;
+ 97  4         cellMask = m;
+ 98  4 
+ 99  4         // imposter mode: radius = halfCell (sphere just touches its 6 neighbours);
+100  4         // cell-SDF mode: radius = √3·halfCell (billboard bounds the rotated cube).
+101  4         let cellR     = halfCell * 1.7321;
+102  4         let imposterR = halfCell;
+103  4         targetR  = mix(imposterR, cellR, clamp(u.u7.x, 0.0, 1.0));
+104  4 
+105  4         // hideLow debug: show only edges & corners
+106  5         if u.u7.w > 0.5 {
+107  5           let nb = countOneBits(cellMask);
+108  5           if nb <= 1u { aliveForm = false; }
+109  4         }
+110  3       }
+111  3     } else {
+112  3       aliveForm = false;
+113  3       formed    = vec3f(0.0);
+114  3       targetR   = 0.0;
+115  2     }
+116  2   } else if formMode > 1.5 {
+117  2     // WALL: cols × rows  (cols·rows ≤ N is guaranteed from JS)
+118  2     // Each tile is a real 3D cube with axis-aligned extents:
+119  2     //   X half = scale·aspect/cols    Y half = scale/rows    Z half = min(X,Y)
+120  2     // We expose +Z / -Z always (front + back of wall) and +X/-X/+Y/-Y only
+121  2     // on the outer rim of the rectangle so neighbour seams disappear like the
+122  2     // cube formation. halfCell = min(tileX, tileY) keeps tile cube proportions.
+123  2     let cols       = u32(formA);
+124  2     let rows       = max(formScale, 1.0);
+125  2     let rowsU      = u32(rows);
+126  2     let totalCells = cols * rowsU;
+127  3     if inst < totalCells {
+128  3       let r      = inst / cols;
+129  3       let c      = inst % cols;
+130  3       let scale  = 2.4;
+131  3       let aspect = formA / rows;
+132  3       // Tile centre in world (Z = 0 plane).
+133  3       let uu     = (f32(c) + 0.5) / formA * 2.0 - 1.0;
+134  3       let vv     = (f32(r) + 0.5) / rows  * 2.0 - 1.0;
+135  3       formed     = vec3f(uu * aspect * scale, vv * scale, 0.0);
+136  3 
+137  3       // Tile half-extents (X may differ from Y when aspect ≠ 1).
+138  3       let tileX  = scale * aspect / formA;
+139  3       let tileY  = scale / rows;
+140  3       // Use min for cellMask SDF/mesh maths: tile becomes a square slab.
+141  3       halfCell   = min(tileX, tileY);
+142  3       // World-extent radius for billboard fallback (covers the whole tile).
+143  3       targetR    = max(tileX, tileY);
+144  3 
+145  3       // Wall cellMask: edges expose ±X / ±Y; front+back (±Z) always exposed.
+146  3       var m: u32 = 16u | 32u;
+147  3       if c == cols - 1u { m |=  1u; }
+148  3       if c == 0u        { m |=  2u; }
+149  3       if r == rowsU - 1u { m |=  4u; }
+150  3       if r == 0u         { m |=  8u; }
+151  3       cellMask = m;
+152  3     } else {
+153  3       aliveForm = false;
+154  3       formed    = vec3f(0.0, 0.0, -100.0); // off-screen behind
+155  3       targetR   = 0.0;
+156  2     }
+157  1   }
+158  1 
+159  1   // smoothly grow / shrink particle to fill its cell when formed
+160  1   let mixT  = smoothstep(0.0, 1.0, formMix);
+161  1   let size  = mix(sp.posR.w, targetR, mixT);
+162  1 
+163  1   // no wobble in formation — particles must lock perfectly still
+164  1   let settle = vec3f(0.0);
+165  1 
+166  1   var center = mix(cloudC, formed + settle, smoothstep(0.0, 1.0, formMix));
+167  1 
+168  1   // ── Scene placement: scale & translate the entire formation ──
+169  1   // Cloud (formMix=0) keeps original position; the formed object is repositioned
+170  1   // and resized via uniform u8 = (objectPos, objectScale).
+171  1   let objPos   = u.u8.xyz;
+172  1   let objScale = max(0.001, u.u8.w);
+173  1   // blend toward the placed pose as the formation forms — keeps cloud anchored at origin
+174  1   let placeT   = smoothstep(0.0, 1.0, formMix);
+175  1   let placedC  = center * objScale + objPos;
+176  1   center       = mix(center, placedC, placeT);
+177  1   halfCell     = mix(halfCell, halfCell * objScale, placeT);
+178  1 
+179  1   // sand-push along mouse ray (still works in any mode, slightly weaker when formed)
+180  1   let mAct = u.u5.z;
+181  2   if mAct > 0.5 {
+182  2     let mNdc = vec2f(u.u5.x * asp, u.u5.y);
+183  2   let isOrtho = u.u9.y > 0.5;
+184  2   let orthoHeight = distance(ro, u.u8.xyz) * 0.45; 
+185  2 
+186  2   // Compute view-space coordinates
+187  2   let rel = center - ro;
+188  2   let vx  = dot(rel, right);
+189  2   let vy  = dot(rel, upv);
+190  2   let vz  = dot(rel, fwd);
+191  2   
+192  2   // Safe depth for perspective
+193  2   let safe_vz = max(vz, 0.05);
+194  2 
+195  3   if pushActive {
+196  3     // simple focal length (now fixed 2.414 everywhere)
+197  3     let mNdc = vec2f(0.0, 0.0);
+198  3     let rdM  = normalize(mNdc.x * right + mNdc.y * upv + 2.414 * fwd);
+199  3     let toC      = center - ro;
+200  3     let projLen  = dot(toC, rdM);
+201  3     let perp     = toC - rdM * projLen;
+202  3     let dist     = length(perp);
+203  4     if dist > 0.001 && projLen > 0.0 {
+204  4       let falloff = exp(-dist * 2.2);
+205  4       let dir     = perp / dist;
+206  4       center += dir * falloff * u.u0.w * (1.0 - formMix);
+207  3     }
+208  2   }
+209  2 
+210  2     let rel = center - ro;
+211  2     let vx = dot(rel, right);
+212  2     let vy = dot(rel, upv);
+213  2     let vz = dot(rel, fwd);
+214  2     let safe_vz = max(vz, 0.05);
+215  2 
+216  2   // Project particle radius to pixels: pxR ≈ size · focal / vz · (viewportH / 2)
+217  2   let viewH = u.u0.z;
+218  2   let pxR   = select( size * 2.414 / safe_vz * (viewH * 0.5), size / orthoHeight * viewH * 1.5, isOrtho );
+219  2 
+220  2   // CUBE LOD by cellMask popcount (decimation when shell pixels < 1):
+221  2   //   pxR ≥ 1.5  → all surface particles (popcount ≥ 1)               · LOD0
+222  2   //   pxR ∈ [0.8, 1.5)  → drop face-interior, keep edges + corners    · LOD1
+223  2   //   pxR ∈ [0.4, 0.8)  → drop edges, keep 8 corner cells             · LOD2
+224  2   //   pxR < 0.4         → keep only corners with extra inflation       · LOD3
+225  2   // Survivors inflate so total covered area ≈ unchanged ("Вариант 2": 2×2×2 → 1 block).
+226  2   var lodInflate: f32 = 1.0;
+227  3   if formMix > 0.5 && formMode > 0.5 && formMode < 1.5 {
+228  3     let bits = countOneBits(cellMask);
+229  4     if pxR < 0.4 {
+230  4       if bits < 3u { aliveForm = false; }
+231  4       lodInflate = 4.0;
+232  4     } else if pxR < 0.8 {
+233  4       if bits < 2u { aliveForm = false; }
+234  4       lodInflate = 2.0;
+235  4     } else if pxR < 1.5 {
+236  4       lodInflate = 1.4;
+237  3     }
+238  2   }
+239  2 
+240  2   // Universal screen-space minimum: never let a particle fall below 1 px (kills subpixel flicker)
+241  2   let curPxR  = pxR * lodInflate;
+242  2   let pxBoost = select(1.0, 1.0 / max(curPxR, 0.001), curPxR < 1.0);
+243  2   // imposter radius also follows the scene scale once formed
+244  2   let sizeScaled = mix(size, size * objScale, placeT);
+245  2   let sizeLod    = sizeScaled * lodInflate * pxBoost;
+246  2 
+247  3   if vz < 0.05 || !aliveForm {
+248  3     var dead: Pv;
+249  3     dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+250  3     dead.quadUV   = vec2f(0.0);
+251  3     dead.color    = vec3f(0.0);
+252  3     dead.depth    = 0.0;
+253  3     dead.phase    = 0.0;
+254  3     dead.wCenter  = vec3f(0.0);
+255  3     dead.size     = 0.0;
+256  3     dead.cellMask = 0u;
+257  3     dead.halfCell = 0.0;
+258  3     dead.meshMode = 0u;
+259  3     dead.meshN    = vec3f(0.0);
+260  3     return dead;
+261  2   }
+262  2 
+263  2   // ── Choose render path ───────────────────────────────────────
+264  2   // MESH PATH (true 3D cube triangle): activated for fully-formed cube OR
+265  2   // wall when the shape exponent is high enough (n > 8 → virtually a cube).
+266  2   // Hardware-rasterized triangles → zero ray-march artifacts on tilt.
+267  2   let isCubeForm = formMode > 0.5 && formMode < 1.5;
+268  2   let isWallForm = formMode > 1.5;
+269  2   let useMesh    = formMix > 0.95
+270  2                 && (isCubeForm || isWallForm)
+271  2                 && n > 8.0
+272  2                 && halfCell > 0.0001;
+273  2 
+274  2   // For non-mesh mode, only the first 6 verts are real (billboard quad).
+275  2   // Verts 6..35 must be killed without affecting depth.
+276  3   if !useMesh && vi >= 6u {
+277  3     var dead: Pv;
+278  3     dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+279  3     dead.quadUV   = vec2f(0.0);
+280  3     dead.color    = vec3f(0.0);
+281  3     dead.depth    = 0.0;
+282  3     dead.phase    = 0.0;
+283  3     dead.wCenter  = vec3f(0.0);
+284  3     dead.size     = 0.0;
+285  3     dead.cellMask = 0u;
+286  3     dead.halfCell = 0.0;
+287  3     dead.meshMode = 0u;
+288  3     dead.meshN    = vec3f(0.0);
+289  3     return dead;
+290  2   }
+291  2 
+292  3   if useMesh {
+293  3     // ── True 3D cube mesh: 6 faces × 2 tris × 3 verts = 36 verts ──
+294  3     let cv = cubeVert(vi);
+295  3     // Cull faces that are not exposed (touch a neighbour cube): emit degenerate.
+296  4     if (cellMask & cv.bit) == 0u {
+297  4       var dead: Pv;
+298  4       dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
+299  4       dead.quadUV   = vec2f(0.0);
+300  4       dead.color    = vec3f(0.0);
+301  4       dead.depth    = 0.0;
+302  4       dead.phase    = 0.0;
+303  4       dead.wCenter  = vec3f(0.0);
+304  4       dead.size     = 0.0;
+305  4       dead.cellMask = 0u;
+306  4       dead.halfCell = 0.0;
+307  4       dead.meshMode = 0u;
+308  4       dead.meshN    = vec3f(0.0);
+309  4       return dead;
+310  3     }
+311  3 
+312  3     // World-space cube vertex (axis-aligned, no per-particle rotation).
+313  3     // halfExt scaled by lodInflate so LOD blocks grow without leaving holes.
+314  3     let halfExt = halfCell * lodInflate;
+315  3     let wp      = center + cv.pos * halfExt;
+316  3 
+317  3     // View-space + perspective project (same projection as billboard path).
+318  3     let relV = wp - ro;
+319  3     let mvx  = dot(relV, right);
+320  3     let mvy  = dot(relV, upv);
+321  3     let mvz  = dot(relV, fwd);
+322  3     
+323  3     // Do NOT kill the vertex if mvz < 0.05. Hardware near-plane clipping will handle it gracefully.
+324  3     // Otherwise, rotating a large close cube will make its vertices snap to (0,0,-2) and destroy the triangle.
+325  3     let safe_mvz = max(mvz, 0.001); // Prevent division by zero for projection
+326  3     
+327  3     let focalM = 2.414;
+328  3     let mcx    = select(mvx * focalM / safe_mvz / asp, mvx / orthoHeight / asp, isOrtho);
+329  3     let mcy    = select(mvy * focalM / safe_mvz, mvy / orthoHeight, isOrtho);
+330  3     let mzNdc  = clamp(mvz / (mvz + 8.0), 0.0, 0.9999);
+331  3 
+332  3     var o: Pv;
+333  3     o.pos      = vec4f(mcx, mcy, mzNdc, 1.0);
+334  3     o.quadUV   = cv.uv;
+335  3     o.color    = sp.colorP.xyz;
+336  3     o.depth    = mvz;
+337  3     o.phase    = 0.0;                     // no per-particle rotation in mesh mode
+338  3     o.wCenter  = center;
+339  3     o.size     = halfExt;
+340  3     o.cellMask = cellMask;
+341  3     o.halfCell = halfCell;
+342  3     o.meshMode = 1u;                      // → fragment shader: skip ray-march
+343  3     o.meshN    = cv.nrm;                  // world-space face normal (already axis-aligned)
+344  3     return o;
+345  2   }
+346  2 
+347  2   // billboard quad scaled to particle radius (world units)
+348  2   // size already lerped above between spawn radius and target cell radius.
+349  2   // sizeLod includes screen-space LOD inflation + min-pixel clamp.
+350  2   // INFLATE for cube-like shapes: a unit cube's corners reach √3 from origin,
+351  2   // so a billboard of half-size R clips the cube into a sphere of radius R.
+352  2   // Sphere (n=2) and octahedron (n=1) fit in unit sphere → inflate = 1.
+353  2   // Cube (n→∞)  → inflate = √3 ≈ 1.732 so corners stay inside the quad.
+354  2   let cubeness2 = clamp((n - 2.0) / 20.0, 0.0, 1.0);
+355  2   let inflate   = mix(1.0, 1.7321, cubeness2);
+356  2   let billSize  = sizeLod * inflate;
+357  2   let lx   = qx[vi] * billSize;
+358  2   let ly   = qy[vi] * billSize;
+359  2 
+360  2   // perspective project
+361  2   let focal = 2.414;
+362  2   let cx = select((vx + lx) * focal / vz / asp, (vx + lx) / orthoHeight / asp, isOrtho);
+363  2   let cy = select((vy + ly) * focal / vz, (vy + ly) / orthoHeight, isOrtho);
+364  2 
+365  2   // map view-space z (≥0.05) to NDC depth [0..1) monotonically — used
+366  2   // only as a coarse sort key; the fragment shader writes the precise
+367  2   // per-pixel depth based on the actual ray-sphere hit point.
+368  2   let zNdc = clamp(vz / (vz + 8.0), 0.0, 0.9999);
+369  2 
+370  2   var o: Pv;
+371  2   o.pos      = vec4f(cx, cy, zNdc, 1.0);
+372  2   o.quadUV   = vec2f(qx[vi], qy[vi]);
+373  2   o.color    = sp.colorP.xyz;
+374  2   o.depth    = vz;
+375  2   // Damp per-particle rotation while forming → cubes/octa/etc align to world
+376  2   // axes when fully formed (phase=0 → rotMat = identity).
+377  2   // Use smoothstep with hard zero past 0.92 so residual lerp can't keep cubes
+378  2   // tilted by a few degrees (which would break face-to-face seam alignment).
+379  2   let phaseDamp = 1.0 - smoothstep(0.0, 0.92, formMix);
+380  2   o.phase    = ph * phaseDamp;
+381  2   o.wCenter  = center;
+382  2   o.size     = billSize;       // billboard half-size in world (used to reconstruct ray pixel)
+383  2   o.cellMask = cellMask;
+384  2   o.halfCell = halfCell;
+385  2   o.meshMode = 0u;
+386  2   o.meshN    = vec3f(0.0);
+387  2   return o;
+388  1 }
+389  1 "##;

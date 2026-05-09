@@ -10,10 +10,10 @@
 //!
 //! Pure text transforms — no IO, no LLM.
 
-use super::intent_router::ChatLang;
-use super::response_builder::HealthGoal;
-use super::recipe_engine::{ResolvedIngredient, DishType, TechCard};
 use super::dish_schema::DishSchema;
+use super::intent_router::ChatLang;
+use super::recipe_engine::{DishType, ResolvedIngredient, TechCard};
+use super::response_builder::HealthGoal;
 
 // ── Display Name Builder ─────────────────────────────────────────────────────
 
@@ -35,7 +35,8 @@ pub fn build_display_name(
     let base_name = if has_with {
         dish_local.to_string()
     } else {
-        let protein_name = ingredients.iter()
+        let protein_name = ingredients
+            .iter()
             .find(|i| i.role == "protein")
             .and_then(|i| i.product.as_ref())
             .map(|p| match lang {
@@ -64,10 +65,18 @@ pub fn build_display_name(
         (HealthGoal::LowCalorie, ChatLang::Pl) => format!("Lekki {}", lowercase_first(&base_name)),
         (HealthGoal::LowCalorie, ChatLang::Uk) => format!("Легкий {}", lowercase_first(&base_name)),
 
-        (HealthGoal::HighProtein, ChatLang::Ru) => format!("Высокобелковый {}", lowercase_first(&base_name)),
-        (HealthGoal::HighProtein, ChatLang::En) => format!("High-protein {}", lowercase_first(&base_name)),
-        (HealthGoal::HighProtein, ChatLang::Pl) => format!("Wysokobiałkowy {}", lowercase_first(&base_name)),
-        (HealthGoal::HighProtein, ChatLang::Uk) => format!("Високобілковий {}", lowercase_first(&base_name)),
+        (HealthGoal::HighProtein, ChatLang::Ru) => {
+            format!("Высокобелковый {}", lowercase_first(&base_name))
+        }
+        (HealthGoal::HighProtein, ChatLang::En) => {
+            format!("High-protein {}", lowercase_first(&base_name))
+        }
+        (HealthGoal::HighProtein, ChatLang::Pl) => {
+            format!("Wysokobiałkowy {}", lowercase_first(&base_name))
+        }
+        (HealthGoal::HighProtein, ChatLang::Uk) => {
+            format!("Високобілковий {}", lowercase_first(&base_name))
+        }
 
         (HealthGoal::Balanced, _) => base_name,
     }
@@ -76,7 +85,9 @@ pub fn build_display_name(
 // ── Text Formatting ──────────────────────────────────────────────────────────
 
 pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
-    let dish = card.display_name.as_deref()
+    let dish = card
+        .display_name
+        .as_deref()
         .unwrap_or_else(|| card.dish_name_local.as_deref().unwrap_or(&card.dish_name));
 
     let total_time: u16 = card.steps.iter().filter_map(|s| s.time_min).sum();
@@ -85,23 +96,35 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
     let intro = match lang {
         ChatLang::Ru => format!(
             "🍽 **{}** — {} порц. • ~{:.0}г •{} {} ккал на порцию",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
+            dish,
+            card.servings,
+            card.total_output_g / card.servings as f32,
+            time_str,
+            card.per_serving_kcal,
         ),
         ChatLang::En => format!(
             "🍽 **{}** — {} serv. • ~{:.0}g •{} {} kcal/serv",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
+            dish,
+            card.servings,
+            card.total_output_g / card.servings as f32,
+            time_str,
+            card.per_serving_kcal,
         ),
         ChatLang::Pl => format!(
             "🍽 **{}** — {} porcji • ~{:.0}g •{} {} kcal/porcja",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
+            dish,
+            card.servings,
+            card.total_output_g / card.servings as f32,
+            time_str,
+            card.per_serving_kcal,
         ),
         ChatLang::Uk => format!(
             "🍽 **{}** — {} порц. • ~{:.0}г •{} {} ккал/порція",
-            dish, card.servings, card.total_output_g / card.servings as f32,
-            time_str, card.per_serving_kcal,
+            dish,
+            card.servings,
+            card.total_output_g / card.servings as f32,
+            time_str,
+            card.per_serving_kcal,
         ),
     };
 
@@ -131,7 +154,11 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
             ChatLang::Pl => "🎯 Dostosowano do",
             ChatLang::Uk => "🎯 Враховано",
         };
-        out.push(format!("{}: {}", label, card.applied_constraints.join(", ")));
+        out.push(format!(
+            "{}: {}",
+            label,
+            card.applied_constraints.join(", ")
+        ));
     }
 
     if !card.adaptations.is_empty() {
@@ -141,17 +168,21 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
             ChatLang::Pl => "🔄 Zmiany",
             ChatLang::Uk => "🔄 Адаптації",
         };
-        let lines: Vec<String> = card.adaptations.iter().map(|a| {
-            let icon = match a.action.as_str() {
-                "added" => "➕",
-                "reduced" => "📉",
-                "increased" => "📈",
-                "removed" => "🚫",
-                "substituted" => "🔁",
-                _ => "•",
-            };
-            format!("  {} **{}** — {}", icon, a.slug, a.detail)
-        }).collect();
+        let lines: Vec<String> = card
+            .adaptations
+            .iter()
+            .map(|a| {
+                let icon = match a.action.as_str() {
+                    "added" => "➕",
+                    "reduced" => "📉",
+                    "increased" => "📈",
+                    "removed" => "🚫",
+                    "substituted" => "🔁",
+                    _ => "•",
+                };
+                format!("  {} **{}** — {}", icon, a.slug, a.detail)
+            })
+            .collect();
         out.push(format!("{}:\n{}", header, lines.join("\n")));
     }
 
@@ -162,7 +193,9 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
             ChatLang::Pl => "🩹 Auto-korekty",
             ChatLang::Uk => "🩹 Авто-виправлення",
         };
-        let lines: Vec<String> = card.auto_fixes.iter()
+        let lines: Vec<String> = card
+            .auto_fixes
+            .iter()
             .map(|f| format!("  • {}", f))
             .collect();
         out.push(format!("{}:\n{}", header, lines.join("\n")));
@@ -196,7 +229,9 @@ pub fn format_recipe_text(card: &TechCard, lang: ChatLang) -> String {
             ChatLang::Pl => "💡 Uwagi",
             ChatLang::Uk => "💡 Увага",
         };
-        let lines: Vec<String> = card.validation_warnings.iter()
+        let lines: Vec<String> = card
+            .validation_warnings
+            .iter()
             .map(|w| format!("  ⚠️ {}", w))
             .collect();
         out.push(format!("{}:\n{}", header, lines.join("\n")));
@@ -213,15 +248,31 @@ fn format_goal_summary(goal: &str, lang: ChatLang) -> String {
         ("weight_loss", ChatLang::Pl) => "🎯 **Cel**: odchudzanie • przepis niskokaloryczny".into(),
         ("weight_loss", ChatLang::Uk) => "🎯 **Ціль**: схуднення • низькокалорійний рецепт".into(),
 
-        ("high_protein", ChatLang::Ru) => "🎯 **Цель**: высокий белок • усиленная протеиновая порция".into(),
-        ("high_protein", ChatLang::En) => "🎯 **Goal**: high protein • boosted protein portion".into(),
-        ("high_protein", ChatLang::Pl) => "🎯 **Cel**: wysoki białko • wzmocniona porcja białka".into(),
-        ("high_protein", ChatLang::Uk) => "🎯 **Ціль**: високий білок • посилена протеїнова порція".into(),
+        ("high_protein", ChatLang::Ru) => {
+            "🎯 **Цель**: высокий белок • усиленная протеиновая порция".into()
+        }
+        ("high_protein", ChatLang::En) => {
+            "🎯 **Goal**: high protein • boosted protein portion".into()
+        }
+        ("high_protein", ChatLang::Pl) => {
+            "🎯 **Cel**: wysoki białko • wzmocniona porcja białka".into()
+        }
+        ("high_protein", ChatLang::Uk) => {
+            "🎯 **Ціль**: високий білок • посилена протеїнова порція".into()
+        }
 
-        ("muscle_gain", ChatLang::Ru) => "🎯 **Цель**: набор массы • увеличены порции и углеводы".into(),
-        ("muscle_gain", ChatLang::En) => "🎯 **Goal**: muscle gain • increased portions and carbs".into(),
-        ("muscle_gain", ChatLang::Pl) => "🎯 **Cel**: masa mięśniowa • zwiększone porcje i węglowodany".into(),
-        ("muscle_gain", ChatLang::Uk) => "🎯 **Ціль**: набір маси • збільшені порції та вуглеводи".into(),
+        ("muscle_gain", ChatLang::Ru) => {
+            "🎯 **Цель**: набор массы • увеличены порции и углеводы".into()
+        }
+        ("muscle_gain", ChatLang::En) => {
+            "🎯 **Goal**: muscle gain • increased portions and carbs".into()
+        }
+        ("muscle_gain", ChatLang::Pl) => {
+            "🎯 **Cel**: masa mięśniowa • zwiększone porcje i węglowodany".into()
+        }
+        ("muscle_gain", ChatLang::Uk) => {
+            "🎯 **Ціль**: набір маси • збільшені порції та вуглеводи".into()
+        }
 
         ("low_calorie", ChatLang::Ru) => "🎯 **Цель**: лёгкий рецепт • снижены калории".into(),
         ("low_calorie", ChatLang::En) => "🎯 **Goal**: light recipe • reduced calories".into(),
@@ -234,15 +285,20 @@ fn format_goal_summary(goal: &str, lang: ChatLang) -> String {
 }
 
 fn fmt_time(min: u16) -> String {
-    if min == 0 { return String::new(); }
+    if min == 0 {
+        return String::new();
+    }
     let rounded = ((min as f32 / 5.0).round() as u16).max(5);
     if rounded < 60 {
         format!(" ⏱ ~{} мин", rounded)
     } else {
         let h = rounded / 60;
         let m = rounded % 60;
-        if m == 0 { format!(" ⏱ ~{} ч", h) }
-        else { format!(" ⏱ ~{} ч {} мин", h, m) }
+        if m == 0 {
+            format!(" ⏱ ~{} ч", h)
+        } else {
+            format!(" ⏱ ~{} ч {} мин", h, m)
+        }
     }
 }
 
@@ -250,22 +306,38 @@ fn fmt_time(min: u16) -> String {
 
 pub fn state_label<'a>(state: &'a str, lang: ChatLang) -> &'a str {
     match (state, lang) {
-        ("raw", ChatLang::Ru) => "сырой", ("raw", ChatLang::En) => "raw",
-        ("raw", ChatLang::Pl) => "surowy", ("raw", ChatLang::Uk) => "сирий",
-        ("boiled", ChatLang::Ru) => "варёный", ("boiled", ChatLang::En) => "boiled",
-        ("boiled", ChatLang::Pl) => "gotowany", ("boiled", ChatLang::Uk) => "варений",
-        ("fried", ChatLang::Ru) => "жареный", ("fried", ChatLang::En) => "fried",
-        ("fried", ChatLang::Pl) => "smażony", ("fried", ChatLang::Uk) => "смажений",
-        ("sauteed", ChatLang::Ru) => "пассерованный", ("sauteed", ChatLang::En) => "sautéed",
-        ("sauteed", ChatLang::Pl) => "podsmażony", ("sauteed", ChatLang::Uk) => "спасерований",
-        ("baked", ChatLang::Ru) => "запечённый", ("baked", ChatLang::En) => "baked",
-        ("baked", ChatLang::Pl) => "pieczony", ("baked", ChatLang::Uk) => "запечений",
-        ("grilled", ChatLang::Ru) => "гриль", ("grilled", ChatLang::En) => "grilled",
-        ("grilled", ChatLang::Pl) => "grillowany", ("grilled", ChatLang::Uk) => "гриль",
-        ("steamed", ChatLang::Ru) => "на пару", ("steamed", ChatLang::En) => "steamed",
-        ("steamed", ChatLang::Pl) => "na parze", ("steamed", ChatLang::Uk) => "на парі",
-        ("smoked", ChatLang::Ru) => "копчёный", ("smoked", ChatLang::En) => "smoked",
-        ("smoked", ChatLang::Pl) => "wędzony", ("smoked", ChatLang::Uk) => "копчений",
+        ("raw", ChatLang::Ru) => "сырой",
+        ("raw", ChatLang::En) => "raw",
+        ("raw", ChatLang::Pl) => "surowy",
+        ("raw", ChatLang::Uk) => "сирий",
+        ("boiled", ChatLang::Ru) => "варёный",
+        ("boiled", ChatLang::En) => "boiled",
+        ("boiled", ChatLang::Pl) => "gotowany",
+        ("boiled", ChatLang::Uk) => "варений",
+        ("fried", ChatLang::Ru) => "жареный",
+        ("fried", ChatLang::En) => "fried",
+        ("fried", ChatLang::Pl) => "smażony",
+        ("fried", ChatLang::Uk) => "смажений",
+        ("sauteed", ChatLang::Ru) => "пассерованный",
+        ("sauteed", ChatLang::En) => "sautéed",
+        ("sauteed", ChatLang::Pl) => "podsmażony",
+        ("sauteed", ChatLang::Uk) => "спасерований",
+        ("baked", ChatLang::Ru) => "запечённый",
+        ("baked", ChatLang::En) => "baked",
+        ("baked", ChatLang::Pl) => "pieczony",
+        ("baked", ChatLang::Uk) => "запечений",
+        ("grilled", ChatLang::Ru) => "гриль",
+        ("grilled", ChatLang::En) => "grilled",
+        ("grilled", ChatLang::Pl) => "grillowany",
+        ("grilled", ChatLang::Uk) => "гриль",
+        ("steamed", ChatLang::Ru) => "на пару",
+        ("steamed", ChatLang::En) => "steamed",
+        ("steamed", ChatLang::Pl) => "na parze",
+        ("steamed", ChatLang::Uk) => "на парі",
+        ("smoked", ChatLang::Ru) => "копчёный",
+        ("smoked", ChatLang::En) => "smoked",
+        ("smoked", ChatLang::Pl) => "wędzony",
+        ("smoked", ChatLang::Uk) => "копчений",
         _ => state,
     }
 }
@@ -273,14 +345,44 @@ pub fn state_label<'a>(state: &'a str, lang: ChatLang) -> &'a str {
 pub fn state_label_ru(state: &str, name_ru: &str) -> String {
     let gender = ru_gender(name_ru);
     match state {
-        "raw" => match gender { 'f' => "сырая", 'n' => "сырое", _ => "сырой" }.into(),
-        "boiled" => match gender { 'f' => "варёная", 'n' => "варёное", _ => "варёный" }.into(),
-        "fried" => match gender { 'f' => "жареная", 'n' => "жареное", _ => "жареный" }.into(),
-        "sauteed" => match gender { 'f' => "пассерованная", 'n' => "пассерованное", _ => "пассерованный" }.into(),
-        "baked" => match gender { 'f' => "запечённая", 'n' => "запечённое", _ => "запечённый" }.into(),
+        "raw" => match gender {
+            'f' => "сырая",
+            'n' => "сырое",
+            _ => "сырой",
+        }
+        .into(),
+        "boiled" => match gender {
+            'f' => "варёная",
+            'n' => "варёное",
+            _ => "варёный",
+        }
+        .into(),
+        "fried" => match gender {
+            'f' => "жареная",
+            'n' => "жареное",
+            _ => "жареный",
+        }
+        .into(),
+        "sauteed" => match gender {
+            'f' => "пассерованная",
+            'n' => "пассерованное",
+            _ => "пассерованный",
+        }
+        .into(),
+        "baked" => match gender {
+            'f' => "запечённая",
+            'n' => "запечённое",
+            _ => "запечённый",
+        }
+        .into(),
         "grilled" => "гриль".into(),
         "steamed" => "на пару".into(),
-        "smoked" => match gender { 'f' => "копчёная", 'n' => "копчёное", _ => "копчёный" }.into(),
+        "smoked" => match gender {
+            'f' => "копчёная",
+            'n' => "копчёное",
+            _ => "копчёный",
+        }
+        .into(),
         _ => state.into(),
     }
 }
@@ -291,18 +393,30 @@ pub fn ru_gender(name: &str) -> char {
 
     if lower.ends_with('ь') {
         const FEM_SOFT: &[&str] = &[
-            "морковь", "фасоль", "соль", "ваниль", "зелень",
-            "форель", "печень", "стручковая фасоль",
+            "морковь",
+            "фасоль",
+            "соль",
+            "ваниль",
+            "зелень",
+            "форель",
+            "печень",
+            "стручковая фасоль",
         ];
         for w in FEM_SOFT {
-            if lower == *w { return 'f'; }
+            if lower == *w {
+                return 'f';
+            }
         }
         return 'm';
     }
 
-    if lower.ends_with('а') || lower.ends_with('я') { 'f' }
-    else if lower.ends_with('о') || lower.ends_with('е') || lower.ends_with('ё') { 'n' }
-    else { 'm' }
+    if lower.ends_with('а') || lower.ends_with('я') {
+        'f'
+    } else if lower.ends_with('о') || lower.ends_with('е') || lower.ends_with('ё') {
+        'n'
+    } else {
+        'm'
+    }
 }
 
 fn lowercase_first(s: &str) -> String {
@@ -317,29 +431,65 @@ fn lowercase_first(s: &str) -> String {
 
 pub fn instrumental_word(word: &str) -> String {
     let lower = word.to_lowercase();
-    if lower.ends_with("ая") { return format!("{}ой", &lower[..lower.len() - "ая".len()]); }
-    if lower.ends_with("яя") { return format!("{}ей", &lower[..lower.len() - "яя".len()]); }
-    if lower.ends_with("ое") || lower.ends_with("ее") { return format!("{}ым", &lower[..lower.len() - "ое".len()]); }
-    if lower.ends_with("ые") { return format!("{}ыми", &lower[..lower.len() - "ые".len()]); }
-    if lower.ends_with("ие") { return format!("{}ими", &lower[..lower.len() - "ие".len()]); }
-    if lower.ends_with("ый") || lower.ends_with("ой") { return format!("{}ым", &lower[..lower.len() - "ый".len()]); }
-    if lower.ends_with("ий") { return format!("{}им", &lower[..lower.len() - "ий".len()]); }
-    if is_neuter_plural_a(&lower) { return format!("{}ми", lower); }
-    if lower.ends_with('а') { return format!("{}ой", &lower[..lower.len() - 'а'.len_utf8()]); }
-    if lower.ends_with('я') { return format!("{}ей", &lower[..lower.len() - 'я'.len_utf8()]); }
-    if lower.ends_with('о') { return format!("{}ом", &lower[..lower.len() - 'о'.len_utf8()]); }
-    if lower.ends_with('ь') { return format!("{}ью", &lower[..lower.len() - 'ь'.len_utf8()]); }
-    if lower.ends_with("ец") { return format!("{}цем", &lower[..lower.len() - "ец".len()]); }
+    if lower.ends_with("ая") {
+        return format!("{}ой", &lower[..lower.len() - "ая".len()]);
+    }
+    if lower.ends_with("яя") {
+        return format!("{}ей", &lower[..lower.len() - "яя".len()]);
+    }
+    if lower.ends_with("ое") || lower.ends_with("ее") {
+        return format!("{}ым", &lower[..lower.len() - "ое".len()]);
+    }
+    if lower.ends_with("ые") {
+        return format!("{}ыми", &lower[..lower.len() - "ые".len()]);
+    }
+    if lower.ends_with("ие") {
+        return format!("{}ими", &lower[..lower.len() - "ие".len()]);
+    }
+    if lower.ends_with("ый") || lower.ends_with("ой") {
+        return format!("{}ым", &lower[..lower.len() - "ый".len()]);
+    }
+    if lower.ends_with("ий") {
+        return format!("{}им", &lower[..lower.len() - "ий".len()]);
+    }
+    if is_neuter_plural_a(&lower) {
+        return format!("{}ми", lower);
+    }
+    if lower.ends_with('а') {
+        return format!("{}ой", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    if lower.ends_with('я') {
+        return format!("{}ей", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
+    if lower.ends_with('о') {
+        return format!("{}ом", &lower[..lower.len() - 'о'.len_utf8()]);
+    }
+    if lower.ends_with('ь') {
+        return format!("{}ью", &lower[..lower.len() - 'ь'.len_utf8()]);
+    }
+    if lower.ends_with("ец") {
+        return format!("{}цем", &lower[..lower.len() - "ец".len()]);
+    }
     format!("{}ом", lower)
 }
 
 pub fn accusative_word(word: &str) -> String {
     let lower = word.to_lowercase();
-    if lower.ends_with("ая") { return format!("{}ую", &lower[..lower.len() - "ая".len()]); }
-    if lower.ends_with("яя") { return format!("{}юю", &lower[..lower.len() - "яя".len()]); }
-    if is_neuter_plural_a(&lower) { return lower; }
-    if lower.ends_with('а') { return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]); }
-    if lower.ends_with('я') { return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]); }
+    if lower.ends_with("ая") {
+        return format!("{}ую", &lower[..lower.len() - "ая".len()]);
+    }
+    if lower.ends_with("яя") {
+        return format!("{}юю", &lower[..lower.len() - "яя".len()]);
+    }
+    if is_neuter_plural_a(&lower) {
+        return lower;
+    }
+    if lower.ends_with('а') {
+        return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    if lower.ends_with('я') {
+        return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
     lower
 }
 
@@ -348,11 +498,17 @@ fn is_neuter_plural_a(word: &str) -> bool {
 }
 
 pub fn accusative_phrase(name: &str) -> String {
-    name.split_whitespace().map(|w| accusative_word(w)).collect::<Vec<_>>().join(" ")
+    name.split_whitespace()
+        .map(|w| accusative_word(w))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn instrumental_phrase(name: &str) -> String {
-    name.split_whitespace().map(|w| instrumental_word(w)).collect::<Vec<_>>().join(" ")
+    name.split_whitespace()
+        .map(|w| instrumental_word(w))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn instrumental_case(name: &str) -> String {
@@ -363,21 +519,34 @@ pub fn instrumental_case(name: &str) -> String {
 
 pub fn instrumental_case_uk(name: &str) -> String {
     let lower = name.to_lowercase();
-    if lower.ends_with('а') { return format!("{}ою", &lower[..lower.len() - 'а'.len_utf8()]); }
-    if lower.ends_with('я') { return format!("{}ею", &lower[..lower.len() - 'я'.len_utf8()]); }
-    if lower.ends_with('ь') { return format!("{}ю", &lower[..lower.len() - 'ь'.len_utf8()]); }
+    if lower.ends_with('а') {
+        return format!("{}ою", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    if lower.ends_with('я') {
+        return format!("{}ею", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
+    if lower.ends_with('ь') {
+        return format!("{}ю", &lower[..lower.len() - 'ь'.len_utf8()]);
+    }
     format!("{}ом", lower)
 }
 
 pub fn accusative_word_uk(word: &str) -> String {
     let lower = word.to_lowercase();
-    if lower.ends_with('а') { return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]); }
-    if lower.ends_with('я') { return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]); }
+    if lower.ends_with('а') {
+        return format!("{}у", &lower[..lower.len() - 'а'.len_utf8()]);
+    }
+    if lower.ends_with('я') {
+        return format!("{}ю", &lower[..lower.len() - 'я'.len_utf8()]);
+    }
     lower
 }
 
 pub fn accusative_phrase_uk(name: &str) -> String {
-    name.split_whitespace().map(|w| accusative_word_uk(w)).collect::<Vec<_>>().join(" ")
+    name.split_whitespace()
+        .map(|w| accusative_word_uk(w))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn instrumental_phrase_uk(name: &str) -> String {
@@ -425,20 +594,38 @@ fn genitive_to_instrumental_pl(gen: &str) -> String {
 
 pub fn instrumental_word_pl(word: &str) -> String {
     let w = word.to_lowercase();
-    if w == "kurczak" { return "kurczakiem".into(); }
-    if w == "łosoś"  { return "łososiem".into(); }
-    if w == "dorsz"   { return "dorszem".into(); }
-    if w.ends_with('a') { return format!("{}ą", &w[..w.len() - 'a'.len_utf8()]); }
-    if w.ends_with("ś") { return format!("{}ią", w); }
-    if w.ends_with('o') { return format!("{}em", &w[..w.len() - 'o'.len_utf8()]); }
-    if w.ends_with("ek") { return format!("{}kiem", &w[..w.len() - "ek".len()]); }
-    if w.ends_with("ak") { return format!("{}iem", w); }
+    if w == "kurczak" {
+        return "kurczakiem".into();
+    }
+    if w == "łosoś" {
+        return "łososiem".into();
+    }
+    if w == "dorsz" {
+        return "dorszem".into();
+    }
+    if w.ends_with('a') {
+        return format!("{}ą", &w[..w.len() - 'a'.len_utf8()]);
+    }
+    if w.ends_with("ś") {
+        return format!("{}ią", w);
+    }
+    if w.ends_with('o') {
+        return format!("{}em", &w[..w.len() - 'o'.len_utf8()]);
+    }
+    if w.ends_with("ek") {
+        return format!("{}kiem", &w[..w.len() - "ek".len()]);
+    }
+    if w.ends_with("ak") {
+        return format!("{}iem", w);
+    }
     format!("{}em", w)
 }
 
 pub fn accusative_word_pl(word: &str) -> String {
     let w = word.to_lowercase();
-    if w.ends_with('a') { return format!("{}ę", &w[..w.len() - 'a'.len_utf8()]); }
+    if w.ends_with('a') {
+        return format!("{}ę", &w[..w.len() - 'a'.len_utf8()]);
+    }
     w
 }
 
@@ -455,7 +642,11 @@ pub fn accusative_phrase_pl(name: &str) -> String {
         return format!("{} {}", first, words[1..].join(" "));
     }
 
-    words.iter().map(|w| accusative_word_pl(w)).collect::<Vec<_>>().join(" ")
+    words
+        .iter()
+        .map(|w| accusative_word_pl(w))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn instrumental_phrase_pl(name: &str) -> String {
@@ -534,7 +725,10 @@ mod tests {
 
     #[test]
     fn instrumental_compound_names() {
-        assert_eq!(instrumental_phrase("Подсолнечное масло"), "подсолнечным маслом");
+        assert_eq!(
+            instrumental_phrase("Подсолнечное масло"),
+            "подсолнечным маслом"
+        );
         assert_eq!(instrumental_phrase("Майонез"), "майонезом");
         assert_eq!(instrumental_phrase("Говядина"), "говядиной");
         assert_eq!(instrumental_phrase("Чёрный перец"), "чёрным перцем");

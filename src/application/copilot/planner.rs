@@ -7,8 +7,8 @@
 //! Backend валидирует и нормализует — никогда не доверяет сырому LLM output.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::infrastructure::gemini_service::GeminiService;
 use crate::shared::AppError;
@@ -46,11 +46,20 @@ impl ToolPlan {
     /// Есть ли AI tools требующие Gemini вызова?
     pub fn requires_ai_tools(&self) -> bool {
         use CopilotTool::*;
-        self.tools.iter().any(|t| matches!(t,
-            SuggestCookFromInventory | GenerateMealPlan | AnalyzeRecipe |
-            GeneralChefAnswer | GenerateFoodPairing | GenerateLabRecipe |
-            SimulateLabProduct | GenerateProductReport | Generate3DFoodModel
-        ))
+        self.tools.iter().any(|t| {
+            matches!(
+                t,
+                SuggestCookFromInventory
+                    | GenerateMealPlan
+                    | AnalyzeRecipe
+                    | GeneralChefAnswer
+                    | GenerateFoodPairing
+                    | GenerateLabRecipe
+                    | SimulateLabProduct
+                    | GenerateProductReport
+                    | Generate3DFoodModel
+            )
+        })
     }
 }
 
@@ -74,11 +83,7 @@ impl CopilotPlanner {
     }
 
     /// Вызвать LLM и получить ToolPlan.
-    pub async fn plan(
-        &self,
-        ctx: &CopilotContext,
-        message: &str,
-    ) -> Result<ToolPlan, AppError> {
+    pub async fn plan(&self, ctx: &CopilotContext, message: &str) -> Result<ToolPlan, AppError> {
         let system_prompt = self.build_system_prompt(ctx);
         let request_body = serde_json::json!({
             "model": "gemini-3-flash-preview",
@@ -104,7 +109,7 @@ impl CopilotPlanner {
     fn build_system_prompt(&self, ctx: &CopilotContext) -> String {
         let tool_catalog = CopilotTool::tool_catalog_prompt();
         format!(
-r##"You are ChefOS Copilot. Output ONLY compact valid JSON. No markdown. No explanations.
+            r##"You are ChefOS Copilot. Output ONLY compact valid JSON. No markdown. No explanations.
 
 CONTEXT: {context}
 
@@ -202,14 +207,15 @@ OUTPUT FORMAT (exactly):
         // Извлечь JSON из ответа (Gemini иногда оборачивает в markdown)
         let json_str = extract_json(raw);
 
-        let parsed: PlannerLlmResponse = serde_json::from_str(&json_str)
-            .map_err(|e| {
-                tracing::warn!("Planner JSON parse failed: {e}\nRaw: {raw}");
-                AppError::internal(format!("Planner response parse error: {e}"))
-            })?;
+        let parsed: PlannerLlmResponse = serde_json::from_str(&json_str).map_err(|e| {
+            tracing::warn!("Planner JSON parse failed: {e}\nRaw: {raw}");
+            AppError::internal(format!("Planner response parse error: {e}"))
+        })?;
 
         // Парсить tool names → CopilotTool enum
-        let tools: Vec<CopilotTool> = parsed.tools.iter()
+        let tools: Vec<CopilotTool> = parsed
+            .tools
+            .iter()
             .filter_map(|name| parse_tool_name(name))
             .collect();
 
@@ -231,13 +237,20 @@ OUTPUT FORMAT (exactly):
         let requires_confirmation = has_write || parsed.requires_confirmation.unwrap_or(false);
 
         let args_map = parsed.args.unwrap_or_default();
-        let tool_calls: Vec<ToolCall> = tools.iter().map(|t| {
-            let args = args_map.get(t.name())
-                .and_then(|v| v.as_object())
-                .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-                .unwrap_or_default();
-            ToolCall { tool: t.clone(), args }
-        }).collect();
+        let tool_calls: Vec<ToolCall> = tools
+            .iter()
+            .map(|t| {
+                let args = args_map
+                    .get(t.name())
+                    .and_then(|v| v.as_object())
+                    .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default();
+                ToolCall {
+                    tool: t.clone(),
+                    args,
+                }
+            })
+            .collect();
 
         Ok(ToolPlan {
             intent: parsed.intent,
@@ -252,33 +265,33 @@ OUTPUT FORMAT (exactly):
 /// Парсить строковое имя tool → CopilotTool.
 fn parse_tool_name(name: &str) -> Option<CopilotTool> {
     match name {
-        "get_inventory"              => Some(CopilotTool::GetInventory),
-        "get_expiring_soon"          => Some(CopilotTool::GetExpiringSoon),
-        "search_ingredients"         => Some(CopilotTool::SearchIngredients),
-        "get_dishes"                 => Some(CopilotTool::GetDishes),
-        "get_recipes"                => Some(CopilotTool::GetRecipes),
-        "get_recipe_by_id"           => Some(CopilotTool::GetRecipeById),
-        "get_lab_experiment"         => Some(CopilotTool::GetLabExperiment),
-        "list_purchase_drafts"       => Some(CopilotTool::ListPurchaseDrafts),
-        "get_purchase_draft"         => Some(CopilotTool::GetPurchaseDraft),
-        "get_daily_briefing"         => Some(CopilotTool::GetDailyBriefing),
+        "get_inventory" => Some(CopilotTool::GetInventory),
+        "get_expiring_soon" => Some(CopilotTool::GetExpiringSoon),
+        "search_ingredients" => Some(CopilotTool::SearchIngredients),
+        "get_dishes" => Some(CopilotTool::GetDishes),
+        "get_recipes" => Some(CopilotTool::GetRecipes),
+        "get_recipe_by_id" => Some(CopilotTool::GetRecipeById),
+        "get_lab_experiment" => Some(CopilotTool::GetLabExperiment),
+        "list_purchase_drafts" => Some(CopilotTool::ListPurchaseDrafts),
+        "get_purchase_draft" => Some(CopilotTool::GetPurchaseDraft),
+        "get_daily_briefing" => Some(CopilotTool::GetDailyBriefing),
         "suggest_cook_from_inventory" => Some(CopilotTool::SuggestCookFromInventory),
-        "generate_meal_plan"         => Some(CopilotTool::GenerateMealPlan),
-        "analyze_recipe"             => Some(CopilotTool::AnalyzeRecipe),
-        "general_chef_answer"        => Some(CopilotTool::GeneralChefAnswer),
-        "generate_food_pairing"      => Some(CopilotTool::GenerateFoodPairing),
-        "prepare_inventory_update"   => Some(CopilotTool::PrepareInventoryUpdate),
-        "adjust_inventory_quantity"  => Some(CopilotTool::AdjustInventoryQuantity),
-        "prepare_purchase_draft"     => Some(CopilotTool::PreparePurchaseDraft),
-        "update_dish_price"          => Some(CopilotTool::UpdateDishPrice),
-        "write_off_inventory"        => Some(CopilotTool::WriteOffInventory),
-        "send_purchase_order"        => Some(CopilotTool::SendPurchaseOrder),
-        "create_recipe"              => Some(CopilotTool::CreateRecipe),
-        "create_dish"                => Some(CopilotTool::CreateDish),
-        "generate_lab_recipe"        => Some(CopilotTool::GenerateLabRecipe),
-        "generate_3d_food_model"     => Some(CopilotTool::Generate3DFoodModel),
-        "simulate_lab_product"       => Some(CopilotTool::SimulateLabProduct),
-        "generate_product_report"    => Some(CopilotTool::GenerateProductReport),
+        "generate_meal_plan" => Some(CopilotTool::GenerateMealPlan),
+        "analyze_recipe" => Some(CopilotTool::AnalyzeRecipe),
+        "general_chef_answer" => Some(CopilotTool::GeneralChefAnswer),
+        "generate_food_pairing" => Some(CopilotTool::GenerateFoodPairing),
+        "prepare_inventory_update" => Some(CopilotTool::PrepareInventoryUpdate),
+        "adjust_inventory_quantity" => Some(CopilotTool::AdjustInventoryQuantity),
+        "prepare_purchase_draft" => Some(CopilotTool::PreparePurchaseDraft),
+        "update_dish_price" => Some(CopilotTool::UpdateDishPrice),
+        "write_off_inventory" => Some(CopilotTool::WriteOffInventory),
+        "send_purchase_order" => Some(CopilotTool::SendPurchaseOrder),
+        "create_recipe" => Some(CopilotTool::CreateRecipe),
+        "create_dish" => Some(CopilotTool::CreateDish),
+        "generate_lab_recipe" => Some(CopilotTool::GenerateLabRecipe),
+        "generate_3d_food_model" => Some(CopilotTool::Generate3DFoodModel),
+        "simulate_lab_product" => Some(CopilotTool::SimulateLabProduct),
+        "generate_product_report" => Some(CopilotTool::GenerateProductReport),
         unknown => {
             tracing::warn!("Planner returned unknown tool: {unknown}");
             None

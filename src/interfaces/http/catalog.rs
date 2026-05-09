@@ -7,7 +7,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::application::{catalog::CatalogService, user::UserService, AdminNutritionService, NutritionProductDetail};
+use crate::application::{
+    catalog::CatalogService, user::UserService, AdminNutritionService, NutritionProductDetail,
+};
 use crate::domain::catalog::CatalogCategoryId;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::{AppError, Language};
@@ -193,8 +195,12 @@ pub async fn search_ingredients(
                 calories_per_100g: ing.calories_per_100g,
                 seasons: ing.seasons.iter().map(|s| s.as_str().to_string()).collect(),
                 image_url: ing.image_url.clone(),
-                density_g_per_ml: ing.density_g_per_ml.and_then(|d| d.to_string().parse::<f64>().ok()),
-                typical_portion_g: ing.typical_portion_g.and_then(|d| d.to_string().parse::<f64>().ok()),
+                density_g_per_ml: ing
+                    .density_g_per_ml
+                    .and_then(|d| d.to_string().parse::<f64>().ok()),
+                typical_portion_g: ing
+                    .typical_portion_g
+                    .and_then(|d| d.to_string().parse::<f64>().ok()),
             })
             .collect(),
     };
@@ -288,8 +294,12 @@ pub async fn search_ingredients_public(
                 calories_per_100g: ing.calories_per_100g,
                 seasons: ing.seasons.iter().map(|s| s.as_str().to_string()).collect(),
                 image_url: ing.image_url.clone(),
-                density_g_per_ml: ing.density_g_per_ml.and_then(|d| d.to_string().parse::<f64>().ok()),
-                typical_portion_g: ing.typical_portion_g.and_then(|d| d.to_string().parse::<f64>().ok()),
+                density_g_per_ml: ing
+                    .density_g_per_ml
+                    .and_then(|d| d.to_string().parse::<f64>().ok()),
+                typical_portion_g: ing
+                    .typical_portion_g
+                    .and_then(|d| d.to_string().parse::<f64>().ok()),
             })
             .collect(),
     };
@@ -326,6 +336,9 @@ pub async fn get_ingredient_detail_public(
         let detail = state.nutrition_service.get_product(uuid).await?;
         return Ok(Json(detail));
     }
-    let detail = state.nutrition_service.get_product_by_slug(&slug_or_id).await?;
+    let detail = state
+        .nutrition_service
+        .get_product_by_slug(&slug_or_id)
+        .await?;
     Ok(Json(detail))
 }

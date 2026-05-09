@@ -35,7 +35,11 @@ use super::vertex::Vertex;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShellError {
     /// A face index references a vertex that doesn't exist.
-    OutOfBoundsIndex { face_id: u32, index: usize, vertex_count: usize },
+    OutOfBoundsIndex {
+        face_id: u32,
+        index: usize,
+        vertex_count: usize,
+    },
     /// A vertex has a non-finite coordinate.
     NonFiniteVertex(usize),
     /// A face's geometry is degenerate (zero area).
@@ -49,16 +53,21 @@ pub enum ShellError {
 impl std::fmt::Display for ShellError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShellError::OutOfBoundsIndex { face_id, index, vertex_count } =>
-                write!(f, "face {face_id}: vertex index {index} >= vertex count {vertex_count}"),
-            ShellError::NonFiniteVertex(i) =>
-                write!(f, "vertex {i} has non-finite coordinate"),
-            ShellError::DegenerateFace(id) =>
-                write!(f, "face {id} is degenerate (zero area)"),
-            ShellError::OpenEdge { v0, v1, count } =>
-                write!(f, "open edge ({v0}, {v1}) appears {count} times (expected 2)"),
-            ShellError::Empty =>
-                write!(f, "shell has no faces"),
+            ShellError::OutOfBoundsIndex {
+                face_id,
+                index,
+                vertex_count,
+            } => write!(
+                f,
+                "face {face_id}: vertex index {index} >= vertex count {vertex_count}"
+            ),
+            ShellError::NonFiniteVertex(i) => write!(f, "vertex {i} has non-finite coordinate"),
+            ShellError::DegenerateFace(id) => write!(f, "face {id} is degenerate (zero area)"),
+            ShellError::OpenEdge { v0, v1, count } => write!(
+                f,
+                "open edge ({v0}, {v1}) appears {count} times (expected 2)"
+            ),
+            ShellError::Empty => write!(f, "shell has no faces"),
         }
     }
 }
@@ -72,8 +81,8 @@ impl std::error::Error for ShellError {}
 /// A connected set of faces in precise f64 space, governed by a `Tolerance`.
 #[derive(Debug, Clone)]
 pub struct GeometricShell {
-    vertices:  Vec<Vertex>,
-    faces:     Vec<TopoFace>,
+    vertices: Vec<Vertex>,
+    faces: Vec<TopoFace>,
     tolerance: Tolerance,
     next_face_id: u32,
 }
@@ -153,7 +162,10 @@ impl GeometricShell {
         }
 
         // Compute normal — reject degenerate faces.
-        if face.compute_normal(&self.vertices, self.tolerance).is_none() {
+        if face
+            .compute_normal(&self.vertices, self.tolerance)
+            .is_none()
+        {
             return Err(ShellError::DegenerateFace(id));
         }
 
@@ -244,7 +256,11 @@ impl GeometricShell {
             // Reverse must exist exactly once.
             let rev_count = edge_count.get(&(v1, v0)).copied().unwrap_or(0);
             if rev_count != 1 {
-                return Err(ShellError::OpenEdge { v0: v1, v1: v0, count: rev_count });
+                return Err(ShellError::OpenEdge {
+                    v0: v1,
+                    v1: v0,
+                    count: rev_count,
+                });
             }
         }
 
@@ -253,11 +269,21 @@ impl GeometricShell {
 
     // ── Read access ─────────────────────────────────────────────────────────
 
-    pub fn vertices(&self) -> &[Vertex]    { &self.vertices }
-    pub fn faces(&self)    -> &[TopoFace]  { &self.faces    }
-    pub fn tolerance(&self) -> Tolerance   { self.tolerance }
-    pub fn vertex_count(&self) -> usize    { self.vertices.len() }
-    pub fn face_count(&self) -> usize      { self.faces.len() }
+    pub fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+    pub fn faces(&self) -> &[TopoFace] {
+        &self.faces
+    }
+    pub fn tolerance(&self) -> Tolerance {
+        self.tolerance
+    }
+    pub fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+    pub fn face_count(&self) -> usize {
+        self.faces.len()
+    }
 
     /// Returns `true` if the shell passes both `validate()` and
     /// `check_watertight()` — i.e. it is a valid closed manifold.
@@ -278,7 +304,9 @@ impl GeometricShell {
         let mut v = 0.0_f64;
         for face in &self.faces {
             let n = face.loop_.len();
-            if n < 3 { continue; }
+            if n < 3 {
+                continue;
+            }
             let a = self.vertices[face.loop_[0]];
             for i in 1..(n - 1) {
                 let b = self.vertices[face.loop_[i]];
@@ -308,8 +336,12 @@ impl GeometricShell {
         for v in &self.vertices {
             let coords = [v.x, v.y, v.z];
             for i in 0..3 {
-                if coords[i] < min[i] { min[i] = coords[i]; }
-                if coords[i] > max[i] { max[i] = coords[i]; }
+                if coords[i] < min[i] {
+                    min[i] = coords[i];
+                }
+                if coords[i] > max[i] {
+                    max[i] = coords[i];
+                }
             }
         }
         (min, max)
@@ -329,10 +361,14 @@ mod tests {
 
         // 8 cube vertices.
         let indices: Vec<usize> = [
-            [-0.5_f64, -0.5, -0.5], [ 0.5, -0.5, -0.5],
-            [ 0.5,  0.5, -0.5], [-0.5,  0.5, -0.5],
-            [-0.5, -0.5,  0.5], [ 0.5, -0.5,  0.5],
-            [ 0.5,  0.5,  0.5], [-0.5,  0.5,  0.5],
+            [-0.5_f64, -0.5, -0.5],
+            [0.5, -0.5, -0.5],
+            [0.5, 0.5, -0.5],
+            [-0.5, 0.5, -0.5],
+            [-0.5, -0.5, 0.5],
+            [0.5, -0.5, 0.5],
+            [0.5, 0.5, 0.5],
+            [-0.5, 0.5, 0.5],
         ]
         .iter()
         .map(|&[x, y, z]| s.add_vertex_raw(Vertex::new(x, y, z)))

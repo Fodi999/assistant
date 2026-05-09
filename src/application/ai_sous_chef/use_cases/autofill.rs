@@ -38,17 +38,18 @@ impl AdminCatalogService {
             if let Some(inferred) = product_dictionary::infer_product_type(&en_low, &ru_low) {
                 tracing::info!(
                     "🔧 Auto-fix product_type: '{}' → '{}' for product {}",
-                    product_type, inferred, id
+                    product_type,
+                    inferred,
+                    id
                 );
                 product_type = inferred.to_string();
                 // Persist the fix in DB so publish won't fail
-                let _ = sqlx::query(
-                    "UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2"
-                )
-                .bind(&product_type)
-                .bind(id)
-                .execute(&self.pool)
-                .await;
+                let _ =
+                    sqlx::query("UPDATE catalog_ingredients SET product_type = $1 WHERE id = $2")
+                        .bind(&product_type)
+                        .bind(id)
+                        .execute(&self.pool)
+                        .await;
             }
         }
 
@@ -60,7 +61,10 @@ impl AdminCatalogService {
             (d.name_ru.clone(), d.name_pl.clone(), d.name_uk.clone())
         } else {
             // Not in dictionary — try AI translation + save as PENDING
-            tracing::info!("📖 Autofill: dictionary miss for '{}' — requesting AI translation", &name_en);
+            tracing::info!(
+                "📖 Autofill: dictionary miss for '{}' — requesting AI translation",
+                &name_en
+            );
             match self.ai_translate_and_save_pending(&name_en).await {
                 Ok((ru, pl, uk)) => (ru, pl, uk),
                 Err(_) => {
@@ -76,13 +80,30 @@ impl AdminCatalogService {
 
         // ── Resolve unit from lookup (not AI) ──
         let name_en_lower = name_en.to_lowercase();
-        let dict_unit = product_dictionary::unit_for_type(&product_type, &name_en_lower).to_string();
+        let dict_unit =
+            product_dictionary::unit_for_type(&product_type, &name_en_lower).to_string();
 
         // Build field status fingerprint for cache key
-        let has_desc_en = product.description_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_desc_ru = product.description_ru.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_desc_pl = product.description_pl.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_desc_uk = product.description_uk.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_desc_en = product
+            .description_en
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_desc_ru = product
+            .description_ru
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_desc_pl = product
+            .description_pl
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_desc_uk = product
+            .description_uk
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
         let has_cal = product.calories_per_100g.is_some();
         let has_prot = product.protein_per_100g.is_some();
         let has_fat = product.fat_per_100g.is_some();
@@ -91,9 +112,15 @@ impl AdminCatalogService {
         // ── Cache check ──
         let fingerprint = format!(
             "v9:{}:{}:{}:{}:{}:{}:{}:{}:{}",
-            name_en, product_type,
-            has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
-            has_cal, has_prot, has_fat
+            name_en,
+            product_type,
+            has_desc_en,
+            has_desc_ru,
+            has_desc_pl,
+            has_desc_uk,
+            has_cal,
+            has_prot,
+            has_fat
         );
         let cache_key = format!("uc:autofill:{}", hash_input(&fingerprint));
 
@@ -104,15 +131,34 @@ impl AdminCatalogService {
                 let mut tagged = cached.clone();
                 if let Some(t) = tagged.as_object_mut() {
                     t.insert("_data_source".into(), serde_json::json!("cache"));
-                    t.insert("_nutrition_state".into(), serde_json::json!(
-                        if obj.get("calories_per_100g").and_then(|v| v.as_f64()).is_some()
-                            && obj.get("protein_per_100g").and_then(|v| v.as_f64()).is_some()
+                    t.insert(
+                        "_nutrition_state".into(),
+                        serde_json::json!(if obj
+                            .get("calories_per_100g")
+                            .and_then(|v| v.as_f64())
+                            .is_some()
+                            && obj
+                                .get("protein_per_100g")
+                                .and_then(|v| v.as_f64())
+                                .is_some()
                             && obj.get("fat_per_100g").and_then(|v| v.as_f64()).is_some()
                             && obj.get("carbs_per_100g").and_then(|v| v.as_f64()).is_some()
-                        { "complete" } else if obj.get("calories_per_100g").and_then(|v| v.as_f64()).is_some()
-                            || obj.get("protein_per_100g").and_then(|v| v.as_f64()).is_some()
-                        { "partial" } else { "none" }
-                    ));
+                        {
+                            "complete"
+                        } else if obj
+                            .get("calories_per_100g")
+                            .and_then(|v| v.as_f64())
+                            .is_some()
+                            || obj
+                                .get("protein_per_100g")
+                                .and_then(|v| v.as_f64())
+                                .is_some()
+                        {
+                            "partial"
+                        } else {
+                            "none"
+                        }),
+                    );
                 }
                 return Ok(tagged);
             }
@@ -121,20 +167,38 @@ impl AdminCatalogService {
 
         // ── Build slim prompt (no names/unit/product_type) ──
         let prompt = build_autofill_prompt(
-            &name_en, &name_ru, &product_type,
-            has_desc_en, has_desc_ru, has_desc_pl, has_desc_uk,
-            has_cal, has_prot, has_fat, has_carbs,
+            &name_en,
+            &name_ru,
+            &product_type,
+            has_desc_en,
+            has_desc_ru,
+            has_desc_pl,
+            has_desc_uk,
+            has_cal,
+            has_prot,
+            has_fat,
+            has_carbs,
         );
 
         // ── Call AI ──
         // Use Best quality (gemini-3.1-pro-preview + retry) for comprehensive data fill
-        let raw = self.llm_adapter
+        let raw = self
+            .llm_adapter
             .generate_with_quality(&prompt, 12000, AiQuality::Best)
             .await?;
 
         // ── Log raw AI response for debugging nutrition pipeline ──
-        let preview_end = raw.char_indices().nth(500).map(|(i, _)| i).unwrap_or(raw.len());
-        tracing::info!("🤖 AI autofill raw response for product {} ({}): {}", id, name_en, &raw[..preview_end]);
+        let preview_end = raw
+            .char_indices()
+            .nth(500)
+            .map(|(i, _)| i)
+            .unwrap_or(raw.len());
+        tracing::info!(
+            "🤖 AI autofill raw response for product {} ({}): {}",
+            id,
+            name_en,
+            &raw[..preview_end]
+        );
 
         // ── Parse JSON ──
         let mut result = parse_json_response(&raw)?;
@@ -147,7 +211,11 @@ impl AdminCatalogService {
             let carbs = obj.get("carbs_per_100g");
             tracing::info!(
                 "📊 AI nutrition for '{}': cal={:?}, prot={:?}, fat={:?}, carbs={:?}",
-                name_en, cal, prot, fat, carbs
+                name_en,
+                cal,
+                prot,
+                fat,
+                carbs
             );
         }
 
@@ -165,11 +233,20 @@ impl AdminCatalogService {
             obj.insert("product_type".into(), serde_json::json!(product_type));
 
             // ── Data source & nutrition state ──
-            let has_cal = obj.get("calories_per_100g").and_then(|v| v.as_f64()).is_some();
-            let has_prot = obj.get("protein_per_100g").and_then(|v| v.as_f64()).is_some();
+            let has_cal = obj
+                .get("calories_per_100g")
+                .and_then(|v| v.as_f64())
+                .is_some();
+            let has_prot = obj
+                .get("protein_per_100g")
+                .and_then(|v| v.as_f64())
+                .is_some();
             let has_fat = obj.get("fat_per_100g").and_then(|v| v.as_f64()).is_some();
             let has_carbs = obj.get("carbs_per_100g").and_then(|v| v.as_f64()).is_some();
-            let filled = [has_cal, has_prot, has_fat, has_carbs].iter().filter(|&&v| v).count();
+            let filled = [has_cal, has_prot, has_fat, has_carbs]
+                .iter()
+                .filter(|&&v| v)
+                .count();
 
             let nutrition_state = match filled {
                 4 => "complete",
@@ -178,7 +255,10 @@ impl AdminCatalogService {
             };
 
             obj.insert("_data_source".into(), serde_json::json!("ai"));
-            obj.insert("_nutrition_state".into(), serde_json::json!(nutrition_state));
+            obj.insert(
+                "_nutrition_state".into(),
+                serde_json::json!(nutrition_state),
+            );
             obj.insert("_nutrition_filled".into(), serde_json::json!(filled));
             obj.insert("_nutrition_total".into(), serde_json::json!(4));
 
@@ -188,9 +268,12 @@ impl AdminCatalogService {
                     "⚠️ AI returned NO nutrition for '{}' — check prompt or model",
                     name_en
                 );
-                obj.insert("_warning".into(), serde_json::json!(
+                obj.insert(
+                    "_warning".into(),
+                    serde_json::json!(
                     "AI did not return nutrition data. Product needs manual entry or USDA lookup."
-                ));
+                ),
+                );
             }
 
             // ══════════════════════════════════════════════════════════════
@@ -202,8 +285,16 @@ impl AdminCatalogService {
                     if let Some(arr) = behaviors.as_array_mut() {
                         for b in arr.iter_mut() {
                             if let Some(bobj) = b.as_object_mut() {
-                                let btype = bobj.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let trigger = bobj.get("trigger").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let btype = bobj
+                                    .get("type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let trigger = bobj
+                                    .get("trigger")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
 
                                 // targets ONLY for pairing
                                 if btype != "pairing" {
@@ -227,20 +318,34 @@ impl AdminCatalogService {
                                 }
                             }
                         }
-                        tracing::info!("🔧 Post-processed {} culinary behaviors (DSL enforcement)", arr.len());
+                        tracing::info!(
+                            "🔧 Post-processed {} culinary behaviors (DSL enforcement)",
+                            arr.len()
+                        );
                     }
                 }
             }
         }
 
         // ── Cache result ──
-        if let Err(e) = self.ai_cache.set(
-            &cache_key, result.clone(), "groq", "llama-3.3-70b-versatile", AUTOFILL_CACHE_TTL_DAYS
-        ).await {
+        if let Err(e) = self
+            .ai_cache
+            .set(
+                &cache_key,
+                result.clone(),
+                "groq",
+                "llama-3.3-70b-versatile",
+                AUTOFILL_CACHE_TTL_DAYS,
+            )
+            .await
+        {
             tracing::warn!("Failed to cache autofill result: {}", e);
         }
 
-        tracing::info!("✅ AI autofill v2 complete for product {} (names from dictionary)", id);
+        tracing::info!(
+            "✅ AI autofill v2 complete for product {} (names from dictionary)",
+            id
+        );
         Ok(result)
     }
 }
@@ -276,9 +381,17 @@ fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
 /// Build autofill prompt — AI only fills descriptions + nutrition + extended data.
 /// Names, unit, product_type are handled by dictionary/backend.
 fn build_autofill_prompt(
-    name_en: &str, name_ru: &str, product_type: &str,
-    has_desc_en: bool, has_desc_ru: bool, has_desc_pl: bool, has_desc_uk: bool,
-    has_cal: bool, has_prot: bool, has_fat: bool, has_carbs: bool,
+    name_en: &str,
+    name_ru: &str,
+    product_type: &str,
+    has_desc_en: bool,
+    has_desc_ru: bool,
+    has_desc_pl: bool,
+    has_desc_uk: bool,
+    has_cal: bool,
+    has_prot: bool,
+    has_fat: bool,
+    has_carbs: bool,
 ) -> String {
     format!(
         r#"You are a food nutrition expert. Fill missing data for: "{name_en}" (Russian: "{name_ru}", type: {product_type}).

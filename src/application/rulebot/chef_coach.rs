@@ -20,11 +20,7 @@ use super::session_context::SessionContext;
 
 /// Pick a motivational coach message based on session context.
 /// Returns `None` if this turn should be silent (to avoid being annoying).
-pub fn pick_message(
-    ctx: &SessionContext,
-    goal: HealthGoal,
-    lang: ChatLang,
-) -> Option<String> {
+pub fn pick_message(ctx: &SessionContext, goal: HealthGoal, lang: ChatLang) -> Option<String> {
     let turn = ctx.turn_count;
     let explored = ctx.shown_slugs.len();
 
@@ -33,12 +29,12 @@ pub fn pick_message(
     // Turns 0–2 are silent: the frontend auto-greeting already welcomes the
     // user, so a coach "Рад видеть тебя!" on the first real query is redundant.
     let should_show = match turn {
-        0..=2 => false,                      // Silent — frontend auto-greets
-        3 | 4 => turn == 3,                  // First coach tip
-        5..=7 => turn == 5,                  // Building habits
-        8..=11 => turn == 8,                 // Deeper engagement
-        12..=16 => turn == 12,               // Advanced tips
-        _ => turn % 5 == 0,                  // Every 5th turn after
+        0..=2 => false,        // Silent — frontend auto-greets
+        3 | 4 => turn == 3,    // First coach tip
+        5..=7 => turn == 5,    // Building habits
+        8..=11 => turn == 8,   // Deeper engagement
+        12..=16 => turn == 12, // Advanced tips
+        _ => turn % 5 == 0,    // Every 5th turn after
     };
 
     if !should_show {
@@ -267,7 +263,15 @@ mod tests {
     fn explored_count_in_turn_8() {
         let mut ctx = SessionContext::new();
         ctx.turn_count = 8;
-        ctx.shown_slugs = vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into(), "f".into(), "g".into()];
+        ctx.shown_slugs = vec![
+            "a".into(),
+            "b".into(),
+            "c".into(),
+            "d".into(),
+            "e".into(),
+            "f".into(),
+            "g".into(),
+        ];
         let msg = pick_message(&ctx, HealthGoal::LowCalorie, ChatLang::Ru).unwrap();
         assert!(msg.contains("более 6") || msg.contains("продуктов"));
     }

@@ -22,20 +22,20 @@
 //!   * Every public type is `Debug + Clone`; geometry data is plain `Vec`s
 //!     (no GPU types, no allocators, no unsafe).
 
+pub mod csg;
+pub mod decal;
+pub mod disk;
+pub mod extrude;
 pub mod lathe;
 pub mod math;
 pub mod mesh_builder;
 pub mod normals;
 pub mod particle_shape;
+pub mod precision;
 pub mod profile;
 pub mod quality;
-pub mod validate;
-pub mod disk;
-pub mod decal;
-pub mod extrude;
-pub mod precision;
 pub mod rounded;
-pub mod csg;
+pub mod validate;
 
 pub use decal::{cylindrical_band, flat_patch};
 pub use disk::{disk_fan_down, disk_fan_up};
@@ -43,9 +43,7 @@ pub use extrude::{extrude_polygon, ExtrudeOptions, Point2};
 pub use lathe::{lathe_profile, MeshPart};
 pub use math::{Vec2, Vec3};
 pub use mesh_builder::MeshBuilder;
-pub use particle_shape::{
-    cell_normal, sdf_cell, Axis, CubeGrid, ExposedMask, SlotKind, WallGrid,
-};
+pub use particle_shape::{cell_normal, sdf_cell, Axis, CubeGrid, ExposedMask, SlotKind, WallGrid};
 pub use precision::tessellate;
 pub use profile::{Profile, ProfilePoint};
 pub use quality::GeometryQuality;

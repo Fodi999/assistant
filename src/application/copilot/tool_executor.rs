@@ -18,7 +18,7 @@ use crate::application::purchase_draft::{
 };
 use crate::application::recipe::RecipeService;
 use crate::application::recipe_v2_service::RecipeV2Service;
-use crate::application::sous_chef::{SousChefPlannerService, PlanRequest};
+use crate::application::sous_chef::{PlanRequest, SousChefPlannerService};
 use crate::shared::Language;
 use crate::shared::PaginationParams;
 use crate::shared::{AppError, AppResult, TenantId, UserId};
@@ -107,7 +107,10 @@ impl ToolExecutor {
         let mut changes = build_preview_changes(&write_call.tool, &write_call.args, tool_results);
 
         if matches!(write_call.tool, CopilotTool::SendPurchaseOrder) {
-            match self.resolve_send_purchase_order_preview(ctx, &write_call.args).await {
+            match self
+                .resolve_send_purchase_order_preview(ctx, &write_call.args)
+                .await
+            {
                 SendPreview::Ok(resolved_id, draft_changes) => {
                     if let Some(obj) = payload.as_object_mut() {
                         obj.insert("id".to_string(), json!(resolved_id.to_string()));
@@ -143,7 +146,10 @@ impl ToolExecutor {
 
         // Для AdjustInventoryQuantity: считаем текущий остаток и формируем preview before→after
         if matches!(write_call.tool, CopilotTool::AdjustInventoryQuantity) {
-            match self.resolve_adjust_quantity_preview(ctx, &write_call.args).await {
+            match self
+                .resolve_adjust_quantity_preview(ctx, &write_call.args)
+                .await
+            {
                 AdjustPreview::Ok(adjust_changes) => {
                     changes = adjust_changes;
                 }
@@ -177,8 +183,16 @@ impl ToolExecutor {
 
         // Для UpdateDishPrice: ищем dish, проверяем noop / multiple / not_found / invalid.
         if matches!(write_call.tool, CopilotTool::UpdateDishPrice) {
-            match self.resolve_update_dish_price_preview(ctx, &write_call.args).await {
-                DishPriceUpdatePreview::Ok { dish_id, dish_name, new_price_cents, changes: dish_changes } => {
+            match self
+                .resolve_update_dish_price_preview(ctx, &write_call.args)
+                .await
+            {
+                DishPriceUpdatePreview::Ok {
+                    dish_id,
+                    dish_name,
+                    new_price_cents,
+                    changes: dish_changes,
+                } => {
                     if let Some(obj) = payload.as_object_mut() {
                         obj.insert("dish_id".to_string(), json!(dish_id.to_string()));
                         obj.insert("dish_name".to_string(), json!(dish_name));
@@ -186,7 +200,10 @@ impl ToolExecutor {
                     }
                     changes = dish_changes;
                 }
-                DishPriceUpdatePreview::SamePrice { name, current_cents } => {
+                DishPriceUpdatePreview::SamePrice {
+                    name,
+                    current_cents,
+                } => {
                     let info = ToolResult {
                         tool_name: "update_dish_price_skipped".to_string(),
                         data: json!({
@@ -200,10 +217,15 @@ impl ToolExecutor {
                     return (None, Some(info));
                 }
                 DishPriceUpdatePreview::Multiple { query, candidates } => {
-                    let list: Vec<serde_json::Value> = candidates.iter().map(|(n, c)| json!({
-                        "name": n,
-                        "price_eur": format!("{:.2}", *c as f64 / 100.0),
-                    })).collect();
+                    let list: Vec<serde_json::Value> = candidates
+                        .iter()
+                        .map(|(n, c)| {
+                            json!({
+                                "name": n,
+                                "price_eur": format!("{:.2}", *c as f64 / 100.0),
+                            })
+                        })
+                        .collect();
                     let info = ToolResult {
                         tool_name: "update_dish_price_skipped".to_string(),
                         data: json!({
@@ -245,19 +267,30 @@ impl ToolExecutor {
         // Для CreateRecipe: резолвим каждый ингредиент в catalog, валидируем servings/quantities,
         // проверяем что рецепт с таким названием ещё не существует.
         if matches!(write_call.tool, CopilotTool::CreateRecipe) {
-            match self.resolve_create_recipe_preview(ctx, &write_call.args).await {
-                CreateRecipePreview::Ok { recipe_name, servings, resolved, recipe_changes } => {
+            match self
+                .resolve_create_recipe_preview(ctx, &write_call.args)
+                .await
+            {
+                CreateRecipePreview::Ok {
+                    recipe_name,
+                    servings,
+                    resolved,
+                    recipe_changes,
+                } => {
                     if let Some(obj) = payload.as_object_mut() {
                         obj.insert("recipe_name".to_string(), json!(recipe_name));
                         obj.insert("servings".to_string(), json!(servings));
                         obj.insert(
                             "resolved_ingredients".to_string(),
-                            json!(resolved.iter().map(|r| json!({
-                                "catalog_ingredient_id": r.catalog_ingredient_id.to_string(),
-                                "ingredient_name": r.matched_name,
-                                "quantity_in_default_unit": r.quantity_in_default_unit,
-                                "default_unit": r.default_unit,
-                            })).collect::<Vec<_>>()),
+                            json!(resolved
+                                .iter()
+                                .map(|r| json!({
+                                    "catalog_ingredient_id": r.catalog_ingredient_id.to_string(),
+                                    "ingredient_name": r.matched_name,
+                                    "quantity_in_default_unit": r.quantity_in_default_unit,
+                                    "default_unit": r.default_unit,
+                                }))
+                                .collect::<Vec<_>>()),
                         );
                     }
                     changes = recipe_changes;
@@ -317,12 +350,25 @@ impl ToolExecutor {
         // ── CreateDish: резолвим recipe_name → recipe_id, валидируем цену,
         // проверяем уникальность имени блюда в рамках тенанта.
         if matches!(write_call.tool, CopilotTool::CreateDish) {
-            match self.resolve_create_dish_preview(ctx, &write_call.args).await {
-                CreateDishPreview::Ok { dish_name, recipe_id, recipe_name, selling_price_cents, description, dish_changes } => {
+            match self
+                .resolve_create_dish_preview(ctx, &write_call.args)
+                .await
+            {
+                CreateDishPreview::Ok {
+                    dish_name,
+                    recipe_id,
+                    recipe_name,
+                    selling_price_cents,
+                    description,
+                    dish_changes,
+                } => {
                     if let Some(obj) = payload.as_object_mut() {
                         obj.insert("dish_name".to_string(), json!(dish_name));
                         obj.insert("recipe_id".to_string(), json!(recipe_id.to_string()));
-                        obj.insert("selling_price_cents".to_string(), json!(selling_price_cents));
+                        obj.insert(
+                            "selling_price_cents".to_string(),
+                            json!(selling_price_cents),
+                        );
                         if let Some(d) = description {
                             obj.insert("description".to_string(), json!(d));
                         }
@@ -384,13 +430,16 @@ impl ToolExecutor {
 
         let plan_type = tool_to_plan_type(&write_call.tool);
 
-        (Some(ActionPlan {
-            id: Uuid::new_v4(),
-            plan_type,
-            changes,
-            write_tool: Some(write_call.tool.clone()),
-            payload,
-        }), None)
+        (
+            Some(ActionPlan {
+                id: Uuid::new_v4(),
+                plan_type,
+                changes,
+                write_tool: Some(write_call.tool.clone()),
+                payload,
+            }),
+            None,
+        )
     }
     async fn resolve_send_purchase_order_preview(
         &self,
@@ -399,7 +448,12 @@ impl ToolExecutor {
     ) -> SendPreview {
         let id_arg = args.get("id").and_then(|v| v.as_str()).unwrap_or("last");
         let target_id: Uuid = if id_arg == "last" || id_arg.is_empty() {
-            let drafts = match self.services.purchase_drafts.list(ctx.tenant_id.clone(), 1).await {
+            let drafts = match self
+                .services
+                .purchase_drafts
+                .list(ctx.tenant_id.clone(), 1)
+                .await
+            {
                 Ok(d) => d,
                 Err(_) => return SendPreview::NotFound,
             };
@@ -414,7 +468,12 @@ impl ToolExecutor {
             }
         };
 
-        let draft = match self.services.purchase_drafts.get(target_id, ctx.user_id.clone()).await {
+        let draft = match self
+            .services
+            .purchase_drafts
+            .get(target_id, ctx.user_id.clone())
+            .await
+        {
             Ok(Some(d)) => d,
             _ => return SendPreview::NotFound,
         };
@@ -451,7 +510,8 @@ impl ToolExecutor {
         ctx: &CopilotContext,
         args: &std::collections::HashMap<String, serde_json::Value>,
     ) -> AdjustPreview {
-        let name = match args.get("ingredient_name")
+        let name = match args
+            .get("ingredient_name")
             .or_else(|| args.get("ingredient"))
             .or_else(|| args.get("name"))
             .or_else(|| args.get("item_name"))
@@ -461,14 +521,19 @@ impl ToolExecutor {
             Some(n) => n.to_string(),
             None => return AdjustPreview::NotFound { name: "?".into() },
         };
-        let target = match args.get("target_quantity")
+        let target = match args
+            .get("target_quantity")
             .or_else(|| args.get("quantity"))
             .and_then(|v| v.as_f64())
         {
             Some(q) => q,
             None => return AdjustPreview::NotFound { name },
         };
-        let unit = args.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
+        let unit = args
+            .get("unit")
+            .and_then(|v| v.as_str())
+            .unwrap_or("kg")
+            .to_string();
 
         let catalog_id = match self.find_catalog_id(&name).await {
             Ok(id) => id,
@@ -477,11 +542,14 @@ impl ToolExecutor {
         let cat_uuid = catalog_id.as_uuid();
 
         // Считаем текущий остаток по всем активным batches
-        let items = self.services.inventory
+        let items = self
+            .services
+            .inventory
             .list_products_with_details(ctx.user_id.clone(), ctx.tenant_id.clone(), Language::En)
             .await
             .unwrap_or_default();
-        let current: f64 = items.iter()
+        let current: f64 = items
+            .iter()
             .filter(|i| i.product.id == cat_uuid)
             .map(|i| i.remaining_quantity)
             .sum();
@@ -491,8 +559,10 @@ impl ToolExecutor {
             return AdjustPreview::Noop { name, current };
         }
 
-        let arrow = format!("{} {} → {} {} (diff {:+.3} {})",
-            current, unit, target, unit, diff, unit);
+        let arrow = format!(
+            "{} {} → {} {} (diff {:+.3} {})",
+            current, unit, target, unit, diff, unit
+        );
         let changes = vec![ActionChange {
             entity: format!("Inventory: {}", name),
             field: "remaining_quantity".to_string(),
@@ -510,26 +580,35 @@ impl ToolExecutor {
         args: &std::collections::HashMap<String, serde_json::Value>,
     ) -> DishPriceUpdatePreview {
         // 1. Парсим dish_name
-        let query = match args.get("dish_name")
+        let query = match args
+            .get("dish_name")
             .or_else(|| args.get("name"))
             .or_else(|| args.get("dish"))
             .and_then(|v| v.as_str())
         {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => return DishPriceUpdatePreview::Invalid { reason: "missing dish_name".into() },
+            _ => {
+                return DishPriceUpdatePreview::Invalid {
+                    reason: "missing dish_name".into(),
+                }
+            }
         };
 
         // 2. Парсим new_price_cents (приоритет) или new_price (EUR float)
-        let new_price_cents: i64 = if let Some(c) = args.get("new_price_cents").and_then(|v| v.as_i64()) {
-            c
-        } else if let Some(eur) = args.get("new_price")
-            .or_else(|| args.get("price"))
-            .and_then(|v| v.as_f64())
-        {
-            (eur * 100.0).round() as i64
-        } else {
-            return DishPriceUpdatePreview::Invalid { reason: "missing new_price".into() };
-        };
+        let new_price_cents: i64 =
+            if let Some(c) = args.get("new_price_cents").and_then(|v| v.as_i64()) {
+                c
+            } else if let Some(eur) = args
+                .get("new_price")
+                .or_else(|| args.get("price"))
+                .and_then(|v| v.as_f64())
+            {
+                (eur * 100.0).round() as i64
+            } else {
+                return DishPriceUpdatePreview::Invalid {
+                    reason: "missing new_price".into(),
+                };
+            };
 
         if new_price_cents <= 0 {
             return DishPriceUpdatePreview::Invalid {
@@ -538,7 +617,9 @@ impl ToolExecutor {
         }
 
         // 3. Ищем блюда по имени
-        let matches = match self.services.dishes
+        let matches = match self
+            .services
+            .dishes
             .find_dishes_by_name(ctx.tenant_id.clone(), &query, true, 5)
             .await
         {
@@ -551,7 +632,8 @@ impl ToolExecutor {
         }
 
         if matches.len() > 1 {
-            let candidates = matches.iter()
+            let candidates = matches
+                .iter()
                 .map(|d| (d.name().as_str().to_string(), d.selling_price().as_cents()))
                 .collect();
             return DishPriceUpdatePreview::Multiple { query, candidates };
@@ -563,7 +645,10 @@ impl ToolExecutor {
         let dish_name = dish.name().as_str().to_string();
 
         if current_cents == new_price_cents {
-            return DishPriceUpdatePreview::SamePrice { name: dish_name, current_cents };
+            return DishPriceUpdatePreview::SamePrice {
+                name: dish_name,
+                current_cents,
+            };
         }
 
         // 5. Строим preview changes (price + опциональный margin)
@@ -579,8 +664,11 @@ impl ToolExecutor {
         if let Some(cost_cents) = dish.recipe_cost_cents() {
             let old_margin_pct = if current_cents > 0 {
                 (current_cents - cost_cents) as f64 * 100.0 / current_cents as f64
-            } else { 0.0 };
-            let new_margin_pct = (new_price_cents - cost_cents) as f64 * 100.0 / new_price_cents as f64;
+            } else {
+                0.0
+            };
+            let new_margin_pct =
+                (new_price_cents - cost_cents) as f64 * 100.0 / new_price_cents as f64;
 
             changes.push(ActionChange {
                 entity: format!("Dish: {}", dish_name),
@@ -596,7 +684,10 @@ impl ToolExecutor {
                     entity: format!("⚠️ Dish: {}", dish_name),
                     field: "warning".to_string(),
                     before: Some(format!("food_cost €{:.2}", cost_cents as f64 / 100.0)),
-                    after: format!("new price €{:.2} is BELOW food cost", new_price_cents as f64 / 100.0),
+                    after: format!(
+                        "new price €{:.2} is BELOW food cost",
+                        new_price_cents as f64 / 100.0
+                    ),
                     unit: None,
                 });
             }
@@ -620,29 +711,38 @@ impl ToolExecutor {
         use crate::domain::catalog::Unit;
 
         // 1. recipe_name
-        let recipe_name = match args.get("recipe_name")
+        let recipe_name = match args
+            .get("recipe_name")
             .or_else(|| args.get("name"))
             .and_then(|v| v.as_str())
         {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => return CreateRecipePreview::Invalid { reason: "missing recipe_name".into() },
+            _ => {
+                return CreateRecipePreview::Invalid {
+                    reason: "missing recipe_name".into(),
+                }
+            }
         };
 
         // 2. servings (default 1, must be > 0 and <= 1000)
         let servings_n: u32 = match args.get("servings").and_then(|v| v.as_u64()) {
             Some(n) if n > 0 && n <= 1000 => n as u32,
-            Some(_) => return CreateRecipePreview::Invalid {
-                reason: "servings must be between 1 and 1000".into(),
-            },
+            Some(_) => {
+                return CreateRecipePreview::Invalid {
+                    reason: "servings must be between 1 and 1000".into(),
+                }
+            }
             None => 1,
         };
 
         // 3. ingredients[] (required, non-empty)
         let ingredients_arr = match args.get("ingredients").and_then(|v| v.as_array()) {
             Some(arr) if !arr.is_empty() => arr.clone(),
-            _ => return CreateRecipePreview::Invalid {
-                reason: "ingredients[] is required and must be non-empty".into(),
-            },
+            _ => {
+                return CreateRecipePreview::Invalid {
+                    reason: "ingredients[] is required and must be non-empty".into(),
+                }
+            }
         };
 
         // 4. Проверка дубликата по имени (case-insensitive)
@@ -650,9 +750,18 @@ impl ToolExecutor {
             page: Some(1),
             per_page: Some(100),
         };
-        if let Ok(page) = self.services.recipes_v1.list_recipes(ctx.tenant_id.clone(), &pagination).await {
+        if let Ok(page) = self
+            .services
+            .recipes_v1
+            .list_recipes(ctx.tenant_id.clone(), &pagination)
+            .await
+        {
             let target = recipe_name.to_lowercase();
-            if page.items.iter().any(|r| r.name().as_str().to_lowercase() == target) {
+            if page
+                .items
+                .iter()
+                .any(|r| r.name().as_str().to_lowercase() == target)
+            {
                 return CreateRecipePreview::AlreadyExists { name: recipe_name };
             }
         }
@@ -671,41 +780,61 @@ impl ToolExecutor {
         });
 
         for (idx, item) in ingredients_arr.iter().enumerate() {
-            let query = match item.get("ingredient_name")
+            let query = match item
+                .get("ingredient_name")
                 .or_else(|| item.get("name"))
                 .and_then(|v| v.as_str())
             {
                 Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-                _ => return CreateRecipePreview::Invalid {
-                    reason: format!("ingredients[{}].ingredient_name is required", idx),
-                },
+                _ => {
+                    return CreateRecipePreview::Invalid {
+                        reason: format!("ingredients[{}].ingredient_name is required", idx),
+                    }
+                }
             };
 
             let qty_raw = match item.get("quantity").and_then(|v| v.as_f64()) {
                 Some(q) if q > 0.0 => q,
-                Some(_) => return CreateRecipePreview::Invalid {
-                    reason: format!("ingredients[{}].quantity must be > 0", idx),
-                },
-                None => return CreateRecipePreview::Invalid {
-                    reason: format!("ingredients[{}].quantity is required", idx),
-                },
+                Some(_) => {
+                    return CreateRecipePreview::Invalid {
+                        reason: format!("ingredients[{}].quantity must be > 0", idx),
+                    }
+                }
+                None => {
+                    return CreateRecipePreview::Invalid {
+                        reason: format!("ingredients[{}].quantity is required", idx),
+                    }
+                }
             };
 
-            let unit_str = item.get("unit").and_then(|v| v.as_str()).unwrap_or("g").trim();
+            let unit_str = item
+                .get("unit")
+                .and_then(|v| v.as_str())
+                .unwrap_or("g")
+                .trim();
             let user_unit = match Unit::from_str(unit_str) {
                 Ok(u) => u,
-                Err(_) => return CreateRecipePreview::Invalid {
-                    reason: format!("ingredients[{}].unit '{}' is not a valid unit", idx, unit_str),
-                },
+                Err(_) => {
+                    return CreateRecipePreview::Invalid {
+                        reason: format!(
+                            "ingredients[{}].unit '{}' is not a valid unit",
+                            idx, unit_str
+                        ),
+                    }
+                }
             };
 
             // Каталог: EN → RU fallback. Берём список — если >1 без точного совпадения, ambiguous.
-            let mut candidates = self.services.catalog
+            let mut candidates = self
+                .services
+                .catalog
                 .search_ingredients(&query, Language::En, 5)
                 .await
                 .unwrap_or_default();
             if candidates.is_empty() {
-                candidates = self.services.catalog
+                candidates = self
+                    .services
+                    .catalog
                     .search_ingredients(&query, Language::Ru, 5)
                     .await
                     .unwrap_or_default();
@@ -729,9 +858,7 @@ impl ToolExecutor {
             } else if candidates.len() == 1 {
                 candidates.remove(0)
             } else {
-                let names: Vec<String> = candidates.iter()
-                    .map(|c| c.name_en.clone())
-                    .collect();
+                let names: Vec<String> = candidates.iter().map(|c| c.name_en.clone()).collect();
                 return CreateRecipePreview::AmbiguousIngredient {
                     query,
                     candidates: names,
@@ -741,16 +868,24 @@ impl ToolExecutor {
             // Конвертируем qty_raw из user_unit в chosen.default_unit
             let qty_in_default = match convert_quantity(qty_raw, user_unit, chosen.default_unit) {
                 Ok(q) => q,
-                Err(msg) => return CreateRecipePreview::Invalid {
-                    reason: format!("ingredients[{}] ('{}'): {}", idx, query, msg),
-                },
+                Err(msg) => {
+                    return CreateRecipePreview::Invalid {
+                        reason: format!("ingredients[{}] ('{}'): {}", idx, query, msg),
+                    }
+                }
             };
 
             recipe_changes.push(ActionChange {
                 entity: format!("Ingredient: {}", chosen.name_en),
                 field: "quantity".to_string(),
                 before: None,
-                after: format!("{} {} (= {:.3} {})", qty_raw, user_unit.as_str(), qty_in_default, chosen.default_unit.as_str()),
+                after: format!(
+                    "{} {} (= {:.3} {})",
+                    qty_raw,
+                    user_unit.as_str(),
+                    qty_in_default,
+                    chosen.default_unit.as_str()
+                ),
                 unit: Some(chosen.default_unit.as_str().to_string()),
             });
 
@@ -777,25 +912,43 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        let name_str = payload.get("recipe_name").and_then(|v| v.as_str())
+        let name_str = payload
+            .get("recipe_name")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::validation("recipe_name is required"))?;
-        let servings_n = payload.get("servings").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+        let servings_n = payload
+            .get("servings")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1) as u32;
 
-        let resolved = payload.get("resolved_ingredients").and_then(|v| v.as_array())
-            .ok_or_else(|| AppError::validation(
-                "resolved_ingredients is required (resolver must run before execution)"
-            ))?;
+        let resolved = payload
+            .get("resolved_ingredients")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| {
+                AppError::validation(
+                    "resolved_ingredients is required (resolver must run before execution)",
+                )
+            })?;
 
         let recipe_name = crate::domain::RecipeName::new(name_str)?;
         let servings = crate::domain::Servings::new(servings_n)?;
 
-        let mut ingredients: Vec<crate::domain::RecipeIngredient> = Vec::with_capacity(resolved.len());
+        let mut ingredients: Vec<crate::domain::RecipeIngredient> =
+            Vec::with_capacity(resolved.len());
         for r in resolved {
-            let cat_id_str = r.get("catalog_ingredient_id").and_then(|v| v.as_str())
-                .ok_or_else(|| AppError::validation("catalog_ingredient_id is required in resolved_ingredients"))?;
+            let cat_id_str = r
+                .get("catalog_ingredient_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    AppError::validation(
+                        "catalog_ingredient_id is required in resolved_ingredients",
+                    )
+                })?;
             let cat_uuid = Uuid::parse_str(cat_id_str)
                 .map_err(|_| AppError::validation("invalid catalog_ingredient_id"))?;
-            let qty_val = r.get("quantity_in_default_unit").and_then(|v| v.as_f64())
+            let qty_val = r
+                .get("quantity_in_default_unit")
+                .and_then(|v| v.as_f64())
                 .ok_or_else(|| AppError::validation("quantity_in_default_unit is required"))?;
 
             ingredients.push(crate::domain::RecipeIngredient::new(
@@ -804,8 +957,17 @@ impl ToolExecutor {
             ));
         }
 
-        let recipe = self.services.recipes_v1
-            .create_recipe(recipe_name, servings, ingredients, vec![], user_id, tenant_id)
+        let recipe = self
+            .services
+            .recipes_v1
+            .create_recipe(
+                recipe_name,
+                servings,
+                ingredients,
+                vec![],
+                user_id,
+                tenant_id,
+            )
             .await?;
 
         Ok(format!(
@@ -825,71 +987,130 @@ impl ToolExecutor {
         args: &std::collections::HashMap<String, serde_json::Value>,
     ) -> CreateDishPreview {
         // 1. dish_name (required)
-        let dish_name = match args.get("dish_name")
+        let dish_name = match args
+            .get("dish_name")
             .or_else(|| args.get("name"))
             .and_then(|v| v.as_str())
         {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => return CreateDishPreview::Invalid { reason: "missing dish_name".into() },
+            _ => {
+                return CreateDishPreview::Invalid {
+                    reason: "missing dish_name".into(),
+                }
+            }
         };
 
         // 2. selling_price_cents (required, > 0)
-        let selling_price_cents: i64 = if let Some(c) = args.get("selling_price_cents").and_then(|v| v.as_i64()) {
-            c
-        } else if let Some(eur) = args.get("selling_price").and_then(|v| v.as_f64()) {
-            (eur * 100.0).round() as i64
-        } else {
-            return CreateDishPreview::Invalid { reason: "missing selling_price_cents (or selling_price in EUR)".into() };
-        };
+        let selling_price_cents: i64 =
+            if let Some(c) = args.get("selling_price_cents").and_then(|v| v.as_i64()) {
+                c
+            } else if let Some(eur) = args.get("selling_price").and_then(|v| v.as_f64()) {
+                (eur * 100.0).round() as i64
+            } else {
+                return CreateDishPreview::Invalid {
+                    reason: "missing selling_price_cents (or selling_price in EUR)".into(),
+                };
+            };
         if selling_price_cents <= 0 {
-            return CreateDishPreview::Invalid { reason: "selling_price must be greater than 0".into() };
+            return CreateDishPreview::Invalid {
+                reason: "selling_price must be greater than 0".into(),
+            };
         }
 
         // 3. recipe_name (required) → resolve to recipe_id
-        let recipe_query = match args.get("recipe_name")
+        let recipe_query = match args
+            .get("recipe_name")
             .or_else(|| args.get("recipe"))
             .and_then(|v| v.as_str())
         {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => return CreateDishPreview::Invalid { reason: "missing recipe_name — which recipe should this dish be based on?".into() },
+            _ => {
+                return CreateDishPreview::Invalid {
+                    reason: "missing recipe_name — which recipe should this dish be based on?"
+                        .into(),
+                }
+            }
         };
 
-        let description = args.get("description").and_then(|v| v.as_str()).map(str::to_string);
+        let description = args
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
 
         // 4. Search recipes by name (list all, filter case-insensitive)
-        let pagination = crate::shared::pagination::PaginationParams { page: Some(1), per_page: Some(200) };
-        let recipes = match self.services.recipes_v1.list_recipes(ctx.tenant_id.clone(), &pagination).await {
+        let pagination = crate::shared::pagination::PaginationParams {
+            page: Some(1),
+            per_page: Some(200),
+        };
+        let recipes = match self
+            .services
+            .recipes_v1
+            .list_recipes(ctx.tenant_id.clone(), &pagination)
+            .await
+        {
             Ok(p) => p.items,
-            Err(_) => return CreateDishPreview::Invalid { reason: "could not load recipes".into() },
+            Err(_) => {
+                return CreateDishPreview::Invalid {
+                    reason: "could not load recipes".into(),
+                }
+            }
         };
 
         let q_low = recipe_query.to_lowercase();
-        let exact: Vec<_> = recipes.iter().filter(|r| r.name().as_str().to_lowercase() == q_low).collect();
-        let partial: Vec<_> = recipes.iter().filter(|r| r.name().as_str().to_lowercase().contains(&q_low)).collect();
+        let exact: Vec<_> = recipes
+            .iter()
+            .filter(|r| r.name().as_str().to_lowercase() == q_low)
+            .collect();
+        let partial: Vec<_> = recipes
+            .iter()
+            .filter(|r| r.name().as_str().to_lowercase().contains(&q_low))
+            .collect();
 
         let chosen_recipe = if exact.len() == 1 {
             exact[0]
         } else if exact.is_empty() && partial.len() == 1 {
             partial[0]
         } else if exact.is_empty() && partial.is_empty() {
-            return CreateDishPreview::RecipeNotFound { query: recipe_query };
+            return CreateDishPreview::RecipeNotFound {
+                query: recipe_query,
+            };
         } else {
             let candidates: Vec<String> = if !exact.is_empty() {
-                exact.iter().map(|r| r.name().as_str().to_string()).collect()
+                exact
+                    .iter()
+                    .map(|r| r.name().as_str().to_string())
+                    .collect()
             } else {
-                partial.iter().map(|r| r.name().as_str().to_string()).collect()
+                partial
+                    .iter()
+                    .map(|r| r.name().as_str().to_string())
+                    .collect()
             };
-            return CreateDishPreview::AmbiguousRecipe { query: recipe_query, candidates };
+            return CreateDishPreview::AmbiguousRecipe {
+                query: recipe_query,
+                candidates,
+            };
         };
 
         let recipe_id = chosen_recipe.id();
         let recipe_name = chosen_recipe.name().as_str().to_string();
 
         // 5. Check dish name uniqueness (case-insensitive)
-        let dish_pagination = crate::shared::pagination::PaginationParams { page: Some(1), per_page: Some(200) };
-        if let Ok((existing_dishes, _)) = self.services.dishes.list_dishes(ctx.tenant_id.clone(), false, &dish_pagination).await {
+        let dish_pagination = crate::shared::pagination::PaginationParams {
+            page: Some(1),
+            per_page: Some(200),
+        };
+        if let Ok((existing_dishes, _)) = self
+            .services
+            .dishes
+            .list_dishes(ctx.tenant_id.clone(), false, &dish_pagination)
+            .await
+        {
             let dname_low = dish_name.to_lowercase();
-            if existing_dishes.iter().any(|d| d.name().as_str().to_lowercase() == dname_low) {
+            if existing_dishes
+                .iter()
+                .any(|d| d.name().as_str().to_lowercase() == dname_low)
+            {
                 return CreateDishPreview::DuplicateDishName { name: dish_name };
             }
         }
@@ -928,13 +1149,24 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        let dish_name_str = payload.get("dish_name").and_then(|v| v.as_str())
+        let dish_name_str = payload
+            .get("dish_name")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::validation("dish_name is required"))?;
-        let recipe_id_str = payload.get("recipe_id").and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::validation("recipe_id is required (resolver must run first)"))?;
-        let selling_price_cents = payload.get("selling_price_cents").and_then(|v| v.as_i64())
+        let recipe_id_str = payload
+            .get("recipe_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AppError::validation("recipe_id is required (resolver must run first)")
+            })?;
+        let selling_price_cents = payload
+            .get("selling_price_cents")
+            .and_then(|v| v.as_i64())
             .ok_or_else(|| AppError::validation("selling_price_cents is required"))?;
-        let description = payload.get("description").and_then(|v| v.as_str()).map(str::to_string);
+        let description = payload
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
 
         let recipe_uuid = Uuid::parse_str(recipe_id_str)
             .map_err(|_| AppError::validation("invalid recipe_id UUID"))?;
@@ -942,8 +1174,17 @@ impl ToolExecutor {
         let dish_name = crate::domain::DishName::new(dish_name_str)?;
         let selling_price = crate::domain::Money::from_cents(selling_price_cents)?;
 
-        let dish = self.services.dishes
-            .create_dish(tenant_id, recipe_id, dish_name, description, selling_price, None)
+        let dish = self
+            .services
+            .dishes
+            .create_dish(
+                tenant_id,
+                recipe_id,
+                dish_name,
+                description,
+                selling_price,
+                None,
+            )
             .await?;
 
         let margin_info = match dish.profit_margin_percent() {
@@ -977,41 +1218,59 @@ impl ToolExecutor {
 
         match tool {
             CopilotTool::GetInventory => {
-                let items = self.services.inventory
+                let items = self
+                    .services
+                    .inventory
                     .list_products_with_details(
                         ctx.user_id.clone(),
                         ctx.tenant_id.clone(),
                         crate::shared::Language::En,
                     )
                     .await?;
-                let summary: Vec<serde_json::Value> = items.iter().map(|i| json!({
-                    "name": i.product.name,
-                    "quantity": i.quantity,
-                    "unit": i.product.base_unit,
-                    "expires_at": i.expires_at.to_string(),
-                    "severity": format!("{:?}", i.severity),
-                })).collect();
-                Ok(ToolResult { tool_name: name, data: json!({ "inventory": summary }) })
+                let summary: Vec<serde_json::Value> = items
+                    .iter()
+                    .map(|i| {
+                        json!({
+                            "name": i.product.name,
+                            "quantity": i.quantity,
+                            "unit": i.product.base_unit,
+                            "expires_at": i.expires_at.to_string(),
+                            "severity": format!("{:?}", i.severity),
+                        })
+                    })
+                    .collect();
+                Ok(ToolResult {
+                    tool_name: name,
+                    data: json!({ "inventory": summary }),
+                })
             }
 
             CopilotTool::GetExpiringSoon => {
-                let items = self.services.inventory
+                let items = self
+                    .services
+                    .inventory
                     .get_expiring_products(ctx.user_id.clone(), ctx.tenant_id.clone(), 3)
                     .await?;
-                let summary: Vec<serde_json::Value> = items.iter().map(|b| json!({
-                    "id": b.id,
-                    "expires_at": b.expires_at.to_string(),
-                    "quantity": b.quantity,
-                })).collect();
-                Ok(ToolResult { tool_name: name, data: json!({ "expiring": summary }) })
+                let summary: Vec<serde_json::Value> = items
+                    .iter()
+                    .map(|b| {
+                        json!({
+                            "id": b.id,
+                            "expires_at": b.expires_at.to_string(),
+                            "quantity": b.quantity,
+                        })
+                    })
+                    .collect();
+                Ok(ToolResult {
+                    tool_name: name,
+                    data: json!({ "expiring": summary }),
+                })
             }
 
             CopilotTool::SearchIngredients => {
                 // Поиск по названию через каталог: пока возвращаем заглушку.
                 // TODO: подключить CatalogService.search_by_name
-                let query = args.get("query")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
                 Ok(ToolResult {
                     tool_name: name,
                     data: json!({ "search_query": query, "note": "catalog search not yet wired" }),
@@ -1019,36 +1278,62 @@ impl ToolExecutor {
             }
 
             CopilotTool::GetDishes => {
-                let pagination = PaginationParams { page: Some(1), per_page: Some(50) };
-                let (dishes, total) = self.services.dishes
+                let pagination = PaginationParams {
+                    page: Some(1),
+                    per_page: Some(50),
+                };
+                let (dishes, total) = self
+                    .services
+                    .dishes
                     .list_dishes(ctx.tenant_id.clone(), true, &pagination)
                     .await?;
-                let summary: Vec<serde_json::Value> = dishes.iter().map(|d| json!({
-                    "id": d.id,
-                    "name": d.name,
-                    "price_cents": d.selling_price.as_cents(),
-                })).collect();
-                Ok(ToolResult { tool_name: name, data: json!({ "dishes": summary, "total": total }) })
+                let summary: Vec<serde_json::Value> = dishes
+                    .iter()
+                    .map(|d| {
+                        json!({
+                            "id": d.id,
+                            "name": d.name,
+                            "price_cents": d.selling_price.as_cents(),
+                        })
+                    })
+                    .collect();
+                Ok(ToolResult {
+                    tool_name: name,
+                    data: json!({ "dishes": summary, "total": total }),
+                })
             }
 
             CopilotTool::GetRecipes => {
-                let recipes = self.services.recipes
+                let recipes = self
+                    .services
+                    .recipes
                     .list_user_recipes(ctx.user_id.clone(), ctx.tenant_id.clone(), ctx.locale)
                     .await?;
-                let summary: Vec<serde_json::Value> = recipes.iter().map(|r| json!({
-                    "id": r.id,
-                    "name": r.name,
-                })).collect();
-                Ok(ToolResult { tool_name: name, data: json!({ "recipes": summary }) })
+                let summary: Vec<serde_json::Value> = recipes
+                    .iter()
+                    .map(|r| {
+                        json!({
+                            "id": r.id,
+                            "name": r.name,
+                        })
+                    })
+                    .collect();
+                Ok(ToolResult {
+                    tool_name: name,
+                    data: json!({ "recipes": summary }),
+                })
             }
 
             CopilotTool::GetRecipeById => {
-                let id_str = args.get("id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| AppError::validation("missing id argument for get_recipe_by_id"))?;
-                let recipe_id = id_str.parse::<Uuid>()
+                let id_str = args.get("id").and_then(|v| v.as_str()).ok_or_else(|| {
+                    AppError::validation("missing id argument for get_recipe_by_id")
+                })?;
+                let recipe_id = id_str
+                    .parse::<Uuid>()
                     .map_err(|_| AppError::validation("invalid UUID for recipe id"))?;
-                let recipe = self.services.recipes
+                let recipe = self
+                    .services
+                    .recipes
                     .get_recipe(recipe_id.into(), ctx.tenant_id.clone(), ctx.locale)
                     .await?;
                 Ok(ToolResult {
@@ -1058,7 +1343,9 @@ impl ToolExecutor {
             }
 
             CopilotTool::SuggestCookFromInventory => {
-                let suggestions = self.services.cook_suggestions
+                let suggestions = self
+                    .services
+                    .cook_suggestions
                     .suggest(ctx.user_id.clone(), ctx.tenant_id.clone(), ctx.locale)
                     .await?;
                 Ok(ToolResult {
@@ -1068,10 +1355,13 @@ impl ToolExecutor {
             }
 
             CopilotTool::GenerateMealPlan => {
-                let query = args.get("query")
+                let query = args
+                    .get("query")
                     .and_then(|v| v.as_str())
                     .unwrap_or("balanced healthy meal plan");
-                let plan = self.services.sous_chef
+                let plan = self
+                    .services
+                    .sous_chef
                     .generate_plan(PlanRequest {
                         query: query.to_string(),
                         lang: Some(ctx.locale.code().to_string()),
@@ -1085,12 +1375,10 @@ impl ToolExecutor {
 
             // AI Brain / GeneralChefAnswer — данные не нужны,
             // engine сам вызовет AI Brain для финального ответа
-            CopilotTool::GeneralChefAnswer => {
-                Ok(ToolResult {
-                    tool_name: name,
-                    data: json!({ "mode": "general_chef_answer" }),
-                })
-            }
+            CopilotTool::GeneralChefAnswer => Ok(ToolResult {
+                tool_name: name,
+                data: json!({ "mode": "general_chef_answer" }),
+            }),
 
             // GetLabExperiment — TODO: подключить LaboratoryService
             CopilotTool::GetLabExperiment => {
@@ -1102,19 +1390,30 @@ impl ToolExecutor {
             }
 
             CopilotTool::ListPurchaseDrafts => {
-                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10).clamp(1, 50);
-                let drafts = self.services.purchase_drafts
+                let limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(10)
+                    .clamp(1, 50);
+                let drafts = self
+                    .services
+                    .purchase_drafts
                     .list(ctx.tenant_id.clone(), limit)
                     .await?;
-                let summary: Vec<serde_json::Value> = drafts.iter().map(|d| json!({
-                    "id": d.id,
-                    "supplier_name": d.supplier_name,
-                    "delivery_date": d.delivery_date.map(|x| x.to_string()),
-                    "status": d.status,
-                    "items_count": d.items.len(),
-                    "total_cost_cents": d.total_cost_cents,
-                    "created_at": d.created_at.to_string(),
-                })).collect();
+                let summary: Vec<serde_json::Value> = drafts
+                    .iter()
+                    .map(|d| {
+                        json!({
+                            "id": d.id,
+                            "supplier_name": d.supplier_name,
+                            "delivery_date": d.delivery_date.map(|x| x.to_string()),
+                            "status": d.status,
+                            "items_count": d.items.len(),
+                            "total_cost_cents": d.total_cost_cents,
+                            "created_at": d.created_at.to_string(),
+                        })
+                    })
+                    .collect();
                 Ok(ToolResult {
                     tool_name: name,
                     data: json!({ "drafts": summary, "total": drafts.len() }),
@@ -1124,7 +1423,9 @@ impl ToolExecutor {
             CopilotTool::GetPurchaseDraft => {
                 let id_arg = args.get("id").and_then(|v| v.as_str()).unwrap_or("last");
                 let target_id: Uuid = if id_arg == "last" || id_arg.is_empty() {
-                    let drafts = self.services.purchase_drafts
+                    let drafts = self
+                        .services
+                        .purchase_drafts
                         .list(ctx.tenant_id.clone(), 1)
                         .await?;
                     let Some(first) = drafts.into_iter().next() else {
@@ -1135,11 +1436,14 @@ impl ToolExecutor {
                     };
                     first.id
                 } else {
-                    id_arg.parse::<Uuid>()
+                    id_arg
+                        .parse::<Uuid>()
                         .map_err(|_| AppError::validation("invalid UUID for purchase draft id"))?
                 };
 
-                let draft = self.services.purchase_drafts
+                let draft = self
+                    .services
+                    .purchase_drafts
                     .get(target_id, ctx.user_id.clone())
                     .await?;
 
@@ -1163,23 +1467,40 @@ impl ToolExecutor {
                     }),
                     None => json!({ "draft": null, "note": "draft not found" }),
                 };
-                Ok(ToolResult { tool_name: name, data })
+                Ok(ToolResult {
+                    tool_name: name,
+                    data,
+                })
             }
 
             CopilotTool::GetDailyBriefing => {
-                let expiring_days = args.get("expiring_days").and_then(|v| v.as_i64()).unwrap_or(3).clamp(1, 14);
-                let low_stock_threshold = args.get("low_stock_threshold").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                let expiring_days = args
+                    .get("expiring_days")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(3)
+                    .clamp(1, 14);
+                let low_stock_threshold = args
+                    .get("low_stock_threshold")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0);
 
                 // 1. Inventory snapshot (one query, used for expiring + low stock)
-                let inventory = self.services.inventory
-                    .list_products_with_details(ctx.user_id.clone(), ctx.tenant_id.clone(), Language::En)
+                let inventory = self
+                    .services
+                    .inventory
+                    .list_products_with_details(
+                        ctx.user_id.clone(),
+                        ctx.tenant_id.clone(),
+                        Language::En,
+                    )
                     .await
                     .unwrap_or_default();
 
                 let now = time::OffsetDateTime::now_utc();
                 let limit = now + time::Duration::days(expiring_days);
 
-                let expiring: Vec<serde_json::Value> = inventory.iter()
+                let expiring: Vec<serde_json::Value> = inventory
+                    .iter()
                     .filter(|i| i.expires_at <= limit && i.remaining_quantity > 0.0)
                     .take(10)
                     .map(|i| {
@@ -1199,8 +1520,12 @@ impl ToolExecutor {
                 use std::collections::HashMap;
                 let mut totals: HashMap<uuid::Uuid, (String, String, f64, f64)> = HashMap::new();
                 for i in inventory.iter() {
-                    let entry = totals.entry(i.product.id)
-                        .or_insert((i.product.name.clone(), i.product.base_unit.clone(), 0.0, i.product.min_stock_threshold));
+                    let entry = totals.entry(i.product.id).or_insert((
+                        i.product.name.clone(),
+                        i.product.base_unit.clone(),
+                        0.0,
+                        i.product.min_stock_threshold,
+                    ));
                     entry.2 += i.remaining_quantity;
                 }
                 let mut low_stock: Vec<serde_json::Value> = totals.values()
@@ -1216,43 +1541,58 @@ impl ToolExecutor {
                     }))
                     .collect();
                 low_stock.sort_by(|a, b| {
-                    a["remaining"].as_f64().unwrap_or(0.0)
+                    a["remaining"]
+                        .as_f64()
+                        .unwrap_or(0.0)
                         .partial_cmp(&b["remaining"].as_f64().unwrap_or(0.0))
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 low_stock.truncate(10);
 
                 // 3. Purchase drafts (split by status)
-                let drafts = self.services.purchase_drafts
+                let drafts = self
+                    .services
+                    .purchase_drafts
                     .list(ctx.tenant_id.clone(), 20)
                     .await
                     .unwrap_or_default();
-                let open_drafts: Vec<serde_json::Value> = drafts.iter()
+                let open_drafts: Vec<serde_json::Value> = drafts
+                    .iter()
                     .filter(|d| d.status == "draft")
                     .take(5)
-                    .map(|d| json!({
-                        "id": d.id.to_string()[..8].to_string(),
-                        "supplier": d.supplier_name.clone().unwrap_or_else(|| "—".into()),
-                        "delivery_date": d.delivery_date.map(|x| x.to_string()),
-                        "items_count": d.items.len(),
-                        "total_cost_eur": format!("{:.2}", d.total_cost_cents as f64 / 100.0),
-                    }))
+                    .map(|d| {
+                        json!({
+                            "id": d.id.to_string()[..8].to_string(),
+                            "supplier": d.supplier_name.clone().unwrap_or_else(|| "—".into()),
+                            "delivery_date": d.delivery_date.map(|x| x.to_string()),
+                            "items_count": d.items.len(),
+                            "total_cost_eur": format!("{:.2}", d.total_cost_cents as f64 / 100.0),
+                        })
+                    })
                     .collect();
-                let recent_sent: Vec<serde_json::Value> = drafts.iter()
+                let recent_sent: Vec<serde_json::Value> = drafts
+                    .iter()
                     .filter(|d| d.status == "sent")
                     .take(5)
-                    .map(|d| json!({
-                        "id": d.id.to_string()[..8].to_string(),
-                        "supplier": d.supplier_name.clone().unwrap_or_else(|| "—".into()),
-                        "items_count": d.items.len(),
-                        "total_cost_eur": format!("{:.2}", d.total_cost_cents as f64 / 100.0),
-                        "sent_at": d.created_at.date().to_string(),
-                    }))
+                    .map(|d| {
+                        json!({
+                            "id": d.id.to_string()[..8].to_string(),
+                            "supplier": d.supplier_name.clone().unwrap_or_else(|| "—".into()),
+                            "items_count": d.items.len(),
+                            "total_cost_eur": format!("{:.2}", d.total_cost_cents as f64 / 100.0),
+                            "sent_at": d.created_at.date().to_string(),
+                        })
+                    })
                     .collect();
 
                 // 4. Dish margin warnings (food_cost_percent > 35% или цена ниже cost)
-                let pagination = PaginationParams { page: Some(1), per_page: Some(100) };
-                let dish_warnings: Vec<serde_json::Value> = match self.services.dishes
+                let pagination = PaginationParams {
+                    page: Some(1),
+                    per_page: Some(100),
+                };
+                let dish_warnings: Vec<serde_json::Value> = match self
+                    .services
+                    .dishes
                     .list_dishes(ctx.tenant_id.clone(), true, &pagination)
                     .await
                 {
@@ -1281,8 +1621,14 @@ impl ToolExecutor {
                             .collect();
                         // Сначала самые проблемные
                         warnings.sort_by(|a, b| {
-                            let pa = a["food_cost_percent"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
-                            let pb = b["food_cost_percent"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                            let pa = a["food_cost_percent"]
+                                .as_str()
+                                .and_then(|s| s.parse::<f64>().ok())
+                                .unwrap_or(0.0);
+                            let pb = b["food_cost_percent"]
+                                .as_str()
+                                .and_then(|s| s.parse::<f64>().ok())
+                                .unwrap_or(0.0);
                             pb.partial_cmp(&pa).unwrap_or(std::cmp::Ordering::Equal)
                         });
                         warnings.truncate(5);
@@ -1292,7 +1638,8 @@ impl ToolExecutor {
                 };
 
                 // 5. Сводка: подсчёт alerts
-                let total_alerts = expiring.len() + low_stock.len() + open_drafts.len() + dish_warnings.len();
+                let total_alerts =
+                    expiring.len() + low_stock.len() + open_drafts.len() + dish_warnings.len();
 
                 Ok(ToolResult {
                     tool_name: name,
@@ -1344,50 +1691,63 @@ impl ToolExecutor {
         tenant_id: TenantId,
         plan: &super::actions::ActionPlan,
     ) -> AppResult<String> {
-        let tool = plan.write_tool.as_ref()
+        let tool = plan
+            .write_tool
+            .as_ref()
             .ok_or_else(|| AppError::internal("Action plan has no write_tool"))?;
 
         match tool {
             CopilotTool::PrepareInventoryUpdate => {
-                self.execute_inventory_add(user_id, tenant_id, &plan.payload).await
+                self.execute_inventory_add(user_id, tenant_id, &plan.payload)
+                    .await
             }
             CopilotTool::WriteOffInventory => {
-                self.execute_inventory_writeoff(tenant_id, &plan.payload).await
+                self.execute_inventory_writeoff(tenant_id, &plan.payload)
+                    .await
             }
             CopilotTool::AdjustInventoryQuantity => {
-                self.execute_adjust_quantity(user_id, tenant_id, &plan.payload).await
+                self.execute_adjust_quantity(user_id, tenant_id, &plan.payload)
+                    .await
             }
             CopilotTool::PreparePurchaseDraft => {
-                self.execute_purchase_draft(user_id, tenant_id, &plan.payload).await
+                self.execute_purchase_draft(user_id, tenant_id, &plan.payload)
+                    .await
             }
             CopilotTool::SendPurchaseOrder => {
-                self.execute_send_purchase_order(user_id, &plan.payload).await
+                self.execute_send_purchase_order(user_id, &plan.payload)
+                    .await
             }
             CopilotTool::UpdateDishPrice => {
-                self.execute_update_dish_price(tenant_id, &plan.payload).await
+                self.execute_update_dish_price(tenant_id, &plan.payload)
+                    .await
             }
             CopilotTool::CreateRecipe => {
-                self.execute_create_recipe(user_id, tenant_id, &plan.payload).await
+                self.execute_create_recipe(user_id, tenant_id, &plan.payload)
+                    .await
             }
-            CopilotTool::CreateDish => {
-                self.execute_create_dish(tenant_id, &plan.payload).await
-            }
+            CopilotTool::CreateDish => self.execute_create_dish(tenant_id, &plan.payload).await,
             _ => {
                 tracing::warn!("execute_write_tool: tool {:?} not yet implemented", tool);
-                Ok(format!("Action {} logged (execution pending implementation).", tool.name()))
+                Ok(format!(
+                    "Action {} logged (execution pending implementation).",
+                    tool.name()
+                ))
             }
         }
     }
 
     /// Извлечь {name, quantity, unit, reason?} из payload (поддерживает items[] и flat).
-    fn extract_item(payload: &serde_json::Value) -> AppResult<(String, f64, String, Option<String>)> {
+    fn extract_item(
+        payload: &serde_json::Value,
+    ) -> AppResult<(String, f64, String, Option<String>)> {
         let item = if let Some(items) = payload.get("items").and_then(|v| v.as_array()) {
             items.first().cloned().unwrap_or(serde_json::Value::Null)
         } else {
             payload.clone()
         };
 
-        let name = item.get("ingredient_name")
+        let name = item
+            .get("ingredient_name")
             .or_else(|| item.get("ingredient"))
             .or_else(|| item.get("item_name"))
             .or_else(|| item.get("product_name"))
@@ -1398,14 +1758,20 @@ impl ToolExecutor {
             .ok_or_else(|| AppError::validation("ingredient_name is required in action payload"))?
             .to_string();
 
-        let quantity = item.get("quantity")
+        let quantity = item
+            .get("quantity")
             .and_then(|v| v.as_f64())
             .ok_or_else(|| AppError::validation("quantity is required in action payload"))?;
 
-        let unit = item.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
+        let unit = item
+            .get("unit")
+            .and_then(|v| v.as_str())
+            .unwrap_or("kg")
+            .to_string();
 
         // reason может быть на уровне item или на верхнем уровне payload
-        let reason = item.get("reason")
+        let reason = item
+            .get("reason")
             .or_else(|| payload.get("reason"))
             .and_then(|v| v.as_str())
             .map(String::from);
@@ -1414,8 +1780,13 @@ impl ToolExecutor {
     }
 
     /// Найти catalog_ingredient_id по имени (EN → RU fallback).
-    async fn find_catalog_id(&self, name: &str) -> AppResult<crate::domain::catalog::CatalogIngredientId> {
-        let candidates = self.services.catalog
+    async fn find_catalog_id(
+        &self,
+        name: &str,
+    ) -> AppResult<crate::domain::catalog::CatalogIngredientId> {
+        let candidates = self
+            .services
+            .catalog
             .search_ingredients(name, Language::En, 5)
             .await
             .unwrap_or_default();
@@ -1424,16 +1795,23 @@ impl ToolExecutor {
             return Ok(ing.id);
         }
 
-        let candidates_ru = self.services.catalog
+        let candidates_ru = self
+            .services
+            .catalog
             .search_ingredients(name, Language::Ru, 5)
             .await
             .unwrap_or_default();
 
-        candidates_ru.into_iter().next()
+        candidates_ru
+            .into_iter()
+            .next()
             .map(|i| i.id)
-            .ok_or_else(|| AppError::not_found(
-                format!("Ingredient '{}' not found in catalog. Please use the exact catalog name.", name)
-            ))
+            .ok_or_else(|| {
+                AppError::not_found(format!(
+                    "Ingredient '{}' not found in catalog. Please use the exact catalog name.",
+                    name
+                ))
+            })
     }
 
     /// Добавить/обновить позицию в инвентаре.
@@ -1451,20 +1829,25 @@ impl ToolExecutor {
         let now = time::OffsetDateTime::now_utc();
         let expires_at = now + time::Duration::days(30);
 
-        self.services.inventory
+        self.services
+            .inventory
             .add_product(
-                user_id,
-                tenant_id,
-                catalog_id,
+                user_id, tenant_id, catalog_id,
                 0, // price_per_unit_cents = 0 (неизвестно)
-                quantity,
-                now,
-                expires_at,
+                quantity, now, expires_at,
             )
             .await?;
 
-        tracing::info!("✅ Copilot write: added {} {} {} to inventory", quantity, unit, name);
-        Ok(format!("Added {} {} of {} to inventory.", quantity, unit, name))
+        tracing::info!(
+            "✅ Copilot write: added {} {} {} to inventory",
+            quantity,
+            unit,
+            name
+        );
+        Ok(format!(
+            "Added {} {} of {} to inventory.",
+            quantity, unit, name
+        ))
     }
 
     /// Списать со склада (FIFO).
@@ -1484,7 +1867,8 @@ impl ToolExecutor {
             .unwrap_or("manual")
             .to_string();
 
-        self.services.inventory
+        self.services
+            .inventory
             .deduct_fifo(
                 tenant_id,
                 catalog_id,
@@ -1495,8 +1879,17 @@ impl ToolExecutor {
             )
             .await?;
 
-        tracing::info!("✅ Copilot write-off: {} {} {} reason={}", quantity, unit, name, reason);
-        Ok(format!("Wrote off {} {} of {} (reason: {}).", quantity, unit, name, reason))
+        tracing::info!(
+            "✅ Copilot write-off: {} {} {} reason={}",
+            quantity,
+            unit,
+            name,
+            reason
+        );
+        Ok(format!(
+            "Wrote off {} {} of {} (reason: {}).",
+            quantity, unit, name, reason
+        ))
     }
 
     /// Создать purchase draft.
@@ -1507,12 +1900,14 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        let supplier = payload.get("supplier_name")
+        let supplier = payload
+            .get("supplier_name")
             .or_else(|| payload.get("supplier"))
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        let delivery_date = payload.get("delivery_date")
+        let delivery_date = payload
+            .get("delivery_date")
             .or_else(|| payload.get("date"))
             .and_then(|v| v.as_str())
             .and_then(|s| {
@@ -1520,22 +1915,27 @@ impl ToolExecutor {
                 time::Date::parse(s, &fmt).ok()
             });
 
-        let note = payload.get("note")
+        let note = payload
+            .get("note")
             .and_then(|v| v.as_str())
             .map(String::from)
             .or_else(|| Some("Created by Copilot".to_string()));
 
-        let items_arr = payload.get("items")
+        let items_arr = payload
+            .get("items")
             .and_then(|v| v.as_array())
             .ok_or_else(|| AppError::validation("purchase draft requires 'items' array"))?;
 
         if items_arr.is_empty() {
-            return Err(AppError::validation("purchase draft must have at least one item"));
+            return Err(AppError::validation(
+                "purchase draft must have at least one item",
+            ));
         }
 
         let mut items_input = Vec::with_capacity(items_arr.len());
         for raw in items_arr {
-            let name = raw.get("ingredient_name")
+            let name = raw
+                .get("ingredient_name")
                 .or_else(|| raw.get("ingredient"))
                 .or_else(|| raw.get("item_name"))
                 .or_else(|| raw.get("product_name"))
@@ -1546,14 +1946,18 @@ impl ToolExecutor {
                 .ok_or_else(|| AppError::validation("each item requires ingredient_name"))?
                 .to_string();
 
-            let quantity = raw.get("quantity")
+            let quantity = raw
+                .get("quantity")
                 .and_then(|v| v.as_f64())
                 .ok_or_else(|| AppError::validation("each item requires quantity"))?;
 
-            let unit = raw.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
+            let unit = raw
+                .get("unit")
+                .and_then(|v| v.as_str())
+                .unwrap_or("kg")
+                .to_string();
 
-            let price_per_unit_cents = raw.get("price_per_unit_cents")
-                .and_then(|v| v.as_i64());
+            let price_per_unit_cents = raw.get("price_per_unit_cents").and_then(|v| v.as_i64());
 
             // Поиск catalog_id (опционально)
             let catalog_ingredient_id = self.find_catalog_id(&name).await.ok().map(|c| c.as_uuid());
@@ -1568,22 +1972,37 @@ impl ToolExecutor {
         }
 
         let count = items_input.len();
-        let draft_id = self.services.purchase_drafts
-            .create(user_id, tenant_id, CreatePurchaseDraftInput {
-                supplier_name: supplier.clone(),
-                delivery_date,
-                note,
-                items: items_input,
-            })
+        let draft_id = self
+            .services
+            .purchase_drafts
+            .create(
+                user_id,
+                tenant_id,
+                CreatePurchaseDraftInput {
+                    supplier_name: supplier.clone(),
+                    delivery_date,
+                    note,
+                    items: items_input,
+                },
+            )
             .await?;
 
-        tracing::info!("✅ Copilot purchase draft: id={} items={} supplier={:?}", draft_id, count, supplier);
+        tracing::info!(
+            "✅ Copilot purchase draft: id={} items={} supplier={:?}",
+            draft_id,
+            count,
+            supplier
+        );
 
         Ok(format!(
             "Purchase draft created with {} item(s){}{}.",
             count,
-            supplier.map(|s| format!(" for supplier {}", s)).unwrap_or_default(),
-            delivery_date.map(|d| format!(" (delivery {})", d)).unwrap_or_default(),
+            supplier
+                .map(|s| format!(" for supplier {}", s))
+                .unwrap_or_default(),
+            delivery_date
+                .map(|d| format!(" (delivery {})", d))
+                .unwrap_or_default(),
         ))
     }
 
@@ -1594,23 +2013,33 @@ impl ToolExecutor {
         user_id: UserId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        let id_str = payload.get("id")
+        let id_str = payload
+            .get("id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::validation("send_purchase_order requires 'id'"))?;
-        let draft_id: Uuid = id_str.parse()
+        let draft_id: Uuid = id_str
+            .parse()
             .map_err(|_| AppError::validation("invalid UUID for purchase draft id"))?;
 
-        let (id, supplier, items_count) = self.services.purchase_drafts
+        let (id, supplier, items_count) = self
+            .services
+            .purchase_drafts
             .mark_sent(draft_id, user_id)
             .await?;
 
-        tracing::info!("✅ Copilot send_purchase_order: draft {} sent ({} items)", id, items_count);
+        tracing::info!(
+            "✅ Copilot send_purchase_order: draft {} sent ({} items)",
+            id,
+            items_count
+        );
 
         Ok(format!(
             "Purchase draft {} marked as sent ({} item(s){}). Status: draft → sent.",
             &id.to_string()[..8],
             items_count,
-            supplier.map(|s| format!(", supplier {}", s)).unwrap_or_default(),
+            supplier
+                .map(|s| format!(", supplier {}", s))
+                .unwrap_or_default(),
         ))
     }
 
@@ -1623,25 +2052,37 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        let name = payload.get("ingredient_name")
+        let name = payload
+            .get("ingredient_name")
             .or_else(|| payload.get("ingredient"))
             .or_else(|| payload.get("name"))
             .or_else(|| payload.get("item_name"))
             .or_else(|| payload.get("product_name"))
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::validation("adjust_inventory_quantity requires 'ingredient_name'"))?;
+            .ok_or_else(|| {
+                AppError::validation("adjust_inventory_quantity requires 'ingredient_name'")
+            })?;
 
-        let target = payload.get("target_quantity")
+        let target = payload
+            .get("target_quantity")
             .or_else(|| payload.get("quantity"))
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| AppError::validation("adjust_inventory_quantity requires 'target_quantity'"))?;
+            .ok_or_else(|| {
+                AppError::validation("adjust_inventory_quantity requires 'target_quantity'")
+            })?;
 
         if target < 0.0 {
             return Err(AppError::validation("target_quantity must be non-negative"));
         }
 
-        let unit = payload.get("unit").and_then(|v| v.as_str()).unwrap_or("kg").to_string();
-        let reason = payload.get("reason").and_then(|v| v.as_str())
+        let unit = payload
+            .get("unit")
+            .and_then(|v| v.as_str())
+            .unwrap_or("kg")
+            .to_string();
+        let reason = payload
+            .get("reason")
+            .and_then(|v| v.as_str())
             .map(normalize_correction_reason)
             .unwrap_or("correction");
 
@@ -1649,17 +2090,23 @@ impl ToolExecutor {
         let cat_uuid = catalog_id.as_uuid();
 
         // Текущий остаток
-        let items = self.services.inventory
+        let items = self
+            .services
+            .inventory
             .list_products_with_details(user_id.clone(), tenant_id.clone(), Language::En)
             .await?;
-        let current: f64 = items.iter()
+        let current: f64 = items
+            .iter()
             .filter(|i| i.product.id == cat_uuid)
             .map(|i| i.remaining_quantity)
             .sum();
 
         let diff = target - current;
         if diff.abs() < 0.0001 {
-            return Ok(format!("No change: {} already at {} {}.", name, current, unit));
+            return Ok(format!(
+                "No change: {} already at {} {}.",
+                name, current, unit
+            ));
         }
 
         if diff > 0.0 {
@@ -1667,7 +2114,8 @@ impl ToolExecutor {
             // price=0 (correction), expires_at = +365 days.
             let now = time::OffsetDateTime::now_utc();
             let expires = now + time::Duration::days(365);
-            self.services.inventory
+            self.services
+                .inventory
                 .add_product(
                     user_id.clone(),
                     tenant_id.clone(),
@@ -1678,10 +2126,17 @@ impl ToolExecutor {
                     expires,
                 )
                 .await?;
-            tracing::info!("✅ Copilot adjust +{} {} of {} (reason={})", diff, unit, name, reason);
+            tracing::info!(
+                "✅ Copilot adjust +{} {} of {} (reason={})",
+                diff,
+                unit,
+                name,
+                reason
+            );
         } else {
             // FIFO write-off на |diff|
-            self.services.inventory
+            self.services
+                .inventory
                 .deduct_fifo(
                     tenant_id.clone(),
                     catalog_id,
@@ -1691,7 +2146,13 @@ impl ToolExecutor {
                     Some(format!("Copilot correction: {} ({})", name, reason)),
                 )
                 .await?;
-            tracing::info!("✅ Copilot adjust {} {} of {} (reason={})", diff, unit, name, reason);
+            tracing::info!(
+                "✅ Copilot adjust {} {} of {} (reason={})",
+                diff,
+                unit,
+                name,
+                reason
+            );
         }
 
         Ok(format!(
@@ -1707,21 +2168,27 @@ impl ToolExecutor {
         tenant_id: TenantId,
         payload: &serde_json::Value,
     ) -> AppResult<String> {
-        let dish_id_str = payload.get("dish_id")
+        let dish_id_str = payload
+            .get("dish_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::validation("update_dish_price requires resolved 'dish_id'"))?;
-        let dish_uuid: Uuid = dish_id_str.parse()
+        let dish_uuid: Uuid = dish_id_str
+            .parse()
             .map_err(|_| AppError::validation("invalid UUID for dish_id"))?;
 
-        let new_price_cents = payload.get("new_price_cents")
+        let new_price_cents = payload
+            .get("new_price_cents")
             .and_then(|v| v.as_i64())
             .ok_or_else(|| AppError::validation("update_dish_price requires 'new_price_cents'"))?;
 
         if new_price_cents <= 0 {
-            return Err(AppError::validation("new_price_cents must be greater than 0"));
+            return Err(AppError::validation(
+                "new_price_cents must be greater than 0",
+            ));
         }
 
-        let dish_name = payload.get("dish_name")
+        let dish_name = payload
+            .get("dish_name")
             .and_then(|v| v.as_str())
             .unwrap_or("dish")
             .to_string();
@@ -1729,11 +2196,14 @@ impl ToolExecutor {
         let new_price = crate::domain::Money::from_cents(new_price_cents)?;
         let dish_id = crate::domain::DishId::from_uuid(dish_uuid);
 
-        let updated = self.services.dishes
+        let updated = self
+            .services
+            .dishes
             .set_selling_price(dish_id, tenant_id, new_price)
             .await?;
 
-        let margin_str = updated.profit_margin_percent()
+        let margin_str = updated
+            .profit_margin_percent()
             .map(|m| format!(", new margin {:.1}%", m))
             .unwrap_or_default();
 
@@ -1756,9 +2226,18 @@ impl ToolExecutor {
 /// Нормализовать причину correction к одному из допустимых значений.
 fn normalize_correction_reason(input: &str) -> &'static str {
     let s = input.to_lowercase();
-    if s.contains("inventory") || s.contains("инвентар") || s.contains("check") || s.contains("audit") {
+    if s.contains("inventory")
+        || s.contains("инвентар")
+        || s.contains("check")
+        || s.contains("audit")
+    {
         "inventory_check"
-    } else if s.contains("manual") || s.contains("count") || s.contains("ручн") || s.contains("пересчёт") || s.contains("пересчет") {
+    } else if s.contains("manual")
+        || s.contains("count")
+        || s.contains("ручн")
+        || s.contains("пересчёт")
+        || s.contains("пересчет")
+    {
         "manual_count"
     } else {
         "correction"
@@ -1768,13 +2247,16 @@ fn normalize_correction_reason(input: &str) -> &'static str {
 /// Нормализовать причину списания к одному из допустимых значений.
 fn normalize_writeoff_reason(input: &str) -> &'static str {
     let s = input.to_lowercase();
-    if s.contains("expir") || s.contains("просроч") || s.contains("истёк") || s.contains("истек") {
+    if s.contains("expir") || s.contains("просроч") || s.contains("истёк") || s.contains("истек")
+    {
         "expired"
-    } else if s.contains("product") || s.contains("производ") || s.contains("приготовл") {
+    } else if s.contains("product") || s.contains("производ") || s.contains("приготовл")
+    {
         "used_in_production"
     } else if s.contains("waste") || s.contains("испорч") || s.contains("отход") {
         "waste"
-    } else if s.contains("correct") || s.contains("корректир") || s.contains("исправ") {
+    } else if s.contains("correct") || s.contains("корректир") || s.contains("исправ")
+    {
         "correction"
     } else {
         "manual"
@@ -1797,8 +2279,13 @@ enum SendPreview {
 enum AdjustPreview {
     Ok(Vec<ActionChange>),
     /// Целевой остаток уже равен текущему — диффа нет, действие не нужно.
-    Noop { name: String, current: f64 },
-    NotFound { name: String },
+    Noop {
+        name: String,
+        current: f64,
+    },
+    NotFound {
+        name: String,
+    },
 }
 
 /// Внутренний результат пред-валидации для UpdateDishPrice.
@@ -1813,7 +2300,10 @@ enum DishPriceUpdatePreview {
     /// Цена уже равна целевой — действие не нужно.
     SamePrice { name: String, current_cents: i64 },
     /// Несколько блюд подходят под запрос — нужна disambiguation.
-    Multiple { query: String, candidates: Vec<(String, i64)> },
+    Multiple {
+        query: String,
+        candidates: Vec<(String, i64)>,
+    },
     /// Не найдено ни одного блюда.
     NotFound { query: String },
     /// new_price ≤ 0 или некорректные args.
@@ -1840,9 +2330,15 @@ enum CreateRecipePreview {
     /// Рецепт с таким именем уже существует (case-insensitive).
     AlreadyExists { name: String },
     /// Один из ингредиентов не найден в каталоге.
-    IngredientNotFound { query: String, suggestions: Vec<String> },
+    IngredientNotFound {
+        query: String,
+        suggestions: Vec<String>,
+    },
     /// Несколько вариантов в каталоге — нужна disambiguation.
-    AmbiguousIngredient { query: String, candidates: Vec<String> },
+    AmbiguousIngredient {
+        query: String,
+        candidates: Vec<String>,
+    },
     /// Некорректные args (servings/quantity ≤ 0, missing fields, bad unit).
     Invalid { reason: String },
 }
@@ -1861,7 +2357,10 @@ enum CreateDishPreview {
     /// Рецепт с таким именем не найден.
     RecipeNotFound { query: String },
     /// Несколько рецептов подошли под запрос.
-    AmbiguousRecipe { query: String, candidates: Vec<String> },
+    AmbiguousRecipe {
+        query: String,
+        candidates: Vec<String>,
+    },
     /// Блюдо с таким именем уже существует.
     DuplicateDishName { name: String },
     /// Некорректные args (цена ≤ 0, missing fields).
@@ -1886,25 +2385,26 @@ fn convert_quantity(
         (Unit::Milliliter, Unit::Liter) => Ok(qty / 1000.0),
         _ => Err(format!(
             "cannot convert {} to {} (incompatible unit families)",
-            from.as_str(), to.as_str()
+            from.as_str(),
+            to.as_str()
         )),
     }
 }
 
 fn tool_to_plan_type(tool: &CopilotTool) -> ActionPlanType {
     match tool {
-        CopilotTool::PrepareInventoryUpdate  => ActionPlanType::AddInventoryItems,
+        CopilotTool::PrepareInventoryUpdate => ActionPlanType::AddInventoryItems,
         CopilotTool::AdjustInventoryQuantity => ActionPlanType::AdjustInventoryQuantity,
-        CopilotTool::WriteOffInventory       => ActionPlanType::WriteOffInventory,
-        CopilotTool::PreparePurchaseDraft    => ActionPlanType::CreatePurchaseDraft,
-        CopilotTool::SendPurchaseOrder       => ActionPlanType::SendPurchaseOrder,
-        CopilotTool::UpdateDishPrice         => ActionPlanType::UpdateDishPrice,
-        CopilotTool::CreateRecipe            => ActionPlanType::CreateRecipe,
-        CopilotTool::CreateDish              => ActionPlanType::CreateDish,
-        CopilotTool::GenerateLabRecipe       => ActionPlanType::GenerateLabRecipe,
-        CopilotTool::GenerateProductReport   => ActionPlanType::GenerateProductReport,
-        CopilotTool::SimulateLabProduct      => ActionPlanType::SimulateLabProduct,
-        _                                    => ActionPlanType::NoWriteAction,
+        CopilotTool::WriteOffInventory => ActionPlanType::WriteOffInventory,
+        CopilotTool::PreparePurchaseDraft => ActionPlanType::CreatePurchaseDraft,
+        CopilotTool::SendPurchaseOrder => ActionPlanType::SendPurchaseOrder,
+        CopilotTool::UpdateDishPrice => ActionPlanType::UpdateDishPrice,
+        CopilotTool::CreateRecipe => ActionPlanType::CreateRecipe,
+        CopilotTool::CreateDish => ActionPlanType::CreateDish,
+        CopilotTool::GenerateLabRecipe => ActionPlanType::GenerateLabRecipe,
+        CopilotTool::GenerateProductReport => ActionPlanType::GenerateProductReport,
+        CopilotTool::SimulateLabProduct => ActionPlanType::SimulateLabProduct,
+        _ => ActionPlanType::NoWriteAction,
     }
 }
 
@@ -1918,21 +2418,28 @@ fn build_preview_changes(
         CopilotTool::PrepareInventoryUpdate | CopilotTool::WriteOffInventory => {
             // Вариант 1: args = { "items": [{ "ingredient", "quantity", "unit" }] }
             if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
-                return items.iter().filter_map(|item| {
-                    let ingredient = item.get("ingredient").or_else(|| item.get("ingredient_name"))?.as_str()?;
-                    let quantity = item.get("quantity")?.as_f64()?;
-                    let unit = item.get("unit").and_then(|u| u.as_str()).unwrap_or("kg");
-                    Some(ActionChange {
-                        entity: ingredient.to_string(),
-                        field: "quantity".to_string(),
-                        before: None,
-                        after: format!("{} {}", quantity, unit),
-                        unit: Some(unit.to_string()),
+                return items
+                    .iter()
+                    .filter_map(|item| {
+                        let ingredient = item
+                            .get("ingredient")
+                            .or_else(|| item.get("ingredient_name"))?
+                            .as_str()?;
+                        let quantity = item.get("quantity")?.as_f64()?;
+                        let unit = item.get("unit").and_then(|u| u.as_str()).unwrap_or("kg");
+                        Some(ActionChange {
+                            entity: ingredient.to_string(),
+                            field: "quantity".to_string(),
+                            before: None,
+                            after: format!("{} {}", quantity, unit),
+                            unit: Some(unit.to_string()),
+                        })
                     })
-                }).collect();
+                    .collect();
             }
             // Вариант 2: плоские args от Gemini = { "ingredient_name"/"ingredient"/"name", "quantity", "unit" }
-            if let Some(name) = args.get("ingredient_name")
+            if let Some(name) = args
+                .get("ingredient_name")
                 .or_else(|| args.get("ingredient"))
                 .or_else(|| args.get("name"))
                 .and_then(|v| v.as_str())
@@ -1965,11 +2472,13 @@ fn build_preview_changes(
             vec![]
         }
         CopilotTool::PreparePurchaseDraft => {
-            let supplier = args.get("supplier_name")
+            let supplier = args
+                .get("supplier_name")
                 .or_else(|| args.get("supplier"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("—");
-            let delivery = args.get("delivery_date")
+            let delivery = args
+                .get("delivery_date")
                 .or_else(|| args.get("date"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("—");
@@ -1979,30 +2488,37 @@ fn build_preview_changes(
                 None => return vec![],
             };
 
-            let mut changes: Vec<ActionChange> = items.iter().filter_map(|it| {
-                let name = it.get("ingredient_name")
-                    .or_else(|| it.get("ingredient"))
-                    .or_else(|| it.get("name"))
-                    .and_then(|v| v.as_str())?;
-                let qty = it.get("quantity").and_then(|v| v.as_f64())?;
-                let unit = it.get("unit").and_then(|v| v.as_str()).unwrap_or("kg");
-                Some(ActionChange {
-                    entity: format!("Purchase: {}", name),
-                    field: "quantity".to_string(),
-                    before: None,
-                    after: format!("{} {}", qty, unit),
-                    unit: Some(unit.to_string()),
+            let mut changes: Vec<ActionChange> = items
+                .iter()
+                .filter_map(|it| {
+                    let name = it
+                        .get("ingredient_name")
+                        .or_else(|| it.get("ingredient"))
+                        .or_else(|| it.get("name"))
+                        .and_then(|v| v.as_str())?;
+                    let qty = it.get("quantity").and_then(|v| v.as_f64())?;
+                    let unit = it.get("unit").and_then(|v| v.as_str()).unwrap_or("kg");
+                    Some(ActionChange {
+                        entity: format!("Purchase: {}", name),
+                        field: "quantity".to_string(),
+                        before: None,
+                        after: format!("{} {}", qty, unit),
+                        unit: Some(unit.to_string()),
+                    })
                 })
-            }).collect();
+                .collect();
 
             // Header row
-            changes.insert(0, ActionChange {
-                entity: "Purchase draft".to_string(),
-                field: "supplier / delivery".to_string(),
-                before: None,
-                after: format!("{} / {}", supplier, delivery),
-                unit: None,
-            });
+            changes.insert(
+                0,
+                ActionChange {
+                    entity: "Purchase draft".to_string(),
+                    field: "supplier / delivery".to_string(),
+                    before: None,
+                    after: format!("{} / {}", supplier, delivery),
+                    unit: None,
+                },
+            );
             changes
         }
         _ => vec![],

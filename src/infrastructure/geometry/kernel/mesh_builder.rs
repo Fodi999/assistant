@@ -46,12 +46,7 @@ impl MeshBuilder {
     }
 
     /// Push a new vertex (position, normal, uv) and return its global index.
-    pub fn add_vertex(
-        &mut self,
-        position: [f32; 3],
-        normal: [f32; 3],
-        uv: [f32; 2],
-    ) -> usize {
+    pub fn add_vertex(&mut self, position: [f32; 3], normal: [f32; 3], uv: [f32; 2]) -> usize {
         let idx = self.vertices.len();
         self.vertices.push(position);
         self.normals.push(normal);
@@ -81,23 +76,14 @@ impl MeshBuilder {
     pub fn add_triangle(&mut self, group: usize, a: usize, b: usize, c: usize) {
         debug_assert!(group < self.groups.len(), "unknown group {group}");
         debug_assert!(
-            a < self.vertices.len()
-                && b < self.vertices.len()
-                && c < self.vertices.len(),
+            a < self.vertices.len() && b < self.vertices.len() && c < self.vertices.len(),
             "triangle index out of range"
         );
         self.groups[group].faces.push([a, b, c]);
     }
 
     /// Append a quad as two triangles `(a,b,c) (a,c,d)` (CCW winding).
-    pub fn add_quad(
-        &mut self,
-        group: usize,
-        a: usize,
-        b: usize,
-        c: usize,
-        d: usize,
-    ) {
+    pub fn add_quad(&mut self, group: usize, a: usize, b: usize, c: usize, d: usize) {
         self.add_triangle(group, a, b, c);
         self.add_triangle(group, a, c, d);
     }

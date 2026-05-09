@@ -14,9 +14,9 @@
 //!
 //! Target: <50ms, zero external calls.
 
-pub mod response;
-pub mod parser;
 pub mod matcher;
+pub mod parser;
+pub mod response;
 pub mod service;
 
 pub use response::SmartParseResponse;

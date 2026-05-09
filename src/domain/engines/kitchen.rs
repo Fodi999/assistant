@@ -7,31 +7,31 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct ScaleRecipeRequest {
-    pub value:         f64,
+    pub value: f64,
     pub from_portions: f64,
-    pub to_portions:   f64,
+    pub to_portions: f64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct YieldRequest {
-    pub raw_weight:    f64,
+    pub raw_weight: f64,
     pub usable_weight: f64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct FoodCostRequest {
-    pub price:      f64,
-    pub amount:     f64,
-    pub portions:   Option<f64>,
+    pub price: f64,
+    pub amount: f64,
+    pub portions: Option<f64>,
     pub sell_price: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct EquivalentsRequest {
     pub ingredient: String,
-    pub value:      Option<f64>,
-    pub unit:       Option<String>,
-    pub lang:       Option<String>,
+    pub value: Option<f64>,
+    pub unit: Option<String>,
+    pub lang: Option<String>,
 }
 
 /// KitchenEngine: professional kitchen calculators.

@@ -1,16 +1,16 @@
 pub mod ai_client_impl; // 🆕 AiClient trait implementation for LlmAdapter
-pub mod cache;          // 🆕 In-memory cache for public endpoints (saves Neon CU)
+pub mod cache; // 🆕 In-memory cache for public endpoints (saves Neon CU)
 pub mod config;
-pub mod gemini;         // 🆕 New vertical-slice Gemini adapters (vision_3d, …)
+pub mod gemini; // 🆕 New vertical-slice Gemini adapters (vision_3d, …)
 pub mod gemini_service; // 🆕 Google Gemini AI (replaces Groq for generation)
-pub mod geometry;       // 🆕 Procedural 3D geometry generators (PR #4)
-pub mod groq_service;   // Legacy — types re-exported by gemini_service
+pub mod geometry; // 🆕 Procedural 3D geometry generators (PR #4)
+pub mod groq_service; // Legacy — types re-exported by gemini_service
 pub mod ingredient_cache; // 🆕 In-memory ingredient catalog for Sous-Chef (0 SQL)
 pub mod llm_adapter;
 pub mod persistence;
 pub mod r2_client;
 pub mod security;
-pub mod storage;        // 🆕 Object storage abstraction (local FS first, R2/S3 later)
+pub mod storage; // 🆕 Object storage abstraction (local FS first, R2/S3 later)
 pub mod stripe_service; // 🆕 Stripe Checkout + Webhook
 
 pub use cache::AppCache;

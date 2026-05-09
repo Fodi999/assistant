@@ -25,28 +25,38 @@ impl CopilotScreen {
     /// Краткое описание экрана для LLM-промпта.
     pub fn description(&self) -> &'static str {
         match self {
-            CopilotScreen::Dashboard     => "main dashboard with summary of inventory, dishes, and activity",
-            CopilotScreen::Inventory     => "stock management: ingredients with quantities, expiry dates, alerts",
-            CopilotScreen::Dishes        => "dish catalog: recipes with costing, allergens, nutritional info",
-            CopilotScreen::Recipes       => "AI-generated recipes and user-saved recipes",
-            CopilotScreen::Laboratory    => "food-tech lab: create and simulate new products and sauces",
-            CopilotScreen::MenuEngineering => "menu engineering: dish profitability and pricing matrix",
-            CopilotScreen::Pricing       => "action bundle purchase page",
-            CopilotScreen::Profile       => "user profile and preferences",
-            CopilotScreen::Chat          => "general AI chef chat",
+            CopilotScreen::Dashboard => {
+                "main dashboard with summary of inventory, dishes, and activity"
+            }
+            CopilotScreen::Inventory => {
+                "stock management: ingredients with quantities, expiry dates, alerts"
+            }
+            CopilotScreen::Dishes => {
+                "dish catalog: recipes with costing, allergens, nutritional info"
+            }
+            CopilotScreen::Recipes => "AI-generated recipes and user-saved recipes",
+            CopilotScreen::Laboratory => {
+                "food-tech lab: create and simulate new products and sauces"
+            }
+            CopilotScreen::MenuEngineering => {
+                "menu engineering: dish profitability and pricing matrix"
+            }
+            CopilotScreen::Pricing => "action bundle purchase page",
+            CopilotScreen::Profile => "user profile and preferences",
+            CopilotScreen::Chat => "general AI chef chat",
         }
     }
 
     /// Какие read tools автоматически доступны на этом экране.
     pub fn default_context_tools(&self) -> Vec<&'static str> {
         match self {
-            CopilotScreen::Inventory     => vec!["get_inventory", "get_expiring_soon"],
-            CopilotScreen::Dishes        => vec!["get_dishes"],
-            CopilotScreen::Recipes       => vec!["get_recipes"],
-            CopilotScreen::Laboratory    => vec!["get_lab_experiment"],
+            CopilotScreen::Inventory => vec!["get_inventory", "get_expiring_soon"],
+            CopilotScreen::Dishes => vec!["get_dishes"],
+            CopilotScreen::Recipes => vec!["get_recipes"],
+            CopilotScreen::Laboratory => vec!["get_lab_experiment"],
             CopilotScreen::MenuEngineering => vec!["get_dishes"],
-            CopilotScreen::Dashboard     => vec!["get_inventory", "get_dishes"],
-            _                            => vec![],
+            CopilotScreen::Dashboard => vec!["get_inventory", "get_dishes"],
+            _ => vec![],
         }
     }
 }
@@ -105,7 +115,8 @@ impl CopilotContext {
     /// Является ли пользователь owner-ом (может всё).
     pub fn is_owner(&self) -> bool {
         // Owner имеет WriteInventory + WriteDishes как минимум
-        self.permissions.contains(&CopilotPermission::WriteInventory)
+        self.permissions
+            .contains(&CopilotPermission::WriteInventory)
             && self.permissions.contains(&CopilotPermission::WriteDishes)
     }
 

@@ -42,9 +42,7 @@ fn build_obj(mesh: &Mesh) -> String {
     } else {
         mesh.groups.iter().map(|g| g.faces.len()).sum()
     };
-    let mut out = String::with_capacity(
-        mesh.vertices.len() * 32 + face_count * 24 + 256,
-    );
+    let mut out = String::with_capacity(mesh.vertices.len() * 32 + face_count * 24 + 256);
 
     out.push_str("# Laboratory v2 — procedural OBJ\n");
     out.push_str("mtllib model.mtl\n\n");
@@ -109,7 +107,12 @@ fn write_material(out: &mut String, mat: &Material) {
     let [r, g, b] = mat.diffuse_color;
     out.push_str(&format!("\nnewmtl {}\n", mat.name));
     // Ambient = half diffuse for a pleasant look
-    out.push_str(&format!("Ka {:.4} {:.4} {:.4}\n", r * 0.5, g * 0.5, b * 0.5));
+    out.push_str(&format!(
+        "Ka {:.4} {:.4} {:.4}\n",
+        r * 0.5,
+        g * 0.5,
+        b * 0.5
+    ));
     out.push_str(&format!("Kd {r:.4} {g:.4} {b:.4}\n"));
     let s = mat.specular;
     out.push_str(&format!("Ks {s:.4} {s:.4} {s:.4}\n"));
@@ -162,8 +165,12 @@ mod tests {
         use crate::infrastructure::geometry::mesh::MaterialGroup;
         let mesh = Mesh::new_multi(
             vec![
-                [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
-                [2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [2.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [2.0, 1.0, 0.0],
             ],
             vec![[0.0, 0.0, 1.0]; 6],
             vec![[0.0, 0.0]; 6],

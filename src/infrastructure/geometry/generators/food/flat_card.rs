@@ -65,7 +65,12 @@ fn box_vertices(hw: f32, hh: f32, hd: f32) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec
     );
     // Back (-Z)
     face(
-        [[hw, -hh, -hd], [-hw, -hh, -hd], [-hw, hh, -hd], [hw, hh, -hd]],
+        [
+            [hw, -hh, -hd],
+            [-hw, -hh, -hd],
+            [-hw, hh, -hd],
+            [hw, hh, -hd],
+        ],
         [0.0, 0.0, -1.0],
         [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
     );
@@ -77,7 +82,12 @@ fn box_vertices(hw: f32, hh: f32, hd: f32) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec
     );
     // Bottom (-Y)
     face(
-        [[-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd], [-hw, -hh, hd]],
+        [
+            [-hw, -hh, -hd],
+            [hw, -hh, -hd],
+            [hw, -hh, hd],
+            [-hw, -hh, hd],
+        ],
         [0.0, -1.0, 0.0],
         [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
     );
@@ -89,7 +99,12 @@ fn box_vertices(hw: f32, hh: f32, hd: f32) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec
     );
     // Left (-X)
     face(
-        [[-hw, -hh, -hd], [-hw, -hh, hd], [-hw, hh, hd], [-hw, hh, -hd]],
+        [
+            [-hw, -hh, -hd],
+            [-hw, -hh, hd],
+            [-hw, hh, hd],
+            [-hw, hh, -hd],
+        ],
         [-1.0, 0.0, 0.0],
         [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
     );

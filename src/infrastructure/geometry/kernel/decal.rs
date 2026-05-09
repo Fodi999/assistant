@@ -154,8 +154,12 @@ mod tests {
     #[test]
     fn cylindrical_band_uvs_cover_unit_square() {
         let p = cylindrical_band(0.030, -0.01, 0.01, 16).unwrap();
-        let (mut min_u, mut max_u, mut min_v, mut max_v) =
-            (f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::NEG_INFINITY);
+        let (mut min_u, mut max_u, mut min_v, mut max_v) = (
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        );
         for [u, v] in &p.uvs {
             min_u = min_u.min(*u);
             max_u = max_u.max(*u);

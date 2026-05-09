@@ -142,7 +142,8 @@ pub fn analyze_shelf_life(
     let mut risk_rank: u8 = 0; // 0 low, 1 medium, 2 high, 3 critical
 
     // pH × aw danger zone without thermal kill step.
-    let danger_chemistry = matches!((max_ph, max_aw), (Some(ph), Some(aw)) if ph > PH_DANGER && aw > AW_DANGER);
+    let danger_chemistry =
+        matches!((max_ph, max_aw), (Some(ph), Some(aw)) if ph > PH_DANGER && aw > AW_DANGER);
     if danger_chemistry && !(has_pasteurize || has_sterilize) {
         risk_rank = risk_rank.max(3);
         warnings.push(LaboratoryWarning {
@@ -166,10 +167,7 @@ pub fn analyze_shelf_life(
     // High-risk categories without safe heat.
     let mut risky_proteins: Vec<&str> = Vec::new();
     for ing in ingredients {
-        if let Some(profile) = profiles
-            .iter()
-            .find(|p| p.slug == ing.ingredient_slug)
-        {
+        if let Some(profile) = profiles.iter().find(|p| p.slug == ing.ingredient_slug) {
             if let Some(cat) = profile.category.as_deref() {
                 let cat_lc = cat.to_lowercase();
                 if PROTEIN_CATEGORIES.contains(&cat_lc.as_str()) {
@@ -278,7 +276,9 @@ fn build_recommendations(
             extra_days: Some(14),
             cost_impact: Some("low".into()),
             quality_impact: Some("low".into()),
-            message: "Низкая активность воды и кислая среда позволяют хранение в сухом тёмном месте.".into(),
+            message:
+                "Низкая активность воды и кислая среда позволяют хранение в сухом тёмном месте."
+                    .into(),
         });
     }
 
@@ -290,7 +290,8 @@ fn build_recommendations(
             extra_days: Some(2),
             cost_impact: Some("low".into()),
             quality_impact: Some("low".into()),
-            message: "Добавление шага пастеризации (≥75°C) снизит риски и продлит срок хранения.".into(),
+            message: "Добавление шага пастеризации (≥75°C) снизит риски и продлит срок хранения."
+                .into(),
         });
     }
 
@@ -361,7 +362,13 @@ mod tests {
         }
     }
 
-    fn profile(slug: &str, days: Option<i32>, ph: Option<f64>, aw: Option<f64>, category: Option<&str>) -> LaboratoryIngredientProfile {
+    fn profile(
+        slug: &str,
+        days: Option<i32>,
+        ph: Option<f64>,
+        aw: Option<f64>,
+        category: Option<&str>,
+    ) -> LaboratoryIngredientProfile {
         LaboratoryIngredientProfile {
             slug: slug.into(),
             name: slug.into(),
@@ -378,7 +385,13 @@ mod tests {
         let res = analyze_shelf_life(
             &[ing("apricot")],
             &[step("heat", Some(75.0))],
-            &[profile("apricot", Some(5), Some(4.0), Some(1.0), Some("fruit"))],
+            &[profile(
+                "apricot",
+                Some(5),
+                Some(4.0),
+                Some(1.0),
+                Some("fruit"),
+            )],
             &LaboratoryProcessAnalysis::default(),
         );
         // base 5 + bonus 2 = 7, no protein, ph<4.6 -> low
@@ -395,15 +408,18 @@ mod tests {
         let res = analyze_shelf_life(
             &[ing("cream")],
             &[step("mix", None)],
-            &[profile("cream", Some(3), Some(6.5), Some(0.95), Some("dairy"))],
+            &[profile(
+                "cream",
+                Some(3),
+                Some(6.5),
+                Some(0.95),
+                Some("dairy"),
+            )],
             &LaboratoryProcessAnalysis::default(),
         );
         // ph>4.6 + aw>0.85 + no heat → critical
         assert_eq!(res.risk_level, "critical");
-        assert!(res
-            .warnings
-            .iter()
-            .any(|w| w.kind == "ph_aw_danger_zone"));
+        assert!(res.warnings.iter().any(|w| w.kind == "ph_aw_danger_zone"));
         // freezing + pasteurization advisory should appear
         assert!(res
             .storage_recommendations
@@ -420,16 +436,19 @@ mod tests {
         let res = analyze_shelf_life(
             &[ing("cream")],
             &[step("pasteurize", Some(80.0))],
-            &[profile("cream", Some(3), Some(6.5), Some(0.95), Some("dairy"))],
+            &[profile(
+                "cream",
+                Some(3),
+                Some(6.5),
+                Some(0.95),
+                Some("dairy"),
+            )],
             &LaboratoryProcessAnalysis::default(),
         );
         // danger chemistry + pasteurize → not critical (max 2 = high possible from protein? has heat → not added)
         assert_ne!(res.risk_level, "critical");
         // Should NOT have ph_aw_danger_zone warning when pasteurize present.
-        assert!(!res
-            .warnings
-            .iter()
-            .any(|w| w.kind == "ph_aw_danger_zone"));
+        assert!(!res.warnings.iter().any(|w| w.kind == "ph_aw_danger_zone"));
     }
 
     #[test]
@@ -442,10 +461,7 @@ mod tests {
         );
         assert_eq!(res.shelf_life_days, None);
         assert_eq!(res.risk_level, "medium");
-        assert!(res
-            .warnings
-            .iter()
-            .any(|w| w.kind == "shelf_life_unknown"));
+        assert!(res.warnings.iter().any(|w| w.kind == "shelf_life_unknown"));
     }
 
     #[test]
@@ -469,7 +485,13 @@ mod tests {
         let res = analyze_shelf_life(
             &[ing("dry_legume")],
             &[step("sterilize", Some(120.0))],
-            &[profile("dry_legume", Some(20), Some(6.0), Some(0.4), Some("grain"))],
+            &[profile(
+                "dry_legume",
+                Some(20),
+                Some(6.0),
+                Some(0.4),
+                Some("grain"),
+            )],
             &LaboratoryProcessAnalysis::default(),
         );
         // 20 + 7 = 27 ≤ 30 → 27
@@ -478,7 +500,13 @@ mod tests {
         let res2 = analyze_shelf_life(
             &[ing("dry_legume")],
             &[step("sterilize", Some(120.0))],
-            &[profile("dry_legume", Some(60), Some(6.0), Some(0.4), Some("grain"))],
+            &[profile(
+                "dry_legume",
+                Some(60),
+                Some(6.0),
+                Some(0.4),
+                Some("grain"),
+            )],
             &LaboratoryProcessAnalysis::default(),
         );
         // 60 + 7 = 67, capped to 30

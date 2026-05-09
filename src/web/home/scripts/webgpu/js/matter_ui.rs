@@ -247,6 +247,30 @@ pub const JS: &str = r##"
         // periodic refresh for fps / frame
         setInterval(syncMatterUi, 250);
         syncMatterUi();
+
+        // Ensure we load perfectly synced to the 1x1x1 grid parameters to prevent layout pop
+        if (window.updateCubeGrid) {
+          window.updateCubeGrid(1);
+          syncMatterUi();
+        }
+
+        // Test grid selection binding
+        window.addEventListener('keydown', e => {
+          if (e.key === '[' || e.key === ']') {
+            if (typeof cubeGridState === 'undefined') return;
+            const current = cubeGridState.selectedCellId === null ? -1 : cubeGridState.selectedCellId;
+            const total = cubeGridState.side * cubeGridState.side * cubeGridState.side;
+            
+            let nextId = current;
+            if (e.key === '[') nextId = current - 1;
+            if (e.key === ']') nextId = current + 1;
+            
+            if (nextId < 0) nextId = total - 1;
+            if (nextId >= total) nextId = 0;
+            
+            if (window.selectCell) window.selectCell(nextId);
+          }
+        });
       }
 
       // expose for render_loop perf hook

@@ -1,5 +1,7 @@
 // Recipe V2 HTTP Handlers - REST API with automatic translations
-use crate::application::recipe_v2_service::{CreateRecipeDto, RecipeResponseDto, RecipeV2Service, UpdateRecipeDto};
+use crate::application::recipe_v2_service::{
+    CreateRecipeDto, RecipeResponseDto, RecipeV2Service, UpdateRecipeDto,
+};
 use crate::domain::recipe_v2::RecipeId;
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppResult;
@@ -164,24 +166,30 @@ pub async fn upload_recipe_image(
         let name = field.name().unwrap_or("");
         if name == "file" || name == "image" {
             content_type = field.content_type().map(|ct| ct.to_string());
-            file_data = Some(
-                field
-                    .bytes()
-                    .await
-                    .map_err(|e| crate::shared::AppError::validation(&format!("Failed to read image: {}", e)))?,
-            );
+            file_data = Some(field.bytes().await.map_err(|e| {
+                crate::shared::AppError::validation(&format!("Failed to read image: {}", e))
+            })?);
             break;
         }
     }
 
-    let file_data = file_data.ok_or_else(|| crate::shared::AppError::validation("No file provided"))?;
-    let content_type = content_type.ok_or_else(|| crate::shared::AppError::validation("No content-type"))?;
+    let file_data =
+        file_data.ok_or_else(|| crate::shared::AppError::validation("No file provided"))?;
+    let content_type =
+        content_type.ok_or_else(|| crate::shared::AppError::validation("No content-type"))?;
 
     let image_url = service
-        .upload_image(RecipeId(recipe_id), tenant_id, file_data.to_vec(), &content_type)
+        .upload_image(
+            RecipeId(recipe_id),
+            tenant_id,
+            file_data.to_vec(),
+            &content_type,
+        )
         .await?;
 
-    Ok(Json(crate::interfaces::http::admin_catalog::ImageUrlResponse { image_url }))
+    Ok(Json(
+        crate::interfaces::http::admin_catalog::ImageUrlResponse { image_url },
+    ))
 }
 
 /// GET /api/recipes/v2/:id/image-url

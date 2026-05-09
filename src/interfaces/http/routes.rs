@@ -21,7 +21,6 @@ use crate::application::{
     UserService,
 };
 use crate::infrastructure::JwtService;
-use crate::web::home::home_page;
 use crate::interfaces::http::{
     admin_auth,
     admin_catalog,
@@ -32,16 +31,12 @@ use crate::interfaces::http::{
     admin_users,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
-    catalog::{get_categories, get_categories_public, get_ingredient_detail_public, search_ingredients, search_ingredients_public, CatalogState, PublicNutritionState},
-    chef_reference_public::{convert_units, fish_season, get_ingredient},
-    public::{
-        cms as public_cms,
-        ingredients::{autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_states, get_ingredient_state, get_ingredients_states_map, get_ingredients_sitemap_data, list_ingredients, list_ingredients_full},
-        intent_pages::{list_published_intent_pages, get_published_intent_page, get_related_intent_pages, get_ingredient_intent_pages},
-        nutrition_pages::{get_diet_page, get_nutrition_page, get_ranking_page, get_all_slugs},
-        seo_content::get_seo_content,
-        tools::{convert_units as tools_convert, fish_season as tools_fish_season, fish_season_table, list_units, list_categories, nutrition, ingredients_db, compare_foods, scale_recipe, yield_calc, ingredient_equivalents, food_cost_calc, ingredient_suggestions, popular_conversions, ingredient_scale, ingredient_convert, seo_ingredient_convert, measure_conversion, ingredient_measures, seasonal_calendar, in_season_now, product_seasonality, best_in_season, products_by_month, product_search, recipe_nutrition, recipe_cost, list_regions, best_right_now, resolve_slug, recipe_analyze, share_recipe, get_shared_recipe, tools_run, tools_catalog},
+    catalog::{
+        get_categories, get_categories_public, get_ingredient_detail_public, search_ingredients,
+        search_ingredients_public, CatalogState, PublicNutritionState,
     },
+    chef_reference_public::{convert_units, fish_season, get_ingredient},
+    city::get_city_map,
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
         add_product, delete_product, get_alerts, get_dashboard, get_health, get_loss_report,
@@ -49,19 +44,43 @@ use crate::interfaces::http::{
     },
     menu_engineering::{analyze_menu, record_sale},
     middleware::AuthUser,
+    preferences::{get_preferences, save_preferences},
+    public::{
+        cms as public_cms,
+        ingredients::{
+            autocomplete_ingredients, get_ingredient_by_slug, get_ingredient_state,
+            get_ingredient_states, get_ingredients_sitemap_data, get_ingredients_states_map,
+            list_ingredients, list_ingredients_full,
+        },
+        intent_pages::{
+            get_ingredient_intent_pages, get_published_intent_page, get_related_intent_pages,
+            list_published_intent_pages,
+        },
+        nutrition_pages::{get_all_slugs, get_diet_page, get_nutrition_page, get_ranking_page},
+        seo_content::get_seo_content,
+        tools::{
+            best_in_season, best_right_now, compare_foods, convert_units as tools_convert,
+            fish_season as tools_fish_season, fish_season_table, food_cost_calc, get_shared_recipe,
+            in_season_now, ingredient_convert, ingredient_equivalents, ingredient_measures,
+            ingredient_scale, ingredient_suggestions, ingredients_db, list_categories,
+            list_regions, list_units, measure_conversion, nutrition, popular_conversions,
+            product_search, product_seasonality, products_by_month, recipe_analyze, recipe_cost,
+            recipe_nutrition, resolve_slug, scale_recipe, seasonal_calendar,
+            seo_ingredient_convert, share_recipe, tools_catalog, tools_run, yield_calc,
+        },
+    },
     recipe::{calculate_recipe_cost, create_recipe, delete_recipe, get_recipe, list_recipes},
     recipe_ai_insights, // AI insights handlers
     recipe_v2,          // V2 handlers with translations
     report::get_summary,
-    city::get_city_map,
-    smart::smart_ingredient, // 🆕 SmartService handler
-    smart::smart_autocomplete, // 🆕 SmartService autocomplete
-    smart_parse::smart_parse, // 🆕 SmartParse handler
+    smart::smart_autocomplete,    // 🆕 SmartService autocomplete
+    smart::smart_ingredient,      // 🆕 SmartService handler
     smart_parse::smart_from_text, // 🆕 SmartParse from-text handler
+    smart_parse::smart_parse,     // 🆕 SmartParse handler
     tenant_ingredient,
     user::{get_avatar_upload_url, me_handler, update_avatar_url, update_language},
-    preferences::{get_preferences, save_preferences},
 };
+use crate::web::home::home_page;
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, FromRequestParts, Request},
     http::{header, Method, StatusCode},
@@ -100,7 +119,7 @@ pub fn create_router(
     admin_nutrition_service: AdminNutritionService, // 🆕 Nutrition editor
     r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
     llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>, // 🆕 for public AI SEO content
-    ingredient_cache: Arc<crate::infrastructure::IngredientCache>, // 🆕 for ChefOS Chat
+    ingredient_cache: Arc<crate::infrastructure::IngredientCache>,    // 🆕 for ChefOS Chat
     gemini_for_copilot: Arc<crate::infrastructure::gemini_service::GeminiService>, // 🆕 Copilot Brain
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
@@ -205,10 +224,7 @@ pub fn create_router(
             post(admin_catalog::ai_autofill_product),
         )
         // AI SEO generation
-        .route(
-            "/products/:id/ai-seo",
-            post(admin_catalog::ai_generate_seo),
-        )
+        .route("/products/:id/ai-seo", post(admin_catalog::ai_generate_seo))
         // Publish / Unpublish — controls visibility in blog
         .route(
             "/products/:id/publish",
@@ -219,10 +235,7 @@ pub fn create_router(
             post(admin_catalog::unpublish_product),
         )
         // AI Audit — catalog completeness & accuracy checker
-        .route(
-            "/audit",
-            get(admin_catalog::ai_audit),
-        )
+        .route("/audit", get(admin_catalog::ai_audit))
         // AI Create Product Draft — returns draft for review, NEVER saves
         .route(
             "/ai/create-product-draft",
@@ -252,14 +265,8 @@ pub fn create_router(
             post(admin_catalog::reject_dictionary_entry),
         )
         // Food Pairing CRUD
-        .route(
-            "/products/:id/pairings",
-            get(admin_catalog::get_pairings),
-        )
-        .route(
-            "/products/:id/pairings",
-            post(admin_catalog::add_pairing),
-        )
+        .route("/products/:id/pairings", get(admin_catalog::get_pairings))
+        .route("/products/:id/pairings", post(admin_catalog::add_pairing))
         .route(
             "/products/:id/pairings/:pairing_id",
             axum::routing::delete(admin_catalog::delete_pairing),
@@ -269,10 +276,7 @@ pub fn create_router(
             post(admin_catalog::ai_generate_pairings),
         )
         // Product search (for pairing ingredient picker)
-        .route(
-            "/products/search",
-            get(admin_catalog::search_products),
-        )
+        .route("/products/search", get(admin_catalog::search_products))
         // Categories
         .route("/categories", get(admin_catalog::list_categories))
         .route("/categories", post(admin_catalog::create_category))
@@ -306,19 +310,58 @@ pub fn create_router(
     let admin_nutrition_routes = Router::new()
         .route("/products", get(admin_nutrition::list_products))
         .route("/products/:id", get(admin_nutrition::get_product))
-        .route("/products/:id/basic", axum::routing::put(admin_nutrition::update_basic))
-        .route("/products/:id/macros", axum::routing::put(admin_nutrition::update_macros))
-        .route("/products/:id/vitamins", axum::routing::put(admin_nutrition::update_vitamins))
-        .route("/products/:id/minerals", axum::routing::put(admin_nutrition::update_minerals))
-        .route("/products/:id/fatty-acids", axum::routing::put(admin_nutrition::update_fatty_acids))
-        .route("/products/:id/diet-flags", axum::routing::put(admin_nutrition::update_diet_flags))
-        .route("/products/:id/allergens", axum::routing::put(admin_nutrition::update_allergens))
-        .route("/products/:id/food-props", axum::routing::put(admin_nutrition::update_food_props))
-        .route("/products/:id/culinary", axum::routing::put(admin_nutrition::update_culinary))
-        .route("/products/:id/health-profile", axum::routing::put(admin_nutrition::update_health_profile))
-        .route("/products/:id/sugar-profile", axum::routing::put(admin_nutrition::update_sugar_profile))
-        .route("/products/:id/processing-effects", axum::routing::put(admin_nutrition::update_processing_effects))
-        .route("/products/:id/culinary-behavior", axum::routing::put(admin_nutrition::update_culinary_behavior))
+        .route(
+            "/products/:id/basic",
+            axum::routing::put(admin_nutrition::update_basic),
+        )
+        .route(
+            "/products/:id/macros",
+            axum::routing::put(admin_nutrition::update_macros),
+        )
+        .route(
+            "/products/:id/vitamins",
+            axum::routing::put(admin_nutrition::update_vitamins),
+        )
+        .route(
+            "/products/:id/minerals",
+            axum::routing::put(admin_nutrition::update_minerals),
+        )
+        .route(
+            "/products/:id/fatty-acids",
+            axum::routing::put(admin_nutrition::update_fatty_acids),
+        )
+        .route(
+            "/products/:id/diet-flags",
+            axum::routing::put(admin_nutrition::update_diet_flags),
+        )
+        .route(
+            "/products/:id/allergens",
+            axum::routing::put(admin_nutrition::update_allergens),
+        )
+        .route(
+            "/products/:id/food-props",
+            axum::routing::put(admin_nutrition::update_food_props),
+        )
+        .route(
+            "/products/:id/culinary",
+            axum::routing::put(admin_nutrition::update_culinary),
+        )
+        .route(
+            "/products/:id/health-profile",
+            axum::routing::put(admin_nutrition::update_health_profile),
+        )
+        .route(
+            "/products/:id/sugar-profile",
+            axum::routing::put(admin_nutrition::update_sugar_profile),
+        )
+        .route(
+            "/products/:id/processing-effects",
+            axum::routing::put(admin_nutrition::update_processing_effects),
+        )
+        .route(
+            "/products/:id/culinary-behavior",
+            axum::routing::put(admin_nutrition::update_culinary_behavior),
+        )
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -358,15 +401,12 @@ pub fn create_router(
         .route("/generate-all", post(admin_states::generate_all_states))
         .route("/audit", get(admin_states::state_audit))
         .route("/data-quality", get(admin_states::data_quality))
-        .route("/data-quality/:product_id", get(admin_states::data_quality_single))
         .route(
-            "/products/:id",
-            get(admin_states::get_product_states),
+            "/data-quality/:product_id",
+            get(admin_states::data_quality_single),
         )
-        .route(
-            "/products/:id",
-            delete(admin_states::delete_product_states),
-        )
+        .route("/products/:id", get(admin_states::get_product_states))
+        .route("/products/:id", delete(admin_states::delete_product_states))
         .route(
             "/products/:id/states/:state",
             axum::routing::put(admin_states::update_product_state),
@@ -415,7 +455,11 @@ pub fn create_router(
         .merge(
             Router::new()
                 .route("/preferences", get(get_preferences).put(save_preferences))
-                .with_state(crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone())),
+                .with_state(
+                    crate::application::preferences_service::PreferencesService::new(
+                        pool_for_prefs.clone(),
+                    ),
+                ),
         )
         .merge(
             Router::new()
@@ -515,10 +559,9 @@ pub fn create_router(
         )
         // 🆕 Visual Workspace — game-like SceneState (GET /api/scenes/inventory)
         .merge({
-            let scene_service =
-                crate::application::scenes::InventorySceneService::shared(
-                    inventory_service.clone(),
-                );
+            let scene_service = crate::application::scenes::InventorySceneService::shared(
+                inventory_service.clone(),
+            );
             Router::new()
                 .route(
                     "/scenes/inventory",
@@ -533,17 +576,26 @@ pub fn create_router(
                     Arc::new(inventory_service),
                     Arc::clone(&ingredient_cache),
                     Arc::clone(&llm_adapter),
-                    crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone()),
-                )
+                    crate::application::preferences_service::PreferencesService::new(
+                        pool_for_prefs.clone(),
+                    ),
+                ),
             );
             Router::new()
-                .route("/cook/suggestions", post(crate::interfaces::http::cook_suggestions::cook_suggestions))
-                .route("/cook/suggestions/dish-image", post(crate::interfaces::http::cook_suggestions::generate_dish_image))
+                .route(
+                    "/cook/suggestions",
+                    post(crate::interfaces::http::cook_suggestions::cook_suggestions),
+                )
+                .route(
+                    "/cook/suggestions/dish-image",
+                    post(crate::interfaces::http::cook_suggestions::generate_dish_image),
+                )
                 .with_state(cook_service)
         })
         // 🆕 Laboratory — food-tech analysis projects (CRUD + /analyze)
         .merge({
-            let lab_service = crate::application::laboratory::LaboratoryService::new(pool_for_prefs.clone());
+            let lab_service =
+                crate::application::laboratory::LaboratoryService::new(pool_for_prefs.clone());
             Router::new()
                 .route(
                     "/laboratory/projects",
@@ -589,9 +641,9 @@ pub fn create_router(
         // PR #2: real `register_image` (JSON + multipart) + `get_asset`.
         // PR #3: real `generate-model` Vision flow (no OBJ yet).
         .merge({
-            use std::sync::Arc;
             use crate::infrastructure::gemini::GeminiVision3D;
             use crate::infrastructure::storage::LocalStorageAdapter;
+            use std::sync::Arc;
             let storage = Arc::new(LocalStorageAdapter::new("./uploads", "/static"));
             let vision_api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
             if vision_api_key.is_empty() {
@@ -637,9 +689,7 @@ pub fn create_router(
                     // GET /api/laboratory/debug-glb/:object_type?quality=high
                     Router::new().route(
                         "/laboratory/debug-glb/:object_type",
-                        axum::routing::get(
-                            crate::interfaces::http::laboratory_v2::debug_glb,
-                        ),
+                        axum::routing::get(crate::interfaces::http::laboratory_v2::debug_glb),
                     ),
                 )
                 .merge(
@@ -648,9 +698,7 @@ pub fn create_router(
                     // Body: GeometryOpRequest JSON → returns GLB bytes
                     Router::new().route(
                         "/laboratory/geometry-op",
-                        axum::routing::post(
-                            crate::interfaces::http::laboratory_v2::geometry_op,
-                        ),
+                        axum::routing::post(crate::interfaces::http::laboratory_v2::geometry_op),
                     ),
                 )
         })
@@ -702,38 +750,63 @@ pub fn create_router(
         )
         .merge({
             // ChefOS iOS usage tracking
-            let usage_service = crate::application::usage_service::UsageService::new(pool_for_public.clone());
+            let usage_service =
+                crate::application::usage_service::UsageService::new(pool_for_public.clone());
             Router::new()
-                .route("/usage/today", get(crate::interfaces::http::usage::get_today))
-                .route("/usage/history", get(crate::interfaces::http::usage::get_history))
-                .route("/usage/action", post(crate::interfaces::http::usage::perform_action))
-                .route("/usage/actions", post(crate::interfaces::http::usage::perform_batch))
-                .route("/usage/purchase", post(crate::interfaces::http::usage::record_purchase))
-                .route("/usage/welcome-bonus", post(crate::interfaces::http::usage::grant_welcome_bonus))
+                .route(
+                    "/usage/today",
+                    get(crate::interfaces::http::usage::get_today),
+                )
+                .route(
+                    "/usage/history",
+                    get(crate::interfaces::http::usage::get_history),
+                )
+                .route(
+                    "/usage/action",
+                    post(crate::interfaces::http::usage::perform_action),
+                )
+                .route(
+                    "/usage/actions",
+                    post(crate::interfaces::http::usage::perform_batch),
+                )
+                .route(
+                    "/usage/purchase",
+                    post(crate::interfaces::http::usage::record_purchase),
+                )
+                .route(
+                    "/usage/welcome-bonus",
+                    post(crate::interfaces::http::usage::grant_welcome_bonus),
+                )
                 .with_state(usage_service)
         })
         // 🆕 Copilot — главный LLM Brain
         .merge({
-            use crate::application::copilot::{CopilotEngine, CopilotAuditService};
             use crate::application::copilot::tool_executor::ToolExecutorServices;
-            use crate::application::usage_service::UsageService;
-            use crate::interfaces::http::copilot::{handle_message, confirm_action, cancel_action, CopilotState};
-            use crate::infrastructure::persistence::AiCacheRepository;
+            use crate::application::copilot::{CopilotAuditService, CopilotEngine};
             use crate::application::sous_chef::SousChefPlannerService;
+            use crate::application::usage_service::UsageService;
+            use crate::infrastructure::persistence::AiCacheRepository;
+            use crate::interfaces::http::copilot::{
+                cancel_action, confirm_action, handle_message, CopilotState,
+            };
 
             let copilot_services = ToolExecutorServices {
                 inventory: Arc::new(inventory_service_for_copilot),
                 dishes: Arc::new(dish_service_for_copilot),
                 recipes: recipe_v2_for_copilot,
                 recipes_v1: Arc::new(recipe_v1_for_copilot),
-                catalog: Arc::new(crate::application::catalog::CatalogService::new(pool_for_prefs.clone())),
+                catalog: Arc::new(crate::application::catalog::CatalogService::new(
+                    pool_for_prefs.clone(),
+                )),
                 cook_suggestions: Arc::new(
                     crate::application::cook_suggestions::CookSuggestionService::new(
                         Arc::new(inventory_service_for_cook),
                         Arc::clone(&ingredient_cache),
                         Arc::clone(&llm_adapter),
-                        crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone()),
-                    )
+                        crate::application::preferences_service::PreferencesService::new(
+                            pool_for_prefs.clone(),
+                        ),
+                    ),
                 ),
                 sous_chef: Arc::new(SousChefPlannerService::new(
                     Arc::clone(&llm_adapter),
@@ -741,7 +814,9 @@ pub fn create_router(
                     (*ingredient_cache).clone(),
                 )),
                 purchase_drafts: Arc::new(
-                    crate::application::purchase_draft::PurchaseDraftService::new(pool_for_prefs.clone())
+                    crate::application::purchase_draft::PurchaseDraftService::new(
+                        pool_for_prefs.clone(),
+                    ),
                 ),
             };
             let copilot_engine = Arc::new(CopilotEngine::new(
@@ -752,9 +827,14 @@ pub fn create_router(
             ));
             Router::new()
                 .route("/copilot/message", axum::routing::post(handle_message))
-                .route("/copilot/actions/:id/confirm", axum::routing::post(confirm_action))
+                .route(
+                    "/copilot/actions/:id/confirm",
+                    axum::routing::post(confirm_action),
+                )
                 .route("/copilot/actions/:id", axum::routing::delete(cancel_action))
-                .with_state(CopilotState { engine: copilot_engine })
+                .with_state(CopilotState {
+                    engine: copilot_engine,
+                })
         })
         .layer(jwt_middleware.clone());
 
@@ -773,11 +853,17 @@ pub fn create_router(
         .route("/ingredients", get(list_ingredients))
         .route("/ingredients-full", get(list_ingredients_full))
         .route("/ingredients-states-map", get(get_ingredients_states_map))
-        .route("/ingredients-sitemap-data", get(get_ingredients_sitemap_data))
+        .route(
+            "/ingredients-sitemap-data",
+            get(get_ingredients_sitemap_data),
+        )
         .route("/ingredients/autocomplete", get(autocomplete_ingredients))
         .route("/ingredients/:slug", get(get_ingredient_by_slug))
         .route("/ingredients/:slug/states", get(get_ingredient_states))
-        .route("/ingredients/:slug/states/:state", get(get_ingredient_state))
+        .route(
+            "/ingredients/:slug/states/:state",
+            get(get_ingredient_state),
+        )
         .with_state(pool_for_public.clone());
 
     let public_tools_router = Router::new()
@@ -821,9 +907,9 @@ pub fn create_router(
         .with_state(pool_for_tools);
 
     // ── 🆕 Culinary Intelligence Platform (RuleBot + Catalog) ────────────────
-    let rulebot = std::sync::Arc::new(
-        crate::application::rulebot::orchestrator::RuleBot::new(pool_for_rulebot)
-    );
+    let rulebot = std::sync::Arc::new(crate::application::rulebot::orchestrator::RuleBot::new(
+        pool_for_rulebot,
+    ));
     let platform_router = Router::new()
         .route("/tools/run", post(tools_run))
         .route("/tools/catalog", get(tools_catalog))
@@ -842,7 +928,10 @@ pub fn create_router(
     // 🆕 Public ingredient DETAIL (no JWT) — rich Wikipedia-style card.
     // GET /public/catalog/ingredients/:slug  → NutritionProductDetail
     let public_catalog_detail_router = Router::new()
-        .route("/catalog/ingredients/:slug", get(get_ingredient_detail_public))
+        .route(
+            "/catalog/ingredients/:slug",
+            get(get_ingredient_detail_public),
+        )
         .with_state(PublicNutritionState {
             nutrition_service: admin_nutrition_service.clone(),
         });
@@ -856,30 +945,38 @@ pub fn create_router(
             Arc::clone(&llm_adapter),
         )
         .with_preferences(
-            crate::application::preferences_service::PreferencesService::new(pool_for_prefs.clone()),
-        )
+            crate::application::preferences_service::PreferencesService::new(
+                pool_for_prefs.clone(),
+            ),
+        ),
     );
     let chat_state = crate::interfaces::http::public::chat::AuthChatState {
         engine: chat_engine,
         usage: crate::application::usage_service::UsageService::new(pool_for_public.clone()),
     };
     let chat_router = Router::new()
-        .route("/chat", post(crate::interfaces::http::public::chat::chat_handler))
+        .route(
+            "/chat",
+            post(crate::interfaces::http::public::chat::chat_handler),
+        )
         .with_state(chat_state);
 
     // ── 🆕 Chat Events (telemetry) POST /api/chat/event ─────────────────────
     // Authenticated; user_id derived from JWT (no body spoofing).
     let chat_events_service = Arc::new(
-        crate::application::chat_events_service::ChatEventsService::new(pool_for_prefs.clone())
+        crate::application::chat_events_service::ChatEventsService::new(pool_for_prefs.clone()),
     );
     let chat_events_router = Router::new()
-        .route("/chat/event", post(crate::interfaces::http::public::chat::chat_event_handler))
+        .route(
+            "/chat/event",
+            post(crate::interfaces::http::public::chat::chat_event_handler),
+        )
         .with_state(chat_events_service);
 
     // ── 🆕 SmartService v2 ──────────────────────────────────────────────────
-    let smart_service = std::sync::Arc::new(
-        crate::application::smart_service::SmartService::new(pool_for_smart)
-    );
+    let smart_service = std::sync::Arc::new(crate::application::smart_service::SmartService::new(
+        pool_for_smart,
+    ));
     let smart_router = Router::new()
         .route("/smart/ingredient", post(smart_ingredient))
         .with_state(smart_service.clone());
@@ -888,7 +985,8 @@ pub fn create_router(
         .with_state(pool_for_autocomplete);
 
     // ── 🆕 SmartParse — deterministic text → ingredient parser ──────────────
-    let smart_parse_service = crate::application::smart_parse::SmartParseService::new(pool_for_smart_parse);
+    let smart_parse_service =
+        crate::application::smart_parse::SmartParseService::new(pool_for_smart_parse);
     let smart_parse_router = Router::new()
         .route("/smart/parse", post(smart_parse))
         .with_state(smart_parse_service.clone());
@@ -903,29 +1001,30 @@ pub fn create_router(
         .with_state(from_text_state);
 
     // ── Public Nutrition / Diet / Ranking SEO routes ──────────────────────────
-    let public_nutrition_svc = std::sync::Arc::new(PublicNutritionService::new(pool_for_public.clone()));
+    let public_nutrition_svc =
+        std::sync::Arc::new(PublicNutritionService::new(pool_for_public.clone()));
     let public_nutrition_router = Router::new()
         .route("/nutrition/:slug", get(get_nutrition_page))
-        .route("/diet/:flag",      get(get_diet_page))
+        .route("/diet/:flag", get(get_diet_page))
         .route("/ranking/:metric", get(get_ranking_page))
-        .route("/products-slugs",  get(get_all_slugs))
+        .route("/products-slugs", get(get_all_slugs))
         .with_state(public_nutrition_svc);
 
     // ── Public AI SEO Content route ───────────────────────────────────────────
-    let seo_content_svc = Arc::new(
-        PublicSeoContentService::new(
-            llm_adapter,
-            crate::infrastructure::persistence::AiCacheRepository::new(pool_for_public.clone()),
-        )
-    );
+    let seo_content_svc = Arc::new(PublicSeoContentService::new(
+        llm_adapter,
+        crate::infrastructure::persistence::AiCacheRepository::new(pool_for_public.clone()),
+    ));
     let public_seo_content_router = Router::new()
         .route("/seo-content", get(get_seo_content))
         .with_state(seo_content_svc.clone());
 
     // ── Intent Pages (AI-generated pSEO pages) ───────────────────────────────
-    let intent_pages_svc = Arc::new(
-        IntentPagesService::new(pool_for_public.clone(), seo_content_svc, r2_client.clone())
-    );
+    let intent_pages_svc = Arc::new(IntentPagesService::new(
+        pool_for_public.clone(),
+        seo_content_svc,
+        r2_client.clone(),
+    ));
 
     // Admin intent pages routes (protected)
     let admin_intent_pages_routes = Router::new()
@@ -937,22 +1036,55 @@ pub fn create_router(
         .route("/delete-bulk", post(admin_intent_pages::delete_bulk))
         .route("/duplicates", get(admin_intent_pages::find_duplicates))
         .route("/cleanup-slugs", post(admin_intent_pages::cleanup_slugs))
-        .route("/cleanup-quality", post(admin_intent_pages::cleanup_low_quality))
+        .route(
+            "/cleanup-quality",
+            post(admin_intent_pages::cleanup_low_quality),
+        )
         .route("/seo-audit", get(admin_intent_pages::seo_audit))
-        .route("/google-discovered", axum::routing::put(admin_intent_pages::set_google_discovered))
+        .route(
+            "/google-discovered",
+            axum::routing::put(admin_intent_pages::set_google_discovered),
+        )
         .route("/", get(admin_intent_pages::list_intent_pages))
         .route("/stats", get(admin_intent_pages::intent_pages_stats))
-        .route("/settings", get(admin_intent_pages::get_settings).put(admin_intent_pages::update_settings))
+        .route(
+            "/settings",
+            get(admin_intent_pages::get_settings).put(admin_intent_pages::update_settings),
+        )
         .route("/scheduler/run", post(admin_intent_pages::run_scheduler))
         .route("/:id", get(admin_intent_pages::get_intent_page))
-        .route("/:id", axum::routing::put(admin_intent_pages::update_intent_page))
-        .route("/:id/publish", post(admin_intent_pages::publish_intent_page))
-        .route("/:id/unpublish", post(admin_intent_pages::unpublish_intent_page))
-        .route("/:id/enqueue", post(admin_intent_pages::enqueue_intent_page))
-        .route("/:id/archive", post(admin_intent_pages::archive_intent_page))
-        .route("/:id", axum::routing::delete(admin_intent_pages::delete_intent_page))
-        .route("/:id/regenerate", post(admin_intent_pages::regenerate_intent_page))
-        .route("/:id/images/:key/upload-url", get(admin_intent_pages::get_image_upload_url))
+        .route(
+            "/:id",
+            axum::routing::put(admin_intent_pages::update_intent_page),
+        )
+        .route(
+            "/:id/publish",
+            post(admin_intent_pages::publish_intent_page),
+        )
+        .route(
+            "/:id/unpublish",
+            post(admin_intent_pages::unpublish_intent_page),
+        )
+        .route(
+            "/:id/enqueue",
+            post(admin_intent_pages::enqueue_intent_page),
+        )
+        .route(
+            "/:id/archive",
+            post(admin_intent_pages::archive_intent_page),
+        )
+        .route(
+            "/:id",
+            axum::routing::delete(admin_intent_pages::delete_intent_page),
+        )
+        .route(
+            "/:id/regenerate",
+            post(admin_intent_pages::regenerate_intent_page),
+        )
+        .route(
+            "/:id/images/:key/upload-url",
+            get(admin_intent_pages::get_image_upload_url),
+        )
         .route("/:id/images/:key", post(admin_intent_pages::save_image_url))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
@@ -973,10 +1105,16 @@ pub fn create_router(
     // Public intent pages routes (no auth)
     let public_intent_pages_router = Router::new()
         .route("/intent-pages", get(list_published_intent_pages))
-        .route("/intent-pages/sitemap", get(admin_intent_pages::intent_pages_sitemap))
+        .route(
+            "/intent-pages/sitemap",
+            get(admin_intent_pages::intent_pages_sitemap),
+        )
         .route("/intent-pages/:slug", get(get_published_intent_page))
         .route("/intent-pages/:slug/related", get(get_related_intent_pages))
-        .route("/ingredients/:slug/intent-pages", get(get_ingredient_intent_pages))
+        .route(
+            "/ingredients/:slug/intent-pages",
+            get(get_ingredient_intent_pages),
+        )
         .with_state(intent_pages_svc.clone());
 
     // ── Background scheduler: publish queued pages every hour ────────────────
@@ -1005,41 +1143,58 @@ pub fn create_router(
     // ── Admin CMS routes (protected) ─────────────────────────────────────────
     let admin_cms_routes = Router::new()
         // About page
-        .route("/about", get(admin_cms::get_about).put(admin_cms::update_about))
+        .route(
+            "/about",
+            get(admin_cms::get_about).put(admin_cms::update_about),
+        )
         // Expertise
-        .route("/expertise", get(admin_cms::list_expertise).post(admin_cms::create_expertise))
+        .route(
+            "/expertise",
+            get(admin_cms::list_expertise).post(admin_cms::create_expertise),
+        )
         .route(
             "/expertise/:id",
-            axum::routing::put(admin_cms::update_expertise)
-                .delete(admin_cms::delete_expertise),
+            axum::routing::put(admin_cms::update_expertise).delete(admin_cms::delete_expertise),
         )
         // Experience
-        .route("/experience", get(admin_cms::list_experience).post(admin_cms::create_experience))
+        .route(
+            "/experience",
+            get(admin_cms::list_experience).post(admin_cms::create_experience),
+        )
         .route(
             "/experience/:id",
-            axum::routing::put(admin_cms::update_experience)
-                .delete(admin_cms::delete_experience),
+            axum::routing::put(admin_cms::update_experience).delete(admin_cms::delete_experience),
         )
         // Gallery
-        .route("/gallery", get(admin_cms::list_gallery).post(admin_cms::create_gallery))
+        .route(
+            "/gallery",
+            get(admin_cms::list_gallery).post(admin_cms::create_gallery),
+        )
         .route(
             "/gallery/:id",
-            axum::routing::put(admin_cms::update_gallery)
-                .delete(admin_cms::delete_gallery),
+            axum::routing::put(admin_cms::update_gallery).delete(admin_cms::delete_gallery),
         )
-        .route("/gallery-categories", get(admin_cms::list_gallery_categories))
+        .route(
+            "/gallery-categories",
+            get(admin_cms::list_gallery_categories),
+        )
         // Knowledge Articles
-        .route("/articles", get(admin_cms::list_articles).post(admin_cms::create_article))
+        .route(
+            "/articles",
+            get(admin_cms::list_articles).post(admin_cms::create_article),
+        )
         .route("/articles/:id", get(admin_cms::get_article))
         .route(
             "/articles/:id",
-            axum::routing::put(admin_cms::update_article)
-                .delete(admin_cms::delete_article),
+            axum::routing::put(admin_cms::update_article).delete(admin_cms::delete_article),
         )
         // Image upload
         .route("/upload-url", get(admin_cms::get_upload_url))
         // Categories
-        .route("/article-categories", get(admin_cms::list_article_categories))
+        .route(
+            "/article-categories",
+            get(admin_cms::list_article_categories),
+        )
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1062,11 +1217,17 @@ pub fn create_router(
         .route("/expertise", get(public_cms::list_expertise))
         .route("/experience", get(public_cms::list_experience))
         .route("/gallery", get(public_cms::list_gallery))
-        .route("/gallery-categories", get(public_cms::list_gallery_categories))
+        .route(
+            "/gallery-categories",
+            get(public_cms::list_gallery_categories),
+        )
         .route("/articles", get(public_cms::list_articles))
         .route("/articles/:slug", get(public_cms::get_article))
         .route("/articles-sitemap", get(public_cms::articles_sitemap))
-        .route("/article-categories", get(public_cms::list_article_categories))
+        .route(
+            "/article-categories",
+            get(public_cms::list_article_categories),
+        )
         .route("/stats", get(public_cms::public_stats))
         .with_state(cms_service);
 
@@ -1094,42 +1255,41 @@ pub fn create_router(
     // Public:    GET  /api/billing/bundles   (catalog of available packs)
     //            POST /webhooks/stripe       (HMAC-verified, never under JWT)
     // Protected: POST /api/billing/checkout  (creates a Checkout Session)
-    let (billing_protected, billing_public_bundles, stripe_webhook_router) =
-        if let Some(stripe) = stripe_service_opt.clone() {
-            let billing_state = crate::interfaces::http::billing::BillingState {
-                stripe,
-                usage: crate::application::usage_service::UsageService::new(
-                    pool_for_billing.clone(),
-                ),
-                pool: pool_for_billing.clone(),
-            };
-
-            let protected = Router::new()
-                .route(
-                    "/billing/checkout",
-                    post(crate::interfaces::http::billing::create_checkout),
-                )
-                .with_state(billing_state.clone())
-                .layer(jwt_middleware);
-
-            let public_bundles = Router::new().route(
-                "/billing/bundles",
-                get(crate::interfaces::http::billing::list_bundles),
-            );
-
-            // Stripe webhook is intentionally NOT under jwt_middleware —
-            // Stripe authenticates itself via the Stripe-Signature header.
-            let webhook = Router::new()
-                .route(
-                    "/webhooks/stripe",
-                    post(crate::interfaces::http::billing::stripe_webhook),
-                )
-                .with_state(billing_state);
-
-            (Some(protected), Some(public_bundles), Some(webhook))
-        } else {
-            (None, None, None)
+    let (billing_protected, billing_public_bundles, stripe_webhook_router) = if let Some(stripe) =
+        stripe_service_opt.clone()
+    {
+        let billing_state = crate::interfaces::http::billing::BillingState {
+            stripe,
+            usage: crate::application::usage_service::UsageService::new(pool_for_billing.clone()),
+            pool: pool_for_billing.clone(),
         };
+
+        let protected = Router::new()
+            .route(
+                "/billing/checkout",
+                post(crate::interfaces::http::billing::create_checkout),
+            )
+            .with_state(billing_state.clone())
+            .layer(jwt_middleware);
+
+        let public_bundles = Router::new().route(
+            "/billing/bundles",
+            get(crate::interfaces::http::billing::list_bundles),
+        );
+
+        // Stripe webhook is intentionally NOT under jwt_middleware —
+        // Stripe authenticates itself via the Stripe-Signature header.
+        let webhook = Router::new()
+            .route(
+                "/webhooks/stripe",
+                post(crate::interfaces::http::billing::stripe_webhook),
+            )
+            .with_state(billing_state);
+
+        (Some(protected), Some(public_bundles), Some(webhook))
+    } else {
+        (None, None, None)
+    };
 
     // Combine all routes
     let mut router = Router::new()
@@ -1214,10 +1374,7 @@ async fn fix_static_mime(
 
 fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
     // Always-allowed production origins (never depend on env alone)
-    const REQUIRED_ORIGINS: &[&str] = &[
-        "https://dima-fomin.pl",
-        "https://www.dima-fomin.pl",
-    ];
+    const REQUIRED_ORIGINS: &[&str] = &["https://dima-fomin.pl", "https://www.dima-fomin.pl"];
 
     // Filter out wildcards — never allow permissive CORS
     let mut safe_origins: Vec<String> = allowed_origins.into_iter().filter(|o| o != "*").collect();
@@ -1303,7 +1460,7 @@ fn build_rate_limiter(per_second: u32) -> Arc<IpRateLimiter> {
 async fn rate_limit_middleware(req: Request, next: Next, limiter: Arc<IpRateLimiter>) -> Response {
     // Extract client IP from connection info or forwarded headers
     let ip = extract_client_ip(&req);
-    
+
     // 🎯 ДОБАВЛЕНО: Лог для отладки IP
     // tracing::debug!("Rate limit check for IP: {}", ip);
 

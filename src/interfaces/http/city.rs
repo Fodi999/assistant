@@ -11,9 +11,7 @@ pub async fn get_city_map(
     State(service): State<CityEngineService>,
     auth: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
-    let map = service
-        .generate_map(auth.user_id, auth.tenant_id)
-        .await?;
+    let map = service.generate_map(auth.user_id, auth.tenant_id).await?;
 
     Ok(Json(map))
 }

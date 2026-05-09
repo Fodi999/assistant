@@ -107,7 +107,9 @@ impl AdminCatalogService {
     ) -> AppResult<serde_json::Value> {
         let valid_types = ["primary", "secondary", "experimental", "avoid"];
         if !valid_types.contains(&pairing_type) {
-            return Err(AppError::validation("Invalid pairing_type. Must be: primary, secondary, experimental, avoid"));
+            return Err(AppError::validation(
+                "Invalid pairing_type. Must be: primary, secondary, experimental, avoid",
+            ));
         }
 
         sqlx::query(
@@ -127,29 +129,36 @@ impl AdminCatalogService {
             AppError::internal("Failed to add pairing")
         })?;
 
-        tracing::info!("✅ Added pairing {} -> {} ({})", product_id, paired_product_id, pairing_type);
+        tracing::info!(
+            "✅ Added pairing {} -> {} ({})",
+            product_id,
+            paired_product_id,
+            pairing_type
+        );
         self.get_pairings(product_id).await
     }
 
     /// Delete a pairing by its id
     pub async fn delete_pairing(&self, product_id: Uuid, pairing_id: Uuid) -> AppResult<()> {
-        let result = sqlx::query(
-            "DELETE FROM food_pairing WHERE id = $1 AND ingredient_a = $2",
-        )
-        .bind(pairing_id)
-        .bind(product_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to delete pairing: {}", e);
-            AppError::internal("Failed to delete pairing")
-        })?;
+        let result = sqlx::query("DELETE FROM food_pairing WHERE id = $1 AND ingredient_a = $2")
+            .bind(pairing_id)
+            .bind(product_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to delete pairing: {}", e);
+                AppError::internal("Failed to delete pairing")
+            })?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::not_found("Pairing not found"));
         }
 
-        tracing::info!("✅ Deleted pairing {} from product {}", pairing_id, product_id);
+        tracing::info!(
+            "✅ Deleted pairing {} from product {}",
+            pairing_id,
+            product_id
+        );
         Ok(())
     }
 
@@ -186,16 +195,19 @@ impl AdminCatalogService {
             AppError::internal("Search failed")
         })?;
 
-        Ok(rows.into_iter().map(|r| {
-            serde_json::json!({
-                "id": r.id,
-                "slug": r.slug,
-                "name_en": r.name_en,
-                "name_ru": r.name_ru,
-                "image_url": r.image_url,
-                "product_type": r.product_type,
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.id,
+                    "slug": r.slug,
+                    "name_en": r.name_en,
+                    "name_ru": r.name_ru,
+                    "image_url": r.image_url,
+                    "product_type": r.product_type,
+                })
             })
-        }).collect())
+            .collect())
     }
 
     /// AI Generate pairings for a product
@@ -264,21 +276,37 @@ Rules:
                 catalog_list = catalog_names.join(", "),
             );
 
-            let raw = self.llm_adapter
+            let raw = self
+                .llm_adapter
                 // Flash model: thinking uses ~80% of token budget
                 .generate_with_quality(&prompt, 8000, AiQuality::Fast)
                 .await?;
 
             // Log raw AI response for debugging
-            let preview_end = raw.char_indices().nth(400).map(|(i, _)| i).unwrap_or(raw.len());
-            tracing::info!("🤖 AI pairings raw for {}: {}", name_en, &raw[..preview_end]);
+            let preview_end = raw
+                .char_indices()
+                .nth(400)
+                .map(|(i, _)| i)
+                .unwrap_or(raw.len());
+            tracing::info!(
+                "🤖 AI pairings raw for {}: {}",
+                name_en,
+                &raw[..preview_end]
+            );
 
             ai_result = parse_pairing_json(&raw)?;
 
             // Cache the AI result
-            let _ = self.ai_cache.set(
-                &cache_key, ai_result.clone(), "gemini", "gemini-3-flash-preview", PAIRING_CACHE_TTL_DAYS
-            ).await;
+            let _ = self
+                .ai_cache
+                .set(
+                    &cache_key,
+                    ai_result.clone(),
+                    "gemini",
+                    "gemini-3-flash-preview",
+                    PAIRING_CACHE_TTL_DAYS,
+                )
+                .await;
         }
 
         // ── Match AI suggestions to catalog products and insert ──
@@ -334,7 +362,9 @@ Rules:
 
         tracing::info!(
             "✅ AI pairings for {}: {} inserted, {} not found in catalog",
-            name_en, inserted, not_found.len()
+            name_en,
+            inserted,
+            not_found.len()
         );
 
         let pairings = self.get_pairings(product_id).await?;
@@ -413,6 +443,9 @@ fn parse_pairing_json(raw: &str) -> AppResult<serde_json::Value> {
     }
 
     let preview = &raw[..raw.len().min(300)];
-    tracing::error!("Failed to parse AI pairings: No JSON found | raw: {}", preview);
+    tracing::error!(
+        "Failed to parse AI pairings: No JSON found | raw: {}",
+        preview
+    );
     Err(AppError::internal("AI returned invalid JSON"))
 }

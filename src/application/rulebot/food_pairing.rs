@@ -19,44 +19,44 @@ use super::recipe_engine::DishType;
 /// If BOTH appear in the ingredient list, remove the SECOND one.
 const BANNED_PAIRS: &[(&str, &str)] = &[
     // ── Ice cream / desserts with savory proteins ──
-    ("ice-cream",  "chicken"),
-    ("ice-cream",  "beef"),
-    ("ice-cream",  "pork"),
-    ("ice-cream",  "fish"),
-    ("ice-cream",  "cod"),
-    ("ice-cream",  "salmon"),
-    ("ice_cream",  "chicken"),
-    ("ice_cream",  "beef"),
-    ("ice_cream",  "pork"),
-    ("ice_cream",  "fish"),
-    ("gelato",     "chicken"),
-    ("gelato",     "beef"),
-    ("gelato",     "fish"),
+    ("ice-cream", "chicken"),
+    ("ice-cream", "beef"),
+    ("ice-cream", "pork"),
+    ("ice-cream", "fish"),
+    ("ice-cream", "cod"),
+    ("ice-cream", "salmon"),
+    ("ice_cream", "chicken"),
+    ("ice_cream", "beef"),
+    ("ice_cream", "pork"),
+    ("ice_cream", "fish"),
+    ("gelato", "chicken"),
+    ("gelato", "beef"),
+    ("gelato", "fish"),
     // ── Fruit + fish/seafood (unless specifically paired like lemon) ──
-    ("cherry",     "fish"),
-    ("cherry",     "seafood"),
-    ("cherry",     "cod"),
-    ("cherry",     "salmon"),
-    ("cherry",     "tuna"),
-    ("banana",     "fish"),
-    ("banana",     "seafood"),
-    ("banana",     "cod"),
-    ("banana",     "beef"),
-    ("grape",      "fish"),
-    ("grape",      "chicken"),
+    ("cherry", "fish"),
+    ("cherry", "seafood"),
+    ("cherry", "cod"),
+    ("cherry", "salmon"),
+    ("cherry", "tuna"),
+    ("banana", "fish"),
+    ("banana", "seafood"),
+    ("banana", "cod"),
+    ("banana", "beef"),
+    ("grape", "fish"),
+    ("grape", "chicken"),
     ("watermelon", "fish"),
     ("watermelon", "meat"),
-    ("kiwi",       "fish"),
-    ("kiwi",       "beef"),
+    ("kiwi", "fish"),
+    ("kiwi", "beef"),
     // ── Chocolate + savory proteins ──
-    ("chocolate",  "beef"),
-    ("chocolate",  "chicken"),
-    ("chocolate",  "fish"),
-    ("chocolate",  "pork"),
+    ("chocolate", "beef"),
+    ("chocolate", "chicken"),
+    ("chocolate", "fish"),
+    ("chocolate", "pork"),
     // ── Dairy + fish (except butter/cream which are okay) ──
-    ("yogurt",     "fish"),
-    ("kefir",      "fish"),
-    ("milk",       "fish"),
+    ("yogurt", "fish"),
+    ("kefir", "fish"),
+    ("milk", "fish"),
 ];
 
 // ── Banned in Dish Type ──────────────────────────────────────────────────────
@@ -65,59 +65,59 @@ const BANNED_PAIRS: &[(&str, &str)] = &[
 /// (slug_contains, banned_dish_type)
 const BANNED_IN_DISH: &[(&str, DishType)] = &[
     // ── Desserts / sweets: NEVER in savory dishes ──
-    ("ice-cream",  DishType::Soup),
-    ("ice_cream",  DishType::Soup),
-    ("ice-cream",  DishType::Stew),
-    ("ice_cream",  DishType::Stew),
-    ("ice-cream",  DishType::StirFry),
-    ("ice_cream",  DishType::StirFry),
-    ("ice-cream",  DishType::Grill),
-    ("ice_cream",  DishType::Grill),
-    ("ice-cream",  DishType::Pasta),
-    ("ice_cream",  DishType::Pasta),
-    ("gelato",     DishType::Soup),
-    ("gelato",     DishType::Stew),
-    ("sorbet",     DishType::Soup),
-    ("sorbet",     DishType::Stew),
-    ("candy",      DishType::Soup),
-    ("candy",      DishType::Stew),
-    ("candy",      DishType::StirFry),
-    ("caramel",    DishType::Soup),
-    ("caramel",    DishType::Stew),
+    ("ice-cream", DishType::Soup),
+    ("ice_cream", DishType::Soup),
+    ("ice-cream", DishType::Stew),
+    ("ice_cream", DishType::Stew),
+    ("ice-cream", DishType::StirFry),
+    ("ice_cream", DishType::StirFry),
+    ("ice-cream", DishType::Grill),
+    ("ice_cream", DishType::Grill),
+    ("ice-cream", DishType::Pasta),
+    ("ice_cream", DishType::Pasta),
+    ("gelato", DishType::Soup),
+    ("gelato", DishType::Stew),
+    ("sorbet", DishType::Soup),
+    ("sorbet", DishType::Stew),
+    ("candy", DishType::Soup),
+    ("candy", DishType::Stew),
+    ("candy", DishType::StirFry),
+    ("caramel", DishType::Soup),
+    ("caramel", DishType::Stew),
     ("marshmallow", DishType::Soup),
     ("marshmallow", DishType::Stew),
     ("whipped-cream", DishType::Soup),
-    ("cookie",     DishType::Soup),
-    ("cookie",     DishType::Stew),
-    ("wafer",      DishType::Soup),
-    ("wafer",      DishType::Stew),
-    ("jam",        DishType::Soup),
-    ("jam",        DishType::Stew),
-    ("syrup",      DishType::Soup),
-    ("syrup",      DishType::Stew),
+    ("cookie", DishType::Soup),
+    ("cookie", DishType::Stew),
+    ("wafer", DishType::Soup),
+    ("wafer", DishType::Stew),
+    ("jam", DishType::Soup),
+    ("jam", DishType::Stew),
+    ("syrup", DishType::Soup),
+    ("syrup", DishType::Stew),
     // ── Chocolate: only in Bake (mole sauce aside, Gemini won't pick it) ──
-    ("chocolate",  DishType::Soup),
-    ("chocolate",  DishType::Stew),
-    ("chocolate",  DishType::Salad),
-    ("chocolate",  DishType::StirFry),
-    ("chocolate",  DishType::Grill),
-    ("chocolate",  DishType::Pasta),
+    ("chocolate", DishType::Soup),
+    ("chocolate", DishType::Stew),
+    ("chocolate", DishType::Salad),
+    ("chocolate", DishType::StirFry),
+    ("chocolate", DishType::Grill),
+    ("chocolate", DishType::Pasta),
     // ── Sweet fruits don't belong in soups / stews ──
-    ("cherry",     DishType::Soup),
-    ("banana",     DishType::Soup),
-    ("grape",      DishType::Soup),
+    ("cherry", DishType::Soup),
+    ("banana", DishType::Soup),
+    ("grape", DishType::Soup),
     ("watermelon", DishType::Soup),
-    ("kiwi",       DishType::Soup),
-    ("mango",      DishType::Soup),
-    ("pineapple",  DishType::Soup),
-    ("cherry",     DishType::Stew),
-    ("banana",     DishType::Stew),
-    ("grape",      DishType::Stew),
+    ("kiwi", DishType::Soup),
+    ("mango", DishType::Soup),
+    ("pineapple", DishType::Soup),
+    ("cherry", DishType::Stew),
+    ("banana", DishType::Stew),
+    ("grape", DishType::Stew),
     ("watermelon", DishType::Stew),
-    ("pineapple",  DishType::Stew),
+    ("pineapple", DishType::Stew),
     // ── Raw fish exclusions ──
-    ("chicken",    DishType::Raw), // chicken tartare = dangerous
-    ("pork",       DishType::Raw), // pork tartare = dangerous
+    ("chicken", DishType::Raw), // chicken tartare = dangerous
+    ("pork", DishType::Raw),    // pork tartare = dangerous
 ];
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -165,7 +165,10 @@ pub fn filter_ingredients(
     if !removed.is_empty() {
         tracing::info!(
             "🚫 food_pairing filtered: {:?}",
-            removed.iter().map(|(s, r)| format!("{s} ({r})")).collect::<Vec<_>>()
+            removed
+                .iter()
+                .map(|(s, r)| format!("{s} ({r})"))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -174,16 +177,16 @@ pub fn filter_ingredients(
 
 /// Check if a slug is banned from a dish type.
 fn is_banned_in_dish(slug: &str, dish_type: DishType) -> bool {
-    BANNED_IN_DISH.iter().any(|(banned, dt)| {
-        *dt == dish_type && slug.contains(banned)
-    })
+    BANNED_IN_DISH
+        .iter()
+        .any(|(banned, dt)| *dt == dish_type && slug.contains(banned))
 }
 
 /// Check if two slugs form a banned pair.
 fn is_banned_pair(a: &str, b: &str) -> bool {
-    BANNED_PAIRS.iter().any(|(x, y)| {
-        (a.contains(x) && b.contains(y)) || (a.contains(y) && b.contains(x))
-    })
+    BANNED_PAIRS
+        .iter()
+        .any(|(x, y)| (a.contains(x) && b.contains(y)) || (a.contains(y) && b.contains(x)))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -194,7 +197,12 @@ mod tests {
 
     #[test]
     fn cherry_removed_from_fish_soup() {
-        let slugs = vec!["cod".into(), "potato".into(), "cherry".into(), "onion".into()];
+        let slugs = vec![
+            "cod".into(),
+            "potato".into(),
+            "cherry".into(),
+            "onion".into(),
+        ];
         let (kept, removed) = filter_ingredients(&slugs, DishType::Soup);
         assert!(!kept.contains(&"cherry".to_string()));
         assert_eq!(removed.len(), 1);
@@ -227,7 +235,12 @@ mod tests {
 
     #[test]
     fn normal_ingredients_pass_through() {
-        let slugs = vec!["beef".into(), "potato".into(), "onion".into(), "carrot".into()];
+        let slugs = vec![
+            "beef".into(),
+            "potato".into(),
+            "onion".into(),
+            "carrot".into(),
+        ];
         let (kept, removed) = filter_ingredients(&slugs, DishType::Soup);
         assert_eq!(kept.len(), 4);
         assert!(removed.is_empty());
@@ -261,7 +274,12 @@ mod tests {
 
     #[test]
     fn ice_cream_removed_from_soup() {
-        let slugs = vec!["chicken".into(), "tomato".into(), "ice-cream".into(), "carrot".into()];
+        let slugs = vec![
+            "chicken".into(),
+            "tomato".into(),
+            "ice-cream".into(),
+            "carrot".into(),
+        ];
         let (kept, removed) = filter_ingredients(&slugs, DishType::Soup);
         assert!(!kept.contains(&"ice-cream".to_string()));
         assert_eq!(removed.len(), 1);

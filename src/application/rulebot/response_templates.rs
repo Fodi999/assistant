@@ -6,12 +6,12 @@
 //! Each function receives a typed context and returns localized text.
 
 use super::intent_router::ChatLang;
-use crate::infrastructure::ingredient_cache::IngredientData;
 use super::meal_builder::MealCombo;
+use crate::infrastructure::ingredient_cache::IngredientData;
 
 // Re-export HealthGoal so templates can use it
-pub use super::response_builder::HealthGoal;
 use super::response_builder::portion_grams;
+pub use super::response_builder::HealthGoal;
 
 // ── Greeting ─────────────────────────────────────────────────────────────────
 
@@ -100,7 +100,10 @@ pub fn healthy_text(name: &str, p: &IngredientData, lang: ChatLang, goal: Health
         bullets.push(match lang {
             ChatLang::Ru => format!("• минимум жира, источник сложных углеводов ({:.0}г)", carb),
             ChatLang::En => format!("• minimal fat, complex carb source ({:.0}g)", carb),
-            ChatLang::Pl => format!("• minimum tłuszczu, źródło węglowodanów złożonych ({:.0}g)", carb),
+            ChatLang::Pl => format!(
+                "• minimum tłuszczu, źródło węglowodanów złożonych ({:.0}g)",
+                carb
+            ),
             ChatLang::Uk => format!("• мінімум жиру, джерело складних вуглеводів ({:.0}г)", carb),
         });
     } else if fat < 3.0 {
@@ -114,26 +117,52 @@ pub fn healthy_text(name: &str, p: &IngredientData, lang: ChatLang, goal: Health
 
     if bullets.is_empty() {
         bullets.push(match lang {
-            ChatLang::Ru => format!("• {} ккал · {:.0}г белка · {:.0}г жиров · {:.0}г углеводов", cal, pro, fat, carb),
-            ChatLang::En => format!("• {} kcal · {:.0}g protein · {:.0}g fat · {:.0}g carbs", cal, pro, fat, carb),
-            ChatLang::Pl => format!("• {} kcal · {:.0}g białka · {:.0}g tłuszczu · {:.0}g węglowodanów", cal, pro, fat, carb),
-            ChatLang::Uk => format!("• {} ккал · {:.0}г білка · {:.0}г жирів · {:.0}г вуглеводів", cal, pro, fat, carb),
+            ChatLang::Ru => format!(
+                "• {} ккал · {:.0}г белка · {:.0}г жиров · {:.0}г углеводов",
+                cal, pro, fat, carb
+            ),
+            ChatLang::En => format!(
+                "• {} kcal · {:.0}g protein · {:.0}g fat · {:.0}g carbs",
+                cal, pro, fat, carb
+            ),
+            ChatLang::Pl => format!(
+                "• {} kcal · {:.0}g białka · {:.0}g tłuszczu · {:.0}g węglowodanów",
+                cal, pro, fat, carb
+            ),
+            ChatLang::Uk => format!(
+                "• {} ккал · {:.0}г білка · {:.0}г жирів · {:.0}г вуглеводів",
+                cal, pro, fat, carb
+            ),
         });
     }
 
     let opener = match (lang, goal) {
-        (ChatLang::Ru, HealthGoal::LowCalorie)  => format!("Для похудения **{}** — хороший вариант:", name),
-        (ChatLang::Ru, HealthGoal::HighProtein)  => format!("Для набора массы **{}** — сильный выбор:", name),
-        (ChatLang::Ru, HealthGoal::Balanced)     => format!("**{}** — сбалансированный вариант:", name),
-        (ChatLang::En, HealthGoal::LowCalorie)   => format!("For weight loss, **{}** works well:", name),
-        (ChatLang::En, HealthGoal::HighProtein)   => format!("For muscle gain, **{}** is a strong pick:", name),
-        (ChatLang::En, HealthGoal::Balanced)      => format!("**{}** — a balanced option:", name),
-        (ChatLang::Pl, HealthGoal::LowCalorie)   => format!("Na odchudzanie **{}** — dobry wybór:", name),
-        (ChatLang::Pl, HealthGoal::HighProtein)   => format!("Na masę **{}** — mocny wybór:", name),
-        (ChatLang::Pl, HealthGoal::Balanced)      => format!("**{}** — zbalansowana opcja:", name),
-        (ChatLang::Uk, HealthGoal::LowCalorie)   => format!("Для схуднення **{}** — хороший варіант:", name),
-        (ChatLang::Uk, HealthGoal::HighProtein)   => format!("Для набору маси **{}** — сильний вибір:", name),
-        (ChatLang::Uk, HealthGoal::Balanced)      => format!("**{}** — збалансований варіант:", name),
+        (ChatLang::Ru, HealthGoal::LowCalorie) => {
+            format!("Для похудения **{}** — хороший вариант:", name)
+        }
+        (ChatLang::Ru, HealthGoal::HighProtein) => {
+            format!("Для набора массы **{}** — сильный выбор:", name)
+        }
+        (ChatLang::Ru, HealthGoal::Balanced) => format!("**{}** — сбалансированный вариант:", name),
+        (ChatLang::En, HealthGoal::LowCalorie) => {
+            format!("For weight loss, **{}** works well:", name)
+        }
+        (ChatLang::En, HealthGoal::HighProtein) => {
+            format!("For muscle gain, **{}** is a strong pick:", name)
+        }
+        (ChatLang::En, HealthGoal::Balanced) => format!("**{}** — a balanced option:", name),
+        (ChatLang::Pl, HealthGoal::LowCalorie) => {
+            format!("Na odchudzanie **{}** — dobry wybór:", name)
+        }
+        (ChatLang::Pl, HealthGoal::HighProtein) => format!("Na masę **{}** — mocny wybór:", name),
+        (ChatLang::Pl, HealthGoal::Balanced) => format!("**{}** — zbalansowana opcja:", name),
+        (ChatLang::Uk, HealthGoal::LowCalorie) => {
+            format!("Для схуднення **{}** — хороший варіант:", name)
+        }
+        (ChatLang::Uk, HealthGoal::HighProtein) => {
+            format!("Для набору маси **{}** — сильний вибір:", name)
+        }
+        (ChatLang::Uk, HealthGoal::Balanced) => format!("**{}** — збалансований варіант:", name),
     };
 
     format!("{}\n{}", opener, bullets.join("\n"))
@@ -165,10 +194,18 @@ pub fn highlight(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String
                 }
             } else if p.calories_per_100g < 50.0 {
                 match lang {
-                    ChatLang::Ru => format!("мало калорий — {} ккал/100г", p.calories_per_100g as i32),
-                    ChatLang::En => format!("low calorie — {} kcal/100g", p.calories_per_100g as i32),
-                    ChatLang::Pl => format!("mało kalorii — {} kcal/100g", p.calories_per_100g as i32),
-                    ChatLang::Uk => format!("мало калорій — {} ккал/100г", p.calories_per_100g as i32),
+                    ChatLang::Ru => {
+                        format!("мало калорий — {} ккал/100г", p.calories_per_100g as i32)
+                    }
+                    ChatLang::En => {
+                        format!("low calorie — {} kcal/100g", p.calories_per_100g as i32)
+                    }
+                    ChatLang::Pl => {
+                        format!("mało kalorii — {} kcal/100g", p.calories_per_100g as i32)
+                    }
+                    ChatLang::Uk => {
+                        format!("мало калорій — {} ккал/100г", p.calories_per_100g as i32)
+                    }
                 }
             } else {
                 match lang {
@@ -184,13 +221,30 @@ pub fn highlight(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String
 
 // ── Macro summary (reason field) ─────────────────────────────────────────────
 
-pub fn macro_summary(p: &IngredientData, lang: ChatLang, goal: HealthGoal, total_options: usize) -> String {
+pub fn macro_summary(
+    p: &IngredientData,
+    lang: ChatLang,
+    goal: HealthGoal,
+    total_options: usize,
+) -> String {
     let pro = p.protein_per_100g;
     let fat = p.fat_per_100g;
     let cal = p.calories_per_100g as i32;
 
-    let pro_level = if pro >= 20.0 { "high" } else if pro >= 10.0 { "moderate" } else { "low" };
-    let fat_level = if fat >= 15.0 { "high" } else if fat >= 5.0 { "moderate" } else { "low" };
+    let pro_level = if pro >= 20.0 {
+        "high"
+    } else if pro >= 10.0 {
+        "moderate"
+    } else {
+        "low"
+    };
+    let fat_level = if fat >= 15.0 {
+        "high"
+    } else if fat >= 5.0 {
+        "moderate"
+    } else {
+        "low"
+    };
 
     let extras = if total_options > 1 {
         match lang {
@@ -205,42 +259,74 @@ pub fn macro_summary(p: &IngredientData, lang: ChatLang, goal: HealthGoal, total
 
     match lang {
         ChatLang::Ru => {
-            let pro_s = match pro_level { "high" => "белок высокий", "moderate" => "белок средний", _ => "белка мало" };
-            let fat_s = match fat_level { "high" => "жир высокий", "moderate" => "жир умеренный", _ => "жира минимум" };
+            let pro_s = match pro_level {
+                "high" => "белок высокий",
+                "moderate" => "белок средний",
+                _ => "белка мало",
+            };
+            let fat_s = match fat_level {
+                "high" => "жир высокий",
+                "moderate" => "жир умеренный",
+                _ => "жира минимум",
+            };
             let action = match goal {
-                HealthGoal::LowCalorie  => format!(" → {} ккал, можно улучшить", cal),
+                HealthGoal::LowCalorie => format!(" → {} ккал, можно улучшить", cal),
                 HealthGoal::HighProtein => format!(" → {:.0}г белка/100г, хороший старт", pro),
-                HealthGoal::Balanced    => " → баланс ОК".into(),
+                HealthGoal::Balanced => " → баланс ОК".into(),
             };
             format!("{}, {}{}{}", pro_s, fat_s, action, extras)
         }
         ChatLang::En => {
-            let pro_s = match pro_level { "high" => "protein high", "moderate" => "protein moderate", _ => "protein low" };
-            let fat_s = match fat_level { "high" => "fat high", "moderate" => "fat moderate", _ => "fat minimal" };
+            let pro_s = match pro_level {
+                "high" => "protein high",
+                "moderate" => "protein moderate",
+                _ => "protein low",
+            };
+            let fat_s = match fat_level {
+                "high" => "fat high",
+                "moderate" => "fat moderate",
+                _ => "fat minimal",
+            };
             let action = match goal {
-                HealthGoal::LowCalorie  => format!(" → {} kcal, room to improve", cal),
+                HealthGoal::LowCalorie => format!(" → {} kcal, room to improve", cal),
                 HealthGoal::HighProtein => format!(" → {:.0}g protein/100g, good start", pro),
-                HealthGoal::Balanced    => " → balance OK".into(),
+                HealthGoal::Balanced => " → balance OK".into(),
             };
             format!("{}, {}{}{}", pro_s, fat_s, action, extras)
         }
         ChatLang::Pl => {
-            let pro_s = match pro_level { "high" => "białko wysokie", "moderate" => "białko średnie", _ => "białka mało" };
-            let fat_s = match fat_level { "high" => "tłuszcz wysoki", "moderate" => "tłuszcz umiarkowany", _ => "tłuszczu minimum" };
+            let pro_s = match pro_level {
+                "high" => "białko wysokie",
+                "moderate" => "białko średnie",
+                _ => "białka mało",
+            };
+            let fat_s = match fat_level {
+                "high" => "tłuszcz wysoki",
+                "moderate" => "tłuszcz umiarkowany",
+                _ => "tłuszczu minimum",
+            };
             let action = match goal {
-                HealthGoal::LowCalorie  => format!(" → {} kcal, można poprawić", cal),
+                HealthGoal::LowCalorie => format!(" → {} kcal, można poprawić", cal),
                 HealthGoal::HighProtein => format!(" → {:.0}g białka/100g, dobry start", pro),
-                HealthGoal::Balanced    => " → balans OK".into(),
+                HealthGoal::Balanced => " → balans OK".into(),
             };
             format!("{}, {}{}{}", pro_s, fat_s, action, extras)
         }
         ChatLang::Uk => {
-            let pro_s = match pro_level { "high" => "білок високий", "moderate" => "білок середній", _ => "білка мало" };
-            let fat_s = match fat_level { "high" => "жир високий", "moderate" => "жир помірний", _ => "жиру мінімум" };
+            let pro_s = match pro_level {
+                "high" => "білок високий",
+                "moderate" => "білок середній",
+                _ => "білка мало",
+            };
+            let fat_s = match fat_level {
+                "high" => "жир високий",
+                "moderate" => "жир помірний",
+                _ => "жиру мінімум",
+            };
             let action = match goal {
-                HealthGoal::LowCalorie  => format!(" → {} ккал, можна покращити", cal),
+                HealthGoal::LowCalorie => format!(" → {} ккал, можна покращити", cal),
                 HealthGoal::HighProtein => format!(" → {:.0}г білка/100г, хороший старт", pro),
-                HealthGoal::Balanced    => " → баланс ОК".into(),
+                HealthGoal::Balanced => " → баланс ОК".into(),
             };
             format!("{}, {}{}{}", pro_s, fat_s, action, extras)
         }
@@ -295,7 +381,14 @@ pub fn product_info_text(name: &str, p: &IngredientData, lang: ChatLang) -> Stri
 
 // ── Conversion ───────────────────────────────────────────────────────────────
 
-pub fn conversion_text(value: f64, from: &str, result: f64, to: &str, supported: bool, lang: ChatLang) -> String {
+pub fn conversion_text(
+    value: f64,
+    from: &str,
+    result: f64,
+    to: &str,
+    supported: bool,
+    lang: ChatLang,
+) -> String {
     if !supported {
         return match lang {
             ChatLang::Ru => format!("Не могу перевести {} {} в {} — такая конвертация не поддерживается. Попробуй: г, кг, мл, л, ст.л., ч.л.", value, from, to),
@@ -308,12 +401,31 @@ pub fn conversion_text(value: f64, from: &str, result: f64, to: &str, supported:
 }
 
 /// Conversion text with product context (density-based).
-pub fn conversion_with_product_text(value: f64, from: &str, result: f64, to: &str, product_name: &str, lang: ChatLang) -> String {
+pub fn conversion_with_product_text(
+    value: f64,
+    from: &str,
+    result: f64,
+    to: &str,
+    product_name: &str,
+    lang: ChatLang,
+) -> String {
     match lang {
-        ChatLang::Ru => format!("✅ {} {} **{}** = **{} {}**\n(расчёт по плотности продукта)", value, from, product_name, result, to),
-        ChatLang::En => format!("✅ {} {} of **{}** = **{} {}**\n(calculated using product density)", value, from, product_name, result, to),
-        ChatLang::Pl => format!("✅ {} {} **{}** = **{} {}**\n(obliczone na podstawie gęstości produktu)", value, from, product_name, result, to),
-        ChatLang::Uk => format!("✅ {} {} **{}** = **{} {}**\n(розрахунок за щільністю продукту)", value, from, product_name, result, to),
+        ChatLang::Ru => format!(
+            "✅ {} {} **{}** = **{} {}**\n(расчёт по плотности продукта)",
+            value, from, product_name, result, to
+        ),
+        ChatLang::En => format!(
+            "✅ {} {} of **{}** = **{} {}**\n(calculated using product density)",
+            value, from, product_name, result, to
+        ),
+        ChatLang::Pl => format!(
+            "✅ {} {} **{}** = **{} {}**\n(obliczone na podstawie gęstości produktu)",
+            value, from, product_name, result, to
+        ),
+        ChatLang::Uk => format!(
+            "✅ {} {} **{}** = **{} {}**\n(розрахунок за щільністю продукту)",
+            value, from, product_name, result, to
+        ),
     }
 }
 
@@ -353,7 +465,9 @@ pub fn conversion_ask_product_text(value: f64, from: &str, to: &str, lang: ChatL
 pub fn nutrition_hint(lang: ChatLang) -> &'static str {
     match lang {
         ChatLang::Ru => "Укажи продукт — например: «калории шпината» или «белок в курице»",
-        ChatLang::En => "Tell me which product — e.g. \"calories in spinach\" or \"protein in chicken\"",
+        ChatLang::En => {
+            "Tell me which product — e.g. \"calories in spinach\" or \"protein in chicken\""
+        }
         ChatLang::Pl => "Podaj produkt — np. «kalorie szpinaku» lub «białko w kurczaku»",
         ChatLang::Uk => "Вкажи продукт — наприклад: «калорії шпинату» або «білок у курці»",
     }
@@ -451,10 +565,27 @@ pub fn cooking_loss_no_product(lang: ChatLang) -> &'static str {
 
 pub fn season_text(product: &str, lang: ChatLang) -> String {
     let season_info = match product {
-        "salmon" | "лосось" => ("salmon", "June–September", "Июнь–Сентябрь", "Czerwiec–Wrzesień"),
-        "strawberry" | "клубника" | "truskawka" => ("strawberry", "May–July", "Май–Июль", "Maj–Lipiec"),
-        "herring" | "сельдь" | "śledź" => ("herring", "October–April", "Октябрь–Апрель", "Październik–Kwiecień"),
-        "mushrooms" | "грибы" | "grzyby" => ("mushrooms", "August–October", "Август–Октябрь", "Sierpień–Październik"),
+        "salmon" | "лосось" => (
+            "salmon",
+            "June–September",
+            "Июнь–Сентябрь",
+            "Czerwiec–Wrzesień",
+        ),
+        "strawberry" | "клубника" | "truskawka" => {
+            ("strawberry", "May–July", "Май–Июль", "Maj–Lipiec")
+        }
+        "herring" | "сельдь" | "śledź" => (
+            "herring",
+            "October–April",
+            "Октябрь–Апрель",
+            "Październik–Kwiecień",
+        ),
+        "mushrooms" | "грибы" | "grzyby" => (
+            "mushrooms",
+            "August–October",
+            "Август–Октябрь",
+            "Sierpień–Październik",
+        ),
         _ => return season_hint(lang).to_string(),
     };
     match lang {
@@ -496,11 +627,26 @@ pub fn recipe_generic(lang: ChatLang) -> &'static str {
 
 // ── Meal idea ────────────────────────────────────────────────────────────────
 
-pub fn meal_idea_with_product(meal_name: &str, description: &str, ingredient_name: &str, cal: i32, lang: ChatLang) -> String {
+pub fn meal_idea_with_product(
+    meal_name: &str,
+    description: &str,
+    ingredient_name: &str,
+    cal: i32,
+    lang: ChatLang,
+) -> String {
     match lang {
-        ChatLang::Ru => format!("🍽️ Идея на сегодня: **{}**\n\n{}\n\nГлавный ингредиент: {} ({} ккал/100г)", meal_name, description, ingredient_name, cal),
-        ChatLang::En => format!("🍽️ Today's idea: **{}**\n\n{}\n\nMain ingredient: {} ({} kcal/100g)", meal_name, description, ingredient_name, cal),
-        ChatLang::Pl | ChatLang::Uk => format!("🍽️ Pomysł na dziś: **{}**\n\n{}\n\nGłówny składnik: {} ({} kcal/100g)", meal_name, description, ingredient_name, cal),
+        ChatLang::Ru => format!(
+            "🍽️ Идея на сегодня: **{}**\n\n{}\n\nГлавный ингредиент: {} ({} ккал/100г)",
+            meal_name, description, ingredient_name, cal
+        ),
+        ChatLang::En => format!(
+            "🍽️ Today's idea: **{}**\n\n{}\n\nMain ingredient: {} ({} kcal/100g)",
+            meal_name, description, ingredient_name, cal
+        ),
+        ChatLang::Pl | ChatLang::Uk => format!(
+            "🍽️ Pomysł na dziś: **{}**\n\n{}\n\nGłówny składnik: {} ({} kcal/100g)",
+            meal_name, description, ingredient_name, cal
+        ),
     }
 }
 
@@ -508,7 +654,9 @@ pub fn meal_idea_text_only(meal_name: &str, description: &str, lang: ChatLang) -
     match lang {
         ChatLang::Ru => format!("🍽️ Идея на сегодня: **{}**\n\n{}", meal_name, description),
         ChatLang::En => format!("🍽️ Today's idea: **{}**\n\n{}", meal_name, description),
-        ChatLang::Pl | ChatLang::Uk => format!("🍽️ Pomysł na dziś: **{}**\n\n{}", meal_name, description),
+        ChatLang::Pl | ChatLang::Uk => {
+            format!("🍽️ Pomysł na dziś: **{}**\n\n{}", meal_name, description)
+        }
     }
 }
 
@@ -521,18 +669,18 @@ pub fn meal_plan_text(
     goal: HealthGoal,
 ) -> String {
     let goal_label = match (lang, goal) {
-        (ChatLang::Ru, HealthGoal::LowCalorie)  => "для похудения",
-        (ChatLang::Ru, HealthGoal::HighProtein)  => "для набора массы",
-        (ChatLang::Ru, HealthGoal::Balanced)     => "сбалансированный",
-        (ChatLang::En, HealthGoal::LowCalorie)   => "for weight loss",
-        (ChatLang::En, HealthGoal::HighProtein)   => "for muscle gain",
-        (ChatLang::En, HealthGoal::Balanced)      => "balanced",
-        (ChatLang::Pl, HealthGoal::LowCalorie)   => "na odchudzanie",
-        (ChatLang::Pl, HealthGoal::HighProtein)   => "na masę",
-        (ChatLang::Pl, HealthGoal::Balanced)      => "zbalansowany",
-        (ChatLang::Uk, HealthGoal::LowCalorie)   => "для схуднення",
-        (ChatLang::Uk, HealthGoal::HighProtein)   => "для набору маси",
-        (ChatLang::Uk, HealthGoal::Balanced)      => "збалансований",
+        (ChatLang::Ru, HealthGoal::LowCalorie) => "для похудения",
+        (ChatLang::Ru, HealthGoal::HighProtein) => "для набора массы",
+        (ChatLang::Ru, HealthGoal::Balanced) => "сбалансированный",
+        (ChatLang::En, HealthGoal::LowCalorie) => "for weight loss",
+        (ChatLang::En, HealthGoal::HighProtein) => "for muscle gain",
+        (ChatLang::En, HealthGoal::Balanced) => "balanced",
+        (ChatLang::Pl, HealthGoal::LowCalorie) => "na odchudzanie",
+        (ChatLang::Pl, HealthGoal::HighProtein) => "na masę",
+        (ChatLang::Pl, HealthGoal::Balanced) => "zbalansowany",
+        (ChatLang::Uk, HealthGoal::LowCalorie) => "для схуднення",
+        (ChatLang::Uk, HealthGoal::HighProtein) => "для набору маси",
+        (ChatLang::Uk, HealthGoal::Balanced) => "збалансований",
     };
 
     let header = match lang {
@@ -550,23 +698,41 @@ pub fn meal_plan_text(
         let cal = (p.calories_per_100g * g / 100.0) as i32;
         let pro = p.protein_per_100g * g / 100.0;
         let portion_label = format!("{:.0}г", g);
-        lines.push(format!("{}: **{}** ({}) — {} ккал · {:.0}г белка", label, name, portion_label, cal, pro));
+        lines.push(format!(
+            "{}: **{}** ({}) — {} ккал · {:.0}г белка",
+            label, name, portion_label, cal, pro
+        ));
     }
 
-    let total_cal: i32 = products.iter().map(|(p, _, _)| {
-        let g = portion_grams(p);
-        (p.calories_per_100g * g / 100.0) as i32
-    }).sum();
-    let total_pro: f32 = products.iter().map(|(p, _, _)| {
-        let g = portion_grams(p);
-        p.protein_per_100g * g / 100.0
-    }).sum();
+    let total_cal: i32 = products
+        .iter()
+        .map(|(p, _, _)| {
+            let g = portion_grams(p);
+            (p.calories_per_100g * g / 100.0) as i32
+        })
+        .sum();
+    let total_pro: f32 = products
+        .iter()
+        .map(|(p, _, _)| {
+            let g = portion_grams(p);
+            p.protein_per_100g * g / 100.0
+        })
+        .sum();
 
     let footer = match lang {
         ChatLang::Ru => format!("\n**Итого: ~{} ккал · {:.0}г белка**", total_cal, total_pro),
-        ChatLang::En => format!("\n**Total: ~{} kcal · {:.0}g protein**", total_cal, total_pro),
-        ChatLang::Pl => format!("\n**Razem: ~{} kcal · {:.0}g białka**", total_cal, total_pro),
-        ChatLang::Uk => format!("\n**Всього: ~{} ккал · {:.0}г білка**", total_cal, total_pro),
+        ChatLang::En => format!(
+            "\n**Total: ~{} kcal · {:.0}g protein**",
+            total_cal, total_pro
+        ),
+        ChatLang::Pl => format!(
+            "\n**Razem: ~{} kcal · {:.0}g białka**",
+            total_cal, total_pro
+        ),
+        ChatLang::Uk => format!(
+            "\n**Всього: ~{} ккал · {:.0}г білка**",
+            total_cal, total_pro
+        ),
     };
     lines.push(footer);
 
@@ -587,7 +753,8 @@ pub fn already_seen_text(
     let cal = p.calories_per_100g as i32;
     let pro = p.protein_per_100g;
 
-    let alt_names: Vec<String> = alternatives.iter()
+    let alt_names: Vec<String> = alternatives
+        .iter()
         .map(|(a, _, _)| a.name(lang.code()).to_string())
         .collect();
     let alt_list = if alt_names.is_empty() {
@@ -598,67 +765,130 @@ pub fn already_seen_text(
 
     match (lang, goal) {
         (ChatLang::Ru, HealthGoal::LowCalorie) => {
-            let base = format!("✅ **{}** — отличный выбор для похудения ({} ккал, {:.0}г белка).", name, cal, pro);
+            let base = format!(
+                "✅ **{}** — отличный выбор для похудения ({} ккал, {:.0}г белка).",
+                name, cal, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Чередуй с рыбой и овощами — разнообразие ускоряет результат.", base)
+                format!(
+                    "{}\n\n💡 Чередуй с рыбой и овощами — разнообразие ускоряет результат.",
+                    base
+                )
             } else {
                 format!("{}\n\nА вот что ещё поможет:\n🔀 Попробуй чередовать с **{}** — разнообразие ускоряет результат.", base, alt_list)
             }
         }
         (ChatLang::Ru, HealthGoal::HighProtein) => {
-            let base = format!("✅ **{}** — мощный источник белка ({:.0}г на 100г).", name, pro);
+            let base = format!(
+                "✅ **{}** — мощный источник белка ({:.0}г на 100г).",
+                name, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Комбинируй с крупами для полного аминокислотного профиля.", base)
+                format!(
+                    "{}\n\n💡 Комбинируй с крупами для полного аминокислотного профиля.",
+                    base
+                )
             } else {
-                format!("{}\n\nДля разнообразия добавь:\n🔀 **{}** — другие сильные источники белка.", base, alt_list)
+                format!(
+                    "{}\n\nДля разнообразия добавь:\n🔀 **{}** — другие сильные источники белка.",
+                    base, alt_list
+                )
             }
         }
         (ChatLang::Ru, HealthGoal::Balanced) => {
-            let base = format!("✅ **{}** — сбалансированный выбор ({} ккал, {:.0}г белка).", name, cal, pro);
+            let base = format!(
+                "✅ **{}** — сбалансированный выбор ({} ккал, {:.0}г белка).",
+                name, cal, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Разнообразь рацион — каждый продукт даёт свой набор микроэлементов.", base)
+                format!(
+                    "{}\n\n💡 Разнообразь рацион — каждый продукт даёт свой набор микроэлементов.",
+                    base
+                )
             } else {
                 format!("{}\n\nДля полноценного рациона добавь:\n🔀 **{}** — хорошо дополняют друг друга.", base, alt_list)
             }
         }
         (ChatLang::En, HealthGoal::LowCalorie) => {
-            let base = format!("✅ **{}** — great choice for weight loss ({} kcal, {:.0}g protein).", name, cal, pro);
+            let base = format!(
+                "✅ **{}** — great choice for weight loss ({} kcal, {:.0}g protein).",
+                name, cal, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Rotate with fish and veggies — variety boosts results.", base)
+                format!(
+                    "{}\n\n💡 Rotate with fish and veggies — variety boosts results.",
+                    base
+                )
             } else {
                 format!("{}\n\nAlso consider:\n🔀 Try alternating with **{}** — variety boosts results.", base, alt_list)
             }
         }
         (ChatLang::En, HealthGoal::HighProtein) => {
-            let base = format!("✅ **{}** — powerful protein source ({:.0}g per 100g).", name, pro);
+            let base = format!(
+                "✅ **{}** — powerful protein source ({:.0}g per 100g).",
+                name, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Pair with grains for a complete amino acid profile.", base)
+                format!(
+                    "{}\n\n💡 Pair with grains for a complete amino acid profile.",
+                    base
+                )
             } else {
-                format!("{}\n\nFor variety, add:\n🔀 **{}** — other strong protein sources.", base, alt_list)
+                format!(
+                    "{}\n\nFor variety, add:\n🔀 **{}** — other strong protein sources.",
+                    base, alt_list
+                )
             }
         }
         (ChatLang::En, HealthGoal::Balanced) => {
-            let base = format!("✅ **{}** — balanced pick ({} kcal, {:.0}g protein).", name, cal, pro);
+            let base = format!(
+                "✅ **{}** — balanced pick ({} kcal, {:.0}g protein).",
+                name, cal, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Diversify your meals — each product brings unique micronutrients.", base)
+                format!(
+                    "{}\n\n💡 Diversify your meals — each product brings unique micronutrients.",
+                    base
+                )
             } else {
-                format!("{}\n\nTo round out your diet:\n🔀 **{}** — they complement each other well.", base, alt_list)
+                format!(
+                    "{}\n\nTo round out your diet:\n🔀 **{}** — they complement each other well.",
+                    base, alt_list
+                )
             }
         }
         (ChatLang::Pl, _) => {
-            let base = format!("✅ **{}** — dobry wybór ({} kcal, {:.0}g białka).", name, cal, pro);
+            let base = format!(
+                "✅ **{}** — dobry wybór ({} kcal, {:.0}g białka).",
+                name, cal, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Urozmaicaj dietę — każdy produkt wnosi inne składniki.", base)
+                format!(
+                    "{}\n\n💡 Urozmaicaj dietę — każdy produkt wnosi inne składniki.",
+                    base
+                )
             } else {
-                format!("{}\n\nDla urozmaicenia:\n🔀 **{}** — dobrze się uzupełniają.", base, alt_list)
+                format!(
+                    "{}\n\nDla urozmaicenia:\n🔀 **{}** — dobrze się uzupełniają.",
+                    base, alt_list
+                )
             }
         }
         (ChatLang::Uk, _) => {
-            let base = format!("✅ **{}** — хороший вибір ({} ккал, {:.0}г білка).", name, cal, pro);
+            let base = format!(
+                "✅ **{}** — хороший вибір ({} ккал, {:.0}г білка).",
+                name, cal, pro
+            );
             if alt_list.is_empty() {
-                format!("{}\n\n💡 Урізноманітнюй раціон — кожен продукт дає свої мікроелементи.", base)
+                format!(
+                    "{}\n\n💡 Урізноманітнюй раціон — кожен продукт дає свої мікроелементи.",
+                    base
+                )
             } else {
-                format!("{}\n\nДля різноманіття:\n🔀 **{}** — добре доповнюють один одного.", base, alt_list)
+                format!(
+                    "{}\n\nДля різноманіття:\n🔀 **{}** — добре доповнюють один одного.",
+                    base, alt_list
+                )
             }
         }
     }
@@ -673,10 +903,22 @@ pub fn already_seen_reason(
 ) -> String {
     let alt_count = alternatives.len();
     match lang {
-        ChatLang::Ru => format!("{} уже показан → предлагаю {} альтернатив(ы)", name, alt_count),
-        ChatLang::En => format!("{} already shown → suggesting {} alternative(s)", name, alt_count),
-        ChatLang::Pl => format!("{} już pokazany → proponuję {} alternatyw(y)", name, alt_count),
-        ChatLang::Uk => format!("{} вже показано → пропоную {} альтернатив(и)", name, alt_count),
+        ChatLang::Ru => format!(
+            "{} уже показан → предлагаю {} альтернатив(ы)",
+            name, alt_count
+        ),
+        ChatLang::En => format!(
+            "{} already shown → suggesting {} alternative(s)",
+            name, alt_count
+        ),
+        ChatLang::Pl => format!(
+            "{} już pokazany → proponuję {} alternatyw(y)",
+            name, alt_count
+        ),
+        ChatLang::Uk => format!(
+            "{} вже показано → пропоную {} альтернатив(и)",
+            name, alt_count
+        ),
     }
 }
 
@@ -757,7 +999,11 @@ pub fn chef_tip(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String 
 
     let tip_seed = {
         use std::time::{SystemTime, UNIX_EPOCH};
-        (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() / 10) as usize
+        (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            / 10) as usize
     };
 
     // ── Product-specific tips ──
@@ -853,18 +1099,24 @@ pub fn chef_tip(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String 
 
     let tips: Vec<(&str, &str, &str, &str)> = if is_meat {
         vec![
-            ("Готовь мясо на решётке или в духовке — жир стечёт, минус ~100 ккал.",
-             "Cook meat on a rack or in the oven — fat drips off, minus ~100 kcal.",
-             "Piecz mięso na ruszcie — tłuszcz ścieka, minus ~100 kcal.",
-             "Готуй м'ясо на решітці — жир стече, мінус ~100 ккал."),
-            ("Маринуй в лимонном соке + травы — вкуснее и мягче без масла.",
-             "Marinate in lemon juice + herbs — tastier and tender without oil.",
-             "Marynuj w soku z cytryny + zioła — smaczniej i delikatniej bez oleju.",
-             "Маринуй в лимонному соці + трави — смачніше без олії."),
-            ("Дай мясу «отдохнуть» 5 мин после готовки — соки распределятся.",
-             "Let meat rest 5 min after cooking — juices redistribute evenly.",
-             "Daj mięsu odpocząć 5 min — soki się rozprowadzą.",
-             "Дай м'ясу «відпочити» 5 хв — соки розподіляться."),
+            (
+                "Готовь мясо на решётке или в духовке — жир стечёт, минус ~100 ккал.",
+                "Cook meat on a rack or in the oven — fat drips off, minus ~100 kcal.",
+                "Piecz mięso na ruszcie — tłuszcz ścieka, minus ~100 kcal.",
+                "Готуй м'ясо на решітці — жир стече, мінус ~100 ккал.",
+            ),
+            (
+                "Маринуй в лимонном соке + травы — вкуснее и мягче без масла.",
+                "Marinate in lemon juice + herbs — tastier and tender without oil.",
+                "Marynuj w soku z cytryny + zioła — smaczniej i delikatniej bez oleju.",
+                "Маринуй в лимонному соці + трави — смачніше без олії.",
+            ),
+            (
+                "Дай мясу «отдохнуть» 5 мин после готовки — соки распределятся.",
+                "Let meat rest 5 min after cooking — juices redistribute evenly.",
+                "Daj mięsu odpocząć 5 min — soki się rozprowadzą.",
+                "Дай м'ясу «відпочити» 5 хв — соки розподіляться.",
+            ),
         ]
     } else if is_veggie {
         vec![
@@ -883,36 +1135,48 @@ pub fn chef_tip(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String 
         ]
     } else if high_protein && matches!(goal, HealthGoal::HighProtein) {
         vec![
-            ("Готовь на пару — сохраняет до 95% белка, в отличие от жарки.",
-             "Steam instead of frying — preserves up to 95% of protein.",
-             "Gotuj na parze — zachowuje do 95% białka.",
-             "Готуй на парі — зберігає до 95% білка."),
-            ("Сочетай с бобовыми — получишь полный аминокислотный профиль.",
-             "Pair with legumes for a complete amino acid profile.",
-             "Połącz z roślinami strączkowymi — pełny profil aminokwasów.",
-             "Поєднуй з бобовими — повний амінокислотний профіль."),
+            (
+                "Готовь на пару — сохраняет до 95% белка, в отличие от жарки.",
+                "Steam instead of frying — preserves up to 95% of protein.",
+                "Gotuj na parze — zachowuje do 95% białka.",
+                "Готуй на парі — зберігає до 95% білка.",
+            ),
+            (
+                "Сочетай с бобовыми — получишь полный аминокислотный профиль.",
+                "Pair with legumes for a complete amino acid profile.",
+                "Połącz z roślinami strączkowymi — pełny profil aminokwasów.",
+                "Поєднуй з бобовими — повний амінокислотний профіль.",
+            ),
         ]
     } else if high_fat {
         vec![
-            ("Калорийный продукт — используй как усилитель вкуса, не как основу.",
-             "Calorie-dense — use as a flavor booster, not the main course.",
-             "Kaloryczny produkt — używaj jako wzmacniacz smaku, nie podstawę.",
-             "Калорійний продукт — використовуй як підсилювач смаку."),
-            ("Отмеряй порцию заранее — легко переесть на 200+ ккал.",
-             "Pre-measure your portion — easy to overeat by 200+ kcal.",
-             "Odmierz porcję z góry — łatwo zjeść za dużo.",
-             "Відміряй порцію заздалегідь — легко переїсти на 200+ ккал."),
+            (
+                "Калорийный продукт — используй как усилитель вкуса, не как основу.",
+                "Calorie-dense — use as a flavor booster, not the main course.",
+                "Kaloryczny produkt — używaj jako wzmacniacz smaku, nie podstawę.",
+                "Калорійний продукт — використовуй як підсилювач смаку.",
+            ),
+            (
+                "Отмеряй порцию заранее — легко переесть на 200+ ккал.",
+                "Pre-measure your portion — easy to overeat by 200+ kcal.",
+                "Odmierz porcję z góry — łatwo zjeść za dużo.",
+                "Відміряй порцію заздалегідь — легко переїсти на 200+ ккал.",
+            ),
         ]
     } else if low_cal && matches!(goal, HealthGoal::LowCalorie) {
         vec![
-            ("Запекай вместо жарки — экономишь ~80 ккал на порцию.",
-             "Bake instead of frying — saves ~80 kcal per serving.",
-             "Piecz zamiast smażyć — oszczędzasz ~80 kcal na porcję.",
-             "Запікай замість смаження — економиш ~80 ккал на порцію."),
-            ("Ешь медленнее — насыщение приходит через 20 минут.",
-             "Eat slowly — fullness takes 20 minutes to kick in.",
-             "Jedz wolniej — sytość przychodzi po 20 minutach.",
-             "Їж повільніше — ситість приходить через 20 хвилин."),
+            (
+                "Запекай вместо жарки — экономишь ~80 ккал на порцию.",
+                "Bake instead of frying — saves ~80 kcal per serving.",
+                "Piecz zamiast smażyć — oszczędzasz ~80 kcal na porcję.",
+                "Запікай замість смаження — економиш ~80 ккал на порцію.",
+            ),
+            (
+                "Ешь медленнее — насыщение приходит через 20 минут.",
+                "Eat slowly — fullness takes 20 minutes to kick in.",
+                "Jedz wolniej — sytość przychodzi po 20 minutach.",
+                "Їж повільніше — ситість приходить через 20 хвилин.",
+            ),
         ]
     } else {
         vec![
@@ -961,17 +1225,17 @@ pub fn meal_combo_text(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> S
 
     let goal_label = match (lang, goal) {
         (ChatLang::Ru, HealthGoal::HighProtein) => "💪 Высокобелковый",
-        (ChatLang::Ru, HealthGoal::LowCalorie)  => "🥗 Низкокалорийный",
-        (ChatLang::Ru, HealthGoal::Balanced)     => "⚖️ Сбалансированный",
+        (ChatLang::Ru, HealthGoal::LowCalorie) => "🥗 Низкокалорийный",
+        (ChatLang::Ru, HealthGoal::Balanced) => "⚖️ Сбалансированный",
         (ChatLang::En, HealthGoal::HighProtein) => "💪 High-Protein",
-        (ChatLang::En, HealthGoal::LowCalorie)  => "🥗 Low-Calorie",
-        (ChatLang::En, HealthGoal::Balanced)     => "⚖️ Balanced",
+        (ChatLang::En, HealthGoal::LowCalorie) => "🥗 Low-Calorie",
+        (ChatLang::En, HealthGoal::Balanced) => "⚖️ Balanced",
         (ChatLang::Pl, HealthGoal::HighProtein) => "💪 Wysokobiałkowy",
-        (ChatLang::Pl, HealthGoal::LowCalorie)  => "🥗 Niskokaloryczny",
-        (ChatLang::Pl, HealthGoal::Balanced)     => "⚖️ Zbilansowany",
+        (ChatLang::Pl, HealthGoal::LowCalorie) => "🥗 Niskokaloryczny",
+        (ChatLang::Pl, HealthGoal::Balanced) => "⚖️ Zbilansowany",
         (ChatLang::Uk, HealthGoal::HighProtein) => "💪 Високобілковий",
-        (ChatLang::Uk, HealthGoal::LowCalorie)  => "🥗 Низькокалорійний",
-        (ChatLang::Uk, HealthGoal::Balanced)     => "⚖️ Збалансований",
+        (ChatLang::Uk, HealthGoal::LowCalorie) => "🥗 Низькокалорійний",
+        (ChatLang::Uk, HealthGoal::Balanced) => "⚖️ Збалансований",
     };
 
     let combo_parts = if let Some(bn) = bname {
@@ -1012,7 +1276,10 @@ pub fn meal_combo_text(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> S
 
     let protein_portion = yield_line(combo.protein_g, combo.protein_cooked_g, lang);
     let side_portion = yield_line(combo.side_g, combo.side_cooked_g, lang);
-    let base_portion_opt = combo.base.as_ref().map(|_| yield_line(combo.base_g, combo.base_cooked_g, lang));
+    let base_portion_opt = combo
+        .base
+        .as_ref()
+        .map(|_| yield_line(combo.base_g, combo.base_cooked_g, lang));
 
     let portions = if let Some(bp) = &base_portion_opt {
         format!("({} + {} + {})", protein_portion, side_portion, bp)
@@ -1045,16 +1312,36 @@ pub fn meal_combo_text(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> S
     };
 
     let mut steps = Vec::new();
-    steps.push(step(1, combo.protein_method, pname, &combo.protein.product_type, lang));
+    steps.push(step(
+        1,
+        combo.protein_method,
+        pname,
+        &combo.protein.product_type,
+        lang,
+    ));
     if let (Some(ref b), Some(bn)) = (&combo.base, bname.as_ref()) {
         steps.push(step(2, combo.base_method, bn, &b.product_type, lang));
     }
-    steps.push(step(steps.len() as u8 + 1, combo.side_method, sname, &combo.side.product_type, lang));
+    steps.push(step(
+        steps.len() as u8 + 1,
+        combo.side_method,
+        sname,
+        &combo.side.product_type,
+        lang,
+    ));
 
     // Total cooking time
-    let total_time = combo.protein_method.time_min(&combo.protein.product_type)
+    let total_time = combo
+        .protein_method
+        .time_min(&combo.protein.product_type)
         .max(combo.side_method.time_min(&combo.side.product_type))
-        .max(combo.base.as_ref().map(|b| combo.base_method.time_min(&b.product_type)).unwrap_or(0));
+        .max(
+            combo
+                .base
+                .as_ref()
+                .map(|b| combo.base_method.time_min(&b.product_type))
+                .unwrap_or(0),
+        );
 
     let time_label = match lang {
         ChatLang::Ru => format!("⏱ Общее время: ~{} мин", total_time),

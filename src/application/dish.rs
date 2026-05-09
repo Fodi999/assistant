@@ -28,10 +28,21 @@ impl DishService {
         selling_price: Money,
         image_url: Option<String>,
     ) -> AppResult<Dish> {
-        let mut dish = Dish::new(tenant_id, recipe_id, name, description, selling_price, image_url)?;
+        let mut dish = Dish::new(
+            tenant_id,
+            recipe_id,
+            name,
+            description,
+            selling_price,
+            image_url,
+        )?;
 
         // Try to materialize cost at creation time
-        match self.recipe_service.calculate_cost(recipe_id, tenant_id).await {
+        match self
+            .recipe_service
+            .calculate_cost(recipe_id, tenant_id)
+            .await
+        {
             Ok(recipe_cost) => {
                 let cost = Money::from_cents(recipe_cost.cost_per_serving.as_cents())?;
                 dish.recalculate_cost(cost);
@@ -103,10 +114,7 @@ impl DishService {
     /// Recalculate materialized costs for ALL dishes of a tenant.
     /// Called when ingredient prices change or manually by owner.
     /// Returns (updated_count, error_count).
-    pub async fn recalculate_all_costs(
-        &self,
-        tenant_id: TenantId,
-    ) -> AppResult<RecalculateResult> {
+    pub async fn recalculate_all_costs(&self, tenant_id: TenantId) -> AppResult<RecalculateResult> {
         // Load all dishes (no pagination — we need all of them)
         let all_pagination = PaginationParams {
             page: Some(1),
@@ -236,8 +244,14 @@ impl DishService {
         active_only: bool,
         limit: usize,
     ) -> AppResult<Vec<Dish>> {
-        let pagination = PaginationParams { page: Some(1), per_page: Some(200) };
-        let (all, _total) = self.dish_repo.list_by_tenant(tenant_id, active_only, &pagination).await?;
+        let pagination = PaginationParams {
+            page: Some(1),
+            per_page: Some(200),
+        };
+        let (all, _total) = self
+            .dish_repo
+            .list_by_tenant(tenant_id, active_only, &pagination)
+            .await?;
         let needle = query.trim().to_lowercase();
         if needle.is_empty() {
             return Ok(Vec::new());
@@ -261,7 +275,8 @@ impl DishService {
         if new_price.as_cents() <= 0 {
             return Err(AppError::validation("Selling price must be greater than 0"));
         }
-        self.update_dish(id, tenant_id, None, None, Some(new_price), None).await
+        self.update_dish(id, tenant_id, None, None, Some(new_price), None)
+            .await
     }
 }
 

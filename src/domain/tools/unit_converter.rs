@@ -35,11 +35,11 @@ pub fn grams_per_tsp(density: f64) -> f64 {
 pub fn mass_to_grams(unit: &str) -> Option<f64> {
     match unit {
         "mg" => Some(0.001),
-        "g"  => Some(1.0),
+        "g" => Some(1.0),
         "kg" => Some(1_000.0),
         "oz" => Some(28.3495),
         "lb" => Some(453.592),
-        _    => None,
+        _ => None,
     }
 }
 
@@ -47,21 +47,21 @@ pub fn mass_to_grams(unit: &str) -> Option<f64> {
 
 pub fn volume_to_ml(unit: &str) -> Option<f64> {
     match unit {
-        "ml"     => Some(1.0),
-        "l"      => Some(1_000.0),
-        "fl_oz"  => Some(29.5735),
-        "tsp"    => Some(4.92892),
-        "tbsp"   => Some(14.7868),
-        "cup"    => Some(236.588),
-        "pint"   => Some(473.176),
-        "quart"  => Some(946.353),
+        "ml" => Some(1.0),
+        "l" => Some(1_000.0),
+        "fl_oz" => Some(29.5735),
+        "tsp" => Some(4.92892),
+        "tbsp" => Some(14.7868),
+        "cup" => Some(236.588),
+        "pint" => Some(473.176),
+        "quart" => Some(946.353),
         "gallon" => Some(3_785.41),
         // Micro-kitchen
-        "dash"        => Some(0.616),    // ~1/8 tsp
-        "pinch"       => Some(0.308),    // ~1/16 tsp
-        "drop"        => Some(0.051),    // ~1 drop
+        "dash" => Some(0.616),           // ~1/8 tsp
+        "pinch" => Some(0.308),          // ~1/16 tsp
+        "drop" => Some(0.051),           // ~1 drop
         "stick_butter" => Some(118.294), // 1/2 cup (US stick)
-        _             => None,
+        _ => None,
     }
 }
 
@@ -92,7 +92,12 @@ pub fn convert_units(value: f64, from: &str, to: &str) -> Option<f64> {
 }
 
 /// Density-aware cross-group conversion:  volume ↔ mass via g/ml density.
-pub fn convert_with_density(value: f64, from: &str, to: &str, density_g_per_ml: f64) -> Option<f64> {
+pub fn convert_with_density(
+    value: f64,
+    from: &str,
+    to: &str,
+    density_g_per_ml: f64,
+) -> Option<f64> {
     // Same group → direct
     if let Some(r) = convert_units(value, from, to) {
         return Some(r);
@@ -206,12 +211,16 @@ pub fn food_cost(price_per_unit: f64, amount: f64) -> f64 {
 }
 
 pub fn cost_per_portion(total_cost: f64, portions: f64) -> f64 {
-    if portions <= 0.0 { return 0.0; }
+    if portions <= 0.0 {
+        return 0.0;
+    }
     total_cost / portions
 }
 
 pub fn margin_percent(sell_price: f64, cost: f64) -> f64 {
-    if sell_price <= 0.0 { return 0.0; }
+    if sell_price <= 0.0 {
+        return 0.0;
+    }
     ((sell_price - cost) / sell_price) * 100.0
 }
 
@@ -232,6 +241,19 @@ pub fn mass_units() -> &'static [&'static str] {
 
 /// Returns all supported volume unit codes (includes kitchen)
 pub fn volume_units() -> &'static [&'static str] {
-    &["ml", "l", "fl_oz", "tsp", "tbsp", "cup", "pint", "quart", "gallon",
-      "dash", "pinch", "drop", "stick_butter"]
+    &[
+        "ml",
+        "l",
+        "fl_oz",
+        "tsp",
+        "tbsp",
+        "cup",
+        "pint",
+        "quart",
+        "gallon",
+        "dash",
+        "pinch",
+        "drop",
+        "stick_butter",
+    ]
 }

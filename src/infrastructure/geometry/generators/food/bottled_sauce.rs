@@ -184,52 +184,45 @@ pub fn generate_with_label_and_quality(
 
     // Group 1: bottle exterior wall (continuous lathe — keeps shoulder smooth).
     let bottle_wall_g = b.add_group(
-        Material::solid(bottle_kind.material_name(), bottle_color)
-            .with_gloss(0.55, 96.0),
+        Material::solid(bottle_kind.material_name(), bottle_color).with_gloss(0.55, 96.0),
     );
     // Group 2: bottle bottom disk (same material, separate group so the
     // normal seam doesn't pull the wall normals downward).
     let bottle_bottom_g = b.add_group(
-        Material::solid(bottle_kind.material_name(), bottle_color)
-            .with_gloss(0.55, 96.0),
+        Material::solid(bottle_kind.material_name(), bottle_color).with_gloss(0.55, 96.0),
     );
     // Group 3: cap.
     let cap_g = b.add_group(Material::solid("cap_metal", cap_color).with_gloss(0.60, 64.0));
     // Group 4: liquid interior + meniscus.
-    let liquid_g = b.add_group(
-        Material::solid("liquid_material", liquid_color).with_gloss(0.55, 96.0),
-    );
+    let liquid_g =
+        b.add_group(Material::solid("liquid_material", liquid_color).with_gloss(0.55, 96.0));
 
     // ── Bottle exterior wall ────────────────────────────────────────────────
-    let body = lathe_profile(&bottle_body_profile(), segments)
-        .expect("lathe bottle body");
+    let body = lathe_profile(&bottle_body_profile(), segments).expect("lathe bottle body");
     b.add_part(bottle_wall_g, &body);
 
     // ── Bottle bottom disk ──────────────────────────────────────────────────
-    let bottom_cap = disk_fan_down(BOTTOM_DISK_RADIUS, -0.060, segments)
-        .expect("bottle bottom disk");
+    let bottom_cap =
+        disk_fan_down(BOTTOM_DISK_RADIUS, -0.060, segments).expect("bottle bottom disk");
     b.add_part(bottle_bottom_g, &bottom_cap);
 
     // ── Cap ─────────────────────────────────────────────────────────────────
     let cap_wall = lathe_profile(&cap_profile(), segments).expect("lathe cap");
     b.add_part(cap_g, &cap_wall);
-    let cap_top = disk_fan_up(CAP_INNER_RADIUS, CAP_TOP_Y, segments)
-        .expect("cap top disk");
+    let cap_top = disk_fan_up(CAP_INNER_RADIUS, CAP_TOP_Y, segments).expect("cap top disk");
     b.add_part(cap_g, &cap_top);
     // Underside ring of the cap so it isn't open from below.
-    let cap_under = disk_fan_down(CAP_INNER_RADIUS, CAP_BOTTOM_Y, segments)
-        .expect("cap underside disk");
+    let cap_under =
+        disk_fan_down(CAP_INNER_RADIUS, CAP_BOTTOM_Y, segments).expect("cap underside disk");
     b.add_part(cap_g, &cap_under);
 
     // ── Liquid (inner wall + meniscus) ──────────────────────────────────────
-    let liquid_wall =
-        lathe_profile(&liquid_profile(), segments).expect("lathe liquid");
+    let liquid_wall = lathe_profile(&liquid_profile(), segments).expect("lathe liquid");
     b.add_part(liquid_g, &liquid_wall);
     // Meniscus sits at the topmost liquid profile point.
     let menisc_radius = liquid_profile().points.last().unwrap().radius;
     let menisc_y = liquid_profile().points.last().unwrap().y;
-    let meniscus =
-        disk_fan_up(menisc_radius, menisc_y, segments).expect("liquid meniscus");
+    let meniscus = disk_fan_up(menisc_radius, menisc_y, segments).expect("liquid meniscus");
     b.add_part(liquid_g, &meniscus);
 
     // ── Label band (optional, PR #15) ───────────────────────────────────────
@@ -264,7 +257,11 @@ mod tests {
         assert_eq!(mesh.vertices.len(), mesh.normals.len());
         assert_eq!(mesh.vertices.len(), mesh.uvs.len());
         for g in &mesh.groups {
-            assert!(!g.faces.is_empty(), "group {} has no faces", g.material.name);
+            assert!(
+                !g.faces.is_empty(),
+                "group {} has no faces",
+                g.material.name
+            );
         }
     }
 
@@ -281,7 +278,10 @@ mod tests {
     #[test]
     fn bottled_sauce_glass_kind_uses_glass_material_name() {
         let mesh = generate("#FF0000", BottleKind::Glass, None);
-        assert!(mesh.groups.iter().any(|g| g.material.name == "bottle_glass"));
+        assert!(mesh
+            .groups
+            .iter()
+            .any(|g| g.material.name == "bottle_glass"));
     }
 
     #[test]

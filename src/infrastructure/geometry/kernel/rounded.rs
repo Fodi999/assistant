@@ -32,29 +32,26 @@ pub fn rounded_rect_points(
     radius: f32,
     corner_segments: usize,
 ) -> Vec<Point2> {
-    let hw = width  * 0.5;
+    let hw = width * 0.5;
     let hh = height * 0.5;
-    let r  = radius.clamp(0.0, hw.min(hh));
+    let r = radius.clamp(0.0, hw.min(hh));
     let segs = corner_segments.max(1);
 
     // Corner centres + start angles (CCW, starting top-right).
     let corners: [(f32, f32, f32); 4] = [
-        ( hw - r,  hh - r, 0.0       ),   // top-right  — 0° → 90°
-        (-hw + r,  hh - r, PI * 0.5  ),   // top-left   — 90° → 180°
-        (-hw + r, -hh + r, PI        ),   // bottom-left — 180° → 270°
-        ( hw - r, -hh + r, PI * 1.5  ),   // bottom-right — 270° → 360°
+        (hw - r, hh - r, 0.0),       // top-right  — 0° → 90°
+        (-hw + r, hh - r, PI * 0.5), // top-left   — 90° → 180°
+        (-hw + r, -hh + r, PI),      // bottom-left — 180° → 270°
+        (hw - r, -hh + r, PI * 1.5), // bottom-right — 270° → 360°
     ];
 
     let mut points = Vec::with_capacity(segs * 4);
 
     for (cx, cy, start) in corners {
         for i in 0..segs {
-            let t     = i as f32 / segs as f32;
+            let t = i as f32 / segs as f32;
             let angle = start + t * (PI * 0.5);
-            points.push(Point2::new(
-                cx + angle.cos() * r,
-                cy + angle.sin() * r,
-            ));
+            points.push(Point2::new(cx + angle.cos() * r, cy + angle.sin() * r));
         }
     }
 

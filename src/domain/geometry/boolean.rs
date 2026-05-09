@@ -55,12 +55,11 @@ pub enum BooleanError {
 impl std::fmt::Display for BooleanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BooleanError::NotImplemented =>
-                write!(f, "boolean operation not yet implemented"),
-            BooleanError::NoOverlap =>
-                write!(f, "shells do not overlap — no boolean result"),
-            BooleanError::DegenerateInput { which } =>
-                write!(f, "degenerate input shell: {}", which),
+            BooleanError::NotImplemented => write!(f, "boolean operation not yet implemented"),
+            BooleanError::NoOverlap => write!(f, "shells do not overlap — no boolean result"),
+            BooleanError::DegenerateInput { which } => {
+                write!(f, "degenerate input shell: {}", which)
+            }
         }
     }
 }
@@ -91,9 +90,12 @@ pub fn boolean(
     let (a_min, a_max) = a.aabb();
     let (b_min, b_max) = b.aabb();
 
-    let overlaps = a_min[0] <= b_max[0] && a_max[0] >= b_min[0]
-                && a_min[1] <= b_max[1] && a_max[1] >= b_min[1]
-                && a_min[2] <= b_max[2] && a_max[2] >= b_min[2];
+    let overlaps = a_min[0] <= b_max[0]
+        && a_max[0] >= b_min[0]
+        && a_min[1] <= b_max[1]
+        && a_max[1] >= b_min[1]
+        && a_min[2] <= b_max[2]
+        && a_max[2] >= b_min[2];
 
     // For Intersect, no overlap → result is empty (not just stub)
     if !overlaps && op == BooleanOp::Intersect {

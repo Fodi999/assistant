@@ -15,8 +15,8 @@
 //!   - Cube − Box       → box with rectangular hole
 //!   - Sphere − Cone    → sphere with conical cutout
 
-use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, MaterialGroup, Mesh};
 use crate::infrastructure::geometry::kernel::math::Vec3;
+use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, MaterialGroup, Mesh};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -46,31 +46,53 @@ impl Aabb {
     /// Build a cylinder-shaped AABB (tight box around a cylinder at origin).
     pub fn cylinder(radius: f32, height: f32, center: [f32; 3]) -> Self {
         Self {
-            min: [center[0] - radius, center[1] - height / 2.0, center[2] - radius],
-            max: [center[0] + radius, center[1] + height / 2.0, center[2] + radius],
+            min: [
+                center[0] - radius,
+                center[1] - height / 2.0,
+                center[2] - radius,
+            ],
+            max: [
+                center[0] + radius,
+                center[1] + height / 2.0,
+                center[2] + radius,
+            ],
         }
     }
 
     /// Build a box AABB.
     pub fn cuboid(half: [f32; 3], center: [f32; 3]) -> Self {
         Self {
-            min: [center[0] - half[0], center[1] - half[1], center[2] - half[2]],
-            max: [center[0] + half[0], center[1] + half[1], center[2] + half[2]],
+            min: [
+                center[0] - half[0],
+                center[1] - half[1],
+                center[2] - half[2],
+            ],
+            max: [
+                center[0] + half[0],
+                center[1] + half[1],
+                center[2] + half[2],
+            ],
         }
     }
 
     /// Is point [x,y,z] strictly inside this AABB?
     pub fn contains(&self, p: [f32; 3]) -> bool {
-        p[0] > self.min[0] && p[0] < self.max[0] &&
-        p[1] > self.min[1] && p[1] < self.max[1] &&
-        p[2] > self.min[2] && p[2] < self.max[2]
+        p[0] > self.min[0]
+            && p[0] < self.max[0]
+            && p[1] > self.min[1]
+            && p[1] < self.max[1]
+            && p[2] > self.min[2]
+            && p[2] < self.max[2]
     }
 
     /// Overlap test — used to quickly reject operations.
     pub fn overlaps(&self, other: &Aabb) -> bool {
-        self.min[0] < other.max[0] && self.max[0] > other.min[0] &&
-        self.min[1] < other.max[1] && self.max[1] > other.min[1] &&
-        self.min[2] < other.max[2] && self.max[2] > other.min[2]
+        self.min[0] < other.max[0]
+            && self.max[0] > other.min[0]
+            && self.min[1] < other.max[1]
+            && self.max[1] > other.min[1]
+            && self.min[2] < other.max[2]
+            && self.max[2] > other.min[2]
     }
 }
 
@@ -92,17 +114,19 @@ pub fn subtract(a: &Mesh, b_aabb: &Aabb, cap_material: Option<Material>) -> Mesh
     let a = &subdivided;
     // ── Step 1: collect surviving faces per group ───────────────────────────
     let mut out_vertices: Vec<[f32; 3]> = Vec::new();
-    let mut out_normals:  Vec<[f32; 3]> = Vec::new();
-    let mut out_uvs:      Vec<[f32; 2]> = Vec::new();
+    let mut out_normals: Vec<[f32; 3]> = Vec::new();
+    let mut out_uvs: Vec<[f32; 2]> = Vec::new();
     let mut out_groups: Vec<MaterialGroup> = Vec::new();
 
     // Work face-by-face across all groups.
     let all_faces: Vec<(usize /*group_idx*/, [usize; 3])> = if a.groups.is_empty() {
         a.faces.iter().map(|f| (0, *f)).collect()
     } else {
-        a.groups.iter().enumerate().flat_map(|(gi, g)| {
-            g.faces.iter().map(move |f| (gi, *f))
-        }).collect()
+        a.groups
+            .iter()
+            .enumerate()
+            .flat_map(|(gi, g)| g.faces.iter().map(move |f| (gi, *f)))
+            .collect()
     };
 
     // Remap: old_vertex_idx → new_vertex_idx
@@ -141,27 +165,42 @@ pub fn subtract(a: &Mesh, b_aabb: &Aabb, cap_material: Option<Material>) -> Mesh
             let new_vi = *remap.entry(vi).or_insert_with(|| {
                 let idx = out_vertices.len();
                 out_vertices.push(a.vertices[vi]);
-                out_normals.push(if vi < a.normals.len() { a.normals[vi] } else { [0.0, 1.0, 0.0] });
-                out_uvs.push(if vi < a.uvs.len() { a.uvs[vi] } else { [0.0, 0.0] });
+                out_normals.push(if vi < a.normals.len() {
+                    a.normals[vi]
+                } else {
+                    [0.0, 1.0, 0.0]
+                });
+                out_uvs.push(if vi < a.uvs.len() {
+                    a.uvs[vi]
+                } else {
+                    [0.0, 0.0]
+                });
                 idx
             });
             new_face[k] = new_vi;
         }
 
-        while group_faces.len() <= *gi { group_faces.push(vec![]); }
+        while group_faces.len() <= *gi {
+            group_faces.push(vec![]);
+        }
         group_faces[*gi].push(new_face);
     }
 
     // ── Step 2: rebuild groups ──────────────────────────────────────────────
     let groups_src = if a.groups.is_empty() {
-        vec![MaterialGroup { material: a.material.clone(), faces: a.faces.clone() }]
+        vec![MaterialGroup {
+            material: a.material.clone(),
+            faces: a.faces.clone(),
+        }]
     } else {
         a.groups.clone()
     };
 
     for (gi, src) in groups_src.iter().enumerate() {
         let faces = group_faces.get(gi).cloned().unwrap_or_default();
-        if faces.is_empty() { continue; }
+        if faces.is_empty() {
+            continue;
+        }
         out_groups.push(MaterialGroup {
             material: src.material.clone(),
             faces,
@@ -177,7 +216,9 @@ pub fn subtract(a: &Mesh, b_aabb: &Aabb, cap_material: Option<Material>) -> Mesh
             out_vertices.extend_from_slice(&cap_group.0);
             out_normals.extend_from_slice(&cap_group.1);
             out_uvs.extend_from_slice(&cap_group.2);
-            let faces: Vec<[usize; 3]> = cap_group.3.iter()
+            let faces: Vec<[usize; 3]> = cap_group
+                .3
+                .iter()
                 .map(|f| [f[0] + offset, f[1] + offset, f[2] + offset])
                 .collect();
             out_groups.push(MaterialGroup {
@@ -204,24 +245,31 @@ pub fn subtract(a: &Mesh, b_aabb: &Aabb, cap_material: Option<Material>) -> Mesh
 /// Subdivide every triangle into 4 by splitting each edge at its midpoint.
 /// Runs `passes` times. Normals and UVs are linearly interpolated.
 fn subdivide_mesh(mesh: &Mesh, passes: u32) -> Mesh {
-    if passes == 0 { return mesh.clone(); }
+    if passes == 0 {
+        return mesh.clone();
+    }
 
     // Work on the flat face/vertex representation (merge groups first)
     let (mut verts, mut normals, mut uvs, mut all_faces, group_map) = flatten_mesh(mesh);
 
     for _ in 0..passes {
-        let mut new_verts   = verts.clone();
+        let mut new_verts = verts.clone();
         let mut new_normals = normals.clone();
-        let mut new_uvs     = uvs.clone();
+        let mut new_uvs = uvs.clone();
         let mut new_faces: Vec<(usize, [usize; 3])> = Vec::new();
-        let mut edge_mid: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::new();
+        let mut edge_mid: std::collections::HashMap<(usize, usize), usize> =
+            std::collections::HashMap::new();
 
-        let mut get_mid = |a: usize, b: usize,
-                           nv: &mut Vec<[f32;3]>,
-                           nn: &mut Vec<[f32;3]>,
-                           nu: &mut Vec<[f32;2]>| -> usize {
+        let mut get_mid = |a: usize,
+                           b: usize,
+                           nv: &mut Vec<[f32; 3]>,
+                           nn: &mut Vec<[f32; 3]>,
+                           nu: &mut Vec<[f32; 2]>|
+         -> usize {
             let key = if a < b { (a, b) } else { (b, a) };
-            if let Some(&m) = edge_mid.get(&key) { return m; }
+            if let Some(&m) = edge_mid.get(&key) {
+                return m;
+            }
             let idx = nv.len();
             nv.push(midpoint3(nv[a], nv[b]));
             nn.push(normalize3(midpoint3(nn[a], nn[b])));
@@ -240,22 +288,26 @@ fn subdivide_mesh(mesh: &Mesh, passes: u32) -> Mesh {
             new_faces.push((*gi, [m01, m12, m20]));
         }
 
-        verts   = new_verts;
+        verts = new_verts;
         normals = new_normals;
-        uvs     = new_uvs;
+        uvs = new_uvs;
         all_faces = new_faces;
     }
 
     // Rebuild groups
     let n_groups = group_map.len();
-    let mut out_groups: Vec<MaterialGroup> = group_map.into_iter()
-        .map(|(_, mat)| MaterialGroup { material: mat, faces: vec![] })
+    let mut out_groups: Vec<MaterialGroup> = group_map
+        .into_iter()
+        .map(|(_, mat)| MaterialGroup {
+            material: mat,
+            faces: vec![],
+        })
         .collect();
     // group_map was consumed — rebuild from n_groups count
     let _ = n_groups;
 
     // Re-attach faces
-    let mut groups_faces: Vec<Vec<[usize;3]>> = (0..out_groups.len()).map(|_| vec![]).collect();
+    let mut groups_faces: Vec<Vec<[usize; 3]>> = (0..out_groups.len()).map(|_| vec![]).collect();
     for (gi, face) in all_faces {
         if gi < groups_faces.len() {
             groups_faces[gi].push(face);
@@ -279,14 +331,18 @@ fn subdivide_mesh(mesh: &Mesh, passes: u32) -> Mesh {
 }
 
 /// Flatten mesh (possibly multi-group) into a single vertex array + per-face group index.
-fn flatten_mesh(mesh: &Mesh) -> (
-    Vec<[f32;3]>, Vec<[f32;3]>, Vec<[f32;2]>,
-    Vec<(usize, [usize;3])>,
+fn flatten_mesh(
+    mesh: &Mesh,
+) -> (
+    Vec<[f32; 3]>,
+    Vec<[f32; 3]>,
+    Vec<[f32; 2]>,
+    Vec<(usize, [usize; 3])>,
     Vec<(usize, Material)>,
 ) {
-    let verts   = mesh.vertices.clone();
+    let verts = mesh.vertices.clone();
     let normals = mesh.normals.clone();
-    let uvs     = mesh.uvs.clone();
+    let uvs = mesh.uvs.clone();
 
     if mesh.groups.is_empty() {
         let faces = mesh.faces.iter().map(|f| (0, *f)).collect();
@@ -298,20 +354,26 @@ fn flatten_mesh(mesh: &Mesh) -> (
     let mut group_map = Vec::new();
     for (gi, g) in mesh.groups.iter().enumerate() {
         group_map.push((gi, g.material.clone()));
-        for f in &g.faces { faces.push((gi, *f)); }
+        for f in &g.faces {
+            faces.push((gi, *f));
+        }
     }
     (verts, normals, uvs, faces, group_map)
 }
 
-fn midpoint3(a: [f32;3], b: [f32;3]) -> [f32;3] {
-    [(a[0]+b[0])*0.5, (a[1]+b[1])*0.5, (a[2]+b[2])*0.5]
+fn midpoint3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        (a[0] + b[0]) * 0.5,
+        (a[1] + b[1]) * 0.5,
+        (a[2] + b[2]) * 0.5,
+    ]
 }
-fn midpoint2(a: [f32;2], b: [f32;2]) -> [f32;2] {
-    [(a[0]+b[0])*0.5, (a[1]+b[1])*0.5]
+fn midpoint2(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+    [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5]
 }
-fn normalize3(v: [f32;3]) -> [f32;3] {
-    let len = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt().max(1e-9);
-    [v[0]/len, v[1]/len, v[2]/len]
+fn normalize3(v: [f32; 3]) -> [f32; 3] {
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-9);
+    [v[0] / len, v[1] / len, v[2] / len]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -319,21 +381,19 @@ fn normalize3(v: [f32;3]) -> [f32;3] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type CapGroup = (
-    Vec<[f32; 3]>, // verts
-    Vec<[f32; 3]>, // normals
-    Vec<[f32; 2]>, // uvs
+    Vec<[f32; 3]>,   // verts
+    Vec<[f32; 3]>,   // normals
+    Vec<[f32; 2]>,   // uvs
     Vec<[usize; 3]>, // faces
     Material,
 );
 
 /// Build a flat cap polygon closing the open boundary loop.
 /// Uses a simple fan-triangulation from the centroid.
-fn build_cap(
-    boundary: &[[f32; 3]],
-    cutter: &Aabb,
-    mat: Option<Material>,
-) -> Option<CapGroup> {
-    if boundary.len() < 3 { return None; }
+fn build_cap(boundary: &[[f32; 3]], cutter: &Aabb, mat: Option<Material>) -> Option<CapGroup> {
+    if boundary.len() < 3 {
+        return None;
+    }
 
     // Determine the dominant axis of the cut face (the axis along which
     // the cutter is shortest — that's the hole's normal direction).
@@ -353,12 +413,19 @@ fn build_cap(
 
     for (axis, side) in faces_to_cap {
         // Collect boundary verts near this AABB face
-        let plane_coord = if side == 0 { cutter.min[axis] } else { cutter.max[axis] };
-        let near: Vec<[f32; 3]> = boundary.iter()
+        let plane_coord = if side == 0 {
+            cutter.min[axis]
+        } else {
+            cutter.max[axis]
+        };
+        let near: Vec<[f32; 3]> = boundary
+            .iter()
             .filter(|v| (v[axis] - plane_coord).abs() < 0.02)
             .copied()
             .collect();
-        if near.len() < 3 { continue; }
+        if near.len() < 3 {
+            continue;
+        }
 
         // Normal points outward from the cutter face
         let mut normal = [0.0f32; 3];
@@ -387,7 +454,9 @@ fn build_cap(
 
     let _ = dy; // used above via cutter.max/min
 
-    if all_verts.is_empty() { return None; }
+    if all_verts.is_empty() {
+        return None;
+    }
 
     let material = mat.unwrap_or_else(|| Material {
         name: "csg_cap".to_string(),
@@ -414,11 +483,19 @@ fn aabb_faces_touched(boundary: &[[f32; 3]], aabb: &Aabb) -> Vec<(usize, usize)>
         let min_plane = aabb.min[axis];
         let max_plane = aabb.max[axis];
 
-        let near_min = boundary.iter().any(|v| (v[axis] - min_plane).abs() < thresh);
-        let near_max = boundary.iter().any(|v| (v[axis] - max_plane).abs() < thresh);
+        let near_min = boundary
+            .iter()
+            .any(|v| (v[axis] - min_plane).abs() < thresh);
+        let near_max = boundary
+            .iter()
+            .any(|v| (v[axis] - max_plane).abs() < thresh);
 
-        if near_min { result.push((axis, 0)); }
-        if near_max { result.push((axis, 1)); }
+        if near_min {
+            result.push((axis, 0));
+        }
+        if near_max {
+            result.push((axis, 1));
+        }
     }
     result
 }

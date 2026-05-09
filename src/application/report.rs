@@ -63,11 +63,7 @@ impl ReportService {
     }
 
     /// Aggregate revenue/profit from dish_sales table
-    async fn aggregate_sales(
-        &self,
-        tenant_id: TenantId,
-        period_days: u32,
-    ) -> AppResult<SalesAgg> {
+    async fn aggregate_sales(&self, tenant_id: TenantId, period_days: u32) -> AppResult<SalesAgg> {
         let row = sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>)>(
             r#"
             SELECT
@@ -215,7 +211,10 @@ impl ReportService {
                 })
             }
             Err(e) => {
-                tracing::warn!("⚠️ Menu engineering analysis failed: {}. Using defaults.", e);
+                tracing::warn!(
+                    "⚠️ Menu engineering analysis failed: {}. Using defaults.",
+                    e
+                );
                 Ok(EngineeringAgg::default())
             }
         }

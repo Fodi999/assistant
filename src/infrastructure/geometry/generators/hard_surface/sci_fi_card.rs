@@ -121,33 +121,33 @@ pub struct SciFiCardSpec {
 impl Default for SciFiCardSpec {
     fn default() -> Self {
         Self {
-            width:     0.12,
-            height:    0.18,
+            width: 0.12,
+            height: 0.18,
             thickness: 0.012,
 
             corner_radius: 0.012,
-            bevel:         0.0015,
+            bevel: 0.0015,
 
-            panel_inset:  0.005,
+            panel_inset: 0.005,
             panel_height: 0.003,
 
-            inset_width:  0.095,
+            inset_width: 0.095,
             inset_height: 0.115,
-            inset_depth:  0.003,
+            inset_depth: 0.003,
 
             glow_strip_height: 0.002,
             glow_strip_y_frac: 0.22,
 
-            rail_width:       0.004,
+            rail_width: 0.004,
             rail_height_frac: 0.55,
-            rail_depth:       0.001,
+            rail_depth: 0.001,
 
             bolt_radius: 0.004,
             bolt_height: 0.002,
-            bolt_inset:  0.010,
+            bolt_inset: 0.010,
 
             accent_hex: "#00C8FF".to_string(),
-            quality:    GeometryQuality::High,
+            quality: GeometryQuality::High,
         }
     }
 }
@@ -188,16 +188,16 @@ fn translate(mut part: MeshPart, dx: f32, dy: f32, dz: f32) -> MeshPart {
 /// `card_rails`, `card_back`, `card_bolts`.
 pub fn generate_sci_fi_card(spec: &SciFiCardSpec) -> Mesh {
     let corner_segs: usize = match spec.quality {
-        GeometryQuality::Draft    =>  4,
-        GeometryQuality::Standard =>  8,
-        GeometryQuality::High     => 16,
-        GeometryQuality::Ultra    => 24,
+        GeometryQuality::Draft => 4,
+        GeometryQuality::Standard => 8,
+        GeometryQuality::High => 16,
+        GeometryQuality::Ultra => 24,
     };
     let bolt_segs: usize = match spec.quality {
-        GeometryQuality::Draft    =>  6,
+        GeometryQuality::Draft => 6,
         GeometryQuality::Standard => 10,
-        GeometryQuality::High     => 16,
-        GeometryQuality::Ultra    => 24,
+        GeometryQuality::High => 16,
+        GeometryQuality::Ultra => 24,
     };
 
     let mut b = MeshBuilder::new();
@@ -245,8 +245,11 @@ pub fn generate_sci_fi_card(spec: &SciFiCardSpec) -> Mesh {
     // back face   → card_back (darker)
     // side walls  → card_base
     {
-        let pts  = rounded_rect_points(spec.width, spec.height, spec.corner_radius, corner_segs);
-        let opts = ExtrudeOptions { depth: spec.thickness, bevel: spec.bevel };
+        let pts = rounded_rect_points(spec.width, spec.height, spec.corner_radius, corner_segs);
+        let opts = ExtrudeOptions {
+            depth: spec.thickness,
+            bevel: spec.bevel,
+        };
         if let Ok([front, back, sides]) = extrude_polygon(&pts, &opts) {
             b.add_part(g_base, &front);
             b.add_part(g_back, &back);
@@ -257,18 +260,21 @@ pub fn generate_sci_fi_card(spec: &SciFiCardSpec) -> Mesh {
     // ── 2. Raised front panel ─────────────────────────────────────────────
     // Sits on top of the card face (Z = thickness).
     {
-        let panel_w = spec.width  - spec.panel_inset * 2.0;
+        let panel_w = spec.width - spec.panel_inset * 2.0;
         let panel_h = spec.height - spec.panel_inset * 2.0;
         let panel_r = (spec.corner_radius - spec.panel_inset).max(0.002);
 
-        let pts  = rounded_rect_points(panel_w, panel_h, panel_r, corner_segs);
-        let opts = ExtrudeOptions { depth: spec.panel_height, bevel: spec.bevel * 0.5 };
+        let pts = rounded_rect_points(panel_w, panel_h, panel_r, corner_segs);
+        let opts = ExtrudeOptions {
+            depth: spec.panel_height,
+            bevel: spec.bevel * 0.5,
+        };
 
         if let Ok([front, back, sides]) = extrude_polygon(&pts, &opts) {
             let z0 = spec.thickness;
-            b.add_part(g_panel, &translate(front,  0.0, 0.0, z0));
-            b.add_part(g_panel, &translate(back,   0.0, 0.0, z0));
-            b.add_part(g_panel, &translate(sides,  0.0, 0.0, z0));
+            b.add_part(g_panel, &translate(front, 0.0, 0.0, z0));
+            b.add_part(g_panel, &translate(back, 0.0, 0.0, z0));
+            b.add_part(g_panel, &translate(sides, 0.0, 0.0, z0));
         }
     }
 
@@ -278,8 +284,11 @@ pub fn generate_sci_fi_card(spec: &SciFiCardSpec) -> Mesh {
     // z = thickness + panel_height so it's flush with the panel top.
     {
         let inset_r = (spec.corner_radius - spec.panel_inset - 0.003).max(0.001);
-        let pts  = rounded_rect_points(spec.inset_width, spec.inset_height, inset_r, corner_segs);
-        let opts = ExtrudeOptions { depth: spec.inset_depth, bevel: spec.bevel * 0.3 };
+        let pts = rounded_rect_points(spec.inset_width, spec.inset_height, inset_r, corner_segs);
+        let opts = ExtrudeOptions {
+            depth: spec.inset_depth,
+            bevel: spec.bevel * 0.3,
+        };
 
         if let Ok([front, back, sides]) = extrude_polygon(&pts, &opts) {
             // Push it up to the panel top surface, then rotate so it recesses inward.
@@ -312,12 +321,15 @@ pub fn generate_sci_fi_card(spec: &SciFiCardSpec) -> Mesh {
         let inset_bottom_y = -(spec.height * 0.5) + spec.panel_inset + 0.002;
         let strip_y = inset_bottom_y + spec.height * spec.glow_strip_y_frac;
 
-        let pts  = rounded_rect_points(strip_w, strip_h, 0.0005, 2);
-        let opts = ExtrudeOptions { depth: 0.0015, bevel: 0.0 };
+        let pts = rounded_rect_points(strip_w, strip_h, 0.0005, 2);
+        let opts = ExtrudeOptions {
+            depth: 0.0015,
+            bevel: 0.0,
+        };
 
         if let Ok([front, back, sides]) = extrude_polygon(&pts, &opts) {
             b.add_part(g_glow, &translate(front, 0.0, strip_y, strip_z));
-            b.add_part(g_glow, &translate(back,  0.0, strip_y, strip_z));
+            b.add_part(g_glow, &translate(back, 0.0, strip_y, strip_z));
             b.add_part(g_glow, &translate(sides, 0.0, strip_y, strip_z));
         }
     }
@@ -325,18 +337,21 @@ pub fn generate_sci_fi_card(spec: &SciFiCardSpec) -> Mesh {
     // ── 5. Side rails (left + right) ──────────────────────────────────────
     // Two thin extruded strips along the left/right vertical edges.
     {
-        let rail_h  = spec.height * spec.rail_height_frac;
-        let rail_z  = spec.thickness;
-        let rail_x  = spec.width * 0.5 - spec.panel_inset - spec.rail_width * 0.5;
+        let rail_h = spec.height * spec.rail_height_frac;
+        let rail_z = spec.thickness;
+        let rail_x = spec.width * 0.5 - spec.panel_inset - spec.rail_width * 0.5;
 
-        let pts  = rounded_rect_points(spec.rail_width, rail_h, 0.001, corner_segs.min(4));
-        let opts = ExtrudeOptions { depth: spec.rail_depth, bevel: 0.0005 };
+        let pts = rounded_rect_points(spec.rail_width, rail_h, 0.001, corner_segs.min(4));
+        let opts = ExtrudeOptions {
+            depth: spec.rail_depth,
+            bevel: 0.0005,
+        };
 
         for &x_sign in &[-1.0_f32, 1.0_f32] {
             if let Ok([front, back, sides]) = extrude_polygon(&pts, &opts) {
                 let dx = x_sign * rail_x;
                 b.add_part(g_rails, &translate(front, dx, 0.0, rail_z));
-                b.add_part(g_rails, &translate(back,  dx, 0.0, rail_z));
+                b.add_part(g_rails, &translate(back, dx, 0.0, rail_z));
                 b.add_part(g_rails, &translate(sides, dx, 0.0, rail_z));
             }
         }
@@ -345,25 +360,28 @@ pub fn generate_sci_fi_card(spec: &SciFiCardSpec) -> Mesh {
     // ── 6. Corner bolts (4×) ──────────────────────────────────────────────
     // Small extruded circles at the four card corners.
     {
-        let bi   = spec.bolt_inset;
-        let hw   = spec.width  * 0.5 - bi;
-        let hh   = spec.height * 0.5 - bi;
+        let bi = spec.bolt_inset;
+        let hw = spec.width * 0.5 - bi;
+        let hh = spec.height * 0.5 - bi;
         let bolt_z = spec.thickness;
 
         let corners: [(f32, f32); 4] = [
-            ( hw,  hh),   // top-right
-            (-hw,  hh),   // top-left
-            (-hw, -hh),   // bottom-left
-            ( hw, -hh),   // bottom-right
+            (hw, hh),   // top-right
+            (-hw, hh),  // top-left
+            (-hw, -hh), // bottom-left
+            (hw, -hh),  // bottom-right
         ];
 
-        let pts  = circle_points(spec.bolt_radius, bolt_segs);
-        let opts = ExtrudeOptions { depth: spec.bolt_height, bevel: spec.bolt_height * 0.4 };
+        let pts = circle_points(spec.bolt_radius, bolt_segs);
+        let opts = ExtrudeOptions {
+            depth: spec.bolt_height,
+            bevel: spec.bolt_height * 0.4,
+        };
 
         for (cx, cy) in corners {
             if let Ok([front, back, sides]) = extrude_polygon(&pts, &opts) {
                 b.add_part(g_bolts, &translate(front, cx, cy, bolt_z));
-                b.add_part(g_bolts, &translate(back,  cx, cy, bolt_z));
+                b.add_part(g_bolts, &translate(back, cx, cy, bolt_z));
                 b.add_part(g_bolts, &translate(sides, cx, cy, bolt_z));
             }
         }
@@ -383,29 +401,52 @@ mod tests {
     #[test]
     fn sci_fi_card_default_generates_mesh() {
         let mesh = generate_sci_fi_card(&SciFiCardSpec::default());
-        assert!(!mesh.groups.is_empty(), "sci_fi_card should have mesh groups");
+        assert!(
+            !mesh.groups.is_empty(),
+            "sci_fi_card should have mesh groups"
+        );
     }
 
     #[test]
     fn sci_fi_card_has_seven_material_groups() {
         let mesh = generate_sci_fi_card(&SciFiCardSpec::default());
-        let names: Vec<&str> = mesh.groups.iter().map(|g| g.material.name.as_str()).collect();
-        for expected in ["card_base", "card_panel", "card_inset", "card_glow",
-                         "card_rails", "card_back", "card_bolts"] {
-            assert!(names.iter().any(|n| *n == expected), "missing group: {expected}");
+        let names: Vec<&str> = mesh
+            .groups
+            .iter()
+            .map(|g| g.material.name.as_str())
+            .collect();
+        for expected in [
+            "card_base",
+            "card_panel",
+            "card_inset",
+            "card_glow",
+            "card_rails",
+            "card_back",
+            "card_bolts",
+        ] {
+            assert!(
+                names.iter().any(|n| *n == expected),
+                "missing group: {expected}"
+            );
         }
     }
 
     #[test]
     fn sci_fi_card_draft_quality_generates() {
-        let spec = SciFiCardSpec { quality: GeometryQuality::Draft, ..Default::default() };
+        let spec = SciFiCardSpec {
+            quality: GeometryQuality::Draft,
+            ..Default::default()
+        };
         let mesh = generate_sci_fi_card(&spec);
         assert!(!mesh.groups.is_empty());
     }
 
     #[test]
     fn sci_fi_card_ultra_quality_generates() {
-        let spec = SciFiCardSpec { quality: GeometryQuality::Ultra, ..Default::default() };
+        let spec = SciFiCardSpec {
+            quality: GeometryQuality::Ultra,
+            ..Default::default()
+        };
         let mesh = generate_sci_fi_card(&spec);
         assert!(!mesh.groups.is_empty());
     }
@@ -427,13 +468,20 @@ mod tests {
         let mesh = generate_sci_fi_card(&SciFiCardSpec::default());
         let bolt_group = mesh.groups.iter().find(|g| g.material.name == "card_bolts");
         assert!(bolt_group.is_some(), "bolt group must exist");
-        assert!(!bolt_group.unwrap().faces.is_empty(), "bolt group must have parts");
+        assert!(
+            !bolt_group.unwrap().faces.is_empty(),
+            "bolt group must have parts"
+        );
     }
 
     #[test]
     fn sci_fi_card_glow_is_emissive_class() {
         let mesh = generate_sci_fi_card(&SciFiCardSpec::default());
-        let glow = mesh.groups.iter().find(|g| g.material.name == "card_glow").unwrap();
+        let glow = mesh
+            .groups
+            .iter()
+            .find(|g| g.material.name == "card_glow")
+            .unwrap();
         assert_eq!(glow.material.material_class, "emissive");
     }
 

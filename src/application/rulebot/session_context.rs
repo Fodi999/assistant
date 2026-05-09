@@ -15,9 +15,9 @@
 //!   - turn_count      — how many turns this session
 //!   - modifier        — last explicit goal ("на массу", "похудение")
 
-use serde::{Deserialize, Serialize};
-use super::intent_router::{ChatLang, HealthModifier, Intent};
 use super::category_filter::ProductCategory;
+use super::intent_router::{ChatLang, HealthModifier, Intent};
+use serde::{Deserialize, Serialize};
 
 // ── Session Context ───────────────────────────────────────────────────────────
 
@@ -77,7 +77,6 @@ pub struct SessionContext {
     //   • route follow-up suggestions toward complementary categories
     //
     // Strict contract: only operational state, no full message history.
-
     /// Recipe identifiers (display_name) the user has added to their plan
     /// in this session. Capped at 20 to keep JSON small.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -99,7 +98,6 @@ pub struct SessionContext {
     // intentionally `#[serde(skip)]` — we never trust client-provided values
     // for allergy/diet filtering, and there's no point serializing them back
     // (client re-populates via stored profile next turn).
-
     /// Product slugs to HARD-exclude from every recommendation:
     /// allergies + intolerances + explicit dislikes, resolved against the
     /// ingredient cache by stem/name matching.
@@ -155,7 +153,9 @@ impl SessionContext {
                     }
                 }
                 // Cap at 30 to keep JSON small
-                if all.len() > 30 { all.drain(..all.len() - 30); }
+                if all.len() > 30 {
+                    all.drain(..all.len() - 30);
+                }
                 all
             },
             turn_count: self.turn_count + 1,
@@ -204,10 +204,21 @@ impl SessionContext {
         let t = input.to_lowercase();
         // Russian pronouns for "in it", "about it"
         let followup_patterns = [
-            "в нём", "в ней", "о нём", "о ней",
-            "его", "её", "про него", "про неё",
-            "in it", "about it", "its", "this",
-            "w nim", "o nim", "tego",
+            "в нём",
+            "в ней",
+            "о нём",
+            "о ней",
+            "его",
+            "её",
+            "про него",
+            "про неё",
+            "in it",
+            "about it",
+            "its",
+            "this",
+            "w nim",
+            "o nim",
+            "tego",
         ];
         followup_patterns.iter().any(|p| t.contains(p))
     }
@@ -272,7 +283,16 @@ mod tests {
         assert_eq!(next.last_category, Some(ProductCategory::Vegetable));
 
         // Second turn without product OR category — should KEEP both
-        let next2 = next.advance(Intent::Greeting, vec![], None, None, ChatLang::Ru, HealthModifier::None, vec![], None);
+        let next2 = next.advance(
+            Intent::Greeting,
+            vec![],
+            None,
+            None,
+            ChatLang::Ru,
+            HealthModifier::None,
+            vec![],
+            None,
+        );
         assert_eq!(next2.last_product_slug, Some("spinach".to_string()));
         assert_eq!(next2.turn_count, 2);
         assert_eq!(next2.last_category, Some(ProductCategory::Vegetable));
@@ -309,7 +329,8 @@ mod tests {
         let next = ctx.advance(
             Intent::HealthyProduct,
             vec![Intent::HealthyProduct],
-            None, None,
+            None,
+            None,
             ChatLang::Ru,
             HealthModifier::None,
             vec![],

@@ -61,7 +61,10 @@ impl LaboratoryService {
             .insert_project(NewLabProject {
                 owner_id,
                 name: name.to_string(),
-                description: req.description.map(|d| d.trim().to_string()).filter(|s| !s.is_empty()),
+                description: req
+                    .description
+                    .map(|d| d.trim().to_string())
+                    .filter(|s| !s.is_empty()),
                 target_product_type: req
                     .target_product_type
                     .map(|t| t.trim().to_lowercase())
@@ -78,11 +81,7 @@ impl LaboratoryService {
         Ok(rows.into_iter().map(LabProjectSummary::from).collect())
     }
 
-    pub async fn get_project(
-        &self,
-        owner_id: Uuid,
-        project_id: Uuid,
-    ) -> AppResult<LabProjectFull> {
+    pub async fn get_project(&self, owner_id: Uuid, project_id: Uuid) -> AppResult<LabProjectFull> {
         let row = self
             .repo
             .get_project_for_owner(project_id, owner_id)
@@ -93,7 +92,10 @@ impl LaboratoryService {
     }
 
     pub async fn delete_project(&self, owner_id: Uuid, project_id: Uuid) -> AppResult<()> {
-        let removed = self.repo.delete_project_for_owner(project_id, owner_id).await?;
+        let removed = self
+            .repo
+            .delete_project_for_owner(project_id, owner_id)
+            .await?;
         if !removed {
             return Err(AppError::not_found("Laboratory project not found"));
         }
@@ -134,7 +136,10 @@ impl LaboratoryService {
                     .map(|r| r.trim().to_lowercase())
                     .filter(|s| !s.is_empty()),
                 sort_order: req.sort_order,
-                notes: req.notes.map(|n| n.trim().to_string()).filter(|s| !s.is_empty()),
+                notes: req
+                    .notes
+                    .map(|n| n.trim().to_string())
+                    .filter(|s| !s.is_empty()),
             })
             .await?;
         let mut dto: LabProjectIngredientDto = row.into();
@@ -196,10 +201,8 @@ impl LaboratoryService {
         //   * duration_min
         //   * target_slugs (order-insensitive)
         if let Some(prev) = self.repo.latest_step(project_id).await? {
-            let prev_targets: Vec<String> =
-                prev.target_slugs.clone().unwrap_or_default();
-            let new_targets: Vec<String> =
-                target_slugs.clone().unwrap_or_default();
+            let prev_targets: Vec<String> = prev.target_slugs.clone().unwrap_or_default();
+            let new_targets: Vec<String> = target_slugs.clone().unwrap_or_default();
             let same_targets = {
                 let mut a = prev_targets.clone();
                 let mut b = new_targets.clone();
@@ -228,7 +231,10 @@ impl LaboratoryService {
                 temperature_c: req.temperature_c,
                 duration_min: req.duration_min,
                 target_slugs,
-                notes: req.notes.map(|n| n.trim().to_string()).filter(|s| !s.is_empty()),
+                notes: req
+                    .notes
+                    .map(|n| n.trim().to_string())
+                    .filter(|s| !s.is_empty()),
             })
             .await?;
         Ok(row.into())
@@ -304,7 +310,8 @@ impl LaboratoryService {
         let analysis = process_engine::analyze_process(&ingredients, &steps, &profiles);
 
         // 4b) Shelf-life engine on the same inputs.
-        let shelf = shelf_life_engine::analyze_shelf_life(&ingredients, &steps, &profiles, &analysis);
+        let shelf =
+            shelf_life_engine::analyze_shelf_life(&ingredients, &steps, &profiles, &analysis);
 
         // 4c) Flavor engine — sensory profile + pairing suggestions.
         let flavor = flavor_engine::analyze_flavor(&ingredients, &profiles);
@@ -401,9 +408,7 @@ impl LaboratoryService {
 
         // 3) Require an analysis snapshot — visual story is downstream of /analyze.
         let analysis_row = latest_analysis.ok_or_else(|| {
-            AppError::conflict(
-                "Run /analyze on this project before generating visual scenes.",
-            )
+            AppError::conflict("Run /analyze on this project before generating visual scenes.")
         })?;
 
         // 4) Decode persisted process effects → engine struct.

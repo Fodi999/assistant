@@ -27,20 +27,20 @@ pub struct LangQuery {
 
 #[derive(Deserialize)]
 pub struct DietQuery {
-    pub lang:  Option<String>,
+    pub lang: Option<String>,
     #[serde(rename = "type")]
     pub product_type: Option<String>,
-    pub limit:  Option<i64>,
+    pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
 
 #[derive(Deserialize)]
 pub struct RankingQuery {
-    pub lang:   Option<String>,
+    pub lang: Option<String>,
     #[serde(rename = "type")]
     pub product_type: Option<String>,
-    pub order:  Option<String>,
-    pub limit:  Option<i64>,
+    pub order: Option<String>,
+    pub limit: Option<i64>,
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -59,12 +59,10 @@ pub async fn get_nutrition_page(
             page.lang = lang;
             Ok(Json(serde_json::to_value(page).unwrap()))
         }
-        Err(crate::shared::AppError::NotFound(msg)) => {
-            Err((
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": msg })),
-            ))
-        }
+        Err(crate::shared::AppError::NotFound(msg)) => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": msg })),
+        )),
         Err(e) => {
             tracing::error!("nutrition page error: {e}");
             Err((
@@ -84,22 +82,20 @@ pub async fn get_diet_page(
     Path(flag): Path<String>,
     Query(q): Query<DietQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let lang   = q.lang.unwrap_or_else(|| "en".to_string());
-    let limit  = q.limit.unwrap_or(50).min(200);
+    let lang = q.lang.unwrap_or_else(|| "en".to_string());
+    let limit = q.limit.unwrap_or(50).min(200);
     let offset = q.offset.unwrap_or(0).max(0);
-    let pt     = q.product_type.as_deref();
+    let pt = q.product_type.as_deref();
 
     match svc.get_diet_page(&flag, pt, limit, offset).await {
         Ok(mut page) => {
             page.lang = lang;
             Ok(Json(serde_json::to_value(page).unwrap()))
         }
-        Err(crate::shared::AppError::Validation(msg)) => {
-            Err((
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            ))
-        }
+        Err(crate::shared::AppError::Validation(msg)) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": msg })),
+        )),
         Err(e) => {
             tracing::error!("diet page error: {e}");
             Err((
@@ -121,22 +117,20 @@ pub async fn get_ranking_page(
     Path(metric): Path<String>,
     Query(q): Query<RankingQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let lang  = q.lang.unwrap_or_else(|| "en".to_string());
+    let lang = q.lang.unwrap_or_else(|| "en".to_string());
     let order = q.order.unwrap_or_else(|| "desc".to_string());
     let limit = q.limit.unwrap_or(20).min(111);
-    let pt    = q.product_type.as_deref();
+    let pt = q.product_type.as_deref();
 
     match svc.get_ranking_page(&metric, pt, &order, limit).await {
         Ok(mut page) => {
             page.lang = lang;
             Ok(Json(serde_json::to_value(page).unwrap()))
         }
-        Err(crate::shared::AppError::Validation(msg)) => {
-            Err((
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            ))
-        }
+        Err(crate::shared::AppError::Validation(msg)) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": msg })),
+        )),
         Err(e) => {
             tracing::error!("ranking page error: {e}");
             Err((

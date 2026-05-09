@@ -28,9 +28,7 @@ impl RecipeRepositoryV2 {
     }
 
     fn row_to_recipe(row: &sqlx::postgres::PgRow) -> AppResult<Recipe> {
-        let language_str: Option<String> = row
-            .try_get("language_default")
-            .unwrap_or(None);
+        let language_str: Option<String> = row.try_get("language_default").unwrap_or(None);
         let language_default = language_str
             .as_deref()
             .and_then(|s| Language::from_code(s))

@@ -2,7 +2,11 @@ use crate::application::usage_service::UsageService;
 use crate::domain::usage::{ActionType, UsageSnapshot};
 use crate::interfaces::http::middleware::AuthUser;
 use crate::shared::AppError;
-use axum::{extract::{Query, State}, http::HeaderMap, Json};
+use axum::{
+    extract::{Query, State},
+    http::HeaderMap,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -185,19 +189,28 @@ pub async fn perform_batch(
         return Err(AppError::validation("Max 10 actions per batch"));
     }
 
-    let action_types: Vec<ActionType> = req.actions.iter()
-        .map(|s| ActionType::from_str(s).ok_or_else(|| AppError::validation(format!("Unknown action: {}", s))))
+    let action_types: Vec<ActionType> = req
+        .actions
+        .iter()
+        .map(|s| {
+            ActionType::from_str(s)
+                .ok_or_else(|| AppError::validation(format!("Unknown action: {}", s)))
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     let result = service.perform_batch(auth.user_id, action_types).await?;
 
-    let items = result.results.into_iter().map(|r| BatchItemResponse {
-        action: r.action,
-        allowed: r.allowed,
-        source: format!("{:?}", r.source).to_lowercase(),
-        reason: r.reason.map(|r| format!("{:?}", r).to_lowercase()),
-        message: r.message,
-    }).collect();
+    let items = result
+        .results
+        .into_iter()
+        .map(|r| BatchItemResponse {
+            action: r.action,
+            allowed: r.allowed,
+            source: format!("{:?}", r.source).to_lowercase(),
+            reason: r.reason.map(|r| format!("{:?}", r).to_lowercase()),
+            message: r.message,
+        })
+        .collect();
 
     Ok(Json(BatchResponse {
         results: items,
@@ -226,7 +239,9 @@ pub async fn record_purchase(
     State(service): State<UsageService>,
     Json(req): Json<PurchaseRequest>,
 ) -> Result<Json<PurchaseResponse>, AppError> {
-    let balance = service.record_purchase(auth.user_id, req.actions, "iap", req.receipt_id.as_deref()).await?;
+    let balance = service
+        .record_purchase(auth.user_id, req.actions, "iap", req.receipt_id.as_deref())
+        .await?;
     Ok(Json(PurchaseResponse {
         purchased_actions: balance.purchased_actions,
         total_purchased: balance.total_purchased,
@@ -281,5 +296,8 @@ pub async fn get_history(
     let limit = q.limit.unwrap_or(100);
     let transactions = service.get_history(auth.user_id, limit).await?;
     let total = transactions.len() as i32;
-    Ok(Json(HistoryResponse { transactions, total }))
+    Ok(Json(HistoryResponse {
+        transactions,
+        total,
+    }))
 }

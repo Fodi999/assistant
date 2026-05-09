@@ -18,9 +18,9 @@ use crate::application::usage_service::UsageService;
 use crate::infrastructure::gemini_service::GeminiService;
 use crate::shared::{AppError, AppResult};
 
-use super::actions::{ActionPlan, CopilotResponse, ConfirmResult, RiskLevel};
+use super::actions::{ActionPlan, ConfirmResult, CopilotResponse, RiskLevel};
 use super::audit::CopilotAuditService;
-use super::billing::{AiFeature, check_and_deduct};
+use super::billing::{check_and_deduct, AiFeature};
 use super::context::CopilotContext;
 use super::planner::CopilotPlanner;
 use super::safety;
@@ -59,11 +59,7 @@ impl CopilotEngine {
     }
 
     /// Главная точка входа — обрабатывает сообщение пользователя.
-    pub async fn handle_message(
-        &self,
-        ctx: &CopilotContext,
-        message: &str,
-    ) -> CopilotResponse {
+    pub async fn handle_message(&self, ctx: &CopilotContext, message: &str) -> CopilotResponse {
         match self.handle_inner(ctx, message).await {
             Ok(resp) => resp,
             Err(e) => {
@@ -80,11 +76,16 @@ impl CopilotEngine {
         action_id: uuid::Uuid,
     ) -> AppResult<ConfirmResult> {
         // 1. Загрузить план из audit log
-        let entry = self.audit.get(action_id, ctx.user_id.clone()).await?
+        let entry = self
+            .audit
+            .get(action_id, ctx.user_id.clone())
+            .await?
             .ok_or_else(|| AppError::not_found("Action plan not found or access denied"))?;
 
         if entry.status != super::audit::AuditStatus::AwaitingConfirmation {
-            return Err(AppError::validation("Action is not in awaiting_confirmation state"));
+            return Err(AppError::validation(
+                "Action is not in awaiting_confirmation state",
+            ));
         }
 
         // 2. Десериализовать ActionPlan из payload
@@ -102,7 +103,8 @@ impl CopilotEngine {
 
         self.audit.mark_confirmed(action_id).await?;
 
-        let exec_result = self.executor
+        let exec_result = self
+            .executor
             .execute_write_tool(ctx.user_id.clone(), ctx.tenant_id.clone(), &plan)
             .await;
 
@@ -136,11 +138,16 @@ impl CopilotEngine {
         action_id: uuid::Uuid,
     ) -> AppResult<CancelResult> {
         // Проверяем что запись существует и принадлежит пользователю
-        let entry = self.audit.get(action_id, user_id.clone()).await?
+        let entry = self
+            .audit
+            .get(action_id, user_id.clone())
+            .await?
             .ok_or_else(|| AppError::not_found("Action plan not found or access denied"))?;
 
         if entry.status == super::audit::AuditStatus::Executed {
-            return Err(AppError::validation("Cannot cancel an already executed action."));
+            return Err(AppError::validation(
+                "Cannot cancel an already executed action.",
+            ));
         }
         if entry.status == super::audit::AuditStatus::Cancelled {
             return Err(AppError::validation("Action is already cancelled."));
@@ -164,13 +171,15 @@ impl CopilotEngine {
         ctx: &CopilotContext,
         message: &str,
     ) -> AppResult<CopilotResponse> {
-
         // ── Step 1: Billing check ─────────────────────────────────────────────
-        let billing = check_and_deduct(&self.usage, ctx.user_id.clone(), AiFeature::CopilotChat).await?;
+        let billing =
+            check_and_deduct(&self.usage, ctx.user_id.clone(), AiFeature::CopilotChat).await?;
 
         if !billing.allowed {
             return Ok(CopilotResponse::denied(
-                billing.deny_message.unwrap_or_else(|| "Insufficient AI actions.".to_string()),
+                billing
+                    .deny_message
+                    .unwrap_or_else(|| "Insufficient AI actions.".to_string()),
                 billing.actions_left,
             ));
         }
@@ -205,7 +214,9 @@ impl CopilotEngine {
         let safety_result = safety::validate_plan(ctx, &plan);
         if !safety_result.allowed {
             return Ok(CopilotResponse::denied(
-                safety_result.deny_reason.unwrap_or_else(|| "Not allowed.".to_string()),
+                safety_result
+                    .deny_reason
+                    .unwrap_or_else(|| "Not allowed.".to_string()),
                 billing.actions_left,
             ));
         }
@@ -217,8 +228,10 @@ impl CopilotEngine {
         // ── Step 5: Prepare ActionPlan for write tools ────────────────────────
         let has_write = plan.tools.iter().any(|t| t.is_write());
         let action_plan = if has_write {
-            let (plan_opt, extra_result) = self.executor
-                .prepare_action_plan(ctx, &plan.tool_calls, &tool_results).await;
+            let (plan_opt, extra_result) = self
+                .executor
+                .prepare_action_plan(ctx, &plan.tool_calls, &tool_results)
+                .await;
             if let Some(extra) = extra_result {
                 tool_results.push(extra);
             }
@@ -228,26 +241,35 @@ impl CopilotEngine {
         };
 
         // ── Step 6: Synthesize answer ─────────────────────────────────────────
-        let answer = self.synthesize_answer(ctx, message, &plan.intent, &tool_results, &action_plan).await;
+        let answer = self
+            .synthesize_answer(ctx, message, &plan.intent, &tool_results, &action_plan)
+            .await;
 
         // ── Step 7: Audit log ─────────────────────────────────────────────────
-        let _audit_id = self.audit.record(
-            ctx.user_id.clone(),
-            ctx.tenant_id.clone(),
-            &ctx.screen,
-            message,
-            &plan.intent,
-            &used_tools,
-            &action_plan,
-            has_write,
-        ).await.unwrap_or_else(|e| {
-            tracing::warn!("Audit log failed (non-blocking): {e}");
-            uuid::Uuid::nil()
-        });
+        let _audit_id = self
+            .audit
+            .record(
+                ctx.user_id.clone(),
+                ctx.tenant_id.clone(),
+                &ctx.screen,
+                message,
+                &plan.intent,
+                &used_tools,
+                &action_plan,
+                has_write,
+            )
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Audit log failed (non-blocking): {e}");
+                uuid::Uuid::nil()
+            });
 
         // ── Step 8: Response ──────────────────────────────────────────────────
         let billing_warning = if billing.actions_left <= 5 {
-            Some(format!("Low AI actions balance: {} remaining.", billing.actions_left))
+            Some(format!(
+                "Low AI actions balance: {} remaining.",
+                billing.actions_left
+            ))
         } else {
             None
         };
@@ -277,8 +299,18 @@ impl CopilotEngine {
         // Если есть write plan — локализованный confirmation-required ответ
         if let Some(plan) = action_plan {
             if !plan.changes.is_empty() {
-                let changes_text = plan.changes.iter()
-                    .map(|c| format!("• {} {}: {} → {}", c.entity, c.field, c.before.as_deref().unwrap_or("?"), c.after))
+                let changes_text = plan
+                    .changes
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "• {} {}: {} → {}",
+                            c.entity,
+                            c.field,
+                            c.before.as_deref().unwrap_or("?"),
+                            c.after
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
                 let locale = ctx.locale.code();
@@ -298,7 +330,8 @@ impl CopilotEngine {
         }
 
         // Подготовить данные от tools — ограничить размер для inventory
-        let context_data: Vec<serde_json::Value> = tool_results.iter()
+        let context_data: Vec<serde_json::Value> = tool_results
+            .iter()
             .map(|r| {
                 let data = limit_tool_data(&r.tool_name, &r.data);
                 json!({ "tool": r.tool_name, "data": data })
@@ -335,8 +368,15 @@ impl CopilotEngine {
             Err(e) => {
                 tracing::warn!("Synthesis LLM call failed: {e}");
                 // Fallback: краткое текстовое представление без LLM
-                tool_results.iter()
-                    .map(|r| format!("[{}]: {}", r.tool_name, r.data.to_string().chars().take(300).collect::<String>()))
+                tool_results
+                    .iter()
+                    .map(|r| {
+                        format!(
+                            "[{}]: {}",
+                            r.tool_name,
+                            r.data.to_string().chars().take(300).collect::<String>()
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join("\n")
             }
@@ -354,10 +394,10 @@ fn limit_tool_data(tool_name: &str, data: &serde_json::Value) -> serde_json::Val
             items.sort_by_key(|item| {
                 let severity = item.get("severity").and_then(|s| s.as_str()).unwrap_or("");
                 match severity {
-                    "Expired"  => 0,
+                    "Expired" => 0,
                     "Critical" => 1,
-                    "Low"      => 2,
-                    _          => 3,
+                    "Low" => 2,
+                    _ => 3,
                 }
             });
             // Топ 10
@@ -374,11 +414,35 @@ fn limit_tool_data(tool_name: &str, data: &serde_json::Value) -> serde_json::Val
 fn looks_like_write_request(message: &str) -> bool {
     let msg = message.to_lowercase();
     let write_keywords = [
-        "добавь", "добавить", "измени", "изменить", "удали", "удалить",
-        "спиши", "списать", "закажи", "заказать", "создай", "создать",
-        "обнови", "обновить", "купи", "купить", "закупку", "закупить",
-        "add", "update", "delete", "remove", "order", "create", "write off",
-        "purchase", "modify", "set price", "change price",
+        "добавь",
+        "добавить",
+        "измени",
+        "изменить",
+        "удали",
+        "удалить",
+        "спиши",
+        "списать",
+        "закажи",
+        "заказать",
+        "создай",
+        "создать",
+        "обнови",
+        "обновить",
+        "купи",
+        "купить",
+        "закупку",
+        "закупить",
+        "add",
+        "update",
+        "delete",
+        "remove",
+        "order",
+        "create",
+        "write off",
+        "purchase",
+        "modify",
+        "set price",
+        "change price",
     ];
     write_keywords.iter().any(|kw| msg.contains(kw))
 }

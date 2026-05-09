@@ -8,9 +8,9 @@
 //!
 //! Returns `ValidationReport` with warnings (non-fatal) and errors (should block).
 
-use super::recipe_engine::{TechCard, ResolvedIngredient, CookingStep};
-use super::user_constraints::UserConstraints;
 use super::intent_router::ChatLang;
+use super::recipe_engine::{CookingStep, ResolvedIngredient, TechCard};
+use super::user_constraints::UserConstraints;
 
 /// Severity of a validation issue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,11 +39,17 @@ impl ValidationReport {
     }
 
     pub fn warnings(&self) -> Vec<&ValidationIssue> {
-        self.issues.iter().filter(|i| i.severity == Severity::Warning).collect()
+        self.issues
+            .iter()
+            .filter(|i| i.severity == Severity::Warning)
+            .collect()
     }
 
     pub fn errors(&self) -> Vec<&ValidationIssue> {
-        self.issues.iter().filter(|i| i.severity == Severity::Error).collect()
+        self.issues
+            .iter()
+            .filter(|i| i.severity == Severity::Error)
+            .collect()
     }
 
     pub fn warning_messages(&self) -> Vec<String> {
@@ -52,7 +58,11 @@ impl ValidationReport {
 }
 
 /// Validate a completed TechCard for coherence.
-pub fn validate_recipe(tech_card: &TechCard, constraints: &UserConstraints, lang: ChatLang) -> ValidationReport {
+pub fn validate_recipe(
+    tech_card: &TechCard,
+    constraints: &UserConstraints,
+    lang: ChatLang,
+) -> ValidationReport {
     let mut report = ValidationReport::default();
 
     check_minimum_ingredients(tech_card, lang, &mut report);
@@ -69,16 +79,24 @@ pub fn validate_recipe(tech_card: &TechCard, constraints: &UserConstraints, lang
 
 /// Recipe should have at least 2 resolved ingredients.
 fn check_minimum_ingredients(tc: &TechCard, lang: ChatLang, report: &mut ValidationReport) {
-    let resolved_count = tc.ingredients.iter()
+    let resolved_count = tc
+        .ingredients
+        .iter()
         .filter(|i| i.resolved_slug.is_some())
         .count();
 
     if resolved_count < 2 {
         let msg = match lang {
             ChatLang::Ru => format!("Только {} ингредиент(ов) — нужно минимум 2", resolved_count),
-            ChatLang::En => format!("Only {} resolved ingredient(s) — needs at least 2", resolved_count),
+            ChatLang::En => format!(
+                "Only {} resolved ingredient(s) — needs at least 2",
+                resolved_count
+            ),
             ChatLang::Pl => format!("Tylko {} składnik(ów) — potrzeba minimum 2", resolved_count),
-            ChatLang::Uk => format!("Лише {} інгредієнт(ів) — потрібно мінімум 2", resolved_count),
+            ChatLang::Uk => format!(
+                "Лише {} інгредієнт(ів) — потрібно мінімум 2",
+                resolved_count
+            ),
         };
         report.issues.push(ValidationIssue {
             severity: Severity::Error,
@@ -90,15 +108,23 @@ fn check_minimum_ingredients(tc: &TechCard, lang: ChatLang, report: &mut Validat
 
 /// Non-vegan recipes should have a protein source (meat, fish, dairy, legume, egg).
 /// Vegan recipes may use legumes/tofu as protein — warn if none found.
-fn check_has_protein(tc: &TechCard, constraints: &UserConstraints, lang: ChatLang, report: &mut ValidationReport) {
+fn check_has_protein(
+    tc: &TechCard,
+    constraints: &UserConstraints,
+    lang: ChatLang,
+    report: &mut ValidationReport,
+) {
     let has_protein_role = tc.ingredients.iter().any(|i| i.role == "protein");
 
     if !has_protein_role {
         let has_plant_protein = tc.ingredients.iter().any(|i| {
             let slug = slug_lower(i);
-            slug.contains("tofu") || slug.contains("tempeh")
-                || slug.contains("lentil") || slug.contains("chickpea")
-                || slug.contains("bean") || slug.contains("edamame")
+            slug.contains("tofu")
+                || slug.contains("tempeh")
+                || slug.contains("lentil")
+                || slug.contains("chickpea")
+                || slug.contains("bean")
+                || slug.contains("edamame")
                 || i.product.as_ref().map(|p| p.product_type.as_str()) == Some("legume")
         });
 
@@ -118,9 +144,13 @@ fn check_has_protein(tc: &TechCard, constraints: &UserConstraints, lang: ChatLan
             });
         } else {
             let msg = match lang {
-                ChatLang::Ru => "Нет источника белка — рекомендуется добавить мясо, рыбу или бобовые",
+                ChatLang::Ru => {
+                    "Нет источника белка — рекомендуется добавить мясо, рыбу или бобовые"
+                }
                 ChatLang::En => "No protein source — consider adding meat, fish, or legumes",
-                ChatLang::Pl => "Brak źródła białka — zalecamy dodać mięso, ryby lub rośliny strączkowe",
+                ChatLang::Pl => {
+                    "Brak źródła białka — zalecamy dodać mięso, ryby lub rośliny strączkowe"
+                }
                 ChatLang::Uk => "Немає джерела білка — рекомендуємо додати м'ясо, рибу або бобові",
             };
             report.issues.push(ValidationIssue {
@@ -138,9 +168,18 @@ fn check_calorie_range(tc: &TechCard, lang: ChatLang, report: &mut ValidationRep
 
     if per_serving < 50 && tc.ingredients.iter().any(|i| i.resolved_slug.is_some()) {
         let msg = match lang {
-            ChatLang::Ru => format!("Калорийность подозрительно низкая: {} ккал/порция", per_serving),
-            ChatLang::En => format!("Per-serving calories suspiciously low: {} kcal", per_serving),
-            ChatLang::Pl => format!("Podejrzanie niska kaloryczność: {} kcal/porcja", per_serving),
+            ChatLang::Ru => format!(
+                "Калорийность подозрительно низкая: {} ккал/порция",
+                per_serving
+            ),
+            ChatLang::En => format!(
+                "Per-serving calories suspiciously low: {} kcal",
+                per_serving
+            ),
+            ChatLang::Pl => format!(
+                "Podejrzanie niska kaloryczność: {} kcal/porcja",
+                per_serving
+            ),
             ChatLang::Uk => format!("Калорійність підозріло низька: {} ккал/порція", per_serving),
         };
         report.issues.push(ValidationIssue {
@@ -152,9 +191,18 @@ fn check_calorie_range(tc: &TechCard, lang: ChatLang, report: &mut ValidationRep
 
     if per_serving > 1500 {
         let msg = match lang {
-            ChatLang::Ru => format!("Калорийность подозрительно высокая: {} ккал/порция", per_serving),
-            ChatLang::En => format!("Per-serving calories suspiciously high: {} kcal", per_serving),
-            ChatLang::Pl => format!("Podejrzanie wysoka kaloryczność: {} kcal/porcja", per_serving),
+            ChatLang::Ru => format!(
+                "Калорийность подозрительно высокая: {} ккал/порция",
+                per_serving
+            ),
+            ChatLang::En => format!(
+                "Per-serving calories suspiciously high: {} kcal",
+                per_serving
+            ),
+            ChatLang::Pl => format!(
+                "Podejrzanie wysoka kaloryczność: {} kcal/porcja",
+                per_serving
+            ),
             ChatLang::Uk => format!("Калорійність підозріло висока: {} ккал/порція", per_serving),
         };
         report.issues.push(ValidationIssue {
@@ -189,10 +237,22 @@ fn check_unresolved_ratio(tc: &TechCard, lang: ChatLang, report: &mut Validation
 
     if total > 0 && unresolved as f32 / total as f32 > 0.5 {
         let msg = match lang {
-            ChatLang::Ru => format!("{}/{} ингредиентов не найдены — рецепт может быть неточным", unresolved, total),
-            ChatLang::En => format!("{}/{} ingredients unresolved — recipe may be inaccurate", unresolved, total),
-            ChatLang::Pl => format!("{}/{} składników nieznalezionych — przepis może być niedokładny", unresolved, total),
-            ChatLang::Uk => format!("{}/{} інгредієнтів не знайдено — рецепт може бути неточним", unresolved, total),
+            ChatLang::Ru => format!(
+                "{}/{} ингредиентов не найдены — рецепт может быть неточным",
+                unresolved, total
+            ),
+            ChatLang::En => format!(
+                "{}/{} ingredients unresolved — recipe may be inaccurate",
+                unresolved, total
+            ),
+            ChatLang::Pl => format!(
+                "{}/{} składników nieznalezionych — przepis może być niedokładny",
+                unresolved, total
+            ),
+            ChatLang::Uk => format!(
+                "{}/{} інгредієнтів не знайдено — рецепт може бути неточним",
+                unresolved, total
+            ),
         };
         report.issues.push(ValidationIssue {
             severity: Severity::Warning,
@@ -206,10 +266,22 @@ fn check_unresolved_ratio(tc: &TechCard, lang: ChatLang, report: &mut Validation
 fn check_total_weight(tc: &TechCard, lang: ChatLang, report: &mut ValidationReport) {
     if tc.total_output_g < 100.0 && !tc.ingredients.is_empty() {
         let msg = match lang {
-            ChatLang::Ru => format!("Общий выход всего {:.0}г — необычно мало", tc.total_output_g),
-            ChatLang::En => format!("Total output is only {:.0}g — unusually low", tc.total_output_g),
-            ChatLang::Pl => format!("Łączna masa to tylko {:.0}g — podejrzanie mało", tc.total_output_g),
-            ChatLang::Uk => format!("Загальний вихід лише {:.0}г — незвично мало", tc.total_output_g),
+            ChatLang::Ru => format!(
+                "Общий выход всего {:.0}г — необычно мало",
+                tc.total_output_g
+            ),
+            ChatLang::En => format!(
+                "Total output is only {:.0}g — unusually low",
+                tc.total_output_g
+            ),
+            ChatLang::Pl => format!(
+                "Łączna masa to tylko {:.0}g — podejrzanie mało",
+                tc.total_output_g
+            ),
+            ChatLang::Uk => format!(
+                "Загальний вихід лише {:.0}г — незвично мало",
+                tc.total_output_g
+            ),
         };
         report.issues.push(ValidationIssue {
             severity: Severity::Warning,
@@ -237,8 +309,9 @@ mod tests {
     fn make_techcard(ingredients: Vec<(&str, &str, &str)>, kcal: u32) -> TechCard {
         use crate::infrastructure::ingredient_cache::IngredientData;
 
-        let ings: Vec<ResolvedIngredient> = ingredients.iter().map(|(slug, role, ptype)| {
-            ResolvedIngredient {
+        let ings: Vec<ResolvedIngredient> = ingredients
+            .iter()
+            .map(|(slug, role, ptype)| ResolvedIngredient {
                 product: Some(IngredientData {
                     slug: slug.to_string(),
                     name_en: slug.to_string(),
@@ -251,7 +324,10 @@ mod tests {
                     carbs_per_100g: 10.0,
                     image_url: None,
                     product_type: ptype.to_string(),
-                    density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+                    density_g_per_ml: None,
+                    typical_portion_g: None,
+                    behaviors: vec![],
+                    states: vec![],
                 }),
                 slug_hint: slug.to_string(),
                 resolved_slug: Some(slug.to_string()),
@@ -264,8 +340,8 @@ mod tests {
                 protein_g: 10.0,
                 fat_g: 5.0,
                 carbs_g: 10.0,
-            }
-        }).collect();
+            })
+            .collect();
 
         TechCard {
             dish_name: "test".into(),
@@ -299,7 +375,8 @@ mod tests {
             applied_constraints: vec![],
             adaptations: vec![],
             validation_warnings: vec![],
-            auto_fixes: vec![], flavor_analysis: None,
+            auto_fixes: vec![],
+            flavor_analysis: None,
             dish_image_url: None,
             ingredients: ings,
         }
@@ -325,7 +402,10 @@ mod tests {
         let tc = make_techcard(vec![("salt", "spice", "spice")], 50);
         let report = validate_recipe(&tc, &UserConstraints::default(), ChatLang::En);
         assert!(report.has_errors());
-        assert!(report.errors().iter().any(|e| e.code == "TOO_FEW_INGREDIENTS"));
+        assert!(report
+            .errors()
+            .iter()
+            .any(|e| e.code == "TOO_FEW_INGREDIENTS"));
     }
 
     #[test]
@@ -358,7 +438,10 @@ mod tests {
             ..Default::default()
         };
         let report = validate_recipe(&tc, &constraints, ChatLang::En);
-        assert!(report.warnings().iter().any(|w| w.code == "NO_PROTEIN_DIETARY"));
+        assert!(report
+            .warnings()
+            .iter()
+            .any(|w| w.code == "NO_PROTEIN_DIETARY"));
     }
 
     #[test]
@@ -377,10 +460,7 @@ mod tests {
     #[test]
     fn low_weight_warning() {
         let mut tc = make_techcard(
-            vec![
-                ("garlic", "spice", "vegetable"),
-                ("salt", "spice", "spice"),
-            ],
+            vec![("garlic", "spice", "vegetable"), ("salt", "spice", "spice")],
             50,
         );
         tc.total_output_g = 10.0; // override to be tiny
@@ -407,11 +487,19 @@ mod tests {
                 resolved_slug: None,
                 state: "raw".into(),
                 role: "other".into(),
-                gross_g: 0.0, cleaned_net_g: 0.0, cooked_net_g: 0.0,
-                kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+                gross_g: 0.0,
+                cleaned_net_g: 0.0,
+                cooked_net_g: 0.0,
+                kcal: 0,
+                protein_g: 0.0,
+                fat_g: 0.0,
+                carbs_g: 0.0,
             });
         }
         let report = validate_recipe(&tc, &UserConstraints::default(), ChatLang::En);
-        assert!(report.warnings().iter().any(|w| w.code == "HIGH_UNRESOLVED"));
+        assert!(report
+            .warnings()
+            .iter()
+            .any(|w| w.code == "HIGH_UNRESOLVED"));
     }
 }

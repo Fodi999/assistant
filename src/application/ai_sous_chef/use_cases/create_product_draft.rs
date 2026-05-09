@@ -60,22 +60,46 @@ pub struct DraftField<T: Serialize> {
 
 impl<T: Serialize + Clone> DraftField<T> {
     fn ai(value: T, confidence: FieldConfidence) -> Self {
-        Self { value: Some(value), source: DataSource::Ai, confidence }
+        Self {
+            value: Some(value),
+            source: DataSource::Ai,
+            confidence,
+        }
     }
     fn ai_opt(value: Option<T>, confidence: FieldConfidence) -> Self {
-        Self { value, source: DataSource::Ai, confidence }
+        Self {
+            value,
+            source: DataSource::Ai,
+            confidence,
+        }
     }
     fn dict(value: T) -> Self {
-        Self { value: Some(value), source: DataSource::Dictionary, confidence: FieldConfidence::High }
+        Self {
+            value: Some(value),
+            source: DataSource::Dictionary,
+            confidence: FieldConfidence::High,
+        }
     }
     fn lookup(value: T) -> Self {
-        Self { value: Some(value), source: DataSource::Lookup, confidence: FieldConfidence::High }
+        Self {
+            value: Some(value),
+            source: DataSource::Lookup,
+            confidence: FieldConfidence::High,
+        }
     }
     fn lookup_opt(value: Option<T>) -> Self {
-        Self { value, source: DataSource::Lookup, confidence: FieldConfidence::High }
+        Self {
+            value,
+            source: DataSource::Lookup,
+            confidence: FieldConfidence::High,
+        }
     }
     fn not_applicable() -> Self {
-        Self { value: None, source: DataSource::Ai, confidence: FieldConfidence::NotApplicable }
+        Self {
+            value: None,
+            source: DataSource::Ai,
+            confidence: FieldConfidence::NotApplicable,
+        }
     }
 }
 
@@ -200,7 +224,11 @@ impl AdminCatalogService {
             .llm_adapter
             .generate_with_quality(&prompt, 5000, AiQuality::Balanced)
             .await?;
-        tracing::debug!("🤖 Raw AI draft response ({} chars): {}", raw.len(), &raw[..raw.len().min(300)]);
+        tracing::debug!(
+            "🤖 Raw AI draft response ({} chars): {}",
+            raw.len(),
+            &raw[..raw.len().min(300)]
+        );
         let ai_json = parse_json_response(&raw)?;
 
         // ══════════════════════════════════════════════════════════════
@@ -261,19 +289,26 @@ impl AdminCatalogService {
     /// 2. Dictionary lookup (ACTIVE entries only)
     /// 3. If miss → AI translate name → save as PENDING (admin must approve!)
     /// 4. Infer product_type + unit from keywords
-    async fn resolve_from_dictionary(
-        &self,
-        input: &str,
-    ) -> product_dictionary::ResolvedProduct {
+    async fn resolve_from_dictionary(&self, input: &str) -> product_dictionary::ResolvedProduct {
         // ── STEP 1: Normalize input ──
         let normalized = product_dictionary::normalize_ingredient_name(input);
-        tracing::info!("🔍 Normalized input: '{}' → '{}'", input.trim(), &normalized);
+        tracing::info!(
+            "🔍 Normalized input: '{}' → '{}'",
+            input.trim(),
+            &normalized
+        );
 
         // ── STEP 2: Dictionary lookup (ACTIVE only) ──
         let dict_entry = self.dictionary.find_by_en(&normalized).await.ok().flatten();
 
         let (name_en, name_ru, name_pl, name_uk, names_from_ai) = if let Some(ref d) = dict_entry {
-            tracing::info!("📖 Dictionary hit: {} → RU:{}, PL:{}, UK:{}", d.name_en, d.name_ru, d.name_pl, d.name_uk);
+            tracing::info!(
+                "📖 Dictionary hit: {} → RU:{}, PL:{}, UK:{}",
+                d.name_en,
+                d.name_ru,
+                d.name_pl,
+                d.name_uk
+            );
             (
                 d.name_en.clone(),
                 d.name_ru.clone(),
@@ -286,7 +321,10 @@ impl AdminCatalogService {
             // NOT IN DICTIONARY → AI translate → save as PENDING
             // Admin must approve before it becomes "truth"!
             // ══════════════════════════════════════════════════════════
-            tracing::info!("📖 Dictionary miss for '{}' — requesting AI translation", &normalized);
+            tracing::info!(
+                "📖 Dictionary miss for '{}' — requesting AI translation",
+                &normalized
+            );
             match self.ai_translate_and_save_pending(&normalized).await {
                 Ok((ru, pl, uk)) => {
                     tracing::info!("🌍 AI translation success: RU:{}, PL:{}, UK:{}", ru, pl, uk);
@@ -295,7 +333,13 @@ impl AdminCatalogService {
                 }
                 Err(e) => {
                     tracing::warn!("AI name translation failed: {} — names will be empty", e);
-                    (normalized.clone(), String::new(), String::new(), String::new(), true)
+                    (
+                        normalized.clone(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        true,
+                    )
                 }
             }
         };
@@ -304,14 +348,12 @@ impl AdminCatalogService {
         let name_ru_lower = name_ru.to_lowercase();
 
         // Infer product_type from keywords (NEVER from AI)
-        let product_type =
-            product_dictionary::infer_product_type(&name_en_lower, &name_ru_lower)
-                .unwrap_or("other")
-                .to_string();
+        let product_type = product_dictionary::infer_product_type(&name_en_lower, &name_ru_lower)
+            .unwrap_or("other")
+            .to_string();
 
         // Unit from lookup (NEVER from AI)
-        let unit =
-            product_dictionary::unit_for_type(&product_type, &name_en_lower).to_string();
+        let unit = product_dictionary::unit_for_type(&product_type, &name_en_lower).to_string();
 
         // Defaults from lookup tables
         let density = product_dictionary::default_density(&product_type);
@@ -367,12 +409,31 @@ Rules:
             .generate_with_quality(&prompt, 4000, AiQuality::Balanced)
             .await?;
 
-        tracing::info!("🌍 AI translate raw ({} chars): {}", raw.len(), &raw[..raw.len().min(200)]);
+        tracing::info!(
+            "🌍 AI translate raw ({} chars): {}",
+            raw.len(),
+            &raw[..raw.len().min(200)]
+        );
 
         let json = parse_json_response(&raw)?;
-        let ru = json.get("ru").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let pl = json.get("pl").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let uk = json.get("uk").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let ru = json
+            .get("ru")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let pl = json
+            .get("pl")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let uk = json
+            .get("uk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         if ru.is_empty() && pl.is_empty() && uk.is_empty() {
             return Err(AppError::internal("AI returned empty translations"));
@@ -384,21 +445,36 @@ Rules:
         let pl_valid = product_dictionary::is_valid_ingredient_name(&pl);
         let uk_valid = product_dictionary::is_valid_ingredient_name(&uk);
 
-        let valid_count = [en_valid, ru_valid, pl_valid, uk_valid].iter().filter(|&&v| v).count();
+        let valid_count = [en_valid, ru_valid, pl_valid, uk_valid]
+            .iter()
+            .filter(|&&v| v)
+            .count();
         let confidence = valid_count as f32 / 4.0;
 
         tracing::info!(
             "🌍 AI translated '{}' → RU:{}, PL:{}, UK:{} (confidence: {:.2}, valid: {}/4)",
-            name_en, ru, pl, uk, confidence, valid_count
+            name_en,
+            ru,
+            pl,
+            uk,
+            confidence,
+            valid_count
         );
 
         // ── Save as PENDING (admin must approve!) ──
         if confidence >= 0.5 {
-            match self.dictionary.insert_pending(name_en, &pl, &ru, &uk, confidence).await {
+            match self
+                .dictionary
+                .insert_pending(name_en, &pl, &ru, &uk, confidence)
+                .await
+            {
                 Ok(entry) => {
                     tracing::info!(
                         "🟡 Saved PENDING: {} → RU:{}, PL:{}, UK:{} (awaiting admin review)",
-                        entry.name_en, entry.name_ru, entry.name_pl, entry.name_uk
+                        entry.name_en,
+                        entry.name_ru,
+                        entry.name_pl,
+                        entry.name_uk
                     );
                 }
                 Err(e) => {
@@ -408,7 +484,8 @@ Rules:
         } else {
             tracing::warn!(
                 "⚠️ AI translation confidence too low ({:.2}) for '{}' — NOT saving to dictionary",
-                confidence, name_en
+                confidence,
+                name_en
             );
         }
 
@@ -464,9 +541,7 @@ fn map_to_draft(
     let str_val = |key: &str| -> Option<String> {
         ai.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
     };
-    let f64_val = |key: &str| -> Option<f64> {
-        ai.get(key).and_then(|v| v.as_f64())
-    };
+    let f64_val = |key: &str| -> Option<f64> { ai.get(key).and_then(|v| v.as_f64()) };
 
     // Animal detection for fiber
     let animal_types = ["fish", "seafood", "meat", "poultry", "dairy"];
@@ -477,12 +552,24 @@ fn map_to_draft(
     // ── Confidence calc: count how many AI fields returned ──
     let mut returned = 0u32;
     let total = 6u32;
-    if f64_val("calories_per_100g").is_some() { returned += 1; }
-    if f64_val("protein_per_100g").is_some() { returned += 1; }
-    if f64_val("fat_per_100g").is_some() { returned += 1; }
-    if f64_val("carbs_per_100g").is_some() { returned += 1; }
-    if str_val("description_en").is_some() { returned += 1; }
-    if str_val("description_ru").is_some() { returned += 1; }
+    if f64_val("calories_per_100g").is_some() {
+        returned += 1;
+    }
+    if f64_val("protein_per_100g").is_some() {
+        returned += 1;
+    }
+    if f64_val("fat_per_100g").is_some() {
+        returned += 1;
+    }
+    if f64_val("carbs_per_100g").is_some() {
+        returned += 1;
+    }
+    if str_val("description_en").is_some() {
+        returned += 1;
+    }
+    if str_val("description_ru").is_some() {
+        returned += 1;
+    }
     let confidence = returned as f64 / total as f64;
     let conf = if confidence >= 0.85 {
         FieldConfidence::High
@@ -580,7 +667,11 @@ fn map_to_draft(
             en: DraftField::dict(resolved.name_en.clone()),
             ru: if resolved.names_from_ai {
                 if resolved.name_ru.is_empty() {
-                    DraftField { value: None, source: DataSource::Ai, confidence: FieldConfidence::Low }
+                    DraftField {
+                        value: None,
+                        source: DataSource::Ai,
+                        confidence: FieldConfidence::Low,
+                    }
                 } else {
                     DraftField::ai(resolved.name_ru.clone(), FieldConfidence::Medium)
                 }
@@ -589,7 +680,11 @@ fn map_to_draft(
             },
             pl: if resolved.names_from_ai {
                 if resolved.name_pl.is_empty() {
-                    DraftField { value: None, source: DataSource::Ai, confidence: FieldConfidence::Low }
+                    DraftField {
+                        value: None,
+                        source: DataSource::Ai,
+                        confidence: FieldConfidence::Low,
+                    }
                 } else {
                     DraftField::ai(resolved.name_pl.clone(), FieldConfidence::Medium)
                 }
@@ -598,7 +693,11 @@ fn map_to_draft(
             },
             uk: if resolved.names_from_ai {
                 if resolved.name_uk.is_empty() {
-                    DraftField { value: None, source: DataSource::Ai, confidence: FieldConfidence::Low }
+                    DraftField {
+                        value: None,
+                        source: DataSource::Ai,
+                        confidence: FieldConfidence::Low,
+                    }
                 } else {
                     DraftField::ai(resolved.name_uk.clone(), FieldConfidence::Medium)
                 }
@@ -633,9 +732,11 @@ fn map_to_draft(
             seo_h1: DraftField::ai_opt(seo_str("seo_h1"), conf.clone()),
         },
         seasons: DraftField::ai_opt(
-            ai.get("seasons")
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()),
+            ai.get("seasons").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            }),
             conf,
         ),
         confidence,
@@ -670,7 +771,10 @@ fn validate_draft(draft: &mut ProductDraft) -> Vec<DraftCorrection> {
                 field: "protein_per_100g".into(),
                 original_value: format!("{:.1}", p),
                 corrected_to: format!("{:.1}", clamped),
-                reason: format!("Protein {:.1}g out of range — clamped to {:.1}g", p, clamped),
+                reason: format!(
+                    "Protein {:.1}g out of range — clamped to {:.1}g",
+                    p, clamped
+                ),
             });
             draft.nutrition.protein_per_100g.value = Some(clamped);
             draft.nutrition.protein_per_100g.source = DataSource::AiCorrected;
@@ -881,7 +985,10 @@ fn parse_json_response(raw: &str) -> AppResult<serde_json::Value> {
         })
         .map_err(|e| {
             tracing::error!("Failed to parse AI draft response: {}", e);
-            tracing::debug!("Raw response (first 500 chars): {}", &raw[..raw.len().min(500)]);
+            tracing::debug!(
+                "Raw response (first 500 chars): {}",
+                &raw[..raw.len().min(500)]
+            );
             AppError::internal("AI returned invalid JSON for draft")
         })
 }

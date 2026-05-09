@@ -59,17 +59,23 @@ pub(crate) enum ToolChoice {
     },
 }
 
-fn default_goal() -> String { "balanced".to_string() }
-fn default_limit() -> usize { 3 }
-fn default_meals() -> usize { 3 }
+fn default_goal() -> String {
+    "balanced".to_string()
+}
+fn default_limit() -> usize {
+    3
+}
+fn default_meals() -> usize {
+    3
+}
 
 /// Human-readable tool name for logging.
 pub(crate) fn action_name(tool: &ToolChoice) -> &'static str {
     match tool {
         ToolChoice::SearchProducts { .. } => "search_products",
-        ToolChoice::GetNutrition { .. }   => "get_nutrition",
-        ToolChoice::ConvertUnits { .. }   => "convert_units",
-        ToolChoice::GeneralAnswer { .. }  => "general_answer",
-        ToolChoice::MealPlan { .. }       => "meal_plan",
+        ToolChoice::GetNutrition { .. } => "get_nutrition",
+        ToolChoice::ConvertUnits { .. } => "convert_units",
+        ToolChoice::GeneralAnswer { .. } => "general_answer",
+        ToolChoice::MealPlan { .. } => "meal_plan",
     }
 }

@@ -14,19 +14,19 @@ const MAX_ENTRIES: usize = 2000; // evict oldest if exceeded
 
 struct CacheEntry {
     response: SmartResponse,
-    created:  Instant,
+    created: Instant,
 }
 
 pub struct SmartCache {
     inner: Arc<Mutex<HashMap<String, CacheEntry>>>,
-    ttl:   Duration,
+    ttl: Duration,
 }
 
 impl SmartCache {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(HashMap::with_capacity(256))),
-            ttl:   DEFAULT_TTL,
+            ttl: DEFAULT_TTL,
         }
     }
 
@@ -48,17 +48,21 @@ impl SmartCache {
         if let Ok(mut map) = self.inner.lock() {
             // Evict if too many entries (simple: clear oldest half)
             if map.len() >= MAX_ENTRIES {
-                let mut entries: Vec<(String, Instant)> = map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.created))
-                    .collect();
+                let mut entries: Vec<(String, Instant)> =
+                    map.iter().map(|(k, v)| (k.clone(), v.created)).collect();
                 entries.sort_by_key(|(_, t)| *t);
                 let to_remove = entries.len() / 2;
                 for (k, _) in entries.into_iter().take(to_remove) {
                     map.remove(&k);
                 }
             }
-            map.insert(key, CacheEntry { response, created: Instant::now() });
+            map.insert(
+                key,
+                CacheEntry {
+                    response,
+                    created: Instant::now(),
+                },
+            );
         }
     }
 }

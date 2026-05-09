@@ -1,5 +1,5 @@
-use sqlx::PgPool;
 use crate::shared::AppError;
+use sqlx::PgPool;
 
 #[derive(Clone)]
 pub struct AiUsageStatsRepository {

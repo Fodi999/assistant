@@ -1,12 +1,12 @@
 // ── Shader assembly: concatenates WGSL fragments in dependency order ─────────────
 // Domain: GPU shader program — single WGSL source passed to createShaderModule.
 
-mod uniforms;
 mod background;
 mod geometry;
-mod sdf;
-mod particles_vert;
 mod particles_frag;
+mod particles_vert;
+mod sdf;
+mod uniforms;
 
 use std::sync::OnceLock;
 

@@ -28,9 +28,7 @@
 //!   → publishes next N pages from queue (FIFO by queued_at)
 
 use crate::application::admin_catalog::revalidate_blog;
-use crate::application::public_seo_content::{
-    PublicSeoContentService, SeoContentRequest,
-};
+use crate::application::public_seo_content::{PublicSeoContentService, SeoContentRequest};
 use crate::infrastructure::R2Client;
 use crate::shared::{AppError, AppResult};
 use deunicode::deunicode;
@@ -74,35 +72,38 @@ const COMPARISON_SUB_INTENTS: &[&str] = &[
 // These are NOT sub-intents; they are dimension values for the SmartService context.
 
 const RECIPE_GOALS: &[&str] = &[
-    "high_protein", "low_carb", "keto", "weight_loss", "muscle_gain", "energy_boost",
+    "high_protein",
+    "low_carb",
+    "keto",
+    "weight_loss",
+    "muscle_gain",
+    "energy_boost",
 ];
 
-const RECIPE_MEAL_TYPES: &[&str] = &[
-    "breakfast", "lunch", "dinner", "snack",
-];
+const RECIPE_MEAL_TYPES: &[&str] = &["breakfast", "lunch", "dinner", "snack"];
 
 const RECIPE_DIETS: &[Option<&str>] = &[
-    None,                // universal (no diet filter)
+    None, // universal (no diet filter)
     Some("vegetarian"),
     Some("vegan"),
     Some("gluten_free"),
 ];
 
 const RECIPE_COOKING_TIMES: &[Option<&str>] = &[
-    None,                // any time budget
+    None, // any time budget
     Some("quick"),
     Some("medium"),
     Some("long"),
 ];
 
 const RECIPE_BUDGETS: &[Option<&str>] = &[
-    None,                // any price tier
+    None, // any price tier
     Some("cheap"),
     Some("premium"),
 ];
 
 const RECIPE_CUISINES: &[Option<&str>] = &[
-    None,                // universal
+    None, // universal
     Some("italian"),
     Some("asian"),
     Some("mexican"),
@@ -114,8 +115,16 @@ fn looks_plural(word: &str) -> bool {
     let w = word.to_lowercase();
     // Explicit singular exceptions that end in 's' but aren't plural
     const SINGULAR_EXCEPTIONS: &[&str] = &[
-        "hummus", "couscous", "asparagus", "citrus", "hibiscus",
-        "octopus", "lettuce", "rice", "quinoa", "tofu",
+        "hummus",
+        "couscous",
+        "asparagus",
+        "citrus",
+        "hibiscus",
+        "octopus",
+        "lettuce",
+        "rice",
+        "quinoa",
+        "tofu",
     ];
     if SINGULAR_EXCEPTIONS.iter().any(|&ex| w == ex) {
         return false;
@@ -123,7 +132,7 @@ fn looks_plural(word: &str) -> bool {
     // Common English plural endings
     w.ends_with('s')
         && !w.ends_with("ss")   // "grass" is not plural-looking
-        && !w.ends_with("us")   // "asparagus"
+        && !w.ends_with("us") // "asparagus"
 }
 
 /// Map a sub-intent slug template to a natural search query for the AI prompt.
@@ -152,14 +161,19 @@ fn sub_intent_to_query(sub: &str, entity_a: &str, entity_b: Option<&str>) -> Str
 }
 
 fn sub_intent_to_slug(sub: &str, entity_a: &str, entity_b: Option<&str>) -> String {
-    let slug = sub.replace("{a}", entity_a)
-       .replace("{b}", entity_b.unwrap_or(""))
-       .trim()
-       .to_lowercase()
-       .replace(' ', "-");
+    let slug = sub
+        .replace("{a}", entity_a)
+        .replace("{b}", entity_b.unwrap_or(""))
+        .trim()
+        .to_lowercase()
+        .replace(' ', "-");
 
     // Clean up multiple dashes
-    let slug = slug.split('-').filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
+    let slug = slug
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
 
     // Fix slug grammar: "is-almonds-healthy" → "are-almonds-healthy"
     if looks_plural(entity_a) {
@@ -347,7 +361,7 @@ pub struct SeoAuditResult {
     pub id: Uuid,
     pub slug: String,
     pub locale: String,
-    pub score: u8,          // 0-5
+    pub score: u8, // 0-5
     pub issues: Vec<String>,
     pub title_len: usize,
     pub desc_len: usize,
@@ -366,8 +380,16 @@ pub struct IntentPagesService {
 }
 
 impl IntentPagesService {
-    pub fn new(pool: PgPool, seo_service: Arc<PublicSeoContentService>, r2_client: R2Client) -> Self {
-        Self { pool, seo_service, r2_client }
+    pub fn new(
+        pool: PgPool,
+        seo_service: Arc<PublicSeoContentService>,
+        r2_client: R2Client,
+    ) -> Self {
+        Self {
+            pool,
+            seo_service,
+            r2_client,
+        }
     }
 
     // ── Generate single ──────────────────────────────────────────────────────
@@ -378,7 +400,8 @@ impl IntentPagesService {
             // recipe_intent: deterministic slug from full context dimensions
             match (&req.goal, &req.meal_type) {
                 (Some(g), Some(m)) => Some(recipe_intent_slug(
-                    g, m,
+                    g,
+                    m,
                     req.diet.as_deref(),
                     req.cooking_time.as_deref(),
                     req.budget.as_deref(),
@@ -388,9 +411,9 @@ impl IntentPagesService {
             }
         } else {
             // Other types: slug from sub_intent template
-            req.sub_intent.as_ref().map(|si| {
-                sub_intent_to_slug(si, &req.entity_a, req.entity_b.as_deref())
-            })
+            req.sub_intent
+                .as_ref()
+                .map(|si| sub_intent_to_slug(si, &req.entity_a, req.entity_b.as_deref()))
         };
 
         // 2. If we have a predetermined slug, check if page already exists
@@ -419,16 +442,31 @@ impl IntentPagesService {
             let goal_label = req.goal.as_deref().unwrap_or("healthy").replace('_', " ");
             let meal_label = req.meal_type.as_deref().unwrap_or("meal").replace('_', " ");
             let mut modifiers = Vec::new();
-            if let Some(d) = req.diet.as_deref() { modifiers.push(d.replace('_', " ")); }
-            if let Some(t) = req.cooking_time.as_deref() { modifiers.push(t.replace('_', " ")); }
-            if let Some(b) = req.budget.as_deref() { modifiers.push(b.replace('_', " ")); }
-            if let Some(c) = req.cuisine.as_deref() { modifiers.push(c.replace('_', " ")); }
-            let mods = if modifiers.is_empty() { String::new() } else { format!("{} ", modifiers.join(" ")) };
-            Some(format!("Best {}{} {} recipes", mods, goal_label, meal_label))
+            if let Some(d) = req.diet.as_deref() {
+                modifiers.push(d.replace('_', " "));
+            }
+            if let Some(t) = req.cooking_time.as_deref() {
+                modifiers.push(t.replace('_', " "));
+            }
+            if let Some(b) = req.budget.as_deref() {
+                modifiers.push(b.replace('_', " "));
+            }
+            if let Some(c) = req.cuisine.as_deref() {
+                modifiers.push(c.replace('_', " "));
+            }
+            let mods = if modifiers.is_empty() {
+                String::new()
+            } else {
+                format!("{} ", modifiers.join(" "))
+            };
+            Some(format!(
+                "Best {}{} {} recipes",
+                mods, goal_label, meal_label
+            ))
         } else {
-            req.sub_intent.as_ref().map(|si| {
-                sub_intent_to_query(si, &req.entity_a, req.entity_b.as_deref())
-            })
+            req.sub_intent
+                .as_ref()
+                .map(|si| sub_intent_to_query(si, &req.entity_a, req.entity_b.as_deref()))
         };
 
         // 4. Call AI to generate content
@@ -441,7 +479,9 @@ impl IntentPagesService {
 
         // Pass the specific search query to the AI for better targeting
         let content = if let Some(ref query) = search_query {
-            self.seo_service.generate_with_query(&seo_req, query).await?
+            self.seo_service
+                .generate_with_query(&seo_req, query)
+                .await?
         } else {
             self.seo_service.generate(&seo_req).await?
         };
@@ -455,15 +495,19 @@ impl IntentPagesService {
                     return cleaned;
                 }
             }
-            generate_slug(&content.title, &req.intent_type, &req.entity_a, req.entity_b.as_deref())
+            generate_slug(
+                &content.title,
+                &req.intent_type,
+                &req.entity_a,
+                req.entity_b.as_deref(),
+            )
         });
 
         // 6. Insert into DB
-        let faq_json = serde_json::to_value(&content.faq)
-            .unwrap_or_else(|_| serde_json::json!([]));
+        let faq_json = serde_json::to_value(&content.faq).unwrap_or_else(|_| serde_json::json!([]));
 
-        let content_blocks_json = serde_json::to_value(&content.content_blocks)
-            .unwrap_or_else(|_| serde_json::json!([]));
+        let content_blocks_json =
+            serde_json::to_value(&content.content_blocks).unwrap_or_else(|_| serde_json::json!([]));
 
         let page = sqlx::query_as::<_, IntentPage>(
             r#"INSERT INTO intent_pages
@@ -497,7 +541,11 @@ impl IntentPagesService {
 
         tracing::info!(
             "✅ Intent page generated: {} / {} / {} → '{}' [{}]",
-            req.intent_type, req.entity_a, req.locale, content.title, slug
+            req.intent_type,
+            req.entity_a,
+            req.locale,
+            content.title,
+            slug
         );
 
         Ok(page)
@@ -511,12 +559,14 @@ impl IntentPagesService {
     // Instead of one generic "salmon nutrition" page.
 
     pub async fn generate_batch(&self, req: &BatchGenerateRequest) -> AppResult<BatchResult> {
-        let intent_types = req.intent_types.clone().unwrap_or_else(|| {
-            vec!["question".into(), "goal".into()]
-        });
-        let locales = req.locales.clone().unwrap_or_else(|| {
-            vec!["en".into(), "pl".into(), "ru".into(), "uk".into()]
-        });
+        let intent_types = req
+            .intent_types
+            .clone()
+            .unwrap_or_else(|| vec!["question".into(), "goal".into()]);
+        let locales = req
+            .locales
+            .clone()
+            .unwrap_or_else(|| vec!["en".into(), "pl".into(), "ru".into(), "uk".into()]);
         let limit = req.limit.unwrap_or(50);
         let auto_publish = req.auto_publish.unwrap_or(false);
 
@@ -529,27 +579,40 @@ impl IntentPagesService {
 
         if slugs.is_empty() {
             return Ok(BatchResult {
-                generated: 0, published: 0, skipped: 0, errors: 0,
+                generated: 0,
+                published: 0,
+                skipped: 0,
+                errors: 0,
                 details: vec!["⚠️ No published products found".into()],
             });
         }
 
         let mut result = BatchResult {
-            generated: 0, published: 0, skipped: 0, errors: 0, details: vec![],
+            generated: 0,
+            published: 0,
+            skipped: 0,
+            errors: 0,
+            details: vec![],
         };
         let mut count = 0i64;
 
         // ── Phase 1: question sub-intents (8 per product) ────────────────────
         if intent_types.iter().any(|t| t == "question") {
             for slug in &slugs {
-                if count >= limit { break; }
+                if count >= limit {
+                    break;
+                }
 
                 for sub in QUESTION_SUB_INTENTS {
-                    if count >= limit { break; }
+                    if count >= limit {
+                        break;
+                    }
                     let target_slug = sub_intent_to_slug(sub, slug, None);
 
                     for locale in &locales {
-                        if count >= limit { break; }
+                        if count >= limit {
+                            break;
+                        }
 
                         // Fast check: slug already in DB?
                         let exists: bool = sqlx::query_scalar(
@@ -561,7 +624,10 @@ impl IntentPagesService {
                         .await
                         .unwrap_or(true);
 
-                        if exists { result.skipped += 1; continue; }
+                        if exists {
+                            result.skipped += 1;
+                            continue;
+                        }
 
                         let gen_req = GenerateRequest {
                             intent_type: "question".into(),
@@ -580,8 +646,10 @@ impl IntentPagesService {
                         match self.generate(&gen_req).await {
                             Ok(page) => {
                                 result.generated += 1;
-                                result.details.push(format!("✅ {} / {} → '{}'",
-                                    target_slug, locale, page.title));
+                                result.details.push(format!(
+                                    "✅ {} / {} → '{}'",
+                                    target_slug, locale, page.title
+                                ));
                                 count += 1;
                                 if auto_publish {
                                     if let Ok(_) = self.publish(page.id).await {
@@ -591,7 +659,9 @@ impl IntentPagesService {
                             }
                             Err(e) => {
                                 result.errors += 1;
-                                result.details.push(format!("❌ {} / {} → {}", target_slug, locale, e));
+                                result
+                                    .details
+                                    .push(format!("❌ {} / {} → {}", target_slug, locale, e));
                             }
                         }
                         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -603,14 +673,20 @@ impl IntentPagesService {
         // ── Phase 2: goal sub-intents (4 per product) ────────────────────────
         if intent_types.iter().any(|t| t == "goal") {
             for slug in &slugs {
-                if count >= limit { break; }
+                if count >= limit {
+                    break;
+                }
 
                 for sub in GOAL_SUB_INTENTS {
-                    if count >= limit { break; }
+                    if count >= limit {
+                        break;
+                    }
                     let target_slug = sub_intent_to_slug(sub, slug, None);
 
                     for locale in &locales {
-                        if count >= limit { break; }
+                        if count >= limit {
+                            break;
+                        }
 
                         let exists: bool = sqlx::query_scalar(
                             "SELECT EXISTS(SELECT 1 FROM intent_pages WHERE slug = $1 AND locale = $2)"
@@ -621,7 +697,10 @@ impl IntentPagesService {
                         .await
                         .unwrap_or(true);
 
-                        if exists { result.skipped += 1; continue; }
+                        if exists {
+                            result.skipped += 1;
+                            continue;
+                        }
 
                         let gen_req = GenerateRequest {
                             intent_type: "goal".into(),
@@ -640,8 +719,10 @@ impl IntentPagesService {
                         match self.generate(&gen_req).await {
                             Ok(page) => {
                                 result.generated += 1;
-                                result.details.push(format!("✅ {} / {} → '{}'",
-                                    target_slug, locale, page.title));
+                                result.details.push(format!(
+                                    "✅ {} / {} → '{}'",
+                                    target_slug, locale, page.title
+                                ));
                                 count += 1;
                                 if auto_publish {
                                     if let Ok(_) = self.publish(page.id).await {
@@ -651,7 +732,9 @@ impl IntentPagesService {
                             }
                             Err(e) => {
                                 result.errors += 1;
-                                result.details.push(format!("❌ {} / {} → {}", target_slug, locale, e));
+                                result
+                                    .details
+                                    .push(format!("❌ {} / {} → {}", target_slug, locale, e));
                             }
                         }
                         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -663,17 +746,25 @@ impl IntentPagesService {
         // ── Phase 3: comparison sub-intents (3 per pair) ─────────────────────
         if intent_types.iter().any(|t| t == "comparison") && slugs.len() >= 2 {
             for i in 0..slugs.len() {
-                if count >= limit { break; }
+                if count >= limit {
+                    break;
+                }
                 let slug_a = &slugs[i];
                 let slug_b = &slugs[(i + 1) % slugs.len()];
-                if slug_a == slug_b { continue; }
+                if slug_a == slug_b {
+                    continue;
+                }
 
                 for sub in COMPARISON_SUB_INTENTS {
-                    if count >= limit { break; }
+                    if count >= limit {
+                        break;
+                    }
                     let target_slug = sub_intent_to_slug(sub, slug_a, Some(slug_b));
 
                     for locale in &locales {
-                        if count >= limit { break; }
+                        if count >= limit {
+                            break;
+                        }
 
                         let exists: bool = sqlx::query_scalar(
                             "SELECT EXISTS(SELECT 1 FROM intent_pages WHERE slug = $1 AND locale = $2)"
@@ -684,7 +775,10 @@ impl IntentPagesService {
                         .await
                         .unwrap_or(true);
 
-                        if exists { result.skipped += 1; continue; }
+                        if exists {
+                            result.skipped += 1;
+                            continue;
+                        }
 
                         let gen_req = GenerateRequest {
                             intent_type: "comparison".into(),
@@ -703,8 +797,10 @@ impl IntentPagesService {
                         match self.generate(&gen_req).await {
                             Ok(page) => {
                                 result.generated += 1;
-                                result.details.push(format!("✅ {} / {} → '{}'",
-                                    target_slug, locale, page.title));
+                                result.details.push(format!(
+                                    "✅ {} / {} → '{}'",
+                                    target_slug, locale, page.title
+                                ));
                                 count += 1;
                                 if auto_publish {
                                     if let Ok(_) = self.publish(page.id).await {
@@ -714,7 +810,9 @@ impl IntentPagesService {
                             }
                             Err(e) => {
                                 result.errors += 1;
-                                result.details.push(format!("❌ {} / {} → {}", target_slug, locale, e));
+                                result
+                                    .details
+                                    .push(format!("❌ {} / {} → {}", target_slug, locale, e));
                             }
                         }
                         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -726,23 +824,42 @@ impl IntentPagesService {
         // ── Phase 4: recipe_intent (goal × meal × diet × time × budget × cuisine) ──
         if intent_types.iter().any(|t| t == "recipe_intent") {
             for goal in RECIPE_GOALS {
-                if count >= limit { break; }
+                if count >= limit {
+                    break;
+                }
                 for meal in RECIPE_MEAL_TYPES {
-                    if count >= limit { break; }
+                    if count >= limit {
+                        break;
+                    }
                     for diet in RECIPE_DIETS {
-                        if count >= limit { break; }
+                        if count >= limit {
+                            break;
+                        }
                         for cooking_time in RECIPE_COOKING_TIMES {
-                            if count >= limit { break; }
+                            if count >= limit {
+                                break;
+                            }
                             for budget in RECIPE_BUDGETS {
-                                if count >= limit { break; }
+                                if count >= limit {
+                                    break;
+                                }
                                 for cuisine in RECIPE_CUISINES {
-                                    if count >= limit { break; }
+                                    if count >= limit {
+                                        break;
+                                    }
                                     let target_slug = recipe_intent_slug(
-                                        goal, meal, *diet, *cooking_time, *budget, *cuisine,
+                                        goal,
+                                        meal,
+                                        *diet,
+                                        *cooking_time,
+                                        *budget,
+                                        *cuisine,
                                     );
 
                                     for locale in &locales {
-                                        if count >= limit { break; }
+                                        if count >= limit {
+                                            break;
+                                        }
 
                                         let exists: bool = sqlx::query_scalar(
                                             "SELECT EXISTS(SELECT 1 FROM intent_pages WHERE slug = $1 AND locale = $2)"
@@ -753,7 +870,10 @@ impl IntentPagesService {
                                         .await
                                         .unwrap_or(true);
 
-                                        if exists { result.skipped += 1; continue; }
+                                        if exists {
+                                            result.skipped += 1;
+                                            continue;
+                                        }
 
                                         let gen_req = GenerateRequest {
                                             intent_type: "recipe_intent".into(),
@@ -772,8 +892,10 @@ impl IntentPagesService {
                                         match self.generate(&gen_req).await {
                                             Ok(page) => {
                                                 result.generated += 1;
-                                                result.details.push(format!("✅ {} / {} → '{}'",
-                                                    target_slug, locale, page.title));
+                                                result.details.push(format!(
+                                                    "✅ {} / {} → '{}'",
+                                                    target_slug, locale, page.title
+                                                ));
                                                 count += 1;
                                                 if auto_publish {
                                                     if let Ok(_) = self.publish(page.id).await {
@@ -783,10 +905,14 @@ impl IntentPagesService {
                                             }
                                             Err(e) => {
                                                 result.errors += 1;
-                                                result.details.push(format!("❌ {} / {} → {}", target_slug, locale, e));
+                                                result.details.push(format!(
+                                                    "❌ {} / {} → {}",
+                                                    target_slug, locale, e
+                                                ));
                                             }
                                         }
-                                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(500))
+                                            .await;
                                     }
                                 }
                             }
@@ -798,7 +924,10 @@ impl IntentPagesService {
 
         tracing::info!(
             "📦 Batch done: {} generated, {} published, {} skipped, {} errors",
-            result.generated, result.published, result.skipped, result.errors
+            result.generated,
+            result.published,
+            result.skipped,
+            result.errors
         );
 
         Ok(result)
@@ -845,10 +974,10 @@ impl IntentPagesService {
                          goal, meal_type, diet, cooking_time, budget, cuisine
                FROM intent_pages WHERE id = $1"#,
         )
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| AppError::not_found("Intent page not found"))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Intent page not found"))
     }
 
     // ── Update ───────────────────────────────────────────────────────────────
@@ -923,7 +1052,11 @@ impl IntentPagesService {
         // Trigger blog revalidation
         tokio::spawn(revalidate_blog(Some(page.entity_a.clone())));
 
-        tracing::info!("📢 Intent page published: '{}' ({})", page.title, page.locale);
+        tracing::info!(
+            "📢 Intent page published: '{}' ({})",
+            page.title,
+            page.locale
+        );
         Ok(page)
     }
 
@@ -946,7 +1079,11 @@ impl IntentPagesService {
 
         tokio::spawn(revalidate_blog(Some(page.entity_a.clone())));
 
-        tracing::info!("Intent page unpublished: '{}' ({})", page.title, page.locale);
+        tracing::info!(
+            "Intent page unpublished: '{}' ({})",
+            page.title,
+            page.locale
+        );
         Ok(page)
     }
 
@@ -986,12 +1123,11 @@ impl IntentPagesService {
 
         // Also try to figure out the sub_intent/search_query from the slug
         // and invalidate that specific cache too
-        let search_query = sub_intent_to_query(
-            &page.slug,
-            &page.entity_a,
-            page.entity_b.as_deref(),
-        );
-        self.seo_service.invalidate_cache_with_query(&seo_req, &search_query).await;
+        let search_query =
+            sub_intent_to_query(&page.slug, &page.entity_a, page.entity_b.as_deref());
+        self.seo_service
+            .invalidate_cache_with_query(&seo_req, &search_query)
+            .await;
 
         // 2. Delete the page from DB
         sqlx::query("DELETE FROM intent_pages WHERE id = $1")
@@ -1003,7 +1139,11 @@ impl IntentPagesService {
             tokio::spawn(revalidate_blog(Some(page.entity_a.clone())));
         }
 
-        tracing::info!("🔄 Regenerating intent page: '{}' ({}) — cache cleared", page.title, page.locale);
+        tracing::info!(
+            "🔄 Regenerating intent page: '{}' ({}) — cache cleared",
+            page.title,
+            page.locale
+        );
 
         // 3. Generate fresh (will call LLM since cache is cleared)
         let gen_req = GenerateRequest {
@@ -1116,7 +1256,11 @@ impl IntentPagesService {
 
     /// Returns all published intent pages for a given ingredient (hub page).
     /// Used by the ingredient page to show "Articles about this ingredient".
-    pub async fn list_for_ingredient(&self, entity_a: &str, locale: &str) -> AppResult<Vec<RelatedPage>> {
+    pub async fn list_for_ingredient(
+        &self,
+        entity_a: &str,
+        locale: &str,
+    ) -> AppResult<Vec<RelatedPage>> {
         let pages = sqlx::query_as::<_, RelatedPage>(
             r#"SELECT title, slug, intent_type, entity_a
                FROM intent_pages
@@ -1196,7 +1340,7 @@ impl IntentPagesService {
         let bad_ids: Vec<Uuid> = bad_pages.iter().map(|a| a.id).collect();
 
         let affected = sqlx::query(
-            "UPDATE intent_pages SET status = 'draft', published_at = NULL WHERE id = ANY($1)"
+            "UPDATE intent_pages SET status = 'draft', published_at = NULL WHERE id = ANY($1)",
         )
         .bind(&bad_ids)
         .execute(&self.pool)
@@ -1211,14 +1355,17 @@ impl IntentPagesService {
         // Trigger sitemap revalidation
         tokio::spawn(revalidate_blog(None));
 
-        let issues_summary: Vec<serde_json::Value> = bad_pages.iter().map(|a| {
-            serde_json::json!({
-                "slug": a.slug,
-                "locale": a.locale,
-                "score": a.score,
-                "issues": a.issues,
+        let issues_summary: Vec<serde_json::Value> = bad_pages
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "slug": a.slug,
+                    "locale": a.locale,
+                    "score": a.score,
+                    "issues": a.issues,
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(serde_json::json!({
             "unpublished": affected,
@@ -1249,17 +1396,25 @@ impl IntentPagesService {
             )));
         }
 
-        let ext = if content_type.contains("png") { "png" }
-                  else if content_type.contains("jpeg") || content_type.contains("jpg") { "jpg" }
-                  else { "webp" };
+        let ext = if content_type.contains("png") {
+            "png"
+        } else if content_type.contains("jpeg") || content_type.contains("jpg") {
+            "jpg"
+        } else {
+            "webp"
+        };
         let key = format!("assets/seo/{}/{}.{}", page_id, image_key, ext);
 
-        let upload_url = self.r2_client
+        let upload_url = self
+            .r2_client
             .generate_presigned_upload_url(&key, content_type)
             .await?;
         let public_url = self.r2_client.get_public_url(&key);
 
-        Ok(ImageUploadResponse { upload_url, public_url })
+        Ok(ImageUploadResponse {
+            upload_url,
+            public_url,
+        })
     }
 
     /// After frontend uploaded to R2, update the matching image block's `src` in content_blocks.
@@ -1272,8 +1427,8 @@ impl IntentPagesService {
         let page = self.get_by_id(page_id).await?;
 
         // Patch content_blocks: find image block with this key and set src
-        let mut blocks: Vec<serde_json::Value> = serde_json::from_value(page.content_blocks)
-            .unwrap_or_default();
+        let mut blocks: Vec<serde_json::Value> =
+            serde_json::from_value(page.content_blocks).unwrap_or_default();
 
         for block in blocks.iter_mut() {
             if block.get("type").and_then(|v| v.as_str()) == Some("image")
@@ -1310,26 +1465,22 @@ impl IntentPagesService {
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM intent_pages")
             .fetch_one(&self.pool)
             .await?;
-        let published: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM intent_pages WHERE status = 'published'"
-        )
-        .fetch_one(&self.pool)
-        .await?;
-        let draft: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM intent_pages WHERE status = 'draft'"
-        )
-        .fetch_one(&self.pool)
-        .await?;
-        let queued: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM intent_pages WHERE status = 'queued'"
-        )
-        .fetch_one(&self.pool)
-        .await?;
-        let archived: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM intent_pages WHERE status = 'archived'"
-        )
-        .fetch_one(&self.pool)
-        .await?;
+        let published: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM intent_pages WHERE status = 'published'")
+                .fetch_one(&self.pool)
+                .await?;
+        let draft: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM intent_pages WHERE status = 'draft'")
+                .fetch_one(&self.pool)
+                .await?;
+        let queued: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM intent_pages WHERE status = 'queued'")
+                .fetch_one(&self.pool)
+                .await?;
+        let archived: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM intent_pages WHERE status = 'archived'")
+                .fetch_one(&self.pool)
+                .await?;
 
         // How many published today?
         let published_today: i64 = sqlx::query_scalar(
@@ -1340,17 +1491,17 @@ impl IntentPagesService {
 
         // Queue breakdown by priority
         let queued_high: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM intent_pages WHERE status = 'queued' AND priority = 2"
+            "SELECT COUNT(*) FROM intent_pages WHERE status = 'queued' AND priority = 2",
         )
         .fetch_one(&self.pool)
         .await?;
         let queued_normal: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM intent_pages WHERE status = 'queued' AND priority = 1"
+            "SELECT COUNT(*) FROM intent_pages WHERE status = 'queued' AND priority = 1",
         )
         .fetch_one(&self.pool)
         .await?;
         let queued_low: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM intent_pages WHERE status = 'queued' AND priority = 0"
+            "SELECT COUNT(*) FROM intent_pages WHERE status = 'queued' AND priority = 0",
         )
         .fetch_one(&self.pool)
         .await?;
@@ -1489,7 +1640,7 @@ impl IntentPagesService {
     pub async fn set_google_discovered(&self, count: i64) -> AppResult<serde_json::Value> {
         sqlx::query(
             "INSERT INTO seo_settings (key, value) VALUES ('google_discovered_pages', $1)
-             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()"
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()",
         )
         .bind(count.to_string())
         .execute(&self.pool)
@@ -1504,7 +1655,8 @@ impl IntentPagesService {
         let page = self.get_by_id(id).await?;
         if page.status != "draft" {
             return Err(AppError::validation(format!(
-                "Can only enqueue draft pages, current status: {}", page.status
+                "Can only enqueue draft pages, current status: {}",
+                page.status
             )));
         }
 
@@ -1579,7 +1731,11 @@ impl IntentPagesService {
             tokio::spawn(revalidate_blog(Some(page.entity_a.clone())));
         }
 
-        tracing::info!("📦 Intent page archived: '{}' ({})", page.title, page.locale);
+        tracing::info!(
+            "📦 Intent page archived: '{}' ({})",
+            page.title,
+            page.locale
+        );
         Ok(page)
     }
 
@@ -1587,7 +1743,7 @@ impl IntentPagesService {
 
     pub async fn get_publish_limit(&self) -> AppResult<i64> {
         let val: Option<String> = sqlx::query_scalar(
-            "SELECT value FROM seo_settings WHERE key = 'publish_limit_per_day'"
+            "SELECT value FROM seo_settings WHERE key = 'publish_limit_per_day'",
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -1609,7 +1765,7 @@ impl IntentPagesService {
 
         sqlx::query(
             "INSERT INTO seo_settings (key, value) VALUES ('publish_limit_per_day', $1)
-             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()"
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()",
         )
         .bind(limit.to_string())
         .execute(&self.pool)
@@ -1638,7 +1794,11 @@ impl IntentPagesService {
 
         let remaining = (limit - published_today).max(0);
         if remaining == 0 {
-            tracing::info!("⏸️ Scheduler: daily limit reached ({}/{}), skipping", published_today, limit);
+            tracing::info!(
+                "⏸️ Scheduler: daily limit reached ({}/{}), skipping",
+                published_today,
+                limit
+            );
             return Ok(serde_json::json!({
                 "published": 0,
                 "reason": "daily_limit_reached",
@@ -1803,7 +1963,11 @@ impl IntentPagesService {
                             .bind(entry.id)
                             .execute(&self.pool)
                             .await?;
-                        tracing::info!("✏️ Fixed slug: '{}' → '{}'", entry.slug, group.canonical_slug);
+                        tracing::info!(
+                            "✏️ Fixed slug: '{}' → '{}'",
+                            entry.slug,
+                            group.canonical_slug
+                        );
                     }
                     kept += 1;
                 } else {
@@ -1838,7 +2002,11 @@ impl IntentPagesService {
             }
         }
 
-        tracing::info!("📢 Bulk publish: {} published, {} skipped", published, skipped);
+        tracing::info!(
+            "📢 Bulk publish: {} published, {} skipped",
+            published,
+            skipped
+        );
         Ok(serde_json::json!({
             "published": published,
             "skipped": skipped,
@@ -1858,7 +2026,11 @@ impl IntentPagesService {
             }
         }
 
-        tracing::info!("📦 Bulk archive: {} archived, {} skipped", archived, skipped);
+        tracing::info!(
+            "📦 Bulk archive: {} archived, {} skipped",
+            archived,
+            skipped
+        );
         Ok(serde_json::json!({
             "archived": archived,
             "skipped": skipped,
@@ -1892,13 +2064,14 @@ impl IntentPagesService {
 /// "is almonds healthy" → "are-almonds-healthy"
 /// "IS-ALMONDS-HEALTHY" → "are-almonds-healthy"
 fn normalise_slug(slug: &str) -> String {
-    let s = slug
-        .trim()
-        .to_lowercase()
-        .replace(' ', "-");
+    let s = slug.trim().to_lowercase().replace(' ', "-");
 
     // Clean up multiple dashes
-    let s = s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    let s = s
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
 
     // Fix grammar: is- → are- for plural entities
     // Extract entity from common patterns
@@ -1929,9 +2102,13 @@ fn transliterate_to_slug(text: &str) -> String {
         .to_lowercase()
         .chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() { c }
-            else if c == ' ' || c == '-' || c == '_' { '-' }
-            else { ' ' }
+            if c.is_ascii_alphanumeric() {
+                c
+            } else if c == ' ' || c == '-' || c == '_' {
+                '-'
+            } else {
+                ' '
+            }
         })
         .collect::<String>()
         .split_whitespace()
@@ -1970,10 +2147,7 @@ fn recipe_intent_slug(
     budget: Option<&str>,
     cuisine: Option<&str>,
 ) -> String {
-    let mut parts = vec![
-        goal.replace('_', "-"),
-        meal_type.replace('_', "-"),
-    ];
+    let mut parts = vec![goal.replace('_', "-"), meal_type.replace('_', "-")];
     if let Some(d) = diet {
         parts.push(d.replace('_', "-"));
     }
@@ -2010,12 +2184,14 @@ fn audit_page(page: &IntentPage) -> SeoAuditResult {
 
     let faq_count = page.faq.as_array().map(|a| a.len()).unwrap_or(0);
 
-    let blocks: Vec<serde_json::Value> = serde_json::from_value(page.content_blocks.clone())
-        .unwrap_or_default();
+    let blocks: Vec<serde_json::Value> =
+        serde_json::from_value(page.content_blocks.clone()).unwrap_or_default();
     let blocks_count = blocks.len();
     let has_images = blocks.iter().any(|b| {
         b.get("type").and_then(|v| v.as_str()) == Some("image")
-            && b.get("src").and_then(|v| v.as_str()).map_or(false, |s| !s.is_empty())
+            && b.get("src")
+                .and_then(|v| v.as_str())
+                .map_or(false, |s| !s.is_empty())
     });
 
     // ── Title: ≤60 chars ──
@@ -2031,9 +2207,15 @@ fn audit_page(page: &IntentPage) -> SeoAuditResult {
     if desc_len >= 80 && desc_len <= 155 {
         score += 1;
     } else if desc_len < 80 {
-        issues.push(format!("description too short: {} chars (min 80)", desc_len));
+        issues.push(format!(
+            "description too short: {} chars (min 80)",
+            desc_len
+        ));
     } else {
-        issues.push(format!("description too long: {} chars (max 155)", desc_len));
+        issues.push(format!(
+            "description too long: {} chars (max 155)",
+            desc_len
+        ));
     }
 
     // ── Answer: ≥200 chars ──

@@ -71,9 +71,9 @@ pub trait ParametricSurface: Send + Sync {
 pub struct Plane {
     pub origin: Vertex,
     /// Direction and magnitude of the U edge.
-    pub u_dir:  [f64; 3],
+    pub u_dir: [f64; 3],
     /// Direction and magnitude of the V edge.
-    pub v_dir:  [f64; 3],
+    pub v_dir: [f64; 3],
 }
 
 impl Plane {
@@ -81,8 +81,8 @@ impl Plane {
     pub fn horizontal(half: f64) -> Self {
         Self {
             origin: Vertex::new(-half, 0.0, -half),
-            u_dir:  [2.0 * half, 0.0, 0.0],
-            v_dir:  [0.0, 0.0, 2.0 * half],
+            u_dir: [2.0 * half, 0.0, 0.0],
+            v_dir: [0.0, 0.0, 2.0 * half],
         }
     }
 }
@@ -100,11 +100,7 @@ impl ParametricSurface for Plane {
         // n = u_dir × v_dir
         let [ux, uy, uz] = self.u_dir;
         let [vx, vy, vz] = self.v_dir;
-        [
-            uy * vz - uz * vy,
-            uz * vx - ux * vz,
-            ux * vy - uy * vx,
-        ]
+        [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]
     }
 }
 
@@ -117,21 +113,24 @@ impl ParametricSurface for Plane {
 /// - `u ∈ [0,1]` sweeps the angle from `angle_start` to `angle_end` (radians).
 /// - `v ∈ [0,1]` sweeps from `y_bottom` to `y_top`.
 pub struct CylindricalSurface {
-    pub centre:      Vertex,
-    pub radius:      f64,
-    pub y_bottom:    f64,
-    pub y_top:       f64,
+    pub centre: Vertex,
+    pub radius: f64,
+    pub y_bottom: f64,
+    pub y_top: f64,
     pub angle_start: f64,
-    pub angle_end:   f64,
+    pub angle_end: f64,
 }
 
 impl CylindricalSurface {
     /// Full cylinder (360°).
     pub fn full(centre: Vertex, radius: f64, y_bottom: f64, y_top: f64) -> Self {
         Self {
-            centre, radius, y_bottom, y_top,
+            centre,
+            radius,
+            y_bottom,
+            y_top,
             angle_start: 0.0,
-            angle_end:   std::f64::consts::TAU,
+            angle_end: std::f64::consts::TAU,
         }
     }
 }
@@ -186,10 +185,6 @@ impl ParametricSurface for SphericalSurface {
     fn normal_at(&self, u: f64, v: f64) -> [f64; 3] {
         let lon = u * std::f64::consts::TAU;
         let lat = (v - 0.5) * std::f64::consts::PI;
-        [
-            lat.cos() * lon.cos(),
-            lat.sin(),
-            lat.cos() * lon.sin(),
-        ]
+        [lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin()]
     }
 }

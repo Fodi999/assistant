@@ -15,7 +15,7 @@ use crate::shared::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-const TARGET: usize = 5;       // сколько нужно вернуть
+const TARGET: usize = 5; // сколько нужно вернуть
 const MAX_ATTEMPTS: usize = 3; // лимит попыток
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -84,17 +84,13 @@ impl AdminCatalogService {
     /// Загружает Set<normalized_slug> всех активных продуктов из БД.
     /// Дёшево: один SQL запрос, только name_en. 500 продуктов < 1мс.
     async fn load_catalog_slugs(&self) -> AppResult<(HashSet<String>, usize)> {
-        let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT name_en FROM catalog_ingredients WHERE is_active = true",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT name_en FROM catalog_ingredients WHERE is_active = true")
+                .fetch_all(&self.pool)
+                .await?;
 
         let count = rows.len();
-        let slugs: HashSet<String> = rows
-            .into_iter()
-            .map(|(n,)| normalize_slug(&n))
-            .collect();
+        let slugs: HashSet<String> = rows.into_iter().map(|(n,)| normalize_slug(&n)).collect();
 
         tracing::info!("📋 Catalog slugs loaded: {} products", count);
         Ok((slugs, count))
@@ -124,7 +120,10 @@ impl AdminCatalogService {
         );
         if let Ok(Some(cached)) = self.ai_cache.get(&cache_key).await {
             if let Ok(suggestions) = serde_json::from_value::<Vec<ProductSuggestion>>(cached) {
-                tracing::info!("📦 Suggest cache hit for '{}'", &query[..query.len().min(40)]);
+                tracing::info!(
+                    "📦 Suggest cache hit for '{}'",
+                    &query[..query.len().min(40)]
+                );
                 return Ok(SuggestProductsResponse {
                     suggestions,
                     query,
@@ -145,13 +144,21 @@ impl AdminCatalogService {
 
             tracing::info!(
                 "🤖 Attempt {}/{}: need {} more, have {}, rejected so far: {}",
-                attempts, MAX_ATTEMPTS, need, accepted.len(), rejected_names.len()
+                attempts,
+                MAX_ATTEMPTS,
+                need,
+                accepted.len(),
+                rejected_names.len()
             );
 
             // Первый запрос: каталог целиком (только имена)
             // Последующие: пустой (AI уже знает каталог, промпт короче)
             let empty_set = HashSet::new();
-            let slugs_for_prompt = if attempts == 1 { &catalog_slugs } else { &empty_set };
+            let slugs_for_prompt = if attempts == 1 {
+                &catalog_slugs
+            } else {
+                &empty_set
+            };
 
             let prompt = build_suggest_prompt(
                 &query,
@@ -193,7 +200,9 @@ impl AdminCatalogService {
                 if dup_in_catalog || dup_in_accepted {
                     tracing::debug!(
                         "   ❌ Rejected '{}' (catalog={}, session={})",
-                        candidate.name_en, dup_in_catalog, dup_in_accepted
+                        candidate.name_en,
+                        dup_in_catalog,
+                        dup_in_accepted
                     );
                     rejected_names.push(candidate.name_en.clone());
                 } else {
@@ -214,12 +223,17 @@ impl AdminCatalogService {
         if accepted.len() < TARGET {
             tracing::warn!(
                 "⚠️ Only {}/{} suggestions after {} attempts (partial result accepted)",
-                accepted.len(), TARGET, attempts
+                accepted.len(),
+                TARGET,
+                attempts
             );
         } else {
             tracing::info!(
                 "✅ Got {}/{} suggestions in {} attempt(s), rejected {}",
-                accepted.len(), TARGET, attempts, rejected_names.len()
+                accepted.len(),
+                TARGET,
+                attempts,
+                rejected_names.len()
             );
         }
 
@@ -245,9 +259,9 @@ impl AdminCatalogService {
 
 fn build_suggest_prompt(
     query: &str,
-    catalog_slugs: &HashSet<String>,        // только при attempt=1
-    accepted: &[ProductSuggestion],         // уже принятые в этой сессии
-    rejected: &[String],                    // отклонённые (дубли)
+    catalog_slugs: &HashSet<String>, // только при attempt=1
+    accepted: &[ProductSuggestion],  // уже принятые в этой сессии
+    rejected: &[String],             // отклонённые (дубли)
     need: usize,
 ) -> String {
     // Блок уже принятых
@@ -274,10 +288,7 @@ fn build_suggest_prompt(
     // Каталог передаём только в первом запросе (дорого при больших каталогах)
     let catalog_block = if !catalog_slugs.is_empty() {
         // Конвертируем slugs обратно в читаемый вид для AI
-        let names: Vec<String> = catalog_slugs
-            .iter()
-            .map(|s| s.replace('-', " "))
-            .collect();
+        let names: Vec<String> = catalog_slugs.iter().map(|s| s.replace('-', " ")).collect();
         let mut sorted = names;
         sorted.sort();
         format!(

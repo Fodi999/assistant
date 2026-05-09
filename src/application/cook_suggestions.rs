@@ -19,16 +19,16 @@ use std::sync::Arc;
 use crate::application::inventory::{InventoryService, InventoryView};
 use crate::application::preferences_service::PreferencesService;
 use crate::domain::user_preferences::UserPreferences;
-use crate::infrastructure::IngredientCache;
 use crate::infrastructure::llm_adapter::LlmAdapter;
+use crate::infrastructure::IngredientCache;
 use crate::shared::{AppResult, Language, TenantId, UserId};
 
-use super::rulebot::dish_schema::{ask_gemini_dish_schema, DishSchema, parse_dish_schema};
+use super::rulebot::dish_schema::{ask_gemini_dish_schema, parse_dish_schema, DishSchema};
+use super::rulebot::goal_modifier::HealthModifier;
 use super::rulebot::intent_router::ChatLang;
 use super::rulebot::recipe_engine;
 use super::rulebot::response_builder::HealthGoal;
-use super::rulebot::goal_modifier::HealthModifier;
-use super::rulebot::user_constraints::{UserConstraints, DietaryMode};
+use super::rulebot::user_constraints::{DietaryMode, UserConstraints};
 
 // ── Response Types (stable contract for iOS) ─────────────────────────────────
 
@@ -306,14 +306,22 @@ impl CookSuggestionService {
         let lang = language_to_chat_lang(&language);
 
         // 0. Load user preferences for personalization
-        let prefs = self.preferences_service.get(user_id).await.unwrap_or_default();
+        let prefs = self
+            .preferences_service
+            .get(user_id)
+            .await
+            .unwrap_or_default();
         let constraints = build_constraints_from_prefs(&prefs);
         let modifier = modifier_from_prefs(&prefs);
         let goal = HealthGoal::from_modifier(modifier, "");
 
         tracing::info!(
             "🎯 Personalization: goal={}, diet={}, allergies={:?}, dislikes={:?}, kcal={}",
-            prefs.goal, prefs.diet, prefs.allergies, prefs.dislikes, prefs.calorie_target
+            prefs.goal,
+            prefs.diet,
+            prefs.allergies,
+            prefs.dislikes,
+            prefs.calorie_target
         );
 
         // 1. Load inventory
@@ -325,12 +333,18 @@ impl CookSuggestionService {
         if inventory.is_empty() {
             return Ok(CookSuggestionsResponse {
                 inventory_insight: InventoryInsight {
-                    days_left: 0, at_risk: vec![], waste_risk: 0, total_ingredients: 0,
+                    days_left: 0,
+                    at_risk: vec![],
+                    waste_risk: 0,
+                    total_ingredients: 0,
                 },
                 can_cook: vec![],
                 almost: vec![],
                 strategic: vec![],
-                suggestions: UnlockSuggestions { missing_frequently: vec![], unlock_hints: vec![] },
+                suggestions: UnlockSuggestions {
+                    missing_frequently: vec![],
+                    unlock_hints: vec![],
+                },
                 personalization: None,
             });
         }
@@ -339,7 +353,9 @@ impl CookSuggestionService {
         let ctx = InventoryContext::from_views_with_cache(&inventory, &self.ingredient_cache).await;
 
         // 3. Ask Gemini for dish candidates (with diet/allergy hints)
-        let dish_schemas = self.generate_dish_candidates_personalized(&ctx, lang, &prefs).await;
+        let dish_schemas = self
+            .generate_dish_candidates_personalized(&ctx, lang, &prefs)
+            .await;
         tracing::info!("📋 Gemini returned {} dish candidates", dish_schemas.len());
 
         // 4. Resolve each dish → TechCard → classify (with user constraints)
@@ -348,31 +364,56 @@ impl CookSuggestionService {
         let mut strategic = Vec::new();
 
         for schema in &dish_schemas {
-            if let Some(dish) = self.resolve_and_classify_personalized(schema, &ctx, lang, &constraints, modifier, goal).await {
+            if let Some(dish) = self
+                .resolve_and_classify_personalized(schema, &ctx, lang, &constraints, modifier, goal)
+                .await
+            {
                 tracing::info!(
                     "✅ Dish '{}': missing={}, ingredients={}",
-                    dish.dish_name, dish.missing_count, dish.ingredients.len()
+                    dish.dish_name,
+                    dish.missing_count,
+                    dish.ingredients.len()
                 );
                 match dish.missing_count {
                     0 => can_cook.push(dish),
                     1..=2 => almost.push(dish),
                     3..=4 => strategic.push(dish), // relaxed: show as strategic instead of dropping
                     _ => {
-                        tracing::info!("⏭ Skipped '{}' (missing {})", dish.dish_name, dish.missing_count);
+                        tracing::info!(
+                            "⏭ Skipped '{}' (missing {})",
+                            dish.dish_name,
+                            dish.missing_count
+                        );
                     }
                 }
             } else {
-                tracing::warn!("❌ resolve_and_classify returned None for '{}'", schema.dish);
+                tracing::warn!(
+                    "❌ resolve_and_classify returned None for '{}'",
+                    schema.dish
+                );
             }
         }
 
         // 5. Build strategic suggestions (expiring-first dishes)
         if !ctx.expiring_names.is_empty() {
             for schema in &dish_schemas {
-                if let Some(mut dish) = self.resolve_and_classify_personalized(schema, &ctx, lang, &constraints, modifier, goal).await {
+                if let Some(mut dish) = self
+                    .resolve_and_classify_personalized(
+                        schema,
+                        &ctx,
+                        lang,
+                        &constraints,
+                        modifier,
+                        goal,
+                    )
+                    .await
+                {
                     if dish.insight.uses_expiring && dish.missing_count <= 2 {
                         dish.insight.priority_score += 50; // boost expiring
-                        if !strategic.iter().any(|s: &SuggestedDish| s.dish_name == dish.dish_name) {
+                        if !strategic
+                            .iter()
+                            .any(|s: &SuggestedDish| s.dish_name == dish.dish_name)
+                        {
                             strategic.push(dish);
                         }
                     }
@@ -398,7 +439,8 @@ impl CookSuggestionService {
         let inventory_insight = build_inventory_insight(&ctx);
 
         // 8. Build unlock suggestions from missing ingredients across all dishes
-        let all_dishes: Vec<&SuggestedDish> = can_cook.iter()
+        let all_dishes: Vec<&SuggestedDish> = can_cook
+            .iter()
             .chain(almost.iter())
             .chain(strategic.iter())
             .collect();
@@ -406,8 +448,10 @@ impl CookSuggestionService {
 
         // 9. Build personalization info
         let personalization = Some(PersonalizationInfo {
-            personalized: prefs.goal != "eat_healthier" || prefs.diet != "no_restrictions"
-                || !prefs.allergies.is_empty() || !prefs.dislikes.is_empty(),
+            personalized: prefs.goal != "eat_healthier"
+                || prefs.diet != "no_restrictions"
+                || !prefs.allergies.is_empty()
+                || !prefs.dislikes.is_empty(),
             goal: prefs.goal.clone(),
             diet: prefs.diet.clone(),
             kcal_target: prefs.calorie_target,
@@ -513,23 +557,37 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         // Build personalization hints for Gemini
         let mut pref_hints = Vec::new();
         if prefs.diet != "no_restrictions" {
-            pref_hints.push(format!("Diet: {} — strictly follow this dietary restriction.", prefs.diet));
+            pref_hints.push(format!(
+                "Diet: {} — strictly follow this dietary restriction.",
+                prefs.diet
+            ));
         }
         if !prefs.allergies.is_empty() {
-            pref_hints.push(format!("ALLERGIES (MUST AVOID): {}", prefs.allergies.join(", ")));
+            pref_hints.push(format!(
+                "ALLERGIES (MUST AVOID): {}",
+                prefs.allergies.join(", ")
+            ));
         }
         if !prefs.intolerances.is_empty() {
-            pref_hints.push(format!("Intolerances (avoid): {}", prefs.intolerances.join(", ")));
+            pref_hints.push(format!(
+                "Intolerances (avoid): {}",
+                prefs.intolerances.join(", ")
+            ));
         }
         if !prefs.dislikes.is_empty() {
-            pref_hints.push(format!("User dislikes (avoid if possible): {}", prefs.dislikes.join(", ")));
+            pref_hints.push(format!(
+                "User dislikes (avoid if possible): {}",
+                prefs.dislikes.join(", ")
+            ));
         }
         match prefs.goal.as_str() {
             "lose_weight" | "low_calorie" => pref_hints.push(format!(
-                "Goal: weight loss. Target ~{} kcal/day. Prefer light, low-calorie dishes.", prefs.calorie_target
+                "Goal: weight loss. Target ~{} kcal/day. Prefer light, low-calorie dishes.",
+                prefs.calorie_target
             )),
             "gain_muscle" | "high_protein" => pref_hints.push(format!(
-                "Goal: muscle gain. Target ~{}g protein/day. Prefer high-protein dishes.", prefs.protein_target
+                "Goal: muscle gain. Target ~{}g protein/day. Prefer high-protein dishes.",
+                prefs.protein_target
             )),
             "maintain" => pref_hints.push("Goal: maintain weight. Balanced meals.".into()),
             _ => {}
@@ -627,7 +685,10 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                 results.push(DishSchema {
                     dish: format!("{} with {}", p, v),
                     dish_local: None,
-                    items: vec![p.to_lowercase().replace(' ', "-"), v.to_lowercase().replace(' ', "-")],
+                    items: vec![
+                        p.to_lowercase().replace(' ', "-"),
+                        v.to_lowercase().replace(' ', "-"),
+                    ],
                 });
             }
         }
@@ -732,7 +793,8 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
                     None => {
                         tracing::debug!(
                             "💸 no price for slug='{}' ({}g) — not in inventory lookup",
-                            slug, ing.gross_g
+                            slug,
+                            ing.gross_g
                         );
                     }
                 }
@@ -759,7 +821,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
 
         tracing::info!(
             "📊 dish '{}' economics: {}/{} priced, cost={}¢, waste_saved={}¢",
-            schema.dish, priced_count, total_count, cost_cents, waste_saved_cents
+            schema.dish,
+            priced_count,
+            total_count,
+            cost_cents,
+            waste_saved_cents
         );
 
         let estimated_cost_cents = cost_cents; // alias for legacy field
@@ -783,14 +849,26 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
 
         // Build reasons
         let mut reasons = Vec::new();
-        if uses_expiring { reasons.push("uses_expiring_ingredients".into()); }
-        if high_protein { reasons.push("high_protein".into()); }
-        if missing.is_empty() { reasons.push("all_ingredients_available".into()); }
-        if estimated_cost_cents > 0 && estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+        if uses_expiring {
+            reasons.push("uses_expiring_ingredients".into());
+        }
+        if high_protein {
+            reasons.push("high_protein".into());
+        }
+        if missing.is_empty() {
+            reasons.push("all_ingredients_available".into());
+        }
+        if estimated_cost_cents > 0 && estimated_cost_cents < 500 {
+            reasons.push("budget_friendly".into());
+        }
 
         // Honest economics (Phase 0) — None when we couldn't price anything.
         let economics = compute_economics(
-            cost_cents, waste_saved_cents, priced_count, total_count, missing.len(),
+            cost_cents,
+            waste_saved_cents,
+            priced_count,
+            total_count,
+            missing.len(),
         );
 
         // Flavor info from TechCard
@@ -807,20 +885,26 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             Some(AdaptationInfo {
                 changed: true,
                 strategy: Some(tech_card.goal.clone()),
-                actions: tech_card.adaptations.iter()
+                actions: tech_card
+                    .adaptations
+                    .iter()
                     .map(|a| format!("{}: {} ({})", a.action, a.slug, a.detail))
                     .collect(),
             })
         };
 
         // Steps
-        let steps: Vec<RecipeStep> = tech_card.steps.iter().map(|s| RecipeStep {
-            step: s.step,
-            text: s.text.clone(),
-            time_min: s.time_min,
-            temp_c: s.temp_c,
-            tip: s.tip.clone(),
-        }).collect();
+        let steps: Vec<RecipeStep> = tech_card
+            .steps
+            .iter()
+            .map(|s| RecipeStep {
+                step: s.step,
+                text: s.text.clone(),
+                time_min: s.time_min,
+                temp_c: s.temp_c,
+                tip: s.tip.clone(),
+            })
+            .collect();
 
         // Honest yield summary — gross → net → cooked.
         let yield_summary = build_yield_summary(&tech_card.ingredients);
@@ -963,7 +1047,11 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
 
         tracing::info!(
             "📊 dish '{}' economics (personalized): {}/{} priced, cost={}¢, waste_saved={}¢",
-            schema.dish, priced_count, total_count, cost_cents, waste_saved_cents
+            schema.dish,
+            priced_count,
+            total_count,
+            cost_cents,
+            waste_saved_cents
         );
 
         let estimated_cost_cents = cost_cents; // alias for legacy field
@@ -973,19 +1061,37 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
         let high_protein = protein_per_serving >= 30.0;
 
         let mut priority = 0i32;
-        if uses_expiring { priority += 40; }
-        if missing.is_empty() { priority += 30; }
-        if high_protein { priority += 10; }
+        if uses_expiring {
+            priority += 40;
+        }
+        if missing.is_empty() {
+            priority += 30;
+        }
+        if high_protein {
+            priority += 10;
+        }
         priority -= (missing.len() as i32) * 15;
 
         let mut reasons = Vec::new();
-        if uses_expiring { reasons.push("uses_expiring_ingredients".into()); }
-        if high_protein { reasons.push("high_protein".into()); }
-        if missing.is_empty() { reasons.push("all_ingredients_available".into()); }
-        if estimated_cost_cents > 0 && estimated_cost_cents < 500 { reasons.push("budget_friendly".into()); }
+        if uses_expiring {
+            reasons.push("uses_expiring_ingredients".into());
+        }
+        if high_protein {
+            reasons.push("high_protein".into());
+        }
+        if missing.is_empty() {
+            reasons.push("all_ingredients_available".into());
+        }
+        if estimated_cost_cents > 0 && estimated_cost_cents < 500 {
+            reasons.push("budget_friendly".into());
+        }
 
         let economics = compute_economics(
-            cost_cents, waste_saved_cents, priced_count, total_count, missing.len(),
+            cost_cents,
+            waste_saved_cents,
+            priced_count,
+            total_count,
+            missing.len(),
         );
 
         let flavor = tech_card.flavor_analysis.as_ref().map(|f| FlavorInfo {
@@ -1000,19 +1106,25 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
             Some(AdaptationInfo {
                 changed: true,
                 strategy: Some(tech_card.goal.clone()),
-                actions: tech_card.adaptations.iter()
+                actions: tech_card
+                    .adaptations
+                    .iter()
                     .map(|a| format!("{}: {} ({})", a.action, a.slug, a.detail))
                     .collect(),
             })
         };
 
-        let steps: Vec<RecipeStep> = tech_card.steps.iter().map(|s| RecipeStep {
-            step: s.step,
-            text: s.text.clone(),
-            time_min: s.time_min,
-            temp_c: s.temp_c,
-            tip: s.tip.clone(),
-        }).collect();
+        let steps: Vec<RecipeStep> = tech_card
+            .steps
+            .iter()
+            .map(|s| RecipeStep {
+                step: s.step,
+                text: s.text.clone(),
+                time_min: s.time_min,
+                temp_c: s.temp_c,
+                tip: s.tip.clone(),
+            })
+            .collect();
 
         let yield_summary = build_yield_summary(&tech_card.ingredients);
 
@@ -1062,9 +1174,15 @@ fn build_constraints_from_prefs(prefs: &UserPreferences) -> UserConstraints {
 
     // Diet → DietaryMode
     match prefs.diet.as_str() {
-        "vegan" => { c.dietary_mode = Some(DietaryMode::Vegan); }
-        "vegetarian" => { c.dietary_mode = Some(DietaryMode::Vegetarian); }
-        "pescatarian" => { c.dietary_mode = Some(DietaryMode::Pescatarian); }
+        "vegan" => {
+            c.dietary_mode = Some(DietaryMode::Vegan);
+        }
+        "vegetarian" => {
+            c.dietary_mode = Some(DietaryMode::Vegetarian);
+        }
+        "pescatarian" => {
+            c.dietary_mode = Some(DietaryMode::Pescatarian);
+        }
         _ => {}
     }
 
@@ -1170,18 +1288,22 @@ impl IngredientInfo {
             return None;
         }
         let cents = match self.base_unit.to_ascii_lowercase().as_str() {
-            "kg"          => (self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64,
-            "g"           => (self.price_per_unit_cents as f64 * grams as f64) as i64,
+            "kg" => (self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64,
+            "g" => (self.price_per_unit_cents as f64 * grams as f64) as i64,
             // density ≈ 1 fallback for l/ml (good enough for water-based items)
-            "l"           => (self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64,
-            "ml"          => (self.price_per_unit_cents as f64 * grams as f64) as i64,
+            "l" => (self.price_per_unit_cents as f64 * grams as f64 / 1000.0) as i64,
+            "ml" => (self.price_per_unit_cents as f64 * grams as f64) as i64,
             // piece / pack / szt / pcs / unknown → use typical weight
             other => {
                 let per_piece = self.typical_piece_g.unwrap_or(100.0) as f64;
                 let result = (self.price_per_unit_cents as f64 * grams as f64 / per_piece) as i64;
                 tracing::debug!(
                     "💰 piece-fallback: unit='{}' price={}¢ grams={:.0} per_piece={:.0}g → {}¢",
-                    other, self.price_per_unit_cents, grams, per_piece, result
+                    other,
+                    self.price_per_unit_cents,
+                    grams,
+                    per_piece,
+                    result
                 );
                 result
             }
@@ -1250,10 +1372,13 @@ impl InventoryContext {
                     ing.name_pl.to_lowercase(),
                     ing.name_uk.to_lowercase(),
                 ];
-                if names.iter().any(|n| n == &name_lower || n.contains(&name_lower) || name_lower.contains(n.as_str())) {
+                if names.iter().any(|n| {
+                    n == &name_lower || n.contains(&name_lower) || name_lower.contains(n.as_str())
+                }) {
                     // Enrich info with a per-piece weight estimate based on product_type.
                     let mut enriched = info.clone();
-                    enriched.typical_piece_g = Some(typical_piece_weight_g(&ing.product_type, &ing.slug));
+                    enriched.typical_piece_g =
+                        Some(typical_piece_weight_g(&ing.product_type, &ing.slug));
                     // Add all variants as keys
                     for alias in &names {
                         if !alias.is_empty() && !lookup.contains_key(alias) {
@@ -1281,7 +1406,9 @@ impl InventoryContext {
 
         tracing::info!(
             "🗃 InventoryContext: {} products, {} lookup keys, {} expiring",
-            available_names.len(), lookup.len(), expiring_names.len()
+            available_names.len(),
+            lookup.len(),
+            expiring_names.len()
         );
 
         Self {
@@ -1294,9 +1421,9 @@ impl InventoryContext {
 
     fn has_ingredient(&self, slug: &str) -> bool {
         let normalized = slug.to_lowercase().replace('-', " ");
-        self.lookup.keys().any(|k| {
-            k.contains(&normalized) || normalized.contains(k.as_str())
-        })
+        self.lookup
+            .keys()
+            .any(|k| k.contains(&normalized) || normalized.contains(k.as_str()))
     }
 
     fn is_expiring(&self, slug: &str) -> bool {
@@ -1341,8 +1468,8 @@ fn parse_dish_array(raw: &str) -> Result<Vec<DishSchema>, String> {
         return Err("Invalid JSON array".into());
     }
     let json_str = &raw[start..=end];
-    let schemas: Vec<DishSchema> = serde_json::from_str(json_str)
-        .map_err(|e| format!("JSON parse error: {e}"))?;
+    let schemas: Vec<DishSchema> =
+        serde_json::from_str(json_str).map_err(|e| format!("JSON parse error: {e}"))?;
     Ok(schemas)
 }
 
@@ -1394,15 +1521,15 @@ fn typical_piece_weight_g(product_type: &str, slug: &str) -> f32 {
     }
     // Bucket by product_type.
     match product_type.to_ascii_lowercase().as_str() {
-        "vegetable" | "fruit"       => 150.0,
-        "egg"                       => 55.0,
-        "spice" | "herb"            => 5.0,
-        "mushroom"                  => 20.0,
-        "nut"                       => 10.0,
-        "grain" | "legume"          => 200.0, // pack-ish
-        "dairy"                     => 200.0, // small container
+        "vegetable" | "fruit" => 150.0,
+        "egg" => 55.0,
+        "spice" | "herb" => 5.0,
+        "mushroom" => 20.0,
+        "nut" => 10.0,
+        "grain" | "legume" => 200.0, // pack-ish
+        "dairy" => 200.0,            // small container
         "meat" | "fish" | "seafood" => 200.0,
-        _                           => 100.0,
+        _ => 100.0,
     }
 }
 
@@ -1423,15 +1550,17 @@ const MARKUP_FACTOR: f64 = 3.0;
 
 /// Cap an ingredient at a max gross_g; scales nutrition proportionally.
 fn scale_ingredient(ing: &mut recipe_engine::ResolvedIngredient, cap_g: f32) {
-    if ing.gross_g <= cap_g || ing.gross_g <= 0.0 { return; }
+    if ing.gross_g <= cap_g || ing.gross_g <= 0.0 {
+        return;
+    }
     let r = cap_g / ing.gross_g;
-    ing.gross_g       = cap_g;
+    ing.gross_g = cap_g;
     ing.cleaned_net_g = (ing.cleaned_net_g * r).max(0.0);
-    ing.cooked_net_g  = (ing.cooked_net_g  * r).max(0.0);
-    ing.kcal      = (ing.kcal as f32 * r).round() as u32;
+    ing.cooked_net_g = (ing.cooked_net_g * r).max(0.0);
+    ing.kcal = (ing.kcal as f32 * r).round() as u32;
     ing.protein_g = (ing.protein_g * r * 10.0).round() / 10.0;
-    ing.fat_g     = (ing.fat_g     * r * 10.0).round() / 10.0;
-    ing.carbs_g   = (ing.carbs_g   * r * 10.0).round() / 10.0;
+    ing.fat_g = (ing.fat_g * r * 10.0).round() / 10.0;
+    ing.carbs_g = (ing.carbs_g * r * 10.0).round() / 10.0;
 }
 
 /// Apply professional sanity caps for spices/condiments per serving.
@@ -1446,48 +1575,109 @@ fn cap_spices(tech_card: &mut recipe_engine::TechCard) {
 
     // Detect if this is a sweet dish (any sweet-profile ingredient present).
     let is_sweet_dish = tech_card.ingredients.iter().any(|ing| {
-        let s = ing.resolved_slug.as_deref()
+        let s = ing
+            .resolved_slug
+            .as_deref()
             .unwrap_or(&ing.slug_hint)
             .to_lowercase();
-        ["banana", "apple", "pear", "mango", "honey", "sugar", "maple",
-         "date", "fig", "berry", "strawberry", "raspberry", "cherry",
-         "orange", "melon", "grape", "pineapple", "kiwi", "peach"]
-            .iter().any(|k| s.contains(k))
+        [
+            "banana",
+            "apple",
+            "pear",
+            "mango",
+            "honey",
+            "sugar",
+            "maple",
+            "date",
+            "fig",
+            "berry",
+            "strawberry",
+            "raspberry",
+            "cherry",
+            "orange",
+            "melon",
+            "grape",
+            "pineapple",
+            "kiwi",
+            "peach",
+        ]
+        .iter()
+        .any(|k| s.contains(k))
     });
 
     // Slugs that must be removed entirely from sweet dishes.
-    let savory_only_slugs: &[&str] = &["black-pepper", "white-pepper", "pink-pepper",
-        "garlic", "onion", "soy-sauce", "fish-sauce", "worcestershire"];
+    let savory_only_slugs: &[&str] = &[
+        "black-pepper",
+        "white-pepper",
+        "pink-pepper",
+        "garlic",
+        "onion",
+        "soy-sauce",
+        "fish-sauce",
+        "worcestershire",
+    ];
 
     tech_card.ingredients.retain(|ing| {
-        if !is_sweet_dish { return true; }
-        let s = ing.resolved_slug.as_deref()
+        if !is_sweet_dish {
+            return true;
+        }
+        let s = ing
+            .resolved_slug
+            .as_deref()
             .unwrap_or(&ing.slug_hint)
             .to_lowercase();
         !savory_only_slugs.iter().any(|k| s.contains(k))
     });
 
     for ing in tech_card.ingredients.iter_mut() {
-        let slug_owned = ing.resolved_slug.clone()
+        let slug_owned = ing
+            .resolved_slug
+            .clone()
             .unwrap_or_else(|| ing.slug_hint.clone())
             .to_lowercase();
         let slug = slug_owned.as_str();
 
         // Salt: 2 g/serving max.
-        let cap_per_serving: Option<f32> =
-            if slug == "salt" || slug.contains("salt") { Some(2.0) }
-            // Black pepper: 0.5 g/serving max.
-            else if slug.contains("black-pepper") || slug == "pepper" || slug.contains("black pepper") { Some(0.5) }
-            // White / pink peppers: 0.5 g/serving.
-            else if slug.contains("white-pepper") || slug.contains("pink-pepper") { Some(0.5) }
-            // Dried herbs & general spices: 1 g/serving.
-            else if matches!(
-                slug, "paprika" | "cumin" | "oregano" | "thyme" | "basil" | "rosemary"
-                    | "coriander" | "turmeric" | "curry" | "cinnamon" | "nutmeg"
-                    | "cardamom" | "cayenne" | "chili" | "chili-powder"
-                    | "bay-leaf" | "dill" | "parsley" | "tarragon"
-            ) || slug.ends_with("-powder") { Some(1.0) }
-            else { None };
+        let cap_per_serving: Option<f32> = if slug == "salt" || slug.contains("salt") {
+            Some(2.0)
+        }
+        // Black pepper: 0.5 g/serving max.
+        else if slug.contains("black-pepper") || slug == "pepper" || slug.contains("black pepper")
+        {
+            Some(0.5)
+        }
+        // White / pink peppers: 0.5 g/serving.
+        else if slug.contains("white-pepper") || slug.contains("pink-pepper") {
+            Some(0.5)
+        }
+        // Dried herbs & general spices: 1 g/serving.
+        else if matches!(
+            slug,
+            "paprika"
+                | "cumin"
+                | "oregano"
+                | "thyme"
+                | "basil"
+                | "rosemary"
+                | "coriander"
+                | "turmeric"
+                | "curry"
+                | "cinnamon"
+                | "nutmeg"
+                | "cardamom"
+                | "cayenne"
+                | "chili"
+                | "chili-powder"
+                | "bay-leaf"
+                | "dill"
+                | "parsley"
+                | "tarragon"
+        ) || slug.ends_with("-powder")
+        {
+            Some(1.0)
+        } else {
+            None
+        };
 
         if let Some(per) = cap_per_serving {
             scale_ingredient(ing, per * servings);
@@ -1495,40 +1685,42 @@ fn cap_spices(tech_card: &mut recipe_engine::TechCard) {
     }
 
     // Recompute totals after capping.
-    let g: f32  = tech_card.ingredients.iter().map(|i| i.gross_g).sum();
+    let g: f32 = tech_card.ingredients.iter().map(|i| i.gross_g).sum();
     let out: f32 = tech_card.ingredients.iter().map(|i| i.cooked_net_g).sum();
-    let k: u32  = tech_card.ingredients.iter().map(|i| i.kcal).sum();
-    let p: f32  = tech_card.ingredients.iter().map(|i| i.protein_g).sum();
-    let f: f32  = tech_card.ingredients.iter().map(|i| i.fat_g).sum();
-    let c: f32  = tech_card.ingredients.iter().map(|i| i.carbs_g).sum();
+    let k: u32 = tech_card.ingredients.iter().map(|i| i.kcal).sum();
+    let p: f32 = tech_card.ingredients.iter().map(|i| i.protein_g).sum();
+    let f: f32 = tech_card.ingredients.iter().map(|i| i.fat_g).sum();
+    let c: f32 = tech_card.ingredients.iter().map(|i| i.carbs_g).sum();
 
-    tech_card.total_gross_g  = g;
+    tech_card.total_gross_g = g;
     tech_card.total_output_g = out;
-    tech_card.total_kcal     = k;
-    tech_card.total_protein  = (p * 10.0).round() / 10.0;
-    tech_card.total_fat      = (f * 10.0).round() / 10.0;
-    tech_card.total_carbs    = (c * 10.0).round() / 10.0;
+    tech_card.total_kcal = k;
+    tech_card.total_protein = (p * 10.0).round() / 10.0;
+    tech_card.total_fat = (f * 10.0).round() / 10.0;
+    tech_card.total_carbs = (c * 10.0).round() / 10.0;
 
     let s = tech_card.servings.max(1) as f32;
-    tech_card.per_serving_kcal    = (k as f32 / s).round() as u32;
+    tech_card.per_serving_kcal = (k as f32 / s).round() as u32;
     tech_card.per_serving_protein = ((p / s) * 10.0).round() / 10.0;
-    tech_card.per_serving_fat     = ((f / s) * 10.0).round() / 10.0;
-    tech_card.per_serving_carbs   = ((c / s) * 10.0).round() / 10.0;
+    tech_card.per_serving_fat = ((f / s) * 10.0).round() / 10.0;
+    tech_card.per_serving_carbs = ((c / s) * 10.0).round() / 10.0;
 }
 
 /// Build a YieldSummary from already-resolved ingredients.
 /// Uses gross/cleaned_net/cooked_net which the recipe engine already computes.
 fn build_yield_summary(ings: &[recipe_engine::ResolvedIngredient]) -> YieldSummary {
-    let gross: f32  = ings.iter().map(|i| i.gross_g).sum();
-    let net: f32    = ings.iter().map(|i| i.cleaned_net_g).sum();
+    let gross: f32 = ings.iter().map(|i| i.gross_g).sum();
+    let net: f32 = ings.iter().map(|i| i.cleaned_net_g).sum();
     let cooked: f32 = ings.iter().map(|i| i.cooked_net_g).sum();
     let loss = if gross > 0.0 {
         (((gross - cooked) / gross) * 100.0 * 10.0).round() / 10.0
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     YieldSummary {
         gross_total_g: (gross * 10.0).round() / 10.0,
-        net_total_g:   (net   * 10.0).round() / 10.0,
-        cooked_total_g:(cooked* 10.0).round() / 10.0,
+        net_total_g: (net * 10.0).round() / 10.0,
+        cooked_total_g: (cooked * 10.0).round() / 10.0,
         total_loss_percent: loss.clamp(0.0, 100.0),
     }
 }
@@ -1537,10 +1729,16 @@ fn build_yield_summary(ings: &[recipe_engine::ResolvedIngredient]) -> YieldSumma
 /// trim:    (gross  - net)    / gross  * 100  (always >= 0, capped 0..100)
 /// cooking: (net    - cooked) / net    * 100  (negative when cooking adds water)
 fn pct_loss(from: f32, to: f32, allow_negative: bool) -> f32 {
-    if from <= 0.0 { return 0.0; }
+    if from <= 0.0 {
+        return 0.0;
+    }
     let raw = ((from - to) / from) * 100.0;
     let rounded = (raw * 10.0).round() / 10.0;
-    if allow_negative { rounded } else { rounded.clamp(0.0, 100.0) }
+    if allow_negative {
+        rounded
+    } else {
+        rounded.clamp(0.0, 100.0)
+    }
 }
 
 fn compute_economics(
@@ -1602,7 +1800,11 @@ mod economics_tests {
         assert_eq!(e.cost_cents, 820);
         assert_eq!(e.suggested_price_cents, 2500);
         // margin = (2500 - 820) / 2500 = 67.2%
-        assert!((e.margin_percent - 67.2).abs() < 0.1, "got {}", e.margin_percent);
+        assert!(
+            (e.margin_percent - 67.2).abs() < 0.1,
+            "got {}",
+            e.margin_percent
+        );
         assert!(matches!(e.confidence, ConfidenceLevel::Strong));
     }
 
@@ -1630,8 +1832,11 @@ mod economics_tests {
     #[test]
     fn kg_cost_is_exact() {
         let info = IngredientInfo {
-            _quantity: 0.0, price_per_unit_cents: 2000, // 20 zł/kg
-            base_unit: "kg".into(), is_expiring: false, typical_piece_g: None,
+            _quantity: 0.0,
+            price_per_unit_cents: 2000, // 20 zł/kg
+            base_unit: "kg".into(),
+            is_expiring: false,
+            typical_piece_g: None,
         };
         // 500g → 10 zł
         assert_eq!(info.cost_for_grams(500.0), Some(1000));
@@ -1641,8 +1846,10 @@ mod economics_tests {
     fn piece_uses_typical_weight() {
         // egg: 55 g per piece, 90¢ per piece → 50g should cost ~82¢
         let info = IngredientInfo {
-            _quantity: 0.0, price_per_unit_cents: 90,
-            base_unit: "piece".into(), is_expiring: false,
+            _quantity: 0.0,
+            price_per_unit_cents: 90,
+            base_unit: "piece".into(),
+            is_expiring: false,
             typical_piece_g: Some(55.0),
         };
         let c = info.cost_for_grams(50.0).unwrap();
@@ -1653,8 +1860,10 @@ mod economics_tests {
     fn piece_falls_back_to_100g_when_unknown() {
         // 5 zł per piece, asking for 100g → ~5 zł (1:1)
         let info = IngredientInfo {
-            _quantity: 0.0, price_per_unit_cents: 500,
-            base_unit: "szt".into(), is_expiring: false,
+            _quantity: 0.0,
+            price_per_unit_cents: 500,
+            base_unit: "szt".into(),
+            is_expiring: false,
             typical_piece_g: None,
         };
         assert_eq!(info.cost_for_grams(100.0), Some(500));
@@ -1663,8 +1872,11 @@ mod economics_tests {
     #[test]
     fn zero_price_returns_none() {
         let info = IngredientInfo {
-            _quantity: 0.0, price_per_unit_cents: 0,
-            base_unit: "kg".into(), is_expiring: false, typical_piece_g: None,
+            _quantity: 0.0,
+            price_per_unit_cents: 0,
+            base_unit: "kg".into(),
+            is_expiring: false,
+            typical_piece_g: None,
         };
         assert_eq!(info.cost_for_grams(100.0), None);
     }
@@ -1709,9 +1921,11 @@ fn build_unlock_suggestions(all: &[&SuggestedDish], almost: &[SuggestedDish]) ->
 
     let missing_frequently: Vec<String> = sorted.iter().take(5).map(|(k, _)| k.clone()).collect();
 
-    let unlock_hints: Vec<String> = sorted.iter().take(3).map(|(name, count)| {
-        format!("+{} → {} more recipes", name, count)
-    }).collect();
+    let unlock_hints: Vec<String> = sorted
+        .iter()
+        .take(3)
+        .map(|(name, count)| format!("+{} → {} more recipes", name, count))
+        .collect();
 
     UnlockSuggestions {
         missing_frequently,

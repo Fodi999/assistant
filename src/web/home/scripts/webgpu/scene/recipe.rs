@@ -14,14 +14,18 @@ pub struct RecipeStep {
 /// A recipe that can be "played" as a scene formation sequence.
 #[derive(Debug, Clone)]
 pub struct Recipe {
-    pub name:        String,
+    pub name: String,
     pub ingredients: Vec<Ingredient>,
-    pub steps:       Vec<RecipeStep>,
+    pub steps: Vec<RecipeStep>,
 }
 
 impl Recipe {
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), ingredients: Vec::new(), steps: Vec::new() }
+        Self {
+            name: name.into(),
+            ingredients: Vec::new(),
+            steps: Vec::new(),
+        }
     }
 
     pub fn add_ingredient(&mut self, ingredient: Ingredient) -> &mut Self {
@@ -30,7 +34,10 @@ impl Recipe {
     }
 
     pub fn add_step(&mut self, description: impl Into<String>, duration_sec: u32) -> &mut Self {
-        self.steps.push(RecipeStep { description: description.into(), duration_sec });
+        self.steps.push(RecipeStep {
+            description: description.into(),
+            duration_sec,
+        });
         self
     }
 

@@ -12,9 +12,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::application::laboratory_v2::{
-    AssetStatus, Laboratory3DAsset, LaboratoryImage,
-};
+use crate::application::laboratory_v2::{AssetStatus, Laboratory3DAsset, LaboratoryImage};
 use crate::shared::AppError;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,10 +127,7 @@ impl LaboratoryV2Repository {
     }
 
     /// Insert a new source-image record, returning the persisted DTO.
-    pub async fn create_image(
-        &self,
-        input: CreateImageInput,
-    ) -> Result<LaboratoryImage, AppError> {
+    pub async fn create_image(&self, input: CreateImageInput) -> Result<LaboratoryImage, AppError> {
         let row = sqlx::query_as::<_, LaboratoryImageRow>(
             r#"
             INSERT INTO laboratory_images (

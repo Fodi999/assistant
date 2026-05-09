@@ -104,7 +104,10 @@ impl StripeService {
             );
         }
 
-        tracing::info!("✅ Stripe service initialized (Test Mode: {})", secret_key.starts_with("sk_test_"));
+        tracing::info!(
+            "✅ Stripe service initialized (Test Mode: {})",
+            secret_key.starts_with("sk_test_")
+        );
 
         Some(Self {
             secret_key,
@@ -145,15 +148,24 @@ impl StripeService {
             ("mode".into(), "payment".into()),
             ("line_items[0][price]".into(), price_id),
             ("line_items[0][quantity]".into(), "1".into()),
-            ("success_url".into(), format!("{}?session_id={{CHECKOUT_SESSION_ID}}", self.success_url)),
+            (
+                "success_url".into(),
+                format!("{}?session_id={{CHECKOUT_SESSION_ID}}", self.success_url),
+            ),
             ("cancel_url".into(), self.cancel_url.clone()),
             ("client_reference_id".into(), user_id.to_string()),
             ("metadata[user_id]".into(), user_id.to_string()),
             ("metadata[actions]".into(), bundle.actions.to_string()),
             ("metadata[bundle]".into(), bundle.key.to_string()),
             // Allow Stripe to handle the email — pre-fill if we have one.
-            ("payment_intent_data[metadata][user_id]".into(), user_id.to_string()),
-            ("payment_intent_data[metadata][bundle]".into(), bundle.key.to_string()),
+            (
+                "payment_intent_data[metadata][user_id]".into(),
+                user_id.to_string(),
+            ),
+            (
+                "payment_intent_data[metadata][bundle]".into(),
+                bundle.key.to_string(),
+            ),
         ];
         if let Some(email) = user_email {
             form.push(("customer_email".into(), email.to_string()));
@@ -249,8 +261,7 @@ impl StripeService {
         // Constant-time compare against every supplied v1 signature.
         for sig_hex in signatures {
             if let Ok(sig_bytes) = hex::decode(sig_hex) {
-                if sig_bytes.len() == expected.len()
-                    && sig_bytes.ct_eq(expected.as_slice()).into()
+                if sig_bytes.len() == expected.len() && sig_bytes.ct_eq(expected.as_slice()).into()
                 {
                     return Ok(());
                 }

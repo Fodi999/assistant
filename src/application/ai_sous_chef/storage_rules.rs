@@ -79,8 +79,8 @@ pub fn state_applicability(product_type: &str, state: ProcessingState) -> &'stat
 pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
     match state {
         ProcessingState::Raw => StorageRule {
-            shelf_life_hours: 72,    // 3 days typical for fresh produce
-            storage_temp_c: 4,       // standard fridge
+            shelf_life_hours: 72, // 3 days typical for fresh produce
+            storage_temp_c: 4,    // standard fridge
             texture: "natural",
             weight_change_percent: 0.0,
             state_type: "raw",
@@ -89,22 +89,22 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             cooking_method: "raw",
         },
         ProcessingState::Boiled => StorageRule {
-            shelf_life_hours: 48,    // 2 days in fridge
+            shelf_life_hours: 48, // 2 days in fridge
             storage_temp_c: 4,
             texture: "soft",
-            weight_change_percent: 5.0,   // absorbs water → gains ~5%
+            weight_change_percent: 5.0, // absorbs water → gains ~5%
             state_type: "heat",
             oil_absorption_g: 0.0,
-            water_loss_percent: 0.0,      // actually gains water
+            water_loss_percent: 0.0, // actually gains water
             cooking_method: "boiled",
         },
         ProcessingState::Fried => StorageRule {
-            shelf_life_hours: 24,    // consume same day ideally
+            shelf_life_hours: 24, // consume same day ideally
             storage_temp_c: 4,
             texture: "crispy",
             weight_change_percent: -25.0, // loses water, absorbs oil → net loss ~25%
             state_type: "heat",
-            oil_absorption_g: 10.0,       // ~10g oil per 100g product
+            oil_absorption_g: 10.0, // ~10g oil per 100g product
             water_loss_percent: 30.0,
             cooking_method: "pan_fried",
         },
@@ -132,14 +132,14 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             shelf_life_hours: 48,
             storage_temp_c: 4,
             texture: "tender",
-            weight_change_percent: -3.0,  // minimal loss
+            weight_change_percent: -3.0, // minimal loss
             state_type: "heat",
             oil_absorption_g: 0.0,
             water_loss_percent: 3.0,
             cooking_method: "steamed",
         },
         ProcessingState::Smoked => StorageRule {
-            shelf_life_hours: 168,   // 7 days — smoking preserves
+            shelf_life_hours: 168, // 7 days — smoking preserves
             storage_temp_c: 4,
             texture: "firm-smoky",
             weight_change_percent: -30.0, // significant water loss
@@ -149,18 +149,18 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             cooking_method: "smoked",
         },
         ProcessingState::Frozen => StorageRule {
-            shelf_life_hours: 2160,  // 90 days
-            storage_temp_c: -18,     // standard freezer
+            shelf_life_hours: 2160, // 90 days
+            storage_temp_c: -18,    // standard freezer
             texture: "frozen",
-            weight_change_percent: 0.0,   // no change
+            weight_change_percent: 0.0, // no change
             state_type: "preserved",
             oil_absorption_g: 0.0,
             water_loss_percent: 0.0,
             cooking_method: "frozen",
         },
         ProcessingState::Dried => StorageRule {
-            shelf_life_hours: 4320,  // 180 days
-            storage_temp_c: 20,      // room temperature OK
+            shelf_life_hours: 4320, // 180 days
+            storage_temp_c: 20,     // room temperature OK
             texture: "brittle",
             weight_change_percent: -70.0, // extreme water loss
             state_type: "preserved",
@@ -169,10 +169,10 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
             cooking_method: "dried",
         },
         ProcessingState::Pickled => StorageRule {
-            shelf_life_hours: 720,   // 30 days
+            shelf_life_hours: 720, // 30 days
             storage_temp_c: 4,
             texture: "crunchy-sour",
-            weight_change_percent: 5.0,   // absorbs brine
+            weight_change_percent: 5.0, // absorbs brine
             state_type: "preserved",
             oil_absorption_g: 0.0,
             water_loss_percent: 0.0,
@@ -186,38 +186,38 @@ pub fn get_storage_rule(state: ProcessingState) -> StorageRule {
 pub fn override_shelf_life(product_type: &str, state: ProcessingState) -> Option<i32> {
     match (product_type, state) {
         // Fish & seafood — shorter shelf life
-        ("fish", ProcessingState::Raw) => Some(24),      // 1 day
+        ("fish", ProcessingState::Raw) => Some(24), // 1 day
         ("fish", ProcessingState::Boiled) => Some(24),
         ("fish", ProcessingState::Fried) => Some(12),
         ("seafood", ProcessingState::Raw) => Some(24),
         ("seafood", ProcessingState::Boiled) => Some(24),
 
         // Meat — moderate
-        ("meat", ProcessingState::Raw) => Some(48),       // 2 days
+        ("meat", ProcessingState::Raw) => Some(48), // 2 days
         ("meat", ProcessingState::Boiled) => Some(48),
-        ("meat", ProcessingState::Smoked) => Some(336),   // 14 days
+        ("meat", ProcessingState::Smoked) => Some(336), // 14 days
 
         // Dairy — short
-        ("dairy", ProcessingState::Raw) => Some(120),     // 5 days
+        ("dairy", ProcessingState::Raw) => Some(120), // 5 days
         ("dairy", ProcessingState::Baked) => Some(72),
 
         // Fruit — varies
-        ("fruit", ProcessingState::Raw) => Some(120),     // 5 days
-        ("fruit", ProcessingState::Dried) => Some(8640),  // 360 days
+        ("fruit", ProcessingState::Raw) => Some(120), // 5 days
+        ("fruit", ProcessingState::Dried) => Some(8640), // 360 days
 
         // Vegetables — moderate
         ("vegetable", ProcessingState::Raw) => Some(168), // 7 days
         ("vegetable", ProcessingState::Frozen) => Some(4320), // 180 days
 
         // Grains — long shelf life
-        ("grain", ProcessingState::Raw) => Some(8640),    // 360 days
+        ("grain", ProcessingState::Raw) => Some(8640), // 360 days
         ("grain", ProcessingState::Boiled) => Some(72),
 
         // Nuts — very long
-        ("nut", ProcessingState::Raw) => Some(4320),      // 180 days
+        ("nut", ProcessingState::Raw) => Some(4320), // 180 days
 
         // Spices — very long
-        ("spice", ProcessingState::Raw) => Some(17520),   // 2 years
+        ("spice", ProcessingState::Raw) => Some(17520), // 2 years
         ("spice", ProcessingState::Dried) => Some(17520),
 
         _ => None, // use default from get_storage_rule

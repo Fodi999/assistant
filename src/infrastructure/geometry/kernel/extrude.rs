@@ -57,7 +57,10 @@ pub struct ExtrudeOptions {
 
 impl Default for ExtrudeOptions {
     fn default() -> Self {
-        Self { depth: 0.08, bevel: 0.0 }
+        Self {
+            depth: 0.08,
+            bevel: 0.0,
+        }
     }
 }
 
@@ -95,10 +98,10 @@ pub fn extrude_polygon(
     // With bevel the cap sits slightly inward, so the chamfer face
     // connects from the main contour at the outer z to the inset contour.
     let cap_z_front = if has_bevel { half - bevel } else { half };
-    let cap_z_back  = if has_bevel { -(half - bevel) } else { -half };
+    let cap_z_back = if has_bevel { -(half - bevel) } else { -half };
 
-    let front = build_cap(points, cap_z_front, [0.0, 0.0,  1.0], false);
-    let back  = build_cap(points, cap_z_back,  [0.0, 0.0, -1.0], true);
+    let front = build_cap(points, cap_z_front, [0.0, 0.0, 1.0], false);
+    let back = build_cap(points, cap_z_back, [0.0, 0.0, -1.0], true);
 
     let sides = if has_bevel {
         build_sides_beveled(points, half, bevel)
@@ -118,15 +121,20 @@ fn build_cap(points: &[Point2], z: f32, normal: [f32; 3], flip: bool) -> MeshPar
 
     // Normalised UV bounding box.
     let (min_x, max_x, min_y, max_y) = points.iter().fold(
-        (f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::NEG_INFINITY),
+        (
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ),
         |(lx, hx, ly, hy), p| (lx.min(p.x), hx.max(p.x), ly.min(p.y), hy.max(p.y)),
     );
     let range_x = (max_x - min_x).max(1e-6);
     let range_y = (max_y - min_y).max(1e-6);
 
     let mut vertices: Vec<[f32; 3]> = Vec::with_capacity(n);
-    let mut normals:  Vec<[f32; 3]> = Vec::with_capacity(n);
-    let mut uvs:      Vec<[f32; 2]> = Vec::with_capacity(n);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(n);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(n);
 
     for p in points {
         vertices.push([p.x, p.y, z]);
@@ -144,7 +152,12 @@ fn build_cap(points: &[Point2], z: f32, normal: [f32; 3], flip: bool) -> MeshPar
         }
     }
 
-    MeshPart { vertices, normals, uvs, faces }
+    MeshPart {
+        vertices,
+        normals,
+        uvs,
+        faces,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,9 +171,9 @@ fn build_sides_flat(points: &[Point2], half: f32) -> MeshPart {
     let (edge_u, total_perim) = edge_u_coords(points);
 
     let mut vertices: Vec<[f32; 3]> = Vec::with_capacity(n * 4);
-    let mut normals:  Vec<[f32; 3]> = Vec::with_capacity(n * 4);
-    let mut uvs:      Vec<[f32; 2]> = Vec::with_capacity(n * 4);
-    let mut faces:    Vec<[usize; 3]> = Vec::with_capacity(n * 2);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(n * 4);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(n * 4);
+    let mut faces: Vec<[usize; 3]> = Vec::with_capacity(n * 2);
 
     for i in 0..n {
         let j = (i + 1) % n;
@@ -171,18 +184,20 @@ fn build_sides_flat(points: &[Point2], half: f32) -> MeshPart {
         let (nx, ny) = outward_normal_2d(a, b);
         let norm = [nx, ny, 0.0];
 
-        let u0 = edge_u[i]     / total_perim;
+        let u0 = edge_u[i] / total_perim;
         let u1 = edge_u[i + 1] / total_perim;
 
         let base = vertices.len();
 
         // 4 verts: front-left, front-right, back-right, back-left.
-        vertices.push([a.x, a.y,  half]);  // 0
-        vertices.push([b.x, b.y,  half]);  // 1
-        vertices.push([b.x, b.y, -half]);  // 2
-        vertices.push([a.x, a.y, -half]);  // 3
+        vertices.push([a.x, a.y, half]); // 0
+        vertices.push([b.x, b.y, half]); // 1
+        vertices.push([b.x, b.y, -half]); // 2
+        vertices.push([a.x, a.y, -half]); // 3
 
-        for _ in 0..4 { normals.push(norm); }
+        for _ in 0..4 {
+            normals.push(norm);
+        }
         uvs.push([u0, 1.0]);
         uvs.push([u1, 1.0]);
         uvs.push([u1, 0.0]);
@@ -193,7 +208,12 @@ fn build_sides_flat(points: &[Point2], half: f32) -> MeshPart {
         faces.push([base, base + 2, base + 3]);
     }
 
-    MeshPart { vertices, normals, uvs, faces }
+    MeshPart {
+        vertices,
+        normals,
+        uvs,
+        faces,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,9 +236,9 @@ fn build_sides_beveled(points: &[Point2], half: f32, bevel: f32) -> MeshPart {
     let (edge_u, total_perim) = edge_u_coords(points);
 
     let mut vertices: Vec<[f32; 3]> = Vec::with_capacity(n * 8);
-    let mut normals:  Vec<[f32; 3]> = Vec::with_capacity(n * 8);
-    let mut uvs:      Vec<[f32; 2]> = Vec::with_capacity(n * 8);
-    let mut faces:    Vec<[usize; 3]> = Vec::with_capacity(n * 6);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(n * 8);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(n * 8);
+    let mut faces: Vec<[usize; 3]> = Vec::with_capacity(n * 6);
 
     let inv_sqrt2 = 1.0_f32 / 2.0_f32.sqrt();
 
@@ -228,11 +248,11 @@ fn build_sides_beveled(points: &[Point2], half: f32, bevel: f32) -> MeshPart {
         let b = points[j];
 
         let (nx, ny) = outward_normal_2d(a, b);
-        let side_n  = [nx, ny, 0.0];
-        let bvl_f_n = [nx * inv_sqrt2, ny * inv_sqrt2,  inv_sqrt2];
+        let side_n = [nx, ny, 0.0];
+        let bvl_f_n = [nx * inv_sqrt2, ny * inv_sqrt2, inv_sqrt2];
         let bvl_b_n = [nx * inv_sqrt2, ny * inv_sqrt2, -inv_sqrt2];
 
-        let u0 = edge_u[i]     / total_perim;
+        let u0 = edge_u[i] / total_perim;
         let u1 = edge_u[i + 1] / total_perim;
 
         // Inset endpoints.
@@ -244,32 +264,40 @@ fn build_sides_beveled(points: &[Point2], half: f32, bevel: f32) -> MeshPart {
         let base = vertices.len();
 
         // Ring 0 — inset at +half.
-        vertices.push([ax_in, ay_in,  half]);
-        vertices.push([bx_in, by_in,  half]);
+        vertices.push([ax_in, ay_in, half]);
+        vertices.push([bx_in, by_in, half]);
         // Ring 1 — full at +(half - bevel).
-        vertices.push([a.x,  a.y,  half - bevel]);
-        vertices.push([b.x,  b.y,  half - bevel]);
+        vertices.push([a.x, a.y, half - bevel]);
+        vertices.push([b.x, b.y, half - bevel]);
         // Ring 2 — full at -(half - bevel).
-        vertices.push([a.x,  a.y, -(half - bevel)]);
-        vertices.push([b.x,  b.y, -(half - bevel)]);
+        vertices.push([a.x, a.y, -(half - bevel)]);
+        vertices.push([b.x, b.y, -(half - bevel)]);
         // Ring 3 — inset at -half.
         vertices.push([ax_in, ay_in, -half]);
         vertices.push([bx_in, by_in, -half]);
 
-        normals.push(bvl_f_n); normals.push(bvl_f_n);
-        normals.push(side_n);  normals.push(side_n);
-        normals.push(side_n);  normals.push(side_n);
-        normals.push(bvl_b_n); normals.push(bvl_b_n);
+        normals.push(bvl_f_n);
+        normals.push(bvl_f_n);
+        normals.push(side_n);
+        normals.push(side_n);
+        normals.push(side_n);
+        normals.push(side_n);
+        normals.push(bvl_b_n);
+        normals.push(bvl_b_n);
 
         // UV: v ∈ [0, 1] front→back, u along perimeter.
-        uvs.push([u0, 1.00]); uvs.push([u1, 1.00]);
-        uvs.push([u0, 0.85]); uvs.push([u1, 0.85]);
-        uvs.push([u0, 0.15]); uvs.push([u1, 0.15]);
-        uvs.push([u0, 0.00]); uvs.push([u1, 0.00]);
+        uvs.push([u0, 1.00]);
+        uvs.push([u1, 1.00]);
+        uvs.push([u0, 0.85]);
+        uvs.push([u1, 0.85]);
+        uvs.push([u0, 0.15]);
+        uvs.push([u1, 0.15]);
+        uvs.push([u0, 0.00]);
+        uvs.push([u1, 0.00]);
 
         // Row 0: bevel front  (ring0 → ring1)
-        faces.push([base,     base + 1, base + 3]);
-        faces.push([base,     base + 3, base + 2]);
+        faces.push([base, base + 1, base + 3]);
+        faces.push([base, base + 3, base + 2]);
         // Row 1: straight wall (ring1 → ring2)
         faces.push([base + 2, base + 3, base + 5]);
         faces.push([base + 2, base + 5, base + 4]);
@@ -278,7 +306,12 @@ fn build_sides_beveled(points: &[Point2], half: f32, bevel: f32) -> MeshPart {
         faces.push([base + 4, base + 7, base + 6]);
     }
 
-    MeshPart { vertices, normals, uvs, faces }
+    MeshPart {
+        vertices,
+        normals,
+        uvs,
+        faces,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -322,17 +355,20 @@ mod tests {
 
     fn square(s: f32) -> Vec<Point2> {
         vec![
-            Point2::new( s,  s),
-            Point2::new(-s,  s),
+            Point2::new(s, s),
+            Point2::new(-s, s),
             Point2::new(-s, -s),
-            Point2::new( s, -s),
+            Point2::new(s, -s),
         ]
     }
 
     #[test]
     fn extrude_square_produces_valid_parts() {
         let pts = square(0.05);
-        let opts = ExtrudeOptions { depth: 0.02, bevel: 0.0 };
+        let opts = ExtrudeOptions {
+            depth: 0.02,
+            bevel: 0.0,
+        };
         let [front, back, sides] = extrude_polygon(&pts, &opts).unwrap();
 
         // 4 verts → 2 triangles per cap.
@@ -345,7 +381,10 @@ mod tests {
     #[test]
     fn extrude_square_beveled() {
         let pts = square(0.05);
-        let opts = ExtrudeOptions { depth: 0.02, bevel: 0.002 };
+        let opts = ExtrudeOptions {
+            depth: 0.02,
+            bevel: 0.002,
+        };
         let [front, back, sides] = extrude_polygon(&pts, &opts).unwrap();
 
         assert_eq!(front.faces.len(), 2);
@@ -363,17 +402,23 @@ mod tests {
     #[test]
     fn extrude_rejects_non_positive_depth() {
         let pts = square(0.05);
-        let opts = ExtrudeOptions { depth: -0.01, bevel: 0.0 };
+        let opts = ExtrudeOptions {
+            depth: -0.01,
+            bevel: 0.0,
+        };
         assert!(extrude_polygon(&pts, &opts).is_err());
     }
 
     #[test]
     fn cap_normals_are_unit_length() {
         let pts = square(0.05);
-        let opts = ExtrudeOptions { depth: 0.02, bevel: 0.0 };
+        let opts = ExtrudeOptions {
+            depth: 0.02,
+            bevel: 0.0,
+        };
         let [front, back, _] = extrude_polygon(&pts, &opts).unwrap();
         for n in front.normals.iter().chain(back.normals.iter()) {
-            let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             assert!((len - 1.0).abs() < 1e-5, "non-unit normal: {len}");
         }
     }

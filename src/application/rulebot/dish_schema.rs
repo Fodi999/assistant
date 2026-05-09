@@ -9,9 +9,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::infrastructure::llm_adapter::LlmAdapter;
 use super::intent_router::ChatLang;
 use super::response_builder::HealthGoal;
+use crate::infrastructure::llm_adapter::LlmAdapter;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,8 +75,12 @@ pub fn parse_dish_schema(raw: &str) -> Result<DishSchema, String> {
     let json_str = extract_json(raw)
         .ok_or_else(|| format!("No JSON found in: {}", &raw[..raw.len().min(100)]))?;
 
-    let schema: DishSchema = serde_json::from_str(json_str)
-        .map_err(|e| format!("JSON parse error: {e} — raw: {}", &raw[..raw.len().min(150)]))?;
+    let schema: DishSchema = serde_json::from_str(json_str).map_err(|e| {
+        format!(
+            "JSON parse error: {e} — raw: {}",
+            &raw[..raw.len().min(150)]
+        )
+    })?;
 
     if schema.dish == "unknown" || schema.items.is_empty() {
         return Err("Gemini couldn't recognize this dish".into());
@@ -89,7 +93,11 @@ pub fn parse_dish_schema(raw: &str) -> Result<DishSchema, String> {
 pub fn extract_json(raw: &str) -> Option<&str> {
     let start = raw.find('{')?;
     let end = raw.rfind('}')?;
-    if end >= start { Some(&raw[start..=end]) } else { None }
+    if end >= start {
+        Some(&raw[start..=end])
+    } else {
+        None
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -100,7 +108,8 @@ mod tests {
 
     #[test]
     fn parse_minimal_schema() {
-        let json = r#"{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","potato","beef"]}"#;
+        let json =
+            r#"{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","potato","beef"]}"#;
         let s = parse_dish_schema(json).unwrap();
         assert_eq!(s.dish, "borscht");
         assert_eq!(s.items.len(), 4);

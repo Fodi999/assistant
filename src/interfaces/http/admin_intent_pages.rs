@@ -30,9 +30,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::application::intent_pages::{
-    BatchGenerateRequest, BatchResult, BulkActionRequest, EnqueueBulkRequest,
-    GenerateRequest, ImageUploadResponse, IntentPage, IntentPagesService, ListQuery,
-    SeoAuditResult, SitemapEntry,
+    BatchGenerateRequest, BatchResult, BulkActionRequest, EnqueueBulkRequest, GenerateRequest,
+    ImageUploadResponse, IntentPage, IntentPagesService, ListQuery, SeoAuditResult, SitemapEntry,
     UpdateIntentPageRequest, UpdateSettingsRequest,
 };
 use crate::domain::AdminClaims;
@@ -279,7 +278,9 @@ pub async fn get_image_upload_url(
     Path((id, key)): Path<(Uuid, String)>,
     Query(q): Query<ImageUploadQuery>,
 ) -> Result<Json<ImageUploadResponse>, AppError> {
-    let resp = service.get_image_upload_url(id, &key, &q.content_type).await?;
+    let resp = service
+        .get_image_upload_url(id, &key, &q.content_type)
+        .await?;
     Ok(Json(resp))
 }
 

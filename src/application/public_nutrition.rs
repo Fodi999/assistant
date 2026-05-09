@@ -282,7 +282,8 @@ impl PublicNutritionService {
         .fetch_optional(&self.pool)
         .await?;
 
-        let basic = basic.ok_or_else(|| AppError::NotFound(format!("product '{slug}' not found")))?;
+        let basic =
+            basic.ok_or_else(|| AppError::NotFound(format!("product '{slug}' not found")))?;
         let product_id = basic.id;
 
         // 2. Macros
@@ -343,14 +344,13 @@ impl PublicNutritionService {
         .unwrap_or(None);
 
         // 8. Availability months
-        let availability_months: Option<Vec<bool>> = sqlx::query_scalar(
-            r#"SELECT availability_months FROM products WHERE id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None)
-        .flatten();
+        let availability_months: Option<Vec<bool>> =
+            sqlx::query_scalar(r#"SELECT availability_months FROM products WHERE id = $1"#)
+                .bind(product_id)
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None)
+                .flatten();
 
         // 9. Top-10 pairings (best pair_score)
         let pairings: Vec<PairingPublicRow> = sqlx::query_as(
@@ -414,13 +414,12 @@ impl PublicNutritionService {
         .unwrap_or(None);
 
         // 13. Culinary behavior
-        let culinary_behavior: Option<CulinaryBehaviorPublicRow> = sqlx::query_as(
-            "SELECT behaviors FROM product_culinary_behavior WHERE product_id = $1",
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
+        let culinary_behavior: Option<CulinaryBehaviorPublicRow> =
+            sqlx::query_as("SELECT behaviors FROM product_culinary_behavior WHERE product_id = $1")
+                .bind(product_id)
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None);
 
         Ok(NutritionPageResponse {
             lang: "en".to_string(),
@@ -546,21 +545,33 @@ impl PublicNutritionService {
     ) -> AppResult<RankingPageResponse> {
         // Map metric → (table, column, label, unit, default_order)
         let (table, col, label, unit, default_order) = match metric {
-            "calories"   => ("nutrition_macros",   "calories_kcal", "Calories",   "kcal", "desc"),
-            "protein"    => ("nutrition_macros",   "protein_g",     "Protein",    "g",    "desc"),
-            "fat"        => ("nutrition_macros",   "fat_g",         "Fat",        "g",    "desc"),
-            "carbs"      => ("nutrition_macros",   "carbs_g",       "Carbohydrates", "g", "desc"),
-            "fiber"      => ("nutrition_macros",   "fiber_g",       "Fiber",      "g",    "desc"),
-            "sugar"      => ("nutrition_macros",   "sugar_g",       "Sugar",      "g",    "asc"),
-            "vitamin-c"  => ("nutrition_vitamins", "vitamin_c",     "Vitamin C",  "mg",   "desc"),
-            "vitamin-d"  => ("nutrition_vitamins", "vitamin_d",     "Vitamin D",  "µg",   "desc"),
-            "vitamin-b12"=> ("nutrition_vitamins", "vitamin_b12",   "Vitamin B12","µg",   "desc"),
-            "iron"       => ("nutrition_minerals", "iron",          "Iron",       "mg",   "desc"),
-            "calcium"    => ("nutrition_minerals", "calcium",       "Calcium",    "mg",   "desc"),
-            "potassium"  => ("nutrition_minerals", "potassium",     "Potassium",  "mg",   "desc"),
-            "magnesium"  => ("nutrition_minerals", "magnesium",     "Magnesium",  "mg",   "desc"),
-            "zinc"       => ("nutrition_minerals", "zinc",          "Zinc",       "mg",   "desc"),
-            "sodium"     => ("nutrition_minerals", "sodium",        "Sodium",     "mg",   "asc"),
+            "calories" => (
+                "nutrition_macros",
+                "calories_kcal",
+                "Calories",
+                "kcal",
+                "desc",
+            ),
+            "protein" => ("nutrition_macros", "protein_g", "Protein", "g", "desc"),
+            "fat" => ("nutrition_macros", "fat_g", "Fat", "g", "desc"),
+            "carbs" => ("nutrition_macros", "carbs_g", "Carbohydrates", "g", "desc"),
+            "fiber" => ("nutrition_macros", "fiber_g", "Fiber", "g", "desc"),
+            "sugar" => ("nutrition_macros", "sugar_g", "Sugar", "g", "asc"),
+            "vitamin-c" => ("nutrition_vitamins", "vitamin_c", "Vitamin C", "mg", "desc"),
+            "vitamin-d" => ("nutrition_vitamins", "vitamin_d", "Vitamin D", "µg", "desc"),
+            "vitamin-b12" => (
+                "nutrition_vitamins",
+                "vitamin_b12",
+                "Vitamin B12",
+                "µg",
+                "desc",
+            ),
+            "iron" => ("nutrition_minerals", "iron", "Iron", "mg", "desc"),
+            "calcium" => ("nutrition_minerals", "calcium", "Calcium", "mg", "desc"),
+            "potassium" => ("nutrition_minerals", "potassium", "Potassium", "mg", "desc"),
+            "magnesium" => ("nutrition_minerals", "magnesium", "Magnesium", "mg", "desc"),
+            "zinc" => ("nutrition_minerals", "zinc", "Zinc", "mg", "desc"),
+            "sodium" => ("nutrition_minerals", "sodium", "Sodium", "mg", "asc"),
             _ => return Err(AppError::Validation(format!("unknown metric '{metric}'"))),
         };
 
@@ -637,11 +648,10 @@ impl PublicNutritionService {
 
     // ── GET /public/products-slugs ─────────────────────────────────────────────
     pub async fn get_all_slugs(&self) -> AppResult<Vec<String>> {
-        let rows: Vec<(String,)> =
-            sqlx::query_as("SELECT slug FROM products ORDER BY slug")
-                .fetch_all(&self.pool)
-                .await
-                .map_err(AppError::from)?;
+        let rows: Vec<(String,)> = sqlx::query_as("SELECT slug FROM products ORDER BY slug")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::from)?;
         Ok(rows.into_iter().map(|(s,)| s).collect())
     }
 }

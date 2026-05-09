@@ -44,13 +44,13 @@ pub struct CardSpec<'a> {
 impl Default for CardSpec<'_> {
     fn default() -> Self {
         Self {
-            width:         0.10,
-            height:        0.14,
-            thickness:     0.008,
+            width: 0.10,
+            height: 0.14,
+            thickness: 0.008,
             corner_radius: 0.012,
-            bevel:         0.001,
-            color_hex:     "#CCCCCC",
-            quality:       GeometryQuality::High,
+            bevel: 0.001,
+            color_hex: "#CCCCCC",
+            quality: GeometryQuality::High,
         }
     }
 }
@@ -65,18 +65,13 @@ impl Default for CardSpec<'_> {
 /// Panics only if `spec` values are degenerate (width/height/thickness ≤ 0).
 pub fn generate_card(spec: &CardSpec<'_>) -> Mesh {
     let corner_segs: usize = match spec.quality {
-        GeometryQuality::Draft    =>  4,
-        GeometryQuality::Standard =>  8,
-        GeometryQuality::High     => 16,
-        GeometryQuality::Ultra    => 24,
+        GeometryQuality::Draft => 4,
+        GeometryQuality::Standard => 8,
+        GeometryQuality::High => 16,
+        GeometryQuality::Ultra => 24,
     };
 
-    let points = rounded_rect_points(
-        spec.width,
-        spec.height,
-        spec.corner_radius,
-        corner_segs,
-    );
+    let points = rounded_rect_points(spec.width, spec.height, spec.corner_radius, corner_segs);
 
     let opts = ExtrudeOptions {
         depth: spec.thickness,
@@ -107,8 +102,8 @@ pub fn generate_card(spec: &CardSpec<'_>) -> Mesh {
     );
 
     b.add_part(g_front, &front);
-    b.add_part(g_back,  &back);
-    b.add_part(g_edge,  &sides);
+    b.add_part(g_back, &back);
+    b.add_part(g_edge, &sides);
 
     b.build()
 }
@@ -130,7 +125,10 @@ mod tests {
 
     #[test]
     fn generate_card_draft_quality() {
-        let spec = CardSpec { quality: GeometryQuality::Draft, ..CardSpec::default() };
+        let spec = CardSpec {
+            quality: GeometryQuality::Draft,
+            ..CardSpec::default()
+        };
         let mesh = generate_card(&spec);
         validate_mesh(&mesh).expect("draft card failed validation");
     }
@@ -149,7 +147,11 @@ mod tests {
     #[test]
     fn generate_card_has_three_groups() {
         let mesh = generate_card(&CardSpec::default());
-        assert_eq!(mesh.groups.len(), 3, "expected card_front / card_back / card_edge");
+        assert_eq!(
+            mesh.groups.len(),
+            3,
+            "expected card_front / card_back / card_edge"
+        );
         assert_eq!(mesh.groups[0].material.name, "card_front");
         assert_eq!(mesh.groups[1].material.name, "card_back");
         assert_eq!(mesh.groups[2].material.name, "card_edge");
@@ -157,7 +159,10 @@ mod tests {
 
     #[test]
     fn generate_card_color_is_applied() {
-        let spec = CardSpec { color_hex: "#FF0000", ..CardSpec::default() };
+        let spec = CardSpec {
+            color_hex: "#FF0000",
+            ..CardSpec::default()
+        };
         let mesh = generate_card(&spec);
         let [r, g, b] = mesh.groups[0].material.diffuse_color;
         assert!((r - 1.0).abs() < 1e-3, "expected red r≈1.0, got {r}");

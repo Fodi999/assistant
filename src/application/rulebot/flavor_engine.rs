@@ -8,8 +8,8 @@
 
 use serde::Serialize;
 
-use crate::infrastructure::ingredient_cache::CachedBehavior;
 use super::recipe_engine::ResolvedIngredient;
+use crate::infrastructure::ingredient_cache::CachedBehavior;
 
 // ── Analysis result ──────────────────────────────────────────────────────────
 
@@ -135,10 +135,15 @@ fn analyze_balance(state: &FlavorAnalysis) -> Vec<String> {
     }
 
     // Flat dish (nothing stands out)
-    let max_val = [state.sweetness, state.acidity, state.umami, state.bitterness]
-        .iter()
-        .cloned()
-        .fold(0.0_f32, f32::max);
+    let max_val = [
+        state.sweetness,
+        state.acidity,
+        state.umami,
+        state.bitterness,
+    ]
+    .iter()
+    .cloned()
+    .fold(0.0_f32, f32::max);
     if max_val < 0.2 && state.moisture < 0.3 {
         out.push("dish_too_flat".into());
     }
@@ -167,7 +172,12 @@ fn detect_dominant(state: &FlavorAnalysis) -> Option<String> {
 fn compute_balance_score(state: &FlavorAnalysis) -> f32 {
     // Balance = how close the flavor axes are to each other
     // Perfect balance = all axes roughly equal (or all zero)
-    let vals = [state.sweetness, state.acidity, state.bitterness, state.umami];
+    let vals = [
+        state.sweetness,
+        state.acidity,
+        state.bitterness,
+        state.umami,
+    ];
     let max = vals.iter().cloned().fold(0.0_f32, f32::max);
     if max < 0.05 {
         return 0.5; // no data → neutral score
@@ -215,9 +225,7 @@ mod tests {
                 product_type: "fruit".into(),
                 density_g_per_ml: None,
                 typical_portion_g: None,
-                behaviors: vec![
-                    make_behavior("sweetness_increase", "+", 0.9),
-                ],
+                behaviors: vec![make_behavior("sweetness_increase", "+", 0.9)],
                 states: vec![],
             }),
             slug_hint: "apple".into(),

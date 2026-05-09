@@ -3,9 +3,9 @@
 //! Only TEXT goes to LLM — no nutrition data, no recipes.
 //! LLM adds personality: chef_intro, explanation, motivation.
 
-use serde::Deserialize;
 use super::goal::Goal;
 use super::types::MealVariant;
+use serde::Deserialize;
 
 /// LLM response shape.
 #[derive(Debug, Deserialize)]
@@ -81,25 +81,43 @@ pub fn parse_gemini_response(raw: &str) -> Option<GeminiChefResponse> {
 
 pub fn fallback_intro(goal: Goal, lang: &str) -> String {
     match (goal, lang) {
-        (Goal::WeightLoss, "ru") => "🧑‍🍳 Я подобрал для вас лёгкие, но сытные блюда с дефицитом калорий.".into(),
-        (Goal::WeightLoss, "pl") => "🧑‍🍳 Przygotowałem dla Ciebie lekkie, ale sycące dania z deficytem kalorycznym.".into(),
-        (Goal::WeightLoss, "uk") => "🧑‍🍳 Я підібрав для вас легкі, але ситні страви з дефіцитом калорій.".into(),
-        (Goal::WeightLoss, _)   => "🧑‍🍳 I've selected light but satisfying meals with a calorie deficit for you.".into(),
+        (Goal::WeightLoss, "ru") => {
+            "🧑‍🍳 Я подобрал для вас лёгкие, но сытные блюда с дефицитом калорий.".into()
+        }
+        (Goal::WeightLoss, "pl") => {
+            "🧑‍🍳 Przygotowałem dla Ciebie lekkie, ale sycące dania z deficytem kalorycznym.".into()
+        }
+        (Goal::WeightLoss, "uk") => {
+            "🧑‍🍳 Я підібрав для вас легкі, але ситні страви з дефіцитом калорій.".into()
+        }
+        (Goal::WeightLoss, _) => {
+            "🧑‍🍳 I've selected light but satisfying meals with a calorie deficit for you.".into()
+        }
 
-        (Goal::HighProtein, "ru") => "🧑‍🍳 Вот план с высоким содержанием белка для ваших целей.".into(),
+        (Goal::HighProtein, "ru") => {
+            "🧑‍🍳 Вот план с высоким содержанием белка для ваших целей.".into()
+        }
         (Goal::HighProtein, "pl") => "🧑‍🍳 Oto plan z dużą ilością białka dla Twoich celów.".into(),
         (Goal::HighProtein, "uk") => "🧑‍🍳 Ось план з високим вмістом білка для ваших цілей.".into(),
-        (Goal::HighProtein, _)   => "🧑‍🍳 Here's a high-protein plan tailored to your goals.".into(),
+        (Goal::HighProtein, _) => "🧑‍🍳 Here's a high-protein plan tailored to your goals.".into(),
 
-        (Goal::QuickBreakfast, "ru") => "🧑‍🍳 Быстрый и питательный завтрак — лучшее начало дня!".into(),
-        (Goal::QuickBreakfast, "pl") => "🧑‍🍳 Szybkie i pożywne śniadanie — najlepszy początek dnia!".into(),
-        (Goal::QuickBreakfast, "uk") => "🧑‍🍳 Швидкий та поживний сніданок — найкращий початок дня!".into(),
-        (Goal::QuickBreakfast, _)   => "🧑‍🍳 A quick and nutritious breakfast — the best way to start your day!".into(),
+        (Goal::QuickBreakfast, "ru") => {
+            "🧑‍🍳 Быстрый и питательный завтрак — лучшее начало дня!".into()
+        }
+        (Goal::QuickBreakfast, "pl") => {
+            "🧑‍🍳 Szybkie i pożywne śniadanie — najlepszy początek dnia!".into()
+        }
+        (Goal::QuickBreakfast, "uk") => {
+            "🧑‍🍳 Швидкий та поживний сніданок — найкращий початок дня!".into()
+        }
+        (Goal::QuickBreakfast, _) => {
+            "🧑‍🍳 A quick and nutritious breakfast — the best way to start your day!".into()
+        }
 
         (_, "ru") => "🧑‍🍳 Я подготовил для вас несколько вариантов на выбор.".into(),
         (_, "pl") => "🧑‍🍳 Przygotowałem dla Ciebie kilka opcji do wyboru.".into(),
         (_, "uk") => "🧑‍🍳 Я підготував для вас кілька варіантів на вибір.".into(),
-        (_, _)   => "🧑‍🍳 I've prepared several options for you to choose from.".into(),
+        (_, _) => "🧑‍🍳 I've prepared several options for you to choose from.".into(),
     }
 }
 
@@ -124,9 +142,15 @@ pub fn fallback_explanation(goal: Goal, lang: &str) -> String {
 
 pub fn fallback_motivation(lang: &str) -> String {
     match lang {
-        "ru" => "💪 Начните с любого варианта — каждый из них принесёт пользу вашему организму!".into(),
-        "pl" => "💪 Zacznij od dowolnej opcji — każda z nich przyniesie korzyści Twojemu organizmowi!".into(),
-        "uk" => "💪 Почніть з будь-якого варіанту — кожен з них принесе користь вашому організму!".into(),
-        _ =>    "💪 Start with any option — each one will benefit your body!".into(),
+        "ru" => {
+            "💪 Начните с любого варианта — каждый из них принесёт пользу вашему организму!".into()
+        }
+        "pl" => {
+            "💪 Zacznij od dowolnej opcji — każda z nich przyniesie korzyści Twojemu organizmowi!"
+                .into()
+        }
+        "uk" => "💪 Почніть з будь-якого варіанту — кожен з них принесе користь вашому організму!"
+            .into(),
+        _ => "💪 Start with any option — each one will benefit your body!".into(),
     }
 }

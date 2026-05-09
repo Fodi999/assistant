@@ -8,8 +8,8 @@
 //! Returns `UserConstraints` — a structured set of filters applied
 //! BEFORE ingredient resolution in the recipe pipeline.
 
-use serde::Serialize;
 use super::intent_router::ChatLang;
+use serde::Serialize;
 
 // ── Dietary Mode ─────────────────────────────────────────────────────────────
 
@@ -69,29 +69,46 @@ pub fn parse_constraints(input: &str, _lang: ChatLang) -> UserConstraints {
     // ── Dietary modes (checked first — broadest filter) ──────────────────
 
     // Vegan
-    if contains_any(&t, &[
-        "веган", "vegan", "растительн",
-        "wegańsk", "weganski",
-        "веганськ", "рослинн",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "веган",
+            "vegan",
+            "растительн",
+            "wegańsk",
+            "weganski",
+            "веганськ",
+            "рослинн",
+        ],
+    ) {
         c.dietary_mode = Some(DietaryMode::Vegan);
         c.raw_exclusions.push("vegan".into());
     }
     // Vegetarian (only if vegan not set — vegan is stricter)
-    else if contains_any(&t, &[
-        "вегетариан", "vegetarian",
-        "wegetariańsk", "wegetarianski",
-        "вегетаріан",
-    ]) {
+    else if contains_any(
+        &t,
+        &[
+            "вегетариан",
+            "vegetarian",
+            "wegetariańsk",
+            "wegetarianski",
+            "вегетаріан",
+        ],
+    ) {
         c.dietary_mode = Some(DietaryMode::Vegetarian);
         c.raw_exclusions.push("vegetarian".into());
     }
     // Pescatarian
-    else if contains_any(&t, &[
-        "пескетариан", "pescatarian", "peskatarian",
-        "peskatariańsk",
-        "пескетаріан",
-    ]) {
+    else if contains_any(
+        &t,
+        &[
+            "пескетариан",
+            "pescatarian",
+            "peskatarian",
+            "peskatariańsk",
+            "пескетаріан",
+        ],
+    ) {
         c.dietary_mode = Some(DietaryMode::Pescatarian);
         c.raw_exclusions.push("pescatarian".into());
     }
@@ -99,78 +116,125 @@ pub fn parse_constraints(input: &str, _lang: ChatLang) -> UserConstraints {
     // ── Allergen exclusions ──────────────────────────────────────────────
 
     // Lactose / Dairy
-    if contains_any(&t, &[
-        "без лактоз", "без молок", "без молочн", "без сливок",
-        "lactose-free", "lactose free", "dairy-free", "dairy free", "no dairy", "no lactose",
-        "bez laktozy", "bez mleka", "bez nabiału",
-        "без лактоз", "без молок",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "без лактоз",
+            "без молок",
+            "без молочн",
+            "без сливок",
+            "lactose-free",
+            "lactose free",
+            "dairy-free",
+            "dairy free",
+            "no dairy",
+            "no lactose",
+            "bez laktozy",
+            "bez mleka",
+            "bez nabiału",
+            "без лактоз",
+            "без молок",
+        ],
+    ) {
         c.exclude_allergens.push("lactose".into());
         c.raw_exclusions.push("lactose-free".into());
     }
 
     // Gluten
-    if contains_any(&t, &[
-        "без глютен", "безглютенов", "без клейковин",
-        "gluten-free", "gluten free", "no gluten",
-        "bez glutenu", "bezglutenow",
-        "без глютен", "безглютенов",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "без глютен",
+            "безглютенов",
+            "без клейковин",
+            "gluten-free",
+            "gluten free",
+            "no gluten",
+            "bez glutenu",
+            "bezglutenow",
+            "без глютен",
+            "безглютенов",
+        ],
+    ) {
         c.exclude_allergens.push("gluten".into());
         c.raw_exclusions.push("gluten-free".into());
     }
 
     // Nuts
-    if contains_any(&t, &[
-        "без орех", "без арахис",
-        "nut-free", "nut free", "no nuts", "without nuts",
-        "bez orzechów", "bez orzechow",
-        "без горіх",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "без орех",
+            "без арахис",
+            "nut-free",
+            "nut free",
+            "no nuts",
+            "without nuts",
+            "bez orzechów",
+            "bez orzechow",
+            "без горіх",
+        ],
+    ) {
         c.exclude_allergens.push("nuts".into());
         c.raw_exclusions.push("nut-free".into());
     }
 
     // Eggs
-    if contains_any(&t, &[
-        "без яиц", "без яйц",
-        "egg-free", "egg free", "no eggs",
-        "bez jajek", "bez jaj",
-        "без яєць",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "без яиц",
+            "без яйц",
+            "egg-free",
+            "egg free",
+            "no eggs",
+            "bez jajek",
+            "bez jaj",
+            "без яєць",
+        ],
+    ) {
         c.exclude_allergens.push("eggs".into());
         c.raw_exclusions.push("egg-free".into());
     }
 
     // Fish
-    if contains_any(&t, &[
-        "без рыб",
-        "fish-free", "no fish",
-        "bez ryb",
-        "без риб",
-    ]) {
+    if contains_any(
+        &t,
+        &["без рыб", "fish-free", "no fish", "bez ryb", "без риб"],
+    ) {
         c.exclude_allergens.push("fish".into());
         c.raw_exclusions.push("fish-free".into());
     }
 
     // Shellfish / Seafood
-    if contains_any(&t, &[
-        "без морепродукт",
-        "shellfish-free", "no shellfish", "no seafood",
-        "bez owoców morza",
-        "без морепродукт",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "без морепродукт",
+            "shellfish-free",
+            "no shellfish",
+            "no seafood",
+            "bez owoców morza",
+            "без морепродукт",
+        ],
+    ) {
         c.exclude_allergens.push("shellfish".into());
         c.raw_exclusions.push("shellfish-free".into());
     }
 
     // Soy
-    if contains_any(&t, &[
-        "без сои", "без соев",
-        "soy-free", "soy free", "no soy",
-        "bez soi",
-        "без сої",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "без сои",
+            "без соев",
+            "soy-free",
+            "soy free",
+            "no soy",
+            "bez soi",
+            "без сої",
+        ],
+    ) {
         c.exclude_allergens.push("soy".into());
         c.raw_exclusions.push("soy-free".into());
     }
@@ -178,21 +242,33 @@ pub fn parse_constraints(input: &str, _lang: ChatLang) -> UserConstraints {
     // ── Specific product bans ────────────────────────────────────────────
 
     // Sugar
-    if contains_any(&t, &[
-        "без сахар", "без цукр",
-        "no sugar", "sugar-free", "sugar free",
-        "bez cukru",
-    ]) {
+    if contains_any(
+        &t,
+        &[
+            "без сахар",
+            "без цукр",
+            "no sugar",
+            "sugar-free",
+            "sugar free",
+            "bez cukru",
+        ],
+    ) {
         c.exclude_slugs.push("sugar".into());
         c.raw_exclusions.push("sugar-free".into());
     }
 
     // Butter (specific, not all dairy)
-    if contains_any(&t, &[
-        "без масл",  // careful: could also mean "без масла растительного"
-        "no butter",
-        "bez masła",
-    ]) && !t.contains("подсолнечн") && !t.contains("растительн") && !t.contains("оливков") {
+    if contains_any(
+        &t,
+        &[
+            "без масл", // careful: could also mean "без масла растительного"
+            "no butter",
+            "bez masła",
+        ],
+    ) && !t.contains("подсолнечн")
+        && !t.contains("растительн")
+        && !t.contains("оливков")
+    {
         c.exclude_slugs.push("butter".into());
         c.raw_exclusions.push("no butter".into());
     }

@@ -19,40 +19,37 @@
 
 use serde::Serialize;
 
-use crate::infrastructure::IngredientCache;
-use crate::infrastructure::ingredient_cache::IngredientData;
-use super::intent_router::ChatLang;
-use super::meal_builder::CookMethod;
-use super::response_builder::HealthGoal;
-use super::goal_modifier::HealthModifier;
+use super::adaptation_engine;
+use super::auto_fix;
+use super::constraint_policy;
 use super::cooking_rules::{self, IngredientRole, StepType};
 use super::food_pairing;
-use super::user_constraints::UserConstraints;
-use super::constraint_policy;
 use super::goal_engine;
-use super::adaptation_engine;
+use super::goal_modifier::HealthModifier;
+use super::intent_router::ChatLang;
+use super::meal_builder::CookMethod;
 use super::recipe_validation;
-use super::auto_fix;
+use super::response_builder::HealthGoal;
+use super::user_constraints::UserConstraints;
+use crate::infrastructure::ingredient_cache::IngredientData;
+use crate::infrastructure::IngredientCache;
 
 // ── Re-exports from extracted modules ────────────────────────────────────────
 // Callers still use `recipe_engine::ask_gemini_dish_schema`, etc.
 
-pub use super::dish_schema::{DishSchema, ask_gemini_dish_schema};
+pub use super::dish_schema::{ask_gemini_dish_schema, DishSchema};
 pub use super::display_name::{format_recipe_text, state_label};
 
 // ── Internal imports from extracted modules ──────────────────────────────────
 
-use super::ingredient_resolver::{resolve_slug, auto_insert_implicit};
 use super::culinary_base_layer;
-use super::nutrition_math::{
-    build_ingredient_for_dish,
-    round1, compute_complexity, detect_allergens, detect_diet_tags,
-};
 use super::display_name::{
-    build_display_name,
-    instrumental_phrase, accusative_phrase,
-    instrumental_phrase_pl, accusative_phrase_pl,
-    instrumental_phrase_uk, accusative_phrase_uk,
+    accusative_phrase, accusative_phrase_pl, accusative_phrase_uk, build_display_name,
+    instrumental_phrase, instrumental_phrase_pl, instrumental_phrase_uk,
+};
+use super::ingredient_resolver::{auto_insert_implicit, resolve_slug};
+use super::nutrition_math::{
+    build_ingredient_for_dish, compute_complexity, detect_allergens, detect_diet_tags, round1,
 };
 
 // ── Dish Cooking Profile ─────────────────────────────────────────────────────
@@ -60,16 +57,16 @@ use super::display_name::{
 /// The type of dish determines how every ingredient is cooked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DishType {
-    Soup,       // borscht, ramen, pho, minestrone…
-    Stew,       // goulash, ragout, curry…
-    Salad,      // caesar, greek…
-    StirFry,    // wok, pad thai…
-    Grill,      // bbq, steaks…
-    Bake,       // casserole, lasagna, pizza…
-    Pasta,      // spaghetti, carbonara…
-    Raw,        // tartare, sashimi…
-    Pancake,    // pancakes, omelette, frittata — batter-mixed sweet/egg dishes
-    Default,    // unknown → old behaviour
+    Soup,    // borscht, ramen, pho, minestrone…
+    Stew,    // goulash, ragout, curry…
+    Salad,   // caesar, greek…
+    StirFry, // wok, pad thai…
+    Grill,   // bbq, steaks…
+    Bake,    // casserole, lasagna, pizza…
+    Pasta,   // spaghetti, carbonara…
+    Raw,     // tartare, sashimi…
+    Pancake, // pancakes, omelette, frittata — batter-mixed sweet/egg dishes
+    Default, // unknown → old behaviour
 }
 
 impl DishType {
@@ -77,51 +74,120 @@ impl DishType {
     pub fn detect(dish: &str) -> Self {
         let d = dish.to_lowercase();
         // Soups
-        if d.contains("soup") || d.contains("borscht") || d.contains("borsch")
-            || d.contains("ramen") || d.contains("pho") || d.contains("minestrone")
-            || d.contains("chowder") || d.contains("consomme") || d.contains("gazpacho")
-            || d.contains("bouillon") || d.contains("broth") || d.contains("ukha")
-            || d.contains("shchi") || d.contains("solyanka") || d.contains("rassolnik")
-            || d.contains("kharcho") || d.contains("tom yum") || d.contains("laksa")
-            || d.contains("miso") { return DishType::Soup; }
+        if d.contains("soup")
+            || d.contains("borscht")
+            || d.contains("borsch")
+            || d.contains("ramen")
+            || d.contains("pho")
+            || d.contains("minestrone")
+            || d.contains("chowder")
+            || d.contains("consomme")
+            || d.contains("gazpacho")
+            || d.contains("bouillon")
+            || d.contains("broth")
+            || d.contains("ukha")
+            || d.contains("shchi")
+            || d.contains("solyanka")
+            || d.contains("rassolnik")
+            || d.contains("kharcho")
+            || d.contains("tom yum")
+            || d.contains("laksa")
+            || d.contains("miso")
+        {
+            return DishType::Soup;
+        }
         // Stews
-        if d.contains("stew") || d.contains("ragout") || d.contains("goulash")
-            || d.contains("curry") || d.contains("chili con") || d.contains("tagine")
-            || d.contains("casserole") || d.contains("pot roast")
-            || d.contains("braised") { return DishType::Stew; }
+        if d.contains("stew")
+            || d.contains("ragout")
+            || d.contains("goulash")
+            || d.contains("curry")
+            || d.contains("chili con")
+            || d.contains("tagine")
+            || d.contains("casserole")
+            || d.contains("pot roast")
+            || d.contains("braised")
+        {
+            return DishType::Stew;
+        }
         // Salads
-        if d.contains("salad") || d.contains("ceviche")
-            || d.contains("coleslaw") || d.contains("tabouleh") { return DishType::Salad; }
+        if d.contains("salad")
+            || d.contains("ceviche")
+            || d.contains("coleslaw")
+            || d.contains("tabouleh")
+        {
+            return DishType::Salad;
+        }
         // Stir-fry / wok
-        if d.contains("stir") || d.contains("wok") || d.contains("pad thai")
-            || d.contains("fried rice") || d.contains("chow mein") { return DishType::StirFry; }
+        if d.contains("stir")
+            || d.contains("wok")
+            || d.contains("pad thai")
+            || d.contains("fried rice")
+            || d.contains("chow mein")
+        {
+            return DishType::StirFry;
+        }
         // Grill
-        if d.contains("grill") || d.contains("bbq") || d.contains("kebab")
-            || d.contains("shashlik") || d.contains("steak")
-            || d.contains("burger") { return DishType::Grill; }
+        if d.contains("grill")
+            || d.contains("bbq")
+            || d.contains("kebab")
+            || d.contains("shashlik")
+            || d.contains("steak")
+            || d.contains("burger")
+        {
+            return DishType::Grill;
+        }
         // Bake
-        if d.contains("bake") || d.contains("lasagna") || d.contains("pizza")
-            || d.contains("quiche") || d.contains("pie")
-            || d.contains("gratin") { return DishType::Bake; }
+        if d.contains("bake")
+            || d.contains("lasagna")
+            || d.contains("pizza")
+            || d.contains("quiche")
+            || d.contains("pie")
+            || d.contains("gratin")
+        {
+            return DishType::Bake;
+        }
         // Pasta
-        if d.contains("pasta") || d.contains("spaghetti") || d.contains("carbonara")
-            || d.contains("penne") || d.contains("fettuccine")
-            || d.contains("macaroni") || d.contains("noodle") { return DishType::Pasta; }
+        if d.contains("pasta")
+            || d.contains("spaghetti")
+            || d.contains("carbonara")
+            || d.contains("penne")
+            || d.contains("fettuccine")
+            || d.contains("macaroni")
+            || d.contains("noodle")
+        {
+            return DishType::Pasta;
+        }
         // Raw
-        if d.contains("tartare") || d.contains("sashimi")
-            || d.contains("carpaccio") { return DishType::Raw; }
+        if d.contains("tartare") || d.contains("sashimi") || d.contains("carpaccio") {
+            return DishType::Raw;
+        }
         // Pancakes / omelettes / frittata — batter-mixed egg/fruit dishes.
         // Must be detected BEFORE Default to avoid "Protein→Grill" steps.
-        if d.contains("pancake") || d.contains("панкейк") || d.contains("блинч")
-            || d.contains("оладь") || d.contains("омлет") || d.contains("omelette")
-            || d.contains("omelet") || d.contains("frittata") || d.contains("crepe")
-            || d.contains("крепе") { return DishType::Pancake; }
+        if d.contains("pancake")
+            || d.contains("панкейк")
+            || d.contains("блинч")
+            || d.contains("оладь")
+            || d.contains("омлет")
+            || d.contains("omelette")
+            || d.contains("omelet")
+            || d.contains("frittata")
+            || d.contains("crepe")
+            || d.contains("крепе")
+        {
+            return DishType::Pancake;
+        }
         DishType::Default
     }
 
     /// The cooking method for a given role in this dish type.
     /// Delegates to cooking_rules for DDD rule lookup.
-    pub fn cook_method(&self, role: &str, slug: &str, _product_type: &str, _goal: HealthGoal) -> CookMethod {
+    pub fn cook_method(
+        &self,
+        role: &str,
+        slug: &str,
+        _product_type: &str,
+        _goal: HealthGoal,
+    ) -> CookMethod {
         let rule = cooking_rules::load_rule(*self);
         let ingredient_role = IngredientRole::from_str_role(role, slug);
         cooking_rules::method_for_role(&rule, ingredient_role)
@@ -248,8 +314,13 @@ pub async fn resolve_dish(
                     resolved_slug: None,
                     state: "raw".into(),
                     role: "other".into(),
-                    gross_g: 0.0, cleaned_net_g: 0.0, cooked_net_g: 0.0,
-                    kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+                    gross_g: 0.0,
+                    cleaned_net_g: 0.0,
+                    cooked_net_g: 0.0,
+                    kcal: 0,
+                    protein_g: 0.0,
+                    fat_g: 0.0,
+                    carbs_g: 0.0,
                 });
             }
         }
@@ -262,9 +333,13 @@ pub async fn resolve_dish(
     culinary_base_layer::apply_culinary_basics(&mut ingredients, dish_type, cache, goal).await;
 
     // ── 2b. Dietary Constraint Policy: remove/substitute per user preferences ──
-    let constraint_report = constraint_policy::apply_dietary_constraints(&mut ingredients, constraints);
+    let constraint_report =
+        constraint_policy::apply_dietary_constraints(&mut ingredients, constraints);
     if !constraint_report.removed.is_empty() {
-        tracing::info!("🥗 Dietary constraints removed: {:?}", constraint_report.removed);
+        tracing::info!(
+            "🥗 Dietary constraints removed: {:?}",
+            constraint_report.removed
+        );
     }
     let mut all_removed = removed;
     for (slug, reason) in &constraint_report.removed {
@@ -273,7 +348,9 @@ pub async fn resolve_dish(
 
     // ── 2c. Adaptation Engine: smart rebalancing per goal profile ─────────
     let goal_profile = goal_engine::profile_for(modifier);
-    let removed_types: Vec<String> = constraint_report.removed.iter()
+    let removed_types: Vec<String> = constraint_report
+        .removed
+        .iter()
         .filter_map(|(slug, _)| {
             // Try to infer product_type from removed slug
             // (the actual product was already removed, so we check the reason)
@@ -282,12 +359,16 @@ pub async fn resolve_dish(
         .collect();
     // Collect broad removed categories from dietary mode
     let removed_categories: Vec<String> = match constraints.dietary_mode {
-        Some(super::user_constraints::DietaryMode::Vegan) =>
-            vec!["meat".into(), "fish".into(), "seafood".into(), "dairy".into()],
-        Some(super::user_constraints::DietaryMode::Vegetarian) =>
-            vec!["meat".into(), "fish".into(), "seafood".into()],
-        Some(super::user_constraints::DietaryMode::Pescatarian) =>
-            vec!["meat".into()],
+        Some(super::user_constraints::DietaryMode::Vegan) => vec![
+            "meat".into(),
+            "fish".into(),
+            "seafood".into(),
+            "dairy".into(),
+        ],
+        Some(super::user_constraints::DietaryMode::Vegetarian) => {
+            vec!["meat".into(), "fish".into(), "seafood".into()]
+        }
+        Some(super::user_constraints::DietaryMode::Pescatarian) => vec!["meat".into()],
         None => vec![],
     };
 
@@ -295,8 +376,8 @@ pub async fn resolve_dish(
         let total: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
         let target = match dish_type {
             DishType::Soup | DishType::Stew => 350.0_f32,
-            DishType::Salad | DishType::Raw    => 250.0,
-            _                                   => 300.0,
+            DishType::Salad | DishType::Raw => 250.0,
+            _ => 300.0,
         };
         ((total / target).round() as u8).max(1)
     };
@@ -316,23 +397,26 @@ pub async fn resolve_dish(
         let total: f32 = ingredients.iter().map(|i| i.cooked_net_g).sum();
         let target = match dish_type {
             DishType::Soup | DishType::Stew => 350.0_f32,
-            DishType::Salad | DishType::Raw    => 250.0,
-            _                                   => 300.0,
+            DishType::Salad | DishType::Raw => 250.0,
+            _ => 300.0,
         };
         ((total / target).round() as u8).max(1)
     };
 
-    let mut snapshots: Vec<cooking_rules::IngredientSnapshot> = ingredients.iter().map(|i| {
-        let slug = i.resolved_slug.as_deref().unwrap_or(&i.slug_hint);
-        cooking_rules::IngredientSnapshot {
-            slug: slug.to_string(),
-            role: IngredientRole::from_str_role(&i.role, slug),
-            gross_g: i.gross_g,
-            fat_g: i.fat_g,
-            protein_g: i.protein_g,
-            kcal: i.kcal,
-        }
-    }).collect();
+    let mut snapshots: Vec<cooking_rules::IngredientSnapshot> = ingredients
+        .iter()
+        .map(|i| {
+            let slug = i.resolved_slug.as_deref().unwrap_or(&i.slug_hint);
+            cooking_rules::IngredientSnapshot {
+                slug: slug.to_string(),
+                role: IngredientRole::from_str_role(&i.role, slug),
+                gross_g: i.gross_g,
+                fat_g: i.fat_g,
+                protein_g: i.protein_g,
+                kcal: i.kcal,
+            }
+        })
+        .collect();
 
     let violations = cooking_rules::apply_constraints(&rule, &mut snapshots, servings_estimate);
 
@@ -362,7 +446,9 @@ pub async fn resolve_dish(
         // If constraint engine added water (RequiresLiquid auto-fix),
         // check if it's already in ingredients (auto_insert_implicit may have added it)
         let has_liquid = ingredients.iter().any(|i| i.role == "liquid");
-        let snap_has_water = snapshots.iter().any(|s| s.slug == "water" && s.role == IngredientRole::Liquid);
+        let snap_has_water = snapshots
+            .iter()
+            .any(|s| s.slug == "water" && s.role == IngredientRole::Liquid);
         if snap_has_water && !has_liquid {
             let water_product = resolve_slug(cache, "water").await;
             ingredients.push(ResolvedIngredient {
@@ -371,8 +457,13 @@ pub async fn resolve_dish(
                 resolved_slug: Some("water".into()),
                 state: "boiled".into(),
                 role: "liquid".into(),
-                gross_g: 300.0, cleaned_net_g: 300.0, cooked_net_g: 300.0,
-                kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+                gross_g: 300.0,
+                cleaned_net_g: 300.0,
+                cooked_net_g: 300.0,
+                kcal: 0,
+                protein_g: 0.0,
+                fat_g: 0.0,
+                carbs_g: 0.0,
             });
         }
     }
@@ -398,22 +489,23 @@ pub async fn resolve_dish(
     let complexity = compute_complexity(&steps);
     let goal_label = match goal {
         HealthGoal::HighProtein => "high_protein",
-        HealthGoal::LowCalorie  => "low_calorie",
-        HealthGoal::Balanced    => "balanced",
-    }.to_string();
+        HealthGoal::LowCalorie => "low_calorie",
+        HealthGoal::Balanced => "balanced",
+    }
+    .to_string();
     let allergens = detect_allergens(&ingredients);
     let tags = detect_diet_tags(&ingredients);
 
     // ── 6. Auto-portion: split into realistic servings (~300–400g each) ──
     let portion_target = match dish_type {
         DishType::Soup | DishType::Stew => 350.0_f32,
-        DishType::Salad | DishType::Raw    => 250.0,
-        _                                   => 300.0,
+        DishType::Salad | DishType::Raw => 250.0,
+        _ => 300.0,
     };
     let servings = ((total_output / portion_target).round() as u8).max(1);
     let per_kcal = (total_kcal as f32 / servings as f32).round() as u32;
     let per_prot = round1(total_protein / servings as f32);
-    let per_fat  = round1(total_fat / servings as f32);
+    let per_fat = round1(total_fat / servings as f32);
     let per_carb = round1(total_carbs / servings as f32);
 
     let mut tech_card = TechCard {
@@ -451,8 +543,12 @@ pub async fn resolve_dish(
     // ── 6b. Flavor/texture analysis from culinary behaviors ────────────────
     let flavor = super::flavor_engine::analyze_dish(&tech_card.ingredients);
     if !flavor.suggestions.is_empty() {
-        tracing::info!("🎨 Flavor analysis: dominant={:?}, balance={:.2}, suggestions={:?}",
-            flavor.dominant, flavor.balance_score, flavor.suggestions);
+        tracing::info!(
+            "🎨 Flavor analysis: dominant={:?}, balance={:.2}, suggestions={:?}",
+            flavor.dominant,
+            flavor.balance_score,
+            flavor.suggestions
+        );
     }
     tech_card.flavor_analysis = Some(flavor);
 
@@ -461,10 +557,12 @@ pub async fn resolve_dish(
     if !validation.issues.is_empty() {
         for issue in &validation.issues {
             match issue.severity {
-                recipe_validation::Severity::Error =>
-                    tracing::warn!("❌ Validation error: {}", issue.message),
-                recipe_validation::Severity::Warning =>
-                    tracing::info!("⚠️ Validation warning: {}", issue.message),
+                recipe_validation::Severity::Error => {
+                    tracing::warn!("❌ Validation error: {}", issue.message)
+                }
+                recipe_validation::Severity::Warning => {
+                    tracing::info!("⚠️ Validation warning: {}", issue.message)
+                }
             }
         }
 
@@ -480,7 +578,8 @@ pub async fn resolve_dish(
         let mut all_warnings = revalidation.warning_messages();
 
         // ── 9b. Culinary logic validation ────────────────────────────────
-        let culinary_warnings = culinary_base_layer::validate_cooking_logic(&tech_card.ingredients, dish_type);
+        let culinary_warnings =
+            culinary_base_layer::validate_cooking_logic(&tech_card.ingredients, dish_type);
         all_warnings.extend(culinary_warnings);
 
         tech_card.validation_warnings = all_warnings;
@@ -510,7 +609,9 @@ fn merge_duplicate_ingredients(ingredients: &mut Vec<ResolvedIngredient>) {
     let mut merged_indices: Vec<usize> = Vec::new();
 
     for i in 0..ingredients.len() {
-        let key = ingredients[i].resolved_slug.as_deref()
+        let key = ingredients[i]
+            .resolved_slug
+            .as_deref()
             .unwrap_or(&ingredients[i].slug_hint)
             .to_lowercase();
 
@@ -550,7 +651,11 @@ fn merge_duplicate_ingredients(ingredients: &mut Vec<ResolvedIngredient>) {
 /// Generate cooking steps driven by DishRule (DDD: rules as data).
 /// Iterates the rule's step sequence; for each step, collects matching ingredients,
 /// skips the step if no ingredients match, otherwise generates text.
-fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang: ChatLang) -> Vec<CookingStep> {
+fn generate_steps(
+    ingredients: &[ResolvedIngredient],
+    dish_type: DishType,
+    lang: ChatLang,
+) -> Vec<CookingStep> {
     let rule = cooking_rules::load_rule(dish_type);
     let lang_code = lang.code();
 
@@ -561,13 +666,17 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
     };
 
     let by_role = |target: IngredientRole| -> Vec<&ResolvedIngredient> {
-        ingredients.iter().filter(|i| classify(i) == target).collect()
+        ingredients
+            .iter()
+            .filter(|i| classify(i) == target)
+            .collect()
     };
 
     // Helper: pick ingredient name by language + apply grammar
     // `case` controls declension: accusative for most steps, instrumental for Dress
     let name_of_case = |ing: &ResolvedIngredient, case: &str| -> String {
-        ing.product.as_ref()
+        ing.product
+            .as_ref()
             .map(|p| {
                 let raw = match lang {
                     ChatLang::En => &p.name_en,
@@ -578,15 +687,15 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
                 match lang {
                     ChatLang::Ru => match case {
                         "instr" => instrumental_phrase(raw),
-                        _       => accusative_phrase(raw),
+                        _ => accusative_phrase(raw),
                     },
                     ChatLang::Pl => match case {
                         "instr" => instrumental_phrase_pl(raw),
-                        _       => accusative_phrase_pl(raw),
+                        _ => accusative_phrase_pl(raw),
                     },
                     ChatLang::Uk => match case {
                         "instr" => instrumental_phrase_uk(raw),
-                        _       => accusative_phrase_uk(raw),
+                        _ => accusative_phrase_uk(raw),
                     },
                     ChatLang::En => raw.to_lowercase(),
                 }
@@ -594,9 +703,7 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
             .unwrap_or_else(|| ing.slug_hint.clone())
     };
 
-    let name_of = |ing: &ResolvedIngredient| -> String {
-        name_of_case(ing, "acc")
-    };
+    let name_of = |ing: &ResolvedIngredient| -> String { name_of_case(ing, "acc") };
 
     let sep = match lang {
         ChatLang::Ru => " и ",
@@ -667,22 +774,38 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
     let mut add = |text: String, time: Option<u16>, temp_c: Option<u16>, tip_key: Option<&str>| {
         step_num += 1;
         let tip = tip_key.and_then(|k| tip_text(k));
-        steps.push(CookingStep { step: step_num, text, time_min: time, temp_c, tip });
+        steps.push(CookingStep {
+            step: step_num,
+            text,
+            time_min: time,
+            temp_c,
+            tip,
+        });
     };
 
     for step_rule in &rule.steps {
         // Collect ingredients that match ANY of the step's roles
-        let matching: Vec<&ResolvedIngredient> = step_rule.roles.iter()
-            .flat_map(|r| by_role(*r))
-            .collect();
+        let matching: Vec<&ResolvedIngredient> =
+            step_rule.roles.iter().flat_map(|r| by_role(*r)).collect();
 
         // For steps that need ingredients: skip if none
-        let needs_ingredients = matches!(step_rule.step,
-            StepType::BoilProtein | StepType::BraiseProtein | StepType::SearProtein
-            | StepType::GrillProtein | StepType::MarinateProtein
-            | StepType::SauteAromatics | StepType::AddRoots | StepType::AddVegetables
-            | StepType::AddAromatics | StepType::BoilBase | StepType::AddBase
-            | StepType::AddLiquid | StepType::AddSpices | StepType::ChopAll | StepType::Dress
+        let needs_ingredients = matches!(
+            step_rule.step,
+            StepType::BoilProtein
+                | StepType::BraiseProtein
+                | StepType::SearProtein
+                | StepType::GrillProtein
+                | StepType::MarinateProtein
+                | StepType::SauteAromatics
+                | StepType::AddRoots
+                | StepType::AddVegetables
+                | StepType::AddAromatics
+                | StepType::BoilBase
+                | StepType::AddBase
+                | StepType::AddLiquid
+                | StepType::AddSpices
+                | StepType::ChopAll
+                | StepType::Dress
         );
 
         if needs_ingredients && matching.is_empty() {
@@ -691,7 +814,8 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
 
         // Special handling for AddRoots: split vegetables into root vs leafy
         if step_rule.step == StepType::AddRoots {
-            let roots: Vec<&ResolvedIngredient> = matching.iter()
+            let roots: Vec<&ResolvedIngredient> = matching
+                .iter()
                 .filter(|i| {
                     let slug = i.resolved_slug.as_deref().unwrap_or("");
                     cooking_rules::is_root_vegetable(slug)
@@ -700,7 +824,12 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
                 .collect();
             if !roots.is_empty() {
                 let names = names_of(&roots, ", ");
-                add(cooking_rules::step_text(StepType::AddRoots, &names, lang_code), step_rule.time_min, step_rule.temp_c, step_rule.tip);
+                add(
+                    cooking_rules::step_text(StepType::AddRoots, &names, lang_code),
+                    step_rule.time_min,
+                    step_rule.temp_c,
+                    step_rule.tip,
+                );
             }
             continue;
         }
@@ -709,7 +838,8 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
         if step_rule.step == StepType::AddVegetables
             && matches!(dish_type, DishType::Soup | DishType::Stew)
         {
-            let leafy: Vec<&ResolvedIngredient> = matching.iter()
+            let leafy: Vec<&ResolvedIngredient> = matching
+                .iter()
                 .filter(|i| {
                     let slug = i.resolved_slug.as_deref().unwrap_or("");
                     !cooking_rules::is_root_vegetable(slug)
@@ -718,7 +848,12 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
                 .collect();
             if !leafy.is_empty() {
                 let names = names_of(&leafy, ", ");
-                add(cooking_rules::step_text(StepType::AddVegetables, &names, lang_code), step_rule.time_min, step_rule.temp_c, step_rule.tip);
+                add(
+                    cooking_rules::step_text(StepType::AddVegetables, &names, lang_code),
+                    step_rule.time_min,
+                    step_rule.temp_c,
+                    step_rule.tip,
+                );
             }
             continue;
         }
@@ -730,19 +865,24 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
             StepType::SauteAromatics => {
                 had_saute = true;
                 names_of(&matching, sep)
-            },
-            StepType::Dress          => names_of_case(&matching, ", ", "instr"),
-            StepType::AddAromatics   => {
+            }
+            StepType::Dress => names_of_case(&matching, ", ", "instr"),
+            StepType::AddAromatics => {
                 if !had_saute {
                     // No sauté step → skip phantom "zasmażka" / "зажарка"
                     continue;
                 }
                 String::new() // text comes from step_text, not names
-            },
-            _                        => names_of(&matching, ", "),
+            }
+            _ => names_of(&matching, ", "),
         };
 
-        add(cooking_rules::step_text(step_rule.step, &names, lang_code), step_rule.time_min, step_rule.temp_c, step_rule.tip);
+        add(
+            cooking_rules::step_text(step_rule.step, &names, lang_code),
+            step_rule.time_min,
+            step_rule.temp_c,
+            step_rule.tip,
+        );
     }
 
     steps
@@ -752,15 +892,16 @@ fn generate_steps(ingredients: &[ResolvedIngredient], dish_type: DishType, lang:
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::dish_schema;
-    use super::super::nutrition_math;
     use super::super::display_name;
+    use super::super::nutrition_math;
+    use super::*;
     use nutrition_math::build_ingredient;
 
     #[test]
     fn parse_minimal_schema() {
-        let json = r#"{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","potato","beef"]}"#;
+        let json =
+            r#"{"dish":"borscht","dish_local":"Борщ","items":["beet","cabbage","potato","beef"]}"#;
         let s = dish_schema::parse_dish_schema(json).unwrap();
         assert_eq!(s.dish, "borscht");
         assert_eq!(s.items.len(), 4);
@@ -807,13 +948,19 @@ mod tests {
             carbs_per_100g: 0.0,
             image_url: None,
             product_type: "meat".into(),
-            density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         let resolved = build_ingredient(&product, "beef", HealthGoal::Balanced);
 
         assert_eq!(resolved.role, "protein");
-        assert!(resolved.state == "grilled" || resolved.state == "baked",
-            "meat protein should be grilled/baked, got {}", resolved.state);
+        assert!(
+            resolved.state == "grilled" || resolved.state == "baked",
+            "meat protein should be grilled/baked, got {}",
+            resolved.state
+        );
         assert!((resolved.cooked_net_g - 100.0).abs() < 1.0);
         assert!(resolved.gross_g > resolved.cooked_net_g);
         assert!(resolved.kcal > 0);
@@ -834,7 +981,10 @@ mod tests {
             carbs_per_100g: 9.6,
             image_url: None,
             product_type: "vegetable".into(),
-            density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         let resolved = build_ingredient(&product, "beet", HealthGoal::Balanced);
 
@@ -846,20 +996,40 @@ mod tests {
     #[test]
     fn recipe_portions_are_reasonable() {
         let meat = IngredientData {
-            slug: "chicken-breast".into(), name_en: "Chicken".into(),
-            name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
-            calories_per_100g: 165.0, protein_per_100g: 31.0,
-            fat_per_100g: 3.6, carbs_per_100g: 0.0, image_url: None,
-            product_type: "meat".into(), density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            slug: "chicken-breast".into(),
+            name_en: "Chicken".into(),
+            name_ru: "".into(),
+            name_pl: "".into(),
+            name_uk: "".into(),
+            calories_per_100g: 165.0,
+            protein_per_100g: 31.0,
+            fat_per_100g: 3.6,
+            carbs_per_100g: 0.0,
+            image_url: None,
+            product_type: "meat".into(),
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         assert_eq!(nutrition_math::recipe_portion(&meat, "protein"), 100.0);
 
         let oil = IngredientData {
-            slug: "olive-oil".into(), name_en: "Olive Oil".into(),
-            name_ru: "".into(), name_pl: "".into(), name_uk: "".into(),
-            calories_per_100g: 884.0, protein_per_100g: 0.0,
-            fat_per_100g: 100.0, carbs_per_100g: 0.0, image_url: None,
-            product_type: "oil".into(), density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            slug: "olive-oil".into(),
+            name_en: "Olive Oil".into(),
+            name_ru: "".into(),
+            name_pl: "".into(),
+            name_uk: "".into(),
+            calories_per_100g: 884.0,
+            protein_per_100g: 0.0,
+            fat_per_100g: 100.0,
+            carbs_per_100g: 0.0,
+            image_url: None,
+            product_type: "oil".into(),
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         assert_eq!(nutrition_math::recipe_portion(&oil, "oil"), 15.0);
     }
@@ -867,15 +1037,33 @@ mod tests {
     #[test]
     fn garlic_is_spice_not_side() {
         let garlic = IngredientData {
-            slug: "garlic".into(), name_en: "Garlic".into(),
-            name_ru: "Чеснок".into(), name_pl: "Czosnek".into(), name_uk: "Часник".into(),
-            calories_per_100g: 149.0, protein_per_100g: 6.4,
-            fat_per_100g: 0.5, carbs_per_100g: 33.0, image_url: None,
-            product_type: "vegetable".into(), density_g_per_ml: None, typical_portion_g: None, behaviors: vec![], states: vec![],
+            slug: "garlic".into(),
+            name_en: "Garlic".into(),
+            name_ru: "Чеснок".into(),
+            name_pl: "Czosnek".into(),
+            name_uk: "Часник".into(),
+            calories_per_100g: 149.0,
+            protein_per_100g: 6.4,
+            fat_per_100g: 0.5,
+            carbs_per_100g: 33.0,
+            image_url: None,
+            product_type: "vegetable".into(),
+            density_g_per_ml: None,
+            typical_portion_g: None,
+            behaviors: vec![],
+            states: vec![],
         };
         let resolved = build_ingredient(&garlic, "garlic", HealthGoal::Balanced);
-        assert_eq!(resolved.role, "spice", "garlic should be spice, not {}", resolved.role);
-        assert_eq!(resolved.cooked_net_g, 5.0, "garlic should be 5g, not {}", resolved.cooked_net_g);
+        assert_eq!(
+            resolved.role, "spice",
+            "garlic should be spice, not {}",
+            resolved.role
+        );
+        assert_eq!(
+            resolved.cooked_net_g, 5.0,
+            "garlic should be 5g, not {}",
+            resolved.cooked_net_g
+        );
     }
 
     #[test]
@@ -917,9 +1105,9 @@ mod tests {
         assert_eq!(display_name::accusative_word("Говядина"), "говядину");
         assert_eq!(display_name::accusative_word("Свинина"), "свинину");
         assert_eq!(display_name::accusative_word("Мука"), "муку");
-        assert_eq!(display_name::accusative_word("Морковь"), "морковь");  // inanimate
-        assert_eq!(display_name::accusative_word("Лук"), "лук");          // inanimate
-        assert_eq!(display_name::accusative_word("Чеснок"), "чеснок");    // inanimate
+        assert_eq!(display_name::accusative_word("Морковь"), "морковь"); // inanimate
+        assert_eq!(display_name::accusative_word("Лук"), "лук"); // inanimate
+        assert_eq!(display_name::accusative_word("Чеснок"), "чеснок"); // inanimate
     }
 
     #[test]
@@ -932,9 +1120,9 @@ mod tests {
     #[test]
     fn accusative_compound_names() {
         assert_eq!(accusative_phrase("Пшеничная мука"), "пшеничную муку");
-        assert_eq!(accusative_phrase("Соль каменная"), "соль каменную");  // adj after noun
-        assert_eq!(accusative_phrase("Куриные яйца"), "куриные яйца");   // inanimate pl → unchanged
-        assert_eq!(accusative_phrase("Чёрный перец"), "чёрный перец");    // inanimate m → unchanged
+        assert_eq!(accusative_phrase("Соль каменная"), "соль каменную"); // adj after noun
+        assert_eq!(accusative_phrase("Куриные яйца"), "куриные яйца"); // inanimate pl → unchanged
+        assert_eq!(accusative_phrase("Чёрный перец"), "чёрный перец"); // inanimate m → unchanged
         assert_eq!(accusative_phrase("Говядина"), "говядину");
     }
 
@@ -949,7 +1137,10 @@ mod tests {
 
     #[test]
     fn instrumental_adjectives() {
-        assert_eq!(display_name::instrumental_word("Подсолнечное"), "подсолнечным");
+        assert_eq!(
+            display_name::instrumental_word("Подсолнечное"),
+            "подсолнечным"
+        );
         assert_eq!(display_name::instrumental_word("Куриные"), "куриными");
         assert_eq!(display_name::instrumental_word("Чёрный"), "чёрным");
         assert_eq!(display_name::instrumental_word("Пшеничная"), "пшеничной");
@@ -957,7 +1148,10 @@ mod tests {
 
     #[test]
     fn instrumental_compound_names() {
-        assert_eq!(instrumental_phrase("Подсолнечное масло"), "подсолнечным маслом");
+        assert_eq!(
+            instrumental_phrase("Подсолнечное масло"),
+            "подсолнечным маслом"
+        );
         assert_eq!(instrumental_phrase("Майонез"), "майонезом");
         assert_eq!(instrumental_phrase("Говядина"), "говядиной");
         assert_eq!(instrumental_phrase("Чёрный перец"), "чёрным перцем");
@@ -975,8 +1169,13 @@ mod tests {
                 resolved_slug: Some("water".into()),
                 state: "boiled".into(),
                 role: "liquid".into(),
-                gross_g: 300.0, cleaned_net_g: 300.0, cooked_net_g: 300.0,
-                kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+                gross_g: 300.0,
+                cleaned_net_g: 300.0,
+                cooked_net_g: 300.0,
+                kcal: 0,
+                protein_g: 0.0,
+                fat_g: 0.0,
+                carbs_g: 0.0,
             },
             ResolvedIngredient {
                 product: None,
@@ -984,8 +1183,13 @@ mod tests {
                 resolved_slug: Some("water".into()),
                 state: "boiled".into(),
                 role: "liquid".into(),
-                gross_g: 300.0, cleaned_net_g: 300.0, cooked_net_g: 300.0,
-                kcal: 0, protein_g: 0.0, fat_g: 0.0, carbs_g: 0.0,
+                gross_g: 300.0,
+                cleaned_net_g: 300.0,
+                cooked_net_g: 300.0,
+                kcal: 0,
+                protein_g: 0.0,
+                fat_g: 0.0,
+                carbs_g: 0.0,
             },
             ResolvedIngredient {
                 product: None,
@@ -993,8 +1197,13 @@ mod tests {
                 resolved_slug: Some("potato".into()),
                 state: "boiled".into(),
                 role: "side".into(),
-                gross_g: 200.0, cleaned_net_g: 170.0, cooked_net_g: 170.0,
-                kcal: 140, protein_g: 3.4, fat_g: 0.2, carbs_g: 31.0,
+                gross_g: 200.0,
+                cleaned_net_g: 170.0,
+                cooked_net_g: 170.0,
+                kcal: 140,
+                protein_g: 3.4,
+                fat_g: 0.2,
+                carbs_g: 31.0,
             },
         ];
 
@@ -1003,7 +1212,10 @@ mod tests {
         assert_eq!(ingredients.len(), 2, "water should be merged into one");
         let water = ingredients.iter().find(|i| i.slug_hint == "water").unwrap();
         assert_eq!(water.gross_g, 600.0, "water grams should be summed");
-        let potato = ingredients.iter().find(|i| i.slug_hint == "potato").unwrap();
+        let potato = ingredients
+            .iter()
+            .find(|i| i.slug_hint == "potato")
+            .unwrap();
         assert_eq!(potato.gross_g, 200.0, "potato should be unchanged");
     }
 }

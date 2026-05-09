@@ -15,31 +15,30 @@
 use std::f32::consts::PI;
 
 use crate::application::laboratory_v2::{ContainerSpec, ProductSurfaceSpec};
-use crate::infrastructure::geometry::kernel::{
-    disk_fan_down, disk_fan_up, lathe_profile, GeometryQuality, MeshBuilder, Profile,
-    ProfilePoint,
-};
 use crate::infrastructure::geometry::kernel::normals::recalculate_smooth_normals;
+use crate::infrastructure::geometry::kernel::{
+    disk_fan_down, disk_fan_up, lathe_profile, GeometryQuality, MeshBuilder, Profile, ProfilePoint,
+};
 use crate::infrastructure::geometry::mesh::{hex_to_rgb, Material, Mesh};
 
 // ── Bowl dimensions (metres) ────────────────────────────────────────────────
-const BOWL_HEIGHT: f32 = 0.060;            // 6 cm tall
-const Y_BOTTOM: f32 = -BOWL_HEIGHT / 2.0;  // -0.030
-const Y_TOP: f32 = BOWL_HEIGHT / 2.0;      // +0.030
+const BOWL_HEIGHT: f32 = 0.060; // 6 cm tall
+const Y_BOTTOM: f32 = -BOWL_HEIGHT / 2.0; // -0.030
+const Y_TOP: f32 = BOWL_HEIGHT / 2.0; // +0.030
 
 // Outer profile.
-const OUTER_R_FOOT: f32 = 0.040;     // foot ring radius
+const OUTER_R_FOOT: f32 = 0.040; // foot ring radius
 const OUTER_R_FOOT_TOP: f32 = 0.044; // top of foot bevel
-const OUTER_R_BASE: f32 = 0.046;     // wall just above foot
-const OUTER_R_TOP: f32 = 0.070;      // rim outer radius
+const OUTER_R_BASE: f32 = 0.046; // wall just above foot
+const OUTER_R_TOP: f32 = 0.070; // rim outer radius
 
 // Inner profile (3 mm wall thickness at top, 3 mm at floor).
 const INNER_R_BOT: f32 = 0.043;
 const INNER_R_TOP: f32 = 0.067;
 
 // Foot rests at Y_BOTTOM. Inner floor is 4 mm above that to give wall thickness.
-const Y_FOOT_TOP: f32 = Y_BOTTOM + 0.004;       // -0.026
-const Y_INNER_BOTTOM: f32 = Y_BOTTOM + 0.004;   // -0.026
+const Y_FOOT_TOP: f32 = Y_BOTTOM + 0.004; // -0.026
+const Y_INNER_BOTTOM: f32 = Y_BOTTOM + 0.004; // -0.026
 
 // ── Sauce dimensions (fallback defaults — overridden by ProductSurfaceSpec) ──
 const FILL_RATIO: f32 = 0.72;
@@ -118,14 +117,23 @@ pub fn fill_volume_from_spec(
     sauce_radius_at_fill: f32,
     y_fill: f32,
 ) -> FillVolumeParams {
-    let fill_h   = surface.and_then(|s| s.fill_height_ratio).unwrap_or(0.72).clamp(0.25, 0.95);
-    let thickness = surface.and_then(|s| s.surface_thickness).unwrap_or(0.45).clamp(0.0, 1.0);
-    let meniscus  = surface.and_then(|s| s.meniscus_height).unwrap_or(0.20).clamp(0.0, 1.0);
+    let fill_h = surface
+        .and_then(|s| s.fill_height_ratio)
+        .unwrap_or(0.72)
+        .clamp(0.25, 0.95);
+    let thickness = surface
+        .and_then(|s| s.surface_thickness)
+        .unwrap_or(0.45)
+        .clamp(0.0, 1.0);
+    let meniscus = surface
+        .and_then(|s| s.meniscus_height)
+        .unwrap_or(0.20)
+        .clamp(0.0, 1.0);
 
     // thickness maps 0..1 → 3 mm .. 20 mm
     let thickness_m = lerp_f32(0.003, 0.020, thickness);
     // meniscus maps 0..1 → 0.5 mm .. 6 mm
-    let meniscus_m  = lerp_f32(0.0005, 0.006, meniscus);
+    let meniscus_m = lerp_f32(0.0005, 0.006, meniscus);
 
     // Bottom of the sauce body = top surface − thickness.
     // But don't go below the bowl inner floor.
@@ -148,16 +156,17 @@ pub fn surface_params_from_spec(surface: Option<&ProductSurfaceSpec>) -> SauceSu
 
     let ridge_height_m = lerp_f32(0.0025, 0.010, s.ridge_height.unwrap_or(0.45));
     let groove_depth_m = lerp_f32(0.0005, 0.006, s.groove_depth.unwrap_or(0.35));
-    let center_peak_m  = lerp_f32(0.0,    0.006, s.center_peak.unwrap_or(0.25));
-    let radius_scale   = s.fill_radius_ratio
+    let center_peak_m = lerp_f32(0.0, 0.006, s.center_peak.unwrap_or(0.25));
+    let radius_scale = s
+        .fill_radius_ratio
         .or_else(|| s.rim_gap_ratio.map(|gap| 1.0 - gap))
         .unwrap_or(0.92)
         .clamp(0.82, 0.98);
-    let swirl_arms     = s.swirl_arms.unwrap_or(3).clamp(1, 8) as f32;
-    let irregularity   = s.surface_irregularity.unwrap_or(0.20).clamp(0.0, 1.0);
+    let swirl_arms = s.swirl_arms.unwrap_or(3).clamp(1, 8) as f32;
+    let irregularity = s.surface_irregularity.unwrap_or(0.20).clamp(0.0, 1.0);
 
     let spiral_turns = s.spiral_turns.unwrap_or(0.45).clamp(0.0, 1.0);
-    let frequency    = s.frequency.unwrap_or(0.50).clamp(0.0, 1.0);
+    let frequency = s.frequency.unwrap_or(0.50).clamp(0.0, 1.0);
     let edge_softness = s.edge_softness.unwrap_or(0.50).clamp(0.0, 1.0);
 
     SauceSurfaceParams {
@@ -225,13 +234,14 @@ pub fn generate_with_surface_and_quality(
 ) -> Mesh {
     // ── Determine bowl material ──────────────────────────────────────────────
     let is_glass = container
-        .map(|c| {
-            c.kind.to_lowercase().contains("glass")
-                || c.material.as_deref() == Some("glass")
-        })
+        .map(|c| c.kind.to_lowercase().contains("glass") || c.material.as_deref() == Some("glass"))
         .unwrap_or(false);
 
-    let material_name = if is_glass { "bowl_glass" } else { "bowl_ceramic" };
+    let material_name = if is_glass {
+        "bowl_glass"
+    } else {
+        "bowl_ceramic"
+    };
 
     // Colour priority: explicit override arg → container tint_hex (glass) →
     // container color_hex → fallback (amber for glass, white ceramic).
@@ -240,15 +250,21 @@ pub fn generate_with_surface_and_quality(
     let bowl_color = container_color_hex
         .map(hex_to_rgb)
         .or_else(|| {
-            container.and_then(|c| {
-                if is_glass {
-                    c.tint_hex.as_deref().or(c.color_hex.as_deref())
-                } else {
-                    c.color_hex.as_deref()
-                }
-            }).map(hex_to_rgb)
+            container
+                .and_then(|c| {
+                    if is_glass {
+                        c.tint_hex.as_deref().or(c.color_hex.as_deref())
+                    } else {
+                        c.color_hex.as_deref()
+                    }
+                })
+                .map(hex_to_rgb)
         })
-        .unwrap_or(if is_glass { glass_fallback } else { ceramic_fallback });
+        .unwrap_or(if is_glass {
+            glass_fallback
+        } else {
+            ceramic_fallback
+        });
 
     let sauce_color = hex_to_rgb(sauce_color_hex);
 
@@ -260,13 +276,17 @@ pub fn generate_with_surface_and_quality(
 
     // Glass gets higher gloss + lower roughness so the frontend makeGlassMaterial
     // picks it up cleanly. Ceramic keeps low gloss.
-    let (gloss_factor, gloss_exp) = if is_glass { (0.85, 256.0) } else { (0.10, 24.0) };
+    let (gloss_factor, gloss_exp) = if is_glass {
+        (0.85, 256.0)
+    } else {
+        (0.10, 24.0)
+    };
 
     // PR #28: derive PBR values from ContainerSpec or sensible defaults.
     let (bowl_roughness, bowl_metalness, bowl_opacity, bowl_class) = if is_glass {
         let opacity = container
             .and_then(|c| c.transparency)
-            .map(|t| 1.0 - t)          // transparency → opacity (invert)
+            .map(|t| 1.0 - t) // transparency → opacity (invert)
             .unwrap_or(0.35);
         (0.06_f32, 0.0_f32, opacity, "glass")
     } else {
@@ -334,8 +354,7 @@ pub fn generate_with_surface_and_quality(
     b.add_part(bowl_g, &foot_disk);
 
     // ── Bowl: inner floor (disk facing up) ──────────────────────────────────
-    let inner_floor =
-        disk_fan_up(INNER_R_BOT, Y_INNER_BOTTOM, segments).expect("inner floor disk");
+    let inner_floor = disk_fan_up(INNER_R_BOT, Y_INNER_BOTTOM, segments).expect("inner floor disk");
     b.add_part(bowl_g, &inner_floor);
 
     // ── Sauce: top swirl surface ─────────────────────────────────────────────
@@ -349,7 +368,15 @@ pub fn generate_with_surface_and_quality(
     let r_at_fill = INNER_R_BOT + (INNER_R_TOP - INNER_R_BOT) * lerp_t.clamp(0.0, 1.0);
     let sauce_radius = r_at_fill * params.radius_scale;
 
-    add_sauce_surface(&mut b, sauce_g, segments, sauce_rings, &params, y_fill, sauce_radius);
+    add_sauce_surface(
+        &mut b,
+        sauce_g,
+        segments,
+        sauce_rings,
+        &params,
+        y_fill,
+        sauce_radius,
+    );
 
     // ── Sauce: PR #29 fill volume (side wall + bottom + meniscus) ───────────
     let fvp = fill_volume_from_spec(surface, sauce_radius, y_fill);
@@ -404,7 +431,8 @@ fn add_sauce_surface(
         // 0 = hard cutoff near the rim (start=0.92), 1 = early soft fade (start=0.65).
         let falloff_start = lerp_f32(0.92, 0.65, params.edge_softness);
         let falloff_width = 1.0 - falloff_start;
-        let edge_falloff = (1.0 - (r_ratio - falloff_start).max(0.0) / falloff_width).clamp(0.0, 1.0);
+        let edge_falloff =
+            (1.0 - (r_ratio - falloff_start).max(0.0) / falloff_width).clamp(0.0, 1.0);
 
         for seg in 0..=segments {
             let t = seg as f32 / segments as f32;
@@ -417,29 +445,31 @@ fn add_sauce_surface(
             // how many full radial turns the spiral completes centre→rim.
             let phase = params.swirl_arms * params.frequency * theta
                 + r_ratio * 2.0 * PI * params.spiral_turns;
-            let wave  = phase.sin();
-            let ridge  = wave.max(0.0).powf(2.4);
+            let wave = phase.sin();
+            let ridge = wave.max(0.0).powf(2.4);
             let groove = (-wave).max(0.0).powf(1.8);
             let mut dy = params.ridge_height_m * ridge - params.groove_depth_m * groove;
 
             // ── Centre curl peak ─────────────────────────────────────────
             let center_w = (1.0 - r_ratio).clamp(0.0, 1.0).powf(4.0);
-            dy += params.center_peak_m
-                * center_w
-                * (theta * 2.0 + r_ratio * 6.0).sin().abs();
+            dy += params.center_peak_m * center_w * (theta * 2.0 + r_ratio * 6.0).sin().abs();
 
             // ── Organic noise ────────────────────────────────────────────
-            let organic = (theta * 5.0 + r_ratio * 11.0).sin()
-                * (theta * 2.0 - r_ratio * 7.0).cos();
+            let organic =
+                (theta * 5.0 + r_ratio * 11.0).sin() * (theta * 2.0 - r_ratio * 7.0).cos();
             dy += params.irregularity * 0.0015 * organic * edge_falloff;
 
             dy *= edge_falloff;
 
             // ── Analytic normal from angular gradient ────────────────────
             let d_phase_dt = params.swirl_arms;
-            let d_wave_dt  = d_phase_dt * phase.cos();
-            let d_ridge_dt = 2.4 * wave.max(0.0).powf(1.4) * d_wave_dt * (if wave > 0.0 { 1.0 } else { 0.0 });
-            let d_groove_dt = 1.8 * (-wave).max(0.0).powf(0.8) * (-d_wave_dt) * (if wave < 0.0 { 1.0 } else { 0.0 });
+            let d_wave_dt = d_phase_dt * phase.cos();
+            let d_ridge_dt =
+                2.4 * wave.max(0.0).powf(1.4) * d_wave_dt * (if wave > 0.0 { 1.0 } else { 0.0 });
+            let d_groove_dt = 1.8
+                * (-wave).max(0.0).powf(0.8)
+                * (-d_wave_dt)
+                * (if wave < 0.0 { 1.0 } else { 0.0 });
             let dphase_dt = (params.ridge_height_m * d_ridge_dt
                 - params.groove_depth_m * d_groove_dt)
                 * edge_falloff;
@@ -497,16 +527,11 @@ fn add_sauce_surface(
 // that ramps upward by `meniscus_m` so the sauce appears to cling to the bowl
 // wall rather than ending at a hard horizontal edge.
 // ─────────────────────────────────────────────────────────────────────────────
-fn add_sauce_volume(
-    b: &mut MeshBuilder,
-    group: usize,
-    segments: usize,
-    fvp: &FillVolumeParams,
-) {
+fn add_sauce_volume(b: &mut MeshBuilder, group: usize, segments: usize, fvp: &FillVolumeParams) {
     let r = fvp.sauce_radius;
     let y_top = fvp.y_fill;
     let y_bot = fvp.y_fill_bottom;
-    let men   = fvp.meniscus_m;
+    let men = fvp.meniscus_m;
 
     // ── Side wall ──────────────────────────────────────────────────────────
     // Two rings of verts: bottom ring at y_bot, top ring at y_top.
@@ -518,7 +543,11 @@ fn add_sauce_volume(
         let cos_t = theta.cos();
         let sin_t = theta.sin();
         let uv_u = t;
-        b.add_vertex([cos_t * r, y_bot, sin_t * r], [cos_t, 0.0, sin_t], [uv_u, 0.0]);
+        b.add_vertex(
+            [cos_t * r, y_bot, sin_t * r],
+            [cos_t, 0.0, sin_t],
+            [uv_u, 0.0],
+        );
     }
     let top_start = b.vertices_len();
     for seg in 0..=segments {
@@ -527,7 +556,11 @@ fn add_sauce_volume(
         let cos_t = theta.cos();
         let sin_t = theta.sin();
         let uv_u = t;
-        b.add_vertex([cos_t * r, y_top, sin_t * r], [cos_t, 0.0, sin_t], [uv_u, 1.0]);
+        b.add_vertex(
+            [cos_t * r, y_top, sin_t * r],
+            [cos_t, 0.0, sin_t],
+            [uv_u, 1.0],
+        );
     }
     for seg in 0..segments {
         let b0 = bot_start + seg;
@@ -617,10 +650,17 @@ mod tests {
         assert!(!mesh.vertices.is_empty());
         assert_eq!(mesh.vertices.len(), mesh.normals.len());
         assert_eq!(mesh.vertices.len(), mesh.uvs.len());
-        assert_eq!(mesh.groups.len(), 3, "expect bowl + sauce_material + sauce_volume groups");
+        assert_eq!(
+            mesh.groups.len(),
+            3,
+            "expect bowl + sauce_material + sauce_volume groups"
+        );
         assert!(!mesh.groups[0].faces.is_empty());
         assert!(!mesh.groups[1].faces.is_empty());
-        assert!(!mesh.groups[2].faces.is_empty(), "sauce_volume must have faces");
+        assert!(
+            !mesh.groups[2].faces.is_empty(),
+            "sauce_volume must have faces"
+        );
     }
 
     #[test]
@@ -659,8 +699,7 @@ mod tests {
             .iter()
             .find(|g| g.material.name == "sauce_material")
             .unwrap();
-        let mut sauce_indices: std::collections::HashSet<usize> =
-            std::collections::HashSet::new();
+        let mut sauce_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
         for [a, b, c] in &sauce.faces {
             sauce_indices.insert(*a);
             sauce_indices.insert(*b);
@@ -808,7 +847,7 @@ mod tests {
         let low_spec = make_surface(None, Some(0.1), None, None, None, None, None);
         let high_spec = make_surface(None, Some(0.9), None, None, None, None, None);
         let q = GeometryQuality::Standard;
-        let low  = generate_with_surface_and_quality("#B8321F", None, None, Some(&low_spec), q);
+        let low = generate_with_surface_and_quality("#B8321F", None, None, Some(&low_spec), q);
         let high = generate_with_surface_and_quality("#B8321F", None, None, Some(&high_spec), q);
         assert!(
             sauce_y_range(&high) > sauce_y_range(&low),
@@ -821,10 +860,12 @@ mod tests {
     #[test]
     fn surface_spec_fill_radius_ratio_expands_sauce() {
         let default_spec = make_surface(None, None, None, None, None, None, None);
-        let wide_spec    = make_surface(None, None, None, None, Some(0.97), None, None);
+        let wide_spec = make_surface(None, None, None, None, Some(0.97), None, None);
         let q = GeometryQuality::Standard;
-        let default_mesh = generate_with_surface_and_quality("#B8321F", None, None, Some(&default_spec), q);
-        let wide_mesh    = generate_with_surface_and_quality("#B8321F", None, None, Some(&wide_spec), q);
+        let default_mesh =
+            generate_with_surface_and_quality("#B8321F", None, None, Some(&default_spec), q);
+        let wide_mesh =
+            generate_with_surface_and_quality("#B8321F", None, None, Some(&wide_spec), q);
         assert!(
             sauce_max_radius(&wide_mesh) > sauce_max_radius(&default_mesh),
             "fill_radius_ratio=0.97 must produce wider sauce than default"
@@ -857,12 +898,23 @@ mod tests {
             GeometryQuality::Standard,
         );
         validate_mesh(&mesh).expect("default-surface mesh should pass validation");
-        assert!(sauce_y_range(&mesh) > 0.0, "default surface should still have swirl relief");
+        assert!(
+            sauce_y_range(&mesh) > 0.0,
+            "default surface should still have swirl relief"
+        );
     }
 
     #[test]
     fn sauce_in_bowl_with_surface_passes_validation() {
-        let spec = make_surface(Some(4), Some(0.8), Some(0.7), Some(0.6), Some(0.96), Some(0.04), Some(0.3));
+        let spec = make_surface(
+            Some(4),
+            Some(0.8),
+            Some(0.7),
+            Some(0.6),
+            Some(0.96),
+            Some(0.04),
+            Some(0.3),
+        );
         let mesh = generate_with_surface_and_quality(
             "#B8321F",
             None,
@@ -899,7 +951,10 @@ mod tests {
             .expect("glass_bowl container must produce bowl_glass material group");
         // Tint colour #3D1A0A → approx [0.239, 0.098, 0.039]
         let [r, _g, _b] = bowl_group.material.diffuse_color;
-        assert!(r > 0.15 && r < 0.40, "glass tint red channel should be dark amber");
+        assert!(
+            r > 0.15 && r < 0.40,
+            "glass tint red channel should be dark amber"
+        );
     }
 
     #[test]
@@ -922,7 +977,9 @@ mod tests {
             GeometryQuality::Standard,
         );
         assert!(
-            mesh.groups.iter().any(|g| g.material.name == "bowl_ceramic"),
+            mesh.groups
+                .iter()
+                .any(|g| g.material.name == "bowl_ceramic"),
             "ceramic container must produce bowl_ceramic group"
         );
     }
@@ -931,7 +988,9 @@ mod tests {
     fn no_container_spec_falls_back_to_bowl_ceramic() {
         let mesh = generate("#B8321F", None);
         assert!(
-            mesh.groups.iter().any(|g| g.material.name == "bowl_ceramic"),
+            mesh.groups
+                .iter()
+                .any(|g| g.material.name == "bowl_ceramic"),
             "no container defaults to bowl_ceramic"
         );
     }
@@ -983,26 +1042,33 @@ mod tests {
     /// which means all sauce vertices will have a lower max Y.
     #[test]
     fn fill_height_ratio_changes_liquid_wall_height() {
-        let low_spec  = make_fill_spec(Some(0.30), None, None);
+        let low_spec = make_fill_spec(Some(0.30), None, None);
         let high_spec = make_fill_spec(Some(0.90), None, None);
         let q = GeometryQuality::Standard;
 
-        let low_mesh  = generate_with_surface_and_quality("#B8321F", None, None, Some(&low_spec),  q);
-        let high_mesh = generate_with_surface_and_quality("#B8321F", None, None, Some(&high_spec), q);
+        let low_mesh = generate_with_surface_and_quality("#B8321F", None, None, Some(&low_spec), q);
+        let high_mesh =
+            generate_with_surface_and_quality("#B8321F", None, None, Some(&high_spec), q);
 
         // Find the max Y in the sauce_material group (top surface).
         fn max_sauce_y(mesh: &Mesh) -> f32 {
-            let grp = mesh.groups.iter().find(|g| g.material.name == "sauce_material").unwrap();
+            let grp = mesh
+                .groups
+                .iter()
+                .find(|g| g.material.name == "sauce_material")
+                .unwrap();
             let mut max_y = f32::NEG_INFINITY;
             for [a, b, c] in &grp.faces {
                 for &vi in &[*a, *b, *c] {
-                    if mesh.vertices[vi][1] > max_y { max_y = mesh.vertices[vi][1]; }
+                    if mesh.vertices[vi][1] > max_y {
+                        max_y = mesh.vertices[vi][1];
+                    }
                 }
             }
             max_y
         }
 
-        let low_y  = max_sauce_y(&low_mesh);
+        let low_y = max_sauce_y(&low_mesh);
         let high_y = max_sauce_y(&high_mesh);
         assert!(
             high_y > low_y,
@@ -1014,27 +1080,37 @@ mod tests {
     /// sauce_volume side wall (top minus bottom of the wall).
     #[test]
     fn surface_thickness_increases_volume_depth() {
-        let thin_spec  = make_fill_spec(Some(0.72), Some(0.10), None);
+        let thin_spec = make_fill_spec(Some(0.72), Some(0.10), None);
         let thick_spec = make_fill_spec(Some(0.72), Some(0.90), None);
         let q = GeometryQuality::Standard;
 
-        let thin_mesh  = generate_with_surface_and_quality("#B8321F", None, None, Some(&thin_spec),  q);
-        let thick_mesh = generate_with_surface_and_quality("#B8321F", None, None, Some(&thick_spec), q);
+        let thin_mesh =
+            generate_with_surface_and_quality("#B8321F", None, None, Some(&thin_spec), q);
+        let thick_mesh =
+            generate_with_surface_and_quality("#B8321F", None, None, Some(&thick_spec), q);
 
         fn volume_y_span(mesh: &Mesh) -> f32 {
-            let grp = mesh.groups.iter().find(|g| g.material.name == "sauce_volume").unwrap();
+            let grp = mesh
+                .groups
+                .iter()
+                .find(|g| g.material.name == "sauce_volume")
+                .unwrap();
             let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
             for [a, b, c] in &grp.faces {
                 for &vi in &[*a, *b, *c] {
                     let y = mesh.vertices[vi][1];
-                    if y < min_y { min_y = y; }
-                    if y > max_y { max_y = y; }
+                    if y < min_y {
+                        min_y = y;
+                    }
+                    if y > max_y {
+                        max_y = y;
+                    }
                 }
             }
             max_y - min_y
         }
 
-        let thin_span  = volume_y_span(&thin_mesh);
+        let thin_span = volume_y_span(&thin_mesh);
         let thick_span = volume_y_span(&thick_mesh);
         assert!(
             thick_span > thin_span,

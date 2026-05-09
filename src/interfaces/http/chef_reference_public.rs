@@ -82,17 +82,65 @@ pub struct FishSeason {
 /// GET /public/chef-reference/fish-season
 pub async fn fish_season() -> Json<Vec<FishSeason>> {
     Json(vec![
-        FishSeason { fish: "salmon".to_string(), month: "january".to_string(),   available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "february".to_string(),  available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "march".to_string(),     available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "april".to_string(),     available: false },
-        FishSeason { fish: "salmon".to_string(), month: "may".to_string(),       available: false },
-        FishSeason { fish: "salmon".to_string(), month: "june".to_string(),      available: false },
-        FishSeason { fish: "salmon".to_string(), month: "july".to_string(),      available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "august".to_string(),    available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "september".to_string(), available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "october".to_string(),   available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "november".to_string(),  available: true  },
-        FishSeason { fish: "salmon".to_string(), month: "december".to_string(),  available: true  },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "january".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "february".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "march".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "april".to_string(),
+            available: false,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "may".to_string(),
+            available: false,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "june".to_string(),
+            available: false,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "july".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "august".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "september".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "october".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "november".to_string(),
+            available: true,
+        },
+        FishSeason {
+            fish: "salmon".to_string(),
+            month: "december".to_string(),
+            available: true,
+        },
     ])
 }

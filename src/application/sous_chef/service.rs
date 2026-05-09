@@ -9,11 +9,11 @@ use crate::infrastructure::llm_adapter::LlmAdapter;
 use crate::infrastructure::persistence::AiCacheRepository;
 use crate::shared::AppError;
 
-use super::goal::{build_cache_key, Goal};
 use super::gemini::{
     build_gemini_prompt, fallback_explanation, fallback_intro, fallback_motivation,
     parse_gemini_response,
 };
+use super::goal::{build_cache_key, Goal};
 use super::resolver::build_variants;
 use super::types::{MealPlan, PlanRequest};
 
@@ -31,7 +31,11 @@ impl SousChefPlannerService {
         ai_cache: AiCacheRepository,
         ingredients: IngredientCache,
     ) -> Self {
-        Self { llm, ai_cache, ingredients }
+        Self {
+            llm,
+            ai_cache,
+            ingredients,
+        }
     }
 
     pub async fn generate_plan(&self, req: PlanRequest) -> Result<MealPlan, AppError> {
@@ -96,7 +100,13 @@ impl SousChefPlannerService {
         if let Ok(val) = serde_json::to_value(&plan) {
             if let Err(e) = self
                 .ai_cache
-                .set(&cache_key, val, "gemini", "gemini-3-flash-preview", CACHE_TTL_DAYS)
+                .set(
+                    &cache_key,
+                    val,
+                    "gemini",
+                    "gemini-3-flash-preview",
+                    CACHE_TTL_DAYS,
+                )
                 .await
             {
                 tracing::warn!("Failed to cache sous-chef plan: {}", e);

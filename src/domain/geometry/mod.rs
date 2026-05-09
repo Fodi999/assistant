@@ -31,8 +31,8 @@
 //! let part = precision::tessellate(&shell).unwrap();
 //! ```
 
-pub mod boolean;
 pub mod body;
+pub mod boolean;
 pub mod curve;
 pub mod edge;
 pub mod face;

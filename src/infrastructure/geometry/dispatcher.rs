@@ -18,8 +18,8 @@ use crate::infrastructure::geometry::generators::food::{
     bottled_sauce, flat_card, jar_product, plate_food, sauce_in_bowl,
 };
 use crate::infrastructure::geometry::generators::hard_surface::card;
-use crate::infrastructure::geometry::generators::hard_surface::sci_fi_card;
 use crate::infrastructure::geometry::generators::hard_surface::organic_sphere;
+use crate::infrastructure::geometry::generators::hard_surface::sci_fi_card;
 use crate::infrastructure::geometry::kernel::GeometryQuality;
 use crate::infrastructure::geometry::mesh::Mesh;
 use crate::shared::AppError;
@@ -48,8 +48,8 @@ pub fn dispatch_with_quality(
     // Attempt to deserialise full Product3DSpec once — used by generators that
     // need rich Vision data (e.g. sauce surface params). Failure is non-fatal;
     // generators fall back to defaults.
-    let full_spec: Option<Product3DSpec> = spec
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let full_spec: Option<Product3DSpec> =
+        spec.and_then(|v| serde_json::from_value(v.clone()).ok());
 
     match object_type {
         "sauce_in_bowl" => {
@@ -67,9 +67,7 @@ pub fn dispatch_with_quality(
         }
         "bottled_sauce" => {
             let liquid_color = extract_str(spec, "/product/color_hex").unwrap_or("#B8321F");
-            let kind = bottled_sauce::BottleKind::from_str(
-                extract_str(spec, "/container/kind"),
-            );
+            let kind = bottled_sauce::BottleKind::from_str(extract_str(spec, "/container/kind"));
             let label_url = extract_str(spec, "/labels/main_url");
             // Cap colour is not in the current spec — leave as default for now.
             Ok(bottled_sauce::generate_with_label_and_quality(
@@ -94,8 +92,14 @@ pub fn dispatch_with_quality(
         "plate_food" => {
             let product_color = extract_str(spec, "/product/color_hex").unwrap_or("#A85B12");
             let plate_color = extract_str(spec, "/container/color_hex");
-            let surface = spec.and_then(|v| v.pointer("/product/surface"))
-                .and_then(|v| serde_json::from_value::<crate::application::laboratory_v2::ProductSurfaceSpec>(v.clone()).ok());
+            let surface = spec
+                .and_then(|v| v.pointer("/product/surface"))
+                .and_then(|v| {
+                    serde_json::from_value::<crate::application::laboratory_v2::ProductSurfaceSpec>(
+                        v.clone(),
+                    )
+                    .ok()
+                });
             Ok(plate_food::generate_with_surface_and_quality(
                 product_color,
                 plate_color,
@@ -114,15 +118,19 @@ pub fn dispatch_with_quality(
         "product_card" => {
             use card::{generate_card, CardSpec};
             let color_hex = extract_str(spec, "/product/color_hex").unwrap_or("#CCCCCC");
-            let width   = extract_f32(spec, "/card/width")         .unwrap_or(0.10);
-            let height  = extract_f32(spec, "/card/height")        .unwrap_or(0.14);
-            let thick   = extract_f32(spec, "/card/thickness")     .unwrap_or(0.008);
-            let radius  = extract_f32(spec, "/card/corner_radius") .unwrap_or(0.012);
-            let bevel   = extract_f32(spec, "/card/bevel")         .unwrap_or(0.001);
+            let width = extract_f32(spec, "/card/width").unwrap_or(0.10);
+            let height = extract_f32(spec, "/card/height").unwrap_or(0.14);
+            let thick = extract_f32(spec, "/card/thickness").unwrap_or(0.008);
+            let radius = extract_f32(spec, "/card/corner_radius").unwrap_or(0.012);
+            let bevel = extract_f32(spec, "/card/bevel").unwrap_or(0.001);
             let card_spec = CardSpec {
-                width, height, thickness: thick,
-                corner_radius: radius, bevel,
-                color_hex, quality,
+                width,
+                height,
+                thickness: thick,
+                corner_radius: radius,
+                bevel,
+                color_hex,
+                quality,
             };
             Ok(generate_card(&card_spec))
         }
@@ -139,11 +147,11 @@ pub fn dispatch_with_quality(
                 generate_dock, CardDockSpec,
             };
             let dock_spec = CardDockSpec {
-                width:      extract_f32(spec, "/dock/width")      .unwrap_or(0.20),
-                depth:      extract_f32(spec, "/dock/depth")      .unwrap_or(0.58),
-                height:     extract_f32(spec, "/dock/height")     .unwrap_or(0.10),
-                slot_width: extract_f32(spec, "/dock/slot_width") .unwrap_or(0.11),
-                slot_depth: extract_f32(spec, "/dock/slot_depth") .unwrap_or(0.15),
+                width: extract_f32(spec, "/dock/width").unwrap_or(0.20),
+                depth: extract_f32(spec, "/dock/depth").unwrap_or(0.58),
+                height: extract_f32(spec, "/dock/height").unwrap_or(0.10),
+                slot_width: extract_f32(spec, "/dock/slot_width").unwrap_or(0.11),
+                slot_depth: extract_f32(spec, "/dock/slot_depth").unwrap_or(0.15),
                 accent_hex: "#00C8FF", // TODO: extract from spec when &'static str is relaxed
                 quality,
                 ..CardDockSpec::default()
@@ -161,11 +169,11 @@ pub fn dispatch_with_quality(
         "sci_fi_card" => {
             use sci_fi_card::{generate_sci_fi_card, SciFiCardSpec};
             let spec_obj = SciFiCardSpec {
-                width:     extract_f32(spec, "/card/width")         .unwrap_or(0.12),
-                height:    extract_f32(spec, "/card/height")        .unwrap_or(0.18),
-                thickness: extract_f32(spec, "/card/thickness")     .unwrap_or(0.012),
+                width: extract_f32(spec, "/card/width").unwrap_or(0.12),
+                height: extract_f32(spec, "/card/height").unwrap_or(0.18),
+                thickness: extract_f32(spec, "/card/thickness").unwrap_or(0.012),
                 corner_radius: extract_f32(spec, "/card/corner_radius").unwrap_or(0.012),
-                bevel:     extract_f32(spec, "/card/bevel")         .unwrap_or(0.0015),
+                bevel: extract_f32(spec, "/card/bevel").unwrap_or(0.0015),
                 accent_hex: extract_str(spec, "/card/accent_hex")
                     .unwrap_or("#00C8FF")
                     .to_string(),
@@ -181,7 +189,7 @@ pub fn dispatch_with_quality(
         "organic_sphere" => {
             use organic_sphere::{generate_organic_sphere, OrganicSphereSpec};
             let spec_obj = OrganicSphereSpec {
-                radius:    extract_f32(spec, "/sphere/radius")     .unwrap_or(0.12),
+                radius: extract_f32(spec, "/sphere/radius").unwrap_or(0.12),
                 color_hex: extract_str(spec, "/sphere/color_hex")
                     .unwrap_or("#B8B8C8")
                     .to_string(),
@@ -214,13 +222,15 @@ pub fn dispatch_with_quality(
         }
         "shape_cube" => {
             use crate::infrastructure::geometry::generators::primitives as prim;
-            let c   = extract_str(spec, "/shape/color_hex").unwrap_or("#F472B6");
-            let sub = extract_f32(spec, "/shape/subdivisions").map(|v| v as u32).unwrap_or(match quality {
-                GeometryQuality::Draft    => 1,
-                GeometryQuality::Standard => 2,
-                GeometryQuality::High     => 3,
-                GeometryQuality::Ultra    => 5,
-            });
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#F472B6");
+            let sub = extract_f32(spec, "/shape/subdivisions")
+                .map(|v| v as u32)
+                .unwrap_or(match quality {
+                    GeometryQuality::Draft => 1,
+                    GeometryQuality::Standard => 2,
+                    GeometryQuality::High => 3,
+                    GeometryQuality::Ultra => 5,
+                });
             let bevel = extract_f32(spec, "/shape/bevel").unwrap_or(0.0);
             Ok(prim::generate_cube_grid(c, sub, bevel))
         }
@@ -231,22 +241,22 @@ pub fn dispatch_with_quality(
         }
         "shape_cylinder" => {
             use crate::infrastructure::geometry::generators::primitives as prim;
-            let c      = extract_str(spec, "/shape/color_hex").unwrap_or("#38BDF8");
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#38BDF8");
             let radius = extract_f32(spec, "/shape/radius").unwrap_or(0.5);
             let height = extract_f32(spec, "/shape/height").unwrap_or(1.0);
             Ok(prim::generate_cylinder(c, radius, height, quality))
         }
         "shape_cone" => {
             use crate::infrastructure::geometry::generators::primitives as prim;
-            let c       = extract_str(spec, "/shape/color_hex").unwrap_or("#FB923C");
-            let r_bot   = extract_f32(spec, "/shape/radius_bottom").unwrap_or(0.5);
-            let r_top   = extract_f32(spec, "/shape/radius_top").unwrap_or(0.0);
-            let height  = extract_f32(spec, "/shape/height").unwrap_or(1.0);
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#FB923C");
+            let r_bot = extract_f32(spec, "/shape/radius_bottom").unwrap_or(0.5);
+            let r_top = extract_f32(spec, "/shape/radius_top").unwrap_or(0.0);
+            let height = extract_f32(spec, "/shape/height").unwrap_or(1.0);
             Ok(prim::generate_cone(c, r_bot, r_top, height, quality))
         }
         "shape_torus" => {
             use crate::infrastructure::geometry::generators::primitives as prim;
-            let c       = extract_str(spec, "/shape/color_hex").unwrap_or("#A78BFA");
+            let c = extract_str(spec, "/shape/color_hex").unwrap_or("#A78BFA");
             let r_major = extract_f32(spec, "/shape/major_radius").unwrap_or(0.5);
             let r_minor = extract_f32(spec, "/shape/minor_radius").unwrap_or(0.15);
             Ok(prim::generate_torus(c, r_major, r_minor, quality))

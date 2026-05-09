@@ -9,10 +9,13 @@
 //! response_templates →  how it sounds  (localized text)
 //! ```
 
+use super::chat_response::{
+    Card, ChatResponse, ConversionCard, CookingLossCard, CookingLossRow, NutritionCard,
+    ProductCard, RecipeCard, RecipeIngredientRow, Suggestion, SuggestionBlock,
+};
 use super::intent_router::{ChatLang, Intent};
-use super::chat_response::{Card, ChatResponse, ConversionCard, CookingLossCard, CookingLossRow, NutritionCard, ProductCard, RecipeCard, RecipeIngredientRow, Suggestion, SuggestionBlock};
-use super::response_templates as tpl;
 use super::meal_builder::MealCombo;
+use super::response_templates as tpl;
 use crate::infrastructure::ingredient_cache::IngredientData;
 
 // ── Health goal (re-exported for templates) ──────────────────────────────────
@@ -42,23 +45,36 @@ impl HealthGoal {
     pub fn from_modifier(modifier: HealthModifier, input: &str) -> Self {
         match modifier {
             HealthModifier::HighProtein => Self::HighProtein,
-            HealthModifier::LowCalorie  => Self::LowCalorie,
-            HealthModifier::LowCarb     => Self::LowCalorie,
-            HealthModifier::HighFiber   => Self::LowCalorie,
+            HealthModifier::LowCalorie => Self::LowCalorie,
+            HealthModifier::LowCarb => Self::LowCalorie,
+            HealthModifier::HighFiber => Self::LowCalorie,
             HealthModifier::ComfortFood => Self::Balanced,
-            HealthModifier::Quick       => Self::Balanced,
-            HealthModifier::Budget      => Self::Balanced,
+            HealthModifier::Quick => Self::Balanced,
+            HealthModifier::Budget => Self::Balanced,
             HealthModifier::None => {
                 let t = input.to_lowercase();
-                if t.contains("белок") || t.contains("протеин") || t.contains("мышц")
-                    || t.contains("protein") || t.contains("muscle") || t.contains("białk")
+                if t.contains("белок")
+                    || t.contains("протеин")
+                    || t.contains("мышц")
+                    || t.contains("protein")
+                    || t.contains("muscle")
+                    || t.contains("białk")
                 {
                     Self::HighProtein
-                } else if t.contains("похуд") || t.contains("диет") || t.contains("diet")
-                    || t.contains("lose weight") || t.contains("slim") || t.contains("сушк")
-                    || t.contains("лёгк") || t.contains("легк") || t.contains("light")
-                    || t.contains("кето") || t.contains("keto") || t.contains("low carb")
-                    || t.contains("клетчатк") || t.contains("fiber")
+                } else if t.contains("похуд")
+                    || t.contains("диет")
+                    || t.contains("diet")
+                    || t.contains("lose weight")
+                    || t.contains("slim")
+                    || t.contains("сушк")
+                    || t.contains("лёгк")
+                    || t.contains("легк")
+                    || t.contains("light")
+                    || t.contains("кето")
+                    || t.contains("keto")
+                    || t.contains("low carb")
+                    || t.contains("клетчатк")
+                    || t.contains("fiber")
                 {
                     Self::LowCalorie
                 } else {
@@ -81,9 +97,17 @@ pub fn portion_grams(p: &IngredientData) -> f32 {
         "eggs" => 120.0,
         // Dairy: cheese 50g, cottage cheese 150g, milk 200ml
         "dairy" => {
-            if p.calories_per_100g > 250.0 { 50.0 }   // hard cheese, butter
-            else if p.calories_per_100g > 150.0 { 100.0 } // cottage cheese, yogurt
-            else { 200.0 }                              // milk, kefir
+            if p.calories_per_100g > 250.0 {
+                50.0
+            }
+            // hard cheese, butter
+            else if p.calories_per_100g > 150.0 {
+                100.0
+            }
+            // cottage cheese, yogurt
+            else {
+                200.0
+            } // milk, kefir
         }
         // Grains & legumes: dry weight ~80g (cooked ~200g)
         "grain" | "legume" => 80.0,
@@ -133,35 +157,42 @@ pub fn build_healthy_response(
     goal: HealthGoal,
 ) -> ChatResponse {
     if products.is_empty() {
-        return ChatResponse::text_only(tpl::healthy_fallback(lang), Intent::HealthyProduct, lang, 0);
+        return ChatResponse::text_only(
+            tpl::healthy_fallback(lang),
+            Intent::HealthyProduct,
+            lang,
+            0,
+        );
     }
 
     // Build cards
-    let cards: Vec<Card> = products.iter().map(|(p, reason_tag, _)| {
-        let name = p.name(lang.code()).to_string();
-        let hl = tpl::highlight(p, lang, goal);
-        Card::Product(ProductCard {
-            actions: vec![],
-            slug: p.slug.clone(),
-            name,
-            calories_per_100g: p.calories_per_100g,
-            protein_per_100g: p.protein_per_100g,
-            fat_per_100g: p.fat_per_100g,
-            carbs_per_100g: p.carbs_per_100g,
-            image_url: p.image_url.clone(),
-            highlight: Some(hl),
-            reason_tag: Some(reason_tag),
+    let cards: Vec<Card> = products
+        .iter()
+        .map(|(p, reason_tag, _)| {
+            let name = p.name(lang.code()).to_string();
+            let hl = tpl::highlight(p, lang, goal);
+            Card::Product(ProductCard {
+                actions: vec![],
+                slug: p.slug.clone(),
+                name,
+                calories_per_100g: p.calories_per_100g,
+                protein_per_100g: p.protein_per_100g,
+                fat_per_100g: p.fat_per_100g,
+                carbs_per_100g: p.carbs_per_100g,
+                image_url: p.image_url.clone(),
+                highlight: Some(hl),
+                reason_tag: Some(reason_tag),
+            })
         })
-    }).collect();
+        .collect();
 
     let (top_p, _, _) = &products[0];
     let top_name = top_p.name(lang.code()).to_string();
     let text = tpl::healthy_text(&top_name, top_p, lang, goal);
     let reason = tpl::macro_summary(top_p, lang, goal, products.len());
 
-    let mut resp = ChatResponse::with_cards(
-        text, cards, Intent::HealthyProduct, vec![], reason, lang, 0,
-    );
+    let mut resp =
+        ChatResponse::with_cards(text, cards, Intent::HealthyProduct, vec![], reason, lang, 0);
 
     resp.suggestions = build_healthy_suggestions(lang, goal, &top_name);
     resp.chef_tip = Some(tpl::chef_tip(top_p, lang, goal));
@@ -181,7 +212,7 @@ pub fn build_specific_healthy_product(
     let reason = tpl::macro_summary(p, lang, goal, 1);
 
     let card = Card::Product(ProductCard {
-            actions: vec![],
+        actions: vec![],
         slug: p.slug.clone(),
         name: name.clone(),
         calories_per_100g: p.calories_per_100g,
@@ -194,7 +225,13 @@ pub fn build_specific_healthy_product(
     });
 
     let mut resp = ChatResponse::with_cards(
-        text, vec![card], Intent::HealthyProduct, vec![], reason, lang, 0,
+        text,
+        vec![card],
+        Intent::HealthyProduct,
+        vec![],
+        reason,
+        lang,
+        0,
     );
 
     resp.suggestions = build_specific_suggestions(lang, goal, &name, &p.slug);
@@ -216,22 +253,25 @@ pub fn build_already_seen_product(
     let text = tpl::already_seen_text(&name, p, alternatives, lang, goal);
 
     // Build cards: ALTERNATIVES only (not the product itself — already shown)
-    let mut cards: Vec<Card> = alternatives.iter().map(|(alt, reason_tag, _)| {
-        let alt_name = alt.name(lang.code()).to_string();
-        let hl = tpl::highlight(alt, lang, goal);
-        Card::Product(ProductCard {
-            actions: vec![],
-            slug: alt.slug.clone(),
-            name: alt_name,
-            calories_per_100g: alt.calories_per_100g,
-            protein_per_100g: alt.protein_per_100g,
-            fat_per_100g: alt.fat_per_100g,
-            carbs_per_100g: alt.carbs_per_100g,
-            image_url: alt.image_url.clone(),
-            highlight: Some(hl),
-            reason_tag: Some(reason_tag),
+    let mut cards: Vec<Card> = alternatives
+        .iter()
+        .map(|(alt, reason_tag, _)| {
+            let alt_name = alt.name(lang.code()).to_string();
+            let hl = tpl::highlight(alt, lang, goal);
+            Card::Product(ProductCard {
+                actions: vec![],
+                slug: alt.slug.clone(),
+                name: alt_name,
+                calories_per_100g: alt.calories_per_100g,
+                protein_per_100g: alt.protein_per_100g,
+                fat_per_100g: alt.fat_per_100g,
+                carbs_per_100g: alt.carbs_per_100g,
+                image_url: alt.image_url.clone(),
+                highlight: Some(hl),
+                reason_tag: Some(reason_tag),
+            })
         })
-    }).collect();
+        .collect();
 
     // If no alternatives found, still show the original product card
     if cards.is_empty() {
@@ -252,9 +292,8 @@ pub fn build_already_seen_product(
 
     let reason = tpl::already_seen_reason(&name, alternatives, lang, goal);
 
-    let mut resp = ChatResponse::with_cards(
-        text, cards, Intent::HealthyProduct, vec![], reason, lang, 0,
-    );
+    let mut resp =
+        ChatResponse::with_cards(text, cards, Intent::HealthyProduct, vec![], reason, lang, 0);
 
     resp.suggestions = build_already_seen_suggestions(lang, goal, &name, &p.slug);
     resp.chef_tip = Some(tpl::chef_tip_alternative(p, lang, goal));
@@ -262,11 +301,24 @@ pub fn build_already_seen_product(
 }
 
 /// Build a conversion response.
-pub fn build_conversion(value: f64, from: String, to: String, result: f64, supported: bool, lang: ChatLang) -> ChatResponse {
+pub fn build_conversion(
+    value: f64,
+    from: String,
+    to: String,
+    result: f64,
+    supported: bool,
+    lang: ChatLang,
+) -> ChatResponse {
     let text = tpl::conversion_text(value, &from, result, &to, supported, lang);
     ChatResponse::with_card(
         text,
-        Card::Conversion(ConversionCard { value, from, to, result, supported }),
+        Card::Conversion(ConversionCard {
+            value,
+            from,
+            to,
+            result,
+            supported,
+        }),
         Intent::Conversion,
         lang,
         0,
@@ -289,7 +341,13 @@ pub fn build_conversion_with_product(
     let text = tpl::conversion_with_product_text(value, &from, result, &to, product_name, lang);
     ChatResponse::with_card(
         text,
-        Card::Conversion(ConversionCard { value, from, to, result, supported: true }),
+        Card::Conversion(ConversionCard {
+            value,
+            from,
+            to,
+            result,
+            supported: true,
+        }),
         Intent::Conversion,
         lang,
         0,
@@ -308,26 +366,82 @@ pub fn build_conversion_ask_product(
     // Add quick-pick suggestions
     resp.suggestions = match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: "💧 Вода".into(), query: format!("{} {} воды в {}", value, from, to), emoji: Some("💧") },
-            Suggestion { label: "🌾 Мука".into(), query: format!("{} {} муки в {}", value, from, to), emoji: Some("🌾") },
-            Suggestion { label: "🍚 Рис".into(), query: format!("{} {} риса в {}", value, from, to), emoji: Some("🍚") },
-            Suggestion { label: "🍯 Мёд".into(), query: format!("{} {} мёда в {}", value, from, to), emoji: Some("🍯") },
+            Suggestion {
+                label: "💧 Вода".into(),
+                query: format!("{} {} воды в {}", value, from, to),
+                emoji: Some("💧"),
+            },
+            Suggestion {
+                label: "🌾 Мука".into(),
+                query: format!("{} {} муки в {}", value, from, to),
+                emoji: Some("🌾"),
+            },
+            Suggestion {
+                label: "🍚 Рис".into(),
+                query: format!("{} {} риса в {}", value, from, to),
+                emoji: Some("🍚"),
+            },
+            Suggestion {
+                label: "🍯 Мёд".into(),
+                query: format!("{} {} мёда в {}", value, from, to),
+                emoji: Some("🍯"),
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: "💧 Water".into(), query: format!("{} {} water in {}", value, from, to), emoji: Some("💧") },
-            Suggestion { label: "🌾 Flour".into(), query: format!("{} {} flour in {}", value, from, to), emoji: Some("🌾") },
-            Suggestion { label: "🍚 Rice".into(), query: format!("{} {} rice in {}", value, from, to), emoji: Some("🍚") },
-            Suggestion { label: "🍯 Honey".into(), query: format!("{} {} honey in {}", value, from, to), emoji: Some("🍯") },
+            Suggestion {
+                label: "💧 Water".into(),
+                query: format!("{} {} water in {}", value, from, to),
+                emoji: Some("💧"),
+            },
+            Suggestion {
+                label: "🌾 Flour".into(),
+                query: format!("{} {} flour in {}", value, from, to),
+                emoji: Some("🌾"),
+            },
+            Suggestion {
+                label: "🍚 Rice".into(),
+                query: format!("{} {} rice in {}", value, from, to),
+                emoji: Some("🍚"),
+            },
+            Suggestion {
+                label: "🍯 Honey".into(),
+                query: format!("{} {} honey in {}", value, from, to),
+                emoji: Some("🍯"),
+            },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: "💧 Woda".into(), query: format!("{} {} wody na {}", value, from, to), emoji: Some("💧") },
-            Suggestion { label: "🌾 Mąka".into(), query: format!("{} {} mąki na {}", value, from, to), emoji: Some("🌾") },
-            Suggestion { label: "🍚 Ryż".into(), query: format!("{} {} ryżu na {}", value, from, to), emoji: Some("🍚") },
+            Suggestion {
+                label: "💧 Woda".into(),
+                query: format!("{} {} wody na {}", value, from, to),
+                emoji: Some("💧"),
+            },
+            Suggestion {
+                label: "🌾 Mąka".into(),
+                query: format!("{} {} mąki na {}", value, from, to),
+                emoji: Some("🌾"),
+            },
+            Suggestion {
+                label: "🍚 Ryż".into(),
+                query: format!("{} {} ryżu na {}", value, from, to),
+                emoji: Some("🍚"),
+            },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: "💧 Вода".into(), query: format!("{} {} води в {}", value, from, to), emoji: Some("💧") },
-            Suggestion { label: "🌾 Борошно".into(), query: format!("{} {} борошна в {}", value, from, to), emoji: Some("🌾") },
-            Suggestion { label: "🍚 Рис".into(), query: format!("{} {} рису в {}", value, from, to), emoji: Some("🍚") },
+            Suggestion {
+                label: "💧 Вода".into(),
+                query: format!("{} {} води в {}", value, from, to),
+                emoji: Some("💧"),
+            },
+            Suggestion {
+                label: "🌾 Борошно".into(),
+                query: format!("{} {} борошна в {}", value, from, to),
+                emoji: Some("🌾"),
+            },
+            Suggestion {
+                label: "🍚 Рис".into(),
+                query: format!("{} {} рису в {}", value, from, to),
+                emoji: Some("🍚"),
+            },
         ],
     };
     resp
@@ -364,12 +478,16 @@ pub fn build_cooking_loss(p: &IngredientData, lang: ChatLang) -> ChatResponse {
     let name = p.name(lang.code()).to_string();
 
     // Filter usable states (skip "raw", skip states with no data)
-    let mut rows: Vec<CookingLossRow> = p.states.iter()
+    let mut rows: Vec<CookingLossRow> = p
+        .states
+        .iter()
         .filter(|s| s.state != "raw")
-        .filter(|s| s.weight_change_percent.is_some()
-                 || s.water_loss_percent.is_some()
-                 || s.oil_absorption_g.is_some()
-                 || s.calories_per_100g.is_some())
+        .filter(|s| {
+            s.weight_change_percent.is_some()
+                || s.water_loss_percent.is_some()
+                || s.oil_absorption_g.is_some()
+                || s.calories_per_100g.is_some()
+        })
         .map(|s| CookingLossRow {
             state: s.state.clone(),
             label: state_label(&s.state, s, lang),
@@ -388,7 +506,9 @@ pub fn build_cooking_loss(p: &IngredientData, lang: ChatLang) -> ChatResponse {
     }
 
     // Stable ordering: boiled, fried, baked, grilled, steamed, smoked, frozen, dried, pickled
-    let order = ["boiled", "fried", "baked", "grilled", "steamed", "smoked", "frozen", "dried", "pickled"];
+    let order = [
+        "boiled", "fried", "baked", "grilled", "steamed", "smoked", "frozen", "dried", "pickled",
+    ];
     rows.sort_by_key(|r| order.iter().position(|s| *s == r.state).unwrap_or(99));
 
     let text = tpl::cooking_loss_text(&name, &rows, lang);
@@ -422,7 +542,11 @@ pub fn build_cooking_loss_no_product(lang: ChatLang) -> ChatResponse {
 
 /// Localized label for a processing state ("варёная", "boiled", …).
 /// Prefers the DB-stored `name_suffix_*`, falls back to a static dictionary.
-fn state_label(state: &str, s: &crate::infrastructure::ingredient_cache::CachedState, lang: ChatLang) -> String {
+fn state_label(
+    state: &str,
+    s: &crate::infrastructure::ingredient_cache::CachedState,
+    lang: ChatLang,
+) -> String {
     let suffix = match lang {
         ChatLang::Ru => s.name_suffix_ru.as_deref(),
         ChatLang::En => s.name_suffix_en.as_deref(),
@@ -437,26 +561,45 @@ fn state_label(state: &str, s: &crate::infrastructure::ingredient_cache::CachedS
     // Static fallback
     let code = lang.code();
     match (state, code) {
-        ("boiled",  "ru") => "варёная", ("boiled",  "en") => "boiled",
-        ("boiled",  "pl") => "ugotowana", ("boiled", "uk") => "варена",
-        ("fried",   "ru") => "жареная", ("fried",   "en") => "fried",
-        ("fried",   "pl") => "smażona", ("fried",   "uk") => "смажена",
-        ("baked",   "ru") => "запечённая", ("baked", "en") => "baked",
-        ("baked",   "pl") => "pieczona", ("baked",  "uk") => "запечена",
-        ("grilled", "ru") => "гриль",   ("grilled", "en") => "grilled",
-        ("grilled", "pl") => "z grilla",("grilled", "uk") => "на грилі",
-        ("steamed", "ru") => "на пару", ("steamed", "en") => "steamed",
-        ("steamed", "pl") => "na parze",("steamed", "uk") => "на парі",
-        ("smoked",  "ru") => "копчёная",("smoked",  "en") => "smoked",
-        ("smoked",  "pl") => "wędzona", ("smoked",  "uk") => "копчена",
-        ("frozen",  "ru") => "мороженая",("frozen", "en") => "frozen",
-        ("frozen",  "pl") => "mrożona", ("frozen",  "uk") => "заморожена",
-        ("dried",   "ru") => "сушёная", ("dried",   "en") => "dried",
-        ("dried",   "pl") => "suszona", ("dried",   "uk") => "сушена",
-        ("pickled", "ru") => "маринованная", ("pickled","en") => "pickled",
-        ("pickled", "pl") => "marynowana",   ("pickled","uk") => "маринована",
+        ("boiled", "ru") => "варёная",
+        ("boiled", "en") => "boiled",
+        ("boiled", "pl") => "ugotowana",
+        ("boiled", "uk") => "варена",
+        ("fried", "ru") => "жареная",
+        ("fried", "en") => "fried",
+        ("fried", "pl") => "smażona",
+        ("fried", "uk") => "смажена",
+        ("baked", "ru") => "запечённая",
+        ("baked", "en") => "baked",
+        ("baked", "pl") => "pieczona",
+        ("baked", "uk") => "запечена",
+        ("grilled", "ru") => "гриль",
+        ("grilled", "en") => "grilled",
+        ("grilled", "pl") => "z grilla",
+        ("grilled", "uk") => "на грилі",
+        ("steamed", "ru") => "на пару",
+        ("steamed", "en") => "steamed",
+        ("steamed", "pl") => "na parze",
+        ("steamed", "uk") => "на парі",
+        ("smoked", "ru") => "копчёная",
+        ("smoked", "en") => "smoked",
+        ("smoked", "pl") => "wędzona",
+        ("smoked", "uk") => "копчена",
+        ("frozen", "ru") => "мороженая",
+        ("frozen", "en") => "frozen",
+        ("frozen", "pl") => "mrożona",
+        ("frozen", "uk") => "заморожена",
+        ("dried", "ru") => "сушёная",
+        ("dried", "en") => "dried",
+        ("dried", "pl") => "suszona",
+        ("dried", "uk") => "сушена",
+        ("pickled", "ru") => "маринованная",
+        ("pickled", "en") => "pickled",
+        ("pickled", "pl") => "marynowana",
+        ("pickled", "uk") => "маринована",
         _ => state,
-    }.to_string()
+    }
+    .to_string()
 }
 
 /// Build a seasonality response.
@@ -498,7 +641,8 @@ pub fn build_recipe_card(
     // Stable slug — derived from canonical English `dish_name`.
     // Used by clients for state tracking (e.g. added_recipes) because
     // display_name/dish_name_local vary by language and AI rephrasing.
-    let slug = card.dish_name
+    let slug = card
+        .dish_name
         .trim()
         .to_lowercase()
         .split_whitespace()
@@ -513,9 +657,13 @@ pub fn build_recipe_card(
         display_name: card.display_name.clone(),
         dish_type: Some(card.dish_type.clone()),
         servings: card.servings,
-        ingredients: card.ingredients.iter().map(|ing| {
-            RecipeIngredientRow {
-                name: ing.product.as_ref()
+        ingredients: card
+            .ingredients
+            .iter()
+            .map(|ing| RecipeIngredientRow {
+                name: ing
+                    .product
+                    .as_ref()
                     .map(|p| p.name(lang.code()).to_string())
                     .unwrap_or_else(|| ing.slug_hint.clone()),
                 slug: ing.resolved_slug.clone(),
@@ -527,17 +675,19 @@ pub fn build_recipe_card(
                 protein_g: ing.protein_g,
                 fat_g: ing.fat_g,
                 carbs_g: ing.carbs_g,
-            }
-        }).collect(),
-        steps: card.steps.iter().map(|s| {
-            super::chat_response::RecipeStepRow {
+            })
+            .collect(),
+        steps: card
+            .steps
+            .iter()
+            .map(|s| super::chat_response::RecipeStepRow {
                 step: s.step,
                 text: s.text.clone(),
                 time_min: s.time_min,
                 temp_c: s.temp_c,
                 tip: s.tip.clone(),
-            }
-        }).collect(),
+            })
+            .collect(),
         total_output_g: card.total_output_g,
         total_gross_g: card.total_gross_g,
         total_loss_g: total_loss,
@@ -552,55 +702,86 @@ pub fn build_recipe_card(
         per_serving_fat: card.per_serving_fat,
         per_serving_carbs: card.per_serving_carbs,
         unresolved: card.unresolved.clone(),
-        removed_ingredients: card.removed_ingredients.iter().map(|(slug, reason)| {
-            super::chat_response::RemovedIngredient {
+        removed_ingredients: card
+            .removed_ingredients
+            .iter()
+            .map(|(slug, reason)| super::chat_response::RemovedIngredient {
                 slug: slug.clone(),
                 reason: reason.clone(),
-            }
-        }).collect(),
+            })
+            .collect(),
         complexity: card.complexity.clone(),
         goal: card.goal.clone(),
         allergens: card.allergens.clone(),
         tags: card.tags.clone(),
         // ── Goal Engine v2 ──
         applied_constraints: card.applied_constraints.clone(),
-        adaptations: card.adaptations.iter().map(|a| {
-            super::chat_response::AdaptationActionRow {
+        adaptations: card
+            .adaptations
+            .iter()
+            .map(|a| super::chat_response::AdaptationActionRow {
                 action: a.action.clone(),
                 slug: a.slug.clone(),
                 detail: a.detail.clone(),
-            }
-        }).collect(),
+            })
+            .collect(),
         validation_warnings: card.validation_warnings.clone(),
         auto_fixes: card.auto_fixes.clone(),
         dish_image_url: card.dish_image_url.clone(),
     };
 
-    let mut resp = ChatResponse::with_card(
-        text,
-        Card::Recipe(recipe_card),
-        Intent::RecipeHelp,
-        lang,
-        0,
-    );
+    let mut resp =
+        ChatResponse::with_card(text, Card::Recipe(recipe_card), Intent::RecipeHelp, lang, 0);
 
     // Suggest follow-ups
     let suggestions = match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: "🔄 Другое блюдо".into(), query: "предложи рецепт".into(), emoji: None },
-            Suggestion { label: "🥗 План питания".into(), query: "составь план питания".into(), emoji: None },
+            Suggestion {
+                label: "🔄 Другое блюдо".into(),
+                query: "предложи рецепт".into(),
+                emoji: None,
+            },
+            Suggestion {
+                label: "🥗 План питания".into(),
+                query: "составь план питания".into(),
+                emoji: None,
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: "🔄 Another dish".into(), query: "suggest a recipe".into(), emoji: None },
-            Suggestion { label: "🥗 Meal plan".into(), query: "build my meal plan".into(), emoji: None },
+            Suggestion {
+                label: "🔄 Another dish".into(),
+                query: "suggest a recipe".into(),
+                emoji: None,
+            },
+            Suggestion {
+                label: "🥗 Meal plan".into(),
+                query: "build my meal plan".into(),
+                emoji: None,
+            },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: "🔄 Inne danie".into(), query: "zaproponuj przepis".into(), emoji: None },
-            Suggestion { label: "🥗 Plan posiłków".into(), query: "ułóż plan posiłków".into(), emoji: None },
+            Suggestion {
+                label: "🔄 Inne danie".into(),
+                query: "zaproponuj przepis".into(),
+                emoji: None,
+            },
+            Suggestion {
+                label: "🥗 Plan posiłków".into(),
+                query: "ułóż plan posiłków".into(),
+                emoji: None,
+            },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: "🔄 Інша страва".into(), query: "запропонуй рецепт".into(), emoji: None },
-            Suggestion { label: "🥗 План харчування".into(), query: "склади план харчування".into(), emoji: None },
+            Suggestion {
+                label: "🔄 Інша страва".into(),
+                query: "запропонуй рецепт".into(),
+                emoji: None,
+            },
+            Suggestion {
+                label: "🥗 План харчування".into(),
+                query: "склади план харчування".into(),
+                emoji: None,
+            },
         ],
     };
     resp.suggestions = suggestions;
@@ -617,7 +798,13 @@ pub fn build_meal_idea(
     goal: HealthGoal,
 ) -> ChatResponse {
     let ingredient_name = p.name(lang.code()).to_string();
-    let text = tpl::meal_idea_with_product(meal_name, description, &ingredient_name, p.calories_per_100g as i32, lang);
+    let text = tpl::meal_idea_with_product(
+        meal_name,
+        description,
+        &ingredient_name,
+        p.calories_per_100g as i32,
+        lang,
+    );
     let mut resp = ChatResponse::with_card(
         text,
         Card::Product(ProductCard {
@@ -641,7 +828,11 @@ pub fn build_meal_idea(
     resp
 }
 
-pub fn build_meal_idea_text_only(meal_name: &str, description: &str, lang: ChatLang) -> ChatResponse {
+pub fn build_meal_idea_text_only(
+    meal_name: &str,
+    description: &str,
+    lang: ChatLang,
+) -> ChatResponse {
     let text = tpl::meal_idea_text_only(meal_name, description, lang);
     ChatResponse::text_only(text, Intent::MealIdea, lang, 0)
 }
@@ -662,7 +853,7 @@ pub fn build_meal_combo(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> 
     // Protein card
     let pname = combo.protein.name(lang.code()).to_string();
     cards.push(Card::Product(ProductCard {
-            actions: vec![],
+        actions: vec![],
         slug: combo.protein.slug.clone(),
         name: pname,
         calories_per_100g: combo.protein.calories_per_100g,
@@ -677,7 +868,7 @@ pub fn build_meal_combo(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> 
     // Side card
     let sname = combo.side.name(lang.code()).to_string();
     cards.push(Card::Product(ProductCard {
-            actions: vec![],
+        actions: vec![],
         slug: combo.side.slug.clone(),
         name: sname,
         calories_per_100g: combo.side.calories_per_100g,
@@ -707,37 +898,95 @@ pub fn build_meal_combo(combo: &MealCombo, lang: ChatLang, goal: HealthGoal) -> 
     }
 
     let reason = match lang {
-        ChatLang::Ru => format!("{}ккал · {:.0}г белка", combo.total_kcal, combo.total_protein),
-        ChatLang::En => format!("{}kcal · {:.0}g protein", combo.total_kcal, combo.total_protein),
-        ChatLang::Pl => format!("{}kcal · {:.0}g białka", combo.total_kcal, combo.total_protein),
-        ChatLang::Uk => format!("{}ккал · {:.0}г білка", combo.total_kcal, combo.total_protein),
+        ChatLang::Ru => format!(
+            "{}ккал · {:.0}г белка",
+            combo.total_kcal, combo.total_protein
+        ),
+        ChatLang::En => format!(
+            "{}kcal · {:.0}g protein",
+            combo.total_kcal, combo.total_protein
+        ),
+        ChatLang::Pl => format!(
+            "{}kcal · {:.0}g białka",
+            combo.total_kcal, combo.total_protein
+        ),
+        ChatLang::Uk => format!(
+            "{}ккал · {:.0}г білка",
+            combo.total_kcal, combo.total_protein
+        ),
     };
 
-    let mut resp = ChatResponse::with_cards(
-        text, cards, Intent::MealIdea, vec![], reason, lang, 0,
-    );
+    let mut resp = ChatResponse::with_cards(text, cards, Intent::MealIdea, vec![], reason, lang, 0);
 
     // Suggestions: try another combo, recipe with protein, details
     resp.suggestions = match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: "🔄 Другой вариант".into(), query: "другое блюдо".into(), emoji: Some("🔄") },
-            Suggestion { label: format!("🍳 Рецепт с {}", combo.protein.name_ru), query: format!("рецепт с {}", combo.protein.slug), emoji: Some("🍳") },
-            Suggestion { label: "📋 План на день".into(), query: "план питания на день".into(), emoji: Some("📋") },
+            Suggestion {
+                label: "🔄 Другой вариант".into(),
+                query: "другое блюдо".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: format!("🍳 Рецепт с {}", combo.protein.name_ru),
+                query: format!("рецепт с {}", combo.protein.slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "📋 План на день".into(),
+                query: "план питания на день".into(),
+                emoji: Some("📋"),
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: "🔄 Another combo".into(), query: "another meal idea".into(), emoji: Some("🔄") },
-            Suggestion { label: format!("🍳 Recipe with {}", combo.protein.name_en), query: format!("recipe with {}", combo.protein.slug), emoji: Some("🍳") },
-            Suggestion { label: "📋 Full day plan".into(), query: "meal plan for the day".into(), emoji: Some("📋") },
+            Suggestion {
+                label: "🔄 Another combo".into(),
+                query: "another meal idea".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: format!("🍳 Recipe with {}", combo.protein.name_en),
+                query: format!("recipe with {}", combo.protein.slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "📋 Full day plan".into(),
+                query: "meal plan for the day".into(),
+                emoji: Some("📋"),
+            },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: "🔄 Inny wariant".into(), query: "inny pomysł na posiłek".into(), emoji: Some("🔄") },
-            Suggestion { label: format!("🍳 Przepis z {}", combo.protein.name_pl), query: format!("przepis z {}", combo.protein.slug), emoji: Some("🍳") },
-            Suggestion { label: "📋 Plan na dzień".into(), query: "plan posiłków na dzień".into(), emoji: Some("📋") },
+            Suggestion {
+                label: "🔄 Inny wariant".into(),
+                query: "inny pomysł na posiłek".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: format!("🍳 Przepis z {}", combo.protein.name_pl),
+                query: format!("przepis z {}", combo.protein.slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "📋 Plan na dzień".into(),
+                query: "plan posiłków na dzień".into(),
+                emoji: Some("📋"),
+            },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: "🔄 Інший варіант".into(), query: "інша страва".into(), emoji: Some("🔄") },
-            Suggestion { label: format!("🍳 Рецепт з {}", combo.protein.name_uk), query: format!("рецепт з {}", combo.protein.slug), emoji: Some("🍳") },
-            Suggestion { label: "📋 План на день".into(), query: "план харчування на день".into(), emoji: Some("📋") },
+            Suggestion {
+                label: "🔄 Інший варіант".into(),
+                query: "інша страва".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: format!("🍳 Рецепт з {}", combo.protein.name_uk),
+                query: format!("рецепт з {}", combo.protein.slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "📋 План на день".into(),
+                query: "план харчування на день".into(),
+                emoji: Some("📋"),
+            },
         ],
     };
 
@@ -761,34 +1010,43 @@ pub fn build_meal_plan(
         ChatLang::Uk => &["🌅 Сніданок", "☀️ Обід", "🌙 Вечеря"],
     };
 
-    let cards: Vec<Card> = products.iter().map(|(p, reason_tag, _)| {
-        let name = p.name(lang.code()).to_string();
-        let hl = tpl::highlight(p, lang, goal);
-        Card::Product(ProductCard {
-            actions: vec![],
-            slug: p.slug.clone(),
-            name,
-            calories_per_100g: p.calories_per_100g,
-            protein_per_100g: p.protein_per_100g,
-            fat_per_100g: p.fat_per_100g,
-            carbs_per_100g: p.carbs_per_100g,
-            image_url: p.image_url.clone(),
-            highlight: Some(hl),
-            reason_tag: Some(reason_tag),
+    let cards: Vec<Card> = products
+        .iter()
+        .map(|(p, reason_tag, _)| {
+            let name = p.name(lang.code()).to_string();
+            let hl = tpl::highlight(p, lang, goal);
+            Card::Product(ProductCard {
+                actions: vec![],
+                slug: p.slug.clone(),
+                name,
+                calories_per_100g: p.calories_per_100g,
+                protein_per_100g: p.protein_per_100g,
+                fat_per_100g: p.fat_per_100g,
+                carbs_per_100g: p.carbs_per_100g,
+                image_url: p.image_url.clone(),
+                highlight: Some(hl),
+                reason_tag: Some(reason_tag),
+            })
         })
-    }).collect();
+        .collect();
 
     let text = tpl::meal_plan_text(products, meal_labels, lang, goal);
 
     // Use realistic portions per product type (not blanket 200g)
-    let total_cal: i32 = products.iter().map(|(p, _, _)| {
-        let g = portion_grams(p);
-        (p.calories_per_100g * g / 100.0) as i32
-    }).sum();
-    let total_pro: f32 = products.iter().map(|(p, _, _)| {
-        let g = portion_grams(p);
-        p.protein_per_100g * g / 100.0
-    }).sum();
+    let total_cal: i32 = products
+        .iter()
+        .map(|(p, _, _)| {
+            let g = portion_grams(p);
+            (p.calories_per_100g * g / 100.0) as i32
+        })
+        .sum();
+    let total_pro: f32 = products
+        .iter()
+        .map(|(p, _, _)| {
+            let g = portion_grams(p);
+            p.protein_per_100g * g / 100.0
+        })
+        .sum();
     let reason = match lang {
         ChatLang::Ru => format!("~{} ккал · {:.0}г белка за день", total_cal, total_pro),
         ChatLang::En => format!("~{} kcal · {:.0}g protein per day", total_cal, total_pro),
@@ -796,22 +1054,50 @@ pub fn build_meal_plan(
         ChatLang::Uk => format!("~{} ккал · {:.0}г білка за день", total_cal, total_pro),
     };
 
-    let mut resp = ChatResponse::with_cards(
-        text, cards, Intent::MealIdea, vec![], reason, lang, 0,
-    );
+    let mut resp = ChatResponse::with_cards(text, cards, Intent::MealIdea, vec![], reason, lang, 0);
 
     resp.suggestions = match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: "Другой вариант плана".into(), query: "другой план питания".into(), emoji: Some("🔄") },
-            Suggestion { label: "Подробнее о завтраке".into(), query: format!("что такое {}", products.first().map(|(p,_,_)| p.slug.as_str()).unwrap_or("eggs")), emoji: Some("🔍") },
+            Suggestion {
+                label: "Другой вариант плана".into(),
+                query: "другой план питания".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: "Подробнее о завтраке".into(),
+                query: format!(
+                    "что такое {}",
+                    products
+                        .first()
+                        .map(|(p, _, _)| p.slug.as_str())
+                        .unwrap_or("eggs")
+                ),
+                emoji: Some("🔍"),
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: "Another plan".into(), query: "another meal plan".into(), emoji: Some("🔄") },
-            Suggestion { label: "Breakfast details".into(), query: format!("what is {}", products.first().map(|(p,_,_)| p.slug.as_str()).unwrap_or("eggs")), emoji: Some("🔍") },
+            Suggestion {
+                label: "Another plan".into(),
+                query: "another meal plan".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: "Breakfast details".into(),
+                query: format!(
+                    "what is {}",
+                    products
+                        .first()
+                        .map(|(p, _, _)| p.slug.as_str())
+                        .unwrap_or("eggs")
+                ),
+                emoji: Some("🔍"),
+            },
         ],
-        _ => vec![
-            Suggestion { label: "Inny plan".into(), query: "inny plan posiłków".into(), emoji: Some("🔄") },
-        ],
+        _ => vec![Suggestion {
+            label: "Inny plan".into(),
+            query: "inny plan posiłków".into(),
+            emoji: Some("🔄"),
+        }],
     };
 
     resp
@@ -853,56 +1139,106 @@ pub fn build_product_not_found(lang: ChatLang) -> ChatResponse {
 
 fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -> Vec<Suggestion> {
     let plan_label: String = match (lang, goal) {
-        (ChatLang::Ru, HealthGoal::LowCalorie)  => "~1600 ккал · 100г белка → Собрать день".into(),
-        (ChatLang::Ru, HealthGoal::HighProtein)  => "~2200 ккал · 160г белка → Собрать день".into(),
-        (ChatLang::Ru, HealthGoal::Balanced)     => "~1800 ккал · 120г белка → Собрать день".into(),
-        (ChatLang::En, HealthGoal::LowCalorie)   => "~1600 kcal · 100g protein → Build my day".into(),
-        (ChatLang::En, HealthGoal::HighProtein)   => "~2200 kcal · 160g protein → Build my day".into(),
-        (ChatLang::En, HealthGoal::Balanced)      => "~1800 kcal · 120g protein → Build my day".into(),
-        (ChatLang::Pl, HealthGoal::LowCalorie)   => "~1600 kcal · 100g białka → Ułóż dzień".into(),
-        (ChatLang::Pl, HealthGoal::HighProtein)   => "~2200 kcal · 160g białka → Ułóż dzień".into(),
-        (ChatLang::Pl, HealthGoal::Balanced)      => "~1800 kcal · 120g białka → Ułóż dzień".into(),
-        (ChatLang::Uk, HealthGoal::LowCalorie)   => "~1600 ккал · 100г білка → Скласти день".into(),
-        (ChatLang::Uk, HealthGoal::HighProtein)   => "~2200 ккал · 160г білка → Скласти день".into(),
-        (ChatLang::Uk, HealthGoal::Balanced)      => "~1800 ккал · 120г білка → Скласти день".into(),
+        (ChatLang::Ru, HealthGoal::LowCalorie) => "~1600 ккал · 100г белка → Собрать день".into(),
+        (ChatLang::Ru, HealthGoal::HighProtein) => "~2200 ккал · 160г белка → Собрать день".into(),
+        (ChatLang::Ru, HealthGoal::Balanced) => "~1800 ккал · 120г белка → Собрать день".into(),
+        (ChatLang::En, HealthGoal::LowCalorie) => "~1600 kcal · 100g protein → Build my day".into(),
+        (ChatLang::En, HealthGoal::HighProtein) => {
+            "~2200 kcal · 160g protein → Build my day".into()
+        }
+        (ChatLang::En, HealthGoal::Balanced) => "~1800 kcal · 120g protein → Build my day".into(),
+        (ChatLang::Pl, HealthGoal::LowCalorie) => "~1600 kcal · 100g białka → Ułóż dzień".into(),
+        (ChatLang::Pl, HealthGoal::HighProtein) => "~2200 kcal · 160g białka → Ułóż dzień".into(),
+        (ChatLang::Pl, HealthGoal::Balanced) => "~1800 kcal · 120g białka → Ułóż dzień".into(),
+        (ChatLang::Uk, HealthGoal::LowCalorie) => "~1600 ккал · 100г білка → Скласти день".into(),
+        (ChatLang::Uk, HealthGoal::HighProtein) => "~2200 ккал · 160г білка → Скласти день".into(),
+        (ChatLang::Uk, HealthGoal::Balanced) => "~1800 ккал · 120г білка → Скласти день".into(),
     };
 
     match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: format!("🍲 Лёгкий рецепт с {}", top_name), query: format!("приготовь лёгкое блюдо с {}", top_name), emoji: Some("🍲") },
-            Suggestion { label: plan_label, query: "план питания на день".into(), emoji: Some("📋") },
-            Suggestion { label: "Ещё варианты".into(), query: match goal {
-                HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
-                HealthGoal::LowCalorie  => "ещё низкокалорийные продукты".into(),
-                HealthGoal::Balanced    => "ещё полезные продукты".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("🍲 Лёгкий рецепт с {}", top_name),
+                query: format!("приготовь лёгкое блюдо с {}", top_name),
+                emoji: Some("🍲"),
+            },
+            Suggestion {
+                label: plan_label,
+                query: "план питания на день".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "Ещё варианты".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
+                    HealthGoal::LowCalorie => "ещё низкокалорийные продукты".into(),
+                    HealthGoal::Balanced => "ещё полезные продукты".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: format!("🍲 Light recipe with {}", top_name), query: format!("cook a light dish with {}", top_name), emoji: Some("🍲") },
-            Suggestion { label: plan_label, query: "meal plan for the day".into(), emoji: Some("📋") },
-            Suggestion { label: "More options".into(), query: match goal {
-                HealthGoal::HighProtein => "more high protein foods".into(),
-                HealthGoal::LowCalorie  => "more low calorie foods".into(),
-                HealthGoal::Balanced    => "more healthy food ideas".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("🍲 Light recipe with {}", top_name),
+                query: format!("cook a light dish with {}", top_name),
+                emoji: Some("🍲"),
+            },
+            Suggestion {
+                label: plan_label,
+                query: "meal plan for the day".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "More options".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "more high protein foods".into(),
+                    HealthGoal::LowCalorie => "more low calorie foods".into(),
+                    HealthGoal::Balanced => "more healthy food ideas".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: format!("🍲 Lekki przepis z {}", top_name), query: format!("ugotuj lekkie danie z {}", top_name), emoji: Some("🍲") },
-            Suggestion { label: plan_label, query: "plan posiłków na dzień".into(), emoji: Some("📋") },
-            Suggestion { label: "Więcej opcji".into(), query: match goal {
-                HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
-                HealthGoal::LowCalorie  => "więcej niskokalorycznych produktów".into(),
-                HealthGoal::Balanced    => "więcej zdrowych produktów".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("🍲 Lekki przepis z {}", top_name),
+                query: format!("ugotuj lekkie danie z {}", top_name),
+                emoji: Some("🍲"),
+            },
+            Suggestion {
+                label: plan_label,
+                query: "plan posiłków na dzień".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "Więcej opcji".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
+                    HealthGoal::LowCalorie => "więcej niskokalorycznych produktów".into(),
+                    HealthGoal::Balanced => "więcej zdrowych produktów".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: format!("🍲 Легкий рецепт з {}", top_name), query: format!("приготуй легку страву з {}", top_name), emoji: Some("🍲") },
-            Suggestion { label: plan_label, query: "план харчування на день".into(), emoji: Some("📋") },
-            Suggestion { label: "Ще варіанти".into(), query: match goal {
-                HealthGoal::HighProtein => "ще високобілкові продукти".into(),
-                HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
-                HealthGoal::Balanced    => "ще корисні продукти".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("🍲 Легкий рецепт з {}", top_name),
+                query: format!("приготуй легку страву з {}", top_name),
+                emoji: Some("🍲"),
+            },
+            Suggestion {
+                label: plan_label,
+                query: "план харчування на день".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "Ще варіанти".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "ще високобілкові продукти".into(),
+                    HealthGoal::LowCalorie => "ще низькокалорійні продукти".into(),
+                    HealthGoal::Balanced => "ще корисні продукти".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
     }
 }
@@ -910,109 +1246,263 @@ fn build_healthy_suggestions(lang: ChatLang, goal: HealthGoal, top_name: &str) -
 fn build_meal_suggestions(lang: ChatLang, slug: &str) -> Vec<Suggestion> {
     match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: "Покажи рецепт".into(), query: format!("рецепт с {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "Другая идея".into(), query: "что ещё приготовить".into(), emoji: Some("🔄") },
-            Suggestion { label: "Калории продукта".into(), query: format!("калории {}", slug), emoji: Some("📊") },
+            Suggestion {
+                label: "Покажи рецепт".into(),
+                query: format!("рецепт с {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "Другая идея".into(),
+                query: "что ещё приготовить".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: "Калории продукта".into(),
+                query: format!("калории {}", slug),
+                emoji: Some("📊"),
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: "Show recipe".into(), query: format!("recipe with {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "Another idea".into(), query: "another meal idea".into(), emoji: Some("🔄") },
-            Suggestion { label: "Product calories".into(), query: format!("calories in {}", slug), emoji: Some("📊") },
+            Suggestion {
+                label: "Show recipe".into(),
+                query: format!("recipe with {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "Another idea".into(),
+                query: "another meal idea".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: "Product calories".into(),
+                query: format!("calories in {}", slug),
+                emoji: Some("📊"),
+            },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: "Pokaż przepis".into(), query: format!("przepis z {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "Inny pomysł".into(), query: "inny pomysł na posiłek".into(), emoji: Some("🔄") },
-            Suggestion { label: "Kalorie produktu".into(), query: format!("kalorie {}", slug), emoji: Some("📊") },
+            Suggestion {
+                label: "Pokaż przepis".into(),
+                query: format!("przepis z {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "Inny pomysł".into(),
+                query: "inny pomysł na posiłek".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: "Kalorie produktu".into(),
+                query: format!("kalorie {}", slug),
+                emoji: Some("📊"),
+            },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: "Покажи рецепт".into(), query: format!("рецепт з {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "Інша ідея".into(), query: "що ще приготувати".into(), emoji: Some("🔄") },
-            Suggestion { label: "Калорії продукту".into(), query: format!("калорії {}", slug), emoji: Some("📊") },
+            Suggestion {
+                label: "Покажи рецепт".into(),
+                query: format!("рецепт з {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "Інша ідея".into(),
+                query: "що ще приготувати".into(),
+                emoji: Some("🔄"),
+            },
+            Suggestion {
+                label: "Калорії продукту".into(),
+                query: format!("калорії {}", slug),
+                emoji: Some("📊"),
+            },
         ],
     }
 }
 
 /// Suggestions for a specific product mentioned in a healthy query.
 /// E.g. "курица полезная" → recipes, nutrition deep-dive, alternatives.
-fn build_specific_suggestions(lang: ChatLang, goal: HealthGoal, name: &str, slug: &str) -> Vec<Suggestion> {
+fn build_specific_suggestions(
+    lang: ChatLang,
+    goal: HealthGoal,
+    name: &str,
+    slug: &str,
+) -> Vec<Suggestion> {
     match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: format!("Рецепты с {}", name), query: format!("рецепт с {}", slug), emoji: Some("📖") },
-            Suggestion { label: format!("Подробнее о {}", name), query: format!("что такое {}", slug), emoji: Some("🔍") },
-            Suggestion { label: "Похожие продукты".into(), query: match goal {
-                HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
-                HealthGoal::LowCalorie  => "ещё низкокалорийные продукты".into(),
-                HealthGoal::Balanced    => "ещё полезные продукты".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Рецепты с {}", name),
+                query: format!("рецепт с {}", slug),
+                emoji: Some("📖"),
+            },
+            Suggestion {
+                label: format!("Подробнее о {}", name),
+                query: format!("что такое {}", slug),
+                emoji: Some("🔍"),
+            },
+            Suggestion {
+                label: "Похожие продукты".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "ещё высокобелковые продукты".into(),
+                    HealthGoal::LowCalorie => "ещё низкокалорийные продукты".into(),
+                    HealthGoal::Balanced => "ещё полезные продукты".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: format!("Recipes with {}", name), query: format!("recipe with {}", slug), emoji: Some("📖") },
-            Suggestion { label: format!("More about {}", name), query: format!("what is {}", slug), emoji: Some("🔍") },
-            Suggestion { label: "Similar products".into(), query: match goal {
-                HealthGoal::HighProtein => "more high protein foods".into(),
-                HealthGoal::LowCalorie  => "more low calorie foods".into(),
-                HealthGoal::Balanced    => "more healthy food ideas".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Recipes with {}", name),
+                query: format!("recipe with {}", slug),
+                emoji: Some("📖"),
+            },
+            Suggestion {
+                label: format!("More about {}", name),
+                query: format!("what is {}", slug),
+                emoji: Some("🔍"),
+            },
+            Suggestion {
+                label: "Similar products".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "more high protein foods".into(),
+                    HealthGoal::LowCalorie => "more low calorie foods".into(),
+                    HealthGoal::Balanced => "more healthy food ideas".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: format!("Przepisy z {}", name), query: format!("przepis z {}", slug), emoji: Some("📖") },
-            Suggestion { label: format!("Więcej o {}", name), query: format!("co to jest {}", slug), emoji: Some("🔍") },
-            Suggestion { label: "Podobne produkty".into(), query: match goal {
-                HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
-                HealthGoal::LowCalorie  => "więcej niskokalorycznych produktów".into(),
-                HealthGoal::Balanced    => "więcej zdrowych produktów".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Przepisy z {}", name),
+                query: format!("przepis z {}", slug),
+                emoji: Some("📖"),
+            },
+            Suggestion {
+                label: format!("Więcej o {}", name),
+                query: format!("co to jest {}", slug),
+                emoji: Some("🔍"),
+            },
+            Suggestion {
+                label: "Podobne produkty".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
+                    HealthGoal::LowCalorie => "więcej niskokalorycznych produktów".into(),
+                    HealthGoal::Balanced => "więcej zdrowych produktów".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: format!("Рецепти з {}", name), query: format!("рецепт з {}", slug), emoji: Some("📖") },
-            Suggestion { label: format!("Детальніше про {}", name), query: format!("що таке {}", slug), emoji: Some("🔍") },
-            Suggestion { label: "Схожі продукти".into(), query: match goal {
-                HealthGoal::HighProtein => "ще високобілкові продукти".into(),
-                HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
-                HealthGoal::Balanced    => "ще корисні продукти".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Рецепти з {}", name),
+                query: format!("рецепт з {}", slug),
+                emoji: Some("📖"),
+            },
+            Suggestion {
+                label: format!("Детальніше про {}", name),
+                query: format!("що таке {}", slug),
+                emoji: Some("🔍"),
+            },
+            Suggestion {
+                label: "Схожі продукти".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "ще високобілкові продукти".into(),
+                    HealthGoal::LowCalorie => "ще низькокалорійні продукти".into(),
+                    HealthGoal::Balanced => "ще корисні продукти".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
     }
 }
 
 /// Suggestions for "already seen" responses — focus on action + exploration.
-fn build_already_seen_suggestions(lang: ChatLang, goal: HealthGoal, name: &str, slug: &str) -> Vec<Suggestion> {
+fn build_already_seen_suggestions(
+    lang: ChatLang,
+    goal: HealthGoal,
+    name: &str,
+    slug: &str,
+) -> Vec<Suggestion> {
     match lang {
         ChatLang::Ru => vec![
-            Suggestion { label: format!("Рецепт с {}", name), query: format!("рецепт с {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "Собрать план на день".into(), query: "план питания на день".into(), emoji: Some("📋") },
-            Suggestion { label: "Другие продукты".into(), query: match goal {
-                HealthGoal::HighProtein => "что ещё высокобелкового".into(),
-                HealthGoal::LowCalorie  => "что ещё низкокалорийного".into(),
-                HealthGoal::Balanced    => "ещё полезные продукты".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Рецепт с {}", name),
+                query: format!("рецепт с {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "Собрать план на день".into(),
+                query: "план питания на день".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "Другие продукты".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "что ещё высокобелкового".into(),
+                    HealthGoal::LowCalorie => "что ещё низкокалорийного".into(),
+                    HealthGoal::Balanced => "ещё полезные продукты".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::En => vec![
-            Suggestion { label: format!("Recipe with {}", name), query: format!("recipe with {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "Build meal plan".into(), query: "meal plan for the day".into(), emoji: Some("📋") },
-            Suggestion { label: "Other products".into(), query: match goal {
-                HealthGoal::HighProtein => "more high protein foods".into(),
-                HealthGoal::LowCalorie  => "more low calorie foods".into(),
-                HealthGoal::Balanced    => "more healthy foods".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Recipe with {}", name),
+                query: format!("recipe with {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "Build meal plan".into(),
+                query: "meal plan for the day".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "Other products".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "more high protein foods".into(),
+                    HealthGoal::LowCalorie => "more low calorie foods".into(),
+                    HealthGoal::Balanced => "more healthy foods".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::Pl => vec![
-            Suggestion { label: format!("Przepis z {}", name), query: format!("przepis z {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "Plan na dzień".into(), query: "plan posiłków na dzień".into(), emoji: Some("📋") },
-            Suggestion { label: "Inne produkty".into(), query: match goal {
-                HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
-                HealthGoal::LowCalorie  => "więcej niskokalorycznych produktów".into(),
-                HealthGoal::Balanced    => "więcej zdrowych produktów".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Przepis z {}", name),
+                query: format!("przepis z {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "Plan na dzień".into(),
+                query: "plan posiłków na dzień".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "Inne produkty".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "więcej produktów wysokobiałkowych".into(),
+                    HealthGoal::LowCalorie => "więcej niskokalorycznych produktów".into(),
+                    HealthGoal::Balanced => "więcej zdrowych produktów".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
         ChatLang::Uk => vec![
-            Suggestion { label: format!("Рецепт з {}", name), query: format!("рецепт з {}", slug), emoji: Some("🍳") },
-            Suggestion { label: "План на день".into(), query: "план харчування на день".into(), emoji: Some("📋") },
-            Suggestion { label: "Інші продукти".into(), query: match goal {
-                HealthGoal::HighProtein => "ще високобілкові продукти".into(),
-                HealthGoal::LowCalorie  => "ще низькокалорійні продукти".into(),
-                HealthGoal::Balanced    => "ще корисні продукти".into(),
-            }, emoji: Some("🔄") },
+            Suggestion {
+                label: format!("Рецепт з {}", name),
+                query: format!("рецепт з {}", slug),
+                emoji: Some("🍳"),
+            },
+            Suggestion {
+                label: "План на день".into(),
+                query: "план харчування на день".into(),
+                emoji: Some("📋"),
+            },
+            Suggestion {
+                label: "Інші продукти".into(),
+                query: match goal {
+                    HealthGoal::HighProtein => "ще високобілкові продукти".into(),
+                    HealthGoal::LowCalorie => "ще низькокалорійні продукти".into(),
+                    HealthGoal::Balanced => "ще корисні продукти".into(),
+                },
+                emoji: Some("🔄"),
+            },
         ],
     }
 }
@@ -1031,22 +1521,25 @@ pub fn build_suggestion_block(
     goal: HealthGoal,
 ) -> SuggestionBlock {
     let title = complement_title(complement, lang);
-    let items: Vec<Card> = products.iter().map(|(p, reason_tag, _)| {
-        let name = p.name(lang.code()).to_string();
-        let hl = tpl::highlight(p, lang, goal);
-        Card::Product(ProductCard {
-            actions: vec![],
-            slug: p.slug.clone(),
-            name,
-            calories_per_100g: p.calories_per_100g,
-            protein_per_100g: p.protein_per_100g,
-            fat_per_100g: p.fat_per_100g,
-            carbs_per_100g: p.carbs_per_100g,
-            image_url: p.image_url.clone(),
-            highlight: Some(hl),
-            reason_tag: Some(reason_tag),
+    let items: Vec<Card> = products
+        .iter()
+        .map(|(p, reason_tag, _)| {
+            let name = p.name(lang.code()).to_string();
+            let hl = tpl::highlight(p, lang, goal);
+            Card::Product(ProductCard {
+                actions: vec![],
+                slug: p.slug.clone(),
+                name,
+                calories_per_100g: p.calories_per_100g,
+                protein_per_100g: p.protein_per_100g,
+                fat_per_100g: p.fat_per_100g,
+                carbs_per_100g: p.carbs_per_100g,
+                image_url: p.image_url.clone(),
+                highlight: Some(hl),
+                reason_tag: Some(reason_tag),
+            })
         })
-    }).collect();
+        .collect();
 
     SuggestionBlock {
         title,

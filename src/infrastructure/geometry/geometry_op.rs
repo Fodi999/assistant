@@ -14,13 +14,13 @@
 //!
 //! Returns raw GLB bytes (model/gltf-binary).
 
-use serde::{Deserialize, Serialize};
 use crate::infrastructure::geometry::dispatcher::dispatch_with_quality;
-use crate::infrastructure::geometry::kernel::csg::{Aabb, subtract};
+use crate::infrastructure::geometry::kernel::csg::{subtract, Aabb};
 use crate::infrastructure::geometry::kernel::quality::GeometryQuality;
-use crate::infrastructure::geometry::mesh::Material;
 use crate::infrastructure::geometry::mesh::hex_to_rgb;
+use crate::infrastructure::geometry::mesh::Material;
 use crate::shared::AppError;
+use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Input schema
@@ -119,33 +119,46 @@ pub fn execute_geometry_op(req: &GeometryOpRequest) -> Result<Vec<u8>, AppError>
                 if let Ok(cutter_mesh) = dispatch_with_quality(&slug, spec.as_ref(), quality) {
                     // Append cutter groups to target
                     if cutter_mesh.groups.is_empty() {
-                        mesh.groups.push(crate::infrastructure::geometry::mesh::MaterialGroup {
-                            material: cutter_mesh.material.clone(),
-                            faces: {
-                                let offset = mesh.vertices.len();
-                                mesh.vertices.extend_from_slice(&cutter_mesh.vertices);
-                                mesh.normals.extend_from_slice(&cutter_mesh.normals);
-                                mesh.uvs.extend_from_slice(&cutter_mesh.uvs);
-                                cutter_mesh.faces.iter().map(|f| [f[0]+offset, f[1]+offset, f[2]+offset]).collect()
-                            },
-                        });
+                        mesh.groups
+                            .push(crate::infrastructure::geometry::mesh::MaterialGroup {
+                                material: cutter_mesh.material.clone(),
+                                faces: {
+                                    let offset = mesh.vertices.len();
+                                    mesh.vertices.extend_from_slice(&cutter_mesh.vertices);
+                                    mesh.normals.extend_from_slice(&cutter_mesh.normals);
+                                    mesh.uvs.extend_from_slice(&cutter_mesh.uvs);
+                                    cutter_mesh
+                                        .faces
+                                        .iter()
+                                        .map(|f| [f[0] + offset, f[1] + offset, f[2] + offset])
+                                        .collect()
+                                },
+                            });
                     } else {
                         let offset = mesh.vertices.len();
                         mesh.vertices.extend_from_slice(&cutter_mesh.vertices);
                         mesh.normals.extend_from_slice(&cutter_mesh.normals);
                         mesh.uvs.extend_from_slice(&cutter_mesh.uvs);
                         for g in cutter_mesh.groups {
-                            mesh.groups.push(crate::infrastructure::geometry::mesh::MaterialGroup {
-                                material: g.material,
-                                faces: g.faces.iter().map(|f| [f[0]+offset, f[1]+offset, f[2]+offset]).collect(),
-                            });
+                            mesh.groups.push(
+                                crate::infrastructure::geometry::mesh::MaterialGroup {
+                                    material: g.material,
+                                    faces: g
+                                        .faces
+                                        .iter()
+                                        .map(|f| [f[0] + offset, f[1] + offset, f[2] + offset])
+                                        .collect(),
+                                },
+                            );
                         }
                     }
                 }
             }
         }
         op => {
-            return Err(AppError::Validation(format!("Unsupported geometry operation: {op}")));
+            return Err(AppError::Validation(format!(
+                "Unsupported geometry operation: {op}"
+            )));
         }
     }
 
@@ -193,12 +206,17 @@ fn build_cutter_aabb(cutter: &CutterSpec) -> Aabb {
     }
 }
 
-fn build_cutter_spec_for_dispatch(cutter: &CutterSpec) -> Option<(String, Option<serde_json::Value>)> {
+fn build_cutter_spec_for_dispatch(
+    cutter: &CutterSpec,
+) -> Option<(String, Option<serde_json::Value>)> {
     match cutter.kind.as_str() {
         "cylinder" | "box" | "cuboid" | "sphere" => None, // primitives handled via AABB only
         slug => {
             let color = cutter.cap_color.as_deref().unwrap_or("#CCCCCC");
-            Some((slug.to_string(), Some(serde_json::json!({ "shape": { "color_hex": color } }))))
+            Some((
+                slug.to_string(),
+                Some(serde_json::json!({ "shape": { "color_hex": color } })),
+            ))
         }
     }
 }

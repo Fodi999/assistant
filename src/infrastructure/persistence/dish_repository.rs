@@ -38,20 +38,20 @@ const DISH_COLUMNS: &str = r#"
 
 // Row type: 13 columns
 type DishRow = (
-    uuid::Uuid,                         // id
-    uuid::Uuid,                         // tenant_id
-    uuid::Uuid,                         // recipe_id
-    String,                             // name
-    Option<String>,                     // description
-    i32,                                // selling_price_cents
-    bool,                               // active
-    Option<i64>,                        // recipe_cost_cents
-    Option<f64>,                        // food_cost_percent
-    Option<f64>,                        // profit_margin_percent
-    Option<time::OffsetDateTime>,       // cost_calculated_at
-    Option<String>,                     // image_url
-    time::OffsetDateTime,               // created_at
-    time::OffsetDateTime,               // updated_at
+    uuid::Uuid,                   // id
+    uuid::Uuid,                   // tenant_id
+    uuid::Uuid,                   // recipe_id
+    String,                       // name
+    Option<String>,               // description
+    i32,                          // selling_price_cents
+    bool,                         // active
+    Option<i64>,                  // recipe_cost_cents
+    Option<f64>,                  // food_cost_percent
+    Option<f64>,                  // profit_margin_percent
+    Option<time::OffsetDateTime>, // cost_calculated_at
+    Option<String>,               // image_url
+    time::OffsetDateTime,         // created_at
+    time::OffsetDateTime,         // updated_at
 );
 
 fn row_to_dish(row: DishRow) -> AppResult<Dish> {

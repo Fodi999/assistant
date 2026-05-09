@@ -86,8 +86,8 @@ pub fn compatibility_score(dish_type: DishType, candidate_product_type: Option<&
     match dish_type {
         DishType::Dessert => match pt {
             // Fully compatible with dessert
-            "fruit" | "berry" | "dairy" | "sweetener" | "chocolate" | "nut"
-            | "seed" | "grain" | "egg" | "spice" => 1.0,
+            "fruit" | "berry" | "dairy" | "sweetener" | "chocolate" | "nut" | "seed" | "grain"
+            | "egg" | "spice" => 1.0,
             // Oils are OK in small amounts (butter in pastry)
             "oil" | "fat" => 0.8,
             // Vegetables mostly wrong (except avocado, but that's rare)
@@ -100,8 +100,8 @@ pub fn compatibility_score(dish_type: DishType, candidate_product_type: Option<&
         },
         DishType::Savory => match pt {
             // Fully compatible with savory
-            "meat" | "fish" | "seafood" | "vegetable" | "legume" | "grain"
-            | "dairy" | "egg" | "oil" | "fat" | "herb" | "spice" | "nut" | "seed" => 1.0,
+            "meat" | "fish" | "seafood" | "vegetable" | "legume" | "grain" | "dairy" | "egg"
+            | "oil" | "fat" | "herb" | "spice" | "nut" | "seed" => 1.0,
             // Sugar-heavy things → strong penalty
             "sweetener" | "chocolate" => 0.05,
             // Fruit is sometimes OK (lemon, tomato counted as veg, but apple → less)
@@ -156,9 +156,7 @@ mod tests {
 
     #[test]
     fn oatmeal_is_neutral() {
-        let ings = vec![
-            ing("oatmeal", 80.0, "grain"),
-        ];
+        let ings = vec![ing("oatmeal", 80.0, "grain")];
         assert_eq!(classify_dish(&ings, 2.0, 1.0, 0.5), DishType::Neutral);
     }
 

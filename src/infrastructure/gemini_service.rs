@@ -55,9 +55,9 @@ impl GeminiService {
         let trimmed = text.trim();
         // Check for ```json or ``` prefix
         let without_prefix = if trimmed.starts_with("```json") {
-            &trimmed[7..]  // skip "```json"
+            &trimmed[7..] // skip "```json"
         } else if trimmed.starts_with("```") {
-            &trimmed[3..]  // skip "```"
+            &trimmed[3..] // skip "```"
         } else {
             return trimmed.to_string();
         };
@@ -109,7 +109,10 @@ Respond with ONLY valid JSON, no other text:
         let translation: GroqTranslationResponse = self.parse_json_response(&content)?;
 
         if translation.pl.trim().is_empty() {
-            tracing::warn!("Gemini returned empty PL translation for: {}", ingredient_name);
+            tracing::warn!(
+                "Gemini returned empty PL translation for: {}",
+                ingredient_name
+            );
         }
 
         tracing::info!("✅ Gemini translation successful for: {}", ingredient_name);
@@ -214,7 +217,10 @@ Rules:
 
         tracing::info!(
             "✅ Gemini unified OK: {} → en={}, cat={}, unit={}",
-            trimmed, result.name_en, result.category_slug, result.unit
+            trimmed,
+            result.name_en,
+            result.category_slug,
+            result.unit
         );
 
         Ok(result)
@@ -249,7 +255,8 @@ Pick the best match. Do not invent values."#,
 
         tracing::info!(
             "✅ Gemini classification: cat={}, unit={}",
-            classification.category_slug, classification.unit
+            classification.category_slug,
+            classification.unit
         );
 
         Ok(classification)
@@ -311,11 +318,20 @@ Pick the best match. Do not invent values."#,
         let status = result.status();
         if !status.is_success() {
             let err = result.text().await.unwrap_or_default();
-            tracing::error!("❌ Image generation failed (HTTP {}): {}", status, &err[..err.len().min(200)]);
-            return Err(AppError::internal(&format!("Image generation API error: {}", status)));
+            tracing::error!(
+                "❌ Image generation failed (HTTP {}): {}",
+                status,
+                &err[..err.len().min(200)]
+            );
+            return Err(AppError::internal(&format!(
+                "Image generation API error: {}",
+                status
+            )));
         }
 
-        let json: serde_json::Value = result.json().await
+        let json: serde_json::Value = result
+            .json()
+            .await
             .map_err(|e| AppError::internal(&format!("Failed to parse image response: {}", e)))?;
 
         // Extract base64 from candidates[0].content.parts[].inlineData.data
@@ -324,26 +340,40 @@ Pick the best match. Do not invent values."#,
             .and_then(|parts| parts.as_array())
             .and_then(|parts| {
                 parts.iter().find_map(|p| {
-                    p.pointer("/inlineData/data").and_then(|d| d.as_str()).map(|s| s.to_string())
+                    p.pointer("/inlineData/data")
+                        .and_then(|d| d.as_str())
+                        .map(|s| s.to_string())
                 })
             })
             .ok_or_else(|| {
-                tracing::error!("❌ No image data in Gemini response: {:?}", json.pointer("/candidates/0/content/parts"));
+                tracing::error!(
+                    "❌ No image data in Gemini response: {:?}",
+                    json.pointer("/candidates/0/content/parts")
+                );
                 AppError::internal("No image data in Gemini response")
             })?;
 
         // Log token usage from usageMetadata
         if let Some(usage) = json.pointer("/usageMetadata") {
-            let prompt_tokens   = usage.pointer("/promptTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
-            let output_tokens   = usage.pointer("/candidatesTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
-            let total_tokens    = usage.pointer("/totalTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
+            let prompt_tokens = usage
+                .pointer("/promptTokenCount")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let output_tokens = usage
+                .pointer("/candidatesTokenCount")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let total_tokens = usage
+                .pointer("/totalTokenCount")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             // Gemini 2.5 Flash pricing (as of 2025):
             //   text input  = $0.15 / 1M tokens
             //   image output = $0.039 per image (fixed, billed as output tokens ~1272 tokens)
-            let input_cost_usd  = (prompt_tokens as f64) * 0.15 / 1_000_000.0;
+            let input_cost_usd = (prompt_tokens as f64) * 0.15 / 1_000_000.0;
             let output_cost_usd = (output_tokens as f64) * 0.039 / 1272.0; // ~$0.039 per image
-            let total_cost_usd  = input_cost_usd + output_cost_usd;
-            let total_cost_pln  = total_cost_usd * 4.05; // approx USD→PLN
+            let total_cost_usd = input_cost_usd + output_cost_usd;
+            let total_cost_pln = total_cost_usd * 4.05; // approx USD→PLN
             tracing::info!(
                 "🪙 Dish image tokens for '{}': prompt={} output={} total={} | cache_hit=false | estimated cost: ${:.4} / {:.2} PLN",
                 dish_name, prompt_tokens, output_tokens, total_tokens,
@@ -359,7 +389,11 @@ Pick the best match. Do not invent values."#,
             );
         }
 
-        tracing::info!("✅ Dish image generated for '{}' ({} base64 chars)", dish_name, base64.len());
+        tracing::info!(
+            "✅ Dish image generated for '{}' ({} base64 chars)",
+            dish_name,
+            base64.len()
+        );
         Ok(base64)
     }
 
@@ -428,7 +462,10 @@ Pick the best match. Do not invent values."#,
             Ok(Err(e)) => Err(e),
             Err(_) => {
                 tracing::error!("🔮 Gemini request timeout ({}s exceeded)", timeout_secs);
-                Err(AppError::internal(&format!("Gemini API timeout ({}s)", timeout_secs)))
+                Err(AppError::internal(&format!(
+                    "Gemini API timeout ({}s)",
+                    timeout_secs
+                )))
             }
         }
     }
@@ -438,8 +475,13 @@ Pick the best match. Do not invent values."#,
         &self,
         request_body: &serde_json::Value,
     ) -> Result<String, AppError> {
-        tracing::debug!("📤 Sending Gemini request: model={}", 
-            request_body.get("model").and_then(|v| v.as_str()).unwrap_or("?"));
+        tracing::debug!(
+            "📤 Sending Gemini request: model={}",
+            request_body
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+        );
 
         let response = self
             .http_client
@@ -474,21 +516,25 @@ Pick the best match. Do not invent values."#,
             AppError::internal(&format!("Failed to parse Gemini response: {}", e))
         })?;
 
-        let choice = data
-            .choices
-            .get(0)
-            .ok_or_else(|| {
-                tracing::error!("❌ Gemini returned empty choices array");
-                AppError::internal("No response from Gemini")
-            })?;
+        let choice = data.choices.get(0).ok_or_else(|| {
+            tracing::error!("❌ Gemini returned empty choices array");
+            AppError::internal("No response from Gemini")
+        })?;
 
         let finish_reason = choice.finish_reason.as_deref().unwrap_or("unknown");
         if finish_reason == "length" {
             let preview = choice.message.content.as_deref().unwrap_or("");
-            let safe_end = preview.char_indices().nth(120).map(|(i, _)| i).unwrap_or(preview.len());
+            let safe_end = preview
+                .char_indices()
+                .nth(120)
+                .map(|(i, _)| i)
+                .unwrap_or(preview.len());
             tracing::warn!(
                 "⚠️ Gemini output truncated (finish_reason=length) model={} content_preview={}",
-                request_body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
+                request_body
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?"),
                 &preview[..safe_end]
             );
         }
@@ -524,7 +570,8 @@ Pick the best match. Do not invent values."#,
         let cleaned = if content.contains("```") {
             content
                 .trim()
-                .strip_prefix("```json").or_else(|| content.trim().strip_prefix("```"))
+                .strip_prefix("```json")
+                .or_else(|| content.trim().strip_prefix("```"))
                 .unwrap_or(content)
                 .trim()
                 .strip_suffix("```")
@@ -541,7 +588,10 @@ Pick the best match. Do not invent values."#,
                 if let Some(start) = cleaned.find('{') {
                     if let Some(end) = cleaned.rfind('}') {
                         let json_str = &cleaned[start..=end];
-                        tracing::debug!("Extracted JSON from response: {}…", &json_str[..json_str.len().min(200)]);
+                        tracing::debug!(
+                            "Extracted JSON from response: {}…",
+                            &json_str[..json_str.len().min(200)]
+                        );
                         return serde_json::from_str(json_str);
                     }
                 }
@@ -562,9 +612,20 @@ Pick the best match. Do not invent values."#,
             return Err(AppError::internal("AI returned empty English name"));
         }
 
-        let cats = ["dairy_and_eggs", "fruits", "vegetables", "meat", "seafood", "grains", "beverages"];
+        let cats = [
+            "dairy_and_eggs",
+            "fruits",
+            "vegetables",
+            "meat",
+            "seafood",
+            "grains",
+            "beverages",
+        ];
         if !cats.contains(&r.category_slug.as_str()) {
-            return Err(AppError::validation(&format!("Invalid category: {}", r.category_slug)));
+            return Err(AppError::validation(&format!(
+                "Invalid category: {}",
+                r.category_slug
+            )));
         }
 
         let units = ["piece", "kilogram", "gram", "liter", "milliliter"];

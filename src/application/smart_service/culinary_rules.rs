@@ -23,8 +23,8 @@
 //! Pure deterministic functions — no DB, no AI, no HTTP.
 //! One public function: `apply(main, candidates, extras, state, meal_type, diet) -> Vec<Candidate>`
 
+use super::context::{Diet, MealType};
 use crate::domain::tools::suggestion_engine::Candidate;
-use super::context::{MealType, Diet};
 
 /// Minimum number of candidates we must keep after filtering.
 /// If result drops below this, return original pool unchanged.
@@ -97,7 +97,11 @@ fn apply_penalties(main: &str, c: &mut Candidate, state: Option<&str>) {
     let m_cat = if is_cooked {
         // Promote RawFish → Fish when cooked (cream sauce is fine with cooked salmon)
         let raw_cat = category_of_slug(&m_slug, None);
-        if raw_cat == Cat::RawFish { Cat::Fish } else { raw_cat }
+        if raw_cat == Cat::RawFish {
+            Cat::Fish
+        } else {
+            raw_cat
+        }
     } else {
         category_of_slug(&m_slug, None)
     };
@@ -174,57 +178,109 @@ fn apply_boosts(main: &str, c: &mut Candidate, extras: &[String]) {
 
     // Fish context
     if m_cat == Cat::Fish || m_cat == Cat::RawFish {
-        if is_acid_slug(&s)  { c.pair_score += 2.0; } // lemon, lime, vinegar
-        if is_herb_slug(&s)  { c.pair_score += 1.5; } // dill, parsley, cilantro
-        if s.contains("rice") || s.contains("quinoa") { c.pair_score += 1.0; }
+        if is_acid_slug(&s) {
+            c.pair_score += 2.0;
+        } // lemon, lime, vinegar
+        if is_herb_slug(&s) {
+            c.pair_score += 1.5;
+        } // dill, parsley, cilantro
+        if s.contains("rice") || s.contains("quinoa") {
+            c.pair_score += 1.0;
+        }
     }
 
     // Chicken
     if m.contains("chicken") {
-        if s.contains("garlic")   { c.pair_score += 2.0; }
-        if s.contains("lemon")    { c.pair_score += 1.5; }
-        if s.contains("rosemary") || s.contains("thyme") { c.pair_score += 1.5; }
-        if s.contains("potato")   { c.pair_score += 1.0; }
+        if s.contains("garlic") {
+            c.pair_score += 2.0;
+        }
+        if s.contains("lemon") {
+            c.pair_score += 1.5;
+        }
+        if s.contains("rosemary") || s.contains("thyme") {
+            c.pair_score += 1.5;
+        }
+        if s.contains("potato") {
+            c.pair_score += 1.0;
+        }
     }
 
     // Beef / red meat
     if m_cat == Cat::RedMeat {
-        if s.contains("garlic")   { c.pair_score += 2.0; }
-        if s.contains("rosemary") { c.pair_score += 1.5; }
-        if s.contains("mushroom") { c.pair_score += 1.5; } // umami synergy
-        if s.contains("potato")   { c.pair_score += 1.0; }
-        if s.contains("red-wine") { c.pair_score += 2.0; }
+        if s.contains("garlic") {
+            c.pair_score += 2.0;
+        }
+        if s.contains("rosemary") {
+            c.pair_score += 1.5;
+        }
+        if s.contains("mushroom") {
+            c.pair_score += 1.5;
+        } // umami synergy
+        if s.contains("potato") {
+            c.pair_score += 1.0;
+        }
+        if s.contains("red-wine") {
+            c.pair_score += 2.0;
+        }
     }
 
     // Grain / pasta
     if m_cat == Cat::Grain {
-        if s.contains("tomato")    { c.pair_score += 1.5; }
-        if s.contains("basil")     { c.pair_score += 1.5; }
-        if s.contains("olive-oil") { c.pair_score += 1.0; }
-        if s.contains("parmesan")  { c.pair_score += 1.0; }
+        if s.contains("tomato") {
+            c.pair_score += 1.5;
+        }
+        if s.contains("basil") {
+            c.pair_score += 1.5;
+        }
+        if s.contains("olive-oil") {
+            c.pair_score += 1.0;
+        }
+        if s.contains("parmesan") {
+            c.pair_score += 1.0;
+        }
     }
 
     // Vegetable
     if m_cat == Cat::Vegetable {
-        if s.contains("lemon")     { c.pair_score += 1.5; }
-        if s.contains("olive-oil") { c.pair_score += 1.0; }
-        if s.contains("hummus")    { c.pair_score += 1.0; }
+        if s.contains("lemon") {
+            c.pair_score += 1.5;
+        }
+        if s.contains("olive-oil") {
+            c.pair_score += 1.0;
+        }
+        if s.contains("hummus") {
+            c.pair_score += 1.0;
+        }
     }
 
     // Legume
     if m_cat == Cat::Legume {
-        if s.contains("garlic")    { c.pair_score += 2.0; }
-        if s.contains("cumin")     { c.pair_score += 1.5; }
-        if s.contains("tomato")    { c.pair_score += 1.0; }
-        if s.contains("olive-oil") { c.pair_score += 1.0; }
+        if s.contains("garlic") {
+            c.pair_score += 2.0;
+        }
+        if s.contains("cumin") {
+            c.pair_score += 1.5;
+        }
+        if s.contains("tomato") {
+            c.pair_score += 1.0;
+        }
+        if s.contains("olive-oil") {
+            c.pair_score += 1.0;
+        }
     }
 
     // Cross-ingredient synergies from extras already in recipe
     let has_extra = |keyword: &str| extras.iter().any(|e| e.to_lowercase().contains(keyword));
 
-    if has_extra("garlic") && is_herb_slug(&s)  { c.pair_score += 0.5; } // garlic+herbs = ✅
-    if has_extra("lemon")  && is_acid_slug(&s)  { c.pair_score -= 1.0; } // avoid double acid
-    if has_extra("olive-oil") && is_fat_slug(&s) { c.pair_score -= 1.5; } // avoid double fat
+    if has_extra("garlic") && is_herb_slug(&s) {
+        c.pair_score += 0.5;
+    } // garlic+herbs = ✅
+    if has_extra("lemon") && is_acid_slug(&s) {
+        c.pair_score -= 1.0;
+    } // avoid double acid
+    if has_extra("olive-oil") && is_fat_slug(&s) {
+        c.pair_score -= 1.5;
+    } // avoid double fat
 }
 
 // ── Internal category enum ───────────────────────────────────────────────────
@@ -253,13 +309,13 @@ fn category_of_slug(slug: &str, product_type: Option<&str>) -> Cat {
     if let Some(pt) = product_type {
         let pt = pt.to_lowercase();
         match pt.as_str() {
-            "fish" | "seafood"           => return Cat::Fish,
-            "dairy" | "milk" | "cheese"  => return Cat::Dairy,
-            "meat" | "poultry"           => return Cat::RedMeat,
+            "fish" | "seafood" => return Cat::Fish,
+            "dairy" | "milk" | "cheese" => return Cat::Dairy,
+            "meat" | "poultry" => return Cat::RedMeat,
             "grain" | "cereal" | "pasta" | "bread" => return Cat::Grain,
-            "vegetable" | "greens"       => return Cat::Vegetable,
-            "legume" | "beans"           => return Cat::Legume,
-            "fruit" | "berry"            => return Cat::SweetFruit,
+            "vegetable" | "greens" => return Cat::Vegetable,
+            "legume" | "beans" => return Cat::Legume,
+            "fruit" | "berry" => return Cat::SweetFruit,
             _ => {}
         }
     }
@@ -268,83 +324,187 @@ fn category_of_slug(slug: &str, product_type: Option<&str>) -> Cat {
     let s = slug;
 
     // Raw fish (subset of fish — typically served uncooked)
-    if ["salmon", "tuna", "mackerel", "sardine", "anchovy", "herring", "trout"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "salmon", "tuna", "mackerel", "sardine", "anchovy", "herring", "trout",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::RawFish;
     }
 
     // Cooked/generic fish
-    if ["cod", "shrimp", "prawn", "crab", "lobster", "sea-bass", "tilapia",
-        "halibut", "swordfish", "catfish", "squid", "octopus", "mussel",
-        "clam", "oyster", "scallop", "fish", "seafood"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "cod",
+        "shrimp",
+        "prawn",
+        "crab",
+        "lobster",
+        "sea-bass",
+        "tilapia",
+        "halibut",
+        "swordfish",
+        "catfish",
+        "squid",
+        "octopus",
+        "mussel",
+        "clam",
+        "oyster",
+        "scallop",
+        "fish",
+        "seafood",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::Fish;
     }
 
     // Dairy
-    if ["milk", "cheese", "yogurt", "kefir", "cream", "curd", "ricotta",
-        "mozzarella", "parmesan", "feta", "brie", "cheddar", "cottage",
-        "butter", "ghee", "smetana", "sour-cream"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "milk",
+        "cheese",
+        "yogurt",
+        "kefir",
+        "cream",
+        "curd",
+        "ricotta",
+        "mozzarella",
+        "parmesan",
+        "feta",
+        "brie",
+        "cheddar",
+        "cottage",
+        "butter",
+        "ghee",
+        "smetana",
+        "sour-cream",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::Dairy;
     }
 
     // Red meat
     if ["beef", "pork", "lamb", "veal", "steak", "venison", "bison"]
-        .iter().any(|k| s.contains(k))
+        .iter()
+        .any(|k| s.contains(k))
     {
         return Cat::RedMeat;
     }
 
     // High-acid fruits (curdlers)
-    if ["lemon", "lime", "orange", "grapefruit", "pineapple", "kiwi",
-        "strawberr", "raspberry", "tamarind"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "lemon",
+        "lime",
+        "orange",
+        "grapefruit",
+        "pineapple",
+        "kiwi",
+        "strawberr",
+        "raspberry",
+        "tamarind",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::HighAcidFruit;
     }
 
     // Sweet fruits (allium conflict)
-    if ["apple", "mango", "banana", "blueberr", "peach", "pear", "plum",
-        "grape", "melon", "watermelon", "cherry", "apricot", "fig", "date"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "apple",
+        "mango",
+        "banana",
+        "blueberr",
+        "peach",
+        "pear",
+        "plum",
+        "grape",
+        "melon",
+        "watermelon",
+        "cherry",
+        "apricot",
+        "fig",
+        "date",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::SweetFruit;
     }
 
     // Alliums
     if ["garlic", "onion", "shallot", "leek", "chive", "scallion"]
-        .iter().any(|k| s.contains(k))
+        .iter()
+        .any(|k| s.contains(k))
     {
         return Cat::Allium;
     }
 
     // Grain
-    if ["rice", "quinoa", "pasta", "spaghetti", "penne", "fettuccine", "noodle",
-        "buckwheat", "bulgur", "couscous", "farro", "barley", "oat", "wheat",
-        "bread", "flour", "semolina"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "rice",
+        "quinoa",
+        "pasta",
+        "spaghetti",
+        "penne",
+        "fettuccine",
+        "noodle",
+        "buckwheat",
+        "bulgur",
+        "couscous",
+        "farro",
+        "barley",
+        "oat",
+        "wheat",
+        "bread",
+        "flour",
+        "semolina",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::Grain;
     }
 
     // Vegetable
-    if ["carrot", "broccoli", "zucchini", "eggplant", "pepper", "tomato",
-        "cucumber", "celery", "cauliflower", "asparagus", "beetroot", "pumpkin",
-        "squash", "cabbage", "lettuce", "spinach", "kale", "arugula", "corn",
-        "artichoke", "fennel"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "carrot",
+        "broccoli",
+        "zucchini",
+        "eggplant",
+        "pepper",
+        "tomato",
+        "cucumber",
+        "celery",
+        "cauliflower",
+        "asparagus",
+        "beetroot",
+        "pumpkin",
+        "squash",
+        "cabbage",
+        "lettuce",
+        "spinach",
+        "kale",
+        "arugula",
+        "corn",
+        "artichoke",
+        "fennel",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::Vegetable;
     }
 
     // Legume
-    if ["lentil", "chickpea", "bean", "pea", "soy", "tofu", "edamame",
-        "hummus", "falafel", "dal"]
-        .iter().any(|k| s.contains(k))
+    if [
+        "lentil", "chickpea", "bean", "pea", "soy", "tofu", "edamame", "hummus", "falafel", "dal",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
     {
         return Cat::Legume;
     }
@@ -356,9 +516,18 @@ fn category_of_slug(slug: &str, product_type: Option<&str>) -> Cat {
 
 /// True only for liquid milk variants — not cheese, yogurt, cream, butter.
 fn is_liquid_milk(s: &str) -> bool {
-    ["whole-milk", "skim-milk", "oat-milk", "almond-milk", "soy-milk",
-     "coconut-milk", "buttermilk", "milk"]
-    .iter().any(|k| s == *k || s.ends_with(k))
+    [
+        "whole-milk",
+        "skim-milk",
+        "oat-milk",
+        "almond-milk",
+        "soy-milk",
+        "coconut-milk",
+        "buttermilk",
+        "milk",
+    ]
+    .iter()
+    .any(|k| s == *k || s.ends_with(k))
 }
 
 /// True for liquids that have calories/protein but cannot be dish components.
@@ -369,28 +538,54 @@ fn is_cooking_liquid(s: &str) -> bool {
         return true;
     }
     // Other cooking liquids — broth, stock, juice, plain water
-    ["broth", "stock", "chicken-stock", "beef-stock", "vegetable-stock",
-     "chicken-broth", "beef-broth", "vegetable-broth",
-     "orange-juice", "apple-juice", "grape-juice", "juice",
-     "water"]
-    .iter().any(|k| s == *k || s.contains(k))
+    [
+        "broth",
+        "stock",
+        "chicken-stock",
+        "beef-stock",
+        "vegetable-stock",
+        "chicken-broth",
+        "beef-broth",
+        "vegetable-broth",
+        "orange-juice",
+        "apple-juice",
+        "grape-juice",
+        "juice",
+        "water",
+    ]
+    .iter()
+    .any(|k| s == *k || s.contains(k))
 }
 
 fn is_acid_slug(s: &str) -> bool {
     ["lemon", "lime", "vinegar", "balsamic", "tamarind", "sumac"]
-    .iter().any(|k| s.contains(k))
+        .iter()
+        .any(|k| s.contains(k))
 }
 
 fn is_herb_slug(s: &str) -> bool {
-    ["dill", "parsley", "cilantro", "basil", "rosemary", "thyme",
-     "oregano", "mint", "chive", "tarragon", "sage", "bay-leaf"]
-    .iter().any(|k| s.contains(k))
+    [
+        "dill", "parsley", "cilantro", "basil", "rosemary", "thyme", "oregano", "mint", "chive",
+        "tarragon", "sage", "bay-leaf",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
 }
 
 fn is_fat_slug(s: &str) -> bool {
-    ["olive-oil", "sunflower-oil", "coconut-oil", "sesame-oil", "avocado-oil",
-     "butter", "ghee", "lard", "oil"]
-    .iter().any(|k| s.contains(k))
+    [
+        "olive-oil",
+        "sunflower-oil",
+        "coconut-oil",
+        "sesame-oil",
+        "avocado-oil",
+        "butter",
+        "ghee",
+        "lard",
+        "oil",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
 }
 
 // ── Diet filter (hard constraint) ────────────────────────────────────────────
@@ -417,8 +612,7 @@ fn passes_diet_filter(c: &Candidate, diet: Diet) -> bool {
 
         Diet::Vegetarian => {
             // No meat/fish, dairy is OK
-            !matches!(cat, Cat::Fish | Cat::RawFish | Cat::RedMeat)
-                && !is_meat_slug(&s)
+            !matches!(cat, Cat::Fish | Cat::RawFish | Cat::RedMeat) && !is_meat_slug(&s)
         }
 
         Diet::Pescatarian => {
@@ -431,14 +625,11 @@ fn passes_diet_filter(c: &Candidate, diet: Diet) -> bool {
             !is_gluten_slug(&s)
         }
 
-        Diet::DairyFree => {
-            cat != Cat::Dairy && !is_dairy_slug(&s)
-        }
+        Diet::DairyFree => cat != Cat::Dairy && !is_dairy_slug(&s),
 
         Diet::Paleo => {
             // No grains, no legumes, no dairy, no processed
-            !matches!(cat, Cat::Grain | Cat::Legume | Cat::Dairy)
-                && !is_processed_slug(&s)
+            !matches!(cat, Cat::Grain | Cat::Legume | Cat::Dairy) && !is_processed_slug(&s)
         }
 
         Diet::Mediterranean => {
@@ -451,38 +642,87 @@ fn passes_diet_filter(c: &Candidate, diet: Diet) -> bool {
 
 fn is_animal_product(s: &str) -> bool {
     ["egg", "honey", "chicken", "turkey", "duck", "goose"]
-    .iter().any(|k| s.contains(k))
+        .iter()
+        .any(|k| s.contains(k))
 }
 
 fn is_meat_slug(s: &str) -> bool {
-    ["beef", "pork", "lamb", "veal", "steak", "chicken", "turkey",
-     "duck", "goose", "venison", "bison", "bacon", "ham", "sausage"]
-    .iter().any(|k| s.contains(k))
+    [
+        "beef", "pork", "lamb", "veal", "steak", "chicken", "turkey", "duck", "goose", "venison",
+        "bison", "bacon", "ham", "sausage",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
 }
 
 fn is_poultry_slug(s: &str) -> bool {
     ["chicken", "turkey", "duck", "goose"]
-    .iter().any(|k| s.contains(k))
+        .iter()
+        .any(|k| s.contains(k))
 }
 
 fn is_gluten_slug(s: &str) -> bool {
-    ["wheat", "barley", "rye", "spelt", "bread", "pasta", "spaghetti",
-     "penne", "fettuccine", "noodle", "flour", "couscous", "bulgur",
-     "semolina", "cracker", "tortilla"]
-    .iter().any(|k| s.contains(k))
+    [
+        "wheat",
+        "barley",
+        "rye",
+        "spelt",
+        "bread",
+        "pasta",
+        "spaghetti",
+        "penne",
+        "fettuccine",
+        "noodle",
+        "flour",
+        "couscous",
+        "bulgur",
+        "semolina",
+        "cracker",
+        "tortilla",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
 }
 
 fn is_dairy_slug(s: &str) -> bool {
-    ["milk", "cheese", "yogurt", "cream", "butter", "ghee", "curd",
-     "ricotta", "mozzarella", "parmesan", "feta", "brie", "cheddar",
-     "cottage", "smetana", "sour-cream", "kefir"]
-    .iter().any(|k| s.contains(k))
+    [
+        "milk",
+        "cheese",
+        "yogurt",
+        "cream",
+        "butter",
+        "ghee",
+        "curd",
+        "ricotta",
+        "mozzarella",
+        "parmesan",
+        "feta",
+        "brie",
+        "cheddar",
+        "cottage",
+        "smetana",
+        "sour-cream",
+        "kefir",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
 }
 
 fn is_processed_slug(s: &str) -> bool {
-    ["sugar", "candy", "soda", "syrup", "corn-syrup", "margarine",
-     "sausage", "hot-dog", "chips", "cracker"]
-    .iter().any(|k| s.contains(k))
+    [
+        "sugar",
+        "candy",
+        "soda",
+        "syrup",
+        "corn-syrup",
+        "margarine",
+        "sausage",
+        "hot-dog",
+        "chips",
+        "cracker",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
 }
 
 // ── Meal-type contextual boosts ──────────────────────────────────────────────
@@ -505,62 +745,136 @@ fn apply_meal_type_boost(c: &mut Candidate, meal_type: Option<MealType>) {
     match meal {
         MealType::Breakfast => {
             // Breakfast staples get a boost
-            if s.contains("egg")     { c.pair_score += 2.0; }
-            if s.contains("oat")     { c.pair_score += 2.0; }
-            if s.contains("yogurt")  { c.pair_score += 1.5; }
-            if s.contains("honey")   { c.pair_score += 1.0; }
-            if s.contains("banana")  { c.pair_score += 1.5; }
-            if s.contains("berr")    { c.pair_score += 1.0; } // strawberry, blueberry
-            if s.contains("toast") || s.contains("bread") { c.pair_score += 1.5; }
-            if s.contains("avocado") { c.pair_score += 1.5; }
+            if s.contains("egg") {
+                c.pair_score += 2.0;
+            }
+            if s.contains("oat") {
+                c.pair_score += 2.0;
+            }
+            if s.contains("yogurt") {
+                c.pair_score += 1.5;
+            }
+            if s.contains("honey") {
+                c.pair_score += 1.0;
+            }
+            if s.contains("banana") {
+                c.pair_score += 1.5;
+            }
+            if s.contains("berr") {
+                c.pair_score += 1.0;
+            } // strawberry, blueberry
+            if s.contains("toast") || s.contains("bread") {
+                c.pair_score += 1.5;
+            }
+            if s.contains("avocado") {
+                c.pair_score += 1.5;
+            }
             // Penalize heavy dinner-style items at breakfast
-            if cat == Cat::RedMeat   { c.pair_score -= 2.0; }
+            if cat == Cat::RedMeat {
+                c.pair_score -= 2.0;
+            }
         }
 
         MealType::Lunch => {
             // Lunch: balanced, salad-friendly, grain sides
-            if cat == Cat::Vegetable { c.pair_score += 1.0; }
-            if cat == Cat::Grain     { c.pair_score += 1.0; }
-            if cat == Cat::Legume    { c.pair_score += 1.0; }
-            if s.contains("hummus")  { c.pair_score += 1.0; }
+            if cat == Cat::Vegetable {
+                c.pair_score += 1.0;
+            }
+            if cat == Cat::Grain {
+                c.pair_score += 1.0;
+            }
+            if cat == Cat::Legume {
+                c.pair_score += 1.0;
+            }
+            if s.contains("hummus") {
+                c.pair_score += 1.0;
+            }
         }
 
         MealType::Dinner => {
             // Dinner: protein-forward, hearty
-            if cat == Cat::RedMeat   { c.pair_score += 1.5; }
-            if cat == Cat::Fish      { c.pair_score += 1.0; }
-            if s.contains("potato")  { c.pair_score += 1.0; }
-            if s.contains("mushroom"){ c.pair_score += 1.0; }
-            if s.contains("garlic")  { c.pair_score += 0.5; }
-            if s.contains("wine")    { c.pair_score += 1.0; }
+            if cat == Cat::RedMeat {
+                c.pair_score += 1.5;
+            }
+            if cat == Cat::Fish {
+                c.pair_score += 1.0;
+            }
+            if s.contains("potato") {
+                c.pair_score += 1.0;
+            }
+            if s.contains("mushroom") {
+                c.pair_score += 1.0;
+            }
+            if s.contains("garlic") {
+                c.pair_score += 0.5;
+            }
+            if s.contains("wine") {
+                c.pair_score += 1.0;
+            }
         }
 
         MealType::Snack => {
             // Snack: light, portable, no heavy cooking
-            if s.contains("nut") || s.contains("almond") || s.contains("walnut") { c.pair_score += 2.0; }
-            if s.contains("hummus")  { c.pair_score += 1.5; }
-            if cat == Cat::SweetFruit || cat == Cat::HighAcidFruit { c.pair_score += 1.5; }
-            if s.contains("yogurt")  { c.pair_score += 1.0; }
-            if s.contains("cracker") || s.contains("bread") { c.pair_score += 1.0; }
+            if s.contains("nut") || s.contains("almond") || s.contains("walnut") {
+                c.pair_score += 2.0;
+            }
+            if s.contains("hummus") {
+                c.pair_score += 1.5;
+            }
+            if cat == Cat::SweetFruit || cat == Cat::HighAcidFruit {
+                c.pair_score += 1.5;
+            }
+            if s.contains("yogurt") {
+                c.pair_score += 1.0;
+            }
+            if s.contains("cracker") || s.contains("bread") {
+                c.pair_score += 1.0;
+            }
             // Penalize heavy items for snacks
-            if cat == Cat::RedMeat   { c.pair_score -= 2.0; }
-            if cat == Cat::Grain     { c.pair_score -= 1.0; }
+            if cat == Cat::RedMeat {
+                c.pair_score -= 2.0;
+            }
+            if cat == Cat::Grain {
+                c.pair_score -= 1.0;
+            }
         }
 
         MealType::Dessert => {
             // Dessert: sweet, creamy, chocolate, berries
-            if s.contains("chocolate") { c.pair_score += 2.5; }
-            if s.contains("cream")   { c.pair_score += 2.0; }
-            if s.contains("sugar")   { c.pair_score += 1.0; }
-            if s.contains("vanilla") { c.pair_score += 1.5; }
-            if s.contains("honey")   { c.pair_score += 1.5; }
-            if s.contains("berr")    { c.pair_score += 1.5; } // strawberry, etc.
-            if s.contains("banana")  { c.pair_score += 1.0; }
-            if cat == Cat::SweetFruit { c.pair_score += 1.0; }
+            if s.contains("chocolate") {
+                c.pair_score += 2.5;
+            }
+            if s.contains("cream") {
+                c.pair_score += 2.0;
+            }
+            if s.contains("sugar") {
+                c.pair_score += 1.0;
+            }
+            if s.contains("vanilla") {
+                c.pair_score += 1.5;
+            }
+            if s.contains("honey") {
+                c.pair_score += 1.5;
+            }
+            if s.contains("berr") {
+                c.pair_score += 1.5;
+            } // strawberry, etc.
+            if s.contains("banana") {
+                c.pair_score += 1.0;
+            }
+            if cat == Cat::SweetFruit {
+                c.pair_score += 1.0;
+            }
             // Penalize savory items in dessert
-            if cat == Cat::Fish || cat == Cat::RawFish { c.pair_score -= 3.0; }
-            if cat == Cat::RedMeat   { c.pair_score -= 3.0; }
-            if cat == Cat::Allium    { c.pair_score -= 2.0; }
+            if cat == Cat::Fish || cat == Cat::RawFish {
+                c.pair_score -= 3.0;
+            }
+            if cat == Cat::RedMeat {
+                c.pair_score -= 3.0;
+            }
+            if cat == Cat::Allium {
+                c.pair_score -= 2.0;
+            }
         }
     }
 }

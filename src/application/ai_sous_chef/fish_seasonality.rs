@@ -44,7 +44,8 @@ pub async fn generate_seasonality_for_product(
     if !FISH_TYPES.contains(&product_type.as_str()) {
         tracing::debug!(
             "⏭️ Skipping seasonality for product {} (type={})",
-            product_id, product_type
+            product_id,
+            product_type
         );
         return Ok(0);
     }
@@ -54,7 +55,11 @@ pub async fn generate_seasonality_for_product(
         .map(|i| {
             match &availability_months {
                 Some(months) if months.len() > i => {
-                    if months[i] { "good" } else { "off" }
+                    if months[i] {
+                        "good"
+                    } else {
+                        "off"
+                    }
                 }
                 None => "good", // No availability_months → assume all year
                 _ => "off",
@@ -87,7 +92,10 @@ pub async fn generate_seasonality_for_product(
                 Err(e) => {
                     tracing::warn!(
                         "⚠️ Failed to insert seasonality for {} region={} month={}: {}",
-                        product_id, region, month, e
+                        product_id,
+                        region,
+                        month,
+                        e
                     );
                 }
             }
@@ -106,7 +114,9 @@ pub async fn generate_seasonality_for_product(
 
     tracing::info!(
         "🗓️ Auto-generated {} seasonality rows for product {} (type={})",
-        total_inserted, product_id, product_type
+        total_inserted,
+        product_id,
+        product_type
     );
 
     Ok(total_inserted)

@@ -1,9 +1,9 @@
 pub mod admin;
-pub mod ai_ports;  // 🆕 AI abstraction traits (AiClient, AiQuality)
+pub mod ai_ports; // 🆕 AI abstraction traits (AiClient, AiQuality)
 pub mod assistant;
-pub mod city; // 🆕 City domain — CityMap wire types for Food Empire city renderer
 pub mod auth;
 pub mod catalog;
+pub mod city; // 🆕 City domain — CityMap wire types for Food Empire city renderer
 pub mod classification_rules; // 🆕 Added classification rules
 pub mod dish;
 pub mod engines; // 🆕 Culinary Intelligence Platform — 5 engine traits + registry
@@ -31,9 +31,9 @@ pub use catalog::*;
 pub use dish::*;
 pub use inventory::*;
 pub use menu_engineering::*;
+pub use processing_state::*;
 pub use recipe::*;
 pub use recipe_ai_insights::*;
-pub use processing_state::*;
 pub use tenant::*;
 pub use tenant_ingredient::*;
 pub use user::*;

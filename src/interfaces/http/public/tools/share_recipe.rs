@@ -125,9 +125,8 @@ pub async fn get_shared_recipe(
 
     match row {
         Some(r) => {
-            let ingredients: Vec<ShareIngredient> =
-                serde_json::from_value(r.ingredients_json)
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let ingredients: Vec<ShareIngredient> = serde_json::from_value(r.ingredients_json)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
             Ok(Json(SharedRecipeData {
                 slug: r.slug,
                 ingredients,

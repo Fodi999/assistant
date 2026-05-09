@@ -1,11 +1,13 @@
 use crate::domain::{
-    Recipe, RecipeId, RecipeName, RecipeIngredient, RecipeCost, IngredientCost,
-    RecipeType, Servings, CatalogIngredientId, Quantity, Money,
+    CatalogIngredientId, IngredientCost, Money, Quantity, Recipe, RecipeCost, RecipeId,
+    RecipeIngredient, RecipeName, RecipeType, Servings,
 };
 use crate::infrastructure::persistence::{
-    RecipeRepositoryTrait, InventoryBatchRepositoryTrait, CatalogIngredientRepositoryTrait,
+    CatalogIngredientRepositoryTrait, InventoryBatchRepositoryTrait, RecipeRepositoryTrait,
 };
-use crate::shared::{AppError, AppResult, UserId, TenantId, Language, PaginatedResponse, PaginationParams};
+use crate::shared::{
+    AppError, AppResult, Language, PaginatedResponse, PaginationParams, TenantId, UserId,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -112,23 +114,24 @@ impl RecipeService {
         tenant_id: TenantId,
     ) -> AppResult<RecipeCost> {
         // Load recipe
-        let recipe = self.recipe_repo
+        let recipe = self
+            .recipe_repo
             .find_by_id(recipe_id, tenant_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Recipe not found".to_string()))?;
 
         // Load all inventory products for this tenant to build price map
-        let inventory_products = self.inventory_repo.list_by_tenant(recipe.tenant_id()).await?;
+        let inventory_products = self
+            .inventory_repo
+            .list_by_tenant(recipe.tenant_id())
+            .await?;
 
         // Build map: catalog_ingredient_id -> (quantity, price)
         let mut price_map: HashMap<CatalogIngredientId, (Quantity, Money)> = HashMap::new();
 
         for product in inventory_products {
             let key = product.catalog_ingredient_id;
-            price_map.insert(
-                key,
-                (product.quantity, product.price_per_unit)
-            );
+            price_map.insert(key, (product.quantity, product.price_per_unit));
         }
 
         // Calculate cost for each ingredient
@@ -138,12 +141,13 @@ impl RecipeService {
             let ingredient_id = recipe_ingredient.catalog_ingredient_id();
 
             // Get inventory price data
-            let (_inventory_qty, inventory_price) = price_map
-                .get(&ingredient_id)
-                .ok_or_else(|| AppError::NotFound(format!(
-                    "No inventory data for ingredient {}. Cannot calculate cost.",
-                    ingredient_id.as_uuid()
-                )))?;
+            let (_inventory_qty, inventory_price) =
+                price_map.get(&ingredient_id).ok_or_else(|| {
+                    AppError::NotFound(format!(
+                        "No inventory data for ingredient {}. Cannot calculate cost.",
+                        ingredient_id.as_uuid()
+                    ))
+                })?;
 
             let unit_price_cents = inventory_price.as_cents() as f64;
             let unit_price = Money::from_cents(unit_price_cents.round() as i64)?;
@@ -152,13 +156,16 @@ impl RecipeService {
             let ingredient_cost = Money::from_cents(ingredient_cost_cents.round() as i64)?;
 
             // Load ingredient name from catalog
-            let catalog_ingredient = self.catalog_repo
+            let catalog_ingredient = self
+                .catalog_repo
                 .find_by_id(ingredient_id)
                 .await?
-                .ok_or_else(|| AppError::NotFound(format!(
-                    "Catalog ingredient {} not found",
-                    ingredient_id.as_uuid()
-                )))?;
+                .ok_or_else(|| {
+                    AppError::NotFound(format!(
+                        "Catalog ingredient {} not found",
+                        ingredient_id.as_uuid()
+                    ))
+                })?;
 
             ingredients_breakdown.push(IngredientCost {
                 ingredient_id,
@@ -175,7 +182,7 @@ impl RecipeService {
             recipe.name().as_str().to_string(),
             ingredients_breakdown,
             vec![], // components_breakdown: component recipes not supported in V1
-            recipe.servings().count()
+            recipe.servings().count(),
         )?;
 
         Ok(recipe_cost)
@@ -190,7 +197,8 @@ impl RecipeService {
     ) -> AppResult<()> {
         // Validate that all ingredients exist in catalog
         for ingredient in &ingredients {
-            let exists = self.catalog_repo
+            let exists = self
+                .catalog_repo
                 .find_by_id(ingredient.catalog_ingredient_id())
                 .await?
                 .is_some();
@@ -203,7 +211,9 @@ impl RecipeService {
             }
         }
 
-        self.recipe_repo.update_ingredients(recipe_id, ingredients, tenant_id).await
+        self.recipe_repo
+            .update_ingredients(recipe_id, ingredients, tenant_id)
+            .await
     }
 }
 

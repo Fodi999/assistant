@@ -9,7 +9,7 @@ pub const JS: &str = r##"
         screen: 'matter-lab',
         tool:   'shape',
         matter: {
-          particlesM:    1,                    // current count in millions
+          particlesM:    NUM_SPHERES / 1_000_000, // current count (starts as 1 particle)
           maxParticlesM: Math.max(1, Math.floor(MAX_PARTICLES / 1_000_000)),
           formation:     'cube',               // cloud | cube | wall
           shape:         'super-cube',         // super-cube | octa | super-sphere

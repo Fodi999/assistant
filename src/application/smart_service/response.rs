@@ -1,8 +1,8 @@
 //! SmartResponse — output contract for SmartService v3.
 
-use serde::{Deserialize, Serialize};
-use crate::domain::tools::flavor_graph::{FlavorVector, FlavorBalance};
+use crate::domain::tools::flavor_graph::{FlavorBalance, FlavorVector};
 use crate::domain::tools::nutrition::{NutritionBreakdownNullable, VitaminData};
+use serde::{Deserialize, Serialize};
 
 /// The single intelligent response for `POST /api/smart/ingredient`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
