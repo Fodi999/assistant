@@ -3,38 +3,35 @@
 // Inside lives the full Matter Lab UI: topbar / left-tools / canvas / matter-panel /
 // action-bar / status-bar — all positioned absolutely over the canvas.
 
-pub fn matter_lab_section() -> &'static str {
-    r##"
+pub fn matter_lab_section() -> String {
+    let profile_panel = crate::web::home::matter_panels::profile_panel();
+    let properties_panel = crate::web::home::matter_panels::properties_panel();
+
+    format!(
+        r##"
   <!-- ── Engine Screen (Matter Lab) ── -->
   <section id="render-screen">
     <main class="matter-lab-shell">
 
-      <!-- Top bar ──────────────────────────────────────────── -->
-      <header class="matter-topbar">
-        <div class="brand">
-          <div class="brand-icon"></div>
-          <span>ChefOS Matter Lab</span>
-        </div>
-        <div class="top-title">— Matter Laboratory —</div>
-        <nav class="top-nav">
-          <button>Projects</button>
-          <button>Presets</button>
-          <button>Docs</button>
-          <button id="close-chefos" class="back-btn" title="Назад">←</button>
-          <div class="user-badge">CH</div>
-        </nav>
-      </header>
+      <!-- Header / Topbar removed completely -->
 
       <!-- Stage layer ──────────────────────────────────────── -->
       <section class="matter-stage">
+        
+        <!-- Floating Close Button -->
+        <button id="close-chefos" class="close-engine-btn" title="Выйти на главную">✕</button>
 
         <!-- Canvas (z=0) -->
         <canvas id="webgpu-canvas"></canvas>
 
-        <!-- Axis gizmo (top-right, z=20) — click axis to snap camera view -->
+        <!-- Axis gizmo (top-left, z=20) — click axis to snap camera view -->
         <canvas id="axis-gizmo" width="96" height="96" title="Click axis to snap view"></canvas>
 
-        <!-- Right panel deleted (Object Inspector) -->
+        <!-- Right Profile Panel (M-panel) -->
+        {}
+
+        <!-- Right Properties Panel (Blender N-panel analog) -->
+        {}
 
         <!-- Status bar (z=15) -->
         <footer class="status-bar">
@@ -54,5 +51,7 @@ pub fn matter_lab_section() -> &'static str {
       </section>
     </main>
   </section>
-"##
+"##,
+        profile_panel, properties_panel
+    )
 }

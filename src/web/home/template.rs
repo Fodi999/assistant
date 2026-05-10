@@ -78,5 +78,5 @@ pub fn template(styles: &str, scripts: &str) -> String {
 </body>
 </html>"##;
 
-    [head, styles, mid, matter, scripts, tail].concat()
+    [head, styles, mid, &matter, scripts, tail].concat()
 }

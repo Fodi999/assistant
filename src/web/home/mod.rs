@@ -1,5 +1,6 @@
 pub mod matter_lab;
 pub mod matter_lab_styles;
+pub mod matter_panels;
 mod scripts;
 mod styles;
 mod template;

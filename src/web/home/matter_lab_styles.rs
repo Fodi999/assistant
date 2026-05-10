@@ -32,10 +32,45 @@ pub fn matter_lab_styles() -> &'static str {
       grid-template-columns: auto 1fr auto;
       align-items: center;
       padding: 0 22px;
-      background: rgba(7, 11, 22, 0.72);
-      backdrop-filter: blur(14px);
-      border-bottom: 1px solid rgba(148, 163, 184, 0.10);
-      z-index: 20;
+      /* Делаем фон полностью монолитным, чтобы 3D-сцена на 100% перекрывалась */
+      background: #0f111a; 
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 100; /* Гарантированно поверх сцены и гизмо */
+      transform: translateY(0);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .header-collapsed .matter-topbar {
+      transform: translateY(-100%);
+    }
+
+    .topbar-toggle-btn {
+      position: absolute;
+      top: 56px; /* Язычок крепится сразу под панелью */
+      left: 50%;
+      transform: translateX(-50%);
+      width: 48px;
+      height: 20px;
+      background: #0f111a;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      color: rgba(226, 232, 240, 0.7);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px;
+      z-index: 100;
+      transition: top 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s, color 0.15s;
+    }
+    
+    .header-collapsed .topbar-toggle-btn {
+      top: 0px; /* При закрытой панели язычок остается на самом верху экрана */
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    .topbar-toggle-btn:hover {
+      background: #1e2233; 
+      color: #fff;
     }
     .matter-topbar .brand {
       display: flex; align-items: center; gap: 10px;
@@ -84,8 +119,31 @@ pub fn matter_lab_styles() -> &'static str {
 
     /* === Stage (full-bleed canvas area) ============================== */
     .matter-stage {
-      position: absolute; inset: 56px 0 0 0;   /* leave room for topbar */
+      position: absolute; inset: 0;   /* теперь canvas идет на весь экран */
       overflow: hidden;
+    }
+
+    /* Floating Close Button */
+    .close-engine-btn {
+      position: absolute;
+      top: 16px; left: 16px;
+      width: 40px; height: 40px;
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      backdrop-filter: blur(8px);
+      border-radius: 50%; /* Makes it a perfect circle */
+      color: rgba(226, 232, 240, 0.95);
+      font-size: 16px; /* Bigger cross */
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      z-index: 50;
+      transition: all .15s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    .close-engine-btn:hover {
+      background: rgba(220, 38, 38, 0.8); /* Red on hover */
+      color: #fff;
+      transform: scale(1.05); /* Slight pop effect */
     }
 "##
 }
@@ -95,7 +153,8 @@ pub fn matter_tools_styles() -> &'static str {
     /* === Left tools rail ============================================ */
     .left-tools {
       position: absolute;
-      top: 24px; left: 22px;
+      top: 186px;
+      left: 16px; 
       display: flex; flex-direction: column; gap: 8px;
       padding: 10px;
       background: rgba(8, 14, 28, 0.78);
@@ -132,8 +191,163 @@ pub fn matter_tools_styles() -> &'static str {
 }
 
 pub fn matter_panel_styles() -> &'static str {
-    // ── Matter Panel Removed ──
-    r##""##
+    r##"
+    /* === Right Properties Panel (Blender N-panel style) ========================= */
+    .matter-panel-right {
+      position: absolute;
+      top: 15px; 
+      right: 15px; 
+      bottom: 50px; /* above the bottom row elements */
+      width: var(--panel-width, 420px);
+      background: rgba(30, 30, 32, 0.85); /* Blender-like dark grey */
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(80, 80, 85, 0.4);
+      border-radius: 8px;
+      z-index: 15;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(0);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: -4px 0 15px rgba(0, 0, 0, 0.25);
+    }
+    
+    .panel-resizer {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -4px;
+      width: 8px;
+      cursor: ew-resize;
+      z-index: 20;
+    }
+    
+    .matter-panel-right.collapsed {
+      /* Translation precisely hides the panel off-screen, leaving exactly the 32px tab visible flush with the right edge */
+      transform: translateX(calc(100% + 15px));
+    }
+    
+    .panel-toggle-btn {
+      position: absolute;
+      left: -32px; 
+      width: 32px; 
+      height: 90px; /* Enough space for Blender-style vertical text */
+      background: rgba(24, 24, 26, 0.95); /* Darker inactive tab background */
+      border: 1px solid rgba(80, 80, 85, 0.4);
+      border-right: none;
+      border-radius: 6px 0 0 6px;
+      color: rgba(148, 163, 184, 0.85);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      transition: all 0.15s ease;
+      
+      /* Blender aesthetic: Top-to-bottom reading, vertically centered */
+      display: flex; align-items: center; justify-content: center;
+      writing-mode: vertical-rl;
+      
+      padding: 0;
+      box-sizing: border-box;
+      outline: none;
+      z-index: 10;
+    }
+    
+    .panel-toggle-btn.tab-m {
+      top: 15px; 
+    }
+
+    .panel-toggle-btn.tab-n {
+      top: 106px; /* 15px + 90px height + 1px gap */
+    }
+    
+    .panel-toggle-btn:hover { 
+      background: rgba(50, 50, 55, 0.95); 
+      color: #fff; 
+    }
+    
+    .panel-toggle-btn.active {
+      background: rgba(30, 30, 32, 0.85); /* Seamlessly matches the active panel body */
+      color: #fff;
+      border-left: 2px solid #38bdf8; /* Blue highlight line to indicate Active tab (Blender style) */
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e8f0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      letter-spacing: 0.3px;
+    }
+    
+    .panel-body {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+    }
+    
+    .prop-section {
+      margin-bottom: 20px;
+    }
+    
+    .prop-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: rgba(226, 232, 240, 0.5);
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+    
+    .prop-value {
+      font-size: 13px;
+      color: #e2e8f0;
+      background: rgba(15, 23, 42, 0.4);
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    
+    .prop-value.text-muted {
+      color: rgba(226, 232, 240, 0.4);
+      font-style: italic;
+    }
+    
+    .prop-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .prop-btn {
+      width: 100%;
+      text-align: center;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .prop-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    .prop-btn.highlight {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+    }
+    
+    .prop-btn.highlight:hover {
+      background: rgba(56, 189, 248, 0.25);
+    }
+    "##
 }
 
 pub fn matter_action_bar_styles() -> &'static str {
@@ -249,7 +463,9 @@ pub fn matter_status_styles() -> &'static str {
     /* ── Axis gizmo ─────────────────────────────── */
     #axis-gizmo {
       position: absolute;
-      top: 16px; right: 16px;
+      top: 16px;
+      right: 36px; /* 32px (tabs width) + 4px gap */
+      left: auto;
       width: 96px; height: 96px;
       z-index: 20;
       cursor: pointer;
@@ -258,8 +474,21 @@ pub fn matter_status_styles() -> &'static str {
       border: 1px solid rgba(148, 163, 184, 0.14);
       backdrop-filter: blur(8px);
       pointer-events: auto;
-      transition: border-color .2s;
+      transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s;
     }
+    
+    /* When a sidebar panel is open, push the gizmo to the left of the panel */
+    body.panel-open #axis-gizmo {
+      /* 15px (panel right) + panel width + 32px (tabs) + 4px (gap) = 51px */
+      right: calc(var(--panel-width, 420px) + 51px);
+    }
+    
+    /* Disable transitions temporarily when user is drag-resizing */
+    .is-resizing .matter-panel-right,
+    .is-resizing #axis-gizmo {
+      transition: none !important;
+    }
+    
     #axis-gizmo:hover {
       border-color: rgba(56, 189, 248, 0.45);
     }
