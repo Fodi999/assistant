@@ -34,13 +34,9 @@ pub fn matter_lab_section() -> String {
 
         <!-- Engine Mode Switcher ── PARTICLE ↔ CAD ── -->
         <div class="engine-mode-switcher" id="engine-mode-switcher">
-          <button class="mode-btn active" data-mode="PARTICLES" title="Particle / Morph Mode">
+          <button class="mode-btn" data-mode="PARTICLES" title="Mode Switch">
             <span class="mode-icon">⬡</span>
-            <span class="mode-label">PARTICLE</span>
-          </button>
-          <button class="mode-btn" data-mode="CAD" title="Solid / CAD Mode">
-            <span class="mode-icon">◈</span>
-            <span class="mode-label">SOLID</span>
+            <span class="mode-label">RENDER</span>
           </button>
         </div>
 

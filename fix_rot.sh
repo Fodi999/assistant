@@ -1,3 +1,4 @@
+cat << 'INNER_EOF' > src/web/home/scripts/webgpu/shader/cad_vert.rs
 pub const WGSL: &str = r##"
 // ── CAD Solid pipeline vertex shader ──
 // Renders a single clean solid primitive geometry representing the container 
@@ -65,7 +66,7 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
   let formScale   = u.u6.w;
 
   let objPos      = u.u8.xyz;
-  let objScale    = max(vec3f(0.001), u.u11.xyz);
+  let objScale    = max(0.001, u.u8.w);
   let objRot      = u.u10.xyz;
   
   let halfCell    = formScale * objScale;
@@ -95,11 +96,12 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
   o.depth    = mvz;
   o.phase    = 0.0;
   o.wCenter  = center;
-  o.size     = halfCell.x;
+  o.size     = halfCell;
   o.cellMask = cellMask;
-  o.halfCell = halfCell.x;
+  o.halfCell = halfCell;
   o.meshMode = 1u;
   o.meshN    = rotMat * cv.nrm;
   return o;
 }
 "##;
+INNER_EOF

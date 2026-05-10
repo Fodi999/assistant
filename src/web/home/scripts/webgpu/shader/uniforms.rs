@@ -11,8 +11,10 @@ struct Uniforms {
   u5: vec4f,   // mouseX, mouseY, mouseActive, shapeExponent
   u6: vec4f,   // formMix, formMode, formA, formScale
   u7: vec4f,   // cellSdfOn, cellRadius, colorMode, hideLow
-  u8: vec4f,   // objectX, objectY, objectZ, objectScale  (scene placement)
-  u9: vec4f,   // floorGridScale, _, _, _
+  u8: vec4f,   // objectX, objectY, objectZ, _
+  u9: vec4f,   // floorGridScale, ortho, isSelected, _
+  u10: vec4f,  // objectRotX, objectRotY, objectRotZ, _
+  u11: vec4f,  // objectScaleX, objectScaleY, objectScaleZ, _
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 

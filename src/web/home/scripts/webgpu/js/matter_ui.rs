@@ -7,6 +7,28 @@ pub const JS: &str = r##"
 
       // ── DOM sync ──
       function syncMatterUi() {
+        if (sceneState) {
+          const isSel = sceneState.selected;
+          const pos = isSel ? sceneState.objectPosition : [0, 0, 0];
+          const scl = isSel ? sceneState.objectScale : [0, 0, 0];
+          const dim = isSel ? sceneState.baseMeshDim : [0, 0, 0];
+
+          const x = document.getElementById("tf-loc-x"); if (x !== document.activeElement) x.value = pos[0].toFixed(3);
+          const y = document.getElementById("tf-loc-y"); if (y !== document.activeElement) y.value = pos[1].toFixed(3);
+          const z = document.getElementById("tf-loc-z"); if (z !== document.activeElement) z.value = pos[2].toFixed(3);
+
+          const sx = document.getElementById("tf-scale-x"); if (sx !== document.activeElement) sx.value = scl[0].toFixed(3);
+          const sy = document.getElementById("tf-scale-y"); if (sy !== document.activeElement) sy.value = scl[1].toFixed(3);
+          const sz = document.getElementById("tf-scale-z"); if (sz !== document.activeElement) sz.value = scl[2].toFixed(3);
+
+          // dimensions = scale * baseMeshDim
+          const dx = document.getElementById("tf-dim-x"); if (dx !== document.activeElement) dx.value = (scl[0] * dim[0]).toFixed(3);
+          const dy = document.getElementById("tf-dim-y"); if (dy !== document.activeElement) dy.value = (scl[1] * dim[1]).toFixed(3);
+          const dz = document.getElementById("tf-dim-z"); if (dz !== document.activeElement) dz.value = (scl[2] * dim[2]).toFixed(3);
+
+        }
+
+
         engineState.performance.fps     = __matterPerf.fps;
         engineState.performance.frameMs = __matterPerf.frameMs;
 
@@ -23,6 +45,116 @@ pub const JS: &str = r##"
 
       // ── bind once on startup ──
       function bindMatterUi() {
+
+        const makeDraggable = (input) => {
+
+          // Style wrapper to allow custom arrows
+          let parentEl = input.parentElement;
+          const btnDec = document.createElement("button");
+          btnDec.innerText = "◀";
+          btnDec.style.cssText = "background:transparent; border:none; color:#475569; font-size:8px; padding:0 4px; cursor:pointer;";
+          const btnInc = document.createElement("button");
+          btnInc.innerText = "▶";
+          btnInc.style.cssText = "background:transparent; border:none; color:#475569; font-size:8px; padding:0 8px 0 4px; cursor:pointer;";
+          
+          btnDec.addEventListener("click", () => {
+            let v = parseFloat(input.value) || 0;
+            let step = parseFloat(input.getAttribute("step")) || 0.1;
+            input.value = (v - step).toFixed(3);
+            input.dispatchEvent(new Event("input"));
+          });
+          btnInc.addEventListener("click", () => {
+            let v = parseFloat(input.value) || 0;
+            let step = parseFloat(input.getAttribute("step")) || 0.1;
+            input.value = (v + step).toFixed(3);
+            input.dispatchEvent(new Event("input"));
+          });
+          
+          // Insert arrows after input
+          parentEl.appendChild(btnDec);
+          parentEl.appendChild(btnInc);
+
+          input.style.cursor = "ew-resize";
+          let isDragging = false;
+          let startX = 0;
+          let startVal = 0;
+          let hasDragged = false;
+          let baseStep = parseFloat(input.getAttribute("step")) || 0.1;
+          
+          input.addEventListener("mousedown", (e) => {
+            startX = e.clientX;
+            startVal = parseFloat(input.value) || 0;
+            isDragging = true;
+            hasDragged = false;
+            
+            const onMove = (me) => {
+              if (!isDragging) return;
+              const dx = me.clientX - startX;
+              if (Math.abs(dx) > 2) hasDragged = true;
+              if (hasDragged) {
+                let speed = baseStep * 0.25;
+                if (me.shiftKey) speed *= 0.1;
+                if (me.altKey) speed *= 10.0;
+                
+                const newVal = startVal + dx * speed;
+                input.value = newVal.toFixed(3);
+                input.dispatchEvent(new Event("input"));
+                
+                if (document.activeElement !== input) {
+                  input.focus();
+                }
+              }
+            };
+            
+            const onUp = (ue) => {
+              isDragging = false;
+              window.removeEventListener("mousemove", onMove);
+              window.removeEventListener("mouseup", onUp);
+              if (hasDragged) {
+                ue.preventDefault();
+                input.blur();
+              }
+            };
+            
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+          });
+        };
+
+        const bindInput = (id, cb) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          makeDraggable(el);
+          el.addEventListener("input", (e) => cb(parseFloat(e.target.value) || 0.0));
+        };
+        bindInput("tf-loc-x", v => sceneState.objectPosition[0] = v);
+        bindInput("tf-loc-y", v => sceneState.objectPosition[1] = v);
+        bindInput("tf-loc-z", v => sceneState.objectPosition[2] = v);
+
+        bindInput("tf-rot-x", v => sceneState.objectRotation[0] = v);
+        bindInput("tf-rot-y", v => sceneState.objectRotation[1] = v);
+        bindInput("tf-rot-z", v => sceneState.objectRotation[2] = v);
+
+        bindInput("tf-scale-x", v => sceneState.objectScale[0] = Math.max(0.001, v));
+        bindInput("tf-scale-y", v => sceneState.objectScale[1] = Math.max(0.001, v));
+        bindInput("tf-scale-z", v => sceneState.objectScale[2] = Math.max(0.001, v));
+
+        // dimensions editing changes scale under the hood (Blender-like)
+        bindInput("tf-dim-x", v => sceneState.objectScale[0] = Math.max(0.001, v / sceneState.baseMeshDim[0]));
+        bindInput("tf-dim-y", v => sceneState.objectScale[1] = Math.max(0.001, v / sceneState.baseMeshDim[1]));
+        bindInput("tf-dim-z", v => sceneState.objectScale[2] = Math.max(0.001, v / sceneState.baseMeshDim[2]));
+
+        const btnApplyScale = document.getElementById("btn-apply-scale");
+        if (btnApplyScale) btnApplyScale.addEventListener("click", () => {
+          sceneState.baseMeshDim[0] *= sceneState.objectScale[0];
+          sceneState.baseMeshDim[1] *= sceneState.objectScale[1];
+          sceneState.baseMeshDim[2] *= sceneState.objectScale[2];
+          sceneState.objectScale[0] = 1.0;
+          sceneState.objectScale[1] = 1.0;
+          sceneState.objectScale[2] = 1.0;
+        });
+
+
         // close button → return to landing
         const close = document.getElementById('close-chefos');
         if (close) close.addEventListener('click', () => {
@@ -155,11 +287,17 @@ pub const JS: &str = r##"
           modeSwitcher.addEventListener('click', (e) => {
             const btn = e.target.closest('.mode-btn');
             if (!btn) return;
-            const mode = btn.dataset.mode;
-            if (!mode) return;
+            const isRender = sceneState.engineMode === "PARTICLES";
+            const mode = isRender ? "CAD" : "PARTICLES";
+            btn.querySelector(".mode-label").textContent = isRender ? "RENDER" : "SOLID";
+            btn.querySelector(".mode-icon").textContent = isRender ? "⬡" : "◈";
+            btn.dataset.mode = mode;
+            if (isRender) {
+                btn.classList.remove("active");
+            } else {
+            }
+            
             sceneState.engineMode = mode;
-            modeSwitcher.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
           });
         }
       }

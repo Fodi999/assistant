@@ -29,15 +29,18 @@ struct FragOut {
   let hitVz = max(dot(p.wCenter - ro, fwd), 0.05);
   let zNdc  = clamp(hitVz / (hitVz + 8.0), 0.0, 0.9999);
   
-  // Добавляем Blender Solid подсветку при выделении
+  // Добавляем Blender Solid подсветку при выделении (minimalistic)
   let isSelected = u.u9.z > 0.5;
   if isSelected {
-    // В Blender контур при выделении оранжевый (#FF9900)
+    // В Blender контур при выделении оранжевый, делаем тонким и ненавязчивым
     let dU = 1.0 - abs(p.quadUV.x);
     let dV = 1.0 - abs(p.quadUV.y);
     let pixelDist = min(dU, dV);
-    if pixelDist < 0.05 {
-      col = mix(col, vec3f(1.0, 0.6, 0.0), 0.8);
+    
+    // Плавный тонкий край, 0.0 до 0.02, прозрачность 0.45
+    let edgeT = 1.0 - smoothstep(0.005, 0.02, pixelDist);
+    if edgeT > 0.0 {
+      col = mix(col, vec3f(1.0, 0.7, 0.1), edgeT * 0.45);
     }
   }
 

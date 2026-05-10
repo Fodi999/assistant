@@ -25,27 +25,36 @@ pub fn properties_panel() -> &'static str {
           <button class="panel-toggle-btn tab-n" id="properties-toggle" title="Свойства (N)">Свойства</button>
           <div class="panel-header">Свойства (N)</div>
           <div class="panel-body">
-            <div class="prop-section">
-              <div class="prop-title">Selection</div>
-              <div class="prop-value text-muted">No object selected</div>
-            </div>
             
             <div class="prop-section">
-              <div class="prop-title">Active Tool</div>
-              <div class="prop-value">Select</div>
-            </div>
-            
-            <div class="prop-section">
-              <div class="prop-title">Mode</div>
-              <div class="prop-value">Object Mode</div>
-            </div>
-            
-            <div class="prop-section">
-              <div class="prop-title">Actions</div>
-              <div class="prop-actions">
-                <button class="prop-btn">Add Cube</button>
-                <button class="prop-btn">Add Form</button>
-                <button class="prop-btn highlight">Open AI Command</button>
+              <div class="prop-title" style="margin-bottom:-4px;">Transform</div>
+              <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 8px 0 12px 0;">
+              
+              <!-- Location -->
+              <div class="prop-title" style="text-transform:none; font-weight:normal; margin-bottom: 4px; color: #cbd5e1;">Location:</div>
+              <div class="prop-vector">
+                <div class="prop-row"><div class="prop-row-label x">X</div><input type="number" id="tf-loc-x" value="0.000" step="0.1"></div>
+                <div class="prop-row"><div class="prop-row-label y">Y</div><input type="number" id="tf-loc-y" value="0.000" step="0.1"></div>
+                <div class="prop-row"><div class="prop-row-label z">Z</div><input type="number" id="tf-loc-z" value="0.000" step="0.1"></div>
+              </div>
+
+              <!-- Rotation -->
+              <div class="prop-title" style="text-transform:none; font-weight:normal; margin-bottom: 4px; color: #cbd5e1;">Rotation:</div>
+              <div class="prop-vector">
+                <div class="prop-row"><div class="prop-row-label x">X</div><input type="number" id="tf-rot-x" value="0" step="1"><span style="color:#64748b;font-size:12px;padding-right:8px;">°</span></div>
+                <div class="prop-row"><div class="prop-row-label y">Y</div><input type="number" id="tf-rot-y" value="0" step="1"><span style="color:#64748b;font-size:12px;padding-right:8px;">°</span></div>
+                <div class="prop-row"><div class="prop-row-label z">Z</div><input type="number" id="tf-rot-z" value="0" step="1"><span style="color:#64748b;font-size:12px;padding-right:8px;">°</span></div>
+              </div>
+
+              <!-- Scale -->
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px;">
+                <div class="prop-title" style="text-transform:none; font-weight:normal; color: #cbd5e1; margin-bottom: 0;">Scale:</div>
+                <button id="btn-apply-scale" style="background:#334155; border:none; color:#cbd5e1; font-size:11px; padding:2px 6px; border-radius:4px; cursor:pointer;" title="Apply Scale">Apply Scale</button>
+              </div>
+              <div class="prop-vector" style="margin-bottom: 12px;">
+                <div class="prop-row"><div class="prop-row-label x">X</div><input type="number" id="tf-scale-x" value="1.000" step="0.1"></div>
+                <div class="prop-row"><div class="prop-row-label y">Y</div><input type="number" id="tf-scale-y" value="1.000" step="0.1"></div>
+                <div class="prop-row"><div class="prop-row-label z">Z</div><input type="number" id="tf-scale-z" value="1.000" step="0.1"></div>
               </div>
             </div>
           </div>
@@ -60,9 +69,14 @@ pub fn shape_panel() -> &'static str {
           <button class="panel-toggle-btn tab-shape" id="shape-toggle" title="Форма">Форма</button>
           <div class="panel-header">Форма</div>
           <div class="panel-body">
+            <!-- Dimensions -->
             <div class="prop-section">
-              <div class="prop-title">Mesh Data</div>
-              <div class="prop-value text-muted">No mesh</div>
+              <div class="prop-title" style="text-transform:none; font-weight:bold; margin-bottom: 4px; color: #f8fafc;">Dimensions</div>
+              <div class="prop-vector">
+                <div class="prop-row"><div class="prop-row-label x" style="width:50px;">Width</div><input type="number" id="tf-dim-x" value="2.0" step="0.1"><span style="color:#64748b;font-size:12px;padding-right:8px;">m</span></div>
+                <div class="prop-row"><div class="prop-row-label y" style="width:50px;">Height</div><input type="number" id="tf-dim-y" value="2.0" step="0.1"><span style="color:#64748b;font-size:12px;padding-right:8px;">m</span></div>
+                <div class="prop-row"><div class="prop-row-label z" style="width:50px;">Depth</div><input type="number" id="tf-dim-z" value="2.0" step="0.1"><span style="color:#64748b;font-size:12px;padding-right:8px;">m</span></div>
+              </div>
             </div>
           </div>
         </aside>

@@ -47,8 +47,8 @@ pub fn matter_lab_styles() -> &'static str {
     .topbar-toggle-btn {
       position: absolute;
       top: 56px; /* Язычок крепится сразу под панелью */
-      left: 50%;
-      transform: translateX(-50%);
+      left: 16px;
+      transform: none;
       width: 48px;
       height: 20px;
       background: #0f111a;
@@ -126,7 +126,7 @@ pub fn matter_lab_styles() -> &'static str {
     /* Floating Close Button */
     .close-engine-btn {
       position: absolute;
-      top: 16px; left: 16px;
+      top: 16px; right: 16px;
       width: 40px; height: 40px;
       background: rgba(15, 23, 42, 0.65);
       border: 1px solid rgba(148, 163, 184, 0.25);
@@ -307,6 +307,53 @@ pub fn matter_panel_styles() -> &'static str {
       overflow-y: auto;
     }
     
+    .prop-vector {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .prop-row {
+      display: flex;
+      align-items: center;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 2px;
+    }
+    .prop-row-label {
+      min-width: 20px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: #94a3b8;
+      padding: 6px 4px 6px 8px;
+    }
+    .prop-row-label.x { color: #f87171; }
+    .prop-row-label.y { color: #4ade80; }
+    .prop-row-label.z { color: #60a5fa; }
+    .prop-row input {
+      flex: 1;
+      background: none;
+      border: none;
+      color: #f1f5f9;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 6px 8px;
+      width: 100%;
+      outline: none;
+      -moz-appearance: textfield;
+    }
+    .prop-row input::-webkit-outer-spin-button,
+    .prop-row input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .prop-row input:focus {
+      background: #334155;
+    }
+
     .prop-section {
       margin-bottom: 20px;
     }
@@ -376,7 +423,7 @@ pub fn matter_action_bar_styles() -> &'static str {
     /* === Bottom action bar ========================================== */
     .action-bar {
       position: absolute;
-      left: 50%; transform: translateX(-50%);
+      left: 16px; transform: none;
       bottom: 56px;
       display: flex; align-items: center; gap: 10px;
       padding: 12px 16px;
@@ -484,7 +531,7 @@ pub fn matter_status_styles() -> &'static str {
     /* ── Axis gizmo ─────────────────────────────── */
     #axis-gizmo {
       position: absolute;
-      top: 16px;
+      top: 60px;
       right: 36px; /* 32px (tabs width) + 4px gap */
       left: auto;
       width: 96px; height: 96px;
@@ -517,9 +564,9 @@ pub fn matter_status_styles() -> &'static str {
     /* ── Engine Mode Switcher ── PARTICLE ↔ CAD ──────────────────── */
     .engine-mode-switcher {
       position: absolute;
-      top: 16px;
-      left: 50%;
-      transform: translateX(-50%);
+      top: 60px;
+      left: 16px;
+      transform: none;
       z-index: 25;
       display: flex;
       gap: 4px;

@@ -1,36 +1,8 @@
+cat << 'INNER_EOF' > src/web/home/scripts/webgpu/shader/cad_vert.rs
 pub const WGSL: &str = r##"
 // ── CAD Solid pipeline vertex shader ──
 // Renders a single clean solid primitive geometry representing the container 
 // (e.g. perfect Blender default cube) without grid subdivisions.
-
-// Helper mapping UI Euler Degrees to Rotation Matrix (XYZ)
-fn euler_to_matrix(deg: vec3f) -> mat3x3f {
-  let rad = deg * (3.14159265 / 180.0);
-  
-  let cx = cos(rad.x); let sx = sin(rad.x);
-  let cy = cos(rad.y); let sy = sin(rad.y);
-  let cz = cos(rad.z); let sz = sin(rad.z);
-
-  let mX = mat3x3f(
-    1.0, 0.0, 0.0,
-    0.0, cx,  sx,
-    0.0, -sx, cx
-  );
-
-  let mY = mat3x3f(
-    cy,  0.0, -sy,
-    0.0, 1.0, 0.0,
-    sy,  0.0, cy
-  );
-
-  let mZ = mat3x3f(
-    cz,  sz,  0.0,
-    -sz, cz,  0.0,
-    0.0, 0.0, 1.0
-  );
-
-  return mZ * mY * mX;
-}
 
 @vertex fn vs_cad(
   @builtin(vertex_index)   vi:   u32,
@@ -65,19 +37,14 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
   let formScale   = u.u6.w;
 
   let objPos      = u.u8.xyz;
-  let objScale    = max(vec3f(0.001), u.u11.xyz);
-  let objRot      = u.u10.xyz;
-  
+  let objScale    = max(0.001, u.u8.w);
   let halfCell    = formScale * objScale;
   let center      = objPos;
   let cellMask    = 63u;
 
   let cv          = cubeVert(vi % 36u);
 
-  let rotMat      = euler_to_matrix(objRot);
-  let localPos    = rotMat * (cv.pos * halfCell);
-  
-  let wp          = center + localPos;
+  let wp          = center + cv.pos * halfCell;
   let relV        = wp - ro;
   let mvx         = dot(relV, right);
   let mvy         = dot(relV, upv);
@@ -95,11 +62,12 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
   o.depth    = mvz;
   o.phase    = 0.0;
   o.wCenter  = center;
-  o.size     = halfCell.x;
+  o.size     = halfCell;
   o.cellMask = cellMask;
-  o.halfCell = halfCell.x;
+  o.halfCell = halfCell;
   o.meshMode = 1u;
-  o.meshN    = rotMat * cv.nrm;
+  o.meshN    = cv.nrm;
   return o;
 }
 "##;
+INNER_EOF

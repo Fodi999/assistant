@@ -58,16 +58,18 @@ pub const JS: &str = r##"
       // X = лево/право,  Y = вверх/вниз,  Z = вперёд/назад
       const sceneState = {
         objectPosition: [0.0, 0.0, 0.0],
-        objectScale:    FORM_OBJSCALE.cube,
+        objectRotation: [0.0, 0.0, 0.0],
+        objectScale:    [1.0, 1.0, 1.0], // Массив scale X Y Z
+        baseMeshDim:    [2.0, 2.0, 2.0], // Массив scale X Y Z
         selected:       false, // Отслеживаем выделен ли объект
-        engineMode:     'PARTICLES', // 'PARTICLES' | 'CAD'
+        engineMode:     'CAD', // 'PARTICLES' | 'CAD'
       };
 
       // Per-formation presets — нижняя грань прилипает к полу
       const formationDefaults = {
-        cube:  { objectPosition:[0.0, 0.0,  0.0], objectScale: FORM_OBJSCALE.cube,  dist: 3.25, target:[0.0, 0.0,  0.0] },
-        cloud: { objectPosition:[0.0, 0.0, 0.0], objectScale: FORM_OBJSCALE.cloud, dist: 3.75, target:[0.0, 0.0, 0.0] },
-        wall:  { objectPosition:[0.0, 0.0,  0.0], objectScale: FORM_OBJSCALE.wall,  dist: 3.5, target:[0.0, 0.0,  0.0] },
+        cube:  { objectPosition:[0.0, 0.0,  0.0], objectScale: [FORM_OBJSCALE.cube, FORM_OBJSCALE.cube, FORM_OBJSCALE.cube],  dist: 3.25, target:[0.0, 0.0,  0.0] },
+        cloud: { objectPosition:[0.0, 0.0, 0.0], objectScale: [FORM_OBJSCALE.cloud, FORM_OBJSCALE.cloud, FORM_OBJSCALE.cloud], dist: 3.75, target:[0.0, 0.0, 0.0] },
+        wall:  { objectPosition:[0.0, 0.0,  0.0], objectScale: [FORM_OBJSCALE.wall, FORM_OBJSCALE.wall, FORM_OBJSCALE.wall],  dist: 3.5, target:[0.0, 0.0,  0.0] },
       };
 
       // ── 4. Camera state ─────────────────────────────────────────
@@ -257,7 +259,7 @@ pub const JS: &str = r##"
           case 'arrowdown':  sceneState.objectPosition[2] += step; break;
           case 'q':          sceneState.objectPosition[1] += step; break;
           case 'e':          sceneState.objectPosition[1] -= Math.min(sceneState.objectPosition[1], step); break;
-          case 'f':          sceneState.objectPosition[1] = sceneState.objectScale * FORM_SCALE[formation.mode]; break;
+          case 'f':          sceneState.objectPosition[1] = sceneState.objectScale[1] * FORM_SCALE[formation.mode]; break;
           case 'c':          
             cam.target = sceneState.objectPosition.slice();
             log('◇ camera focused on object', '#67e8f9');

@@ -12,10 +12,12 @@ pub const JS: &str = r##"
       //   u5: mouseX, mouseY, mouseActive, shapeExponent
       //   u6: formMix(0..1), formMode(0=cloud,1=cube,2=wall), formA, formScale
       //   u7: cellSdfOn, cellRadius, colorMode(0/1/2), hideLow(0/1)
-      //   u8: objectX, objectY, objectZ, objectScale  (scene placement)
-      //   u9: floorGridScale, orthoFlag, _, _
+      //   u8: objectX, objectY, objectZ, _
+      //   u9: floorGridScale, orthoFlag, isSelected, _
+      //   u10: objectRotX, objectRotY, objectRotZ, _
+      //   u11: objectScaleX, objectScaleY, objectScaleZ, _
       const uniformBuf = device.createBuffer({
-        size: 160,
+        size: 192,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
 

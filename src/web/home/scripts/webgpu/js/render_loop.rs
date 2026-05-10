@@ -7,7 +7,7 @@ pub const JS: &str = r##"
       let frameCount = 0;
       let lastFpsTime = t0, fpsAcc = 0, fps = 0;
       let lastFrameTime = t0;
-      const ubo = new Float32Array(40); // 10 × vec4
+      const ubo = new Float32Array(48); // 12 × vec4
 
       function frame() {
         const now = performance.now();
@@ -120,12 +120,22 @@ pub const JS: &str = r##"
         ubo[32] = sceneState.objectPosition[0];
         ubo[33] = sceneState.objectPosition[1];
         ubo[34] = sceneState.objectPosition[2];
-        ubo[35] = sceneState.objectScale;
+        ubo[35] = 0;
         // u9: floor settings + camera projection + object selection
         ubo[36] = floorGrid.scale;
         ubo[37] = cam.ortho ? 1.0 : 0.0;
         ubo[38] = sceneState.selected ? 1.0 : 0.0; // u9.z = isSelected flag
         ubo[39] = 0;
+        // u10: object rotation (in degrees from UI, passed to shader)
+        ubo[40] = sceneState.objectRotation[0];
+        ubo[41] = sceneState.objectRotation[1];
+        ubo[42] = sceneState.objectRotation[2];
+        ubo[43] = 0;
+        // u11: object scale (in XYZ)
+        ubo[44] = sceneState.objectScale[0] * (sceneState.baseMeshDim[0] / 2.0);
+        ubo[45] = sceneState.objectScale[1] * (sceneState.baseMeshDim[1] / 2.0);
+        ubo[46] = sceneState.objectScale[2] * (sceneState.baseMeshDim[2] / 2.0);
+        ubo[47] = 0;
         device.queue.writeBuffer(uniformBuf, 0, ubo);
 
         const enc  = device.createCommandEncoder();
