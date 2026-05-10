@@ -29,16 +29,26 @@ pub const JS: &str = r##"
           document.body.classList.remove('engine-open');
         });
 
-        // === Right Panels Logic (N and M) ===
-        const toggleNPanel = document.getElementById('properties-toggle');
-        const toggleMPanel = document.getElementById('profile-toggle');
-        
-        const propertiesPanel = document.getElementById('properties-panel');
-        const profilePanel = document.getElementById('profile-panel');
+        // === Right Panels Logic ===
+        const panelsConfig = [
+          { id: 'M', panelId: 'profile-panel', toggleId: 'profile-toggle', resizerId: 'profile-resizer' },
+          { id: 'N', panelId: 'properties-panel', toggleId: 'properties-toggle', resizerId: 'properties-resizer' },
+          { id: 'SHAPE', panelId: 'shape-panel', toggleId: 'shape-toggle', resizerId: 'shape-resizer' },
+          { id: 'MATERIAL', panelId: 'material-panel', toggleId: 'material-toggle', resizerId: 'material-resizer' },
+          { id: 'NODES', panelId: 'nodes-panel', toggleId: 'nodes-toggle', resizerId: 'nodes-resizer' },
+          { id: 'HISTORY', panelId: 'history-panel', toggleId: 'history-toggle', resizerId: 'history-resizer' },
+          { id: 'AI', panelId: 'ai-panel', toggleId: 'ai-toggle', resizerId: 'ai-resizer' }
+        ];
+
+        const panelElements = panelsConfig.map(cfg => ({
+          ...cfg,
+          panel: document.getElementById(cfg.panelId),
+          toggle: document.getElementById(cfg.toggleId),
+          resizer: document.getElementById(cfg.resizerId)
+        })).filter(cfg => cfg.panel && cfg.toggle);
 
         function updateBodyPanelState() {
-          const isAnyOpen = (propertiesPanel && !propertiesPanel.classList.contains('collapsed')) || 
-                            (profilePanel && !profilePanel.classList.contains('collapsed'));
+          const isAnyOpen = panelElements.some(p => !p.panel.classList.contains('collapsed'));
           if (isAnyOpen) {
             document.body.classList.add('panel-open');
           } else {
@@ -47,59 +57,35 @@ pub const JS: &str = r##"
         }
 
         function openPanel(idToOpen) {
-          // Open requested
-          if (idToOpen === 'N' && propertiesPanel) {
-            propertiesPanel.classList.remove('collapsed');
-            toggleNPanel.classList.add('active');
-            
-            // Close other
-            if (profilePanel) {
-               profilePanel.classList.add('collapsed');
-               if(toggleMPanel) toggleMPanel.classList.remove('active');
+          panelElements.forEach(p => {
+            if (p.id === idToOpen || idToOpen === p.panelId) {
+              p.panel.classList.remove('collapsed');
+              p.toggle.classList.add('active');
+            } else {
+              p.panel.classList.add('collapsed');
+              p.toggle.classList.remove('active');
             }
-          } 
-          else if (idToOpen === 'M' && profilePanel) {
-            profilePanel.classList.remove('collapsed');
-            if(toggleMPanel) toggleMPanel.classList.add('active');
-            
-            // Close other
-            if (propertiesPanel) {
-               propertiesPanel.classList.add('collapsed');
-               toggleNPanel.classList.remove('active');
-            }
-          }
-          
+          });
           updateBodyPanelState();
         }
 
         function closeAllPanels() {
-          if (propertiesPanel) propertiesPanel.classList.add('collapsed');
-          if (profilePanel) profilePanel.classList.add('collapsed');
-          if (toggleNPanel) toggleNPanel.classList.remove('active');
-          if (toggleMPanel) toggleMPanel.classList.remove('active');
-          
+          panelElements.forEach(p => {
+            p.panel.classList.add('collapsed');
+            p.toggle.classList.remove('active');
+          });
           updateBodyPanelState();
         }
 
-        if (toggleNPanel && propertiesPanel) {
-          toggleNPanel.addEventListener('click', () => {
-            if (propertiesPanel.classList.contains('collapsed')) {
-              openPanel('N');
-            } else {
-              closeAllPanels();
-            }
+        panelElements.forEach(p => {
+          p.toggle.addEventListener('click', () => {
+             if (p.panel.classList.contains('collapsed')) {
+               openPanel(p.id);
+             } else {
+               closeAllPanels();
+             }
           });
-        }
-        
-        if (toggleMPanel && profilePanel) {
-          toggleMPanel.addEventListener('click', () => {
-            if (profilePanel.classList.contains('collapsed')) {
-              openPanel('M');
-            } else {
-              closeAllPanels();
-            }
-          });
-        }
+        });
           
         // Allow toggling with hotkeys N and M
         window.addEventListener('keydown', (e) => {
@@ -107,25 +93,21 @@ pub const JS: &str = r##"
             const key = e.key.toLowerCase();
             
             if (key === 'n') {
-              if (propertiesPanel && propertiesPanel.classList.contains('collapsed')) {
-                openPanel('N');
-              } else {
-                closeAllPanels();
+              const p = panelElements.find(p => p.id === 'N');
+              if (p) {
+                if (p.panel.classList.contains('collapsed')) openPanel('N'); else closeAllPanels();
               }
             } 
             else if (key === 'm') {
-              if (profilePanel && profilePanel.classList.contains('collapsed')) {
-                openPanel('M');
-              } else {
-                closeAllPanels();
+              const p = panelElements.find(p => p.id === 'M');
+              if (p) {
+                if (p.panel.classList.contains('collapsed')) openPanel('M'); else closeAllPanels();
               }
             }
           }
         });
 
         // Drag to resize panel logic
-        const resizerN = document.getElementById('properties-resizer');
-        const resizerM = document.getElementById('profile-resizer');
         let isResizing = false;
         
         const attachResizer = (resizerEl) => {
@@ -137,8 +119,9 @@ pub const JS: &str = r##"
           });
         };
         
-        attachResizer(resizerN);
-        attachResizer(resizerM);
+        panelElements.forEach(p => {
+          if (p.resizer) attachResizer(p.resizer);
+        });
         
         window.addEventListener('mousemove', (e) => {
           if (!isResizing) return;

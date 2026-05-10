@@ -6,6 +6,11 @@
 pub fn matter_lab_section() -> String {
     let profile_panel = crate::web::home::matter_panels::profile_panel();
     let properties_panel = crate::web::home::matter_panels::properties_panel();
+    let shape_panel = crate::web::home::matter_panels::shape_panel();
+    let material_panel = crate::web::home::matter_panels::material_panel();
+    let nodes_panel = crate::web::home::matter_panels::nodes_panel();
+    let history_panel = crate::web::home::matter_panels::history_panel();
+    let ai_panel = crate::web::home::matter_panels::ai_panel();
 
     format!(
         r##"
@@ -27,10 +32,25 @@ pub fn matter_lab_section() -> String {
         <!-- Axis gizmo (top-left, z=20) — click axis to snap camera view -->
         <canvas id="axis-gizmo" width="96" height="96" title="Click axis to snap view"></canvas>
 
-        <!-- Right Profile Panel (M-panel) -->
+        <!-- Right Properties Panel (Blender N-panel analog) -->
         {}
 
-        <!-- Right Properties Panel (Blender N-panel analog) -->
+        <!-- Shape Panel -->
+        {}
+
+        <!-- Material Panel -->
+        {}
+
+        <!-- Nodes Panel -->
+        {}
+
+        <!-- History Panel -->
+        {}
+
+        <!-- AI Panel -->
+        {}
+
+        <!-- Right Profile Panel (M-panel) -->
         {}
 
         <!-- Status bar (z=15) -->
@@ -52,6 +72,6 @@ pub fn matter_lab_section() -> String {
     </main>
   </section>
 "##,
-        profile_panel, properties_panel
+        properties_panel, shape_panel, material_panel, nodes_panel, history_panel, ai_panel, profile_panel
     )
 }

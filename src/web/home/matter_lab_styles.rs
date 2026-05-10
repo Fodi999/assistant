@@ -224,6 +224,7 @@ pub fn matter_panel_styles() -> &'static str {
     .matter-panel-right.collapsed {
       /* Translation precisely hides the panel off-screen, leaving exactly the 32px tab visible flush with the right edge */
       transform: translateX(calc(100% + 15px));
+      z-index: 16; /* Ensure collapsed tabs render on top of the open panel body */
     }
     
     .panel-toggle-btn {
@@ -252,12 +253,32 @@ pub fn matter_panel_styles() -> &'static str {
       z-index: 10;
     }
     
-    .panel-toggle-btn.tab-m {
+    .panel-toggle-btn.tab-n {
       top: 15px; 
     }
 
-    .panel-toggle-btn.tab-n {
+    .panel-toggle-btn.tab-shape {
       top: 106px; /* 15px + 90px height + 1px gap */
+    }
+
+    .panel-toggle-btn.tab-material {
+      top: 197px; 
+    }
+
+    .panel-toggle-btn.tab-nodes {
+      top: 288px; 
+    }
+
+    .panel-toggle-btn.tab-history {
+      top: 379px; 
+    }
+
+    .panel-toggle-btn.tab-ai {
+      top: 470px; 
+    }
+
+    .panel-toggle-btn.tab-m {
+      top: 561px; 
     }
     
     .panel-toggle-btn:hover { 
