@@ -12,30 +12,35 @@ mod pipeline;
 mod render_loop;
 mod state;
 
-/// Assembles the complete JS source, embedding the WGSL shader as `shaderSrc`.
-pub fn assemble(shader: &str) -> String {
+/// Assembles the complete JS source, embedding both WGSL shaders.
+pub fn assemble(shader: &str, cad_shader: &str) -> String {
     let mut out = String::with_capacity(
         init::JS.len()
             + state::JS.len()
             + matter_state::JS.len()
             + buffers::JS.len()
             + shader.len()
+            + cad_shader.len()
             + pipeline::JS.len()
             + hud::JS.len()
             + controls::JS.len()
             + gizmo::JS.len()
             + matter_ui::JS.len()
             + render_loop::JS.len()
-            + 64,
+            + 128,
     );
     out.push_str(init::JS);
     out.push_str(state::JS);
     out.push_str(matter_state::JS);
     out.push_str(buffers::JS);
-    // ── 6. WGSL ─────────────────────────────────────────────────
+    // ── 6. WGSL (Particle / Morph pipeline) ─────────────────────
     out.push_str("\n      // ── 6. WGSL ─────────────────────────────────────────────────\n");
     out.push_str("      const shaderSrc = `\n");
     out.push_str(shader);
+    out.push_str("\n`;\n");
+    // ── 6b. WGSL (CAD / Solid pipeline) ────────────────────────
+    out.push_str("      const cadShaderSrc = `\n");
+    out.push_str(cad_shader);
     out.push_str("\n`;\n");
     out.push_str(pipeline::JS);
     out.push_str(hud::JS);

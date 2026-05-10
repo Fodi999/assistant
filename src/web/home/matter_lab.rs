@@ -32,6 +32,18 @@ pub fn matter_lab_section() -> String {
         <!-- Axis gizmo (top-left, z=20) — click axis to snap camera view -->
         <canvas id="axis-gizmo" width="96" height="96" title="Click axis to snap view"></canvas>
 
+        <!-- Engine Mode Switcher ── PARTICLE ↔ CAD ── -->
+        <div class="engine-mode-switcher" id="engine-mode-switcher">
+          <button class="mode-btn active" data-mode="PARTICLES" title="Particle / Morph Mode">
+            <span class="mode-icon">⬡</span>
+            <span class="mode-label">PARTICLE</span>
+          </button>
+          <button class="mode-btn" data-mode="CAD" title="Solid / CAD Mode">
+            <span class="mode-icon">◈</span>
+            <span class="mode-label">SOLID</span>
+          </button>
+        </div>
+
         <!-- Right Properties Panel (Blender N-panel analog) -->
         {}
 

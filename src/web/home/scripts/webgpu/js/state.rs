@@ -60,6 +60,7 @@ pub const JS: &str = r##"
         objectPosition: [0.0, 0.0, 0.0],
         objectScale:    FORM_OBJSCALE.cube,
         selected:       false, // Отслеживаем выделен ли объект
+        engineMode:     'PARTICLES', // 'PARTICLES' | 'CAD'
       };
 
       // Per-formation presets — нижняя грань прилипает к полу

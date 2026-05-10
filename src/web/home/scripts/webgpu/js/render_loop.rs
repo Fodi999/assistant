@@ -18,7 +18,7 @@ pub const JS: &str = r##"
         if (frameCount === 0) {
           log('🚀 render loop запущен!', '#67e8f9');
           log('🖱  drag · wheel · 1-5 · C/V/W form · [/] shape · R · B=HUD · Shift+B=bench', '#a78bfa');
-          setTimeout(() => { if (diag) diag.style.display = 'none'; }, 4000);
+          setTimeout(() => { const diagEl = document.getElementById('gpu-diag'); if (diagEl) diagEl.style.display = 'none'; }, 4000);
         }
         frameCount++;
         fpsAcc++;
@@ -162,10 +162,16 @@ pub const JS: &str = r##"
               depthStoreOp: 'store',
             },
           });
-          pass.setPipeline(spherePipeline);
+          // ── Engine mode switch ─────────────────────────────────
+          // PARTICLE mode: instanced billboards raymarched via SDF (full morph/cloud)
+          // CAD mode:      rasterized cube mesh with clean Blender solid shading
+          if (sceneState.engineMode === 'CAD') {
+            pass.setPipeline(cadPipeline);
+          } else {
+            pass.setPipeline(spherePipeline);
+          }
           pass.setBindGroup(0, bindGroup);
-          // 36 verts per instance: enough for either billboard quad (uses first 6,
-          // discards 6..35) or cube mesh (uses all 36 for 6 axis-aligned faces).
+          // 36 verts per instance: billboard quad uses first 6, cube mesh uses all 36.
           pass.draw(36, NUM_SPHERES);
           pass.end();
         }

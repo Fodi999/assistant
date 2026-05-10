@@ -148,6 +148,20 @@ pub const JS: &str = r##"
         // periodic refresh for fps / frame
         setInterval(syncMatterUi, 250);
         syncMatterUi();
+
+        // ── Engine Mode Switcher (PARTICLE ↔ CAD) ─────────────────
+        const modeSwitcher = document.getElementById('engine-mode-switcher');
+        if (modeSwitcher) {
+          modeSwitcher.addEventListener('click', (e) => {
+            const btn = e.target.closest('.mode-btn');
+            if (!btn) return;
+            const mode = btn.dataset.mode;
+            if (!mode) return;
+            sceneState.engineMode = mode;
+            modeSwitcher.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          });
+        }
       }
 
       // expose for render_loop perf hook

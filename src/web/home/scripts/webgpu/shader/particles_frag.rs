@@ -249,8 +249,8 @@ struct FragOut {
     let dV = (1.0 - abs(p.quadUV.y)) / max(vy, 0.00001);
     let pixelDist = min(dU, dV);
     
-    // Выделение грани объекта, если он выбран (u9.z == 1.0)
-    let isSelected = u.u9.z > 0.5;
+    // Выделение грани объекта отключено в Render Mode (Particles), чтобы было чисто "как есть" (магия)
+    let isSelected = false; // Было: u.u9.z > 0.5;
     
     // Толщина линии строго в пикселях 
     // В Blender outline константной толщины (1.0 обычный, 1.5 при выделении)

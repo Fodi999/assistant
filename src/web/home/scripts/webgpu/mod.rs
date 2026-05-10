@@ -20,5 +20,5 @@ static WEBGPU_JS: OnceLock<String> = OnceLock::new();
 /// Returns the complete WebGPU JS source, assembled once and cached for the
 /// lifetime of the process.
 pub fn webgpu_js() -> &'static str {
-    WEBGPU_JS.get_or_init(|| js::assemble(shader::wgsl()))
+    WEBGPU_JS.get_or_init(|| js::assemble(shader::wgsl(), &shader::cad_wgsl()))
 }

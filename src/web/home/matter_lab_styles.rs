@@ -513,5 +513,51 @@ pub fn matter_status_styles() -> &'static str {
     #axis-gizmo:hover {
       border-color: rgba(56, 189, 248, 0.45);
     }
+
+    /* ── Engine Mode Switcher ── PARTICLE ↔ CAD ──────────────────── */
+    .engine-mode-switcher {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      display: flex;
+      gap: 4px;
+      background: rgba(15, 20, 30, 0.80);
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      border-radius: 10px;
+      padding: 4px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: rgba(148, 163, 184, 0.8);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      white-space: nowrap;
+    }
+    .mode-btn:hover {
+      background: rgba(56, 189, 248, 0.10);
+      color: #e2e8f0;
+    }
+    .mode-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.40);
+      color: #38bdf8;
+    }
+    .mode-icon {
+      font-size: 13px;
+      line-height: 1;
+    }
 "##
 }
