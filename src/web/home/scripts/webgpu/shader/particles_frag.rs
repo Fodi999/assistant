@@ -158,25 +158,25 @@ struct FragOut {
   } // close outer non-mesh else branch
 
   // ── lighting on the real 3D normal ──
-  // CAD MATTE MATERIAL (Plasticity-style)
-  // Soft, matte gradient lighting:
-  let L1 = normalize(vec3f( 0.45,  0.85, -0.40));
-  let L2 = normalize(vec3f(-0.35,  0.25,  0.65));
-  let L3 = normalize(vec3f( 0.10, -0.50, -0.20)); // Soft bounce light
+  // BLENDER SOLID VIEWPORT LIGHTING 
+  // Standard 3-point Studio lighting setup
+  let L1 = normalize(vec3f( 0.50,  0.80,  0.50)); // Key light (from above-right-front)
+  let L2 = normalize(vec3f(-0.80, -0.20, -0.20)); // Fill light (from left)
+  let L3 = normalize(vec3f( 0.20, -0.50, -0.80)); // Back/Rim light
 
   let v  = -rd;
   
-  // Soften lambert with wrapping (valve half-lambert style)
-  let dA = pow(max(dot(nrm, L1) * 0.5 + 0.5, 0.0), 1.5) * 1.1; 
+  // Standard Lambertian diffuse for that crisp viewport look
+  let dA = max(dot(nrm, L1), 0.0) * 0.80; 
   let dB = max(dot(nrm, L2), 0.0) * 0.35;
-  let dC = max(dot(nrm, L3), 0.0) * 0.20;
+  let dC = max(dot(nrm, L3), 0.0) * 0.25;
 
-  // Reduced specular
+  // Specular reflection (Blender viewport has subtle shine)
   let h  = normalize(L1 + v);
-  let sp = pow(max(dot(nrm, h), 0.0), 32.0) * 0.15; // low shine
+  let sp = pow(max(dot(nrm, h), 0.0), 50.0) * 0.15; 
 
-  // Soft rim
-  let fr = pow(1.0 - max(dot(nrm, v), 0.0), 2.5) * 0.15;
+  // Very soft Fresnel rim
+  let fr = pow(1.0 - max(dot(nrm, v), 0.0), 3.0) * 0.10;
 
   // ── seam suppression for flush-packed cube cells ──
   // When a face touches a neighbour (cellMask bit not set), this is an internal
@@ -202,19 +202,23 @@ struct FragOut {
   let hitVz = max(dot(hitW - ro, fwd), 0.05);
   let fog   = exp(-hitVz * 0.045);
 
-  let cad_matte_base = vec3f(0.85, 0.88, 0.90); // light gray-blue CAD material
+  // Blender-style standard gray default material with a hint of particle color
+  let blender_base = vec3f(0.80, 0.80, 0.80); 
+  
+  // Mix ambient lighting (0.15) with the directed diffuse lighting
+  var col = blender_base * (0.15 + dA + dB + dC); 
+  // Add in particle custom color slightly (if colored particles are used)
+  col = mix(col, p.color.rgb * (0.15 + dA + dB + dC), 0.3);
 
-  var col = p.color * 0.25;                                    // ambient
-  col    += cad_matte_base * (dA + dB + dC) * 0.85;                // matte diffuse
-  col    += vec3f(0.95, 0.97, 1.0) * sp * seamMul;                 // subtle specular 
-  col    += vec3f(0.80, 0.90, 1.00) * fr * (0.80 + 0.20 * sphereLikeness) * seamMul;
+  // Add specular and fresnel highlights on top
+  col += vec3f(1.0) * sp * seamMul;                 
+  col += vec3f(1.0) * fr * seamMul;
 
-  // distance darkening (atmospheric, NOT alpha)
-  col *= 0.65 + 0.35 * fog;
+  // Clean atmospheric fading (less darkening than before to keep it looking like a 3D software viewport)
+  col *= 0.85 + 0.15 * fog;
 
-  // tone map + gamma
-  col = col / (col + vec3f(1.0));
-  col = pow(col, vec3f(0.4545));
+  // Gamma correction (sRGB space)
+  col = pow(col, vec3f(1.0 / 2.2));
 
   // ── debug overrides (after tone-map so colours stay punchy) ──
   let cmode = u.u7.z;
@@ -238,17 +242,30 @@ struct FragOut {
 
   // ── CAD/Plasticity Edge Overlay (mesh mode only) ──
   if p.meshMode == 1u {
-    let fw = max(vx, vy);
+    // Рассчитываем расстояние до края строго в экранных пикселях по каждой оси отдельно!
+    // Благодаря делению на fwidth, при вращении камеры линии больше не будут утолщаться
+    // и искажаться, они всегда будут занимать одинаковое количество пикселей на экране.
+    let dU = (1.0 - abs(p.quadUV.x)) / max(vx, 0.00001);
+    let dV = (1.0 - abs(p.quadUV.y)) / max(vy, 0.00001);
+    let pixelDist = min(dU, dV);
     
-    let dU = 1.0 - abs(p.quadUV.x);
-    let dV = 1.0 - abs(p.quadUV.y);
-    let dEdge = min(dU, dV);
+    // Выделение грани объекта, если он выбран (u9.z == 1.0)
+    let isSelected = u.u9.z > 0.5;
     
-    // 1.2 pixels wide edge, with anti-aliasing
-    let edgeT = smoothstep(fw * 1.8, fw * 0.4, dEdge);
-    let edgeColor = vec3f(0.12, 0.14, 0.17); // Softer edge color, less black
+    // Толщина линии строго в пикселях 
+    // В Blender outline константной толщины (1.0 обычный, 1.5 при выделении)
+    let thickness = select(1.0, 1.5, isSelected);
     
-    col = mix(col, edgeColor, edgeT);
+    // Аналитический антиалиасинг (1.0 внутри линии, плавно спадает к 0.0)
+    let edgeT = 1.0 - smoothstep(thickness - 0.7, thickness + 0.7, pixelDist);
+    
+    // Цвет
+    let blenderOrange = vec3f(1.0, 0.45, 0.0);
+    let defaultEdge   = col * 0.4; 
+    let edgeColor     = select(defaultEdge, blenderOrange, isSelected);
+    
+    let mixStrength   = select(0.5, 1.0, isSelected);
+    col = mix(col, edgeColor, edgeT * mixStrength);
   }
 
   var out: FragOut;

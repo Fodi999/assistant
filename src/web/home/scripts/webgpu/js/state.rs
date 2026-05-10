@@ -59,6 +59,7 @@ pub const JS: &str = r##"
       const sceneState = {
         objectPosition: [0.0, 0.0, 0.0],
         objectScale:    FORM_OBJSCALE.cube,
+        selected:       false, // Отслеживаем выделен ли объект
       };
 
       // Per-formation presets — нижняя грань прилипает к полу
@@ -70,9 +71,9 @@ pub const JS: &str = r##"
 
       // ── 4. Camera state ─────────────────────────────────────────
       const cam = {
-        yaw:    0.785,
-        pitch:  -0.615,
-        dist:   3.25,
+        yaw:    Math.PI / 4,     // ~45 градусов вправо, как дефолтная камера Blender
+        pitch:  Math.PI / 6,     // ~30 градусов вниз 
+        dist:   8.0,             // Дефолтная удобная дистанция к дефолтному кубу
         target: [0.0, 0.0, 0.0],
         autoRotate: false,
         ortho: false,
@@ -152,16 +153,34 @@ pub const JS: &str = r##"
       const mouse = { ndcX: 999, ndcY: 999, active: false };
 
       // pointer interactions on canvas
-      let dragging = false, panning = false, lastX = 0, lastY = 0;
+      let dragging = false, panning = false, lastX = 0, lastY = 0, startX = 0, startY = 0;
       canvas.addEventListener('pointerdown', (e) => {
         canvas.setPointerCapture(e.pointerId);
         dragging = true;
-        panning  = e.shiftKey || e.button === 2;
+        // Pan if Shift is pressed, or Middle Mouse Button + Shift, or Right Click
+        panning  = e.shiftKey || e.button === 2 || (e.button === 1 && e.shiftKey);
         lastX = e.clientX; lastY = e.clientY;
+        startX = e.clientX; startY = e.clientY;
       });
+      
       canvas.addEventListener('pointerup', (e) => {
         dragging = false; panning = false;
         try { canvas.releasePointerCapture(e.pointerId); } catch {}
+        
+        // --- ПРОСТОЙ ВЫДЕЛИТЕЛЬ (КЛИК ДЛЯ ВЫДЕЛЕНИЯ) ---
+        // Если курсор не сдвигался во время нажатия (< 5 пикселей), считаем это кликом.
+        const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+        if (dist < 5 && e.button === 0) { // Только левый клик
+          sceneState.selected = !sceneState.selected;
+          
+          // Тот самый трюк для удобного зума: если объект выделен, смещаем фокус камеры точно на него!
+          if (sceneState.selected) {
+            cam.target = sceneState.objectPosition.slice(); 
+          }
+          
+          const msg = sceneState.selected ? 'Выделен (Фокус на объекте)' : 'Снято выделение';
+          log(`◇ Объект: ${msg}`, sceneState.selected ? '#fbbf24' : '#9ca3af');
+        }
       });
       canvas.addEventListener('pointermove', (e) => {
         // NDC for sand cursor (in screen space, aspect-corrected later in shader)
@@ -182,29 +201,44 @@ pub const JS: &str = r##"
           cam.target[2] -= dx * k * Math.sin(cam.yaw);
           cam.target[1] += dy * k;
         } else {
+          // Orbit (Blender style)
           cam.yaw   += dx * 0.005;
           cam.pitch += dy * 0.005;
-          // no clamp — full sphere rotation
         }
       });
       canvas.addEventListener('pointerleave', () => { mouse.active = false; });
+      
+      // --- Поддержка нативного Pinch-to-Zoom для Safari (Mac/iOS) ---
+      let startPinchDist = 0;
+      canvas.addEventListener('gesturestart', (e) => {
+        e.preventDefault();
+        startPinchDist = cam.dist;
+      });
+      canvas.addEventListener('gesturechange', (e) => {
+        e.preventDefault();
+        let minZ = 0.5;
+        if (state.formMix > 0.8) minZ = Math.max(0.5, 2.5 * state.objScale);
+        
+        // e.scale > 1 = раздвигаем пальцы (Zoom In), e.scale < 1 = сдвигаем (Zoom Out)
+        // В Three.js и Blender мы просто делим начальную дистанцию на масштаб
+        cam.dist = Math.max(minZ, Math.min(80, startPinchDist / e.scale));
+      });
+      canvas.addEventListener('gestureend', (e) => e.preventDefault());
+
       canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
-        const factor = Math.exp(e.deltaY * 0.001);
         
-        // Dynamically compute absolute minimum zoom so we don't pierce inside solid shapes.
-        // formScale = formation scale block size (e.g. wall or cube side length).
-        // We use roughly half that plus a tiny margin to stay outside the model.
-        let minZ = 0.5;
-        if (state.formMix > 0.8) {
-          // If formed, use the form scale. Object scale is state.formScale * state.objScale
-          // So the radius of the megashape bounds is roughly formScale * sqrt(3)/2 * objScale
-          // For a single particle mesh (formScale == 1.0 or single cube), the size is u9.x (cellSize)
-          // We just make sure we are not physically closer than 2.0 * objScale to be super safe. 
-          minZ = Math.max(0.5, 2.5 * state.objScale);
-        }
+        // В Blender можно приближаться вплотную (макро-съемка). 
+        // Мы ставим минимальную дистанцию в 0.05 (почти в упор), 
+        // а логарифмический масштаб ниже сам замедлит зум при приближении.
+        const minZ = 0.05;
 
-        cam.dist = Math.max(minZ, Math.min(80, cam.dist * factor));
+        // --- ПРОСТОЙ И НАДЕЖНЫЙ ЗУМ (КАК В BLENDER) ---
+        let speed = e.ctrlKey ? 0.01 : 0.002;
+        const factor = Math.exp(e.deltaY * speed);
+        
+        // Чем меньше cam.dist, тем меньше шаг зума — идеальная эмуляция Blender
+        cam.dist = Math.max(minZ, Math.min(200, cam.dist * factor));
       }, { passive: false });
       canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 

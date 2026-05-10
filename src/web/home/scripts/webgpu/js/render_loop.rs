@@ -121,10 +121,10 @@ pub const JS: &str = r##"
         ubo[33] = sceneState.objectPosition[1];
         ubo[34] = sceneState.objectPosition[2];
         ubo[35] = sceneState.objectScale;
-        // u9: floor settings + camera projection
+        // u9: floor settings + camera projection + object selection
         ubo[36] = floorGrid.scale;
         ubo[37] = cam.ortho ? 1.0 : 0.0;
-        ubo[38] = 0;
+        ubo[38] = sceneState.selected ? 1.0 : 0.0; // u9.z = isSelected flag
         ubo[39] = 0;
         device.queue.writeBuffer(uniformBuf, 0, ubo);
 

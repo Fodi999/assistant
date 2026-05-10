@@ -24,21 +24,24 @@ struct BgFragOut {
   @builtin(frag_depth) depth: f32,
 }
 
-// ── Фрактальная сетка с авто-сокрытием ───────────────────────
-// Плавно скрывает линии, если они становятся "слишком густыми"
-fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
-  let cell_lw = world_lw * scale; 
-  let opacity = smoothstep(1.5, 0.05, cell_lw); // expanded fade range
-  let clamped_lw = min(cell_lw, 0.5);
+// ── Фрактальная сетка с аналитическим антиалиасингом (Evan Wallace) ──
+fn grid_intensity(xz: vec2f, dp: vec2f, scale: f32) -> f32 {
+  let coord = xz * scale;
+  let deriv = dp * scale;
   
-  // fract(x + 0.5) - 0.5 centers the grid lines exactly on integer matching: 0.0, 1.0, 2.0
-  let mx = abs(fract(p.x * scale + 0.5) - 0.5);
-  let mz = abs(fract(p.z * scale + 0.5) - 0.5);
+  // Расстояние до линии сетки с учетом ее размера на экране
+  let grid = abs(fract(coord - 0.5) - 0.5) / deriv;
   
-  return max(
-    1.0 - smoothstep(0.0, clamped_lw, mx),
-    1.0 - smoothstep(0.0, clamped_lw, mz)
-  ) * opacity;
+  // Толщина линии около 1.5 пикселя на экране
+  let lw = 1.5;
+  let l = min(grid.x, grid.y);
+  let alpha = 1.0 - min(l / lw, 1.0);
+  
+  // Если масштаб приближается к размеру пикселя (deriv > 0.5),
+  // линии сливаются в кашу. Чтобы не было Муара (ряби), плавно их прячем.
+  let fade = 1.0 - smoothstep(0.1, 0.4, max(deriv.x, deriv.y));
+  
+  return alpha * fade;
 }
 
 @fragment fn fs_bg(in: Vert) -> BgFragOut {
@@ -78,48 +81,57 @@ fn grid_intensity(p: vec3f, scale: f32, world_lw: f32) -> f32 {
 
   var out: BgFragOut;
   out.col = vec4f(col, 1.0);
-  out.depth = 1.0;
+  // Записываем глубину 0.99999, чтобы пройти тест depthCompare: 'less' (где фон очищен в 1.0)
+  out.depth = 0.99999;
+
+  // Чтобы получить идеальный антиалиасинг, мы должны использовать функцию fwidth()
+  // до любых if/discard веток (uniform control flow). Вычисляем лучевое попадание заранее:
+  let t_hit_uncond = -ro_eff.y / rd.y;
+  let p_uncond = ro_eff + rd * t_hit_uncond;
+  let dp_uncond = fwidth(p_uncond.xz); // Сколько мировых едениц за 1 пиксель экрана!
 
   // ── Floor at Y = 0 ──────────────────────────────────────────
-  // Works from both sides — camera can be above OR below Y=0.
   if (abs(rd.y) > 0.0005) {
-    let t_hit = -ro_eff.y / rd.y;
+    let t_hit = t_hit_uncond;
     if ((t_hit > 0.05) && (t_hit < 200.0)) {
-      let p = ro_eff + rd * t_hit;
+      let p = p_uncond;
+      let dp = dp_uncond;
 
-      // Вычисляем реальную толщину линии в мировых координатах (~1.5px экрана)
-      let world_lw = max((t_hit / 2.414) * (2.0 / 900.0) * 1.5, 0.0001);
+      // Усиливаем видимость базовых линий
+      let m = grid_intensity(p.xz, dp, u.u9.x * 1.0);
+      // Добавляем крупные клетки (по 10 метров) чтобы даже вдали пол читался
+      let dcm = grid_intensity(p.xz, dp, u.u9.x * 0.1);
 
-      // Иерархия масштабов с учетом настройки UI (u.u9.x):
-      // UI scale 1.0 (метры)      => u9.x = 1.0
-      // UI scale 100.0 (сантиметры) => u9.x = 100.0
-      // UI scale 1000.0 (миллиметры) => u9.x = 1000.0
-      let s = u.u9.x;
-      // Усиливаем видимость базовых линий 1-unit (метровых)
-      let m = grid_intensity(p, u.u9.x * 1.0, world_lw);
+      let combined_grid = clamp(m * 0.5 + dcm * 0.3, 0.0, 1.0);
 
-      let combined_grid = clamp(m, 0.0, 1.0);
+      // Идеально ровное затухание в туман (как в Blender, fadeDistance = 150)
+      let fade = smoothstep(150.0, 30.0, t_hit);
 
-      // smooth distance fade (gone by 70 units)
-      let fade = clamp(1.0 - t_hit / 100.0, 0.0, 1.0);
+      // Светло-серая сетка
+      let lineCol = vec3f(0.5, 0.5, 0.5); 
+      var gridCol = mix(col, lineCol, combined_grid);
 
-      // Рисуем сетку ярким цветом, чтобы точно было видно
-      let lineCol = vec3f(0.6, 0.6, 0.6); // Светло-серая сетка
-      var gridCol = mix(col, lineCol, combined_grid * 0.5); // 50% прозрачность
-
-      // Яркие оси как в Blender (Красная = X, Зеленая = Z)
-      let axisLineWidth = world_lw * 2.5; 
-      let axis_x = 1.0 - smoothstep(axisLineWidth * 0.2, axisLineWidth * 1.5, abs(p.z));
-      let axis_z = 1.0 - smoothstep(axisLineWidth * 0.2, axisLineWidth * 1.5, abs(p.x));
+      // Тонкие минималистичные оси (Красная = X, Зеленая = Z)
+      // Толщина ровно ~1 пиксель экрана (антиалиасинг от 0.0 до 1.2)
+      let axis_x = 1.0 - smoothstep(0.0, 1.2, abs(p.z) / dp.y);
+      let axis_z = 1.0 - smoothstep(0.0, 1.2, abs(p.x) / dp.x);
       
+      // Смешиваем на 85% для большей утонченности (не такие "ядовито-режущие")
       // X = Red 
-      gridCol = mix(gridCol, vec3f(0.9, 0.2, 0.2), axis_x);
+      gridCol = mix(gridCol, vec3f(0.85, 0.25, 0.25), axis_x * 0.85);
       // Z = Green 
-      gridCol = mix(gridCol, vec3f(0.3, 0.8, 0.3), axis_z);
+      gridCol = mix(gridCol, vec3f(0.35, 0.75, 0.35), axis_z * 0.85);
 
 
       // Применяем сетку к фону
       col = mix(col, gridCol, fade);
+
+      // --- 4. BLENDER FLOOR SHADOW (Падающая тень на пол) ---
+      // Фейковая круглая тень прямо под центром мира (где стоит наш объект).
+      // В Blender в Solid Mode полупрозрачная тень под объектом дает четкое ощущение плоскости.
+      let shadowDist = length(vec2f(p.x, p.z));
+      let shadowFade = smoothstep(1.3, 0.0, shadowDist); 
+      col = mix(col, col * 0.25, shadowFade * 0.65); // Мягко затемняем пол
 
       out.col = vec4f(col, 1.0);
       // Глубину оставляем 1.0 (глубина фона), чтобы сетка и пол не перекрывали объект снизу
