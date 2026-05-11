@@ -11,10 +11,11 @@ use axum::response::{Html, IntoResponse, Response};
 
 pub async fn home_page() -> impl IntoResponse {
     let css = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         styles::styles(),
         matter_lab_styles::matter_lab_styles(),
         matter_lab_styles::matter_tools_styles(),
+        matter_lab_styles::matter_toolbar_styles(),
         matter_lab_styles::matter_panel_styles(),
         matter_lab_styles::matter_action_bar_styles(),
         matter_lab_styles::matter_status_styles(),

@@ -1,150 +1,292 @@
-// ── JS: Sketch tools — Line / Rectangle / Circle / Dimension + keyboard bindings ──
-// Domain: Sketch — tool dispatch, isolated from state events and rendering.
+// ── JS: Sketch tools — select / point / line / grab / delete ─────────────────
+// Domain: Sketch — click dispatch, hotkeys, line chain, grab, history.
 
 pub const JS: &str = r##"
-      // ─────────────────────────────────────────────────────────────
-      // __handleSketchClick(ndcX, ndcY)
-      // Called by state.rs pointerup when selectionMode === 4.
-      // Dispatches the click to the active tool.
-      // ─────────────────────────────────────────────────────────────
-      window.__handleSketchClick = function(ndcX, ndcY) {
-        const tool = (window.editorState && window.editorState.activeSketchTool) || 'line';
+      // ─────────────────────────────────────────────────────────
+      // __handleSketchClick(ndcX, ndcY, shiftKey)
+      // Caller has already filtered out drag gestures.
+      // ─────────────────────────────────────────────────────────
+      window.__handleSketchClick = function(ndcX, ndcY, shiftKey) {
+        const SM   = window.SelectionMode;
+        const tool = sketchState.activeTool;
 
-        // Select tool — no geometry creation
-        if (tool === 'select') {
-          log(`[sketch] Select tool: clicked empty space`, '#6b7280');
-          if (window.__updateSketchUI) window.__updateSketchUI();
-          return;
-        }
+        // Grab confirms on any click.
+        if (sketchState.grab.active) { __confirmGrab(); return; }
 
-        // ── Phase gate ─────────────────────────────────────────────
-        const phase = sketchState.phase || 'drawing';
-        if (phase === 'extrude_preview') {
-          log('[sketch] ✋ locked: extrude preview active — Cancel or Create Solid', '#f59e0b');
-          return;
-        }
-        if (phase === 'solid_created') {
-          log('[sketch] ✋ locked: sketch is reference (solid created) — start new sketch', '#f59e0b');
-          return;
-        }
-
-        log(`[sketch] tool="${tool}" raycast fn=${typeof window.__raycastSketchPlane}`, '#a78bfa');
-        if (!['select', 'line', 'rectangle', 'circle', 'dimension'].includes(tool)) {
-          log(`[sketch] ✗ unknown tool — skip`, '#f87171');
-          return;
-        }
-
-        log(`[sketch] NDC x=${ndcX.toFixed(3)} y=${ndcY.toFixed(3)}`, '#6b7280');
-        const snappedHit = window.__raycastSketchPlane(ndcX, ndcY);
-        log(`[sketch] hit=${JSON.stringify(snappedHit)}`, snappedHit ? '#38bdf8' : '#f87171');
-        if (!snappedHit) {
-          log(`[sketch] ✗ raycast returned null — check __raycastSketchPlane`, '#f87171');
-          return;
-        }
-        const hx = snappedHit.x, hy = snappedHit.y, hz = snappedHit.z;
-
-        // ── LINE TOOL: chain of points, close by clicking first point ──
-        if (tool === 'line') {
-          if (sketchState.closed || phase === 'closed_profile') {
-            log('[sketch] ✋ profile already closed — click "New Sketch" to draw again', '#f59e0b');
-            return;
+        if (tool === SM.SELECT) {
+          const pId = window.__pickPointAt(ndcX, ndcY);
+          const eId = pId ? null : window.__pickEdgeAt(ndcX, ndcY);
+          if (!shiftKey) {
+            sketchState.selectedPointIds.clear();
+            sketchState.selectedEdgeIds.clear();
           }
-          if (sketchState.points.length > 2 && snappedHit.snapType === 'first') {
-            sketchState.closed = true;
-            log(`✓ Sketch closed (${sketchState.points.length} pts)`, '#10b981');
-            if (window.__setSketchPhase) window.__setSketchPhase('closed_profile', 'auto-close on first-point click');
-            if (window.__updateSketchUI) window.__updateSketchUI();
-            return;
+          if (pId) {
+            if (sketchState.selectedPointIds.has(pId)) sketchState.selectedPointIds.delete(pId);
+            else                                       sketchState.selectedPointIds.add(pId);
+          } else if (eId) {
+            if (sketchState.selectedEdgeIds.has(eId)) sketchState.selectedEdgeIds.delete(eId);
+            else                                      sketchState.selectedEdgeIds.add(eId);
           }
-          const last = sketchState.points[sketchState.points.length - 1];
-          if (last && Math.hypot(hx-last.x, hy-last.y, hz-last.z) < 1e-4) return;
-          sketchState.points.push({ x: hx, y: hy, z: hz });
-          log(`+ Pt ${sketchState.points.length}: ${hx.toFixed(3)}, ${hy.toFixed(3)}, ${hz.toFixed(3)}`, '#38bdf8');
-          if (phase !== 'drawing') window.__setSketchPhase && window.__setSketchPhase('drawing', 'first point');
-          if (window.__updateSketchUI) window.__updateSketchUI();
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
         }
 
-        // ── RECTANGLE TOOL: delegated to sketch_rect.rs ──
-        if (tool === 'rectangle') {
-          if (window.__handleRectTool) window.__handleRectTool(hx, hy, hz, snappedHit);
+        if (tool === SM.POINT) {
+          const hit = window.__raycastSketchPlane(ndcX, ndcY);
+          if (!hit) return;
+          // Don't create duplicate at existing grid cell.
+          const existing = window.__findPointAtGrid(hit.gx, hit.gy, hit.gz);
+          if (existing) return;
+          window.__pushHistory();
+          window.__addPoint(hit.gx, hit.gy, hit.gz);
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
         }
 
-        // ── CIRCLE TOOL: center + radius ──
-        if (tool === 'circle') {
-          if (window.__handleCircleTool) window.__handleCircleTool(hx, hy, hz);
+        if (tool === SM.LINE) {
+          // Snap target: existing point under cursor > new at grid.
+          const hoveredId = window.__pickPointAt(ndcX, ndcY);
+          let targetId = hoveredId;
+          let createdPoint = false;
+          if (!targetId) {
+            const hit = window.__raycastSketchPlane(ndcX, ndcY);
+            if (!hit) return;
+            const existing = window.__findPointAtGrid(hit.gx, hit.gy, hit.gz);
+            if (existing) targetId = existing.id;
+            else { window.__pushHistory(); targetId = window.__addPoint(hit.gx, hit.gy, hit.gz).id; createdPoint = true; }
+          }
+          const startId = sketchState.line.startPointId;
+          if (startId && startId !== targetId) {
+            // Avoid duplicate edge & self-loop.
+            if (!window.__findEdgeBetween(startId, targetId)) {
+              if (!createdPoint) window.__pushHistory();
+              window.__addEdge(startId, targetId);
+            }
+          }
+          sketchState.line.startPointId = targetId;
+          sketchState.phase = "line_pending";
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
         }
 
-        // ── DIMENSION TOOL: delegated to sketch_dim.rs ──
-        if (tool === 'dimension') {
-          if (window.__handleDimTool) window.__handleDimTool(hx, hy, hz);
+        if (tool === SM.DELETE) {
+          const pId = window.__pickPointAt(ndcX, ndcY);
+          if (pId) {
+            window.__pushHistory();
+            sketchState.selectedPointIds = new Set([pId]);
+            sketchState.selectedEdgeIds  = new Set();
+            window.__deleteSelected();
+          } else {
+            const eId = window.__pickEdgeAt(ndcX, ndcY);
+            if (eId) {
+              window.__pushHistory();
+              sketchState.selectedEdgeIds  = new Set([eId]);
+              sketchState.selectedPointIds = new Set();
+              window.__deleteSelected();
+            }
+          }
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
         }
       };
 
-      // ─────────────────────────────────────────────────────────────
-      // __handleSketchKey(e)
-      // Called by state.rs keydown when selectionMode === 4.
-      // Returns true if the event was consumed.
-      // ─────────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────
+      // __handleSketchDoubleClick(ndcX, ndcY)
+      // Select tool: double-click edge → select both endpoints.
+      // ─────────────────────────────────────────────────────────
+      window.__handleSketchDoubleClick = function(ndcX, ndcY) {
+        if (sketchState.activeTool !== "select") return;
+        const eId = window.__pickEdgeAt(ndcX, ndcY);
+        if (!eId) return;
+        const e = sketchState.edges.find(x => x.id === eId);
+        if (!e) return;
+        sketchState.selectedPointIds = new Set([e.a, e.b]);
+        sketchState.selectedEdgeIds  = new Set([eId]);
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      };
+
+      // ─────────────────────────────────────────────────────────
+      // __handleSketchKey(e) → bool consumed
+      // ─────────────────────────────────────────────────────────
       window.__handleSketchKey = function(e) {
-        const k = e.key.toLowerCase();
+        const k    = e.key.toLowerCase();
+        const meta = e.metaKey || e.ctrlKey;
 
-        if (k === 'escape') {
-          // Priority 1: cancel extrude preview
-          if (window.extrudePreview && window.extrudePreview.active) {
-            window.extrudePreview.active = false;
-            window.extrudePreview.points = [];
-            if (sketchState.closed && window.__setSketchPhase)
-              window.__setSketchPhase('closed_profile', 'preview cancelled (Esc)');
-            log('▣ Extrude preview cancelled (Esc)', '#f59e0b');
-            if (window.__updateSketchUI) window.__updateSketchUI();
-            return true;
-          }
-          // Priority 2: cancel pending tool
-          if (sketchState.pendingStart) {
-            if (window.__cancelRectTool)   window.__cancelRectTool();
-            if (window.__cancelCircleTool) window.__cancelCircleTool();
-            if (window.__cancelDimTool)    window.__cancelDimTool();
-            sketchState.pendingStart = null;
-            sketchState.pendingTool  = null;
-            log('✕ Tool cancelled', '#fbbf24');
-          } else if (sketchState.points.length > 0 && !sketchState.closed) {
-            sketchState.points     = [];
-            sketchState.dimensions = [];
-            if (window.__setSketchPhase) window.__setSketchPhase('drawing', 'sketch cleared (Esc)');
-            log('✕ Sketch cleared', '#fbbf24');
-          }
-          if (window.__updateSketchUI) window.__updateSketchUI();
-          return true;
-        }
-
-        if (k === 'enter' && sketchState.points.length > 2 && !sketchState.closed) {
-          sketchState.closed = true;
-          if (window.__setSketchPhase) window.__setSketchPhase('closed_profile', 'closed via Enter');
-          log(`✓ Sketch closed (Enter)`, '#10b981');
-          if (window.__updateSketchUI) window.__updateSketchUI();
-          return true;
-        }
-
-        if (k === 'backspace' && sketchState.points.length > 0 && !sketchState.closed) {
-          sketchState.points.pop();
-          log(`↶ Removed last point`, '#fbbf24');
-          if (window.__updateSketchUI) window.__updateSketchUI();
-          return true;
-        }
-
-        // Don't steal input from form fields
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return false;
 
-        // Tool hotkeys
-        if (k === 'l' && window.__setSketchTool) { window.__setSketchTool('line');      return true; }
-        if (k === 'r' && window.__setSketchTool) { window.__setSketchTool('rectangle'); return true; }
-        if (k === 'o' && window.__setSketchTool) { window.__setSketchTool('circle');    return true; }
-        if (k === 'd' && window.__setSketchTool) { window.__setSketchTool('dimension'); return true; }
+        // Undo / Redo (Cmd+Z / Cmd+Shift+Z / Ctrl+Y).
+        if (meta && k === 'z') {
+          if (e.shiftKey) window.__redo();
+          else            window.__undo();
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+          e.preventDefault();
+          return true;
+        }
+        if (meta && k === 'y') {
+          window.__redo();
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+          e.preventDefault();
+          return true;
+        }
+
+        // Grab mode hotkeys.
+        if (sketchState.grab.active) {
+          if (k === 'escape') { __cancelGrab(); return true; }
+          if (k === 'enter')  { __confirmGrab(); return true; }
+          if (k === 'x') { sketchState.grab.axisLock = 'X'; return true; }
+          if (k === 'y') { sketchState.grab.axisLock = 'Y'; return true; }
+          if (k === 'z') { sketchState.grab.axisLock = 'Z'; return true; }
+          return true;
+        }
+
+        // Working plane.
+        if (k === '1') { window.__setWorkingPlane('XZ'); return true; }
+        if (k === '2') { window.__setWorkingPlane('XY'); return true; }
+        if (k === '3') { window.__setWorkingPlane('YZ'); return true; }
+
+        if (k === 'escape') {
+          if (sketchState.line.startPointId) {
+            sketchState.line.startPointId = null;
+            sketchState.phase = "idle";
+            log('✕ Line chain cancelled', '#fbbf24');
+          } else {
+            sketchState.selectedPointIds.clear();
+            sketchState.selectedEdgeIds.clear();
+          }
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+          return true;
+        }
+
+        if (k === 'enter') {
+          if (sketchState.line.startPointId) {
+            sketchState.line.startPointId = null;
+            sketchState.phase = "idle";
+            log('✓ Line chain finished', '#10b981');
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+          }
+          return true;
+        }
+
+        if (k === 'backspace' || k === 'delete') {
+          if (sketchState.selectedPointIds.size + sketchState.selectedEdgeIds.size > 0) {
+            window.__pushHistory();
+            window.__deleteSelected();
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+          }
+          return true;
+        }
+
+        if (k === 's') { window.__setSketchTool && window.__setSketchTool('select'); return true; }
+        if (k === 'p') { window.__setSketchTool && window.__setSketchTool('point');  return true; }
+        if (k === 'l') { window.__setSketchTool && window.__setSketchTool('line');   return true; }
+        if (k === 'g') {
+          if (!sketchState.selectedPointIds.size) { log('G: select points first', '#94a3b8'); return true; }
+          __startGrab();
+          return true;
+        }
 
         return false;
+      };
+
+      // ─────────────────────────────────────────────────────────
+      // Grab
+      // ─────────────────────────────────────────────────────────
+      function __startGrab() {
+        const ids = [...sketchState.selectedPointIds];
+        if (!ids.length) return;
+        window.__pushHistory();
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        const snapshot = new Map();
+        for (const id of ids) {
+          const p = byId.get(id);
+          if (p) snapshot.set(id, { x: p.x, y: p.y, z: p.z });
+        }
+        const startWorld = sketchState.hoverWorld
+          ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
+          : { x: 0, y: 0, z: 0 };
+        sketchState.grab = {
+          active: true, pointIds: ids,
+          startMouseWorld: startWorld,
+          originalPoints: snapshot,
+          axisLock: null,
+        };
+        log('⤢ Grab ' + ids.length + ' pt — X/Y/Z lock · Enter/click confirm · Esc cancel', '#a78bfa');
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      }
+
+      window.__updateGrab = function(hoverWorld) {
+        const grab = sketchState.grab;
+        if (!grab.active || !hoverWorld || !grab.startMouseWorld) return;
+        let dx = hoverWorld.x - grab.startMouseWorld.x;
+        let dy = hoverWorld.y - grab.startMouseWorld.y;
+        let dz = hoverWorld.z - grab.startMouseWorld.z;
+        if (grab.axisLock === 'X') { dy = 0; dz = 0; }
+        if (grab.axisLock === 'Y') { dx = 0; dz = 0; }
+        if (grab.axisLock === 'Z') { dx = 0; dy = 0; }
+        const g = sketchState.gridSize || 1.0;
+        const sdx = Math.round(dx / g) * g;
+        const sdy = Math.round(dy / g) * g;
+        const sdz = Math.round(dz / g) * g;
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        for (const id of grab.pointIds) {
+          const orig = grab.originalPoints.get(id);
+          const p = byId.get(id);
+          if (!orig || !p) continue;
+          p.x  = orig.x + sdx; p.y  = orig.y + sdy; p.z  = orig.z + sdz;
+          p.gx = Math.round(p.x / g);
+          p.gy = Math.round(p.y / g);
+          p.gz = Math.round(p.z / g);
+        }
+      };
+
+      function __confirmGrab() {
+        const n = sketchState.grab.pointIds.length;
+        sketchState.grab = { active: false, pointIds: [], startMouseWorld: null, originalPoints: new Map(), axisLock: null };
+        log('✓ Grab confirmed (' + n + ' pt)', '#10b981');
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      }
+
+      function __cancelGrab() {
+        const grab = sketchState.grab;
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        const g = sketchState.gridSize || 1.0;
+        for (const id of grab.pointIds) {
+          const orig = grab.originalPoints.get(id);
+          const p = byId.get(id);
+          if (!orig || !p) continue;
+          p.x = orig.x; p.y = orig.y; p.z = orig.z;
+          p.gx = Math.round(p.x / g);
+          p.gy = Math.round(p.y / g);
+          p.gz = Math.round(p.z / g);
+        }
+        sketchState.grab = { active: false, pointIds: [], startMouseWorld: null, originalPoints: new Map(), axisLock: null };
+        // Pop the snapshot we pushed in __startGrab.
+        if (sketchState._history.undo.length) sketchState._history.undo.pop();
+        log('✕ Grab cancelled', '#fbbf24');
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      }
+
+      // ─────────────────────────────────────────────────────────
+      // __updateLinePreview()
+      // Called from pointermove. Updates sketchState.line.previewPoint.
+      // ─────────────────────────────────────────────────────────
+      window.__updateLinePreview = function() {
+        const line = sketchState.line;
+        if (sketchState.activeTool !== 'line' || !line.startPointId || !sketchState.hoverWorld) {
+          line.previewPoint = null;
+          line.previewLength = 0;
+          line.previewValid = true;
+          return;
+        }
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        const a = byId.get(line.startPointId);
+        if (!a) { line.previewPoint = null; return; }
+        const h = sketchState.hoverWorld;
+        line.previewPoint = { x: h.x, y: h.y, z: h.z, gx: h.gx, gy: h.gy, gz: h.gz };
+        line.previewLength = Math.hypot(h.x - a.x, h.y - a.y, h.z - a.z);
+        const samePos   = (a.gx === h.gx && a.gy === h.gy && a.gz === h.gz);
+        const targetExisting = window.__findPointAtGrid(h.gx, h.gy, h.gz);
+        const dupEdge   = targetExisting && window.__findEdgeBetween(a.id, targetExisting.id);
+        line.previewValid = !samePos && !dupEdge;
       };
 "##;

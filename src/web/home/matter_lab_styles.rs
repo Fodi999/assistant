@@ -158,6 +158,118 @@ pub fn matter_lab_styles() -> &'static str {
 "##
 }
 
+pub fn matter_toolbar_styles() -> &'static str {
+    r##"
+    /* ═══════════════════════════════════════════════════════════════
+       Universal Bottom Toolbar — always visible, floating island
+       Groups: Mode · Primitives · Sketch tools
+    ═══════════════════════════════════════════════════════════════ */
+    #universal-toolbar {
+      position: absolute;
+      bottom: 52px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 2px;
+      padding: 5px 8px;
+      background: rgba(10, 12, 20, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 16px;
+      backdrop-filter: blur(20px);
+      box-shadow:
+        0 8px 32px rgba(0,0,0,0.55),
+        0 0 0 0.5px rgba(255,255,255,0.05) inset;
+      pointer-events: auto;
+    }
+
+    /* vertical separator between groups */
+    .utb-sep {
+      width: 1px;
+      height: 28px;
+      background: rgba(255,255,255,0.09);
+      margin: 0 5px;
+      border-radius: 1px;
+      align-self: center;
+    }
+
+    /* each button */
+    .utb-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      width: 52px;
+      height: 52px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      background: transparent;
+      color: rgba(148, 163, 184, 0.65);
+      font-size: 18px;
+      cursor: pointer;
+      transition: background 0.13s, color 0.13s, border-color 0.13s;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .utb-btn span.utb-label {
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      line-height: 1;
+      text-transform: uppercase;
+      color: inherit;
+    }
+    .utb-btn:hover {
+      background: rgba(255,255,255,0.07);
+      color: #e2e8f0;
+    }
+    /* mode buttons */
+    .utb-btn[data-sel].active,
+    .utb-btn[data-sel]:focus-visible {
+      background: rgba(56, 189, 248, 0.14);
+      border-color: rgba(56, 189, 248, 0.40);
+      color: #38bdf8;
+    }
+    /* sketch tool buttons */
+    .utb-btn[data-tool].active {
+      background: rgba(167, 139, 250, 0.14);
+      border-color: rgba(167, 139, 250, 0.40);
+      color: #c4b5fd;
+    }
+    /* primitive buttons */
+    .utb-btn[data-asset]:hover {
+      background: rgba(167, 139, 250, 0.10);
+      border-color: rgba(167, 139, 250, 0.25);
+      color: #c4b5fd;
+    }
+
+    /* tooltip on hover — appears ABOVE the button */
+    .utb-btn::after {
+      content: attr(title);
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 12, 20, 0.96);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 7px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #e2e8f0;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.12s;
+      z-index: 100;
+    }
+    .utb-btn:hover::after { opacity: 1; }
+"##
+}
+
 pub fn matter_tools_styles() -> &'static str {
     r##"
     /* === Left tools rail ============================================ */
@@ -565,11 +677,9 @@ pub fn matter_status_styles() -> &'static str {
     
     /* When a sidebar panel is open, push the gizmo to the left of the panel */
     body.panel-open #axis-gizmo {
-      /* 15px (panel right) + panel width + 32px (tabs) + 4px (gap) = 51px */
       right: calc(var(--panel-width, 420px) + 51px);
     }
     
-    /* Disable transitions temporarily when user is drag-resizing */
     .is-resizing .matter-panel-right,
     .is-resizing #axis-gizmo {
       transition: none !important;
@@ -582,6 +692,57 @@ pub fn matter_status_styles() -> &'static str {
       cursor: grabbing;
       border-color: rgba(56, 189, 248, 0.7);
     }
+
+    /* ── Selection Filter Bar ──────────────────────────────────── */
+    /* Appears top-left, just below the axis gizmo */
+    #sel-filter-bar {
+      position: absolute;
+      top: 168px; /* 60px gizmo top + 96px gizmo height + 12px gap */
+      right: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 20;
+      pointer-events: auto;
+    }
+    body.panel-open #sel-filter-bar {
+      right: calc(var(--panel-width, 420px) + 43px);
+    }
+
+    .sfb-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px 5px 8px;
+      background: rgba(8, 14, 28, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 6px;
+      color: rgba(148, 163, 184, 0.55);
+      font-size: 11px;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+      user-select: none;
+      min-width: 78px;
+    }
+    .sfb-btn:hover {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.35);
+      color: #cbd5e1;
+    }
+    .sfb-btn.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.55);
+      color: #38bdf8;
+    }
+    /* Colour per filter type */
+    .sfb-btn[data-filter="point"].active  { border-color: #a78bfa; color: #a78bfa; background: rgba(167,139,250,0.14); }
+    .sfb-btn[data-filter="edge"].active   { border-color: #38bdf8; color: #38bdf8; background: rgba(56,189,248,0.14);  }
+    .sfb-btn[data-filter="face"].active   { border-color: #4ade80; color: #4ade80; background: rgba(74,222,128,0.14);  }
+    .sfb-btn[data-filter="solid"].active  { border-color: #fbbf24; color: #fbbf24; background: rgba(251,191,36,0.14);  }
+
+    .sfb-lbl { font-size: 10px; letter-spacing: 0.04em; }
 
     /* ── Engine Mode Switcher ── bottom-left island ──────────────── */
     .engine-mode-switcher {
@@ -600,157 +761,170 @@ pub fn matter_status_styles() -> &'static str {
       backdrop-filter: blur(10px);
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
     }
-    /* ── Selection mode toolbar — bottom center island ── */
-    .selection-mode-switcher {
+
+    /* ─── Sketch Inspector (right side, below axis-gizmo) ─── */
+    #sketch-inspector {
       position: absolute;
-      bottom: 56px;
-      left: 50%;
-      top: auto;
-      transform: translateX(-50%);
-      z-index: 25;
-      display: flex;
-      gap: 2px;
-      align-items: center;
-      background: rgba(12, 15, 22, 0.72);
-      border: 1px solid rgba(255, 255, 255, 0.07);
+      /* gizmo: top 60 + 96 height + 16 gap = 172 */
+      top: 172px;
+      right: 16px;
+      width: 240px;
+      padding: 12px 14px;
       border-radius: 12px;
-      padding: 3px;
-      backdrop-filter: blur(16px);
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255,255,255,0.04) inset;
+      background: rgba(15, 20, 30, 0.86);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      font: 500 12px/1.5 -apple-system, "SF Pro Display", system-ui, monospace;
+      color: #cbd5e1;
+      z-index: 20;
+      pointer-events: auto;
     }
-    .sel-btn {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      padding: 5px 12px;
-      border: 1px solid transparent;
-      border-radius: 9px;
-      background: transparent;
-      color: rgba(148, 163, 184, 0.65);
-      font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      cursor: pointer;
-      transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
-      white-space: nowrap;
-    }
-    .sel-btn:hover {
-      background: rgba(255, 255, 255, 0.06);
-      color: #e2e8f0;
-    }
-    .sel-btn.active {
-      background: rgba(56, 189, 248, 0.12);
-      border-color: rgba(56, 189, 248, 0.30);
-      color: #7dd3fc;
-    }
-    /* Vertical divider inside the toolbar island */
-    .toolbar-sep {
-      width: 1px;
-      height: 18px;
-      background: rgba(255, 255, 255, 0.09);
-      margin: 0 2px;
-      align-self: center;
-      flex-shrink: 0;
-    }
-    /* Primitive buttons inside the toolbar island */
-    .prim-btn {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 5px 9px;
-      border: 1px solid transparent;
-      border-radius: 9px;
-      background: transparent;
-      color: rgba(148, 163, 184, 0.60);
-      font-size: 13px;
-      cursor: pointer;
-      transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
-      white-space: nowrap;
-      line-height: 1;
-    }
-    .prim-btn:hover {
-      background: rgba(167, 139, 250, 0.10);
-      border-color: rgba(167, 139, 250, 0.25);
-      color: #c4b5fd;
-    }
-    .prim-label {
-      font-size: 10px;
-      font-weight: 500;
-      letter-spacing: 0.03em;
-    }
-    .mode-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
-      border: 1px solid transparent;
-      border-radius: 7px;
-      background: transparent;
-      color: rgba(148, 163, 184, 0.8);
-      font-size: 11px;
+    #sketch-inspector .si-header {
+      color: #67e8f9;
       font-weight: 600;
       letter-spacing: 0.08em;
-      cursor: pointer;
-      transition: all 0.18s ease;
-      white-space: nowrap;
+      font-size: 11px;
+      text-transform: uppercase;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px dashed rgba(148, 163, 184, 0.18);
     }
-    .mode-btn:hover {
-      background: rgba(56, 189, 248, 0.10);
-      color: #e2e8f0;
+    #sketch-inspector .si-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+      margin: 0;
     }
-    .mode-btn.active {
-      background: rgba(56, 189, 248, 0.15);
-      border-color: rgba(56, 189, 248, 0.40);
-      color: #38bdf8;
+    #sketch-inspector .si-grid dt { color: #94a3b8; }
+    #sketch-inspector .si-grid dd { color: #e2e8f0; margin: 0; text-align: right; font-weight: 600; }
+    #sketch-inspector .si-grid dd#si-tool { color: #fbbf24; }
+
+    /* ─── Sketch Inspector — section blocks ─── */
+    #sketch-inspector .si-divider {
+      height: 1px;
+      background: rgba(148, 163, 184, 0.14);
+      margin: 10px 0;
     }
-    .mode-icon {
-      font-size: 13px;
-      line-height: 1;
+    #sketch-inspector .si-block-title {
+      color: #67e8f9;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+    #sketch-inspector .si-block-hint {
+      color: #64748b;
+      font-size: 11px;
+      font-style: italic;
+    }
+    #sketch-inspector .si-hint {
+      color: #94a3b8;
+      font-size: 11px;
+      line-height: 1.45;
+      font-style: italic;
     }
 
-    /* ─── Sketch tools toolbar ────────────────────────────── */
-    .sketch-tools-switcher {
-      display: none; /* hidden by default; JS sets display:flex in Sketch mode */
+    /* ─── Mini command bar (top center, above hotkey strip) ─── */
+    #mini-bar {
       position: absolute;
+      top: 14px;
       left: 50%;
-      top: 60px;
       transform: translateX(-50%);
-      z-index: 20;
-      background: rgba(24, 24, 26, 0.92);
-      border: 1px solid rgba(80, 80, 85, 0.45);
-      border-radius: 10px;
-      padding: 4px;
-      gap: 2px;
-      align-items: center;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-    }
-    .sketch-tool-btn {
       display: flex;
       align-items: center;
-      gap: 5px;
-      padding: 5px 13px;
-      border: 1px solid transparent;
-      border-radius: 7px;
-      background: transparent;
-      color: rgba(148, 163, 184, 0.75);
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      cursor: pointer;
-      transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
-      white-space: nowrap;
-      line-height: 1;
-      outline: none;
-    }
-    .sketch-tool-btn:hover {
-      background: rgba(56, 189, 248, 0.10);
+      gap: 10px;
+      padding: 7px 16px;
+      border-radius: 999px;
+      background: rgba(15, 20, 30, 0.82);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      backdrop-filter: blur(12px);
+      font: 600 12px/1.4 "JetBrains Mono", system-ui, monospace;
       color: #e2e8f0;
+      letter-spacing: 0.02em;
+      z-index: 21;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+      pointer-events: none;
+      user-select: none;
     }
-    .sketch-tool-btn.active {
-      background: rgba(56, 189, 248, 0.18);
-      border-color: rgba(56, 189, 248, 0.45);
-      color: #38bdf8;
+    #mini-bar .mb-cell b {
+      color: #67e8f9;
+      font-weight: 700;
+      margin-right: 5px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
+    #mini-bar .mb-sep { color: #475569; }
+    #mini-bar #mini-tool   { color: #fbbf24; }
+    #mini-bar #mini-plane  { color: #a78bfa; }
+    #mini-bar #mini-snap   { color: #10b981; }
+    #mini-bar #mini-length { color: #38bdf8; }
+
+    /* ─── Hotkey strip (top center, below mini-bar) ─── */
+    #hotkey-strip {
+      position: absolute;
+      top: 54px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 14px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(15, 20, 30, 0.70);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      backdrop-filter: blur(10px);
+      font: 500 11px/1.4 -apple-system, system-ui, monospace;
+      color: #94a3b8;
+      letter-spacing: 0.02em;
+      z-index: 19;
+      pointer-events: none;
+      user-select: none;
+    }
+    #hotkey-strip b { color: #67e8f9; font-weight: 700; margin-right: 4px; }
+
+    /* ─── Working plane pills (top-left) ─── */
+    #plane-switch {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 10px;
+      background: rgba(15, 20, 30, 0.82);
+      border: 1px solid rgba(167, 139, 250, 0.28);
+      backdrop-filter: blur(10px);
+      z-index: 20;
+    }
+    .plane-pill {
+      appearance: none;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      font: 700 11px/1 "JetBrains Mono", system-ui, monospace;
+      letter-spacing: 0.06em;
+      padding: 7px 11px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background .12s ease, color .12s ease, transform .12s ease;
+    }
+    .plane-pill:hover { color: #e2e8f0; background: rgba(167,139,250,0.10); }
+    .plane-pill.active {
+      color: #f5f3ff;
+      background: linear-gradient(180deg, rgba(167,139,250,0.45), rgba(167,139,250,0.22));
+      box-shadow: inset 0 0 0 1px rgba(167,139,250,0.55), 0 2px 8px rgba(167,139,250,0.25);
+    }
+
+    /* ─── Toolbar active tool emphasis ─── */
+    #universal-toolbar .utb-btn.active {
+      color: #f0f9ff;
+      background: linear-gradient(180deg, rgba(56,189,248,0.40), rgba(56,189,248,0.20));
+      box-shadow: inset 0 0 0 1px rgba(56,189,248,0.65), 0 4px 14px rgba(56,189,248,0.25);
+      transform: translateY(-1px);
+    }
+
+    /* ─── end ────────────────────────────── */
 "##
 }
