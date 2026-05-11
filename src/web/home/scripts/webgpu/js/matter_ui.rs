@@ -1,14 +1,14 @@
 // ── JS: Matter Lab UI — toolbar binding, inspector, status bar, FPS sync ─────
-// Domain: Application — UI glue.
+// Domain: Application — UI glue. Includes constraint + validation inspector.
 
 pub const JS: &str = r##"
       // ── Per-tool helper text ──
       const TOOL_HINTS = {
-        select: 'Click to pick · Shift+click to add/toggle · Double-click edge: select both endpoints',
-        point:  'Click to place a point on current plane · 1/2/3 switch plane',
+        select: 'Click pick · Shift+click toggle · Dbl-click edge → endpoints / profile · D dim · F fix · H/V align',
+        point:  'Click to place point on current plane · 1/2/3 switch plane',
         line:   'Click two points to draw an edge · keep clicking to chain · Enter/Esc to finish',
-        grab:   'Drag selected points · X / Y / Z to lock axis · Enter confirm · Esc cancel',
-        delete: 'Click a point or edge to delete · ⌫/Del removes current selection',
+        grab:   'Drag selected (non-fixed) points · X / Y / Z to lock axis · Enter/click confirm · Esc cancel',
+        delete: 'Click a point or edge to delete · ⌫/Del removes current selection · cascades constraints',
       };
 
       window.__setSketchTool = function(tool) {
@@ -21,22 +21,27 @@ pub const JS: &str = r##"
         }
         sketchState.activeTool = tool;
         if (tool === 'grab' && sketchState.selectedPointIds.size > 0 && !sketchState.grab.active) {
-          const ids = [...sketchState.selectedPointIds];
-          const byId = new Map(sketchState.points.map(p => [p.id, p]));
-          const snapshot = new Map();
-          for (const id of ids) {
-            const p = byId.get(id);
-            if (p) snapshot.set(id, { x: p.x, y: p.y, z: p.z });
+          const allIds  = [...sketchState.selectedPointIds];
+          const moveIds = allIds.filter(id => !(window.__isPointFixed && window.__isPointFixed(id)));
+          if (!moveIds.length) {
+            window.__setStatusMessage('Cannot move fixed point');
+          } else {
+            const byId = new Map(sketchState.points.map(p => [p.id, p]));
+            const snapshot = new Map();
+            for (const id of moveIds) {
+              const p = byId.get(id);
+              if (p) snapshot.set(id, { x: p.x, y: p.y, z: p.z });
+            }
+            window.__pushHistory();
+            sketchState.grab = {
+              active: true, pointIds: moveIds,
+              startMouseWorld: sketchState.hoverWorld
+                ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
+                : { x: 0, y: 0, z: 0 },
+              originalPoints: snapshot,
+              axisLock: null,
+            };
           }
-          window.__pushHistory();
-          sketchState.grab = {
-            active: true, pointIds: ids,
-            startMouseWorld: sketchState.hoverWorld
-              ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
-              : { x: 0, y: 0, z: 0 },
-            originalPoints: snapshot,
-            axisLock: null,
-          };
         }
         document.querySelectorAll('.utb-btn[data-tool]').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.tool === tool);
@@ -44,6 +49,19 @@ pub const JS: &str = r##"
         if (window.__setCursorForTool) window.__setCursorForTool();
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
+
+      // ── Helpers for inspector formatting ──
+      function __orientationOfEdge(edgeId) {
+        if (window.__hasHorizontalConstraint && window.__hasHorizontalConstraint(edgeId)) return 'Horizontal';
+        if (window.__hasVerticalConstraint   && window.__hasVerticalConstraint(edgeId))   return 'Vertical';
+        return '—';
+      }
+      function __validationOfPoint(pointId) {
+        const deg = window.__pointDegree ? window.__pointDegree(pointId) : 0;
+        if (deg === 0) return 'isolated';
+        if (deg === 1) return 'open';
+        return 'connected';
+      }
 
       window.__updateSketchInspector = function() {
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -60,10 +78,8 @@ pub const JS: &str = r##"
         const totalSel = selPts.length + selEds.length;
         set('si-selected', String(totalSel));
 
-        // ── Per-selection detail blocks ──
         const byId = new Map(sketchState.points.map(p => [p.id, p]));
 
-        // No selection
         showBlock('si-block-none',  totalSel === 0);
         showBlock('si-block-point', totalSel === 1 && selPts.length === 1);
         showBlock('si-block-edge',  totalSel === 1 && selEds.length === 1);
@@ -75,7 +91,11 @@ pub const JS: &str = r##"
             set('si-pt-id', p.id);
             set('si-pt-grid', '(' + p.gx + ', ' + p.gy + ', ' + p.gz + ')');
             set('si-pt-world', p.x.toFixed(2) + ', ' + p.y.toFixed(2) + ', ' + p.z.toFixed(2));
-            set('si-pt-degree', String(window.__pointDegree(p.id)));
+            const deg = window.__pointDegree(p.id);
+            const edgesAt = window.__edgesAtPoint ? window.__edgesAtPoint(p.id) : [];
+            set('si-pt-degree', String(deg) + (edgesAt.length ? ' [' + edgesAt.join(', ') + ']' : ''));
+            set('si-pt-fixed', window.__isPointFixed(p.id) ? 'yes' : 'no');
+            set('si-pt-valid', __validationOfPoint(p.id));
           }
         } else if (totalSel === 1 && selEds.length === 1) {
           const e = sketchState.edges.find(x => x.id === selEds[0]);
@@ -85,6 +105,16 @@ pub const JS: &str = r##"
             set('si-eg-from', a ? (a.id + ' (' + a.gx + ',' + a.gy + ',' + a.gz + ')') : '—');
             set('si-eg-to',   b ? (b.id + ' (' + b.gx + ',' + b.gy + ',' + b.gz + ')') : '—');
             set('si-eg-len', window.__edgeLength(e).toFixed(3) + ' u');
+            const dim = window.__getEdgeLengthConstraint(e.id);
+            set('si-eg-dim', dim ? (dim.value.toFixed(3) + ' u') : '—');
+            set('si-eg-orient', __orientationOfEdge(e.id));
+            const prof = window.__getProfileForEdge(e.id);
+            set('si-eg-profile', prof ? prof.id + ' (' + prof.plane + ')' : '—');
+            if (a && b) {
+              set('si-eg-dx', (b.x - a.x).toFixed(2));
+              set('si-eg-dy', (b.y - a.y).toFixed(2));
+              set('si-eg-dz', (b.z - a.z).toFixed(2));
+            }
           }
         } else if (totalSel > 1) {
           set('si-multi-pts', String(selPts.length));
@@ -95,11 +125,26 @@ pub const JS: &str = r##"
             if (e) totalLen += window.__edgeLength(e);
           }
           set('si-multi-len', totalLen.toFixed(3) + ' u');
+          let fixedN = 0;
+          for (const pid of selPts) if (window.__isPointFixed(pid)) fixedN++;
+          let constrainedN = 0;
+          for (const eid of selEds) {
+            if (window.__getEdgeLengthConstraint(eid) ||
+                window.__hasHorizontalConstraint(eid) ||
+                window.__hasVerticalConstraint(eid)) constrainedN++;
+          }
+          set('si-multi-fixed', String(fixedN));
+          set('si-multi-constr', String(constrainedN));
         }
 
-        // ── Open ends ──
-        const ends = window.__countOpenEnds ? window.__countOpenEnds() : 0;
-        set('si-open-ends', String(ends));
+        // ── Sketch-wide stats (always visible) ──
+        const opens     = window.__countOpenEnds ? window.__countOpenEnds() : 0;
+        const isolated  = window.__countIsolatedPoints ? window.__countIsolatedPoints() : 0;
+        const profilesN = (sketchState.profiles || []).length;
+        set('si-open-ends', String(opens));
+        set('si-isolated',  String(isolated));
+        set('si-profiles',  String(profilesN));
+        set('si-validation', sketchState.showValidation ? 'on' : 'off');
 
         // ── Tool hint ──
         set('si-hint', TOOL_HINTS[tool] || '');
@@ -142,6 +187,7 @@ pub const JS: &str = r##"
           });
         }
         if (window.__setCursorForTool) window.__setCursorForTool();
+        if (window.__notifySketchChanged) window.__notifySketchChanged();
         window.__updateSketchInspector();
         setInterval(() => {
           const fps = (globalThis.__matterPerf && globalThis.__matterPerf.fps) || 0;

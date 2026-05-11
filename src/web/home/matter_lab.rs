@@ -1,9 +1,9 @@
-// ── Matter Lab template — engine-screen markup (3D sketch core) ─────────────
-// Wireframe editor: 5 tools, plane switch, rich inspector, mini status, gizmo.
+// ── Matter Lab template — engine-screen markup (sketch + constraints) ──────
+// Wireframe editor with dimensions / fixed / horizontal-vertical / profiles.
 
 pub fn matter_lab_section() -> String {
     r##"
-  <!-- ── Engine Screen (Matter Lab — 3D Sketch core) ── -->
+  <!-- ── Engine Screen (Matter Lab — 3D Sketch core + constraints) ── -->
   <section id="render-screen">
     <main class="matter-lab-shell">
       <section class="matter-stage">
@@ -13,7 +13,7 @@ pub fn matter_lab_section() -> String {
         <canvas id="webgpu-canvas"></canvas>
         <canvas id="sketch-canvas" style="position:absolute;top:0;left:0;pointer-events:none;z-index:1;"></canvas>
 
-        <!-- Axis gizmo (click axis to snap camera) -->
+        <!-- Axis gizmo -->
         <canvas id="axis-gizmo" width="96" height="96" title="Click axis to snap view"></canvas>
 
         <!-- Mini command bar (top center) -->
@@ -27,15 +27,19 @@ pub fn matter_lab_section() -> String {
           <span class="mb-cell"><b>Length</b> <span id="mini-length">—</span></span>
         </div>
 
-        <!-- Hotkey strip (just below mini-bar) -->
+        <!-- Hotkey strip -->
         <div id="hotkey-strip">
           <span><b>S</b> Select</span>
           <span><b>P</b> Point</span>
           <span><b>L</b> Line</span>
           <span><b>G</b> Grab</span>
+          <span><b>D</b> Dim</span>
+          <span><b>F</b> Fix</span>
+          <span><b>H</b> Horiz</span>
+          <span><b>V</b> Vert</span>
+          <span><b>⇧V</b> Valid</span>
           <span><b>1/2/3</b> Plane</span>
-          <span><b>X/Y/Z</b> axis lock</span>
-          <span><b>⌫</b> Delete</span>
+          <span><b>⌫</b> Del</span>
           <span><b>⌘Z</b> Undo</span>
           <span><b>Esc</b> Cancel</span>
         </div>
@@ -47,7 +51,7 @@ pub fn matter_lab_section() -> String {
           <button class="plane-pill"        data-plane="YZ" title="Right plane (3)">YZ</button>
         </div>
 
-        <!-- Universal Toolbar — exactly 5 sketch tools -->
+        <!-- Universal Toolbar — 5 sketch tools -->
         <nav id="universal-toolbar" aria-label="Sketch tools">
           <button class="utb-btn active" data-tool="select" title="Select (S)">↖<span class="utb-label">Select</span></button>
           <button class="utb-btn"        data-tool="point"  title="Point (P)">•<span class="utb-label">Point</span></button>
@@ -60,12 +64,15 @@ pub fn matter_lab_section() -> String {
         <aside id="sketch-inspector" class="glass-dark">
           <header class="si-header">Sketch Inspector</header>
           <dl class="si-grid">
-            <dt>Tool</dt>      <dd id="si-tool">SELECT</dd>
-            <dt>Plane</dt>     <dd id="si-plane">XZ</dd>
-            <dt>Points</dt>    <dd id="si-points">0</dd>
-            <dt>Edges</dt>     <dd id="si-edges">0</dd>
-            <dt>Selected</dt>  <dd id="si-selected">0</dd>
-            <dt>Open ends</dt> <dd id="si-open-ends">0</dd>
+            <dt>Tool</dt>            <dd id="si-tool">SELECT</dd>
+            <dt>Plane</dt>           <dd id="si-plane">XZ</dd>
+            <dt>Points</dt>          <dd id="si-points">0</dd>
+            <dt>Edges</dt>           <dd id="si-edges">0</dd>
+            <dt>Selected</dt>        <dd id="si-selected">0</dd>
+            <dt>Open ends</dt>       <dd id="si-open-ends">0</dd>
+            <dt>Isolated</dt>        <dd id="si-isolated">0</dd>
+            <dt>Closed profiles</dt> <dd id="si-profiles">0</dd>
+            <dt>Validation</dt>      <dd id="si-validation">on</dd>
           </dl>
 
           <div class="si-divider"></div>
@@ -78,29 +85,39 @@ pub fn matter_lab_section() -> String {
           <div id="si-block-point" class="si-block" style="display:none;">
             <div class="si-block-title">Point</div>
             <dl class="si-grid">
-              <dt>Id</dt>     <dd id="si-pt-id">—</dd>
-              <dt>Grid</dt>   <dd id="si-pt-grid">—</dd>
-              <dt>World</dt>  <dd id="si-pt-world">—</dd>
-              <dt>Degree</dt> <dd id="si-pt-degree">0</dd>
+              <dt>Id</dt>         <dd id="si-pt-id">—</dd>
+              <dt>Grid</dt>       <dd id="si-pt-grid">—</dd>
+              <dt>World</dt>      <dd id="si-pt-world">—</dd>
+              <dt>Edges</dt>      <dd id="si-pt-degree">0</dd>
+              <dt>Fixed</dt>      <dd id="si-pt-fixed">no</dd>
+              <dt>Validation</dt> <dd id="si-pt-valid">—</dd>
             </dl>
           </div>
 
           <div id="si-block-edge" class="si-block" style="display:none;">
             <div class="si-block-title">Edge</div>
             <dl class="si-grid">
-              <dt>Id</dt>     <dd id="si-eg-id">—</dd>
-              <dt>From</dt>   <dd id="si-eg-from">—</dd>
-              <dt>To</dt>     <dd id="si-eg-to">—</dd>
-              <dt>Length</dt> <dd id="si-eg-len">—</dd>
+              <dt>Id</dt>           <dd id="si-eg-id">—</dd>
+              <dt>A</dt>            <dd id="si-eg-from">—</dd>
+              <dt>B</dt>            <dd id="si-eg-to">—</dd>
+              <dt>Length</dt>       <dd id="si-eg-len">—</dd>
+              <dt>Dimension</dt>    <dd id="si-eg-dim">—</dd>
+              <dt>Orientation</dt>  <dd id="si-eg-orient">—</dd>
+              <dt>Profile</dt>      <dd id="si-eg-profile">—</dd>
+              <dt>ΔX</dt>           <dd id="si-eg-dx">—</dd>
+              <dt>ΔY</dt>           <dd id="si-eg-dy">—</dd>
+              <dt>ΔZ</dt>           <dd id="si-eg-dz">—</dd>
             </dl>
           </div>
 
           <div id="si-block-multi" class="si-block" style="display:none;">
             <div class="si-block-title">Multi-selection</div>
             <dl class="si-grid">
-              <dt>Points</dt>     <dd id="si-multi-pts">0</dd>
-              <dt>Edges</dt>      <dd id="si-multi-eds">0</dd>
-              <dt>Total len</dt>  <dd id="si-multi-len">—</dd>
+              <dt>Points</dt>         <dd id="si-multi-pts">0</dd>
+              <dt>Edges</dt>          <dd id="si-multi-eds">0</dd>
+              <dt>Fixed points</dt>   <dd id="si-multi-fixed">0</dd>
+              <dt>Constrained</dt>    <dd id="si-multi-constr">0</dd>
+              <dt>Total len</dt>      <dd id="si-multi-len">—</dd>
             </dl>
           </div>
 

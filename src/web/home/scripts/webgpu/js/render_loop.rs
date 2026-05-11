@@ -130,16 +130,15 @@ pub const JS: &str = r##"
           const g     = sketchState.gridSize || 1.0;
           const N     = 20;
           const plane = sketchState.workingPlane || 'XZ';
-          // Pick lattice coord generator per plane.
-          function gridLineA(i) {       // first family of parallel lines
+          function gridLineA(i) {
             if (plane === 'XZ') return { a: [i*g, 0, -N*g], b: [i*g, 0,  N*g] };
             if (plane === 'XY') return { a: [i*g, -N*g, 0], b: [i*g,  N*g, 0] };
-            /* YZ */            return { a: [0, i*g, -N*g], b: [0, i*g,  N*g] };
+            return { a: [0, i*g, -N*g], b: [0, i*g,  N*g] };
           }
-          function gridLineB(i) {       // second family
+          function gridLineB(i) {
             if (plane === 'XZ') return { a: [-N*g, 0, i*g], b: [ N*g, 0, i*g] };
             if (plane === 'XY') return { a: [-N*g, i*g, 0], b: [ N*g, i*g, 0] };
-            /* YZ */            return { a: [0, -N*g, i*g], b: [0,  N*g, i*g] };
+            return { a: [0, -N*g, i*g], b: [0,  N*g, i*g] };
           }
           ctx.lineWidth = 1;
           ctx.strokeStyle = 'rgba(148,163,184,0.18)';
@@ -153,7 +152,7 @@ pub const JS: &str = r##"
           }
           ctx.stroke();
 
-          // ── World axes (always XYZ) ──
+          // ── World axes ──
           const origin = w2s(0, 0, 0);
           if (origin) {
             const axes = [
@@ -173,8 +172,32 @@ pub const JS: &str = r##"
             }
           }
 
-          // ── Edges (with optional length label on hover/selected) ──
           const pById = new Map(sketchState.points.map(p => [p.id, p]));
+          const eById = new Map(sketchState.edges.map(e  => [e.id, e]));
+
+          // ── Closed profile fills (under edges) ──
+          if (sketchState.profiles && sketchState.profiles.length) {
+            for (const prof of sketchState.profiles) {
+              const ringPts = prof.pointIds.map(id => pById.get(id)).filter(Boolean);
+              if (ringPts.length < 3) continue;
+              const screenPts = ringPts.map(p => w2s(p.x, p.y, p.z));
+              if (screenPts.some(s => !s)) continue;
+              const isFullySelected = prof.edgeIds.every(eid => sketchState.selectedEdgeIds.has(eid));
+              ctx.save();
+              ctx.beginPath();
+              ctx.moveTo(screenPts[0].x, screenPts[0].y);
+              for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i].x, screenPts[i].y);
+              ctx.closePath();
+              ctx.fillStyle   = isFullySelected ? 'rgba(251,146,60,0.18)' : 'rgba(56,189,248,0.10)';
+              ctx.strokeStyle = isFullySelected ? 'rgba(251,146,60,0.55)' : 'rgba(56,189,248,0.35)';
+              ctx.lineWidth   = 1.2;
+              ctx.fill();
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+
+          // ── Edges ──
           for (const e of sketchState.edges) {
             const a = pById.get(e.a), b = pById.get(e.b);
             if (!a || !b) continue;
@@ -188,18 +211,35 @@ pub const JS: &str = r##"
             ctx.moveTo(sa.x, sa.y);
             ctx.lineTo(sb.x, sb.y);
             ctx.stroke();
-            if (isHover || isSel) {
-              const len = Math.hypot(b.x-a.x, b.y-a.y, b.z-a.z);
-              const mx  = (sa.x + sb.x) * 0.5;
-              const my  = (sa.y + sb.y) * 0.5;
+
+            // Constraint badges + length.
+            const dimC = window.__getEdgeLengthConstraint && window.__getEdgeLengthConstraint(e.id);
+            const isH  = window.__hasHorizontalConstraint && window.__hasHorizontalConstraint(e.id);
+            const isV  = window.__hasVerticalConstraint   && window.__hasVerticalConstraint(e.id);
+            const len  = Math.hypot(b.x-a.x, b.y-a.y, b.z-a.z);
+            const mx   = (sa.x + sb.x) * 0.5;
+            const my   = (sa.y + sb.y) * 0.5;
+
+            if (dimC || isHover || isSel) {
               const txt = len.toFixed(2) + 'u';
               ctx.font = '11px "JetBrains Mono", system-ui, monospace';
               const w = ctx.measureText(txt).width + 8;
-              ctx.fillStyle = 'rgba(15,23,42,0.85)';
-              ctx.fillRect(mx - w/2, my - 16, w, 16);
-              ctx.fillStyle = isSel ? '#fb923c' : '#facc15';
+              const bright = !!dimC;
+              ctx.fillStyle = bright ? 'rgba(15,23,42,0.95)' : 'rgba(15,23,42,0.85)';
+              ctx.fillRect(mx - w/2, my - 18, w, 16);
+              ctx.fillStyle = bright ? '#67e8f9' : (isSel ? '#fb923c' : '#facc15');
               ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText(txt, mx, my - 8);
+              ctx.fillText(txt, mx, my - 10);
+            }
+            if (isH || isV) {
+              const tag = isH ? 'H' : 'V';
+              ctx.font = 'bold 11px "JetBrains Mono", system-ui, monospace';
+              const wt = ctx.measureText(tag).width + 8;
+              ctx.fillStyle = 'rgba(167,139,250,0.95)';
+              ctx.fillRect(mx + 8, my - 8, wt, 16);
+              ctx.fillStyle = '#0f172a';
+              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              ctx.fillText(tag, mx + 8 + wt/2, my);
             }
           }
 
@@ -220,7 +260,6 @@ pub const JS: &str = r##"
                 ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y);
                 ctx.stroke();
                 ctx.restore();
-                // Length label at midpoint.
                 const len = sketchState.line.previewLength || 0;
                 const txt = len.toFixed(2) + 'u';
                 const mx = (sa.x + sb.x) * 0.5;
@@ -236,6 +275,34 @@ pub const JS: &str = r##"
             }
           }
 
+          // ── Validation markers (drawn under points so points still visible) ──
+          if (sketchState.showValidation) {
+            const isoSet = new Set(sketchState.validation.isolatedIds);
+            const oeSet  = new Set(sketchState.validation.openEndIds);
+            for (const p of sketchState.points) {
+              const s = w2s(p.x, p.y, p.z);
+              if (!s) continue;
+              if (isoSet.has(p.id)) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, 12, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(244,114,182,0.85)';
+                ctx.setLineDash([3, 2]);
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.restore();
+              } else if (oeSet.has(p.id)) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, 10, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(239,68,68,0.75)';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+                ctx.restore();
+              }
+            }
+          }
+
           // ── Points ──
           for (const p of sketchState.points) {
             const s = w2s(p.x, p.y, p.z);
@@ -243,6 +310,7 @@ pub const JS: &str = r##"
             const isHover  = sketchState.hoverPointId === p.id;
             const isSel    = sketchState.selectedPointIds.has(p.id);
             const isAnchor = sketchState.line.startPointId === p.id;
+            const isFixed  = window.__isPointFixed && window.__isPointFixed(p.id);
             const r = isSel ? 8 : isAnchor ? 7.5 : isHover ? 7 : 6;
             ctx.beginPath();
             ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
@@ -251,15 +319,28 @@ pub const JS: &str = r##"
             ctx.strokeStyle = '#0f172a';
             ctx.lineWidth = 1.8;
             ctx.stroke();
+            if (isFixed) {
+              // Square lock marker.
+              const d = r + 4;
+              ctx.save();
+              ctx.strokeStyle = '#fbbf24';
+              ctx.lineWidth = 1.8;
+              ctx.strokeRect(s.x - d, s.y - d, d * 2, d * 2);
+              // Tiny dot above to mimic lock shackle.
+              ctx.beginPath();
+              ctx.arc(s.x, s.y - d - 4, 2.2, 0, Math.PI * 2);
+              ctx.fillStyle = '#fbbf24';
+              ctx.fill();
+              ctx.restore();
+            }
           }
 
-          // ── Snap marker + ghost preview point (point/line tool only) ──
+          // ── Snap marker + ghost preview point ──
           if (sketchState.hoverWorld &&
               (sketchState.activeTool === 'point' || sketchState.activeTool === 'line')) {
             const c = w2s(sketchState.hoverWorld.x, sketchState.hoverWorld.y, sketchState.hoverWorld.z);
             if (c) {
               const snapPoint = sketchState.snap.kind === 'point';
-              // Ghost circle (only if not snapping to existing point).
               if (!snapPoint) {
                 ctx.save();
                 ctx.beginPath();
@@ -272,14 +353,12 @@ pub const JS: &str = r##"
                 ctx.stroke();
                 ctx.restore();
               }
-              // Crosshair always.
               ctx.strokeStyle = snapPoint ? 'rgba(16,185,129,0.9)' : 'rgba(250,204,21,0.7)';
               ctx.lineWidth = 1;
               ctx.beginPath();
               ctx.moveTo(c.x - 10, c.y); ctx.lineTo(c.x + 10, c.y);
               ctx.moveTo(c.x, c.y - 10); ctx.lineTo(c.x, c.y + 10);
               ctx.stroke();
-              // Coord HUD next to cursor.
               const hw = sketchState.hoverWorld;
               const txt = 'X ' + hw.gx + '  Y ' + hw.gy + '  Z ' + hw.gz;
               ctx.font = '11px "JetBrains Mono", system-ui, monospace';
@@ -290,6 +369,22 @@ pub const JS: &str = r##"
               ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
               ctx.fillText(txt, c.x + 19, c.y - 1);
             }
+          }
+
+          // ── Status message banner (bottom-center) ──
+          if (sketchState.statusMessage) {
+            const txt = sketchState.statusMessage;
+            ctx.font = '12px "JetBrains Mono", system-ui, monospace';
+            const tw = ctx.measureText(txt).width + 20;
+            const y0 = sk.height - 70;
+            ctx.fillStyle = 'rgba(15,23,42,0.92)';
+            ctx.fillRect(sk.width/2 - tw/2, y0, tw, 26);
+            ctx.strokeStyle = 'rgba(251,191,36,0.55)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(sk.width/2 - tw/2, y0, tw, 26);
+            ctx.fillStyle = '#fbbf24';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(txt, sk.width/2, y0 + 13);
           }
 
           // ── Grab HUD ──

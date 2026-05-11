@@ -1,16 +1,14 @@
-// ── JS: Sketch tools — select / point / line / grab / delete ─────────────────
+// ── JS: Sketch tools — select / point / line / grab / delete + constraints ──
 // Domain: Sketch — click dispatch, hotkeys, line chain, grab, history.
 
 pub const JS: &str = r##"
       // ─────────────────────────────────────────────────────────
       // __handleSketchClick(ndcX, ndcY, shiftKey)
-      // Caller has already filtered out drag gestures.
       // ─────────────────────────────────────────────────────────
       window.__handleSketchClick = function(ndcX, ndcY, shiftKey) {
         const SM   = window.SelectionMode;
         const tool = sketchState.activeTool;
 
-        // Grab confirms on any click.
         if (sketchState.grab.active) { __confirmGrab(); return; }
 
         if (tool === SM.SELECT) {
@@ -34,7 +32,6 @@ pub const JS: &str = r##"
         if (tool === SM.POINT) {
           const hit = window.__raycastSketchPlane(ndcX, ndcY);
           if (!hit) return;
-          // Don't create duplicate at existing grid cell.
           const existing = window.__findPointAtGrid(hit.gx, hit.gy, hit.gz);
           if (existing) return;
           window.__pushHistory();
@@ -44,7 +41,6 @@ pub const JS: &str = r##"
         }
 
         if (tool === SM.LINE) {
-          // Snap target: existing point under cursor > new at grid.
           const hoveredId = window.__pickPointAt(ndcX, ndcY);
           let targetId = hoveredId;
           let createdPoint = false;
@@ -57,7 +53,6 @@ pub const JS: &str = r##"
           }
           const startId = sketchState.line.startPointId;
           if (startId && startId !== targetId) {
-            // Avoid duplicate edge & self-loop.
             if (!window.__findEdgeBetween(startId, targetId)) {
               if (!createdPoint) window.__pushHistory();
               window.__addEdge(startId, targetId);
@@ -92,18 +87,103 @@ pub const JS: &str = r##"
 
       // ─────────────────────────────────────────────────────────
       // __handleSketchDoubleClick(ndcX, ndcY)
-      // Select tool: double-click edge → select both endpoints.
+      // Select tool: double-click edge.
+      //  - if edge belongs to a profile → select entire profile.
+      //  - else → select both endpoints of edge.
       // ─────────────────────────────────────────────────────────
       window.__handleSketchDoubleClick = function(ndcX, ndcY) {
         if (sketchState.activeTool !== "select") return;
         const eId = window.__pickEdgeAt(ndcX, ndcY);
         if (!eId) return;
-        const e = sketchState.edges.find(x => x.id === eId);
-        if (!e) return;
-        sketchState.selectedPointIds = new Set([e.a, e.b]);
-        sketchState.selectedEdgeIds  = new Set([eId]);
+        const prof = window.__getProfileForEdge(eId);
+        if (prof) {
+          sketchState.selectedPointIds = new Set(prof.pointIds);
+          sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+          window.__setStatusMessage('Selected ' + prof.id + ' (' + prof.edgeIds.length + ' edges)');
+        } else {
+          const e = sketchState.edges.find(x => x.id === eId);
+          if (!e) return;
+          sketchState.selectedPointIds = new Set([e.a, e.b]);
+          sketchState.selectedEdgeIds  = new Set([eId]);
+        }
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
+
+      // ─────────────────────────────────────────────────────────
+      // Constraint key handlers (require exactly one edge selected)
+      // ─────────────────────────────────────────────────────────
+      function __requireSingleEdge() {
+        if (sketchState.selectedEdgeIds.size !== 1 || sketchState.selectedPointIds.size > 0) {
+          window.__setStatusMessage('Select exactly one edge');
+          return null;
+        }
+        const id = [...sketchState.selectedEdgeIds][0];
+        return sketchState.edges.find(e => e.id === id) || null;
+      }
+
+      function __keyDimension() {
+        const edge = __requireSingleEdge();
+        if (!edge) return;
+        const cur = window.__edgeLength(edge);
+        const input = window.prompt('Edge length:', cur.toFixed(3));
+        if (input === null) return;
+        const v = parseFloat(input);
+        if (!isFinite(v) || v <= 0) { window.__setStatusMessage('Invalid length'); return; }
+        window.__pushHistory();
+        const ok = window.__applyEdgeLength(edge, v);
+        if (ok) {
+          window.__addConstraint('edge_length', 'edge', edge.id, v);
+          window.__notifySketchChanged();
+          window.__setStatusMessage('Length = ' + v.toFixed(3));
+        }
+      }
+
+      function __keyHorizontal() {
+        const edge = __requireSingleEdge();
+        if (!edge) return;
+        window.__pushHistory();
+        const ok = window.__applyHorizontal(edge);
+        if (ok) {
+          const v = window.__getConstraintForTarget('vertical', edge.id);
+          if (v) window.__removeConstraint(v.id);
+          window.__addConstraint('horizontal', 'edge', edge.id, null);
+          window.__notifySketchChanged();
+          window.__setStatusMessage('Edge horizontal');
+        }
+      }
+
+      function __keyVertical() {
+        const edge = __requireSingleEdge();
+        if (!edge) return;
+        window.__pushHistory();
+        const ok = window.__applyVertical(edge);
+        if (ok) {
+          const h = window.__getConstraintForTarget('horizontal', edge.id);
+          if (h) window.__removeConstraint(h.id);
+          window.__addConstraint('vertical', 'edge', edge.id, null);
+          window.__notifySketchChanged();
+          window.__setStatusMessage('Edge vertical');
+        }
+      }
+
+      function __keyFixToggle() {
+        if (sketchState.selectedPointIds.size === 0) {
+          window.__setStatusMessage('F: select points first');
+          return;
+        }
+        window.__pushHistory();
+        let nFixed = 0, nUnfixed = 0;
+        for (const pid of sketchState.selectedPointIds) {
+          if (window.__isPointFixed(pid)) {
+            const c = window.__getConstraintForTarget('fixed_point', pid);
+            if (c) { window.__removeConstraint(c.id); nUnfixed++; }
+          } else {
+            window.__addConstraint('fixed_point', 'point', pid, null);
+            nFixed++;
+          }
+        }
+        window.__setStatusMessage('Fixed ' + nFixed + ' · Unfixed ' + nUnfixed);
+      }
 
       // ─────────────────────────────────────────────────────────
       // __handleSketchKey(e) → bool consumed
@@ -114,7 +194,7 @@ pub const JS: &str = r##"
 
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return false;
 
-        // Undo / Redo (Cmd+Z / Cmd+Shift+Z / Ctrl+Y).
+        // Undo / Redo.
         if (meta && k === 'z') {
           if (e.shiftKey) window.__redo();
           else            window.__undo();
@@ -129,7 +209,7 @@ pub const JS: &str = r##"
           return true;
         }
 
-        // Grab mode hotkeys.
+        // Grab mode hotkeys (axis lock).
         if (sketchState.grab.active) {
           if (k === 'escape') { __cancelGrab(); return true; }
           if (k === 'enter')  { __confirmGrab(); return true; }
@@ -148,7 +228,7 @@ pub const JS: &str = r##"
           if (sketchState.line.startPointId) {
             sketchState.line.startPointId = null;
             sketchState.phase = "idle";
-            log('✕ Line chain cancelled', '#fbbf24');
+            window.__setStatusMessage('Line chain cancelled');
           } else {
             sketchState.selectedPointIds.clear();
             sketchState.selectedEdgeIds.clear();
@@ -161,7 +241,7 @@ pub const JS: &str = r##"
           if (sketchState.line.startPointId) {
             sketchState.line.startPointId = null;
             sketchState.phase = "idle";
-            log('✓ Line chain finished', '#10b981');
+            window.__setStatusMessage('Line chain finished');
             if (window.__updateSketchInspector) window.__updateSketchInspector();
           }
           return true;
@@ -176,12 +256,28 @@ pub const JS: &str = r##"
           return true;
         }
 
+        // Tools.
         if (k === 's') { window.__setSketchTool && window.__setSketchTool('select'); return true; }
         if (k === 'p') { window.__setSketchTool && window.__setSketchTool('point');  return true; }
         if (k === 'l') { window.__setSketchTool && window.__setSketchTool('line');   return true; }
         if (k === 'g') {
-          if (!sketchState.selectedPointIds.size) { log('G: select points first', '#94a3b8'); return true; }
+          if (!sketchState.selectedPointIds.size) { window.__setStatusMessage('G: select points first'); return true; }
           __startGrab();
+          return true;
+        }
+
+        // Constraints.
+        if (k === 'd') { __keyDimension();  if (window.__updateSketchInspector) window.__updateSketchInspector(); return true; }
+        if (k === 'f') { __keyFixToggle();  if (window.__updateSketchInspector) window.__updateSketchInspector(); return true; }
+        if (k === 'h') { __keyHorizontal(); if (window.__updateSketchInspector) window.__updateSketchInspector(); return true; }
+        if (k === 'v') {
+          if (e.shiftKey) {
+            sketchState.showValidation = !sketchState.showValidation;
+            window.__setStatusMessage('Validation: ' + (sketchState.showValidation ? 'on' : 'off'));
+          } else {
+            __keyVertical();
+          }
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
           return true;
         }
 
@@ -189,15 +285,19 @@ pub const JS: &str = r##"
       };
 
       // ─────────────────────────────────────────────────────────
-      // Grab
+      // Grab — skips fixed points.
       // ─────────────────────────────────────────────────────────
       function __startGrab() {
-        const ids = [...sketchState.selectedPointIds];
-        if (!ids.length) return;
+        const allIds   = [...sketchState.selectedPointIds];
+        const moveIds  = allIds.filter(id => !window.__isPointFixed(id));
+        if (!moveIds.length) {
+          window.__setStatusMessage('Cannot move fixed point');
+          return;
+        }
         window.__pushHistory();
         const byId = new Map(sketchState.points.map(p => [p.id, p]));
         const snapshot = new Map();
-        for (const id of ids) {
+        for (const id of moveIds) {
           const p = byId.get(id);
           if (p) snapshot.set(id, { x: p.x, y: p.y, z: p.z });
         }
@@ -205,12 +305,14 @@ pub const JS: &str = r##"
           ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
           : { x: 0, y: 0, z: 0 };
         sketchState.grab = {
-          active: true, pointIds: ids,
+          active: true, pointIds: moveIds,
           startMouseWorld: startWorld,
           originalPoints: snapshot,
           axisLock: null,
         };
-        log('⤢ Grab ' + ids.length + ' pt — X/Y/Z lock · Enter/click confirm · Esc cancel', '#a78bfa');
+        const skipped = allIds.length - moveIds.length;
+        const msg = '⤢ Grab ' + moveIds.length + ' pt' + (skipped ? ' (' + skipped + ' fixed)' : '') + ' — X/Y/Z lock';
+        window.__setStatusMessage(msg);
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       }
 
@@ -242,7 +344,8 @@ pub const JS: &str = r##"
       function __confirmGrab() {
         const n = sketchState.grab.pointIds.length;
         sketchState.grab = { active: false, pointIds: [], startMouseWorld: null, originalPoints: new Map(), axisLock: null };
-        log('✓ Grab confirmed (' + n + ' pt)', '#10b981');
+        window.__notifySketchChanged();
+        window.__setStatusMessage('Grab confirmed (' + n + ' pt)');
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       }
 
@@ -260,15 +363,13 @@ pub const JS: &str = r##"
           p.gz = Math.round(p.z / g);
         }
         sketchState.grab = { active: false, pointIds: [], startMouseWorld: null, originalPoints: new Map(), axisLock: null };
-        // Pop the snapshot we pushed in __startGrab.
         if (sketchState._history.undo.length) sketchState._history.undo.pop();
-        log('✕ Grab cancelled', '#fbbf24');
+        window.__setStatusMessage('Grab cancelled');
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       }
 
       // ─────────────────────────────────────────────────────────
       // __updateLinePreview()
-      // Called from pointermove. Updates sketchState.line.previewPoint.
       // ─────────────────────────────────────────────────────────
       window.__updateLinePreview = function() {
         const line = sketchState.line;
