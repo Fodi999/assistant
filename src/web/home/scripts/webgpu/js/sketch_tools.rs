@@ -77,26 +77,9 @@ pub const JS: &str = r##"
           return;
         }
 
-        // ── DIMENSION TOOL: 2 clicks → linear dimension annotation ──
+        // ── DIMENSION TOOL: delegated to sketch_dim.rs ──
         if (tool === 'dimension') {
-          if (!sketchState.pendingStart) {
-            sketchState.pendingStart = { x: hx, y: hy, z: hz };
-            sketchState.pendingTool  = 'dimension';
-            log(`↔ Dim point 1: ${hx.toFixed(3)}, ${hz.toFixed(3)}`, '#a78bfa');
-            return;
-          }
-          const p1   = sketchState.pendingStart;
-          const p2   = { x: hx, y: hy, z: hz };
-          const dist = Math.hypot(p2.x-p1.x, p2.y-p1.y, p2.z-p1.z);
-          const label = dist < 0.01  ? (dist*1000).toFixed(1)+' mm'
-                      : dist < 1.0   ? (dist*100).toFixed(1)+' cm'
-                      :                dist.toFixed(3)+' m';
-          if (!Array.isArray(sketchState.dimensions)) sketchState.dimensions = [];
-          sketchState.dimensions.push({ p1, p2, label, id: 'dim-' + Date.now() });
-          sketchState.pendingStart = null;
-          sketchState.pendingTool  = null;
-          log(`✓ Dim: ${label}`, '#a78bfa');
-          if (window.__updateSketchUI) window.__updateSketchUI();
+          if (window.__handleDimTool) window.__handleDimTool(hx, hy, hz);
           return;
         }
       };
@@ -124,6 +107,7 @@ pub const JS: &str = r##"
           if (sketchState.pendingStart) {
             if (window.__cancelRectTool)   window.__cancelRectTool();
             if (window.__cancelCircleTool) window.__cancelCircleTool();
+            if (window.__cancelDimTool)    window.__cancelDimTool();
             sketchState.pendingStart = null;
             sketchState.pendingTool  = null;
             log('✕ Tool cancelled', '#fbbf24');

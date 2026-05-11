@@ -15,6 +15,7 @@ mod sketch_state;
 mod sketch_pick;
 mod sketch_rect;
 mod sketch_circle;
+mod sketch_dim;
 mod sketch_tools;
 mod extrude;
 
@@ -27,6 +28,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + sketch_pick::JS.len()
             + sketch_rect::JS.len()
             + sketch_circle::JS.len()
+            + sketch_dim::JS.len()
             + sketch_tools::JS.len()
             + matter_state::JS.len()
             + buffers::JS.len()
@@ -52,7 +54,9 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch_rect::JS);
     // 5. Circle tool
     out.push_str(sketch_circle::JS);
-    // 6. Sketch tools dispatcher
+    // 6. Dimension tool
+    out.push_str(sketch_dim::JS);
+    // 7. Sketch tools dispatcher
     out.push_str(sketch_tools::JS);
     out.push_str(matter_state::JS);
     out.push_str(buffers::JS);
