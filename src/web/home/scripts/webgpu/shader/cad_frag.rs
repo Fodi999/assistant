@@ -90,7 +90,13 @@ fn sdBackendShape(p: vec3f, b: vec3f, bevel: f32) -> f32 {
   
   let isSelected = u.u9.z > 0.5;
   let selectionMode = u32(u.u9.w); // 0=Object, 1=Face, 2=Edge, 3=Vertex
-  let face_id_to_highlight = 2u; // Например выделяем ID=2 для тестов, можно брать из Uniform
+  let selected_face_id = u32(u.u15.x);
+  let hovered_face_id  = u32(u.u15.y);
+
+  // Hover highlight works in any selection mode (subtle cyan tint)
+  if hovered_face_id != 0u && p.cellMask == hovered_face_id {
+    col = mix(col, vec3f(0.2, 0.85, 1.0), 0.25);
+  }
   
   if isSelected {
     let yellowLine = vec3f(1.0, 0.75, 0.0);
@@ -101,9 +107,9 @@ fn sdBackendShape(p: vec3f, b: vec3f, bevel: f32) -> f32 {
       col += yellowLine * rim * 0.3;
       if is_edge { col = mix(col, yellowLine, 0.5); }
     } else if selectionMode == 1u {
-      // Face Mode: Подсвечивается только выбранная грань (сейчас для примера ID=2)
-      if p.cellMask == face_id_to_highlight {
-         col = mix(col, yellowLine, 0.5);
+      // Face Mode: выбранная грань из u15.x (0 = ни одна)
+      if selected_face_id != 0u && p.cellMask == selected_face_id {
+         col = mix(col, yellowLine, 0.6);
       }
       if is_edge { col = mix(col, vec3f(0.2), 0.5); } // Остальные линии тусклые
     } else if selectionMode == 2u {

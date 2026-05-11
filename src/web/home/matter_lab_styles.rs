@@ -19,6 +19,16 @@ pub fn matter_lab_styles() -> &'static str {
     .matter-lab-shell .action-bar,
     .matter-lab-shell .status-bar { pointer-events: auto; }
 
+    /* Sketch tools — active state + Select tool styling */
+    .sketch-tool-btn.active {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+    }
+    .sketch-tool-btn[data-tool="select"] {
+      color: #38bdf8;
+    }
+
     /* canvas itself must receive pointer events for orbit/zoom/push */
     .matter-stage > #webgpu-canvas { pointer-events: auto; }
     /* stage is transparent to clicks — panels above it handle themselves */
@@ -285,6 +295,10 @@ pub fn matter_panel_styles() -> &'static str {
       top: 652px;
     }
 
+    .panel-toggle-btn.tab-solid {
+      top: 740px;
+    }
+
     .panel-toggle-btn:hover { 
       background: rgba(50, 50, 55, 0.95); 
       color: #fff; 
@@ -540,7 +554,7 @@ pub fn matter_status_styles() -> &'static str {
       left: auto;
       width: 96px; height: 96px;
       z-index: 20;
-      cursor: pointer;
+      cursor: grab;
       border-radius: 50%;
       background: rgba(8, 14, 28, 0.55);
       border: 1px solid rgba(148, 163, 184, 0.14);
@@ -563,6 +577,10 @@ pub fn matter_status_styles() -> &'static str {
     
     #axis-gizmo:hover {
       border-color: rgba(56, 189, 248, 0.45);
+    }
+    #axis-gizmo.dragging {
+      cursor: grabbing;
+      border-color: rgba(56, 189, 248, 0.7);
     }
 
     /* ── Engine Mode Switcher ── bottom-left island ──────────────── */

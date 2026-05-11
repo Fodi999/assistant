@@ -171,6 +171,25 @@ pub fn ai_panel() -> &'static str {
     "#
 }
 
+pub fn solid_inspector_panel() -> &'static str {
+    r#"
+        <aside class="matter-panel-right collapsed" id="solid-inspector-panel">
+          <div class="panel-resizer" id="solid-inspector-resizer" title="Drag to resize"></div>
+          <button class="panel-toggle-btn tab-solid" id="solid-inspector-toggle" title="Solid">Solid</button>
+          <div class="panel-header" id="solid-inspector-title">Solid Inspector</div>
+          <div class="panel-body">
+            <div id="solid-inspector-body">
+              <div class="prop-section">
+                <div style="font-size:12px; color:#64748b; text-align:center; padding:20px 0;">
+                  No solid selected.<br>Click a solid in the Outliner or viewport.
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+    "#
+}
+
 pub fn sketch_panel() -> &'static str {
     r#"
         <aside class="matter-panel-right collapsed" id="sketch-panel">

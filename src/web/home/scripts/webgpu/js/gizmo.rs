@@ -118,6 +118,8 @@ pub const JS: &str = r##"
         }
 
         gc.addEventListener('click', (e) => {
+          // Ignore if drag happened (moved > 4px)
+          if (gc._dragMoved) return;
           const hit = hitTest(e.clientX, e.clientY);
           if (!hit) return;
           const [ty, tp] = SNAPS[hit];
@@ -152,6 +154,49 @@ pub const JS: &str = r##"
             if (frac < 1) requestAnimationFrame(tick);
           }
           requestAnimationFrame(tick);
+        });
+
+        // ── Drag-to-orbit on the gizmo ────────────────────────────
+        // Same feel as main canvas orbit but scoped to the gizmo widget.
+        // Sensitivity scaled so a full 96px drag ≈ 180° rotation.
+        let gizmoDragging = false;
+        let gizmoLastX = 0, gizmoLastY = 0;
+        gc._dragMoved = false;
+
+        gc.addEventListener('pointerdown', (e) => {
+          gizmoDragging = true;
+          gc._dragMoved = false;
+          gizmoLastX = e.clientX;
+          gizmoLastY = e.clientY;
+          gc.classList.add('dragging');
+          gc.setPointerCapture(e.pointerId);
+          e.stopPropagation();
+        });
+
+        gc.addEventListener('pointermove', (e) => {
+          if (!gizmoDragging) return;
+          const dx = e.clientX - gizmoLastX;
+          const dy = e.clientY - gizmoLastY;
+          if (Math.hypot(dx, dy) > 4) gc._dragMoved = true;
+          gizmoLastX = e.clientX;
+          gizmoLastY = e.clientY;
+          // Sensitivity: 360° per ~600px drag (same as main canvas orbit 0.005 * px)
+          cam.yaw   += dx * 0.012;
+          cam.pitch += dy * 0.012;
+          // Clamp pitch to avoid gimbal flip
+          cam.pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, cam.pitch));
+          e.stopPropagation();
+        });
+
+        gc.addEventListener('pointerup', (e) => {
+          gizmoDragging = false;
+          gc.classList.remove('dragging');
+          try { gc.releasePointerCapture(e.pointerId); } catch {}
+          e.stopPropagation();
+        });
+
+        gc.addEventListener('pointerleave', () => {
+          if (!gizmoDragging) gc._dragMoved = false;
         });
 
         // Redraw every frame (cheap 2D canvas, ~0.1 ms)

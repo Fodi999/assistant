@@ -7,7 +7,7 @@ pub const JS: &str = r##"
       let frameCount = 0;
       let lastFpsTime = t0, fpsAcc = 0, fps = 0;
       let lastFrameTime = t0;
-      const ubo = new Float32Array(60); // 15 × vec4
+      const ubo = new Float32Array(64); // 16 × vec4
 
       function frame() {
         const now = performance.now();
@@ -157,6 +157,12 @@ pub const JS: &str = r##"
         ubo[57] = pId;
         ubo[58] = 0;
         ubo[59] = 0;
+
+        // u15: CAD face highlight (selectedFaceId, hoveredFaceId, _, _)
+        ubo[60] = (window.selectedFaceId || 0) >>> 0;
+        ubo[61] = (window.hoveredFaceId  || 0) >>> 0;
+        ubo[62] = 0;
+        ubo[63] = 0;
         
         device.queue.writeBuffer(uniformBuf, 0, ubo);
 
@@ -524,6 +530,7 @@ pub const JS: &str = r##"
                 point:  '#a78bfa',
                 first:  '#10b981',
                 origin: '#f472b6',
+                align:  '#f43f5e',
                 free:   '#cbd5e1',
               };
               const col = snapColors[hover.snapType] || '#cbd5e1';
@@ -534,6 +541,14 @@ pub const JS: &str = r##"
                 ctx.arc(sh.x, sh.y, 8, 0, Math.PI*2);
               } else if (hover.snapType === 'origin') {
                 ctx.rect(sh.x-7, sh.y-7, 14, 14);
+              } else if (hover.snapType === 'align') {
+                // dotted dashed guide cursor marker
+                ctx.setLineDash([4, 4]);
+                ctx.moveTo(sh.x-10, sh.y); ctx.lineTo(sh.x+10, sh.y);
+                ctx.moveTo(sh.x, sh.y-10); ctx.lineTo(sh.x, sh.y+10);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.beginPath(); // clear for standard stroke
               } else {
                 // small + cross
                 ctx.moveTo(sh.x-7, sh.y); ctx.lineTo(sh.x+7, sh.y);

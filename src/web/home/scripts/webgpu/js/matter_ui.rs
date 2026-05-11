@@ -271,7 +271,8 @@ pub const JS: &str = r##"
         // === Right Panels Logic ===
         const panelsConfig = [
           { id: 'M', panelId: 'profile-panel', toggleId: 'profile-toggle', resizerId: 'profile-resizer' },
-          { id: 'N', panelId: 'properties-panel', toggleId: 'properties-toggle', resizerId: 'properties-resizer' },
+          { id: 'N',     panelId: 'properties-panel',      toggleId: 'properties-toggle',      resizerId: 'properties-resizer' },
+          { id: 'SOLID', panelId: 'solid-inspector-panel', toggleId: 'solid-inspector-toggle', resizerId: 'solid-inspector-resizer' },
           { id: 'SHAPE', panelId: 'shape-panel', toggleId: 'shape-toggle', resizerId: 'shape-resizer' },
           { id: 'MATERIAL', panelId: 'material-panel', toggleId: 'material-toggle', resizerId: 'material-resizer' },
           { id: 'NODES', panelId: 'nodes-panel', toggleId: 'nodes-toggle', resizerId: 'nodes-resizer' },
@@ -415,9 +416,16 @@ pub const JS: &str = r##"
 
         function updatePanelForMode(mode) {
           // Right inspector follows mode strictly
-          if (mode === 'sketch') openPanel('SKETCH');
-          else if (mode === 'object') openPanel('N');
-          else openPanel('N'); // Face/Edge/Vertex share Properties panel
+          if (mode === 'sketch') {
+            openPanel('SKETCH');
+          } else if (mode === 'object') {
+            // Show Solid Inspector if there are solids, otherwise generic Properties
+            const hasSolids = (window.solids && window.solids.length > 0);
+            if (hasSolids) openPanel('SOLID');
+            else openPanel('N');
+          } else {
+            openPanel('N'); // Face/Edge/Vertex share Properties panel
+          }
         }
 
         function updateSketchOverlays(mode) {
@@ -455,8 +463,98 @@ pub const JS: &str = r##"
           if (elP) elP.textContent = planeLbl;
           if (elG) elG.textContent = snapLbl;
           if (elT) elT.textContent = s.activeSketchTool;
-          if (elM) elM.textContent = MODE_LABEL[s.mode];
+          if (elM) {
+            const phase = (typeof sketchState !== 'undefined' && sketchState.phase) || 'drawing';
+            const phaseLbl = {
+              drawing:         'Sketch · drawing',
+              closed_profile:  'Sketch · ✓ closed',
+              extrude_preview: 'Sketch · ⬚ preview',
+              solid_created:   'Sketch · ◆ solid (ref)',
+            }[phase] || MODE_LABEL[s.mode];
+            elM.textContent = s.mode === 'sketch' ? phaseLbl : MODE_LABEL[s.mode];
+          }
         }
+
+        // ─────────────────────────────────────────────────────────
+        // SOLID INSPECTOR — populate right panel from a solid record
+        // ─────────────────────────────────────────────────────────
+        window.__openSolidInspector = function(solid) {
+          if (!solid) return;
+          openPanel('SOLID');
+          const titleEl = document.getElementById('solid-inspector-title');
+          if (titleEl) titleEl.textContent = solid.name || solid.id;
+          const body = document.getElementById('solid-inspector-body');
+          if (!body) return;
+          const m = solid.mesh;
+          const meta = (m && m.meta) || {};
+          const br = solid.bufferRecord || {};
+          const triCount  = solid.triangleCount || meta.triangleCount || (m && m.indices ? m.indices.length / 3 : '?');
+          const faceCount = solid.faceCount  || meta.faceCount  || '?';
+          const kernel    = solid.source === 'truck-modeling' ? '🔷 truck-modeling' : '◇ local-earcut';
+          const depth     = (solid.depth || 0).toFixed(3);
+          const plane     = solid.plane || '?';
+          const fmtId     = s => s ? String(s).replace('solid_','#') : '?';
+
+          body.innerHTML = `
+            <div class="prop-section">
+              <div class="prop-title" style="color:#38bdf8; margin-bottom:8px; font-size:13px;">${solid.name || solid.id}</div>
+              <div style="font-size:11px; color:#64748b; margin-bottom:12px; display:flex; gap:6px; align-items:center;">
+                <span style="background:rgba(56,189,248,.12); color:#38bdf8; padding:2px 6px; border-radius:3px; font-size:10px;">EXTRUDED SOLID</span>
+                <span style="background:rgba(16,185,129,.10); color:#10b981; padding:2px 6px; border-radius:3px; font-size:10px;">${kernel}</span>
+              </div>
+
+              <div class="prop-title" style="color:#f8fafc; margin-bottom:6px;">MESH</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; font-size:11px; margin-bottom:14px;">
+                <span style="color:#64748b;">Triangles</span><span style="color:#cbd5e1;">${triCount}</span>
+                <span style="color:#64748b;">Faces</span><span style="color:#cbd5e1;">${faceCount}</span>
+                <span style="color:#64748b;">Plane</span><span style="color:#cbd5e1;">${plane}</span>
+                <span style="color:#64748b;">Depth</span><span style="color:#cbd5e1;">${depth} m</span>
+              </div>
+
+              <div class="prop-title" style="color:#f8fafc; margin-bottom:6px;">BUFFER RANGE</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; font-size:11px; margin-bottom:14px;">
+                <span style="color:#64748b;">Vert base</span><span style="color:#475569; font-family:monospace;">${br.vertexBase ?? '?'}</span>
+                <span style="color:#64748b;">Vert count</span><span style="color:#475569; font-family:monospace;">${br.vertexCount ?? '?'}</span>
+                <span style="color:#64748b;">Face ID base</span><span style="color:#475569; font-family:monospace;">${br.faceIdBase ?? '?'}</span>
+              </div>
+
+              <div class="prop-title" style="color:#f8fafc; margin-bottom:8px;">ACTIONS</div>
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                <button class="prop-btn" id="si-btn-edit-sketch" style="width:100%;">✎ Edit Sketch</button>
+                <button class="prop-btn" id="si-btn-edit-extrude" style="width:100%;">⬚ Edit Extrude</button>
+                <button class="prop-btn" id="si-btn-delete" style="width:100%; color:#f87171; border-color:rgba(248,113,113,.2);">🗑 Delete Solid</button>
+              </div>
+            </div>
+          `;
+          // Action wiring
+          const btnEditSketch = document.getElementById('si-btn-edit-sketch');
+          if (btnEditSketch) btnEditSketch.addEventListener('click', () => {
+            if (window.__setEditorMode) window.__setEditorMode('sketch');
+          });
+          const btnDelete = document.getElementById('si-btn-delete');
+          if (btnDelete) btnDelete.addEventListener('click', () => {
+            const idx = (window.solids || []).findIndex(s => s.id === solid.id);
+            if (idx >= 0) {
+              window.solids.splice(idx, 1);
+              // Full buffer rebuild on delete
+              if (window.__resetCadBuffers) {
+                window.__resetCadBuffers();
+                (window.solids || []).forEach(s => {
+                  if (s.mesh && window.uploadMeshToCadBuffers) {
+                    s.bufferRecord = window.uploadMeshToCadBuffers(s.mesh);
+                    s.faceIdBase = s.bufferRecord.faceIdBase;
+                    s.faceCount  = s.bufferRecord.faceCount;
+                  }
+                });
+                window.solids = (window.solids || []).filter((_, i) => true); // no-op reference refresh
+              }
+              window.selectedSolidId = null;
+              window.selectedFaceId  = 0;
+              if (window.__renderSolidsList) window.__renderSolidsList();
+              openPanel('N');
+            }
+          });
+        };
 
         window.__setEditorMode = function(mode, opts) {
           opts = opts || {};
@@ -464,23 +562,34 @@ pub const JS: &str = r##"
           const prev = window.editorState.mode;
           if (prev === mode && !opts.force) return;
 
-          // Leaving sketch: optionally extrude closed sketch
-          if (prev === 'sketch' && mode !== 'sketch') {
-            if (window.doFakeExtrude && sketchState && sketchState.closed) {
-              try { window.doFakeExtrude(); } catch (e) {}
-            }
-          }
+          // Leaving sketch: do NOT auto-extrude. User must explicitly press Extrude.
+          // (Sketch is preserved as reference when phase === 'solid_created'.)
 
           window.editorState.mode = mode;
           sceneState.selectionMode = MODE_NUM[mode];
 
-          // Defaults when entering sketch
+          // Defaults when entering sketch — reset if coming from solid_created (new sketch)
           if (mode === 'sketch') {
             window.editorState.activeSketchTool = window.editorState.activeSketchTool || 'line';
             window.editorState.activeSketchPlane = window.editorState.activeSketchPlane || 'XZ';
-            sketchState.plane = window.editorState.activeSketchPlane;
-            const ps = document.getElementById('sketch-plane-select');
-            if (ps) ps.value = sketchState.plane;
+            if (window.sketchState) {
+              window.sketchState.plane = window.editorState.activeSketchPlane;
+              const ps = document.getElementById('sketch-plane-select');
+              if (ps) ps.value = window.sketchState.plane;
+              // If we're re-entering sketch after a solid was created, start fresh
+              const phase = window.sketchState.phase || 'drawing';
+              if (phase === 'solid_created') {
+                window.sketchState.points = [];
+                window.sketchState.closed = false;
+                window.sketchState.circles = [];
+                window.sketchState.rectangles = [];
+                window.sketchState.pendingStart = null;
+                window.sketchState.pendingTool = null;
+                window.extrudePreview = window.extrudePreview || {};
+                window.extrudePreview.active = false;
+                if (window.__setSketchPhase) window.__setSketchPhase('drawing', 'new sketch');
+              }
+            }
           }
 
           updateModeButtons(mode);
@@ -494,14 +603,14 @@ pub const JS: &str = r##"
         window.__setSketchPlane = function(plane) {
           if (!['XY','XZ','YZ'].includes(plane)) return;
           // If user has unfinished sketch, ask
-          if (sketchState && sketchState.points.length > 0 && !sketchState.closed) {
+          if (window.sketchState && window.sketchState.points.length > 0 && !window.sketchState.closed) {
             const ok = window.confirm('Discard current unfinished sketch and switch plane?');
             if (!ok) return;
-            sketchState.points = [];
-            sketchState.closed = false;
+            window.sketchState.points = [];
+            window.sketchState.closed = false;
           }
           window.editorState.activeSketchPlane = plane;
-          sketchState.plane = plane;
+          if (window.sketchState) window.sketchState.plane = plane;
           const ps = document.getElementById('sketch-plane-select');
           if (ps) ps.value = plane;
           if (window.editorState.mode === 'sketch') {
@@ -512,11 +621,11 @@ pub const JS: &str = r##"
         };
 
         window.__setSketchTool = function(tool) {
-          if (!['line','rectangle','circle','dimension'].includes(tool)) return;
+          if (!['select','line','rectangle','circle','dimension'].includes(tool)) return;
           // Cancel any in-progress two-click operation from the previous tool
-          if (sketchState && sketchState.pendingStart) {
-            sketchState.pendingStart = null;
-            sketchState.pendingTool  = null;
+          if (window.sketchState && window.sketchState.pendingStart) {
+            window.sketchState.pendingStart = null;
+            window.sketchState.pendingTool  = null;
           }
           window.editorState.activeSketchTool = tool;
           const sw = document.getElementById('sketch-tools-switcher');
@@ -662,6 +771,9 @@ pub const JS: &str = r##"
               legacyExt.style.pointerEvents = 'none';
             }
           }
+
+          // Toolbar Extrude button (enable only when closed profile)
+          if (window.__syncExtrudeButton) window.__syncExtrudeButton();
         };
 
         // ─────────────────────────────────────────────────────────
@@ -681,22 +793,71 @@ pub const JS: &str = r##"
             distance:  dist,
             points:    a.points.map(p => ({ x:p.x, y:p.y, z:p.z })),
           };
+          if (window.__setSketchPhase) window.__setSketchPhase('extrude_preview', 'preview started');
           log(`▣ Extrude preview: ${a.axes.dirLabel} × ${dist.toFixed(3)} m`, '#a78bfa');
         }
         function cancelExtrudePreview() {
           window.extrudePreview.active = false;
           window.extrudePreview.points = [];
+          // Return to closed_profile so Extrude button stays enabled and sketch is locked
+          if (window.__setSketchPhase && sketchState && sketchState.closed) {
+            window.__setSketchPhase('closed_profile', 'preview cancelled');
+          }
           log('▣ Extrude preview cancelled', '#f87171');
         }
-        function commitExtrudePreview() {
-          // For now: commit by clearing the sketch and disabling preview.
-          // Backend (truck) wiring will replace this later.
+        async function commitExtrudePreview() {
+          // Guard: prevent double-execution while async is in flight
+          if (commitExtrudePreview._running) return;
+          // Real pipeline: sketch → truck-modeling B-Rep (backend) → GPU upload.
+          // Falls back to local earcut if backend unreachable.
           if (!window.extrudePreview.active) startExtrudePreview();
           if (!window.extrudePreview.active) return;
-          log('▣ Create Solid: pending backend (truck) — preview kept', '#10b981');
-          // Intentionally leave preview active so user can see result.
-          // Real solid creation happens when Rust backend is wired.
+          const btn = document.getElementById('btn-sketch-extrude-create');
+          if (btn) { btn.disabled = true; btn.textContent = '… solving'; }
+          commitExtrudePreview._running = true;
+          try {
+            const solid = await window.createSolidFromActiveSketchAsync();
+            const src = solid.source || 'local-earcut';
+            log(`▣ Solid created: ${solid.name} · ${solid.triangleCount} tris · depth=${solid.depth.toFixed(3)}m · ${src}`, '#10b981');
+            window.extrudePreview.active = false;
+            window.extrudePreview.points = [];
+            sketchState.pendingStart = null;
+            sketchState.pendingTool = null;
+            if (window.__setSketchPhase) window.__setSketchPhase('solid_created', 'solid committed');
+            // Switch to object mode — do NOT call __setEditorMode here, it triggers
+            // the sketchPanelToggle rAF cascade that re-enters sketch mode.
+            // Instead just update the state directly and sync UI.
+            window.editorState.mode = 'object';
+            sceneState.selectionMode = 0; // MODE_NUM.object
+            updateModeButtons('object');
+            updateSketchOverlays('object');
+            updateCameraForMode('object', window.editorState.activeSketchPlane);
+            updateStatusBar();
+            if (window.__updateSketchUI) window.__updateSketchUI();
+            if (window.__syncExtrudeButton) window.__syncExtrudeButton();
+            // Open Solid Inspector for the newly created solid
+            if (window.__openSolidInspector) window.__openSolidInspector(solid);
+            // Refresh Outliner solids list
+            if (window.__renderSolidsList) window.__renderSolidsList();
+          } catch (err) {
+            log('✗ Create Solid failed: ' + err.message, '#f87171');
+            console.error(err);
+          } finally {
+            commitExtrudePreview._running = false;
+            if (btn) {
+              // Keep button disabled after solid created — phase guard shows "start over" tooltip
+              const phase = (sketchState && sketchState.phase) || 'drawing';
+              if (phase === 'solid_created') {
+                btn.disabled = true;
+                btn.textContent = 'Create Solid';
+              } else {
+                btn.disabled = false;
+                btn.textContent = 'Create Solid';
+              }
+            }
+          }
         }
+        commitExtrudePreview._running = false;
         const btnPrev   = document.getElementById('btn-sketch-extrude-preview');
         const btnCreate = document.getElementById('btn-sketch-extrude-create');
         const btnCancel = document.getElementById('btn-sketch-extrude-cancel');
@@ -714,13 +875,17 @@ pub const JS: &str = r##"
         const btnCancelSketch = document.getElementById('btn-sketch-cancel');
         if (btnCancelSketch) {
           btnCancelSketch.addEventListener('click', () => {
-            sketchState.points = [];
-            sketchState.closed = false;
-            sketchState.pendingStart = null;
-            sketchState.pendingTool = null;
+            if (window.sketchState) {
+              window.sketchState.points = [];
+              window.sketchState.closed = false;
+              window.sketchState.pendingStart = null;
+              window.sketchState.pendingTool = null;
+              window.sketchState.dimensions = [];
+            }
             cancelExtrudePreview();
+            if (window.__setSketchPhase) window.__setSketchPhase('drawing', 'sketch reset');
             if (window.__updateSketchUI) window.__updateSketchUI();
-            log('✕ Sketch cancelled', '#f87171');
+            log('✕ Sketch reset (new sketch)', '#f87171');
           });
         }
 
@@ -729,9 +894,58 @@ pub const JS: &str = r##"
           toolsSw.addEventListener('click', (e) => {
             const btn = e.target.closest('.sketch-tool-btn');
             if (!btn) return;
-            window.__setSketchTool(btn.dataset.tool);
+            const tool = btn.dataset.tool;
+            // Extrude is an ACTION not a tool — runs preview + opens commit UI
+            if (tool === 'extrude') {
+              if (btn.disabled) return;
+              try {
+                startExtrudePreview();
+                if (window.editorState && window.editorState.mode === 'sketch') {
+                  // Auto-open the extrude inspector panel so user sees Create/Cancel
+                  const ep = document.getElementById('sketch-ui-extrude-panel');
+                  if (ep) ep.style.display = 'block';
+                }
+              } catch (err) { log('✗ Extrude failed: ' + err.message, '#f87171'); }
+              return;
+            }
+            window.__setSketchTool(tool);
           });
         }
+
+        // Sync Extrude button enabled/disabled with closed-profile state
+        window.__syncExtrudeButton = function() {
+          const btn = document.getElementById('sketch-tool-extrude');
+          if (!btn) return;
+          const a = window.activeSketch;
+          const phase = (sketchState && sketchState.phase) || 'drawing';
+          // Only enable in closed_profile phase (not during preview / after solid)
+          const ok = !!(a && a.closed && a.pointIds.length >= 3 && phase === 'closed_profile');
+          btn.disabled = !ok;
+          btn.style.opacity = ok ? '1' : '0.5';
+          btn.style.cursor  = ok ? 'pointer' : 'not-allowed';
+          // Tooltip explains why it's disabled
+          if (!a || a.pointIds.length === 0) btn.title = 'Extrude — draw a closed profile first';
+          else if (!a.closed) btn.title = 'Extrude — close the profile (click first point)';
+          else if (phase === 'extrude_preview') btn.title = 'Extrude — preview active, Create or Cancel first';
+          else if (phase === 'solid_created') btn.title = 'Extrude — solid created, click "New Sketch" to start over';
+          else btn.title = 'Extrude closed profile (E)';
+
+          // Also sync the "Create Solid" button inside the extrude panel.
+          // It gets disabled after first solid created — must re-enable for second sketch.
+          const btnCreate = document.getElementById('btn-sketch-extrude-create');
+          if (btnCreate) {
+            const creating = !!commitExtrudePreview._running;
+            if (phase === 'solid_created') {
+              btnCreate.disabled = true;
+            } else if (creating) {
+              btnCreate.disabled = true;
+              btnCreate.textContent = '… solving';
+            } else {
+              btnCreate.disabled = false;
+              btnCreate.textContent = 'Create Solid';
+            }
+          }
+        };
 
         // Track mouse coords in sketch plane for status overlay
         const canvasEl = document.getElementById('webgpu-canvas') || document.querySelector('canvas');
@@ -758,6 +972,8 @@ pub const JS: &str = r##"
             requestAnimationFrame(() => {
               const panel = document.getElementById('sketch-panel');
               const isOpen = panel && !panel.classList.contains('collapsed');
+              // Allow re-entering sketch after solid_created — __setEditorMode will reset state.
+              // Only block if already in sketch mode and panel is being closed.
               if (isOpen && window.editorState.mode !== 'sketch') {
                 window.__setEditorMode('sketch');
               } else if (!isOpen && window.editorState.mode === 'sketch') {
@@ -824,94 +1040,30 @@ pub const JS: &str = r##"
         }, 300);
       }
 
-      window.doFakeExtrude = function() {
+      window.doFakeExtrude = async function() {
+        // Now backed by real extrude pipeline (truck-modeling backend + GPU upload + solids[])
         if (!sketchState || !sketchState.closed || sketchState.points.length < 3) return;
-        
-        let pts = [...sketchState.points];
-        // Calculate signed area to enforce consistent CCW winding
-        let area = 0;
-        for (let i=0; i<pts.length; i++) {
-           let nxt = (i+1)%pts.length;
-           area += (pts[nxt].x - pts[i].x) * (pts[nxt].y + pts[i].y);
+        try {
+          // If no active preview, create a default 1m extrude along plane normal
+          if (!window.extrudePreview || !window.extrudePreview.active) {
+            const a = window.activeSketch;
+            if (!a) return;
+            const n = a.axes.n;
+            window.extrudePreview = {
+              active: true, profileId: a.id, plane: a.plane,
+              direction: [n[0], n[1], n[2]], distance: 1.0,
+              points: a.points.map(p => ({ x:p.x, y:p.y, z:p.z })),
+            };
+          }
+          const solid = await window.createSolidFromActiveSketchAsync();
+          log(`▣ Auto-extrude on sketch exit: ${solid.name} [${solid.source}]`, '#10b981');
+          sketchState.points = [];
+          sketchState.closed = false;
+          window.extrudePreview.active = false;
+          if (window.__updateSketchUI) window.__updateSketchUI();
+        } catch (err) {
+          log('✗ doFakeExtrude failed: ' + err.message, '#f87171');
         }
-        if (area > 0) pts.reverse(); // force CCW
-
-        let minX = Infinity, maxX = -Infinity;
-        let minZ = Infinity, maxZ = -Infinity;
-        pts.forEach(p => { 
-           minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-           minZ = Math.min(minZ, p.y); maxZ = Math.max(maxZ, p.y);
-        });
-        
-        let cx = (minX + maxX) / 2.0;
-        let cz = (minZ + maxZ) / 2.0;
-        
-        // Генерируем 2D плоскость без толщины (ведь Extrude мы будем делать потом отдельно)
-        sceneState.baseMeshDim = [Math.max(0.1, maxX - minX), 0.001, Math.max(0.1, maxZ - minZ)];
-        sceneState.objectPosition = [cx, 0.0, cz];
-        sceneState.objectRotation = [0, 0, 0];
-        sceneState.objectScale = [1, 1, 1];
-        
-        const pos = [];
-        const norm = [];
-        const fids = [];
-        const uidx = [];
-        
-        const N = pts.length;
-        
-        // --- TOP FACE (Плоскость смотрящая вверх) ---
-        const vTopCenter = pos.length / 3;
-        pos.push(0, 0, 0); // center relative
-        norm.push(0, 1, 0); fids.push(0);
-        
-        const topStart = pos.length / 3;
-        for (let i=0; i<N; i++) {
-           pos.push((pts[i].x - cx) * 1000.0, 0, (pts[i].y - cz) * 1000.0);
-           norm.push(0, 1, 0); fids.push(0);
-        }
-        for (let i=0; i<N; i++) {
-           let nxt = (i + 1) % N;
-           uidx.push(vTopCenter, topStart + i, topStart + nxt);
-        }
-        
-        // --- BOTTOM FACE (Плоскость смотрящая вниз, чтобы фигура была видна с двух сторон) ---
-        const vBotCenter = pos.length / 3;
-        pos.push(0, 0, 0);
-        norm.push(0, -1, 0); fids.push(1);
-        
-        const botStart = pos.length / 3;
-        for (let i=0; i<N; i++) {
-           pos.push((pts[i].x - cx) * 1000.0, 0, (pts[i].y - cz) * 1000.0);
-           norm.push(0, -1, 0); fids.push(1);
-        }
-        for (let i=0; i<N; i++) {
-           let nxt = (i + 1) % N;
-           // reversed winding for bottom
-           uidx.push(vBotCenter, botStart + nxt, botStart + i);
-        }
-        
-        const posArr = new Float32Array(pos);
-        const normArr = new Float32Array(norm);
-        const faceIdArr = new Uint32Array(fids);
-        const idxArr = new Uint32Array(uidx);
-        
-        device.queue.writeBuffer(cadPosBuf, 0, posArr);
-        device.queue.writeBuffer(cadNormalBuf, 0, normArr);
-        device.queue.writeBuffer(cadFaceIdBuf, 0, faceIdArr);
-        device.queue.writeBuffer(cadIndexBuf, 0, idxArr);
-        cadIndexCount = idxArr.length;
-        
-        sketchState.points = [];
-        sketchState.closed = false;
-        openPanel('SKETCH');
-        
-        const sketchTools = document.getElementById('sketch-tools-switcher');
-        if (sketchTools) sketchTools.style.display = 'flex';
-        
-        const sketchInfo = document.getElementById('sketch-info-overlay');
-        if (sketchInfo) sketchInfo.style.display = 'block';
-        
-        if (window.__updateSketchUI) window.__updateSketchUI();
       };
 
       // expose for render_loop perf hook

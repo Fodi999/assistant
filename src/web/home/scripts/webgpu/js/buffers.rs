@@ -17,7 +17,7 @@ pub const JS: &str = r##"
       //   u10: objectRotX, objectRotY, objectRotZ, _
       //   u11: objectScaleX, objectScaleY, objectScaleZ, _
       const uniformBuf = device.createBuffer({
-        size: 240,
+        size: 256,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
 

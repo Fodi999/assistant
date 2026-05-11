@@ -11,6 +11,7 @@ mod matter_ui;
 mod pipeline;
 mod render_loop;
 mod state;
+mod extrude;
 
 /// Assembles the complete JS source, embedding both WGSL shaders.
 pub fn assemble(shader: &str, cad_shader: &str) -> String {
@@ -27,6 +28,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + gizmo::JS.len()
             + matter_ui::JS.len()
             + render_loop::JS.len()
+            + extrude::JS.len()
             + 128,
     );
     out.push_str(init::JS);
@@ -46,6 +48,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(hud::JS);
     out.push_str(controls::JS);
     out.push_str(gizmo::JS);
+    out.push_str(extrude::JS);
     out.push_str(matter_ui::JS);
     out.push_str(render_loop::JS);
     out

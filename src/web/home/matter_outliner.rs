@@ -4,17 +4,29 @@
 
 pub fn outliner_panel() -> &'static str {
     r##"
-        <!-- Left sliding panel: History only -->
+        <!-- Left sliding panel: Outliner (Solids + Sketches) + History -->
         <aside class="outliner-panel collapsed" id="outliner-panel">
 
-          <!-- Single tab button sticking out to the right -->
-          <button class="ol-tab-btn tab-ol-history" id="ol-history-toggle" title="History (H)">History</button>
+          <!-- Tab buttons sticking out to the right -->
+          <button class="ol-tab-btn tab-ol-solids active" id="ol-solids-toggle" title="Outliner (O)" style="top:15px;">Solids</button>
+          <button class="ol-tab-btn tab-ol-history" id="ol-history-toggle" title="History (H)" style="top:115px;">History</button>
 
-          <!-- Content area fills the whole panel -->
+          <!-- Content area -->
           <div class="outliner-inner">
 
+              <!-- SOLIDS / SKETCHES OUTLINER -->
+              <div class="outliner-body" id="outliner-tab-solids">
+                <div class="outliner-toolbar">
+                  <span style="color:#94a3b8;font-size:11px;font-weight:600;letter-spacing:.5px;">OUTLINER</span>
+                  <span style="color:#64748b;font-size:11px;margin-left:auto;" id="solids-count">0 objects</span>
+                </div>
+                <div id="outliner-solids-list">
+                  <div style="font-size:11px; color:#64748b; padding:12px 4px;">No solids yet. Draw a sketch and extrude it.</div>
+                </div>
+              </div>
+
               <!-- HISTORY -->
-              <div class="outliner-body" id="outliner-tab-history">
+              <div class="outliner-body" id="outliner-tab-history" style="display:none;">
                 <div class="outliner-toolbar">
                   <button class="outliner-mini-btn" id="btn-history-clear">✕ Clear</button>
                   <span style="color:#64748b;font-size:11px;margin-left:auto;" id="history-count">0 entries</span>
@@ -138,12 +150,36 @@ pub fn outliner_styles() -> &'static str {
     .history-entry-icon  { color: #38bdf8; }
     .history-entry-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .history-entry-time  { color: #64748b; font-size: 10px; font-family: monospace; }
+
+    /* Solids outliner tree */
+    .outliner-section-header {
+      font-size: 10px; font-weight: 700; letter-spacing: .6px;
+      color: #64748b; text-transform: uppercase;
+      padding: 6px 4px 4px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .outliner-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #cbd5e1;
+      transition: background .1s;
+      user-select: none;
+    }
+    .outliner-item:hover { background: rgba(56,189,248,0.08); color: #fff; }
+    .outliner-item.selected { background: rgba(56,189,248,0.18); color: #fff;
+      border-left: 2px solid #38bdf8; padding-left: 6px; }
+    .outliner-item-icon { font-size: 13px; opacity: .7; }
+    .outliner-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .outliner-item-meta { font-size: 10px; color: #475569; font-family: monospace; }
     "##
 }
 
 pub fn outliner_js() -> &'static str {
     r##"
-    // ─── History Panel Wiring ────────────────────────────────────────
+    // ─── Outliner: Solids tree + History ────────────────────────────────────
     (function initOutliner() {
       function boot() {
         if (window.__outlinerBooted) return;
@@ -151,14 +187,87 @@ pub fn outliner_js() -> &'static str {
         if (!root) { return setTimeout(boot, 50); }
         window.__outlinerBooted = true;
 
-        // ── History data ─────────────────────────────────────────
-        window.cadHistory = window.cadHistory || { entries: [], max: 200, _seq: 0 };
-        const hist = window.cadHistory;
+        // ── Tab switching ─────────────────────────────────────────
+        const tabSolids   = document.getElementById('ol-solids-toggle');
+        const tabHistory  = document.getElementById('ol-history-toggle');
+        const bodySolids  = document.getElementById('outliner-tab-solids');
+        const bodyHistory = document.getElementById('outliner-tab-history');
 
+        function showTab(name) {
+          const isSolids = name === 'solids';
+          if (bodySolids)  bodySolids.style.display  = isSolids  ? 'flex' : 'none';
+          if (bodyHistory) bodyHistory.style.display = !isSolids ? 'flex' : 'none';
+          if (tabSolids)  tabSolids.classList.toggle('active',  isSolids);
+          if (tabHistory) tabHistory.classList.toggle('active', !isSolids);
+        }
+        if (tabSolids)  tabSolids.addEventListener('click',  () => { openPanel(); showTab('solids'); });
+        if (tabHistory) tabHistory.addEventListener('click', () => { openPanel(); showTab('history'); });
+        showTab('solids'); // default
+
+        // ── Panel open / close ────────────────────────────────────
+        function openPanel()   { root.classList.remove('collapsed'); }
+        function closePanel()  { root.classList.add('collapsed'); }
+        function togglePanel(tab) {
+          if (root.classList.contains('collapsed')) { openPanel(); showTab(tab || 'solids'); }
+          else closePanel();
+        }
+
+        // Keyboard: O = Outliner/Solids, H = History
+        document.addEventListener('keydown', e => {
+          if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+          if (e.key === 'o' || e.key === 'O') togglePanel('solids');
+          if (e.key === 'h' || e.key === 'H') { openPanel(); showTab('history'); }
+        });
+
+        // ── Solids rendering ──────────────────────────────────────
         function escapeHtml(s) {
           return String(s).replace(/[&<>"']/g, c =>
             ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
+
+        const solidsList  = document.getElementById('outliner-solids-list');
+        const solidsCount = document.getElementById('solids-count');
+
+        window.__renderSolidsList = function() {
+          const solids = window.solids || [];
+          if (solidsCount) solidsCount.textContent = solids.length + ' object' + (solids.length !== 1 ? 's' : '');
+          if (!solidsList) return;
+          if (solids.length === 0) {
+            solidsList.innerHTML = '<div style="font-size:11px; color:#64748b; padding:12px 4px;">No solids yet. Draw a sketch and extrude it.</div>';
+            return;
+          }
+          const selectedId = window.selectedSolidId || null;
+          let html = '<div class="outliner-section-header">⬡ Solids (' + solids.length + ')</div>';
+          for (const s of solids) {
+            const sel = s.id === selectedId ? ' selected' : '';
+            const kernel = (s.source === 'truck-modeling') ? '🔷' : '◇';
+            const tris = s.triangleCount || (s.mesh && s.mesh.meta && s.mesh.meta.triangleCount) || '?';
+            html += '<div class="outliner-item' + sel + '" data-solid-id="' + escapeHtml(s.id) + '">'
+              + '<span class="outliner-item-icon">⬚</span>'
+              + '<span class="outliner-item-name">' + escapeHtml(s.name || s.id) + '</span>'
+              + '<span class="outliner-item-meta">' + kernel + ' ' + tris + 't</span>'
+              + '</div>';
+          }
+          solidsList.innerHTML = html;
+          solidsList.querySelectorAll('.outliner-item[data-solid-id]').forEach(el => {
+            el.addEventListener('click', () => {
+              const id = el.dataset.solidId;
+              const solid = (window.solids || []).find(s => s.id === id);
+              if (!solid) return;
+              window.selectedSolidId = id;
+              window.selectedFaceId  = 0;
+              // Open Solid Inspector on right
+              if (window.__openSolidInspector) window.__openSolidInspector(solid);
+              // Highlight in viewport (selectionMode → Object)
+              if (typeof sceneState !== 'undefined') sceneState.selected = true;
+              if (window.__renderSolidsList) window.__renderSolidsList();
+            });
+          });
+        };
+
+        // ── History data & rendering ──────────────────────────────
+        window.cadHistory = window.cadHistory || { entries: [], max: 200, _seq: 0 };
+        const hist = window.cadHistory;
 
         window.cadHistoryAdd = function(action, label, payload) {
           const e = { id: 'h-' + (++hist._seq), action,
@@ -170,25 +279,6 @@ pub fn outliner_js() -> &'static str {
         };
         window.cadHistoryClear = function() { hist.entries.length = 0; renderHistory(); };
 
-        // ── Panel open / close ────────────────────────────────────
-        function openPanel()   { root.classList.remove('collapsed');
-                                 const btn = document.getElementById('ol-history-toggle');
-                                 if (btn) btn.classList.add('active'); }
-        function closePanel()  { root.classList.add('collapsed');
-                                 const btn = document.getElementById('ol-history-toggle');
-                                 if (btn) btn.classList.remove('active'); }
-        function togglePanel() { root.classList.contains('collapsed') ? openPanel() : closePanel(); }
-
-        const tabBtn = document.getElementById('ol-history-toggle');
-        if (tabBtn) tabBtn.addEventListener('click', togglePanel);
-
-        // Keyboard shortcut H: toggle History panel
-        document.addEventListener('keydown', e => {
-          if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-          if (e.key === 'h' || e.key === 'H') togglePanel();
-        });
-
-        // ── Render history list ───────────────────────────────────
         const histEl  = document.getElementById('outliner-history-list');
         const histCnt = document.getElementById('history-count');
         function renderHistory() {
@@ -250,6 +340,7 @@ pub fn outliner_js() -> &'static str {
 
         // ── Initial render ────────────────────────────────────────
         renderHistory();
+        window.__renderSolidsList();
         window.cadHistoryAdd('session.start', 'Session started');
       }
 

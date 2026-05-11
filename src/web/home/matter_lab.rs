@@ -11,6 +11,7 @@ pub fn matter_lab_section() -> String {
     let nodes_panel = crate::web::home::matter_panels::nodes_panel();
     let history_panel = crate::web::home::matter_panels::history_panel();
     let ai_panel = crate::web::home::matter_panels::ai_panel();
+    let solid_inspector_panel = crate::web::home::matter_panels::solid_inspector_panel();
     let sketch_panel = crate::web::home::matter_panels::sketch_panel();
     let outliner_panel = crate::web::home::matter_outliner::outliner_panel();
 
@@ -65,10 +66,12 @@ pub fn matter_lab_section() -> String {
 
         <!-- Sketch Tools (visible only in Sketch Mode) -->
         <div class="sketch-tools-switcher" id="sketch-tools-switcher">
+          <button class="sketch-tool-btn"        data-tool="select"    title="Select (V)">↖ Select</button>
           <button class="sketch-tool-btn active" data-tool="line"      title="Line (L)">╱ Line</button>
           <button class="sketch-tool-btn"        data-tool="rectangle" title="Rect (R)">▭ Rect</button>
           <button class="sketch-tool-btn"        data-tool="circle"    title="Circle (O)">○ Circle</button>
           <button class="sketch-tool-btn"        data-tool="dimension" title="Dimension (D)">↔ Dim</button>
+          <button class="sketch-tool-btn"        data-tool="extrude"   id="sketch-tool-extrude" title="Extrude closed profile (E)" disabled style="opacity:0.5;">⬚ Extrude</button>
         </div>
 
         <div id="sketch-info-overlay" style="display:none; position: absolute; left: 24px; bottom: 48px; z-index: 10; font-family: monospace; font-size: 11px; color: #64748b; line-height: 1.5; pointer-events: none;">
@@ -103,6 +106,9 @@ pub fn matter_lab_section() -> String {
         <!-- Sketch Inspector Panel -->
         {}
 
+        <!-- Solid Inspector Panel -->
+        {}
+
         <!-- Left Outliner + Tool Shelf -->
         {}
 
@@ -125,6 +131,6 @@ pub fn matter_lab_section() -> String {
     </main>
   </section>
 "##,
-        properties_panel, shape_panel, material_panel, nodes_panel, history_panel, ai_panel, profile_panel, sketch_panel, outliner_panel
+        properties_panel, shape_panel, material_panel, nodes_panel, history_panel, ai_panel, profile_panel, sketch_panel, solid_inspector_panel, outliner_panel
     )
 }

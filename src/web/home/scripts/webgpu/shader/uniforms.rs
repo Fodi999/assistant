@@ -18,6 +18,7 @@ struct Uniforms {
   u12: vec4f,  // objectDimX, objectDimY, objectDimZ, _
   u13: vec4f,  // bevel, segments, roundness, _
   u14: vec4f,  // gridVisible, activePlane (0=XZ, 1=XY, 2=YZ), _, _
+  u15: vec4f,  // selectedFaceId, hoveredFaceId, _, _ (CAD face highlight)
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 
