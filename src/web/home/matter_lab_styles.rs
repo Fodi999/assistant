@@ -925,6 +925,136 @@ pub fn matter_status_styles() -> &'static str {
       transform: translateY(-1px);
     }
 
+    /* ─── Sketch I/O panel (JSON export/import contract) ─── */
+    #sketch-io-panel {
+      position: absolute;
+      right: 16px;
+      bottom: 56px;
+      width: 360px;
+      max-height: 46vh;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 12px 10px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.88);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(148, 163, 184, 0.18);
+      backdrop-filter: blur(10px);
+      font: 12px "JetBrains Mono", system-ui, monospace;
+      color: #e2e8f0;
+      z-index: 5;
+      transition: max-height 180ms ease, padding 180ms ease;
+    }
+    #sketch-io-panel.collapsed {
+      max-height: 38px;
+      overflow: hidden;
+      padding-bottom: 6px;
+    }
+    #sketch-io-panel.collapsed .sio-tabs,
+    #sketch-io-panel.collapsed .sio-preview,
+    #sketch-io-panel.collapsed .sio-meta,
+    #sketch-io-panel.collapsed .sio-actions { display: none; }
+    #sketch-io-panel .sio-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    #sketch-io-panel .sio-title {
+      color: #67e8f9;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+    #sketch-io-panel .sio-toggle {
+      background: transparent;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      color: #cbd5e1;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font: inherit;
+      cursor: pointer;
+    }
+    #sketch-io-panel .sio-toggle:hover { border-color: rgba(56, 189, 248, 0.55); color: #f1f5f9; }
+    #sketch-io-panel .sio-tabs {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    #sketch-io-panel .sio-tab {
+      flex: 1;
+      padding: 4px 8px;
+      background: rgba(30, 41, 59, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 6px;
+      color: #94a3b8;
+      font: inherit;
+      cursor: pointer;
+    }
+    #sketch-io-panel .sio-tab.active {
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.55);
+      background: rgba(251, 191, 36, 0.10);
+    }
+    #sketch-io-panel .sio-tab:hover:not(.active) { color: #e2e8f0; border-color: rgba(148, 163, 184, 0.4); }
+    #sketch-io-panel .sio-btn-mini {
+      width: 28px;
+      padding: 4px 0;
+      background: rgba(30, 41, 59, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 6px;
+      color: #cbd5e1;
+      font: inherit;
+      cursor: pointer;
+    }
+    #sketch-io-panel .sio-btn-mini:hover { color: #67e8f9; border-color: rgba(56, 189, 248, 0.55); }
+    #sketch-io-panel .sio-preview {
+      flex: 1 1 auto;
+      min-height: 120px;
+      max-height: 260px;
+      overflow: auto;
+      margin: 0;
+      padding: 8px 10px;
+      background: rgba(2, 6, 23, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 8px;
+      color: #c7d2fe;
+      font-size: 11px;
+      line-height: 1.45;
+      white-space: pre;
+      tab-size: 2;
+    }
+    #sketch-io-panel .sio-preview::-webkit-scrollbar { width: 8px; height: 8px; }
+    #sketch-io-panel .sio-preview::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); border-radius: 4px; }
+    #sketch-io-panel .sio-meta {
+      color: #94a3b8;
+      font-size: 10px;
+      letter-spacing: 0.03em;
+      text-align: right;
+    }
+    #sketch-io-panel .sio-actions {
+      display: flex;
+      gap: 6px;
+    }
+    #sketch-io-panel .sio-btn {
+      flex: 1;
+      padding: 6px 10px;
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.85));
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 8px;
+      color: #e2e8f0;
+      font: inherit;
+      cursor: pointer;
+      transition: transform 100ms ease, border-color 100ms ease, color 100ms ease;
+    }
+    #sketch-io-panel .sio-btn:hover {
+      color: #67e8f9;
+      border-color: rgba(56, 189, 248, 0.65);
+      transform: translateY(-1px);
+    }
+    #sketch-io-panel .sio-btn:active { transform: translateY(0); }
+
     /* ─── end ────────────────────────────── */
 "##
 }

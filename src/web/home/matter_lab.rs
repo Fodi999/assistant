@@ -125,6 +125,27 @@ pub fn matter_lab_section() -> String {
           <div class="si-hint" id="si-hint">Click to pick · Shift+click to add</div>
         </aside>
 
+        <!-- Sketch I/O panel (bottom-right): export/import JSON contract -->
+        <aside id="sketch-io-panel" class="glass-dark">
+          <header class="sio-header">
+            <span class="sio-title">SketchGraph JSON</span>
+            <button id="sio-toggle" class="sio-toggle" title="Collapse / expand panel">▾ JSON</button>
+          </header>
+          <div class="sio-tabs">
+            <button class="sio-tab active" data-mode="full"    title="Full sketch (with world coords + profiles)">Full</button>
+            <button class="sio-tab"        data-mode="payload" title="Backend-compatible payload (slim)">Payload</button>
+            <button id="sio-refresh" class="sio-btn-mini" title="Refresh preview">↻</button>
+          </div>
+          <pre id="sio-preview" class="sio-preview">{}</pre>
+          <div id="sio-meta" class="sio-meta">—</div>
+          <div class="sio-actions">
+            <button id="sio-copy"     class="sio-btn" title="Copy JSON to clipboard">⧉ Copy</button>
+            <button id="sio-download" class="sio-btn" title="Download JSON file">⬇ Download</button>
+            <button id="sio-load"     class="sio-btn" title="Load JSON file from disk">⬆ Load</button>
+            <input  id="sio-file-input" type="file" accept="application/json,.json" style="display:none;">
+          </div>
+        </aside>
+
         <!-- Status bar -->
         <footer class="status-bar">
           <div>

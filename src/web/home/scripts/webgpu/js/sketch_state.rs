@@ -493,12 +493,171 @@ pub const JS: &str = r##"
       };
 
       // ── Serialisation ──────────────────────────────────────────
+      // SketchGraph v1 — canonical front-end ↔ Rust backend contract.
+      window.__SKETCH_SCHEMA_VERSION = 1;
+
       window.__sketchToJSON = function() {
         return {
+          schema:       'sketch_graph',
+          version:      window.__SKETCH_SCHEMA_VERSION,
+          workingPlane: sketchState.workingPlane,
+          gridSize:     sketchState.gridSize,
           points: sketchState.points.map(p => ({ id:p.id, gx:p.gx, gy:p.gy, gz:p.gz, x:p.x, y:p.y, z:p.z })),
           edges:  sketchState.edges.map(e => ({ id:e.id, a:e.a, b:e.b })),
-          constraints: sketchState.constraints.map(c => ({ ...c })),
+          constraints: sketchState.constraints.map(c => ({
+            id: c.id, type: c.type, targetType: c.targetType, targetId: c.targetId, value: c.value
+          })),
+          profiles: (sketchState.profiles || []).map(pf => ({
+            id: pf.id, pointIds: [...pf.pointIds], edgeIds: [...pf.edgeIds],
+            plane: pf.plane, closed: !!pf.closed,
+          })),
+        };
+      };
+
+      // Backend-compatible payload — slim shape, no derived fields.
+      // Profiles & validation are omitted (they are recomputable downstream).
+      window.__sketchExportPayload = function() {
+        return {
+          schema:       'sketch_graph',
+          version:      window.__SKETCH_SCHEMA_VERSION,
           workingPlane: sketchState.workingPlane,
+          gridSize:     sketchState.gridSize,
+          points: sketchState.points.map(p => ({ id:p.id, gx:p.gx, gy:p.gy, gz:p.gz })),
+          edges:  sketchState.edges.map(e => ({ id:e.id, a:e.a, b:e.b })),
+          constraints: sketchState.constraints.map(c => ({
+            type: c.type, targetType: c.targetType, targetId: c.targetId, value: c.value
+          })),
+        };
+      };
+
+      // ── Validation ─────────────────────────────────────────────
+      // Returns { ok:true } on success, or { ok:false, error:string }.
+      window.__validateSketchJSON = function(obj) {
+        if (!obj || typeof obj !== 'object')                 return { ok:false, error:'Not a JSON object' };
+        if (obj.schema && obj.schema !== 'sketch_graph')     return { ok:false, error:'Wrong schema tag: ' + obj.schema };
+        if (!Array.isArray(obj.points))                      return { ok:false, error:'Missing "points" array' };
+        if (!Array.isArray(obj.edges))                       return { ok:false, error:'Missing "edges" array' };
+        const constraints = obj.constraints || [];
+        if (!Array.isArray(constraints))                     return { ok:false, error:'"constraints" must be an array' };
+        const plane = obj.workingPlane || 'XZ';
+        if (!['XZ','XY','YZ'].includes(plane))               return { ok:false, error:'Invalid workingPlane: ' + plane };
+        const gridSize = (obj.gridSize == null) ? 1.0 : obj.gridSize;
+        if (!isFinite(gridSize) || gridSize <= 0)            return { ok:false, error:'gridSize must be a positive number' };
+
+        // Points: id uniqueness, fields present, grid uniqueness.
+        const ids = new Set();
+        const gridKeys = new Set();
+        for (let i = 0; i < obj.points.length; i++) {
+          const p = obj.points[i];
+          if (!p || typeof p.id !== 'string')                return { ok:false, error:'points[' + i + '].id missing' };
+          if (ids.has(p.id))                                 return { ok:false, error:'Duplicate point id: ' + p.id };
+          ids.add(p.id);
+          for (const k of ['gx','gy','gz']) {
+            if (!Number.isInteger(p[k]))                     return { ok:false, error:'points[' + i + '].' + k + ' must be integer' };
+          }
+          const gk = p.gx + ',' + p.gy + ',' + p.gz;
+          if (gridKeys.has(gk))                              return { ok:false, error:'Duplicate point grid coords: (' + gk + ')' };
+          gridKeys.add(gk);
+        }
+
+        // Edges: id uniqueness, endpoints exist, no self-loops.
+        const edgeIds = new Set();
+        for (let i = 0; i < obj.edges.length; i++) {
+          const e = obj.edges[i];
+          if (!e || typeof e.id !== 'string')                return { ok:false, error:'edges[' + i + '].id missing' };
+          if (edgeIds.has(e.id))                             return { ok:false, error:'Duplicate edge id: ' + e.id };
+          edgeIds.add(e.id);
+          if (!ids.has(e.a))                                 return { ok:false, error:'Edge ' + e.id + ' references unknown point a=' + e.a };
+          if (!ids.has(e.b))                                 return { ok:false, error:'Edge ' + e.id + ' references unknown point b=' + e.b };
+          if (e.a === e.b)                                   return { ok:false, error:'Edge ' + e.id + ' is a self-loop' };
+        }
+
+        // Constraints: types & targets valid.
+        const validC = new Set(['fixed_point','edge_length','horizontal','vertical']);
+        for (let i = 0; i < constraints.length; i++) {
+          const c = constraints[i];
+          if (!c || !validC.has(c.type))                     return { ok:false, error:'constraints[' + i + '] invalid type: ' + (c && c.type) };
+          if (c.type === 'fixed_point') {
+            if (c.targetType !== 'point' || !ids.has(c.targetId))
+              return { ok:false, error:'fixed_point on unknown point: ' + c.targetId };
+          } else {
+            if (c.targetType !== 'edge' || !edgeIds.has(c.targetId))
+              return { ok:false, error:c.type + ' on unknown edge: ' + c.targetId };
+            if (c.type === 'edge_length' && (!isFinite(c.value) || c.value <= 0))
+              return { ok:false, error:'edge_length value must be positive: ' + c.value };
+          }
+        }
+        return { ok:true };
+      };
+
+      // Import a SketchGraph object. Pushes history snapshot first.
+      // Returns { ok:true, stats:{points,edges,constraints} } or { ok:false, error }.
+      window.__sketchFromJSON = function(obj) {
+        const v = window.__validateSketchJSON(obj);
+        if (!v.ok) return v;
+
+        // Snapshot current state for undo.
+        window.__pushHistory();
+
+        const g = (obj.gridSize == null) ? 1.0 : obj.gridSize;
+        sketchState.gridSize     = g;
+        sketchState.workingPlane = obj.workingPlane || 'XZ';
+        sketchState.plane        = sketchState.workingPlane;
+
+        // Rebuild points — derive world coords from grid + gridSize.
+        sketchState.points = obj.points.map(p => ({
+          id: p.id,
+          gx: p.gx, gy: p.gy, gz: p.gz,
+          x: (typeof p.x === 'number') ? p.x : p.gx * g,
+          y: (typeof p.y === 'number') ? p.y : p.gy * g,
+          z: (typeof p.z === 'number') ? p.z : p.gz * g,
+        }));
+        sketchState.edges       = obj.edges.map(e => ({ id: e.id, a: e.a, b: e.b }));
+        sketchState.constraints = (obj.constraints || []).map(c => ({
+          id: c.id || ('c_imp_' + (++__constraintCounter)),
+          type: c.type, targetType: c.targetType, targetId: c.targetId,
+          value: (c.value == null) ? null : c.value,
+        }));
+
+        // Re-seed id counters past the highest imported numeric suffix.
+        const bump = (prefix, current) => {
+          let max = current;
+          const re = new RegExp('^' + prefix + '_(\\d+)$');
+          const scan = (arr) => arr.forEach(it => {
+            const m = re.exec(it.id || '');
+            if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+          });
+          scan(sketchState.points.filter(x => prefix === 'p'));
+          scan(sketchState.edges.filter(x => prefix === 'e'));
+          scan(sketchState.constraints.filter(x => prefix === 'c'));
+          return max;
+        };
+        __pointCounter      = bump('p', __pointCounter);
+        __edgeCounter       = bump('e', __edgeCounter);
+        __constraintCounter = bump('c', __constraintCounter);
+
+        // Reset transient state.
+        sketchState.selectedPointIds = new Set();
+        sketchState.selectedEdgeIds  = new Set();
+        sketchState.hoverPointId = null;
+        sketchState.hoverEdgeId  = null;
+        sketchState.hoverWorld   = null;
+        sketchState.line.startPointId = null;
+        sketchState.line.previewPoint = null;
+        sketchState.grab.active = false;
+
+        // Recompute derived sets.
+        window.__notifySketchChanged();
+        window.__setStatusMessage('Imported ' + sketchState.points.length + ' pts · '
+          + sketchState.edges.length + ' edges · '
+          + sketchState.constraints.length + ' constraints');
+        return {
+          ok: true,
+          stats: {
+            points: sketchState.points.length,
+            edges:  sketchState.edges.length,
+            constraints: sketchState.constraints.length,
+          },
         };
       };
 "##;

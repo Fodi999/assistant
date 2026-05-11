@@ -188,6 +188,7 @@ pub const JS: &str = r##"
         }
         if (window.__setCursorForTool) window.__setCursorForTool();
         if (window.__notifySketchChanged) window.__notifySketchChanged();
+        if (window.__bindSketchIO) window.__bindSketchIO();
         window.__updateSketchInspector();
         setInterval(() => {
           const fps = (globalThis.__matterPerf && globalThis.__matterPerf.fps) || 0;

@@ -17,6 +17,7 @@ mod sketch_rect;
 mod sketch_circle;
 mod sketch_dim;
 mod sketch_tools;
+mod sketch_io;
 mod extrude;
 
 /// Assembles the complete JS source, embedding both WGSL shaders.
@@ -30,6 +31,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + sketch_circle::JS.len()
             + sketch_dim::JS.len()
             + sketch_tools::JS.len()
+            + sketch_io::JS.len()
             + matter_state::JS.len()
             + buffers::JS.len()
             + shader.len()
@@ -58,6 +60,8 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch_dim::JS);
     // 7. Sketch tools dispatcher
     out.push_str(sketch_tools::JS);
+    // 8. Sketch I/O — JSON export / import / backend payload preview
+    out.push_str(sketch_io::JS);
     out.push_str(matter_state::JS);
     out.push_str(buffers::JS);
     // ── WGSL shaders ────────────────────────────────────────────
