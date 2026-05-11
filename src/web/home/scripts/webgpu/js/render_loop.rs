@@ -331,23 +331,31 @@ pub const JS: &str = r##"
             }
           }
 
-          // ── Point markers ──
-          for (let i = 0; i < pts.length; i++) {
-            const p = pts[i];
-            const s = w2s(p.x,p.y,p.z);
-            if (!s) continue;
-            const isFirst = (i === 0 && pts.length > 2 && !sketchState.closed);
-            const r = isFirst ? 6 : 4;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, r, 0, Math.PI*2);
-            ctx.fillStyle = isFirst ? '#10b981' : '#38bdf8';
-            ctx.fill();
-            ctx.strokeStyle = '#0f172a';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-          }
-
-          // ── Rubber-band preview to hover ──
+            // ── Point markers ──
+            for (let i = 0; i < pts.length; i++) {
+              const p = pts[i];
+              const s = w2s(p.x,p.y,p.z);
+              if (!s) continue;
+              const isFirst = (i === 0 && pts.length > 2 && !sketchState.closed);
+              const isSelectMode = (tool === 'select');
+              const isDragged = (sketchState.draggedPtIndex === i);
+              const r = (isFirst || isDragged || isSelectMode) ? 6 : 4;
+              ctx.beginPath();
+              ctx.arc(s.x, s.y, r, 0, Math.PI*2);
+              
+              if (isDragged) {
+                ctx.fillStyle = '#dc2626'; // Pure red for dragged
+              } else if (isSelectMode) {
+                ctx.fillStyle = '#ef4444'; // Bright red for all points when Select/Point tool is active
+              } else {
+                ctx.fillStyle = isFirst ? '#10b981' : '#38bdf8';
+              }
+              
+              ctx.fill();
+              ctx.strokeStyle = '#0f172a';
+              ctx.lineWidth = (isSelectMode || isDragged) ? 2.0 : 1.5;
+              ctx.stroke();
+            }          // ── Rubber-band preview to hover ──
           if (hover && !sketchState.closed && mouse.active) {
             const sh = w2s(hover.x, hover.y, hover.z);
             if (sh) {

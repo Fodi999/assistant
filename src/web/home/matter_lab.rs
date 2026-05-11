@@ -66,7 +66,7 @@ pub fn matter_lab_section() -> String {
 
         <!-- Sketch Tools (visible only in Sketch Mode) -->
         <div class="sketch-tools-switcher" id="sketch-tools-switcher">
-          <button class="sketch-tool-btn"        data-tool="select"    title="Select (V)">↖ Select</button>
+          <button class="sketch-tool-btn"        data-tool="select"    title="Edit Points (V)">↖ Точки</button>
           <button class="sketch-tool-btn active" data-tool="line"      title="Line (L)">╱ Line</button>
           <button class="sketch-tool-btn"        data-tool="rectangle" title="Rect (R)">▭ Rect</button>
           <button class="sketch-tool-btn"        data-tool="circle"    title="Circle (O)">○ Circle</button>

@@ -1,209 +1,92 @@
-// ── JS: application state — particles, camera, shape, formation, input ───────────
-// Domain: Application state — all runtime state objects and pointer event wiring.
+// ── JS: Application state — particles, camera, scene, formation, input dispatcher ──
+// Domain: Application state — runtime state objects and pointer/keyboard event wiring.
+// Sketch logic is delegated to: sketch_state.rs · sketch_pick.rs · sketch_tools.rs
 
 pub const JS: &str = r##"
-      // Each particle = 8 floats = 32 bytes.
-      // Cap MAX_PARTICLES at whatever the GPU storage-buffer limit allows.
+      // ── Particle buffer constants ──────────────────────────────
       const PARTICLE_STRIDE = 32;
       const HARD_CAP        = 5_000_000;
       const deviceCap       = Math.floor(device.limits.maxStorageBufferBindingSize / PARTICLE_STRIDE);
       const MAX_PARTICLES   = Math.min(HARD_CAP, deviceCap);
-      // Start with 1 particle (the "default cube"), max up to 1M
-      let   NUM_SPHERES     = 1;
-      const CLOUD_VOLUME    = (4 / 3) * Math.PI * Math.pow(5.5, 3);
+
+      let   NUM_SPHERES  = 1;
+      const CLOUD_VOLUME = (4 / 3) * Math.PI * Math.pow(5.5, 3);
       log(`✓ MAX_PARTICLES = ${(MAX_PARTICLES/1e6).toFixed(2)}M  (buffer ${(MAX_PARTICLES*32/1048576).toFixed(0)} MB)`, '#a78bfa');
 
       function buildParticles(count) {
         const data = new Float32Array(count * 8);
         for (let i = 0; i < count; i++) {
           const b = i * 8;
-          data[b + 0] = 0.0;
-          data[b + 1] = 0.0;
-          data[b + 2] = 0.0;
-          data[b + 3] = 0.5; // radius is half cell
-          // Grey color for the single square/cube
-          data[b + 4] = 0.8;
-          data[b + 5] = 0.8;
-          data[b + 6] = 0.8;
-          data[b + 7] = 0.0;
+          data[b+0] = 0.0; data[b+1] = 0.0; data[b+2] = 0.0;
+          data[b+3] = 0.5;
+          data[b+4] = 0.8; data[b+5] = 0.8; data[b+6] = 0.8;
+          data[b+7] = 0.0;
         }
         return data;
       }
       let sphereData = buildParticles(NUM_SPHERES);
 
-      // ════════════════════════════════════════════════════════════
-      // СИСТЕМА КООРДИНАТ (Y-вверх, правая рука)
-      //
-      //   Y  ↑         Центр мира (0,0,0) — пересечение красной X
-      //      │          и синей Z осей на полу.
-      //      │   Z ←   Пол — плоскость Y = 0.
-      //      │ ↗        Объект стоит на полу: его нижняя грань = Y 0.
-      //      └──── X →
-      //
-      // Позиция материи (shader: particles_vert.rs):
-      //   worldPos = localPos * FORM_SCALE * objScale + objPos
-      //   objPos.y = FORM_SCALE * objScale  ← нижняя грань на Y=0
-      // ════════════════════════════════════════════════════════════
-
-      // Полуразмеры formation (= paramB в render_loop.rs)
       const FORM_SCALE    = { cube: 1.8, cloud: 1.5, wall: 1.6 };
-      // Масштаб объекта для каждой формации
       const FORM_OBJSCALE = { cube: 0.18, cloud: 0.30, wall: 0.22 };
-      // Y_centre = половина высоты в world units → нижняя грань на Y=0
-      function halfHeight(mode) {
-        return FORM_SCALE[mode] * FORM_OBJSCALE[mode];
-      }
+      function halfHeight(mode) { return FORM_SCALE[mode] * FORM_OBJSCALE[mode]; }
 
-      // ── Scene state (object placement) ─────────────────────────
-      // X = лево/право,  Y = вверх/вниз,  Z = вперёд/назад
+      // ── Scene state ────────────────────────────────────────────
       const sceneState = {
         objectPosition: [0.0, 0.0, 0.0],
         objectRotation: [0.0, 0.0, 0.0],
-        objectScale:    [1.0, 1.0, 1.0], // Массив scale X Y Z
-        baseMeshDim:    [2.0, 2.0, 2.0], // Габариты формы в метрах
+        objectScale:    [1.0, 1.0, 1.0],
+        baseMeshDim:    [2.0, 2.0, 2.0],
         objectBevel:    0.040,
         objectProfile:  1.0,
         objectRoundness: 0.0,
-        selected:       false, // Отслеживаем выделен ли объект
-        selectionMode:  0, // 0=Body, 1=Face, 2=Edge, 3=Vert, 4=Sketch
-        engineMode:     'CAD', // 'PARTICLES' | 'CAD'
+        selected:       false,
+        selectionMode:  0,
+        engineMode:     'CAD',
       };
 
-      const sketchState = {
-        points: [],   // { x, y, z }
-        closed: false,
-        plane: 'XZ',  // 'XZ' (y=0), 'XY' (z=0), 'YZ' (x=0)
-        showGrid: true,
-        // ── State machine ─────────────────────────────────────────
-        //  'drawing'         → can add points/lines, Extrude disabled
-        //  'closed_profile'  → profile locked, Extrude enabled
-        //  'extrude_preview' → preview shown, NO new points allowed
-        //  'solid_created'   → sketch is ghost/reference (read-only)
-        phase: 'drawing',
-        // Tool state: for Rect/Circle 2-click workflow
-        pendingTool: null,   // 'rectangle' | 'circle' | 'dimension' | null
-        pendingStart: null,  // {x,y,z} first corner / center
-        dimensions: [],      // committed dimension annotations
-        // Snap visualization (filled by render_loop)
-        hover: null,         // {x,y,z, snapType: 'grid'|'point'|'origin'|'first'}
-      };
-      // Expose to window so global functions (e.g. __setSketchTool) can access it
-      window.sketchState = sketchState;
-
-      // ── Phase transition helper (central place for transitions) ──
-      window.__setSketchPhase = function(next, reason) {
-        const prev = sketchState.phase;
-        if (prev === next) return;
-        sketchState.phase = next;
-        log(`◇ sketch phase: ${prev} → ${next}${reason?' ('+reason+')':''}`, '#a78bfa');
-        if (window.__updateSketchUI) window.__updateSketchUI();
-      };
-
-      // Extrude Preview state (frontend only, no backend yet)
-      // Activated by Sketch Inspector "Preview Extrude" button
-      window.extrudePreview = {
-        active:    false,
-        profileId: null,
-        plane:     'XZ',
-        direction: [0, 1, 0],  // unit vector
-        distance:  1.0,
-        points:    [],         // snapshot of base-profile points
-      };
-
-      let isPanning = false;
-
-      // --- UI Settings Sync ---
-      const planeSel = document.getElementById('sketch-plane-select');
-      if (planeSel) {
-        planeSel.addEventListener('change', e => {
-          if (window.__setSketchPlane) window.__setSketchPlane(e.target.value);
-          else sketchState.plane = e.target.value;
-        });
-      }
-      const gridSnapSel = document.getElementById('sketch-grid-snap-select');
-      if (gridSnapSel) {
-        gridSnapSel.addEventListener('change', e => {
-          window.sketchGridSnap = parseFloat(e.target.value);
-          // refresh status overlay
-          const elG = document.getElementById('sketch-info-grid');
-          if (elG) {
-            const snap = window.sketchGridSnap;
-            elG.textContent = snap >= 1 ? snap+' m' : (snap*100).toFixed(snap<0.01?1:0)+' cm';
-          }
-        });
-      }
-      const gridToggle = document.getElementById('sketch-grid-toggle');
-      if (gridToggle) {
-        gridToggle.addEventListener('change', e => { sketchState.showGrid = e.target.checked; });
-      }
-
-      // Make snapStep configurable globally
-      window.sketchGridSnap = 0.1;
-      function snapToGrid(value) {
-        const s = window.sketchGridSnap;
-        if (!s || s <= 0) return value; // snap disabled
-        return Math.round(value / s) * s;
-      }
-
-      // Per-formation presets — нижняя грань прилипает к полу
-      const formationDefaults = {
-        cube:  { objectPosition:[0.0, 0.0,  0.0], objectScale: [FORM_OBJSCALE.cube, FORM_OBJSCALE.cube, FORM_OBJSCALE.cube],  dist: 6.4, target:[0.0, 1.0,  0.0] },
-        cloud: { objectPosition:[0.0, 0.0, 0.0], objectScale: [FORM_OBJSCALE.cloud, FORM_OBJSCALE.cloud, FORM_OBJSCALE.cloud], dist: 6.4, target:[0.0, 1.0, 0.0] },
-        wall:  { objectPosition:[0.0, 0.0,  0.0], objectScale: [FORM_OBJSCALE.wall, FORM_OBJSCALE.wall, FORM_OBJSCALE.wall],  dist: 6.4, target:[0.0, 1.0,  0.0] },
-      };
-
-      // ── 4. Camera state ─────────────────────────────────────────
+      // ── Camera ─────────────────────────────────────────────────
       const cam = {
-        yaw:    Math.PI / 4,     // ~45 градусов вправо, как дефолтная камера Blender
-        pitch:  Math.PI / 6,     // ~30 градусов вниз 
-        dist:   6.4,             // Адаптированная дефолтная дистанция к 2.0m объекту
+        yaw:    Math.PI / 4,
+        pitch:  Math.PI / 6,
+        dist:   6.4,
         target: [0.0, 1.0, 0.0],
         autoRotate: false,
         ortho: false,
       };
 
       window.setCameraPreset = function(preset) {
-        switch(preset) {
-          case 'front': cam.yaw = 0.0; cam.pitch = 0.0; break;
-          case 'right': cam.yaw = Math.PI * 0.5; cam.pitch = 0.0; break;
-          case 'top':   cam.yaw = 0.0; cam.pitch = -Math.PI * 0.5 + 0.001; break;
-          case 'iso':   cam.yaw = 0.785; cam.pitch = -0.615; break;
+        switch (preset) {
+          case 'front': cam.yaw = 0.0;         cam.pitch = 0.0;                  break;
+          case 'right': cam.yaw = Math.PI*0.5; cam.pitch = 0.0;                  break;
+          case 'top':   cam.yaw = 0.0;         cam.pitch = -Math.PI*0.5 + 0.001; break;
+          case 'iso':   cam.yaw = 0.785;       cam.pitch = -0.615;               break;
         }
         log(`◇ camera preset: ${preset}`, '#67e8f9');
       };
-      
+
       window.setCameraProjection = function(mode) {
         cam.ortho = (mode === 'ortho');
         log(`◇ projection: ${mode}`, '#67e8f9');
       };
-      // shape parameter: 0 = super-cube · 0.5 = octahedron (triangle silhouette) · 1 = super-sphere
-      const shape = { roundness: 0.0 }; // Force grid square
-      // Piecewise map slider [0..1] → superquadric exponent n  (|x|ⁿ+|y|ⁿ+|z|ⁿ=1):
-      //   r=0.0 → n=22  cube       (sharp planar faces)
-      //   r=0.5 → n=1   octahedron (diamond: triangular silhouette, exact L1 SDF)
-      //   r=1.0 → n=2   sphere     (perfectly round)
-      // Lower half r∈[0,0.5] sweeps cube → octahedron (n: 22 → 1).
-      // Upper half r∈[0.5,1] sweeps octahedron → sphere (n: 1 → 2).
-      function shapeExponent(r) {
-        return 22.0; // always cube
-      }
+
+      const shape = { roundness: 0.0 };
+      function shapeExponent(r) { return 22.0; }
 
       function updateCameraForCount(count) {
-        if (count < 10) {
-          cam.dist = 6.4;
-        } else if (count < 1000) {
-          cam.dist = 8.0;
-        } else {
-          cam.dist = formationDefaults['cube'].dist;
-        }
+        cam.dist = count < 10 ? 6.4 : count < 1000 ? 8.0 : formationDefaults['cube'].dist;
       }
 
-      // ── Formation state ────────────────────────────────────────
+      // ── Formation ──────────────────────────────────────────────
+      const formationDefaults = {
+        cube:  { objectPosition:[0.0,0.0,0.0], objectScale:[FORM_OBJSCALE.cube,  FORM_OBJSCALE.cube,  FORM_OBJSCALE.cube],  dist:6.4, target:[0.0,1.0,0.0] },
+        cloud: { objectPosition:[0.0,0.0,0.0], objectScale:[FORM_OBJSCALE.cloud, FORM_OBJSCALE.cloud, FORM_OBJSCALE.cloud], dist:6.4, target:[0.0,1.0,0.0] },
+        wall:  { objectPosition:[0.0,0.0,0.0], objectScale:[FORM_OBJSCALE.wall,  FORM_OBJSCALE.wall,  FORM_OBJSCALE.wall],  dist:6.4, target:[0.0,1.0,0.0] },
+      };
       const formation = { mode: 'cube', target: 1.0, mix: 1.0 };
+
       function setFormation(mode) {
         formation.mode   = mode;
         formation.target = 1.0;
-        // re-frame scene per formation
         const d = formationDefaults[mode] || formationDefaults.cube;
         if (d) {
           sceneState.objectPosition = d.objectPosition.slice();
@@ -214,433 +97,81 @@ pub const JS: &str = r##"
         log(`◇ formation = ${mode}`, '#f0abfc');
       }
 
-      // ── Cell-SDF (kernel::particle_shape port) ────────────────
-      // on        : when true, cube formation uses per-cell SDF instead of
-      //             billboard imposters → flush seams + rounded outer hull.
-      // radius    : 0..0.5 corner radius (cell-local units).
-      // colorMode : 0 normal · 1 normals-as-RGB · 2 colour-by-SlotKind.
-      // hideLow   : true → cull cells with ≤ 1 exposed face (show only edges/corners).
-      const cellSdf = { on: true, radius: 0.05, colorMode: 0, hideLow: false };
-      const floorGrid = { scale: 1.0 }; // 1.0 = m, 100.0 = cm, 1000.0 = mm
+      // ── Cell-SDF / Floor grid ──────────────────────────────────
+      const cellSdf   = { on: true, radius: 0.05, colorMode: 0, hideLow: false };
+      const floorGrid = { scale: 1.0 };
 
-      function toggleCellSdf() {
-        cellSdf.on = !cellSdf.on;
-        log(`◇ cell-sdf = ${cellSdf.on ? 'ON' : 'off'}`, '#67e8f9');
-      }
-      function cycleColorMode() {
-        cellSdf.colorMode = (cellSdf.colorMode + 1) % 3;
-        const names = ['normal', 'normals-RGB', 'mask-color'];
-        log(`◇ debug color = ${names[cellSdf.colorMode]}`, '#fbbf24');
-      }
+      function toggleCellSdf()  { cellSdf.on = !cellSdf.on; log(`◇ cell-sdf = ${cellSdf.on ? 'ON' : 'off'}`, '#67e8f9'); }
+      function cycleColorMode() { cellSdf.colorMode = (cellSdf.colorMode+1)%3; log(`◇ debug color = ${['normal','normals-RGB','mask-color'][cellSdf.colorMode]}`, '#fbbf24'); }
 
       const mouse = { ndcX: 999, ndcY: 999, active: false };
 
-      // ─────────────────────────────────────────────────────────
-      // Sketch plane raycaster — shared by pointer handlers & overlay
-      // Returns {x,y,z, snapType} or null (no intersection).
-      // ─────────────────────────────────────────────────────────
-      window.__raycastSketchPlane = function(ndcX, ndcY, opts) {
-        opts = opts || {};
-        const asp = canvas.width / canvas.height;
-        const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-        const cy = Math.cos(cam.yaw),   sy = Math.sin(cam.yaw);
-        const fwdX = -sy * cp, fwdY = -sp, fwdZ = cy * cp;
-        const roX = cam.target[0] - fwdX * cam.dist;
-        const roY = cam.target[1] - fwdY * cam.dist;
-        const roZ = cam.target[2] - fwdZ * cam.dist;
-        let rX = fwdY*0 - fwdZ*1, rY = fwdZ*0 - fwdX*0, rZ = fwdX*1 - fwdY*0;
-        const rL = Math.hypot(rX,rY,rZ) || 1; rX/=rL; rY/=rL; rZ/=rL;
-        const uX = rY*fwdZ - rZ*fwdY, uY = rZ*fwdX - rX*fwdZ, uZ = rX*fwdY - rY*fwdX;
-        let oX = roX, oY = roY, oZ = roZ, dX, dY, dZ;
-        if (cam.ortho) {
-          const oh = cam.dist * 0.45;
-          oX += rX*(ndcX*asp)*oh + uX*ndcY*oh;
-          oY += rY*(ndcX*asp)*oh + uY*ndcY*oh;
-          oZ += rZ*(ndcX*asp)*oh + uZ*ndcY*oh;
-          const fL = Math.hypot(fwdX,fwdY,fwdZ);
-          dX=fwdX/fL; dY=fwdY/fL; dZ=fwdZ/fL;
-        } else {
-          const fl = 2.414;
-          const dx = fwdX*fl + rX*(ndcX*asp) + uX*ndcY;
-          const dy = fwdY*fl + rY*(ndcX*asp) + uY*ndcY;
-          const dz = fwdZ*fl + rZ*(ndcX*asp) + uZ*ndcY;
-          const L = Math.hypot(dx,dy,dz);
-          dX=dx/L; dY=dy/L; dZ=dz/L;
-        }
-        // DEBUG: log ray info once per click (not on hover)
-        if (!opts._isHover) {
-          log(`[ray] ortho=${cam.ortho} plane=${sketchState.plane} pitch=${cam.pitch.toFixed(3)} yaw=${cam.yaw.toFixed(3)}`, '#6366f1');
-          log(`[ray] origin=(${oX.toFixed(2)},${oY.toFixed(2)},${oZ.toFixed(2)}) dir=(${dX.toFixed(3)},${dY.toFixed(3)},${dZ.toFixed(3)})`, '#6366f1');
-        }
-        let t, hit = false, hx, hy, hz;
-        const p = sketchState.plane;
-        if (p === 'XZ' && Math.abs(dY) > 1e-6) {
-          t = -oY/dY; if (t>0) { hx = oX+dX*t; hy = 0; hz = oZ+dZ*t; hit = true; }
-          else if (!opts._isHover) log(`[ray] XZ: t=${t?.toFixed(3)} ≤ 0 → miss`, '#f87171');
-        } else if (p === 'XY' && Math.abs(dZ) > 1e-6) {
-          t = -oZ/dZ; if (t>0) { hx = oX+dX*t; hy = oY+dY*t; hz = 0; hit = true; }
-          else if (!opts._isHover) log(`[ray] XY: t=${t?.toFixed(3)} ≤ 0 → miss`, '#f87171');
-        } else if (p === 'YZ' && Math.abs(dX) > 1e-6) {
-          t = -oX/dX; if (t>0) { hx = 0; hy = oY+dY*t; hz = oZ+dZ*t; hit = true; }
-          else if (!opts._isHover) log(`[ray] YZ: t=${t?.toFixed(3)} ≤ 0 → miss`, '#f87171');
-        } else {
-          if (!opts._isHover) log(`[ray] MISS — plane=${p} |dY|=${Math.abs(dY).toFixed(6)} |dZ|=${Math.abs(dZ).toFixed(6)} |dX|=${Math.abs(dX).toFixed(6)}`, '#f87171');
-        }
-        if (!hit) return null;
-        let snapType = 'free';
-        const pickR = (cam.dist * 0.03);
-
-        // 1. Direct Point Snap (Highest priority)
-        if (sketchState.points.length > 0) {
-          for (let i = 0; i < sketchState.points.length; i++) {
-            if (i === opts.ignoreIndex) continue;
-            const pp = sketchState.points[i];
-            if (Math.hypot(hx-pp.x, hy-pp.y, hz-pp.z) < pickR) {
-              return { x: pp.x, y: pp.y, z: pp.z, snapType: (i===0 ? 'first' : 'point') };
-            }
-          }
-        }
-        // 2. Direct Origin Snap
-        if (Math.hypot(hx,hy,hz) < pickR) {
-          return { x: 0, y: 0, z: 0, snapType: 'origin' };
-        }
-
-        // 3. Smart Guides / Axis Alignment Snap
-        let alignedX = false, alignedY = false, alignedZ = false;
-        if (sketchState.points.length > 0) {
-          // Find closest alignments
-          for (let i = 0; i < sketchState.points.length; i++) {
-            if (i === opts.ignoreIndex) continue;
-            const pp = sketchState.points[i];
-            if (!alignedX && Math.abs(hx - pp.x) < pickR) { hx = pp.x; alignedX = true; }
-            if (!alignedY && Math.abs(hy - pp.y) < pickR) { hy = pp.y; alignedY = true; }
-            if (!alignedZ && Math.abs(hz - pp.z) < pickR) { hz = pp.z; alignedZ = true; }
-          }
-          if (alignedX || alignedY || alignedZ) snapType = 'align';
-        }
-
-        // 4. Grid snap (Fallback for non-aligned axes)
-        if (opts.skipGridSnap !== true) {
-          if (!alignedX) hx = snapToGrid(hx);
-          if (!alignedY) hy = snapToGrid(hy);
-          if (!alignedZ) hz = snapToGrid(hz);
-          if (!alignedX && !alignedY && !alignedZ && window.sketchGridSnap > 0) snapType = 'grid';
-        }
-
-        return { x: hx, y: hy, z: hz, snapType };
-      };
-
-      // ─────────────────────────────────────────────────────────
-      // CAD solid picker — ray vs all solid meshes (Möller–Trumbore).
-      // Returns { solid, faceId, t, point } or null. Camera-agnostic
-      // ray construction copied from sketch raycaster.
-      // ─────────────────────────────────────────────────────────
-      window.__buildPickRay = function(ndcX, ndcY) {
-        const asp = canvas.width / canvas.height;
-        const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-        const cy = Math.cos(cam.yaw),   sy = Math.sin(cam.yaw);
-        const fwdX = -sy * cp, fwdY = -sp, fwdZ = cy * cp;
-        const roX = cam.target[0] - fwdX * cam.dist;
-        const roY = cam.target[1] - fwdY * cam.dist;
-        const roZ = cam.target[2] - fwdZ * cam.dist;
-        let rX = fwdY*0 - fwdZ*1, rY = fwdZ*0 - fwdX*0, rZ = fwdX*1 - fwdY*0;
-        const rL = Math.hypot(rX,rY,rZ) || 1; rX/=rL; rY/=rL; rZ/=rL;
-        const uX = rY*fwdZ - rZ*fwdY, uY = rZ*fwdX - rX*fwdZ, uZ = rX*fwdY - rY*fwdX;
-        let oX = roX, oY = roY, oZ = roZ, dX, dY, dZ;
-        if (cam.ortho) {
-          const oh = cam.dist * 0.45;
-          oX += rX*(ndcX*asp)*oh + uX*ndcY*oh;
-          oY += rY*(ndcX*asp)*oh + uY*ndcY*oh;
-          oZ += rZ*(ndcX*asp)*oh + uZ*ndcY*oh;
-          const fL = Math.hypot(fwdX,fwdY,fwdZ);
-          dX=fwdX/fL; dY=fwdY/fL; dZ=fwdZ/fL;
-        } else {
-          const fl = 2.414;
-          const dx = fwdX*fl + rX*(ndcX*asp) + uX*ndcY;
-          const dy = fwdY*fl + rY*(ndcX*asp) + uY*ndcY;
-          const dz = fwdZ*fl + rZ*(ndcX*asp) + uZ*ndcY;
-          const L = Math.hypot(dx,dy,dz);
-          dX=dx/L; dY=dy/L; dZ=dz/L;
-        }
-        return { ox: oX, oy: oY, oz: oZ, dx: dX, dy: dY, dz: dZ };
-      };
-
-      window.__raycastCadSolids = function(ndcX, ndcY) {
-        const solids = window.solids || [];
-        if (!solids.length) return null;
-        const r = window.__buildPickRay(ndcX, ndcY);
-        const ox = r.ox, oy = r.oy, oz = r.oz, dx = r.dx, dy = r.dy, dz = r.dz;
-        const EPS = 1e-7;
-        let bestT = Infinity, bestSolid = null, bestFaceId = 0, bestTri = -1;
-        for (let si = 0; si < solids.length; si++) {
-          const solid = solids[si];
-          const m = solid.mesh;
-          if (!m || !m.positions || !m.indices) continue;
-          const pos = m.positions, idx = m.indices, faces = m.triangleGlobalFaceIds;
-          const triCount = (idx.length / 3) | 0;
-          for (let t = 0; t < triCount; t++) {
-            const i0 = idx[t*3+0]*3, i1 = idx[t*3+1]*3, i2 = idx[t*3+2]*3;
-            const ax = pos[i0], ay = pos[i0+1], az = pos[i0+2];
-            const bx = pos[i1], by = pos[i1+1], bz = pos[i1+2];
-            const cx = pos[i2], cy = pos[i2+1], cz = pos[i2+2];
-            const e1x = bx-ax, e1y = by-ay, e1z = bz-az;
-            const e2x = cx-ax, e2y = cy-ay, e2z = cz-az;
-            // pvec = d × e2
-            const px = dy*e2z - dz*e2y;
-            const py = dz*e2x - dx*e2z;
-            const pz = dx*e2y - dy*e2x;
-            const det = e1x*px + e1y*py + e1z*pz;
-            if (det > -EPS && det < EPS) continue;
-            const invDet = 1.0/det;
-            const tvx = ox-ax, tvy = oy-ay, tvz = oz-az;
-            const u = (tvx*px + tvy*py + tvz*pz) * invDet;
-            if (u < 0 || u > 1) continue;
-            // qvec = tv × e1
-            const qx = tvy*e1z - tvz*e1y;
-            const qy = tvz*e1x - tvx*e1z;
-            const qz = tvx*e1y - tvy*e1x;
-            const v = (dx*qx + dy*qy + dz*qz) * invDet;
-            if (v < 0 || u+v > 1) continue;
-            const tt = (e2x*qx + e2y*qy + e2z*qz) * invDet;
-            if (tt > EPS && tt < bestT) {
-              bestT = tt; bestSolid = solid; bestTri = t;
-              bestFaceId = faces ? faces[t] : 0;
-            }
-          }
-        }
-        if (!bestSolid) return null;
-        return {
-          solid: bestSolid,
-          faceId: bestFaceId,
-          tri: bestTri,
-          t: bestT,
-          point: { x: ox+dx*bestT, y: oy+dy*bestT, z: oz+dz*bestT },
-        };
-      };
-
-      // pointer interactions on canvas
+      // ══════════════════════════════════════════════════════════
+      // POINTER EVENTS  (sketch logic → __handleSketchClick / __handleSketchKey)
+      // ══════════════════════════════════════════════════════════
       let dragging = false, panning = false, lastX = 0, lastY = 0, startX = 0, startY = 0;
+
       canvas.addEventListener('pointerdown', (e) => {
         canvas.setPointerCapture(e.pointerId);
         dragging = true;
-        // Pan if Shift is pressed, or Middle Mouse Button + Shift, or Right Click
         panning  = e.shiftKey || e.button === 2 || (e.button === 1 && e.shiftKey);
         lastX = e.clientX; lastY = e.clientY;
         startX = e.clientX; startY = e.clientY;
+
+        if (e.button === 0 && sceneState.selectionMode === 4) {
+          const rect = canvas.getBoundingClientRect();
+          const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          const ndcY = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+          const hit  = window.__raycastSketchPlane(ndcX, ndcY, { skipGridSnap: true });
+          if (hit) {
+            const pickR = Math.max(0.5, cam.dist * 0.05);
+            for (let i = 0; i < sketchState.points.length; i++) {
+              const pp = sketchState.points[i];
+              if (Math.hypot(hit.x-pp.x, hit.y-pp.y, hit.z-pp.z) < pickR) {
+                sketchState.draggedPtIndex = i;
+                startX = -9999;
+                log(`[sketch] ⤢ Grabbed point ${i}`, '#a78bfa');
+                break;
+              }
+            }
+          }
+        }
       });
-      
+
       canvas.addEventListener('pointerup', (e) => {
         dragging = false; panning = false;
         try { canvas.releasePointerCapture(e.pointerId); } catch {}
-        
+
         if (sketchState.draggedPtIndex !== undefined) {
-             sketchState.draggedPtIndex = undefined;
-             // If we just dragged a point, we changed the profile. 
-             // Stop the click from adding a new point.
-             startX = 0; startY = 0;
-             return;
+          sketchState.draggedPtIndex = undefined;
+          startX = 0; startY = 0;
+          return;
         }
+        if (startX < -100) { startX = 0; startY = 0; return; }
 
-        // В Sketch-режиме pointerdown может перехватываться оверлеем → startX/Y = 0
-        // Поэтому для Sketch просто считаем dist=0
-        const dist = (sceneState.selectionMode === 4) ? 0 : Math.hypot(e.clientX - startX, e.clientY - startY);
+        const dist = (sceneState.selectionMode === 4 && startX !== -9999)
+          ? 0
+          : Math.hypot(e.clientX - startX, e.clientY - startY);
         startX = 0; startY = 0;
+
         log(`[click] button=${e.button} dist=${dist.toFixed(1)} selMode=${sceneState.selectionMode}`, '#6b7280');
-        if (dist < 15 && e.button === 0) { // Только левый клик
+
+        if (dist < 15 && e.button === 0) {
+          const rect = canvas.getBoundingClientRect();
+          const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          const ndcY = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+
           if (sceneState.selectionMode === 4) {
-            const rect = canvas.getBoundingClientRect();
-            const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-            const ndcY = 1 - ((e.clientY - rect.top) / rect.height) * 2;
-
-            // ── DRAG POINT LOGIC ──
-            // If user clicked inside a point's radius, we start dragging it, bypassing tool logic
-            // Even if profile is closed, we can still edit its shape by dragging points
-            const tool = (window.editorState && window.editorState.activeSketchTool) || 'line';
-            const initialHit = window.__raycastSketchPlane(ndcX, ndcY, { skipGridSnap: true });
-            
-            if (initialHit) {
-                const pickR = (cam.dist * 0.03);
-                for (let i = 0; i < sketchState.points.length; i++) {
-                    const pp = sketchState.points[i];
-                    if (Math.hypot(initialHit.x-pp.x, initialHit.y-pp.y, initialHit.z-pp.z) < pickR) {
-                        sketchState.draggedPtIndex = i;
-                        log(`[sketch] ⤢ Dragging point ${i}`, '#a78bfa');
-                        return; // return so we don't start drawing a new line
-                    }
-                }
-            }
-
-            // If we are in "select" tool, but clicked an empty space, we do nothing.
-            if (tool === 'select') {
-              log(`[sketch] Select tool: clicked empty space`, '#6b7280');
-              return;
-            }
-
-            // ── PHASE GATE ────────────────────────────────────────
-            // Block any input that would create geometry when the sketch
-            // is locked (preview shown / solid already created). Closed is okay, but handled below by tool.
-            const phase = sketchState.phase || 'drawing';
-            if (phase === 'extrude_preview') {
-              log('[sketch] ✋ locked: extrude preview active — Cancel or Create Solid', '#f59e0b');
-              return;
-            }
-            if (phase === 'solid_created') {
-              log('[sketch] ✋ locked: sketch is reference (solid created) — start new sketch', '#f59e0b');
-              return;
-            }
-            // Sketch Mode logic
-            log(`[sketch] tool="${tool}" raycast fn=${typeof window.__raycastSketchPlane}`, '#a78bfa');
-            if (!['select','line','rectangle','circle','dimension'].includes(tool)) {
-              log(`[sketch] ✗ unknown tool — skip`, '#f87171');
-              return;
-            }
-            log(`[sketch] NDC x=${ndcX.toFixed(3)} y=${ndcY.toFixed(3)}`, '#6b7280');
-            const hit = window.__raycastSketchPlane(ndcX, ndcY);
-            log(`[sketch] hit=${JSON.stringify(hit)}`, hit ? '#38bdf8' : '#f87171');
-            if (!hit) {
-              log(`[sketch] ✗ raycast returned null — check __raycastSketchPlane`, '#f87171');
-              return;
-            }
-            const hx = hit.x, hy = hit.y, hz = hit.z;
-
-            // ── LINE TOOL: chain of points, close by clicking first point ──
-            if (tool === 'line') {
-              // Closed profile is locked — user must explicitly start a new sketch
-              if (sketchState.closed || phase === 'closed_profile') {
-                log('[sketch] ✋ profile already closed — click "New Sketch" to draw again', '#f59e0b');
-                return;
-              }
-              if (sketchState.points.length > 2 && hit.snapType === 'first') {
-                sketchState.closed = true;
-                log(`✓ Sketch closed (${sketchState.points.length} pts)`, '#10b981');
-                if (window.__setSketchPhase) window.__setSketchPhase('closed_profile', 'auto-close on first-point click');
-                if (window.__updateSketchUI) window.__updateSketchUI();
-                return;
-              }
-              // Avoid duplicate last point
-              const last = sketchState.points[sketchState.points.length-1];
-              if (last && Math.hypot(hx-last.x, hy-last.y, hz-last.z) < 1e-4) return;
-              sketchState.points.push({ x: hx, y: hy, z: hz });
-              log(`+ Pt ${sketchState.points.length}: ${hx.toFixed(3)}, ${hy.toFixed(3)}, ${hz.toFixed(3)}`, '#38bdf8');
-              if (phase !== 'drawing') window.__setSketchPhase && window.__setSketchPhase('drawing', 'first point');
-              if (window.__updateSketchUI) window.__updateSketchUI();
-              return;
-            }
-
-            // ── RECTANGLE TOOL: 2 clicks ──
-            if (tool === 'rectangle') {
-              if (!sketchState.pendingStart) {
-                sketchState.pendingStart = { x: hx, y: hy, z: hz };
-                sketchState.pendingTool = 'rectangle';
-                log(`◻ Rect corner 1: ${hx.toFixed(3)}, ${hz.toFixed(3)}`, '#38bdf8');
-                return;
-              }
-              const s = sketchState.pendingStart;
-              const pl = sketchState.plane;
-              let pts;
-              if (pl === 'XZ') {
-                pts = [
-                  { x: s.x, y: 0, z: s.z },
-                  { x: hx,  y: 0, z: s.z },
-                  { x: hx,  y: 0, z: hz  },
-                  { x: s.x, y: 0, z: hz  },
-                ];
-              } else if (pl === 'XY') {
-                pts = [
-                  { x: s.x, y: s.y, z: 0 },
-                  { x: hx,  y: s.y, z: 0 },
-                  { x: hx,  y: hy,  z: 0 },
-                  { x: s.x, y: hy,  z: 0 },
-                ];
-              } else { // YZ
-                pts = [
-                  { x: 0, y: s.y, z: s.z },
-                  { x: 0, y: hy,  z: s.z },
-                  { x: 0, y: hy,  z: hz  },
-                  { x: 0, y: s.y, z: hz  },
-                ];
-              }
-              sketchState.points = pts;
-              sketchState.closed = true;
-              sketchState.pendingStart = null;
-              sketchState.pendingTool = null;
-              log(`✓ Rectangle done`, '#10b981');
-              if (window.__setSketchPhase) window.__setSketchPhase('closed_profile', 'rectangle complete');
-              if (window.__updateSketchUI) window.__updateSketchUI();
-              return;
-            }
-
-            // ── CIRCLE TOOL: center + radius ──
-            if (tool === 'circle') {
-              if (!sketchState.pendingStart) {
-                sketchState.pendingStart = { x: hx, y: hy, z: hz };
-                sketchState.pendingTool = 'circle';
-                log(`○ Circle center`, '#38bdf8');
-                return;
-              }
-              const c = sketchState.pendingStart;
-              const pl = sketchState.plane;
-              let dxp, dyp;
-              if (pl === 'XZ')      { dxp = hx - c.x; dyp = hz - c.z; }
-              else if (pl === 'XY') { dxp = hx - c.x; dyp = hy - c.y; }
-              else                  { dxp = hy - c.y; dyp = hz - c.z; }
-              const r = Math.hypot(dxp, dyp);
-              if (r < 1e-4) { sketchState.pendingStart = null; return; }
-              const N = 32;
-              const pts = [];
-              for (let i = 0; i < N; i++) {
-                const a = (i / N) * Math.PI * 2;
-                const ca = Math.cos(a) * r, sa = Math.sin(a) * r;
-                if (pl === 'XZ')      pts.push({ x: c.x+ca, y: 0,    z: c.z+sa });
-                else if (pl === 'XY') pts.push({ x: c.x+ca, y: c.y+sa, z: 0 });
-                else                  pts.push({ x: 0, y: c.y+ca, z: c.z+sa });
-              }
-              sketchState.points = pts;
-              sketchState.closed = true;
-              sketchState.pendingStart = null;
-              sketchState.pendingTool = null;
-              log(`✓ Circle r=${r.toFixed(3)}m`, '#10b981');
-              if (window.__setSketchPhase) window.__setSketchPhase('closed_profile', 'circle complete');
-              if (window.__updateSketchUI) window.__updateSketchUI();
-              return;
-            }
-
-            // ── DIMENSION TOOL: 2 clicks → linear dimension annotation ──
-            if (tool === 'dimension') {
-              if (!sketchState.pendingStart) {
-                sketchState.pendingStart = { x: hx, y: hy, z: hz };
-                sketchState.pendingTool = 'dimension';
-                log(`↔ Dim point 1: ${hx.toFixed(3)}, ${hz.toFixed(3)}`, '#a78bfa');
-                return;
-              }
-              const p1 = sketchState.pendingStart;
-              const p2 = { x: hx, y: hy, z: hz };
-              const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
-              const label = dist < 0.01  ? (dist*1000).toFixed(1)+' mm'
-                          : dist < 1.0   ? (dist*100).toFixed(1)+' cm'
-                          :                dist.toFixed(3)+' m';
-              // Store in sketchState.dimensions array
-              if (!Array.isArray(sketchState.dimensions)) sketchState.dimensions = [];
-              sketchState.dimensions.push({ p1, p2, label, id: 'dim-' + Date.now() });
-              sketchState.pendingStart = null;
-              sketchState.pendingTool = null;
-              log(`✓ Dim: ${label}`, '#a78bfa');
-              if (window.__updateSketchUI) window.__updateSketchUI();
-              return;
-            }
+            if (window.__handleSketchClick) window.__handleSketchClick(ndcX, ndcY);
           } else {
-            // CAD face pick (Object/Face/Edge/Vertex mode — any non-sketch mode)
-            const rect = canvas.getBoundingClientRect();
-            const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-            const ndcY = 1 - ((e.clientY - rect.top) / rect.height) * 2;
             const hit = window.__raycastCadSolids && window.__raycastCadSolids(ndcX, ndcY);
             if (hit) {
-              window.selectedFaceId = hit.faceId;
+              window.selectedFaceId  = hit.faceId;
               window.selectedSolidId = hit.solid.id;
               sceneState.selected = true;
               log(`◇ Pick: solid=${hit.solid.id} faceId=${hit.faceId} t=${hit.t.toFixed(3)}`, '#fbbf24');
             } else {
-              window.selectedFaceId = 0;
+              window.selectedFaceId  = 0;
               window.selectedSolidId = null;
               sceneState.selected = !sceneState.selected;
               if (sceneState.selected) {
@@ -653,26 +184,19 @@ pub const JS: &str = r##"
           }
         }
       });
+
       canvas.addEventListener('pointermove', (e) => {
-        // NDC for sand cursor (in screen space, aspect-corrected later in shader)
         const rect = canvas.getBoundingClientRect();
-        mouse.ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+        mouse.ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.ndcY = 1 - ((e.clientY - rect.top) / rect.height) * 2;
         mouse.active = true;
 
-        // ── Track world coords of cursor on active sketch plane (status overlay + hover)
         if (sceneState.selectionMode === 4) {
-          // Raw (unsnapped) world position for status bar
           const raw = window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY, { skipGridSnap: true, _isHover: true });
           if (raw) window.__sketchMouseWorld = { x: raw.x, y: raw.y, z: raw.z };
-          // Snapped position with snapType for overlay rendering
-          // Temporarily disable point self-snapping by passing ignoreIndex
-          const opts = { _isHover: true, ignoreIndex: sketchState.draggedPtIndex };
-          const snapped = window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY, opts);
-          sketchState.hover = snapped;
+          sketchState.hover = window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY, { _isHover: true, ignoreIndex: sketchState.draggedPtIndex });
         } else {
           sketchState.hover = null;
-          // CAD hover face highlight (throttled — only when not dragging)
           if (!dragging && window.__raycastCadSolids && (window.solids || []).length) {
             const hh = window.__raycastCadSolids(mouse.ndcX, mouse.ndcY);
             window.hoveredFaceId = hh ? hh.faceId : 0;
@@ -682,146 +206,61 @@ pub const JS: &str = r##"
         }
 
         if (!dragging) return;
-        
-        // ── POINT DRAGGING UPDATE ──
+
         if (sketchState.draggedPtIndex !== undefined && sketchState.hover) {
-            sketchState.points[sketchState.draggedPtIndex] = {
-                x: sketchState.hover.x,
-                y: sketchState.hover.y,
-                z: sketchState.hover.z
-            };
-            if (window.extrudePreview && window.extrudePreview.active) {
-                window.extrudePreview.points = sketchState.points.map(p => ({...p}));
-            }
-            if (window.__updateSketchUI) window.__updateSketchUI();
-            return; // skip camera movement
+          sketchState.points[sketchState.draggedPtIndex] = {
+            x: sketchState.hover.x, y: sketchState.hover.y, z: sketchState.hover.z,
+          };
+          if (window.extrudePreview && window.extrudePreview.active)
+            window.extrudePreview.points = sketchState.points.map(p => ({ ...p }));
+          if (window.__updateSketchUI) window.__updateSketchUI();
+          return;
         }
 
-        // Prevent camera orbiting in Sketch mode with Left Click
-        // But allow navigating with Right Click (e.buttons === 2) or Middle Click (e.buttons === 4)
         if (sceneState.selectionMode === 4 && !e.shiftKey && e.buttons === 1) return;
-        
+
         const dx = e.clientX - lastX;
         const dy = e.clientY - lastY;
         lastX = e.clientX; lastY = e.clientY;
 
         if (panning) {
-          // pan target on the camera plane
-          const k = cam.dist * 0.0015;
-          // Plane-aware pan: build camera right/up from yaw/pitch and translate target along them.
-          // This works correctly for XY (front), XZ (top), YZ (right) sketch views.
-          const cy = Math.cos(cam.yaw),   sy = Math.sin(cam.yaw);
-          const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-          const fwdX = -sy * cp, fwdY = -sp, fwdZ = cy * cp;
-          let rxv = fwdY * 0 - fwdZ * 1;
-          let ryv = fwdZ * 0 - fwdX * 0;
-          let rzv = fwdX * 1 - fwdY * 0;
-          const rL = Math.hypot(rxv, ryv, rzv) || 1;
-          rxv /= rL; ryv /= rL; rzv /= rL;
-          const uxv = ryv * fwdZ - rzv * fwdY;
-          const uyv = rzv * fwdX - rxv * fwdZ;
-          const uzv = rxv * fwdY - ryv * fwdX;
-          cam.target[0] -= (dx * rxv - dy * uxv) * k;
-          cam.target[1] -= (dx * ryv - dy * uyv) * k;
-          cam.target[2] -= (dx * rzv - dy * uzv) * k;
+          const k   = cam.dist * 0.0015;
+          const cy  = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+          const cp  = Math.cos(cam.pitch);
+          const fwdX = -sy*cp, fwdY = -Math.sin(cam.pitch), fwdZ = cy*cp;
+          let rxv = -fwdZ, ryv = 0, rzv = fwdX;
+          const rL = Math.hypot(rxv, ryv, rzv) || 1; rxv /= rL; rzv /= rL;
+          const uxv = ryv*fwdZ - rzv*fwdY;
+          const uyv = rzv*fwdX - rxv*fwdZ;
+          const uzv = rxv*fwdY - ryv*fwdX;
+          cam.target[0] -= (dx*rxv - dy*uxv) * k;
+          cam.target[1] -= (dx*ryv - dy*uyv) * k;
+          cam.target[2] -= (dx*rzv - dy*uzv) * k;
         } else {
-          // Orbit (Blender style)
           cam.yaw   += dx * 0.005;
           cam.pitch += dy * 0.005;
         }
       });
+
       canvas.addEventListener('pointerleave', () => { mouse.active = false; });
-      
-      // --- Поддержка нативного Pinch-to-Zoom для Safari (Mac/iOS) ---
+
       let startPinchDist = 0;
-      canvas.addEventListener('gesturestart', (e) => {
-        e.preventDefault();
-        startPinchDist = cam.dist;
-      });
-      canvas.addEventListener('gesturechange', (e) => {
-        e.preventDefault();
-        let minZ = 0.5;
-        if (state.formMix > 0.8) minZ = Math.max(0.5, 2.5 * state.objScale);
-        
-        // e.scale > 1 = раздвигаем пальцы (Zoom In), e.scale < 1 = сдвигаем (Zoom Out)
-        // В Three.js и Blender мы просто делим начальную дистанцию на масштаб
-        cam.dist = Math.max(minZ, Math.min(80, startPinchDist / e.scale));
-      });
-      canvas.addEventListener('gestureend', (e) => e.preventDefault());
+      canvas.addEventListener('gesturestart',  (e) => { e.preventDefault(); startPinchDist = cam.dist; });
+      canvas.addEventListener('gesturechange', (e) => { e.preventDefault(); cam.dist = Math.max(0.5, Math.min(80, startPinchDist / e.scale)); });
+      canvas.addEventListener('gestureend',    (e) => e.preventDefault());
 
       canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
-        
-        // В Blender можно приближаться вплотную (макро-съемка). 
-        // Мы ставим минимальную дистанцию в 0.05 (почти в упор), 
-        // а логарифмический масштаб ниже сам замедлит зум при приближении.
-        const minZ = 0.05;
-
-        // --- ПРОСТОЙ И НАДЕЖНЫЙ ЗУМ (КАК В BLENDER) ---
-        let speed = e.ctrlKey ? 0.01 : 0.002;
-        const factor = Math.exp(e.deltaY * speed);
-        
-        // Чем меньше cam.dist, тем меньше шаг зума — идеальная эмуляция Blender
-        cam.dist = Math.max(minZ, Math.min(200, cam.dist * factor));
+        cam.dist = Math.max(0.05, Math.min(200, cam.dist * Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.002))));
       }, { passive: false });
+
       canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-      // Keyboard move tool
       document.addEventListener('keydown', (e) => {
-        // ── Sketch Mode shortcuts ──
         if (sceneState.selectionMode === 4) {
-          const k = e.key.toLowerCase();
-          if (k === 'escape') {
-            // Priority 1: cancel active extrude preview
-            if (window.extrudePreview && window.extrudePreview.active) {
-              window.extrudePreview.active = false;
-              window.extrudePreview.points = [];
-              if (sketchState.closed && window.__setSketchPhase) {
-                window.__setSketchPhase('closed_profile', 'preview cancelled (Esc)');
-              }
-              log('▣ Extrude preview cancelled (Esc)', '#f59e0b');
-              if (window.__updateSketchUI) window.__updateSketchUI();
-              return;
-            }
-            // Priority 2: cancel pending tool
-            if (sketchState.pendingStart) {
-              sketchState.pendingStart = null;
-              sketchState.pendingTool  = null;
-              log('✕ Tool cancelled', '#fbbf24');
-            } else if (sketchState.points.length > 0 && !sketchState.closed) {
-              sketchState.points = [];
-              sketchState.dimensions = [];
-              if (window.__setSketchPhase) window.__setSketchPhase('drawing', 'sketch cleared (Esc)');
-              log('✕ Sketch cleared', '#fbbf24');
-            }
-            if (window.__updateSketchUI) window.__updateSketchUI();
-            return;
-          }
-          if (k === 'enter' && sketchState.points.length > 2 && !sketchState.closed) {
-            sketchState.closed = true;
-            if (window.__setSketchPhase) window.__setSketchPhase('closed_profile', 'closed via Enter');
-            log(`✓ Sketch closed (Enter)`, '#10b981');
-            if (window.__updateSketchUI) window.__updateSketchUI();
-            return;
-          }
-          if (k === 'backspace' && sketchState.points.length > 0 && !sketchState.closed) {
-            sketchState.points.pop();
-            log(`↶ Removed last point`, '#fbbf24');
-            if (window.__updateSketchUI) window.__updateSketchUI();
-            return;
-          }
-          if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
-          if (k === 'l' && window.__setSketchTool) { window.__setSketchTool('line'); return; }
-          if (k === 'r' && window.__setSketchTool) { window.__setSketchTool('rectangle'); return; }
-          if (k === 'o' && window.__setSketchTool) { window.__setSketchTool('circle'); return; }
-          if (k === 'd' && window.__setSketchTool) { window.__setSketchTool('dimension'); return; }
+          if (window.__handleSketchKey && window.__handleSketchKey(e)) return;
         }
-
-        // Move object along X,Y,Z axes: ←/→ = X, ↑/↓ = Z, Q/E = Y
-        // F = rest to floor, C = focus camera
-        let moved = false;
         const step = 0.05 * (floorGrid.scale === 1000.0 ? 0.01 : floorGrid.scale === 100.0 ? 0.1 : 1.0);
-        
         switch (e.key.toLowerCase()) {
           case 'arrowleft':  sceneState.objectPosition[0] -= step; break;
           case 'arrowright': sceneState.objectPosition[0] += step; break;
@@ -830,7 +269,7 @@ pub const JS: &str = r##"
           case 'q':          sceneState.objectPosition[1] += step; break;
           case 'e':          sceneState.objectPosition[1] -= Math.min(sceneState.objectPosition[1], step); break;
           case 'f':          sceneState.objectPosition[1] = sceneState.objectScale[1] * FORM_SCALE[formation.mode]; break;
-          case 'c':          
+          case 'c':
             cam.target = sceneState.objectPosition.slice();
             cam.target[1] += sceneState.baseMeshDim[1] / 2.0;
             log('◇ camera focused on object', '#67e8f9');
