@@ -75,11 +75,14 @@ pub const JS: &str = r##"
         plane: 'XZ',  // 'XZ' (y=0), 'XY' (z=0), 'YZ' (x=0)
         showGrid: true,
         // Tool state: for Rect/Circle 2-click workflow
-        pendingTool: null,   // 'rectangle' | 'circle' | null
+        pendingTool: null,   // 'rectangle' | 'circle' | 'dimension' | null
         pendingStart: null,  // {x,y,z} first corner / center
+        dimensions: [],      // committed dimension annotations
         // Snap visualization (filled by render_loop)
         hover: null,         // {x,y,z, snapType: 'grid'|'point'|'origin'|'first'}
       };
+      // Expose to window so global functions (e.g. __setSketchTool) can access it
+      window.sketchState = sketchState;
 
       // Extrude Preview state (frontend only, no backend yet)
       // Activated by Sketch Inspector "Preview Extrude" button
@@ -301,9 +304,9 @@ pub const JS: &str = r##"
         // Увеличили порог клика для тачпадов mac, где пальцы скользят при клике
         if (dist < 15 && e.button === 0) { // Только левый клик
           if (sceneState.selectionMode === 4) {
-            // Sketch Mode logic — only create points for line/rectangle/circle tools
+            // Sketch Mode logic
             const tool = (window.editorState && window.editorState.activeSketchTool) || 'line';
-            if (tool !== 'line' && tool !== 'rectangle' && tool !== 'circle') {
+            if (!['line','rectangle','circle','dimension'].includes(tool)) {
               return;
             }
             const rect = canvas.getBoundingClientRect();
@@ -407,6 +410,30 @@ pub const JS: &str = r##"
               sketchState.pendingStart = null;
               sketchState.pendingTool = null;
               log(`✓ Circle r=${r.toFixed(3)}m`, '#10b981');
+              if (window.__updateSketchUI) window.__updateSketchUI();
+              return;
+            }
+
+            // ── DIMENSION TOOL: 2 clicks → linear dimension annotation ──
+            if (tool === 'dimension') {
+              if (!sketchState.pendingStart) {
+                sketchState.pendingStart = { x: hx, y: hy, z: hz };
+                sketchState.pendingTool = 'dimension';
+                log(`↔ Dim point 1: ${hx.toFixed(3)}, ${hz.toFixed(3)}`, '#a78bfa');
+                return;
+              }
+              const p1 = sketchState.pendingStart;
+              const p2 = { x: hx, y: hy, z: hz };
+              const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+              const label = dist < 0.01  ? (dist*1000).toFixed(1)+' mm'
+                          : dist < 1.0   ? (dist*100).toFixed(1)+' cm'
+                          :                dist.toFixed(3)+' m';
+              // Store in sketchState.dimensions array
+              if (!Array.isArray(sketchState.dimensions)) sketchState.dimensions = [];
+              sketchState.dimensions.push({ p1, p2, label, id: 'dim-' + Date.now() });
+              sketchState.pendingStart = null;
+              sketchState.pendingTool = null;
+              log(`✓ Dim: ${label}`, '#a78bfa');
               if (window.__updateSketchUI) window.__updateSketchUI();
               return;
             }
@@ -524,6 +551,7 @@ pub const JS: &str = r##"
               log('✕ Tool cancelled', '#fbbf24');
             } else if (sketchState.points.length > 0 && !sketchState.closed) {
               sketchState.points = [];
+              sketchState.dimensions = [];
               log('✕ Sketch cleared', '#fbbf24');
             }
             if (window.__updateSketchUI) window.__updateSketchUI();

@@ -689,5 +689,50 @@ pub fn matter_status_styles() -> &'static str {
       font-size: 13px;
       line-height: 1;
     }
+
+    /* ─── Sketch tools toolbar ────────────────────────────── */
+    .sketch-tools-switcher {
+      display: none; /* hidden by default; JS sets display:flex in Sketch mode */
+      position: absolute;
+      left: 50%;
+      top: 60px;
+      transform: translateX(-50%);
+      z-index: 20;
+      background: rgba(24, 24, 26, 0.92);
+      border: 1px solid rgba(80, 80, 85, 0.45);
+      border-radius: 10px;
+      padding: 4px;
+      gap: 2px;
+      align-items: center;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    }
+    .sketch-tool-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 13px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: rgba(148, 163, 184, 0.75);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
+      white-space: nowrap;
+      line-height: 1;
+      outline: none;
+    }
+    .sketch-tool-btn:hover {
+      background: rgba(56, 189, 248, 0.10);
+      color: #e2e8f0;
+    }
+    .sketch-tool-btn.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.45);
+      color: #38bdf8;
+    }
 "##
 }

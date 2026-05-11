@@ -63,12 +63,12 @@ pub fn matter_lab_section() -> String {
           <button class="prim-btn" data-asset="polygon-sketch" title="Polygon Sketch">⬡<span class="prim-label">Poly</span></button>
         </div>
 
-        <!-- Sketch Tools (Visible only in Sketch Mode) -->
-        <div class="sketch-tools-switcher" id="sketch-tools-switcher" style="display:none; position: absolute; left: 50%; top: 60px; transform: translateX(-50%); z-index: 20; background: rgba(30,30,35,0.85); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 4px; display: flex; gap: 4px; backdrop-filter: blur(10px);">
-          <button class="sketch-tool-btn active" data-tool="line" style="background: rgba(255,255,255,0.1); color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Line</button>
-          <button class="sketch-tool-btn" data-tool="rectangle" style="background: transparent; color: #cbd5e1; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Rect</button>
-          <button class="sketch-tool-btn" data-tool="circle" style="background: transparent; color: #cbd5e1; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Circle</button>
-          <button class="sketch-tool-btn" data-tool="dimension" style="background: transparent; color: #cbd5e1; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Dim</button>
+        <!-- Sketch Tools (visible only in Sketch Mode) -->
+        <div class="sketch-tools-switcher" id="sketch-tools-switcher">
+          <button class="sketch-tool-btn active" data-tool="line"      title="Line (L)">╱ Line</button>
+          <button class="sketch-tool-btn"        data-tool="rectangle" title="Rect (R)">▭ Rect</button>
+          <button class="sketch-tool-btn"        data-tool="circle"    title="Circle (O)">○ Circle</button>
+          <button class="sketch-tool-btn"        data-tool="dimension" title="Dimension (D)">↔ Dim</button>
         </div>
 
         <div id="sketch-info-overlay" style="display:none; position: absolute; left: 24px; bottom: 48px; z-index: 10; font-family: monospace; font-size: 11px; color: #64748b; line-height: 1.5; pointer-events: none;">

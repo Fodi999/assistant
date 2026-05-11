@@ -438,6 +438,79 @@ pub const JS: &str = r##"
                 ctx.textAlign = 'left'; ctx.textBaseline = 'top';
                 ctx.fillText(`R ${fmtDist(r)}  ⌀ ${fmtDist(r*2)}`, sh.x+10, sh.y+10);
               }
+
+              // Dimension tool: preview live line + distance while hovering after point 1
+              if (tool === 'dimension' && sketchState.pendingStart && hover) {
+                const p1s = w2s(sketchState.pendingStart.x, sketchState.pendingStart.y, sketchState.pendingStart.z);
+                const p2s = w2s(hover.x, hover.y, hover.z);
+                if (p1s && p2s) {
+                  const dx = sketchState.pendingStart.x - hover.x;
+                  const dy = sketchState.pendingStart.y - hover.y;
+                  const dz = sketchState.pendingStart.z - hover.z;
+                  const dist = Math.hypot(dx, dy, dz);
+                  const lbl = dist < 0.01 ? (dist*1000).toFixed(1)+' mm'
+                            : dist < 1.0  ? (dist*100).toFixed(1)+' cm'
+                            :               dist.toFixed(3)+' m';
+                  ctx.setLineDash([5, 3]);
+                  ctx.strokeStyle = '#a78bfa';
+                  ctx.lineWidth = 1.5;
+                  ctx.beginPath();
+                  ctx.moveTo(p1s.x, p1s.y);
+                  ctx.lineTo(p2s.x, p2s.y);
+                  ctx.stroke();
+                  ctx.setLineDash([]);
+                  // Arrow ticks
+                  const angle = Math.atan2(p2s.y - p1s.y, p2s.x - p1s.x);
+                  for (const [px, py] of [[p1s.x, p1s.y], [p2s.x, p2s.y]]) {
+                    ctx.beginPath();
+                    ctx.moveTo(px + Math.cos(angle+Math.PI/2)*6, py + Math.sin(angle+Math.PI/2)*6);
+                    ctx.lineTo(px + Math.cos(angle-Math.PI/2)*6, py + Math.sin(angle-Math.PI/2)*6);
+                    ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1.5; ctx.stroke();
+                  }
+                  const mx = (p1s.x + p2s.x) / 2;
+                  const my = (p1s.y + p2s.y) / 2;
+                  ctx.font = '11px "JetBrains Mono", monospace';
+                  const tw = ctx.measureText(lbl).width + 8;
+                  ctx.fillStyle = 'rgba(24,24,26,0.82)';
+                  ctx.fillRect(mx - tw/2, my - 9, tw, 14);
+                  ctx.fillStyle = '#a78bfa';
+                  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                  ctx.fillText(lbl, mx, my);
+                }
+              }
+
+              // Draw committed dimension annotations
+              if (Array.isArray(sketchState.dimensions)) {
+                for (const dim of sketchState.dimensions) {
+                  const p1s = w2s(dim.p1.x, dim.p1.y, dim.p1.z);
+                  const p2s = w2s(dim.p2.x, dim.p2.y, dim.p2.z);
+                  if (!p1s || !p2s) continue;
+                  ctx.setLineDash([4, 3]);
+                  ctx.strokeStyle = '#c4b5fd';
+                  ctx.lineWidth = 1.2;
+                  ctx.beginPath();
+                  ctx.moveTo(p1s.x, p1s.y);
+                  ctx.lineTo(p2s.x, p2s.y);
+                  ctx.stroke();
+                  ctx.setLineDash([]);
+                  const angle = Math.atan2(p2s.y - p1s.y, p2s.x - p1s.x);
+                  for (const [px, py] of [[p1s.x, p1s.y], [p2s.x, p2s.y]]) {
+                    ctx.beginPath();
+                    ctx.moveTo(px + Math.cos(angle+Math.PI/2)*5, py + Math.sin(angle+Math.PI/2)*5);
+                    ctx.lineTo(px + Math.cos(angle-Math.PI/2)*5, py + Math.sin(angle-Math.PI/2)*5);
+                    ctx.strokeStyle = '#c4b5fd'; ctx.lineWidth = 1.2; ctx.stroke();
+                  }
+                  const mx = (p1s.x + p2s.x) / 2;
+                  const my = (p1s.y + p2s.y) / 2;
+                  ctx.font = '10px "JetBrains Mono", monospace';
+                  const tw = ctx.measureText(dim.label).width + 6;
+                  ctx.fillStyle = 'rgba(24,24,26,0.78)';
+                  ctx.fillRect(mx - tw/2, my - 8, tw, 13);
+                  ctx.fillStyle = '#c4b5fd';
+                  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                  ctx.fillText(dim.label, mx, my);
+                }
+              }
               ctx.restore();
             }
           }

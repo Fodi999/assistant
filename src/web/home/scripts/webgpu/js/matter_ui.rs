@@ -513,14 +513,16 @@ pub const JS: &str = r##"
 
         window.__setSketchTool = function(tool) {
           if (!['line','rectangle','circle','dimension'].includes(tool)) return;
+          // Cancel any in-progress two-click operation from the previous tool
+          if (sketchState && sketchState.pendingStart) {
+            sketchState.pendingStart = null;
+            sketchState.pendingTool  = null;
+          }
           window.editorState.activeSketchTool = tool;
           const sw = document.getElementById('sketch-tools-switcher');
           if (sw) {
             sw.querySelectorAll('.sketch-tool-btn').forEach(b => {
-              const active = b.dataset.tool === tool;
-              b.classList.toggle('active', active);
-              b.style.background = active ? 'rgba(255,255,255,0.1)' : 'transparent';
-              b.style.color = active ? '#fff' : '#cbd5e1';
+              b.classList.toggle('active', b.dataset.tool === tool);
             });
           }
           updateStatusBar();
