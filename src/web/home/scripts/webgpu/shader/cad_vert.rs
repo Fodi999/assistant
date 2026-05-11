@@ -33,26 +33,10 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
 }
 
 @vertex fn vs_cad(
-  @builtin(vertex_index)   vi:   u32,
-  @builtin(instance_index) inst: u32,
+  @location(0) position: vec3f,
+  @location(1) normal: vec3f,
+  @location(2) face_id: u32,
 ) -> Pv {
-  // We only draw 1 solid mesh for the bounding object (inst 0)
-  if inst != 0u {
-    var dead: Pv;
-    dead.pos      = vec4f(0.0, 0.0, -2.0, 1.0);
-    dead.quadUV   = vec2f(0.0);
-    dead.color    = vec3f(0.0);
-    dead.depth    = 0.0;
-    dead.phase    = 0.0;
-    dead.wCenter  = vec3f(0.0);
-    dead.size     = 0.0;
-    dead.cellMask = 0u;
-    dead.halfCell = 0.0;
-    dead.meshMode = 0u;
-    dead.meshN    = vec3f(0.0);
-    return dead;
-  }
-
   let sp          = spheres.data[0];
   let ro          = u.u1.xyz;
   let right       = u.u2.xyz;
@@ -62,20 +46,25 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
   let orthoHeight = distance(ro, u.u8.xyz) * 0.45;
   let asp         = u.u0.y / u.u0.z;
 
-  let formScale   = u.u6.w;
-
   let objPos      = u.u8.xyz;
   let objScale    = max(vec3f(0.001), u.u11.xyz);
+  let objDim      = max(vec3f(0.001), u.u12.xyz);
   let objRot      = u.u10.xyz;
   
-  let halfCell    = formScale * objScale;
-  let center      = objPos;
-  let cellMask    = 63u;
-
-  let cv          = cubeVert(vi % 36u);
-
+  let halfCell    = (objDim / 2.0) * objScale;
+  let center      = objPos + vec3f(0.0, halfCell.y, 0.0);
+  
   let rotMat      = euler_to_matrix(objRot);
-  let localPos    = rotMat * (cv.pos * halfCell);
+  // position comes in absolute dimensions from backend, assuming it's around origin
+  // truck backend centers it at origin, we just apply rotation and translation
+  // If the backend generated it with exact dimensions in mm, we need to convert to world units
+  // Wait, backend generates scaled to mm (x 1000). We should scale it down to world units.
+  // Actually, position from rust is f32 vector in mm.
+  let world_scale = 1.0 / 1000.0;
+  
+  // Also we want it scaled by objScale
+  let scaledPos   = position * world_scale * objScale;
+  let localPos    = rotMat * scaledPos;
   
   let wp          = center + localPos;
   let relV        = wp - ro;
@@ -90,16 +79,16 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
 
   var o: Pv;
   o.pos      = vec4f(cx, cy, zNdc, 1.0);
-  o.quadUV   = cv.uv;
-  o.color    = sp.colorP.xyz; // Object base color
+  o.quadUV   = vec2f(0.0); // Not used in poly
+  o.color    = sp.colorP.xyz; 
   o.depth    = mvz;
   o.phase    = 0.0;
   o.wCenter  = center;
   o.size     = halfCell.x;
-  o.cellMask = cellMask;
+  o.cellMask = face_id; // Using cellMask property to forward face_id
   o.halfCell = halfCell.x;
   o.meshMode = 1u;
-  o.meshN    = rotMat * cv.nrm;
+  o.meshN    = normalize(rotMat * normal);
   return o;
 }
 "##;

@@ -15,6 +15,9 @@ struct Uniforms {
   u9: vec4f,   // floorGridScale, ortho, isSelected, _
   u10: vec4f,  // objectRotX, objectRotY, objectRotZ, _
   u11: vec4f,  // objectScaleX, objectScaleY, objectScaleZ, _
+  u12: vec4f,  // objectDimX, objectDimY, objectDimZ, _
+  u13: vec4f,  // bevel, segments, roundness, _
+  u14: vec4f,  // gridVisible, activePlane (0=XZ, 1=XY, 2=YZ), _, _
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 

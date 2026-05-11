@@ -65,9 +65,17 @@ pub const JS: &str = r##"
       document.body.classList.add('gpu-active');
 
       const dpr = window.devicePixelRatio || 1;
+      const sketchCanvas = document.getElementById('sketch-canvas');
       function resizeCanvas() {
         canvas.width  = Math.floor(window.innerWidth  * dpr);
         canvas.height = Math.floor(window.innerHeight * dpr);
+        
+        if (sketchCanvas) {
+          sketchCanvas.width = Math.floor(window.innerWidth * dpr);
+          sketchCanvas.height = Math.floor(window.innerHeight * dpr);
+          sketchCanvas.style.width = window.innerWidth + 'px';
+          sketchCanvas.style.height = window.innerHeight + 'px';
+        }
       }
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);

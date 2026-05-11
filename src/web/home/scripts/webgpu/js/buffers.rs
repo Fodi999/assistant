@@ -17,9 +17,18 @@ pub const JS: &str = r##"
       //   u10: objectRotX, objectRotY, objectRotZ, _
       //   u11: objectScaleX, objectScaleY, objectScaleZ, _
       const uniformBuf = device.createBuffer({
-        size: 192,
+        size: 240,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
+
+      // ── CAD Mesh Buffers (Полигональная сетка от Truck Backend) ──
+      // Выделяем пустые буферы с запасом на 100k вершин и треугольников.
+      // Позже мы их обновим через device.queue.writeBuffer
+      let cadPosBuf = device.createBuffer({ size: 100000 * 3 * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+      let cadNormalBuf = device.createBuffer({ size: 100000 * 3 * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+      let cadFaceIdBuf = device.createBuffer({ size: 100000 * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+      let cadIndexBuf = device.createBuffer({ size: 100000 * 3 * 4, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+      let cadIndexCount = 0;
 
       let sphereBuf;
       try {

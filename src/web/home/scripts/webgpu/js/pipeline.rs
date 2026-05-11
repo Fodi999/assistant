@@ -59,7 +59,15 @@ pub const JS: &str = r##"
       // Mode 2: CAD / Solid — rasterized cube mesh, clean Blender-style lighting
       const cadPipeline = device.createRenderPipeline({
         layout: pipelineLayout,
-        vertex:   { module: cadModule, entryPoint: 'vs_cad' },
+        vertex: { 
+          module: cadModule, 
+          entryPoint: 'vs_cad',
+          buffers: [
+            { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] }, // positions
+            { arrayStride: 12, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }] }, // normals
+            { arrayStride: 4,  attributes: [{ shaderLocation: 2, offset: 0, format: 'uint32' }] }     // face_ids
+          ]
+        },
         fragment: { module: cadModule, entryPoint: 'fs_cad', targets: [{ format: fmt }] },
         primitive: { topology: 'triangle-list', cullMode: 'back' },
         depthStencil: { format: DEPTH_FMT, depthWriteEnabled: true, depthCompare: 'less' },

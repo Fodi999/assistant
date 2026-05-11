@@ -281,6 +281,10 @@ pub fn matter_panel_styles() -> &'static str {
       top: 561px; 
     }
     
+    .panel-toggle-btn.tab-sketch {
+      top: 652px;
+    }
+
     .panel-toggle-btn:hover { 
       background: rgba(50, 50, 55, 0.95); 
       color: #fff; 
@@ -561,11 +565,12 @@ pub fn matter_status_styles() -> &'static str {
       border-color: rgba(56, 189, 248, 0.45);
     }
 
-    /* ── Engine Mode Switcher ── PARTICLE ↔ CAD ──────────────────── */
+    /* ── Engine Mode Switcher ── bottom-left island ──────────────── */
     .engine-mode-switcher {
       position: absolute;
-      top: 60px;
+      bottom: 56px;
       left: 16px;
+      top: auto;
       transform: none;
       z-index: 25;
       display: flex;
@@ -576,6 +581,84 @@ pub fn matter_status_styles() -> &'static str {
       padding: 4px;
       backdrop-filter: blur(10px);
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    /* ── Selection mode toolbar — bottom center island ── */
+    .selection-mode-switcher {
+      position: absolute;
+      bottom: 56px;
+      left: 50%;
+      top: auto;
+      transform: translateX(-50%);
+      z-index: 25;
+      display: flex;
+      gap: 2px;
+      align-items: center;
+      background: rgba(12, 15, 22, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 12px;
+      padding: 3px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255,255,255,0.04) inset;
+    }
+    .sel-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      background: transparent;
+      color: rgba(148, 163, 184, 0.65);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+      white-space: nowrap;
+    }
+    .sel-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+    }
+    .sel-btn.active {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.30);
+      color: #7dd3fc;
+    }
+    /* Vertical divider inside the toolbar island */
+    .toolbar-sep {
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.09);
+      margin: 0 2px;
+      align-self: center;
+      flex-shrink: 0;
+    }
+    /* Primitive buttons inside the toolbar island */
+    .prim-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 9px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      background: transparent;
+      color: rgba(148, 163, 184, 0.60);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .prim-btn:hover {
+      background: rgba(167, 139, 250, 0.10);
+      border-color: rgba(167, 139, 250, 0.25);
+      color: #c4b5fd;
+    }
+    .prim-label {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
     }
     .mode-btn {
       display: flex;

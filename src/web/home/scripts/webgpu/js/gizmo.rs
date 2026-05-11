@@ -121,6 +121,19 @@ pub const JS: &str = r##"
           const hit = hitTest(e.clientX, e.clientY);
           if (!hit) return;
           const [ty, tp] = SNAPS[hit];
+
+          // In Sketch Mode: clicking X/Y/Z switches sketch plane (not just camera).
+          const inSketch = window.editorState && window.editorState.mode === 'sketch';
+          if (inSketch && window.__setSketchPlane) {
+            // Map axis = normal of plane → plane name
+            const planeFor = { Y:'XZ', 'Y_':'XZ', Z:'XY', 'Z_':'XY', X:'YZ', 'X_':'YZ' };
+            const pl = planeFor[hit];
+            if (pl) {
+              window.__setSketchPlane(pl);
+              return; // setSketchPlane already handles camera
+            }
+          }
+
           // Smooth snap via micro-animation
           const startYaw   = cam.yaw;
           const startPitch = cam.pitch;

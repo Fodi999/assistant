@@ -7,7 +7,7 @@ pub const JS: &str = r##"
       let frameCount = 0;
       let lastFpsTime = t0, fpsAcc = 0, fps = 0;
       let lastFrameTime = t0;
-      const ubo = new Float32Array(48); // 12 × vec4
+      const ubo = new Float32Array(60); // 15 × vec4
 
       function frame() {
         const now = performance.now();
@@ -125,17 +125,39 @@ pub const JS: &str = r##"
         ubo[36] = floorGrid.scale;
         ubo[37] = cam.ortho ? 1.0 : 0.0;
         ubo[38] = sceneState.selected ? 1.0 : 0.0; // u9.z = isSelected flag
-        ubo[39] = 0;
+        ubo[39] = sceneState.selectionMode; // u9.w = selectionMode (0=Object,1=Face,2=Edge,3=Vertex)
         // u10: object rotation (in degrees from UI, passed to shader)
         ubo[40] = sceneState.objectRotation[0];
         ubo[41] = sceneState.objectRotation[1];
         ubo[42] = sceneState.objectRotation[2];
         ubo[43] = 0;
         // u11: object scale (in XYZ)
-        ubo[44] = sceneState.objectScale[0] * (sceneState.baseMeshDim[0] / 2.0);
-        ubo[45] = sceneState.objectScale[1] * (sceneState.baseMeshDim[1] / 2.0);
-        ubo[46] = sceneState.objectScale[2] * (sceneState.baseMeshDim[2] / 2.0);
+        ubo[44] = sceneState.objectScale[0];
+        ubo[45] = sceneState.objectScale[1];
+        ubo[46] = sceneState.objectScale[2];
         ubo[47] = 0;
+        
+        // u12: object base dimensions (XYZ)
+        ubo[48] = sceneState.baseMeshDim[0];
+        ubo[49] = sceneState.baseMeshDim[1];
+        ubo[50] = sceneState.baseMeshDim[2];
+        ubo[51] = 0;
+
+        // u13: Geometry properties (Bevel, Segments, Roundness)
+        ubo[52] = sceneState.objectBevel;
+        ubo[53] = sceneState.objectProfile;
+        ubo[54] = sceneState.objectRoundness;
+        ubo[55] = 0;
+
+        // u14: Sketching Grids + Planes
+        ubo[56] = sketchState.showGrid ? 1.0 : 0.0;
+        let pId = 0.0;
+        if (sketchState.plane === 'XY') pId = 1.0;
+        else if (sketchState.plane === 'YZ') pId = 2.0;
+        ubo[57] = pId;
+        ubo[58] = 0;
+        ubo[59] = 0;
+        
         device.queue.writeBuffer(uniformBuf, 0, ubo);
 
         const enc  = device.createCommandEncoder();
@@ -177,16 +199,380 @@ pub const JS: &str = r##"
           // CAD mode:      rasterized cube mesh with clean Blender solid shading
           if (sceneState.engineMode === 'CAD') {
             pass.setPipeline(cadPipeline);
+            pass.setBindGroup(0, bindGroup);
+            if (cadIndexCount > 0) {
+              pass.setVertexBuffer(0, cadPosBuf);
+              pass.setVertexBuffer(1, cadNormalBuf);
+              pass.setVertexBuffer(2, cadFaceIdBuf);
+              pass.setIndexBuffer(cadIndexBuf, 'uint32');
+              pass.drawIndexed(cadIndexCount);
+            }
           } else {
             pass.setPipeline(spherePipeline);
+            pass.setBindGroup(0, bindGroup);
+            // 36 verts per instance: billboard quad uses first 6, cube mesh uses all 36.
+            pass.draw(36, NUM_SPHERES);
           }
-          pass.setBindGroup(0, bindGroup);
-          // 36 verts per instance: billboard quad uses first 6, cube mesh uses all 36.
-          pass.draw(36, NUM_SPHERES);
           pass.end();
         }
 
         device.queue.submit([enc.finish()]);
+        
+        // --- Sketch Canvas Overlay ---
+        if (sceneState.selectionMode === 4 && sketchState && typeof sketchState.points !== 'undefined') {
+          const sk = document.getElementById('sketch-canvas');
+          if (!sk) return;
+          // Sync canvas resolution to viewport
+          if (sk.width !== canvas.width || sk.height !== canvas.height) {
+            sk.width = canvas.width; sk.height = canvas.height;
+          }
+          const ctx = sk.getContext('2d');
+          ctx.clearRect(0, 0, sk.width, sk.height);
+
+          // ── World → Screen projection (matches WebGPU camera) ──
+          function w2s(x, y, z) {
+            const dx = x - roX, dy = y - roY, dz = z - roZ;
+            const vwX = dx*rX  + dy*rY  + dz*rZ;
+            const vwY = dx*uX  + dy*uY  + dz*uZ;
+            const vwZ = dx*fwdX + dy*fwdY + dz*fwdZ;
+            const asp = sk.width / sk.height;
+            let ndcX, ndcY;
+            if (cam.ortho) {
+              if (vwZ < -50 || vwZ > 1000) return null;
+              const oh = cam.dist * 0.45;
+              ndcX = (vwX / oh) / asp;
+              ndcY = (vwY / oh);
+            } else {
+              if (vwZ < 0.05) return null;
+              const fL = 2.414;
+              ndcX = (vwX * fL) / vwZ / asp;
+              ndcY = (vwY * fL) / vwZ;
+            }
+            return {
+              x: (ndcX + 1) * 0.5 * sk.width,
+              y: (1 - ndcY) * 0.5 * sk.height,
+            };
+          }
+
+          // ── Format distance (auto mm/cm/m) ──
+          function fmtDist(m) {
+            if (m < 0.01) return (m*1000).toFixed(1) + ' mm';
+            if (m < 1.0)  return (m*100).toFixed(1) + ' cm';
+            return m.toFixed(3) + ' m';
+          }
+
+          // ── Origin marker (small cross at 0,0,0) ──
+          {
+            const o = w2s(0,0,0);
+            if (o) {
+              ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(o.x-6, o.y); ctx.lineTo(o.x+6, o.y);
+              ctx.moveTo(o.x, o.y-6); ctx.lineTo(o.x, o.y+6);
+              ctx.stroke();
+            }
+          }
+
+          const tool = (window.editorState && window.editorState.activeSketchTool) || 'line';
+          const pts = sketchState.points;
+          const hover = sketchState.hover;
+          const plane = sketchState.plane;
+
+          // ── Draw committed polyline ──
+          if (pts.length > 0) {
+            ctx.beginPath();
+            let first = true;
+            for (const p of pts) {
+              const s = w2s(p.x, p.y, p.z);
+              if (!s) continue;
+              if (first) { ctx.moveTo(s.x, s.y); first = false; }
+              else        ctx.lineTo(s.x, s.y);
+            }
+            if (sketchState.closed) {
+              const f = w2s(pts[0].x, pts[0].y, pts[0].z);
+              if (f) ctx.lineTo(f.x, f.y);
+              ctx.fillStyle = 'rgba(56,189,248,0.15)';
+              ctx.fill();
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 2;
+            } else {
+              ctx.strokeStyle = '#cbd5e1';
+              ctx.lineWidth = 1.5;
+            }
+            ctx.stroke();
+
+            // Dimension labels on each segment
+            ctx.font = '11px "JetBrains Mono", monospace';
+            for (let i = 1; i < pts.length; i++) {
+              const a = pts[i-1], b = pts[i];
+              const d = Math.hypot(b.x-a.x, b.y-a.y, b.z-a.z);
+              if (d < 0.005) continue;
+              const sa = w2s(a.x,a.y,a.z), sb = w2s(b.x,b.y,b.z);
+              if (!sa || !sb) continue;
+              const mx = (sa.x+sb.x)/2, my = (sa.y+sb.y)/2;
+              const dx = sb.x-sa.x, dy = sb.y-sa.y, L = Math.hypot(dx,dy) || 1;
+              // Offset perpendicular
+              const ox = -dy/L * 10, oy = dx/L * 10;
+              const lbl = fmtDist(d);
+              ctx.fillStyle = 'rgba(15,23,42,0.85)';
+              const w = ctx.measureText(lbl).width + 6;
+              ctx.fillRect(mx+ox-w/2, my+oy-8, w, 14);
+              ctx.fillStyle = '#fbbf24';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(lbl, mx+ox, my+oy);
+            }
+          }
+
+          // ── Point markers ──
+          for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            const s = w2s(p.x,p.y,p.z);
+            if (!s) continue;
+            const isFirst = (i === 0 && pts.length > 2 && !sketchState.closed);
+            const r = isFirst ? 6 : 4;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, r, 0, Math.PI*2);
+            ctx.fillStyle = isFirst ? '#10b981' : '#38bdf8';
+            ctx.fill();
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+
+          // ── Rubber-band preview to hover ──
+          if (hover && !sketchState.closed && mouse.active) {
+            const sh = w2s(hover.x, hover.y, hover.z);
+            if (sh) {
+              ctx.save();
+              ctx.setLineDash([4, 4]);
+
+              // Line tool: from last point to hover
+              if (tool === 'line' && pts.length > 0) {
+                const last = pts[pts.length-1];
+                const sl = w2s(last.x,last.y,last.z);
+                if (sl) {
+                  ctx.beginPath();
+                  ctx.moveTo(sl.x, sl.y);
+                  ctx.lineTo(sh.x, sh.y);
+                  ctx.strokeStyle = '#94a3b8';
+                  ctx.lineWidth = 1.5;
+                  ctx.stroke();
+                  // Live dimension
+                  const d = Math.hypot(hover.x-last.x, hover.y-last.y, hover.z-last.z);
+                  if (d > 0.001) {
+                    const mx = (sl.x+sh.x)/2, my = (sl.y+sh.y)/2;
+                    const lbl = fmtDist(d);
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = 'rgba(15,23,42,0.9)';
+                    const w = ctx.measureText(lbl).width + 8;
+                    ctx.fillRect(mx-w/2, my-18, w, 14);
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(lbl, mx, my-11);
+                  }
+                }
+              }
+
+              // Rectangle tool: preview rect from pendingStart to hover
+              if (tool === 'rectangle' && sketchState.pendingStart) {
+                const s0 = sketchState.pendingStart;
+                let corners;
+                if (plane === 'XZ')      corners = [[s0.x,0,s0.z],[hover.x,0,s0.z],[hover.x,0,hover.z],[s0.x,0,hover.z]];
+                else if (plane === 'XY') corners = [[s0.x,s0.y,0],[hover.x,s0.y,0],[hover.x,hover.y,0],[s0.x,hover.y,0]];
+                else                     corners = [[0,s0.y,s0.z],[0,hover.y,s0.z],[0,hover.y,hover.z],[0,s0.y,hover.z]];
+                ctx.beginPath();
+                let first = true;
+                for (const c of corners) {
+                  const s = w2s(c[0],c[1],c[2]);
+                  if (!s) continue;
+                  if (first) { ctx.moveTo(s.x,s.y); first=false; } else ctx.lineTo(s.x,s.y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(148,163,184,0.10)';
+                ctx.fill();
+                // Width/Height labels
+                let w_, h_;
+                if (plane === 'XZ')      { w_ = Math.abs(hover.x-s0.x); h_ = Math.abs(hover.z-s0.z); }
+                else if (plane === 'XY') { w_ = Math.abs(hover.x-s0.x); h_ = Math.abs(hover.y-s0.y); }
+                else                     { w_ = Math.abs(hover.y-s0.y); h_ = Math.abs(hover.z-s0.z); }
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#fbbf24';
+                ctx.font = '11px "JetBrains Mono", monospace';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+                ctx.fillText(`W ${fmtDist(w_)}  H ${fmtDist(h_)}`, sh.x+10, sh.y+10);
+              }
+
+              // Circle tool: preview circle from pendingStart center to hover radius
+              if (tool === 'circle' && sketchState.pendingStart) {
+                const c = sketchState.pendingStart;
+                let dxp, dyp;
+                if (plane === 'XZ')      { dxp = hover.x - c.x; dyp = hover.z - c.z; }
+                else if (plane === 'XY') { dxp = hover.x - c.x; dyp = hover.y - c.y; }
+                else                     { dxp = hover.y - c.y; dyp = hover.z - c.z; }
+                const r = Math.hypot(dxp, dyp);
+                const N = 48;
+                ctx.beginPath();
+                for (let i = 0; i <= N; i++) {
+                  const a = (i / N) * Math.PI * 2;
+                  const ca = Math.cos(a)*r, sa = Math.sin(a)*r;
+                  let pt;
+                  if (plane === 'XZ')      pt = w2s(c.x+ca, 0, c.z+sa);
+                  else if (plane === 'XY') pt = w2s(c.x+ca, c.y+sa, 0);
+                  else                     pt = w2s(0, c.y+ca, c.z+sa);
+                  if (!pt) continue;
+                  if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+                }
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(148,163,184,0.10)';
+                ctx.fill();
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#fbbf24';
+                ctx.font = '11px "JetBrains Mono", monospace';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+                ctx.fillText(`R ${fmtDist(r)}  ⌀ ${fmtDist(r*2)}`, sh.x+10, sh.y+10);
+              }
+              ctx.restore();
+            }
+          }
+
+          // ── Hover snap indicator ──
+          if (hover && mouse.active) {
+            const sh = w2s(hover.x, hover.y, hover.z);
+            if (sh) {
+              const snapColors = {
+                grid:   '#38bdf8',
+                point:  '#a78bfa',
+                first:  '#10b981',
+                origin: '#f472b6',
+                free:   '#cbd5e1',
+              };
+              const col = snapColors[hover.snapType] || '#cbd5e1';
+              ctx.strokeStyle = col;
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              if (hover.snapType === 'point' || hover.snapType === 'first') {
+                ctx.arc(sh.x, sh.y, 8, 0, Math.PI*2);
+              } else if (hover.snapType === 'origin') {
+                ctx.rect(sh.x-7, sh.y-7, 14, 14);
+              } else {
+                // small + cross
+                ctx.moveTo(sh.x-7, sh.y); ctx.lineTo(sh.x+7, sh.y);
+                ctx.moveTo(sh.x, sh.y-7); ctx.lineTo(sh.x, sh.y+7);
+              }
+              ctx.stroke();
+              // Coordinate label
+              const p = plane;
+              let a='X', b='Z', av=hover.x, bv=hover.z;
+              if (p === 'XY')      { a='X'; b='Y'; av=hover.x; bv=hover.y; }
+              else if (p === 'YZ') { a='Y'; b='Z'; av=hover.y; bv=hover.z; }
+              const lbl = `${a}:${av.toFixed(3)} ${b}:${bv.toFixed(3)}`;
+              ctx.font = '10px "JetBrains Mono", monospace';
+              ctx.fillStyle = 'rgba(15,23,42,0.85)';
+              const w = ctx.measureText(lbl).width + 6;
+              ctx.fillRect(sh.x+12, sh.y-6, w, 12);
+              ctx.fillStyle = col;
+              ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+              ctx.fillText(lbl, sh.x+15, sh.y);
+            }
+          }
+        }
+        // -----------------------------
+
+        // --- Extrude Preview Overlay (frontend-only, transparent prism) ---
+        if (window.extrudePreview && window.extrudePreview.active && window.extrudePreview.points.length >= 3) {
+          const sk = document.getElementById('sketch-canvas');
+          if (sk) {
+            if (sk.width !== canvas.width || sk.height !== canvas.height) {
+              sk.width = canvas.width; sk.height = canvas.height;
+            }
+            const ctx = sk.getContext('2d');
+            const ep = window.extrudePreview;
+            // Re-use w2s closure pattern locally
+            function w2s2(x, y, z) {
+              const dx = x - roX, dy = y - roY, dz = z - roZ;
+              const vwX = dx*rX  + dy*rY  + dz*rZ;
+              const vwY = dx*uX  + dy*uY  + dz*uZ;
+              const vwZ = dx*fwdX + dy*fwdY + dz*fwdZ;
+              const asp = sk.width / sk.height;
+              let ndcX, ndcY;
+              if (cam.ortho) {
+                if (vwZ < -50 || vwZ > 1000) return null;
+                const oh = cam.dist * 0.45;
+                ndcX = (vwX / oh) / asp;
+                ndcY = (vwY / oh);
+              } else {
+                if (vwZ < 0.05) return null;
+                const fL = 2.414;
+                ndcX = (vwX * fL) / vwZ / asp;
+                ndcY = (vwY * fL) / vwZ;
+              }
+              return { x:(ndcX+1)*0.5*sk.width, y:(1-ndcY)*0.5*sk.height };
+            }
+            const base = ep.points;
+            const dx = ep.direction[0] * ep.distance;
+            const dy = ep.direction[1] * ep.distance;
+            const dz = ep.direction[2] * ep.distance;
+            const top = base.map(p => ({ x:p.x+dx, y:p.y+dy, z:p.z+dz }));
+
+            // Side walls (translucent fill)
+            ctx.save();
+            ctx.fillStyle   = 'rgba(167, 139, 250, 0.18)';
+            ctx.strokeStyle = 'rgba(167, 139, 250, 0.6)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < base.length; i++) {
+              const j = (i + 1) % base.length;
+              const a = w2s2(base[i].x, base[i].y, base[i].z);
+              const b = w2s2(base[j].x, base[j].y, base[j].z);
+              const c = w2s2(top[j].x,  top[j].y,  top[j].z);
+              const d = w2s2(top[i].x,  top[i].y,  top[i].z);
+              if (!a || !b || !c || !d) continue;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.lineTo(c.x, c.y);
+              ctx.lineTo(d.x, d.y);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+            // Top cap outline
+            ctx.beginPath();
+            for (let i = 0; i < top.length; i++) {
+              const s = w2s2(top[i].x, top[i].y, top[i].z);
+              if (!s) continue;
+              if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(167, 139, 250, 0.25)';
+            ctx.strokeStyle = '#a78bfa';
+            ctx.lineWidth = 1.5;
+            ctx.fill();
+            ctx.stroke();
+            // Distance label at first edge midpoint
+            const a0 = w2s2(base[0].x, base[0].y, base[0].z);
+            const t0 = w2s2(top[0].x,  top[0].y,  top[0].z);
+            if (a0 && t0) {
+              const mx = (a0.x+t0.x)/2, my = (a0.y+t0.y)/2;
+              const lbl = `↥ ${ep.distance < 1 ? (ep.distance*100).toFixed(1)+' cm' : ep.distance.toFixed(3)+' m'}`;
+              ctx.font = '11px "JetBrains Mono", monospace';
+              ctx.fillStyle = 'rgba(15,23,42,0.9)';
+              const w = ctx.measureText(lbl).width + 8;
+              ctx.fillRect(mx+8, my-7, w, 14);
+              ctx.fillStyle = '#a78bfa';
+              ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+              ctx.fillText(lbl, mx+12, my);
+            }
+            ctx.restore();
+          }
+        }
+
         gpuRafId = requestAnimationFrame(frame);
       }
 

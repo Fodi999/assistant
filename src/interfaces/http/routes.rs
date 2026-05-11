@@ -1320,6 +1320,7 @@ pub fn create_router(
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete
         .nest("/api", smart_parse_router) // 🆕 POST /api/smart/parse
         .nest("/api", smart_from_text_router) // 🆕 POST /api/smart/from-text
+        .route("/api/matter/mesh/generate", axum::routing::post(crate::interfaces::http::public::matter::generate_mesh_endpoint)) // 🆕 CAD endpoint
         .nest("/api", protected_chat_routes) // 🔒 POST /api/chat + /api/chat/event (auth + billing)
         .nest("/api", protected_routes);
 
