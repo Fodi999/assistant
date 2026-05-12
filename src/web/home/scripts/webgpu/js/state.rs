@@ -138,6 +138,7 @@ pub const JS: &str = r##"
         const __pfPick = performance.now();
 
         // Hover + snap (always while pointer is on canvas, regardless of drag).
+        const __pfPick = performance.now();
         const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY);
         sketchState.hoverWorld = hit || null;
         if (hit) {
