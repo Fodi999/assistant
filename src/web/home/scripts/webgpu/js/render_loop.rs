@@ -364,36 +364,60 @@ pub const JS: &str = r##"
           // ── Snap marker + ghost preview point ──
           if (sketchState.hoverWorld &&
               (sketchState.activeTool === 'point' || sketchState.activeTool === 'line')) {
-            const c = w2s(sketchState.hoverWorld.x, sketchState.hoverWorld.y, sketchState.hoverWorld.z);
-            if (c) {
-              const snapPoint = sketchState.snap.kind === 'point';
+            const hw = sketchState.hoverWorld;
+            // Use the stored cursor screen position so the crosshair is
+            // always exactly at the pointer tip (snapped world projected back
+            // via w2s can drift by sub-pixel on non-integer grids).
+            let cx, cy;
+            if (hw.screenX !== undefined && hw.screenY !== undefined) {
+              cx = hw.screenX;
+              cy = hw.screenY;
+            } else {
+              const _c = w2s(hw.x, hw.y, hw.z);
+              if (!_c) { cx = null; }
+              else { cx = _c.x; cy = _c.y; }
+            }
+            if (cx !== null && cx !== undefined) {
+              const kind = sketchState.snap.kind;
+              const snapPoint = kind === 'point';
+              const snapFree  = kind === 'free';
+              const snapColor = snapPoint ? '#10b981'
+                              : snapFree  ? '#cbd5e1'
+                              : '#67e8f9';
               if (!snapPoint) {
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(c.x, c.y, 5.5, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(56,189,248,0.35)';
-                ctx.strokeStyle = '#38bdf8';
+                ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
+                ctx.fillStyle = snapFree
+                  ? 'rgba(203,213,225,0.25)'
+                  : 'rgba(56,189,248,0.35)';
+                ctx.strokeStyle = snapColor;
                 ctx.setLineDash([2, 2]);
                 ctx.lineWidth = 1.5;
                 ctx.fill();
                 ctx.stroke();
                 ctx.restore();
               }
-              ctx.strokeStyle = snapPoint ? 'rgba(16,185,129,0.9)' : 'rgba(250,204,21,0.7)';
+              ctx.strokeStyle = snapPoint ? 'rgba(16,185,129,0.9)'
+                              : snapFree  ? 'rgba(203,213,225,0.7)'
+                              : 'rgba(250,204,21,0.7)';
               ctx.lineWidth = 1;
               ctx.beginPath();
-              ctx.moveTo(c.x - 10, c.y); ctx.lineTo(c.x + 10, c.y);
-              ctx.moveTo(c.x, c.y - 10); ctx.lineTo(c.x, c.y + 10);
+              ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
+              ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
               ctx.stroke();
-              const hw = sketchState.hoverWorld;
-              const txt = 'X ' + hw.gx + '  Y ' + hw.gy + '  Z ' + hw.gz;
+              const fmtC = window.__fmtCoord || (v => Number(v).toFixed(3));
+              const line1 = 'g ' + hw.gx + ',' + hw.gy + ',' + hw.gz;
+              const line2 = fmtC(hw.x) + ' ' + fmtC(hw.y) + ' ' + fmtC(hw.z);
               ctx.font = '11px "JetBrains Mono", system-ui, monospace';
-              const w = ctx.measureText(txt).width + 10;
+              const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 10;
               ctx.fillStyle = 'rgba(15,23,42,0.88)';
-              ctx.fillRect(c.x + 14, c.y - 10, w, 18);
-              ctx.fillStyle = snapPoint ? '#10b981' : '#67e8f9';
+              ctx.fillRect(cx + 14, cy - 18, w, 34);
+              ctx.fillStyle = snapColor;
               ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-              ctx.fillText(txt, c.x + 19, c.y - 1);
+              ctx.fillText(line1, cx + 19, cy - 9);
+              ctx.fillStyle = '#e2e8f0';
+              ctx.fillText(line2, cx + 19, cy + 7);
             }
           }
 
