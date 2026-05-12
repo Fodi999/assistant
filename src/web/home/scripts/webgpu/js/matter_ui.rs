@@ -150,19 +150,32 @@ pub const JS: &str = r##"
         set('si-hint', TOOL_HINTS[tool] || '');
 
         // ── Mini status bar ──
+        const planeLbl = window.__planeLabel
+          ? window.__planeLabel(sketchState.workingPlane)
+          : (sketchState.workingPlane || 'XZ');
+        set('mini-mode',  sketchState.draftMode === 'projection' ? 'Projection' : 'Free 3D');
         set('mini-tool',  tool.toUpperCase());
-        set('mini-plane', sketchState.workingPlane || 'XZ');
+        set('mini-plane', sketchState.draftMode === 'projection'
+          ? (sketchState.workingPlane + ' ' + planeLbl)
+          : (sketchState.workingPlane || 'XZ'));
+        const snap = sketchState.snap || { kind: 'none' };
+        const hw   = sketchState.hoverWorld;
+        const fmtC = window.__fmtCoord || (v => Number(v).toFixed(3));
+        const fmtL = window.__fmtLength || (v => Number(v).toFixed(3));
         let snapTxt;
-        if (sketchState.snap.kind === 'point' && sketchState.snap.pointId) snapTxt = 'existing ' + sketchState.snap.pointId;
-        else if (sketchState.snap.kind === 'grid')                          snapTxt = 'grid ' + sketchState.snap.gx + ',' + sketchState.snap.gy + ',' + sketchState.snap.gz;
-        else                                                                snapTxt = '—';
+        if (snap.kind === 'point' && snap.pointId)  snapTxt = 'POINT ' + snap.pointId;
+        else if (snap.kind === 'grid')               snapTxt = 'GRID '  + snap.gx + ',' + snap.gy + ',' + snap.gz;
+        else if (snap.kind === 'free' && hw)         snapTxt = 'FREE '  + fmtC(hw.x) + ' ' + fmtC(hw.y) + ' ' + fmtC(hw.z);
+        else                                          snapTxt = '—';
         set('mini-snap', snapTxt);
+        if (hw)  set('mini-grid', fmtC(hw.x) + ' ' + fmtC(hw.y) + ' ' + fmtC(hw.z));
+        else     set('mini-grid', '—');
         let lenTxt = '—';
         if (tool === 'line' && sketchState.line.startPointId && sketchState.line.previewPoint) {
-          lenTxt = (sketchState.line.previewLength || 0).toFixed(2) + ' u';
+          lenTxt = fmtL(sketchState.line.previewLength || 0) + ' u';
         } else if (totalSel === 1 && selEds.length === 1) {
           const e = sketchState.edges.find(x => x.id === selEds[0]);
-          if (e) lenTxt = window.__edgeLength(e).toFixed(2) + ' u';
+          if (e) lenTxt = fmtL(window.__edgeLength(e)) + ' u';
         }
         set('mini-length', lenTxt);
 
@@ -185,6 +198,47 @@ pub const JS: &str = r##"
         if (onoffEl) onoffEl.textContent = sketchState.useBackendCommands ? 'ON' : 'OFF';
         // Last result: use unified lastCommandMsg (set by all engine modes).
         set('si-backend-last', sketchState.lastCommandMsg || '—');
+
+        // ── Projection Drafting block (Phase 13) ──
+        const draftChk = document.getElementById('si-draft-mode');
+        if (draftChk) draftChk.checked = sketchState.draftMode === 'projection';
+        const draftLbl = document.getElementById('si-draft-mode-label');
+        if (draftLbl) draftLbl.textContent = sketchState.draftMode === 'projection' ? 'projection' : 'free3d';
+        const projDesc = window.__planeDescriptor
+          ? window.__planeDescriptor(sketchState.workingPlane)
+          : (sketchState.workingPlane || '—');
+        set('si-proj-active', projDesc);
+        const _pl = sketchState.workingPlane || 'XZ';
+        let _visTxt = '—', _hidTxt = '—';
+        if (_pl === 'XZ') { _visTxt = 'X, Z'; _hidTxt = 'Y'; }
+        else if (_pl === 'XY') { _visTxt = 'X, Y'; _hidTxt = 'Z'; }
+        else if (_pl === 'YZ') { _visTxt = 'Y, Z'; _hidTxt = 'X'; }
+        set('si-proj-visible', _visTxt);
+        set('si-proj-hidden',  _hidTxt);
+        if (selPts.length === 1) {
+          const _p = sketchState.points.find(pp => pp.id === selPts[0]);
+          const _m = _p && window.__projectionCoordsForPlane
+            ? window.__projectionCoordsForPlane(_p, _pl) : null;
+          if (_m) set('si-proj-selpt',
+            _m.hAxis + '=' + fmtC(_m.h) + '  ' + _m.vAxis + '=' + fmtC(_m.v) +
+            '   (' + _m.hiddenAxis + '=' + fmtC(_m.hidden) + ')');
+          else set('si-proj-selpt', '—');
+        } else {
+          set('si-proj-selpt', '—');
+        }
+        if (selEds.length === 1) {
+          const _e = sketchState.edges.find(x => x.id === selEds[0]);
+          const _a = _e && sketchState.points.find(p => p.id === _e.a);
+          const _b = _e && sketchState.points.find(p => p.id === _e.b);
+          if (_a && _b && window.__projectionCoordsForPlane) {
+            const _ma = window.__projectionCoordsForPlane(_a, _pl);
+            const _mb = window.__projectionCoordsForPlane(_b, _pl);
+            const _dh = _mb.h - _ma.h, _dv = _mb.v - _ma.v;
+            set('si-proj-len', fmtL(Math.hypot(_dh, _dv)) + ' u');
+          } else set('si-proj-len', '—');
+        } else {
+          set('si-proj-len', '—');
+        }
 
         // ── Engine mode + perf metrics (Phase 11) ──
         const modeSel = document.getElementById('si-engine-mode');
@@ -307,12 +361,71 @@ pub const JS: &str = r##"
           });
         }
 
+        // ── Snap-mode checkboxes (Phase 12 — Touchpad Precision) ──
+        const snapBindings = [
+          ['si-snap-grid',  'gridSnap'],
+          ['si-snap-point', 'pointSnap'],
+          ['si-snap-mid',   'midpointSnap'],
+          ['si-snap-free',  'freeMode'],
+        ];
+        for (const [id, key] of snapBindings) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          // Sync initial DOM state from sketchState.precision.
+          el.checked = !!(sketchState.precision && sketchState.precision[key]);
+          el.addEventListener('change', () => {
+            window.__setSnapMode(key, el.checked);
+            window.__updateSketchInspector();
+          });
+        }
+        const tpEl = document.getElementById('si-touchpad-mode');
+        if (tpEl) {
+          tpEl.checked = !!(sketchState.precision && sketchState.precision.touchpadMode);
+          tpEl.addEventListener('change', () => {
+            if (sketchState.precision) sketchState.precision.touchpadMode = tpEl.checked;
+            window.__setStatusMessage('Touchpad precision: ' + (tpEl.checked ? 'on' : 'off'));
+          });
+        }
+
         // ── Engine mode select (Phase 11) ──
         const modeSel = document.getElementById('si-engine-mode');
         if (modeSel) {
           modeSel.value = sketchState.engineMode || 'backend';
           modeSel.addEventListener('change', () => {
             window.__setEngineMode(modeSel.value);
+          });
+        }
+
+        // ── Projection Drafting controls (Phase 13) ──
+        const draftEl = document.getElementById('si-draft-mode');
+        if (draftEl) {
+          draftEl.checked = sketchState.draftMode === 'projection';
+          draftEl.addEventListener('change', () => {
+            window.__setDraftMode(draftEl.checked ? 'projection' : 'free3d');
+          });
+        }
+        const projW = document.getElementById('si-proj-w');
+        const projH = document.getElementById('si-proj-h');
+        const projD = document.getElementById('si-proj-d');
+        function syncProjInputsToState() {
+          const pr = sketchState.projection || {};
+          if (projW) { const v = parseInt(projW.value, 10); if (isFinite(v)) pr.boxWidth  = v; }
+          if (projH) { const v = parseInt(projH.value, 10); if (isFinite(v)) pr.boxHeight = v; }
+          if (projD) { const v = parseInt(projD.value, 10); if (isFinite(v)) pr.boxDepth  = v; }
+        }
+        [projW, projH, projD].forEach(el => { if (el) el.addEventListener('change', syncProjInputsToState); });
+        const projBoxBtn = document.getElementById('si-proj-box');
+        if (projBoxBtn) {
+          projBoxBtn.addEventListener('click', async () => {
+            syncProjInputsToState();
+            const pr = sketchState.projection || {};
+            await window.__createProjectionBox(pr.boxWidth, pr.boxHeight, pr.boxDepth);
+          });
+        }
+        const projBlockBtn = document.getElementById('si-proj-block');
+        if (projBlockBtn) {
+          projBlockBtn.addEventListener('click', async () => {
+            await window.__createSampleSlopedBlock();
           });
         }
 

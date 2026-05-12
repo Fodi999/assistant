@@ -80,6 +80,10 @@ pub const JS: &str = r##"
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
 
+      // Prevent browser scroll/swipe gestures hijacking the CAD viewport.
+      canvas.style.touchAction        = 'none';
+      canvas.style.overscrollBehavior = 'none';
+
       const fmt    = navigator.gpu.getPreferredCanvasFormat();
       const gpuCtx = canvas.getContext('webgpu');
       gpuCtx.configure({ device, format: fmt, alphaMode: 'opaque' });

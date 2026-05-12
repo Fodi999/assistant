@@ -231,12 +231,25 @@ pub const JS: &str = r##"
             if (!sa || !sb) continue;
             const isHover = sketchState.hoverEdgeId === e.id;
             const isSel   = sketchState.selectedEdgeIds.has(e.id);
-            ctx.strokeStyle = isSel ? '#fb923c' : isHover ? '#facc15' : '#cbd5e1';
-            ctx.lineWidth   = isSel ? 3.0 : isHover ? 2.5 : 2.0;
+            const kind    = e.kind || 'normal';
+            ctx.save();
+            if (kind === 'construction') {
+              ctx.strokeStyle = isSel ? '#fb923c' : isHover ? '#facc15' : '#67e8f9';
+              ctx.lineWidth   = isSel ? 1.6 : 1.2;
+              ctx.setLineDash([4, 3]);
+            } else if (kind === 'hidden') {
+              ctx.strokeStyle = isSel ? '#fb923c' : isHover ? '#facc15' : '#94a3b8';
+              ctx.lineWidth   = isSel ? 1.8 : 1.4;
+              ctx.setLineDash([6, 4]);
+            } else {
+              ctx.strokeStyle = isSel ? '#fb923c' : isHover ? '#facc15' : '#cbd5e1';
+              ctx.lineWidth   = isSel ? 3.0 : isHover ? 2.5 : 2.0;
+            }
             ctx.beginPath();
             ctx.moveTo(sa.x, sa.y);
             ctx.lineTo(sb.x, sb.y);
             ctx.stroke();
+            ctx.restore();
 
             // Constraint badges + length.
             const dimC = window.__getEdgeLengthConstraint && window.__getEdgeLengthConstraint(e.id);
@@ -418,6 +431,81 @@ pub const JS: &str = r##"
               ctx.fillText(line1, cx + 19, cy - 9);
               ctx.fillStyle = '#e2e8f0';
               ctx.fillText(line2, cx + 19, cy + 7);
+            }
+          }
+
+          // ── Projection drafting overlays (Phase 13) ──
+          if (sketchState.draftMode === 'projection') {
+            // Plane badge (top-left, below plane pills).
+            const lbl = window.__planeDescriptor
+              ? window.__planeDescriptor(sketchState.workingPlane)
+              : (sketchState.workingPlane || 'XZ');
+            ctx.font = 'bold 12px "JetBrains Mono", system-ui, monospace';
+            const bw = ctx.measureText(lbl).width + 16;
+            ctx.fillStyle = 'rgba(15,23,42,0.92)';
+            ctx.fillRect(16, 60, bw, 24);
+            ctx.strokeStyle = 'rgba(56,189,248,0.55)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(16, 60, bw, 24);
+            ctx.fillStyle = '#67e8f9';
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(lbl, 24, 72);
+
+            // Guide lines for hovered / selected points along the in-plane axes.
+            const pl = sketchState.workingPlane || 'XZ';
+            const guideTargets = [];
+            if (sketchState.hoverPointId) {
+              const p = pById.get(sketchState.hoverPointId);
+              if (p) guideTargets.push({ p, color: 'rgba(250,204,21,0.55)' });
+            }
+            for (const id of sketchState.selectedPointIds) {
+              const p = pById.get(id);
+              if (p) guideTargets.push({ p, color: 'rgba(251,146,60,0.65)' });
+            }
+            if (guideTargets.length && sketchState.projection.showGuides) {
+              const D = 50;
+              ctx.save();
+              ctx.setLineDash([3, 3]);
+              ctx.lineWidth = 1;
+              for (const g of guideTargets) {
+                const p = g.p;
+                let line1A, line1B, line2A, line2B;
+                if (pl === 'XZ') {
+                  line1A = w2s(-D, p.y, p.z); line1B = w2s(D, p.y, p.z); // X-axis guide
+                  line2A = w2s(p.x, p.y, -D); line2B = w2s(p.x, p.y,  D); // Z-axis guide
+                } else if (pl === 'XY') {
+                  line1A = w2s(-D, p.y, p.z); line1B = w2s(D, p.y, p.z);
+                  line2A = w2s(p.x, -D, p.z); line2B = w2s(p.x,  D, p.z);
+                } else { // YZ
+                  line1A = w2s(p.x, p.y, -D); line1B = w2s(p.x, p.y, D);
+                  line2A = w2s(p.x, -D, p.z); line2B = w2s(p.x,  D, p.z);
+                }
+                ctx.strokeStyle = g.color;
+                ctx.beginPath();
+                if (line1A && line1B) { ctx.moveTo(line1A.x, line1A.y); ctx.lineTo(line1B.x, line1B.y); }
+                if (line2A && line2B) { ctx.moveTo(line2A.x, line2A.y); ctx.lineTo(line2B.x, line2B.y); }
+                ctx.stroke();
+                // Coordinate label near the point with visible coords for this plane.
+                const map = window.__projectionCoordsForPlane && window.__projectionCoordsForPlane(p, pl);
+                if (map) {
+                  const ps = w2s(p.x, p.y, p.z);
+                  if (ps) {
+                    const fmt = window.__fmtCoord || (v => Number(v).toFixed(2));
+                    const t = pl + ' · ' + map.hAxis + '=' + fmt(map.h) + ' ' + map.vAxis + '=' + fmt(map.v)
+                            + '  (' + map.hiddenAxis + '=' + fmt(map.hidden) + ')';
+                    ctx.font = '10px "JetBrains Mono", system-ui, monospace';
+                    const tw2 = ctx.measureText(t).width + 8;
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = 'rgba(15,23,42,0.85)';
+                    ctx.fillRect(ps.x + 10, ps.y + 10, tw2, 16);
+                    ctx.fillStyle = '#67e8f9';
+                    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                    ctx.fillText(t, ps.x + 14, ps.y + 18);
+                    ctx.setLineDash([3, 3]);
+                  }
+                }
+              }
+              ctx.restore();
             }
           }
 

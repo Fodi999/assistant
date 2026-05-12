@@ -45,11 +45,15 @@ pub fn matter_lab_section() -> String {
 
         <!-- Mini command bar (top center) -->
         <div id="mini-bar">
+          <span class="mb-cell"><b>Mode</b> <span id="mini-mode">Free 3D</span></span>
+          <span class="mb-sep">·</span>
           <span class="mb-cell"><b>Tool</b> <span id="mini-tool">SELECT</span></span>
           <span class="mb-sep">·</span>
           <span class="mb-cell"><b>Plane</b> <span id="mini-plane">XZ</span></span>
           <span class="mb-sep">·</span>
           <span class="mb-cell"><b>Snap</b> <span id="mini-snap">—</span></span>
+          <span class="mb-sep">·</span>
+          <span class="mb-cell"><b>Coord</b> <span id="mini-grid">—</span></span>
           <span class="mb-sep">·</span>
           <span class="mb-cell"><b>Length</b> <span id="mini-length">—</span></span>
         </div>
@@ -67,6 +71,7 @@ pub fn matter_lab_section() -> String {
           <span><b>⇧V</b> Valid</span>
           <span><b>⇧P</b> Perf</span>
           <span><b>1/2/3</b> Plane</span>
+          <span><b>J</b> Proj</span>
           <span><b>⌫</b> Del</span>
           <span><b>⌘Z</b> Undo</span>
           <span><b>Esc</b> Cancel</span>
@@ -183,6 +188,48 @@ pub fn matter_lab_section() -> String {
             </ul>
           </div>
 
+          <!-- ── Projection Drafting (Phase 13) ── -->
+          <div class="si-divider"></div>
+          <div class="si-block-title">Projection Draft</div>
+          <dl class="si-grid">
+            <dt>Mode</dt>
+            <dd>
+              <label style="display:inline-flex; gap:6px; align-items:center;">
+                <input type="checkbox" id="si-draft-mode">
+                <span id="si-draft-mode-label">free3d</span>
+              </label>
+            </dd>
+            <dt>Active</dt>      <dd id="si-proj-active">—</dd>
+            <dt>Visible</dt>     <dd id="si-proj-visible">—</dd>
+            <dt>Hidden</dt>      <dd id="si-proj-hidden">—</dd>
+            <dt>Selected</dt>    <dd id="si-proj-selpt">—</dd>
+            <dt>Proj. length</dt><dd id="si-proj-len">—</dd>
+          </dl>
+          <div style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
+            <label style="font-size:10px;">W
+              <input id="si-proj-w" type="number" min="1" max="100" value="6"
+                     style="width:44px; background:rgba(15,23,42,0.7); color:#e2e8f0;
+                            border:1px solid rgba(148,163,184,0.25); border-radius:4px;
+                            padding:1px 4px; font:inherit; text-align:right;">
+            </label>
+            <label style="font-size:10px;">H
+              <input id="si-proj-h" type="number" min="1" max="100" value="5"
+                     style="width:44px; background:rgba(15,23,42,0.7); color:#e2e8f0;
+                            border:1px solid rgba(148,163,184,0.25); border-radius:4px;
+                            padding:1px 4px; font:inherit; text-align:right;">
+            </label>
+            <label style="font-size:10px;">D
+              <input id="si-proj-d" type="number" min="1" max="100" value="4"
+                     style="width:44px; background:rgba(15,23,42,0.7); color:#e2e8f0;
+                            border:1px solid rgba(148,163,184,0.25); border-radius:4px;
+                            padding:1px 4px; font:inherit; text-align:right;">
+            </label>
+          </div>
+          <div style="display:flex; gap:6px; margin-top:6px;">
+            <button id="si-proj-box"   class="sio-btn" style="flex:1;">⬚ Box</button>
+            <button id="si-proj-block" class="sio-btn" style="flex:1;">▦ Sample block</button>
+          </div>
+
           <!-- ── Precision (Phase 7) ── -->
           <div class="si-divider"></div>
           <div class="si-block-title">Precision</div>
@@ -195,6 +242,15 @@ pub fn matter_lab_section() -> String {
                      font:inherit; text-align:right;">
             </dd>
             <dt>Coord prec.</dt> <dd>3 dec</dd>
+            <dt>Snap modes</dt>
+            <dd style="display:flex; flex-direction:column; gap:2px; font-size:11px;">
+              <label><input type="checkbox" id="si-snap-grid"  checked> Grid</label>
+              <label><input type="checkbox" id="si-snap-point" checked> Points</label>
+              <label><input type="checkbox" id="si-snap-mid"> Midpoint</label>
+              <label><input type="checkbox" id="si-snap-free"> Free (Shift)</label>
+            </dd>
+            <dt>Touchpad</dt>
+            <dd><label><input type="checkbox" id="si-touchpad-mode" checked> precision lock</label></dd>
           </dl>
 
           <!-- ── Sketch Engine (Phase 11) ── -->

@@ -71,6 +71,54 @@ pub const JS: &str = r##"
         // ── Profile selection (Phase 8) ──
         selectedProfileId: null,
         hoverProfileId: null,
+
+        // ── Precision / Snap (Phase 12) ──
+        coordPrecision: 3,
+        precision: {
+          touchpadMode: true,
+          snapEnabled: true,
+          gridSnap:    true,
+          pointSnap:   true,
+          midpointSnap: false,
+          freeMode:    false,
+
+          pointSnapRadiusPx: 14,
+          edgeSnapRadiusPx:  8,
+          snapLockMs:        180,
+
+          // Last resolved samples (set every pointermove).
+          lastFreeWorld:    null,
+          lastSnappedWorld: null,
+          lastGrid:         null,
+          lastMouseScreen:  null,
+
+          // Modifier state (true while Shift is held).
+          shiftHeld: false,
+
+          // Touchpad anti-jitter lock.
+          snapLock: {
+            active: false,
+            key: null,        // pointId or "g:gx,gy,gz"
+            kind: null,       // 'point' | 'grid'
+            expiresAt: 0,
+            screenX: 0,
+            screenY: 0,
+          },
+        },
+
+        // ── Projection Drafting (Phase 13) ──
+        // draftMode 'free3d' → ordinary 3D sketch.
+        // draftMode 'projection' → engineering-style projection drafting
+        // (top / front / side views on the three working planes).
+        draftMode: 'free3d',
+        projection: {
+          // Default box dimensions for "Create projection box".
+          boxWidth:  6,   // X
+          boxHeight: 5,   // Y
+          boxDepth:  4,   // Z
+          // Show dashed projection guide-lines through hovered / selected points.
+          showGuides: true,
+        },
       };
       window.sketchState = sketchState;
 
@@ -111,6 +159,167 @@ pub const JS: &str = r##"
         if (pl === "YZ") gx = 0;
         return { gx, gy, gz, x: gx * g, y: gy * g, z: gz * g };
       };
+
+      // ── Precision helpers (Phase 12) ───────────────────────────
+      // Formats a coordinate value using sketchState.coordPrecision.
+      window.__fmtCoord = function(v) {
+        const n = Number(v);
+        if (!isFinite(n)) return '—';
+        const p = sketchState.coordPrecision || 3;
+        // Trim trailing zeros (1.500 → 1.5, 1.000 → 1) when integer.
+        return n.toFixed(p);
+      };
+      window.__fmtLength = function(v) {
+        const n = Number(v);
+        if (!isFinite(n)) return '—';
+        const p = sketchState.coordPrecision || 3;
+        return n.toFixed(p);
+      };
+
+      // __setSnapMode(key, on) — toggles one of: gridSnap | pointSnap | midpointSnap | freeMode.
+      window.__setSnapMode = function(key, on) {
+        const pr = sketchState.precision;
+        if (!(key in pr)) return;
+        pr[key] = !!on;
+        // freeMode implies snapping disabled overall.
+        if (key === 'freeMode' && on) {
+          pr.snapEnabled = false;
+        } else if (key === 'freeMode' && !on) {
+          pr.snapEnabled = true;
+        }
+        if (window.__setStatusMessage) {
+          window.__setStatusMessage('Snap · ' + key + ' = ' + (on ? 'on' : 'off'));
+        }
+      };
+
+      // __cycleGridSize(direction) — halve (-1) or double (+1) gridSize.
+      // Clamps to [0.001, 100].
+      window.__cycleGridSize = function(direction) {
+        const cur = sketchState.gridSize || 1.0;
+        const next = (direction > 0) ? cur * 2 : cur / 2;
+        const clamped = Math.max(0.001, Math.min(100, next));
+        sketchState.gridSize = clamped;
+        if (window.__setStatusMessage) {
+          window.__setStatusMessage('Grid size: ' + clamped);
+        }
+        if (window.__notifySketchChanged) window.__notifySketchChanged();
+      };
+
+      // ── __resolveSnapTarget(freeWorld, mousePx, options) → snap target ──
+      // Priority:
+      //   1. existing point   (if pointSnap and within pointSnapRadiusPx)
+      //   2. grid             (if gridSnap)
+      //   3. free             (if freeMode or shift held)
+      //   4. grid fallback
+      // Returns {kind, pointId, gx, gy, gz, x, y, z, screenDistancePx, key, valid}.
+      window.__resolveSnapTarget = function(freeWorld, mousePx, opts) {
+        const pr   = sketchState.precision;
+        const plane = sketchState.workingPlane || 'XZ';
+        const now  = Date.now();
+        const shift = pr.shiftHeld;
+
+        // Persist last free sample.
+        pr.lastFreeWorld   = { x: freeWorld.x, y: freeWorld.y, z: freeWorld.z };
+        pr.lastMouseScreen = { x: mousePx.x,   y: mousePx.y };
+
+        // Free mode override (explicit or via Shift).
+        const wantFree = pr.freeMode || shift;
+
+        // ── Snap lock check (touchpad anti-jitter) ──
+        const lock = pr.snapLock;
+        if (pr.touchpadMode && lock.active && now < lock.expiresAt && !wantFree) {
+          const dx = mousePx.x - lock.screenX;
+          const dy = mousePx.y - lock.screenY;
+          const moved = Math.hypot(dx, dy);
+          if (moved < 8) {
+            // Still locked — return last snapshot if target still exists.
+            if (lock.kind === 'point') {
+              const p = sketchState.points.find(pp => pp.id === lock.key);
+              if (p) {
+                return {
+                  kind: 'point', pointId: p.id,
+                  gx: p.gx, gy: p.gy, gz: p.gz,
+                  x: p.x, y: p.y, z: p.z,
+                  screenDistancePx: moved, key: 'p:' + p.id, valid: true,
+                };
+              }
+            }
+          }
+          lock.active = false;
+        }
+
+        // ── 1. Existing point snap ──
+        if (pr.snapEnabled && pr.pointSnap && !wantFree && window.__worldToScreenPx) {
+          const radius = pr.pointSnapRadiusPx || 14;
+          let best = null, bestD = Infinity;
+          for (const p of sketchState.points) {
+            const s = window.__worldToScreenPx(p.x, p.y, p.z);
+            if (!s) continue;
+            const d = Math.hypot(s.x - mousePx.x, s.y - mousePx.y);
+            if (d < radius && d < bestD) { bestD = d; best = p; }
+          }
+          if (best) {
+            // Acquire lock.
+            if (pr.touchpadMode) {
+              lock.active    = true;
+              lock.kind      = 'point';
+              lock.key       = best.id;
+              lock.expiresAt = now + (pr.snapLockMs || 180);
+              lock.screenX   = mousePx.x;
+              lock.screenY   = mousePx.y;
+            }
+            pr.lastSnappedWorld = { x: best.x, y: best.y, z: best.z };
+            pr.lastGrid = { gx: best.gx, gy: best.gy, gz: best.gz };
+            return {
+              kind: 'point', pointId: best.id,
+              gx: best.gx, gy: best.gy, gz: best.gz,
+              x: best.x, y: best.y, z: best.z,
+              screenDistancePx: bestD, key: 'p:' + best.id, valid: true,
+            };
+          }
+        }
+
+        // ── 2. Free mode (no snap visually; still emit nearest grid for engine) ──
+        if (wantFree) {
+          let fx = freeWorld.x, fy = freeWorld.y, fz = freeWorld.z;
+          if (plane === 'XZ') fy = 0;
+          if (plane === 'XY') fz = 0;
+          if (plane === 'YZ') fx = 0;
+          // Compute nearest grid coords so engine submission still works.
+          const ng = window.__snapWorldToGrid({ x: fx, y: fy, z: fz }, plane);
+          pr.lastSnappedWorld = { x: fx, y: fy, z: fz };
+          pr.lastGrid = { gx: ng.gx, gy: ng.gy, gz: ng.gz };
+          return {
+            kind: 'free', pointId: null,
+            gx: ng.gx, gy: ng.gy, gz: ng.gz,
+            x: fx, y: fy, z: fz,
+            screenDistancePx: 0,
+            key: 'f:' + fx.toFixed(4) + ',' + fy.toFixed(4) + ',' + fz.toFixed(4),
+            valid: true,
+          };
+        }
+
+        // ── 3. Grid snap (fallback / primary when no point) ──
+        const snapped = window.__snapWorldToGrid(freeWorld, plane);
+        const gridKey = 'g:' + snapped.gx + ',' + snapped.gy + ',' + snapped.gz;
+        if (pr.touchpadMode) {
+          lock.active    = true;
+          lock.kind      = 'grid';
+          lock.key       = gridKey;
+          lock.expiresAt = now + (pr.snapLockMs || 180);
+          lock.screenX   = mousePx.x;
+          lock.screenY   = mousePx.y;
+        }
+        pr.lastSnappedWorld = { x: snapped.x, y: snapped.y, z: snapped.z };
+        pr.lastGrid = { gx: snapped.gx, gy: snapped.gy, gz: snapped.gz };
+        return {
+          kind: 'grid', pointId: null,
+          gx: snapped.gx, gy: snapped.gy, gz: snapped.gz,
+          x: snapped.x,   y: snapped.y,   z: snapped.z,
+          screenDistancePx: 0, key: gridKey, valid: true,
+        };
+      };
+
       window.__findPointAtGrid = function(gx, gy, gz) {
         for (const p of sketchState.points) {
           if (p.gx === gx && p.gy === gy && p.gz === gz) return p;
@@ -531,11 +740,15 @@ pub const JS: &str = r##"
         window.__notifySketchChanged();
         return p;
       };
-      window.__addEdge = function(aId, bId) {
+      window.__addEdge = function(aId, bId, kind) {
         if (!aId || !bId || aId === bId) return null;
         const existing = window.__findEdgeBetween(aId, bId);
-        if (existing) return existing;
-        const e = { id: window.__nextEdgeId(), a: aId, b: bId };
+        if (existing) {
+          // Upgrade kind if a stricter (visible) variant was requested.
+          if (kind && kind !== existing.kind) existing.kind = kind;
+          return existing;
+        }
+        const e = { id: window.__nextEdgeId(), a: aId, b: bId, kind: kind || 'normal' };
         sketchState.edges.push(e);
         window.__notifySketchChanged();
         return e;
@@ -579,6 +792,175 @@ pub const JS: &str = r##"
         const sb = document.getElementById('mini-plane');
         if (sb) sb.textContent = plane;
         if (typeof log === 'function') log('◇ Working plane → ' + plane, '#67e8f9');
+      };
+
+      // ── Projection Drafting Mode (Phase 13) ────────────────────
+      // Plane label helper — in projection mode returns Top/Front/Side,
+      // in free3d returns raw plane name.
+      window.__planeLabel = function(plane) {
+        const pl = plane || sketchState.workingPlane || 'XZ';
+        if (sketchState.draftMode !== 'projection') return pl;
+        if (pl === 'XZ') return 'Top';
+        if (pl === 'XY') return 'Front';
+        if (pl === 'YZ') return 'Side';
+        return pl;
+      };
+      // Full descriptive label, e.g. "XZ · Horizontal / Top".
+      window.__planeDescriptor = function(plane) {
+        const pl = plane || sketchState.workingPlane || 'XZ';
+        if (pl === 'XZ') return 'XZ · Horizontal / Top';
+        if (pl === 'XY') return 'XY · Front';
+        if (pl === 'YZ') return 'YZ · Profile / Side';
+        return pl;
+      };
+
+      // Map a 3D point onto the 2D coordinates visible in a given plane.
+      // Returns { hAxis, vAxis, hiddenAxis, h, v, hidden } where h/v are the
+      // visible projected coordinates and `hidden` is the axis that collapses.
+      window.__projectionCoordsForPlane = function(point, plane) {
+        const pl = plane || sketchState.workingPlane || 'XZ';
+        if (!point) return null;
+        if (pl === 'XZ') return { hAxis:'X', vAxis:'Z', hiddenAxis:'Y', h:point.x, v:point.z, hidden:point.y };
+        if (pl === 'XY') return { hAxis:'X', vAxis:'Y', hiddenAxis:'Z', h:point.x, v:point.y, hidden:point.z };
+        if (pl === 'YZ') return { hAxis:'Z', vAxis:'Y', hiddenAxis:'X', h:point.z, v:point.y, hidden:point.x };
+        return null;
+      };
+
+      // Compose a 3D point from two projection pairs.
+      // Stub for future "auto-reconstruct from two views" feature.
+      // planeA/planeB are 'XZ' | 'XY' | 'YZ'; hA/vA/hB/vB are the projected
+      // coordinates on each plane. Returns {x,y,z} or null on conflict.
+      window.__pointFromProjectionPair = function(planeA, hA, vA, planeB, hB, vB) {
+        if (!planeA || !planeB || planeA === planeB) return null;
+        const set = {};
+        function put(axis, val) {
+          if (set[axis] === undefined) { set[axis] = val; return true; }
+          return Math.abs(set[axis] - val) < 1e-6;
+        }
+        function feed(plane, h, v) {
+          const map = window.__projectionCoordsForPlane({x:0,y:0,z:0}, plane);
+          if (!map) return false;
+          return put(map.hAxis, h) && put(map.vAxis, v);
+        }
+        if (!feed(planeA, hA, vA)) return null;
+        if (!feed(planeB, hB, vB)) return null;
+        return { x: set.X || 0, y: set.Y || 0, z: set.Z || 0 };
+      };
+
+      // Toggle / set draft mode.
+      window.__setDraftMode = function(mode) {
+        if (mode !== 'free3d' && mode !== 'projection') return;
+        if (sketchState.draftMode === mode) return;
+        sketchState.draftMode = mode;
+        if (window.__setStatusMessage) {
+          window.__setStatusMessage('Draft mode: ' + (mode === 'projection' ? 'Projection' : 'Free 3D'));
+        }
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      };
+      window.__toggleDraftMode = function() {
+        window.__setDraftMode(sketchState.draftMode === 'projection' ? 'free3d' : 'projection');
+      };
+
+      // ── Engine-aware bulk point creation ──
+      // Adds a point through the currently active engine and returns the new
+      // point id (string) via a Promise. Falls back to the legacy local model
+      // when neither backend nor wasm engines are available.
+      window.__createPointViaEngine = async function(gx, gy, gz) {
+        const existing = window.__findPointAtGrid(gx, gy, gz);
+        if (existing) return existing.id;
+        const mode = sketchState.engineMode || 'backend';
+        if ((mode === 'wasm' || mode === 'hybrid') && window.__wasmAddPointAndApply) {
+          const r = await window.__wasmAddPointAndApply(gx, gy, gz);
+          if (r && r.ok) return r.pointId;
+        }
+        if (mode === 'backend' && window.__backendAddPoint) {
+          const r = await window.__backendAddPoint(gx, gy, gz);
+          if (r && r.ok) return r.pointId;
+        }
+        const p = window.__addPoint(gx, gy, gz);
+        return p ? p.id : null;
+      };
+      window.__createEdgeViaEngine = async function(aId, bId, kind) {
+        if (!aId || !bId || aId === bId) return null;
+        const mode = sketchState.engineMode || 'backend';
+        if ((mode === 'wasm' || mode === 'hybrid') && window.__wasmAddEdgeAndApply) {
+          await window.__wasmAddEdgeAndApply({ pointId: aId }, { pointId: bId });
+        } else if (mode === 'backend' && window.__backendAddEdge) {
+          await window.__backendAddEdge({ pointId: aId }, { pointId: bId });
+        } else {
+          window.__addEdge(aId, bId, kind);
+          return;
+        }
+        // After backend/wasm sync, stamp the kind on the freshly-added edge.
+        const e = window.__findEdgeBetween(aId, bId);
+        if (e && kind && kind !== 'normal') e.kind = kind;
+      };
+
+      // ── Projection box ──
+      // Creates an axis-aligned wireframe box (12 edges) at the origin with the
+      // given grid-unit dimensions. Uses the active engine.
+      window.__createProjectionBox = async function(w, h, d) {
+        const W = Math.max(1, Math.round(w || sketchState.projection.boxWidth));
+        const H = Math.max(1, Math.round(h || sketchState.projection.boxHeight));
+        const D = Math.max(1, Math.round(d || sketchState.projection.boxDepth));
+        if (window.__pushHistory) window.__pushHistory();
+        const A  = await window.__createPointViaEngine(0, 0, 0);
+        const B  = await window.__createPointViaEngine(W, 0, 0);
+        const C  = await window.__createPointViaEngine(W, 0, D);
+        const D1 = await window.__createPointViaEngine(0, 0, D);
+        const A2 = await window.__createPointViaEngine(0, H, 0);
+        const B2 = await window.__createPointViaEngine(W, H, 0);
+        const C2 = await window.__createPointViaEngine(W, H, D);
+        const D2 = await window.__createPointViaEngine(0, H, D);
+        const edges = [
+          [A,B],[B,C],[C,D1],[D1,A],
+          [A2,B2],[B2,C2],[C2,D2],[D2,A2],
+          [A,A2],[B,B2],[C,C2],[D1,D2],
+        ];
+        for (const [u, v] of edges) {
+          await window.__createEdgeViaEngine(u, v, 'normal');
+        }
+        if (window.__setStatusMessage) {
+          window.__setStatusMessage('Projection box ' + W + '×' + H + '×' + D + ' created');
+        }
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      };
+
+      // ── Sample sloped block (engineering drafting example) ──
+      // Wireframe only — does NOT generate solid geometry.
+      window.__createSampleSlopedBlock = async function() {
+        if (window.__pushHistory) window.__pushHistory();
+        const P  = {};
+        P.p1  = await window.__createPointViaEngine(0, 0, 0);
+        P.p2  = await window.__createPointViaEngine(6, 0, 0);
+        P.p3  = await window.__createPointViaEngine(6, 0, 4);
+        P.p4  = await window.__createPointViaEngine(0, 0, 4);
+        P.p5  = await window.__createPointViaEngine(0, 2, 0);
+        P.p6  = await window.__createPointViaEngine(6, 2, 0);
+        P.p7  = await window.__createPointViaEngine(2, 5, 0);
+        P.p8  = await window.__createPointViaEngine(6, 5, 0);
+        P.p9  = await window.__createPointViaEngine(2, 5, 4);
+        P.p10 = await window.__createPointViaEngine(6, 5, 4);
+        P.p11 = await window.__createPointViaEngine(0, 2, 4);
+        P.p12 = await window.__createPointViaEngine(6, 2, 4);
+        const edges = [
+          // base
+          [P.p1, P.p2], [P.p2, P.p3], [P.p3, P.p4], [P.p4, P.p1],
+          // verticals up to lower shoulder
+          [P.p1, P.p5], [P.p2, P.p6], [P.p4, P.p11], [P.p3, P.p12],
+          // upper sloped top
+          [P.p5, P.p7], [P.p7, P.p8], [P.p8, P.p6],
+          [P.p11, P.p9], [P.p9, P.p10], [P.p10, P.p12],
+          // top-side connectors
+          [P.p5, P.p11], [P.p7, P.p9], [P.p8, P.p10], [P.p6, P.p12],
+        ];
+        for (const [u, v] of edges) {
+          await window.__createEdgeViaEngine(u, v, 'normal');
+        }
+        if (window.__setStatusMessage) {
+          window.__setStatusMessage('Sample sloped block created (wireframe)');
+        }
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
 
       // ── History (undo / redo) ──────────────────────────────────

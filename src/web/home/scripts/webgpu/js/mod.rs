@@ -6,6 +6,7 @@ mod controls;
 mod gizmo;
 mod hud;
 mod init;
+pub mod input;
 mod matter_state;
 mod matter_ui;
 mod pipeline;
@@ -28,6 +29,9 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     let mut out = String::with_capacity(
         init::JS.len()
             + state::JS.len()
+            + input::keyboard::JS.len()
+            + input::mouse::JS.len()
+            + input::touchpad::JS.len()
             + sketch_state::JS.len()
             + sketch_pick::JS.len()
             + sketch_rect::JS.len()
@@ -51,8 +55,14 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + 256,
     );
     out.push_str(init::JS);
-    // 1. Core runtime state (particles, camera, scene, event dispatcher)
+    // 1. Core runtime state (particles, camera, scene)
     out.push_str(state::JS);
+    // 1a. Input — keyboard shortcuts
+    out.push_str(input::keyboard::JS);
+    // 1b. Input — mouse (pointer events, orbit, pan, click, hover, snap)
+    out.push_str(input::mouse::JS);
+    // 1c. Input — touchpad / wheel zoom
+    out.push_str(input::touchpad::JS);
     // 2. Sketch data model (sketchState, snapToGrid, extrudePreview, UI sync)
     out.push_str(sketch_state::JS);
     // 3. Sketch raycasting (raycastSketchPlane, buildPickRay, raycastCadSolids)

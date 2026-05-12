@@ -6,6 +6,9 @@ pub const JS: &str = r##"
       // __handleSketchClick(ndcX, ndcY, shiftKey)
       // ─────────────────────────────────────────────────────────
       window.__handleSketchClick = function(ndcX, ndcY, shiftKey) {
+        // Ignore clicks that are the tail end of a wheel/pinch zoom gesture.
+        if (window.__wheelZoomActive) return;
+
         const SM   = window.SelectionMode;
         const tool = sketchState.activeTool;
 
@@ -41,47 +44,72 @@ pub const JS: &str = r##"
           return;
         }
 
-        if (tool === SM.POINT) {
+        // ── Resolve current snap target (single source of truth for geometry creation) ──
+        // Used by POINT and LINE tools. Refreshed at click time so it works even
+        // on touch / first-frame click where pointermove never fired.
+        function __resolveClickSnap() {
           const hit = window.__raycastSketchPlane(ndcX, ndcY);
-          if (!hit) return;
-          const existing = window.__findPointAtGrid(hit.gx, hit.gy, hit.gz);
-          if (existing) return;
+          if (!hit) return null;
+          if (!window.__resolveSnapTarget) {
+            // Fallback: behave as before — pure grid snap.
+            return {
+              kind: 'grid', pointId: null,
+              gx: hit.gx, gy: hit.gy, gz: hit.gz,
+              x: hit.x, y: hit.y, z: hit.z, valid: true,
+            };
+          }
+          const canvas = document.getElementById('matterCanvas');
+          const mpx = canvas
+            ? { x: (ndcX + 1) * 0.5 * canvas.width, y: (1 - ndcY) * 0.5 * canvas.height }
+            : { x: 0, y: 0 };
+          return window.__resolveSnapTarget(
+            { x: hit.freeX, y: hit.freeY, z: hit.freeZ },
+            mpx,
+            { force: true },
+          );
+        }
+
+        if (tool === SM.POINT) {
+          const snap = __resolveClickSnap();
+          if (!snap || !snap.valid) return;
+          // Snapped to an existing point — nothing to create.
+          if (snap.kind === 'point') return;
           const mode = sketchState.engineMode || 'backend';
-          // ── WASM / Hybrid path (Phase 11) ──
+          // ── WASM / Hybrid path ──
           if (mode === 'wasm' || mode === 'hybrid') {
             window.__pushHistory();
-            window.__wasmAddPointAndApply(hit.gx, hit.gy, hit.gz).then(() => {
+            window.__wasmAddPointAndApply(snap.gx, snap.gy, snap.gz).then(() => {
               if (window.__updateSketchInspector) window.__updateSketchInspector();
             });
             return;
           }
-          // ── Backend precision path (Phase 7) ──
+          // ── Backend precision path ──
           if (mode === 'backend') {
             window.__pushHistory();
-            window.__backendAddPoint(hit.gx, hit.gy, hit.gz).then(() => {
+            window.__backendAddPoint(snap.gx, snap.gy, snap.gz).then(() => {
               if (window.__updateSketchInspector) window.__updateSketchInspector();
             });
             return;
           }
           // ── Legacy local fallback ──
           window.__pushHistory();
-          window.__addPoint(hit.gx, hit.gy, hit.gz);
+          window.__addPoint(snap.gx, snap.gy, snap.gz);
           if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
         }
 
         if (tool === SM.LINE) {
-          const hoveredId = window.__pickPointAt(ndcX, ndcY);
+          const snap = __resolveClickSnap();
+          if (!snap || !snap.valid) return;
+          const hoveredId = snap.kind === 'point' ? snap.pointId : null;
           const mode = sketchState.engineMode || 'backend';
-          // ── WASM / Hybrid path (Phase 11) ──
+          // ── WASM / Hybrid path ──
           if (mode === 'wasm' || mode === 'hybrid') {
             (async () => {
               window.__pushHistory();
               let targetId = hoveredId;
               if (!targetId) {
-                const hit = window.__raycastSketchPlane(ndcX, ndcY);
-                if (!hit) return;
-                const r = await window.__wasmAddPointAndApply(hit.gx, hit.gy, hit.gz);
+                const r = await window.__wasmAddPointAndApply(snap.gx, snap.gy, snap.gz);
                 if (!r.ok) return;
                 targetId = r.pointId;
               }
@@ -104,9 +132,7 @@ pub const JS: &str = r##"
               window.__pushHistory();
               let targetId = hoveredId;
               if (!targetId) {
-                const hit = window.__raycastSketchPlane(ndcX, ndcY);
-                if (!hit) return;
-                const r = await window.__backendAddPoint(hit.gx, hit.gy, hit.gz);
+                const r = await window.__backendAddPoint(snap.gx, snap.gy, snap.gz);
                 if (!r.ok) return;
                 targetId = r.pointId;
               }
@@ -127,11 +153,13 @@ pub const JS: &str = r##"
           let targetId = hoveredId;
           let createdPoint = false;
           if (!targetId) {
-            const hit = window.__raycastSketchPlane(ndcX, ndcY);
-            if (!hit) return;
-            const existing = window.__findPointAtGrid(hit.gx, hit.gy, hit.gz);
+            const existing = window.__findPointAtGrid(snap.gx, snap.gy, snap.gz);
             if (existing) targetId = existing.id;
-            else { window.__pushHistory(); targetId = window.__addPoint(hit.gx, hit.gy, hit.gz).id; createdPoint = true; }
+            else {
+              window.__pushHistory();
+              targetId = window.__addPoint(snap.gx, snap.gy, snap.gz).id;
+              createdPoint = true;
+            }
           }
           const startId = sketchState.line.startPointId;
           if (startId && startId !== targetId) {
@@ -335,6 +363,12 @@ pub const JS: &str = r##"
         if (k === '1') { window.__setWorkingPlane('XZ'); return true; }
         if (k === '2') { window.__setWorkingPlane('XY'); return true; }
         if (k === '3') { window.__setWorkingPlane('YZ'); return true; }
+
+        // Projection draft mode toggle (Phase 13).
+        if (k === 'j') {
+          if (window.__toggleDraftMode) window.__toggleDraftMode();
+          return true;
+        }
 
         // N — toggle inspector panel (Blender style).
         if (k === 'n') {

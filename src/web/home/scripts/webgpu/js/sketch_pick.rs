@@ -28,10 +28,13 @@ pub const JS: &str = r##"
           const fL = Math.hypot(fwdX, fwdY, fwdZ);
           dx = fwdX/fL; dy = fwdY/fL; dz = fwdZ/fL;
         } else {
+          // Correct perspective ray: dir = forward + right*(ndcX*asp*fl) + up*(ndcY*fl)
+          // where fl = tan(fov/2).  Consistent inverse of __worldToScreenPx which uses
+          // fL = 1/tan(fov/2):  ndcX = vwX*fL/vwZ/asp  →  vwX = ndcX*asp/fL = ndcX*asp*fl
           const fl = Math.tan((cam.fov || 45) * Math.PI / 360);
-          const vx = fwdX*fl + rX*(ndcX*asp) + uX*ndcY;
-          const vy = fwdY*fl + rY*(ndcX*asp) + uY*ndcY;
-          const vz = fwdZ*fl + rZ*(ndcX*asp) + uZ*ndcY;
+          const vx = fwdX + rX*(ndcX*asp*fl) + uX*(ndcY*fl);
+          const vy = fwdY + rY*(ndcX*asp*fl) + uY*(ndcY*fl);
+          const vz = fwdZ + rZ*(ndcX*asp*fl) + uZ*(ndcY*fl);
           const L = Math.hypot(vx, vy, vz) || 1;
           dx = vx/L; dy = vy/L; dz = vz/L;
         }
