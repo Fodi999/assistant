@@ -1,0 +1,3 @@
+# commit .js and .wasm build artefacts
+!*.js
+!*.wasm
