@@ -13,63 +13,7 @@ pub fn template(styles: &str, scripts: &str) -> String {
     let mid = r##"</style>
 </head>
 
-<body>
-  <div class="grid"></div>
-
-  <div class="shell">
-    <header>
-      <div class="brand">
-        <div class="logo"></div>
-        <div>ChefOS Interactive</div>
-      </div>
-      <nav>
-        <span>Ingredients</span>
-        <span>Tools</span>
-        <span>Laboratory</span>
-        <span>Inventory</span>
-      </nav>
-    </header>
-
-    <main>
-      <section class="hero">
-        <h1>Сайт как игровой движок для шеф-повара.</h1>
-        <p>
-          Интерактивная платформа, где ингредиенты, рецепты, склад, себестоимость
-          и лаборатория превращаются в рабочие сцены, объекты и действия.
-        </p>
-        <div class="actions">
-          <button class="button" id="open-chefos">Открыть ChefOS</button>
-          <a class="button secondary" href="/public/tools/categories">Проверить API</a>
-        </div>
-      </section>
-
-      <section class="viewport-card" aria-label="ChefOS viewport preview">
-        <div class="fake-viewport"></div>
-        <div class="object"></div>
-        <div class="toolbar">
-          <div class="tool">↖</div>
-          <div class="tool">＋</div>
-          <div class="tool">□</div>
-          <div class="tool">⛶</div>
-        </div>
-        <div class="panel">
-          <h3>Selected Object</h3>
-          <div class="row"><span>Type</span><strong>Ingredient Card</strong></div>
-          <div class="row"><span>Mode</span><strong>Preview</strong></div>
-          <div class="row"><span>Engine</span><strong>Rust</strong></div>
-          <div class="row"><span>Render</span><strong>WebGPU soon</strong></div>
-        </div>
-        <div class="status">
-          <span><span class="dot"></span>Backend online</span>
-          <span>Axum · Rust · Koyeb Ready</span>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      ChefOS Interactive Engine · Rust backend + future WebGPU frontend
-    </footer>
-  </div>
+<body class="engine-open">
 
   <!-- ── Render Screen (Matter Lab) ── -->
 "##;

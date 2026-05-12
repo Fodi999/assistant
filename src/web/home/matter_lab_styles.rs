@@ -679,6 +679,13 @@ pub fn matter_status_styles() -> &'static str {
     body.panel-open #axis-gizmo {
       right: calc(var(--panel-width, 420px) + 51px);
     }
+
+    /* When N-panel (sketch inspector) is open, push gizmo left */
+    #sketch-inspector.open ~ #axis-gizmo,
+    .matter-stage:has(#sketch-inspector.open) #axis-gizmo,
+    .matter-stage.inspector-open #axis-gizmo {
+      right: calc(250px + 20px + 12px);
+    }
     
     .is-resizing .matter-panel-right,
     .is-resizing #axis-gizmo {
@@ -763,32 +770,84 @@ pub fn matter_status_styles() -> &'static str {
     }
 
     /* ─── Sketch Inspector (right side, below axis-gizmo) ─── */
+    /* ─── Sketch Inspector — Blender N-panel style ─── */
+
+    /* The thin edge tab always visible on the right */
+    #si-tab {
+      position: absolute;
+      top: 50%;
+      right: 0;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 72px;
+      background: rgba(15, 20, 30, 0.90);
+      border: 1px solid rgba(56, 189, 248, 0.30);
+      border-right: none;
+      border-radius: 8px 0 0 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 25;
+      pointer-events: auto;
+      transition: background 150ms, border-color 150ms, width 150ms;
+    }
+    #si-tab:hover {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.65);
+      width: 24px;
+    }
+    #si-tab.open {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.55);
+    }
+    .si-tab-label {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      font: 700 11px/1 "JetBrains Mono", system-ui, monospace;
+      color: #67e8f9;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      user-select: none;
+    }
+
+    /* The sliding panel */
     #sketch-inspector {
       position: absolute;
-      /* gizmo: top 60 + 96 height + 16 gap = 172 */
-      top: 172px;
-      right: 16px;
-      width: 240px;
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: rgba(15, 20, 30, 0.86);
-      border: 1px solid rgba(56, 189, 248, 0.22);
-      backdrop-filter: blur(12px);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      top: 0;
+      right: 0;
+      width: 250px;
+      height: 100%;
+      padding: 14px 14px 14px 14px;
+      background: rgba(10, 15, 25, 0.94);
+      border-left: 1px solid rgba(56, 189, 248, 0.20);
+      backdrop-filter: blur(16px);
+      box-shadow: -6px 0 28px rgba(0, 0, 0, 0.55);
       font: 500 12px/1.5 -apple-system, "SF Pro Display", system-ui, monospace;
       color: #cbd5e1;
-      z-index: 20;
+      z-index: 24;
       pointer-events: auto;
+      overflow-y: auto;
+      /* start hidden — translated fully to the right */
+      transform: translateX(100%);
+      transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
     }
+    #sketch-inspector.open {
+      transform: translateX(0);
+    }
+    /* Scrollbar */
+    #sketch-inspector::-webkit-scrollbar { width: 6px; }
+    #sketch-inspector::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.22); border-radius: 3px; }
+
     #sketch-inspector .si-header {
       color: #67e8f9;
-      font-weight: 600;
+      font-weight: 700;
       letter-spacing: 0.08em;
       font-size: 11px;
       text-transform: uppercase;
-      padding-bottom: 8px;
-      margin-bottom: 8px;
-      border-bottom: 1px dashed rgba(148, 163, 184, 0.18);
+      padding-bottom: 10px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.18);
     }
     #sketch-inspector .si-grid {
       display: grid;
@@ -925,25 +984,14 @@ pub fn matter_status_styles() -> &'static str {
       transform: translateY(-1px);
     }
 
-    /* ─── Sketch I/O panel (JSON export/import contract) ─── */
+    /* ─── Sketch I/O panel — inside N-panel ─── */
     #sketch-io-panel {
-      position: absolute;
-      right: 16px;
-      bottom: 56px;
-      width: 360px;
-      max-height: 46vh;
       display: flex;
       flex-direction: column;
       gap: 8px;
-      padding: 12px 12px 10px;
-      border-radius: 12px;
-      background: rgba(15, 23, 42, 0.88);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(148, 163, 184, 0.18);
-      backdrop-filter: blur(10px);
+      padding: 10px 0 4px;
       font: 12px "JetBrains Mono", system-ui, monospace;
       color: #e2e8f0;
-      z-index: 5;
-      transition: max-height 180ms ease, padding 180ms ease;
     }
     #sketch-io-panel.collapsed {
       max-height: 38px;
@@ -1011,8 +1059,8 @@ pub fn matter_status_styles() -> &'static str {
     #sketch-io-panel .sio-btn-mini:hover { color: #67e8f9; border-color: rgba(56, 189, 248, 0.55); }
     #sketch-io-panel .sio-preview {
       flex: 1 1 auto;
-      min-height: 120px;
-      max-height: 260px;
+      min-height: 80px;
+      max-height: 180px;
       overflow: auto;
       margin: 0;
       padding: 8px 10px;

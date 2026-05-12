@@ -224,6 +224,19 @@ pub const JS: &str = r##"
         if (k === '2') { window.__setWorkingPlane('XY'); return true; }
         if (k === '3') { window.__setWorkingPlane('YZ'); return true; }
 
+        // N — toggle inspector panel (Blender style).
+        if (k === 'n') {
+          const tab   = document.getElementById('si-tab');
+          const panel = document.getElementById('sketch-inspector');
+          const stage = document.querySelector('.matter-stage');
+          if (tab && panel) {
+            const open = panel.classList.toggle('open');
+            tab.classList.toggle('open', open);
+            if (stage) stage.classList.toggle('inspector-open', open);
+          }
+          return true;
+        }
+
         if (k === 'escape') {
           if (sketchState.line.startPointId) {
             sketchState.line.startPointId = null;

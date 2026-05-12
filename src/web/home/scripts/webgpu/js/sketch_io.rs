@@ -136,7 +136,7 @@ pub const JS: &str = r##"
         if (toggle && panel) {
           toggle.addEventListener('click', () => {
             panel.classList.toggle('collapsed');
-            toggle.textContent = panel.classList.contains('collapsed') ? '▸ JSON' : '▾ JSON';
+            toggle.textContent = panel.classList.contains('collapsed') ? '▸' : '▾';
             if (!panel.classList.contains('collapsed')) window.__refreshSketchIOPanel();
           });
         }
@@ -145,10 +145,12 @@ pub const JS: &str = r##"
       }
       window.__bindSketchIO = __bindSketchIO;
 
-      // Auto-refresh panel periodically (lightweight — only when expanded).
+      // Auto-refresh panel periodically (only when N-panel + IO section are both visible).
       setInterval(() => {
-        const panel = document.getElementById('sketch-io-panel');
-        if (panel && !panel.classList.contains('collapsed')) {
+        const inspector = document.getElementById('sketch-inspector');
+        const panel     = document.getElementById('sketch-io-panel');
+        if (inspector && inspector.classList.contains('open') &&
+            panel && !panel.classList.contains('collapsed')) {
           window.__refreshSketchIOPanel();
         }
       }, 750);

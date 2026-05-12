@@ -8,8 +8,6 @@ pub fn matter_lab_section() -> String {
     <main class="matter-lab-shell">
       <section class="matter-stage">
 
-        <button id="close-chefos" class="close-engine-btn" title="Выйти на главную">✕</button>
-
         <canvas id="webgpu-canvas"></canvas>
         <canvas id="sketch-canvas" style="position:absolute;top:0;left:0;pointer-events:none;z-index:1;"></canvas>
 
@@ -60,9 +58,15 @@ pub fn matter_lab_section() -> String {
           <button class="utb-btn"        data-tool="delete" title="Delete (⌫)">⌫<span class="utb-label">Delete</span></button>
         </nav>
 
-        <!-- Sketch Inspector (right side) -->
+        <!-- Sketch Inspector — Blender-style N-panel (slides from right edge) -->
+        <button id="si-tab" class="si-edge-tab" title="Toggle Inspector (N)">
+          <span class="si-tab-label">N</span>
+        </button>
         <aside id="sketch-inspector" class="glass-dark">
-          <header class="si-header">Sketch Inspector</header>
+          <header class="si-header">
+            <span>Sketch Inspector</span>
+          </header>
+          <div id="si-body">
           <dl class="si-grid">
             <dt>Tool</dt>            <dd id="si-tool">SELECT</dd>
             <dt>Plane</dt>           <dd id="si-plane">XZ</dd>
@@ -123,27 +127,29 @@ pub fn matter_lab_section() -> String {
 
           <div class="si-divider"></div>
           <div class="si-hint" id="si-hint">Click to pick · Shift+click to add</div>
-        </aside>
 
-        <!-- Sketch I/O panel (bottom-right): export/import JSON contract -->
-        <aside id="sketch-io-panel" class="glass-dark">
-          <header class="sio-header">
-            <span class="sio-title">SketchGraph JSON</span>
-            <button id="sio-toggle" class="sio-toggle" title="Collapse / expand panel">▾ JSON</button>
-          </header>
-          <div class="sio-tabs">
-            <button class="sio-tab active" data-mode="full"    title="Full sketch (with world coords + profiles)">Full</button>
-            <button class="sio-tab"        data-mode="payload" title="Backend-compatible payload (slim)">Payload</button>
-            <button id="sio-refresh" class="sio-btn-mini" title="Refresh preview">↻</button>
+          <!-- ── JSON Export / Import ── -->
+          <div class="si-divider"></div>
+          <div id="sketch-io-panel">
+            <header class="sio-header">
+              <span class="sio-title">SketchGraph JSON</span>
+              <button id="sio-toggle" class="sio-toggle" title="Collapse / expand">▾</button>
+            </header>
+            <div class="sio-tabs">
+              <button class="sio-tab active" data-mode="full"    title="Full sketch">Full</button>
+              <button class="sio-tab"        data-mode="payload" title="Backend payload">Payload</button>
+              <button id="sio-refresh" class="sio-btn-mini" title="Refresh">↻</button>
+            </div>
+            <pre id="sio-preview" class="sio-preview">{}</pre>
+            <div id="sio-meta" class="sio-meta">—</div>
+            <div class="sio-actions">
+              <button id="sio-copy"     class="sio-btn" title="Copy JSON">⧉ Copy</button>
+              <button id="sio-download" class="sio-btn" title="Download JSON">⬇ Save</button>
+              <button id="sio-load"     class="sio-btn" title="Load JSON file">⬆ Load</button>
+              <input  id="sio-file-input" type="file" accept="application/json,.json" style="display:none;">
+            </div>
           </div>
-          <pre id="sio-preview" class="sio-preview">{}</pre>
-          <div id="sio-meta" class="sio-meta">—</div>
-          <div class="sio-actions">
-            <button id="sio-copy"     class="sio-btn" title="Copy JSON to clipboard">⧉ Copy</button>
-            <button id="sio-download" class="sio-btn" title="Download JSON file">⬇ Download</button>
-            <button id="sio-load"     class="sio-btn" title="Load JSON file from disk">⬆ Load</button>
-            <input  id="sio-file-input" type="file" accept="application/json,.json" style="display:none;">
-          </div>
+          </div><!-- /si-body -->
         </aside>
 
         <!-- Status bar -->

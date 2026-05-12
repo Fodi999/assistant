@@ -186,6 +186,16 @@ pub const JS: &str = r##"
             if (window.__stopWebGpuScene) window.__stopWebGpuScene();
           });
         }
+        const siToggle = document.getElementById('si-tab');
+        const siPanel  = document.getElementById('sketch-inspector');
+        if (siToggle && siPanel) {
+          siToggle.addEventListener('click', () => {
+            const open = siPanel.classList.toggle('open');
+            siToggle.classList.toggle('open', open);
+            const stage = document.querySelector('.matter-stage');
+            if (stage) stage.classList.toggle('inspector-open', open);
+          });
+        }
         if (window.__setCursorForTool) window.__setCursorForTool();
         if (window.__notifySketchChanged) window.__notifySketchChanged();
         if (window.__bindSketchIO) window.__bindSketchIO();
