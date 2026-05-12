@@ -57,7 +57,7 @@ pub fn detect_profiles(sketch: &SketchGraph) -> Vec<Profile> {
             }
             counter += 1;
             profiles.push(Profile {
-                id: format!("pr_{}", counter),
+                id: format!("profile_{}", counter),
                 point_ids: cycle.point_ids,
                 edge_ids: cycle.edge_ids,
                 plane: sketch.working_plane.clone(),

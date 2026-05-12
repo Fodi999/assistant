@@ -182,15 +182,31 @@ pub const JS: &str = r##"
               if (ringPts.length < 3) continue;
               const screenPts = ringPts.map(p => w2s(p.x, p.y, p.z));
               if (screenPts.some(s => !s)) continue;
+              const isSelected = sketchState.selectedProfileId === prof.id;
+              const isHover    = !isSelected && sketchState.hoverProfileId === prof.id;
               const isFullySelected = prof.edgeIds.every(eid => sketchState.selectedEdgeIds.has(eid));
               ctx.save();
               ctx.beginPath();
               ctx.moveTo(screenPts[0].x, screenPts[0].y);
               for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i].x, screenPts[i].y);
               ctx.closePath();
-              ctx.fillStyle   = isFullySelected ? 'rgba(251,146,60,0.18)' : 'rgba(56,189,248,0.10)';
-              ctx.strokeStyle = isFullySelected ? 'rgba(251,146,60,0.55)' : 'rgba(56,189,248,0.35)';
-              ctx.lineWidth   = 1.2;
+              if (isSelected) {
+                ctx.fillStyle   = 'rgba(251,146,60,0.22)';
+                ctx.strokeStyle = 'rgba(251,146,60,0.90)';
+                ctx.lineWidth   = 2.0;
+              } else if (isHover) {
+                ctx.fillStyle   = 'rgba(56,189,248,0.20)';
+                ctx.strokeStyle = 'rgba(56,189,248,0.75)';
+                ctx.lineWidth   = 1.6;
+              } else if (isFullySelected) {
+                ctx.fillStyle   = 'rgba(251,146,60,0.18)';
+                ctx.strokeStyle = 'rgba(251,146,60,0.55)';
+                ctx.lineWidth   = 1.2;
+              } else {
+                ctx.fillStyle   = 'rgba(56,189,248,0.06)';
+                ctx.strokeStyle = 'rgba(56,189,248,0.25)';
+                ctx.lineWidth   = 1.0;
+              }
               ctx.fill();
               ctx.stroke();
               ctx.restore();

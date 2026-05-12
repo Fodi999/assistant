@@ -45,7 +45,20 @@ pub const JS: &str = r##"
           lastValidation: result.validation || null,
         };
 
-        if (window.__notifySketchChanged) window.__notifySketchChanged();
+        // Profiles from backend are authoritative when commands are ON.
+        // We bypass __notifySketchChanged's __recomputeProfiles by inlining
+        // only the parts that depend on points/edges and leaving profiles
+        // (already set above) intact.
+        if (window.__recomputeValidation) window.__recomputeValidation();
+        // Phase 8: invalidate stale profile selection against backend profiles.
+        if (sketchState.selectedProfileId
+            && !sketchState.profiles.some(p => p.id === sketchState.selectedProfileId)) {
+          sketchState.selectedProfileId = null;
+        }
+        if (sketchState.hoverProfileId
+            && !sketchState.profiles.some(p => p.id === sketchState.hoverProfileId)) {
+          sketchState.hoverProfileId = null;
+        }
         return true;
       };
 

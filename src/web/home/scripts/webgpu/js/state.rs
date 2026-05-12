@@ -154,13 +154,21 @@ pub const JS: &str = r##"
         if (tool === 'select' || tool === 'delete') {
           sketchState.hoverPointId = window.__pickPointAt(mouse.ndcX, mouse.ndcY);
           sketchState.hoverEdgeId  = sketchState.hoverPointId ? null : window.__pickEdgeAt(mouse.ndcX, mouse.ndcY);
+          // Phase 8: profile hover only when no point/edge under cursor.
+          if (tool === 'select' && !sketchState.hoverPointId && !sketchState.hoverEdgeId && hit) {
+            sketchState.hoverProfileId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
+          } else {
+            sketchState.hoverProfileId = null;
+          }
         } else if (tool === 'line') {
           // For Line tool: highlight existing point under cursor as snap target.
           sketchState.hoverPointId = window.__pickPointAt(mouse.ndcX, mouse.ndcY);
           sketchState.hoverEdgeId  = null;
+          sketchState.hoverProfileId = null;
         } else {
           sketchState.hoverPointId = null;
           sketchState.hoverEdgeId  = null;
+          sketchState.hoverProfileId = null;
         }
         if (window.__updateLinePreview) window.__updateLinePreview();
         if (sketchState.grab.active && hit) window.__updateGrab(hit);

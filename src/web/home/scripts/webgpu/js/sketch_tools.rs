@@ -17,6 +17,7 @@ pub const JS: &str = r##"
           if (!shiftKey) {
             sketchState.selectedPointIds.clear();
             sketchState.selectedEdgeIds.clear();
+            sketchState.selectedProfileId = null;
           }
           if (pId) {
             if (sketchState.selectedPointIds.has(pId)) sketchState.selectedPointIds.delete(pId);
@@ -24,6 +25,17 @@ pub const JS: &str = r##"
           } else if (eId) {
             if (sketchState.selectedEdgeIds.has(eId)) sketchState.selectedEdgeIds.delete(eId);
             else                                      sketchState.selectedEdgeIds.add(eId);
+          } else {
+            // Profile picking — only on the active working plane.
+            const hit = window.__raycastSketchPlane(ndcX, ndcY);
+            if (hit) {
+              const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
+              if (profId) {
+                window.__selectProfile(profId);
+              } else if (!shiftKey) {
+                sketchState.selectedProfileId = null;
+              }
+            }
           }
           if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
@@ -128,12 +140,42 @@ pub const JS: &str = r##"
       window.__handleSketchDoubleClick = function(ndcX, ndcY) {
         if (sketchState.activeTool !== "select") return;
         const eId = window.__pickEdgeAt(ndcX, ndcY);
-        if (!eId) return;
-        const prof = window.__getProfileForEdge(eId);
+        if (!eId) {
+          // No edge under cursor — try profile picking inside an area.
+          const hit = window.__raycastSketchPlane(ndcX, ndcY);
+          if (hit) {
+            const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
+            if (profId) {
+              const prof = window.__selectProfile(profId);
+              if (prof) {
+                sketchState.selectedPointIds = new Set(prof.pointIds);
+                sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+              }
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            }
+          }
+          return;
+        }
+        // Edge hit — find all profiles containing this edge, pick smallest by area.
+        const profs = window.__getProfilesForEdge(eId);
+        let prof = null;
+        if (profs.length === 1) prof = profs[0];
+        else if (profs.length > 1) {
+          prof = profs
+            .map(p => ({ p, a: window.__profileArea(p) }))
+            .filter(h => h.a > 0)
+            .sort((a, b) => a.a - b.a)[0]?.p || profs[0];
+        }
         if (prof) {
-          sketchState.selectedPointIds = new Set(prof.pointIds);
-          sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
-          window.__setStatusMessage('Selected ' + prof.id + ' (' + prof.edgeIds.length + ' edges)');
+          // If profile is already selected, expand to its points/edges.
+          if (sketchState.selectedProfileId === prof.id) {
+            sketchState.selectedPointIds = new Set(prof.pointIds);
+            sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+          } else {
+            window.__selectProfile(prof.id);
+            sketchState.selectedPointIds = new Set(prof.pointIds);
+            sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+          }
         } else {
           const e = sketchState.edges.find(x => x.id === eId);
           if (!e) return;

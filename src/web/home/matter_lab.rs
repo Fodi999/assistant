@@ -128,6 +128,31 @@ pub fn matter_lab_section() -> String {
           <div class="si-divider"></div>
           <div class="si-hint" id="si-hint">Click to pick · Shift+click to add</div>
 
+          <!-- ── Selected Profile (Phase 8) ── -->
+          <div class="si-divider"></div>
+          <div id="si-block-profile" class="si-block" style="display:none;">
+            <div class="si-block-title">Selected Profile</div>
+            <dl class="si-grid">
+              <dt>Id</dt>        <dd id="si-pf-id">—</dd>
+              <dt>Plane</dt>     <dd id="si-pf-plane">—</dd>
+              <dt>Points</dt>    <dd id="si-pf-points">0</dd>
+              <dt>Edges</dt>     <dd id="si-pf-edges">0</dd>
+              <dt>Area</dt>      <dd id="si-pf-area">—</dd>
+              <dt>Extrudable</dt><dd id="si-pf-ready">no</dd>
+            </dl>
+            <div style="margin-top:8px; display:flex; gap:6px;">
+              <button id="si-pf-copy" class="sio-btn" style="flex:1;">⧉ Copy Profile</button>
+              <button id="si-pf-clear" class="sio-btn" style="flex:0 0 auto; padding:6px 10px;">✕</button>
+            </div>
+          </div>
+
+          <div id="si-block-profile-list" class="si-block">
+            <div class="si-block-title">Profiles · <span id="si-pf-count">0</span></div>
+            <ul id="si-pf-list" style="list-style:none; padding:0; margin:6px 0 0;
+                 max-height:140px; overflow-y:auto; font-size:11px;">
+            </ul>
+          </div>
+
           <!-- ── Precision (Phase 7) ── -->
           <div class="si-divider"></div>
           <div class="si-block-title">Precision</div>

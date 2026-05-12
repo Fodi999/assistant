@@ -60,6 +60,10 @@ pub const JS: &str = r##"
         // ── Backend precision commands (Phase 7) ──
         useBackendCommands: true,
         backendStatus: { ok: null, message: null, lastValidation: null },
+
+        // ── Profile selection (Phase 8) ──
+        selectedProfileId: null,
+        hoverProfileId: null,
       };
       window.sketchState = sketchState;
 
@@ -382,9 +386,132 @@ pub const JS: &str = r##"
         return null;
       };
 
+      // ── Profile selection helpers (Phase 8) ───────────────────
+      window.__getProfileById = function(profileId) {
+        if (!profileId) return null;
+        return sketchState.profiles.find(p => p.id === profileId) || null;
+      };
+
+      window.__getProfilesForEdge = function(edgeId) {
+        return sketchState.profiles.filter(p => p.edgeIds.indexOf(edgeId) !== -1);
+      };
+
+      window.__clearProfileSelection = function() {
+        sketchState.selectedProfileId = null;
+      };
+
+      window.__selectProfile = function(profileId) {
+        const prof = window.__getProfileById(profileId);
+        if (!prof) { sketchState.selectedProfileId = null; return null; }
+        sketchState.selectedProfileId = prof.id;
+        window.__setStatusMessage('Selected ' + prof.id + ' (' + prof.edgeIds.length + ' edges)');
+        return prof;
+      };
+
+      window.__setHoverProfile = function(profileId) {
+        sketchState.hoverProfileId = profileId || null;
+      };
+
+      window.__getSelectedProfile = function() {
+        return window.__getProfileById(sketchState.selectedProfileId);
+      };
+
+      // Project a point (x,y,z) onto the plane's 2D (u,v).
+      //   XZ → (x, z)
+      //   XY → (x, y)
+      //   YZ → (z, y)
+      window.__projectToPlane2D = function(plane, x, y, z) {
+        if (plane === 'XY') return { u: x, v: y };
+        if (plane === 'YZ') return { u: z, v: y };
+        return { u: x, v: z }; // XZ
+      };
+
+      // Shoelace area in active plane projection. Always positive.
+      window.__profileArea = function(prof) {
+        if (!prof || !prof.pointIds || prof.pointIds.length < 3) return 0;
+        const pById = new Map(sketchState.points.map(p => [p.id, p]));
+        const ring = prof.pointIds.map(id => pById.get(id)).filter(Boolean);
+        if (ring.length < 3) return 0;
+        const plane = prof.plane || sketchState.workingPlane || 'XZ';
+        const uv = ring.map(p => window.__projectToPlane2D(plane, p.x, p.y, p.z));
+        let s = 0;
+        for (let i = 0; i < uv.length; i++) {
+          const a = uv[i], b = uv[(i + 1) % uv.length];
+          s += a.u * b.v - b.u * a.v;
+        }
+        return Math.abs(s * 0.5);
+      };
+
+      // Point-in-polygon (ray casting) in plane 2D projection.
+      window.__profileContainsWorld = function(prof, x, y, z) {
+        if (!prof || !prof.pointIds || prof.pointIds.length < 3) return false;
+        const pById = new Map(sketchState.points.map(p => [p.id, p]));
+        const ring = prof.pointIds.map(id => pById.get(id)).filter(Boolean);
+        if (ring.length < 3) return false;
+        const plane = prof.plane || sketchState.workingPlane || 'XZ';
+        const uv = ring.map(p => window.__projectToPlane2D(plane, p.x, p.y, p.z));
+        const q  = window.__projectToPlane2D(plane, x, y, z);
+        let inside = false;
+        for (let i = 0, j = uv.length - 1; i < uv.length; j = i++) {
+          const a = uv[i], b = uv[j];
+          const intersect = ((a.v > q.v) !== (b.v > q.v))
+            && (q.u < (b.u - a.u) * (q.v - a.v) / ((b.v - a.v) || 1e-12) + a.u);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      };
+
+      // Smallest containing profile at world (x,y,z) on active plane.
+      window.__pickProfileAtWorld = function(x, y, z) {
+        const hits = sketchState.profiles
+          .filter(p => p.plane === sketchState.workingPlane)
+          .filter(p => window.__profileContainsWorld(p, x, y, z))
+          .map(p => ({ p, area: window.__profileArea(p) }))
+          .filter(h => h.area > 0)
+          .sort((a, b) => a.area - b.area);
+        return hits.length ? hits[0].p.id : null;
+      };
+
+      // Build the payload for future extrude.
+      window.__selectedProfileToPayload = function() {
+        const prof = window.__getSelectedProfile();
+        if (!prof) return null;
+        const pById = new Map(sketchState.points.map(p => [p.id, p]));
+        const points = prof.pointIds.map(id => {
+          const p = pById.get(id);
+          return p ? { id: p.id, gx: p.gx, gy: p.gy, gz: p.gz, x: p.x, y: p.y, z: p.z } : null;
+        }).filter(Boolean);
+        return {
+          profileId: prof.id,
+          plane:     prof.plane,
+          pointIds:  [...prof.pointIds],
+          edgeIds:   [...prof.edgeIds],
+          points,
+          area:      window.__profileArea(prof),
+        };
+      };
+
+      window.__isSelectedProfileExtrudable = function() {
+        const prof = window.__getSelectedProfile();
+        if (!prof) return false;
+        if (!prof.closed) return false;
+        if (!prof.plane || prof.plane === 'unknown') return false;
+        if (!prof.edgeIds || prof.edgeIds.length < 3) return false;
+        return window.__profileArea(prof) > 0;
+      };
+
       window.__notifySketchChanged = function() {
         window.__recomputeValidation();
         window.__recomputeProfiles();
+        // Phase 8: invalidate stale profile selection.
+        if (sketchState.selectedProfileId
+            && !sketchState.profiles.some(p => p.id === sketchState.selectedProfileId)) {
+          sketchState.selectedProfileId = null;
+        }
+        if (sketchState.hoverProfileId
+            && !sketchState.profiles.some(p => p.id === sketchState.hoverProfileId)) {
+          sketchState.hoverProfileId = null;
+        }
       };
 
       // ── Mutations ──────────────────────────────────────────────

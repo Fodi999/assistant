@@ -885,6 +885,34 @@ pub fn matter_status_styles() -> &'static str {
       font-style: italic;
     }
 
+    /* ─── Profile list (Phase 8) ─── */
+    #sketch-inspector #si-pf-list li {
+      padding: 3px 6px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 5px;
+      margin-bottom: 3px;
+      cursor: pointer;
+      color: #cbd5e1;
+      transition: background 100ms, border-color 100ms, color 100ms;
+      font-family: "JetBrains Mono", monospace;
+      display: flex; justify-content: space-between; gap: 6px;
+    }
+    #sketch-inspector #si-pf-list li:hover {
+      background: rgba(56, 189, 248, 0.10);
+      border-color: rgba(56, 189, 248, 0.40);
+      color: #e2e8f0;
+    }
+    #sketch-inspector #si-pf-list li.selected {
+      background: rgba(251, 146, 60, 0.12);
+      border-color: rgba(251, 146, 60, 0.55);
+      color: #fb923c;
+    }
+    #sketch-inspector #si-pf-list .pf-meta {
+      color: #94a3b8;
+      font-size: 10px;
+    }
+    #sketch-inspector #si-pf-list li.selected .pf-meta { color: #fdba74; }
+
     /* ─── Mini command bar (top center, above hotkey strip) ─── */
     #mini-bar {
       position: absolute;

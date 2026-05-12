@@ -188,6 +188,51 @@ pub const JS: &str = r##"
         else if (bs.ok === false) last = '✕ ' + (bs.message || 'ERROR');
         else                      last = '—';
         set('si-backend-last', last);
+
+        // ── Profile selection block (Phase 8) ──
+        const profSel = window.__getSelectedProfile && window.__getSelectedProfile();
+        showBlock('si-block-profile', !!profSel);
+        if (profSel) {
+          set('si-pf-id', profSel.id);
+          set('si-pf-plane', profSel.plane || '—');
+          set('si-pf-points', String(profSel.pointIds.length));
+          set('si-pf-edges',  String(profSel.edgeIds.length));
+          const area = window.__profileArea(profSel);
+          set('si-pf-area', area.toFixed(3) + ' u²');
+          set('si-pf-ready', window.__isSelectedProfileExtrudable() ? 'yes' : 'no');
+        }
+
+        // Edge inspector — show all profiles if edge belongs to many.
+        if (totalSel === 1 && selEds.length === 1) {
+          const eid = selEds[0];
+          const profs = window.__getProfilesForEdge ? window.__getProfilesForEdge(eid) : [];
+          if (profs.length > 1) set('si-eg-profile', profs.map(p => p.id).join(', '));
+        }
+
+        // ── Profile list (Phase 8) ──
+        const listEl = document.getElementById('si-pf-list');
+        const cntEl  = document.getElementById('si-pf-count');
+        if (cntEl) cntEl.textContent = String((sketchState.profiles || []).length);
+        if (listEl) {
+          listEl.innerHTML = '';
+          for (const pf of (sketchState.profiles || [])) {
+            const li = document.createElement('li');
+            li.dataset.profileId = pf.id;
+            if (pf.id === sketchState.selectedProfileId) li.classList.add('selected');
+            const area = window.__profileArea(pf);
+            const left = document.createElement('span');
+            left.textContent = pf.id;
+            const right = document.createElement('span');
+            right.className = 'pf-meta';
+            right.textContent = (pf.plane || '?') + ' · ' + pf.edgeIds.length + 'e · ' + area.toFixed(2);
+            li.appendChild(left); li.appendChild(right);
+            li.addEventListener('click', () => {
+              window.__selectProfile(pf.id);
+              window.__updateSketchInspector();
+            });
+            listEl.appendChild(li);
+          }
+        }
       };
 
       function bindMatterUi() {
@@ -236,6 +281,29 @@ pub const JS: &str = r##"
         if (beChk) {
           beChk.addEventListener('change', () => {
             window.__setUseBackendCommands(beChk.checked);
+          });
+        }
+
+        // ── Profile selection buttons (Phase 8) ──
+        const pfCopy = document.getElementById('si-pf-copy');
+        if (pfCopy) {
+          pfCopy.addEventListener('click', async () => {
+            const payload = window.__selectedProfileToPayload();
+            if (!payload) { window.__setStatusMessage('No profile selected'); return; }
+            const txt = JSON.stringify(payload, null, 2);
+            try {
+              await navigator.clipboard.writeText(txt);
+              window.__setStatusMessage('Copied profile ' + payload.profileId);
+            } catch (e) {
+              window.__setStatusMessage('Clipboard failed');
+            }
+          });
+        }
+        const pfClear = document.getElementById('si-pf-clear');
+        if (pfClear) {
+          pfClear.addEventListener('click', () => {
+            window.__clearProfileSelection();
+            window.__updateSketchInspector();
           });
         }
 
