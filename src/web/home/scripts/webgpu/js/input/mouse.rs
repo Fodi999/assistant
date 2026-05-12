@@ -15,6 +15,11 @@ pub const JS: &str = r##"
       let dragging  = false, panning = false, orbiting = false;
       let lastX = 0, lastY = 0, startX = 0, startY = 0;
       let dragMoved = false;
+      // True when the current pointer-down landed on a gizmo handle.
+      // Prevents pointerup from firing __handleSketchClick (which confirms grab).
+      let gizmoHandleDrag = false;
+
+      window.__isPointerDragging = () => dragging;
 
       const mouse = { ndcX: 999, ndcY: 999, active: false };
 
@@ -28,13 +33,63 @@ pub const JS: &str = r##"
       }
       window.__setCursorForTool = __setCursorForTool;
 
+      // ── Gizmo handle hit test ─────────────────────────────────
+      function __hitGizmoHandle(px, py) {
+        const handles = window.__gizmoHandles;
+        if (!handles) return null;
+        for (const h of handles) {
+          if (Math.hypot(px - h.x, py - h.y) <= h.r + 4) return h.axis;
+        }
+        return null;
+      }
+
       // ── Pointer down ─────────────────────────────────────────────
       canvas.addEventListener('pointerdown', (e) => {
         canvas.setPointerCapture(e.pointerId);
-        dragging  = true;
-        dragMoved = false;
+        dragging       = true;
+        dragMoved      = false;
+        gizmoHandleDrag = false;
+
+        const isGrab = sketchState.grab?.active;
+        const isCopy = sketchState.copy?.active;
+
+        if ((isGrab || isCopy) && e.button === 0) {
+          const rect2  = canvas.getBoundingClientRect();
+          const hitAxis = __hitGizmoHandle(e.clientX - rect2.left, e.clientY - rect2.top);
+          const tState = isGrab ? sketchState.grab : sketchState.copy;
+
+          tState.axisLock = hitAxis || null;
+
+          if (sketchState.hoverWorld) {
+            tState.startMouseWorld = { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z };
+          }
+          if (sketchState.precision?.lastMouseScreen) {
+             tState.startScreen = { x: sketchState.precision.lastMouseScreen.x, y: sketchState.precision.lastMouseScreen.y };
+          }
+
+          if (isGrab) {
+            const byId = new Map(sketchState.points.map(p => [p.id, p]));
+            tState.dragBase = new Map();
+            for (const id of tState.pointIds) {
+              const p = byId.get(id);
+              if (p) tState.dragBase.set(id, { x: p.x, y: p.y, z: p.z });
+            }
+          } else {
+            tState.baseDelta = { dx: tState.delta.dx, dy: tState.delta.dy, dz: tState.delta.dz };
+          }
+
+          gizmoHandleDrag = true;
+          window.__hitGizmoOnDown = (hitAxis !== null);
+
+          panning  = false;
+          orbiting = false;
+          lastX = e.clientX; lastY = e.clientY;
+          startX = e.clientX; startY = e.clientY;
+          return;
+        }
+
         const wantsPan = (e.button === 2) || (e.button === 1)
-                       || (e.shiftKey && e.button === 0)
+                       || (e.shiftKey && !e.metaKey && !e.ctrlKey && e.button === 0)
                        || (spaceHeld   && e.button === 0);
         panning  = wantsPan;
         orbiting = !wantsPan;
@@ -46,14 +101,30 @@ pub const JS: &str = r##"
       canvas.addEventListener('pointerup', (e) => {
         const wasDragging = dragging;
         dragging = false;
+        const wasGizmo = gizmoHandleDrag;
+        gizmoHandleDrag = false;
         try { canvas.releasePointerCapture(e.pointerId); } catch {}
         const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
         startX = 0; startY = 0;
-        if (wasDragging && e.button === 0 && dist < CLICK_THRESH_PX && !panning && !dragMoved) {
+
+        if (wasGizmo) {
+          // If they clicked empty space without dragging, confirm grab/copy.
+          if (!dragMoved && !window.__hitGizmoOnDown) {
+            const rect = canvas.getBoundingClientRect();
+            const ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+            const ndcY = 1 - ((e.clientY - rect.top)  / rect.height) * 2;
+            if (window.__handleSketchClick) window.__handleSketchClick(ndcX, ndcY, e.shiftKey || e.metaKey || e.ctrlKey);
+          }
+          panning = false; orbiting = false;
+          return;
+        }
+
+        // Suppress click-confirm when the down-event was on a gizmo handle.
+        if (!wasGizmo && wasDragging && e.button === 0 && dist < CLICK_THRESH_PX && !panning && !dragMoved) {
           const rect = canvas.getBoundingClientRect();
           const ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
           const ndcY = 1 - ((e.clientY - rect.top)  / rect.height) * 2;
-          if (window.__handleSketchClick) window.__handleSketchClick(ndcX, ndcY, e.shiftKey);
+          if (window.__handleSketchClick) window.__handleSketchClick(ndcX, ndcY, e.shiftKey || e.metaKey || e.ctrlKey);
         }
         panning  = false;
         orbiting = false;
@@ -128,8 +199,21 @@ pub const JS: &str = r##"
         }
 
         if (window.__updateLinePreview) window.__updateLinePreview();
-        if (sketchState.grab.active && hit) window.__updateGrab(hit);
-        if (sketchState.copy.active && hit) window.__updateCopyConnect(hit);
+        // Grab / CopyConnect update: pass hit if available, else pass the last
+        // known hoverWorld so off-plane axis-lock still gets screen-delta updates.
+        const grabTarget = hit || sketchState.hoverWorld;
+        if (sketchState.grab.active)  window.__updateGrab(grabTarget);
+        if (sketchState.copy.active)  window.__updateCopyConnect(grabTarget);
+
+        // ── Gizmo handle hover (updates cursor + highlight) ──
+        if (sketchState.grab.active) {
+          const rect3 = canvas.getBoundingClientRect();
+          const hAxis = __hitGizmoHandle(e.clientX - rect3.left, e.clientY - rect3.top);
+          window.__gizmoHoverAxis = hAxis || null;
+          canvas.style.cursor = hAxis ? 'grab' : 'crosshair';
+        } else {
+          window.__gizmoHoverAxis = null;
+        }
         if (window.__perfSample) window.__perfSample('pick', performance.now() - __pfPick);
 
         if (!dragging) return;

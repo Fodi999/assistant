@@ -525,21 +525,154 @@ pub const JS: &str = r##"
             ctx.fillText(txt, sk.width/2, y0 + 13);
           }
 
-          // ── Grab HUD ──
+          // ── Grab HUD + Axis Gizmo with draggable handles ──
           if (sketchState.grab.active) {
-            const lock = sketchState.grab.axisLock;
+            const grab = sketchState.grab;
+            const lock = grab.axisLock;
             const lockColor = lock === 'X' ? '#ef4444' : lock === 'Y' ? '#22c55e' : lock === 'Z' ? '#3b82f6' : '#a78bfa';
-            const txt = 'GRAB ' + sketchState.grab.pointIds.length + (lock ? (' · ' + lock + '-axis') : '') + '  · X/Y/Z lock · Enter confirm · Esc cancel';
-            ctx.font = '12px "JetBrains Mono", system-ui, monospace';
-            const tw = ctx.measureText(txt).width + 16;
-            ctx.fillStyle = 'rgba(15,23,42,0.92)';
-            ctx.fillRect(sk.width/2 - tw/2, 16, tw, 26);
-            ctx.fillStyle = lockColor;
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(txt, sk.width/2, 29);
-            if (lock && sketchState.grab.startMouseWorld) {
-              const o = sketchState.grab.startMouseWorld;
-              const d = 50;
+
+            // ── Compute centroid of grabbed points ──
+            const byId = new Map(sketchState.points.map(p => [p.id, p]));
+            let cx = 0, cy0 = 0, cz = 0, n = 0;
+            for (const id of grab.pointIds) {
+              const p = byId.get(id);
+              if (!p) continue;
+              cx += p.x; cy0 += p.y; cz += p.z; n++;
+            }
+            if (n > 0) { cx /= n; cy0 /= n; cz /= n; }
+            const center = w2s(cx, cy0, cz);
+
+            // ── Draw Minimalist Axis Gizmo (Plasticity Style) ──
+            const hoveredHandle = window.__gizmoHoverAxis || null;
+            if (center) {
+              const arrowLen = 7;
+              const arrowW   = 1.5;
+              const HIT_R    = 12;
+              const axes = [
+                { axis: 'X', color: '#ef4444', wx: arrowLen, wy: 0, wz: 0 },
+                { axis: 'Y', color: '#22c55e', wx: 0, wy: arrowLen, wz: 0 },
+                { axis: 'Z', color: '#3b82f6', wx: 0, wy: 0, wz: arrowLen },
+              ];
+              const pOffset = 1.0;
+              const pSz = 1.8;
+              const pln = [
+                { axis: 'XY', color: '#fcd34d', p1: [pOffset, pOffset, 0], p2: [pOffset+pSz, pOffset, 0], p3: [pOffset+pSz, pOffset+pSz, 0], p4: [pOffset, pOffset+pSz, 0] },
+                { axis: 'YZ', color: '#fcd34d', p1: [0, pOffset, pOffset], p2: [0, pOffset+pSz, pOffset], p3: [0, pOffset+pSz, pOffset+pSz], p4: [0, pOffset, pOffset+pSz] },
+                { axis: 'XZ', color: '#fcd34d', p1: [pOffset, 0, pOffset], p2: [pOffset+pSz, 0, pOffset], p3: [pOffset+pSz, 0, pOffset+pSz], p4: [pOffset, 0, pOffset+pSz] },
+              ];
+
+              const handles = [];
+              ctx.save();
+
+              // Planar squares
+              for (const p of pln) {
+                const s1 = w2s(cx + p.p1[0], cy0 + p.p1[1], cz + p.p1[2]);
+                const s2 = w2s(cx + p.p2[0], cy0 + p.p2[1], cz + p.p2[2]);
+                const s3 = w2s(cx + p.p3[0], cy0 + p.p3[1], cz + p.p3[2]);
+                const s4 = w2s(cx + p.p4[0], cy0 + p.p4[1], cz + p.p4[2]);
+                if (!s1 || !s2 || !s3 || !s4) continue;
+
+                const isLocked  = (lock === p.axis);
+                const isHovered = (hoveredHandle === p.axis);
+
+                ctx.beginPath();
+                ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                ctx.lineTo(s3.x, s3.y); ctx.lineTo(s4.x, s4.y);
+                ctx.closePath();
+
+                if (isLocked || isHovered) {
+                  ctx.fillStyle = p.color;
+                  ctx.globalAlpha = 0.6;
+                  ctx.fill();
+                  ctx.strokeStyle = '#fff';
+                  ctx.globalAlpha = 0.9;
+                  ctx.lineWidth = 1;
+                  ctx.stroke();
+                } else {
+                  ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                  if (lock) ctx.globalAlpha = 0.05;
+                  else ctx.globalAlpha = 1.0;
+                  ctx.fill();
+                  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                  if (!lock) ctx.stroke();
+                }
+
+                // Hit center
+                const hx = (s1.x + s3.x) / 2;
+                const hy = (s1.y + s3.y) / 2;
+                handles.push({ axis: p.axis, x: hx, y: hy, r: 12 });
+              }
+
+              // Axes
+              for (const a of axes) {
+                const tip = w2s(cx + a.wx, cy0 + a.wy, cz + a.wz);
+                const base = w2s(cx + a.wx*0.2, cy0 + a.wy*0.2, cz + a.wz*0.2); // slight gap from origin
+                if (!tip || !base) continue;
+                const isLocked  = (lock === a.axis);
+                const isHovered = (hoveredHandle === a.axis);
+                
+                // Dim other axes when one is locked
+                if (lock && !isLocked) {
+                    ctx.globalAlpha = 0.15;
+                } else {
+                    ctx.globalAlpha = (isLocked || isHovered) ? 1.0 : 0.85;
+                }
+                const angle = Math.atan2(tip.y - base.y, tip.x - base.x);
+
+                // Minimalist Shaft
+                ctx.strokeStyle = a.color;
+                ctx.lineWidth   = isHovered || isLocked ? arrowW + 1 : arrowW;
+                ctx.beginPath();
+                ctx.moveTo(base.x, base.y);
+                ctx.lineTo(tip.x, tip.y);
+                ctx.stroke();
+
+                // Sleek Arrowhead
+                ctx.fillStyle = a.color;
+                const hw = 3.5, hl = 12;
+                ctx.beginPath();
+                ctx.moveTo(tip.x + 2*Math.cos(angle), tip.y + 2*Math.sin(angle));
+                ctx.lineTo(tip.x - hl*Math.cos(angle) + hw*Math.sin(angle),
+                           tip.y - hl*Math.sin(angle) - hw*Math.cos(angle));
+                ctx.lineTo(tip.x - hl*Math.cos(angle) - hw*Math.sin(angle),
+                           tip.y - hl*Math.sin(angle) + hw*Math.cos(angle));
+                ctx.closePath();
+                ctx.fill();
+
+                // Push hit area around the tip
+                handles.push({ axis: a.axis, x: tip.x, y: tip.y, r: HIT_R });
+              }
+
+              // Center FREE handle (screen space)
+              const cIsLocked = (lock === 'FREE');
+              const cIsHovered = (hoveredHandle === 'FREE');
+              ctx.globalAlpha = (cIsLocked || cIsHovered) ? 1.0 : (lock ? 0.15 : 0.8);
+              ctx.beginPath();
+              ctx.arc(center.x, center.y, 4, 0, Math.PI * 2);
+              ctx.fillStyle = '#fff';
+              ctx.fill();
+              if (cIsLocked || cIsHovered) {
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, 8, 0, Math.PI * 2);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+              }
+              handles.push({ axis: 'FREE', x: center.x, y: center.y, r: 12 });
+
+              ctx.globalAlpha = 1.0;
+              ctx.restore();
+
+              window.__gizmoHandles = handles;
+              window.__gizmoCenterScreen = center;
+            } else {
+              window.__gizmoHandles = null;
+            }
+
+            // ── Active axis dashed infinite guide ──
+            if (lock && grab.startMouseWorld) {
+              const o = grab.startMouseWorld;
+              const d = 1000; // make it truly long across screen
               let p1, p2;
               if (lock === 'X') { p1 = w2s(o.x - d, o.y, o.z); p2 = w2s(o.x + d, o.y, o.z); }
               if (lock === 'Y') { p1 = w2s(o.x, o.y - d, o.z); p2 = w2s(o.x, o.y + d, o.z); }
@@ -548,11 +681,54 @@ pub const JS: &str = r##"
                 ctx.save();
                 ctx.setLineDash([4, 4]);
                 ctx.strokeStyle = lockColor;
-                ctx.lineWidth = 1.5;
+                ctx.globalAlpha = 0.5;
+                ctx.lineWidth = 1.0;
                 ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
                 ctx.restore();
               }
             }
+
+            // ── Delta readout near cursor ──
+            if (grab.pointIds.length > 0) {
+              const byId2 = byId;
+              const sampleId   = grab.pointIds[0];
+              const sampleOrig = grab.originalPoints.get(sampleId);
+              const sampleNow  = byId2.get(sampleId);
+              if (sampleOrig && sampleNow) {
+                const ddx = (sampleNow.x - sampleOrig.x).toFixed(2);
+                const ddy = (sampleNow.y - sampleOrig.y).toFixed(2);
+                const ddz = (sampleNow.z - sampleOrig.z).toFixed(2);
+                const dist = Math.hypot(sampleNow.x - sampleOrig.x, sampleNow.y - sampleOrig.y, sampleNow.z - sampleOrig.z).toFixed(2);
+                const deltaLabel = (lock ? lock + ' ' : '') + '|Δ|' + dist
+                  + '  X' + ddx + ' Y' + ddy + ' Z' + ddz;
+                const scrX = (sketchState.hoverWorld && sketchState.hoverWorld.screenX) || (center ? center.x : sk.width/2);
+                const scrY = (sketchState.hoverWorld && sketchState.hoverWorld.screenY)
+                  ? sketchState.hoverWorld.screenY - 22
+                  : (center ? center.y - 22 : 80);
+                ctx.save();
+                ctx.font = '11px "JetBrains Mono", system-ui, monospace';
+                const tw2 = ctx.measureText(deltaLabel).width + 12;
+                ctx.fillStyle = 'rgba(15,23,42,0.9)';
+                ctx.fillRect(scrX - tw2/2, scrY - 10, tw2, 19);
+                ctx.fillStyle = lockColor;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(deltaLabel, scrX, scrY - 1);
+                ctx.restore();
+              }
+            }
+
+            // ── Banner ──
+            const txt = '⤢ GRAB ' + grab.pointIds.length + (lock ? (' · ' + lock + '-axis') : ' · free') + '  X/Y/Z lock · Enter confirm · Esc cancel';
+            ctx.font = '12px "JetBrains Mono", system-ui, monospace';
+            const tw = ctx.measureText(txt).width + 16;
+            ctx.fillStyle = 'rgba(15,23,42,0.92)';
+            ctx.fillRect(sk.width/2 - tw/2, 16, tw, 26);
+            ctx.fillStyle = lockColor;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(txt, sk.width/2, 29);
+          } else {
+            window.__gizmoHandles = null;
+            window.__gizmoHoverAxis = null;
           }
 
           // ── Copy Connect preview (Phase 14) ──

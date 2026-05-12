@@ -354,9 +354,9 @@ pub const JS: &str = r##"
         if (sketchState.grab.active) {
           if (k === 'escape') { __cancelGrab(); return true; }
           if (k === 'enter')  { __confirmGrab(); return true; }
-          if (k === 'x') { sketchState.grab.axisLock = 'X'; return true; }
-          if (k === 'y') { sketchState.grab.axisLock = 'Y'; return true; }
-          if (k === 'z') { sketchState.grab.axisLock = 'Z'; return true; }
+          if (k === 'x') { sketchState.grab.axisLock = (sketchState.grab.axisLock === 'X' ? null : 'X'); return true; }
+          if (k === 'y') { sketchState.grab.axisLock = (sketchState.grab.axisLock === 'Y' ? null : 'Y'); return true; }
+          if (k === 'z') { sketchState.grab.axisLock = (sketchState.grab.axisLock === 'Z' ? null : 'Z'); return true; }
           return true;
         }
 
@@ -439,7 +439,30 @@ pub const JS: &str = r##"
           return true;
         }
         if (k === 'g') {
-          if (!sketchState.selectedPointIds.size) { window.__setStatusMessage('G: select points first'); return true; }
+          // If edges are selected but no points — auto-derive their endpoints.
+          if (!sketchState.selectedPointIds.size && sketchState.selectedEdgeIds.size > 0) {
+            const eById = new Map(sketchState.edges.map(e => [e.id, e]));
+            for (const eid of sketchState.selectedEdgeIds) {
+              const edge = eById.get(eid);
+              if (edge) {
+                sketchState.selectedPointIds.add(edge.a);
+                sketchState.selectedPointIds.add(edge.b);
+              }
+            }
+          }
+          // If a profile is selected — take all its points.
+          if (!sketchState.selectedPointIds.size && sketchState.selectedProfileId) {
+            const prof = window.__getProfileById
+              ? window.__getProfileById(sketchState.selectedProfileId)
+              : null;
+            if (prof && prof.pointIds) {
+              for (const id of prof.pointIds) sketchState.selectedPointIds.add(id);
+            }
+          }
+          if (!sketchState.selectedPointIds.size) {
+            window.__setStatusMessage('G: select points, edges, or a profile first');
+            return true;
+          }
           __startGrab();
           return true;
         }
@@ -488,9 +511,14 @@ pub const JS: &str = r##"
         const startWorld = sketchState.hoverWorld
           ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
           : { x: 0, y: 0, z: 0 };
+        // Store start screen Y so we can drive the off-plane axis via mouse vertical delta.
+        const startScreen = (sketchState.precision && sketchState.precision.lastMouseScreen)
+          ? { x: sketchState.precision.lastMouseScreen.x, y: sketchState.precision.lastMouseScreen.y }
+          : { x: 0, y: 0 };
         sketchState.grab = {
           active: true, pointIds: moveIds,
           startMouseWorld: startWorld,
+          startScreen,
           originalPoints: snapshot,
           axisLock: null,
         };
@@ -503,22 +531,51 @@ pub const JS: &str = r##"
       window.__updateGrab = function(hoverWorld) {
         const grab = sketchState.grab;
         if (!grab.active || !hoverWorld || !grab.startMouseWorld) return;
+        if (!window.__isPointerDragging || !window.__isPointerDragging()) return;
+        if (!grab.dragBase) return;
+
         let dx = hoverWorld.x - grab.startMouseWorld.x;
         let dy = hoverWorld.y - grab.startMouseWorld.y;
         let dz = hoverWorld.z - grab.startMouseWorld.z;
-        if (grab.axisLock === 'X') { dy = 0; dz = 0; }
-        if (grab.axisLock === 'Y') { dx = 0; dz = 0; }
-        if (grab.axisLock === 'Z') { dx = 0; dy = 0; }
+
+        // The working plane constrains the raycast, so the axis perpendicular
+        // to the plane never moves in hoverWorld.  Instead, drive it from the
+        // vertical mouse-screen delta (upward = positive world units).
+        const plane = sketchState.workingPlane || 'XZ';
+        // Perpendicular axes per plane: XZ→Y,  XY→Z,  YZ→X
+        const perpAxis = (plane === 'XZ') ? 'Y' : (plane === 'XY') ? 'Z' : 'X';
+
+        if (grab.axisLock === perpAxis) {
+          // Use screen-Y delta to drive the off-plane axis.
+          const scr = sketchState.precision && sketchState.precision.lastMouseScreen;
+          if (scr && grab.startScreen) {
+            const canvas = document.getElementById('matterCanvas');
+            const canvasH = canvas ? canvas.height : 600;
+            const pixelDelta = grab.startScreen.y - scr.y;   // up = positive
+            const scale = (cam.dist * 1.8) / canvasH;        // world-units per pixel
+            const raw = pixelDelta * scale;
+            if (perpAxis === 'Y') { dx = 0; dy = raw; dz = 0; }
+            if (perpAxis === 'Z') { dx = 0; dy = 0;   dz = raw; }
+            if (perpAxis === 'X') { dx = raw; dy = 0; dz = 0; }
+          }
+        } else if (grab.axisLock === 'X') { dy = 0; dz = 0; }
+          else if (grab.axisLock === 'Y') { dx = 0; dz = 0; }
+          else if (grab.axisLock === 'Z') { dx = 0; dy = 0; }
+          else if (grab.axisLock === 'XY') { dz = 0; }
+          else if (grab.axisLock === 'YZ') { dx = 0; }
+          else if (grab.axisLock === 'XZ') { dy = 0; }
+          else if (grab.axisLock === 'FREE') { /* free move on working plane, no axis zeroing */ }
+
         const g = sketchState.gridSize || 1.0;
         const sdx = Math.round(dx / g) * g;
         const sdy = Math.round(dy / g) * g;
         const sdz = Math.round(dz / g) * g;
         const byId = new Map(sketchState.points.map(p => [p.id, p]));
         for (const id of grab.pointIds) {
-          const orig = grab.originalPoints.get(id);
+          const base = grab.dragBase.get(id);
           const p = byId.get(id);
-          if (!orig || !p) continue;
-          p.x  = orig.x + sdx; p.y  = orig.y + sdy; p.z  = orig.z + sdz;
+          if (!base || !p) continue;
+          p.x  = base.x + sdx; p.y  = base.y + sdy; p.z  = base.z + sdz;
           p.gx = Math.round(p.x / g);
           p.gy = Math.round(p.y / g);
           p.gz = Math.round(p.z / g);
@@ -620,6 +677,9 @@ pub const JS: &str = r##"
         const startWorld = sketchState.hoverWorld
           ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
           : { x: 0, y: 0, z: 0 };
+        const cpStartScreen = (sketchState.precision && sketchState.precision.lastMouseScreen)
+          ? { x: sketchState.precision.lastMouseScreen.x, y: sketchState.precision.lastMouseScreen.y }
+          : { x: 0, y: 0 };
         sketchState.copy = {
           active: true,
           source: src.source,
@@ -627,6 +687,7 @@ pub const JS: &str = r##"
           edges: src.edges,
           originals,
           startMouseWorld: startWorld,
+          startScreen: cpStartScreen,
           delta: { dx: 0, dy: 0, dz: 0 },
           axisLock: null,
         };
@@ -644,16 +705,41 @@ pub const JS: &str = r##"
       window.__updateCopyConnect = function(hoverWorld) {
         const cp = sketchState.copy;
         if (!cp.active || !hoverWorld || !cp.startMouseWorld) return;
+        if (!window.__isPointerDragging || !window.__isPointerDragging()) return;
+        if (!cp.baseDelta) return;
+
         let dx = hoverWorld.x - cp.startMouseWorld.x;
         let dy = hoverWorld.y - cp.startMouseWorld.y;
         let dz = hoverWorld.z - cp.startMouseWorld.z;
-        if (cp.axisLock === 'X') { dy = 0; dz = 0; }
-        if (cp.axisLock === 'Y') { dx = 0; dz = 0; }
-        if (cp.axisLock === 'Z') { dx = 0; dy = 0; }
+
+        // Same off-plane axis fix as grab.
+        const plane = sketchState.workingPlane || 'XZ';
+        const perpAxis = (plane === 'XZ') ? 'Y' : (plane === 'XY') ? 'Z' : 'X';
+
+        if (cp.axisLock === perpAxis) {
+          const scr = sketchState.precision && sketchState.precision.lastMouseScreen;
+          if (scr && cp.startScreen) {
+            const canvas = document.getElementById('matterCanvas');
+            const canvasH = canvas ? canvas.height : 600;
+            const pixelDelta = cp.startScreen.y - scr.y;
+            const scale = (cam.dist * 1.8) / canvasH;
+            const raw = pixelDelta * scale;
+            if (perpAxis === 'Y') { dx = 0; dy = raw; dz = 0; }
+            if (perpAxis === 'Z') { dx = 0; dy = 0;   dz = raw; }
+            if (perpAxis === 'X') { dx = raw; dy = 0; dz = 0; }
+          }
+        } else if (cp.axisLock === 'X') { dy = 0; dz = 0; }
+          else if (cp.axisLock === 'Y') { dx = 0; dz = 0; }
+          else if (cp.axisLock === 'Z') { dx = 0; dy = 0; }
+          else if (cp.axisLock === 'XY') { dz = 0; }
+          else if (cp.axisLock === 'YZ') { dx = 0; }
+          else if (cp.axisLock === 'XZ') { dy = 0; }
+          else if (cp.axisLock === 'FREE') { /* no extra zeros */ }
+
         const g = sketchState.gridSize || 1.0;
-        cp.delta.dx = Math.round(dx / g) * g;
-        cp.delta.dy = Math.round(dy / g) * g;
-        cp.delta.dz = Math.round(dz / g) * g;
+        cp.delta.dx = cp.baseDelta.dx + Math.round(dx / g) * g;
+        cp.delta.dy = cp.baseDelta.dy + Math.round(dy / g) * g;
+        cp.delta.dz = cp.baseDelta.dz + Math.round(dz / g) * g;
       };
 
       async function __confirmCopyConnect() {
