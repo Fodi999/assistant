@@ -139,6 +139,12 @@ pub const JS: &str = r##"
           const sel = (ss.selectedPointIds ? ss.selectedPointIds.size : 0)
                     + (ss.selectedEdgeIds  ? ss.selectedEdgeIds.size  : 0);
           setText('perf-selected', sel);
+          // Engine mode metrics (Phase 11).
+          setText('perf-mode', ss.engineMode || 'backend');
+          const wms = ss.lastWasmMs || 0;
+          const bms = ss.lastBackendMs || 0;
+          setText('perf-wasm-ms', wms > 0 ? wms.toFixed(2) + ' ms' : '—');
+          setText('perf-be-ms',   bms > 0 ? bms.toFixed(1) + ' ms' : '—');
         }
 
         s.dpr = window.devicePixelRatio || 1;

@@ -181,13 +181,36 @@ pub const JS: &str = r##"
         }
         const beChk = document.getElementById('si-use-backend');
         if (beChk) beChk.checked = !!sketchState.useBackendCommands;
-        set('si-backend-onoff', sketchState.useBackendCommands ? 'ON' : 'OFF');
-        const bs = sketchState.backendStatus || {};
-        let last;
-        if (bs.ok === true)       last = '✓ ' + (bs.message || 'OK');
-        else if (bs.ok === false) last = '✕ ' + (bs.message || 'ERROR');
-        else                      last = '—';
-        set('si-backend-last', last);
+        const onoffEl = document.getElementById('si-backend-onoff');
+        if (onoffEl) onoffEl.textContent = sketchState.useBackendCommands ? 'ON' : 'OFF';
+        // Last result: use unified lastCommandMsg (set by all engine modes).
+        set('si-backend-last', sketchState.lastCommandMsg || '—');
+
+        // ── Engine mode + perf metrics (Phase 11) ──
+        const modeSel = document.getElementById('si-engine-mode');
+        if (modeSel && document.activeElement !== modeSel) {
+          modeSel.value = sketchState.engineMode || 'backend';
+        }
+        set('si-last-be-ms',   (sketchState.lastBackendMs || 0).toFixed(1)  + ' ms');
+        set('si-last-wasm-ms', (sketchState.lastWasmMs    || 0).toFixed(2) + ' ms');
+        const syncEl = document.getElementById('si-sync-status');
+        if (syncEl) {
+          const s = sketchState.lastSyncStatus || '—';
+          let label = s, cls = 'idle';
+          if      (s === 'ok')      { label = 'OK';      cls = 'ok';      }
+          else if (s === 'diff')    { label = 'DIFF';    cls = 'diff';    }
+          else if (s === 'pending') { label = 'pending'; cls = 'pending'; }
+          else if (s === 'err')     { label = 'ERR';     cls = 'err';     }
+          syncEl.textContent = label;
+          syncEl.className   = 'si-sync si-sync-' + cls;
+        }
+        // WASM status badge (Phase 10) — kept in same block.
+        const wstatusEl = document.getElementById('si-wasm-status');
+        if (wstatusEl && window.wasmState) {
+          const st = window.wasmState.status || 'not_loaded';
+          wstatusEl.textContent = st;
+          wstatusEl.className   = 'si-wasm-status si-wasm-' + st;
+        }
 
         // ── Profile selection block (Phase 8) ──
         const profSel = window.__getSelectedProfile && window.__getSelectedProfile();
@@ -284,6 +307,15 @@ pub const JS: &str = r##"
           });
         }
 
+        // ── Engine mode select (Phase 11) ──
+        const modeSel = document.getElementById('si-engine-mode');
+        if (modeSel) {
+          modeSel.value = sketchState.engineMode || 'backend';
+          modeSel.addEventListener('change', () => {
+            window.__setEngineMode(modeSel.value);
+          });
+        }
+
         // ── Profile selection buttons (Phase 8) ──
         const pfCopy = document.getElementById('si-pf-copy');
         if (pfCopy) {
@@ -321,14 +353,6 @@ pub const JS: &str = r##"
             const r = await window.__wasmValidateSketch();
             if (!r) { window.__setStatusMessage('WASM validate failed'); return; }
             window.__updateSketchInspector();
-          });
-        }
-        const wUse = document.getElementById('si-use-wasm');
-        if (wUse) {
-          wUse.addEventListener('change', () => {
-            window.__setUseWasmEngine(wUse.checked);
-            const onoff = document.getElementById('si-wasm-onoff');
-            if (onoff) onoff.textContent = wUse.checked ? 'ON' : 'OFF';
           });
         }
 

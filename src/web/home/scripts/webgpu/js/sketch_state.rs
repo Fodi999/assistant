@@ -61,6 +61,13 @@ pub const JS: &str = r##"
         useBackendCommands: true,
         backendStatus: { ok: null, message: null, lastValidation: null },
 
+        // ── Engine Mode (Phase 11) ── 'backend' | 'wasm' | 'hybrid'
+        engineMode: 'backend',
+        lastBackendMs: 0,
+        lastWasmMs: 0,
+        lastSyncStatus: '—',   // 'ok' | 'diff' | 'pending' | 'err' | '—'
+        lastCommandMsg: '—',   // last engine result string (shown as "Last result")
+
         // ── Profile selection (Phase 8) ──
         selectedProfileId: null,
         hoverProfileId: null,

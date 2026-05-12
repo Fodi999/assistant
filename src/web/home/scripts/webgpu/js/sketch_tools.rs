@@ -46,14 +46,24 @@ pub const JS: &str = r##"
           if (!hit) return;
           const existing = window.__findPointAtGrid(hit.gx, hit.gy, hit.gz);
           if (existing) return;
+          const mode = sketchState.engineMode || 'backend';
+          // ── WASM / Hybrid path (Phase 11) ──
+          if (mode === 'wasm' || mode === 'hybrid') {
+            window.__pushHistory();
+            window.__wasmAddPointAndApply(hit.gx, hit.gy, hit.gz).then(() => {
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            });
+            return;
+          }
           // ── Backend precision path (Phase 7) ──
-          if (sketchState.useBackendCommands) {
+          if (mode === 'backend') {
             window.__pushHistory();
             window.__backendAddPoint(hit.gx, hit.gy, hit.gz).then(() => {
               if (window.__updateSketchInspector) window.__updateSketchInspector();
             });
             return;
           }
+          // ── Legacy local fallback ──
           window.__pushHistory();
           window.__addPoint(hit.gx, hit.gy, hit.gz);
           if (window.__updateSketchInspector) window.__updateSketchInspector();
@@ -62,8 +72,34 @@ pub const JS: &str = r##"
 
         if (tool === SM.LINE) {
           const hoveredId = window.__pickPointAt(ndcX, ndcY);
+          const mode = sketchState.engineMode || 'backend';
+          // ── WASM / Hybrid path (Phase 11) ──
+          if (mode === 'wasm' || mode === 'hybrid') {
+            (async () => {
+              window.__pushHistory();
+              let targetId = hoveredId;
+              if (!targetId) {
+                const hit = window.__raycastSketchPlane(ndcX, ndcY);
+                if (!hit) return;
+                const r = await window.__wasmAddPointAndApply(hit.gx, hit.gy, hit.gz);
+                if (!r.ok) return;
+                targetId = r.pointId;
+              }
+              const startId = sketchState.line.startPointId;
+              if (startId && startId !== targetId) {
+                await window.__wasmAddEdgeAndApply(
+                  { pointId: startId },
+                  { pointId: targetId },
+                );
+              }
+              sketchState.line.startPointId = targetId;
+              sketchState.phase = "line_pending";
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            })();
+            return;
+          }
           // ── Backend precision path ──
-          if (sketchState.useBackendCommands) {
+          if (mode === 'backend') {
             (async () => {
               window.__pushHistory();
               let targetId = hoveredId;

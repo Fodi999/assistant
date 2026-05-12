@@ -1221,6 +1221,39 @@ pub fn matter_status_styles() -> &'static str {
       border-color: rgba(248, 113, 113, 0.45);
     }
 
+    /* === Hybrid sync badge (Phase 11) ==================================== */
+    .si-sync {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      letter-spacing: 0.04em;
+      background: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .si-sync.si-sync-ok {
+      background: rgba(34, 197, 94, 0.18);
+      color: #4ade80;
+      border-color: rgba(34, 197, 94, 0.45);
+    }
+    .si-sync.si-sync-diff {
+      background: rgba(248, 113, 113, 0.20);
+      color: #f87171;
+      border-color: rgba(248, 113, 113, 0.50);
+    }
+    .si-sync.si-sync-pending {
+      background: rgba(251, 191, 36, 0.18);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.45);
+    }
+    .si-sync.si-sync-err {
+      background: rgba(248, 113, 113, 0.18);
+      color: #f87171;
+      border-color: rgba(248, 113, 113, 0.45);
+    }
+
     /* ─── end ────────────────────────────── */
 "##
 }

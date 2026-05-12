@@ -28,6 +28,10 @@ pub fn matter_lab_section() -> String {
             <div class="perf-row"><span class="perf-key">Pick</span>     <span id="perf-pick"     class="perf-val">0 ms</span></div>
             <div class="perf-row"><span class="perf-key">Backend</span>  <span id="perf-backend"  class="perf-val">—</span></div>
             <div class="perf-sep"></div>
+            <div class="perf-row"><span class="perf-key">Mode</span>     <span id="perf-mode"     class="perf-val">backend</span></div>
+            <div class="perf-row"><span class="perf-key">WASM ms</span>  <span id="perf-wasm-ms"  class="perf-val">—</span></div>
+            <div class="perf-row"><span class="perf-key">BE ms</span>    <span id="perf-be-ms"    class="perf-val">—</span></div>
+            <div class="perf-sep"></div>
             <div class="perf-row"><span class="perf-key">Pts</span>      <span id="perf-pts"      class="perf-val">0</span></div>
             <div class="perf-row"><span class="perf-key">Edges</span>    <span id="perf-edges"    class="perf-val">0</span></div>
             <div class="perf-row"><span class="perf-key">Profiles</span> <span id="perf-profiles" class="perf-val">0</span></div>
@@ -190,31 +194,29 @@ pub fn matter_lab_section() -> String {
                      border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 4px;
                      font:inherit; text-align:right;">
             </dd>
-            <dt>Backend</dt>
-            <dd>
-              <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
-                <input id="si-use-backend" type="checkbox" checked
-                       style="accent-color:#38bdf8;">
-                <span id="si-backend-onoff">ON</span>
-              </label>
-            </dd>
-            <dt>Last result</dt> <dd id="si-backend-last">—</dd>
             <dt>Coord prec.</dt> <dd>3 dec</dd>
           </dl>
 
-          <!-- ── WASM Engine (Phase 10) ── -->
+          <!-- ── Sketch Engine (Phase 11) ── -->
           <div class="si-divider"></div>
-          <div class="si-block-title">Sketch WASM Engine</div>
+          <div class="si-block-title">Sketch Engine</div>
           <dl class="si-grid">
-            <dt>Status</dt> <dd><span id="si-wasm-status" class="si-wasm-status si-wasm-not_loaded">not_loaded</span></dd>
-            <dt>Engine</dt>
+            <dt>Mode</dt>
             <dd>
-              <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
-                <input id="si-use-wasm" type="checkbox"
-                       style="accent-color:#a855f7;">
-                <span id="si-wasm-onoff">OFF</span>
-              </label>
+              <select id="si-engine-mode"
+                      style="background:rgba(15,23,42,0.7); color:#e2e8f0;
+                             border:1px solid rgba(148,163,184,0.25); border-radius:4px;
+                             padding:1px 4px; font:inherit;">
+                <option value="backend">Backend</option>
+                <option value="wasm">WASM</option>
+                <option value="hybrid">Hybrid</option>
+              </select>
             </dd>
+            <dt>WASM</dt> <dd><span id="si-wasm-status" class="si-wasm-status si-wasm-not_loaded">not_loaded</span></dd>
+            <dt>Last backend</dt> <dd id="si-last-be-ms">— ms</dd>
+            <dt>Last WASM</dt>    <dd id="si-last-wasm-ms">— ms</dd>
+            <dt>Sync</dt>         <dd><span id="si-sync-status" class="si-sync si-sync-idle">—</span></dd>
+            <dt>Last result</dt>  <dd id="si-backend-last">—</dd>
           </dl>
           <div class="sio-actions">
             <button id="si-wasm-load"     class="sio-btn" title="Lazy-import /wasm/sketch_engine/">⬇ Load WASM</button>

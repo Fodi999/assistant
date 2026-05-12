@@ -45,6 +45,10 @@ pub const JS: &str = r##"
           lastValidation: result.validation || null,
         };
 
+        // ── lastCommandMsg is NOT set here; it is set by the caller
+        //    (__backendAddPoint / __backendAddEdge / WASM helpers) so that
+        //    the engine prefix ('Backend' / 'WASM' / 'Hybrid') is accurate.
+
         // Profiles from backend are authoritative when commands are ON.
         // We bypass __notifySketchChanged's __recomputeProfiles by inlining
         // only the parts that depend on points/edges and leaving profiles
@@ -75,15 +79,21 @@ pub const JS: &str = r##"
             body: JSON.stringify(body),
           });
           if (!res.ok) {
-            if (window.__perfSample) window.__perfSample('backend', performance.now() - __pfT0);
+            const __dt = performance.now() - __pfT0;
+            sketchState.lastBackendMs = __dt;
+            if (window.__perfSample) window.__perfSample('backend', __dt);
             if (window.__perfMarkBackendError) window.__perfMarkBackendError();
             return { ok: false, error: 'HTTP ' + res.status };
           }
           const json = await res.json();
-          if (window.__perfSample) window.__perfSample('backend', performance.now() - __pfT0);
+          const __dt = performance.now() - __pfT0;
+          sketchState.lastBackendMs = __dt;
+          if (window.__perfSample) window.__perfSample('backend', __dt);
           return { ok: true, json };
         } catch (e) {
-          if (window.__perfSample) window.__perfSample('backend', performance.now() - __pfT0);
+          const __dt = performance.now() - __pfT0;
+          sketchState.lastBackendMs = __dt;
+          if (window.__perfSample) window.__perfSample('backend', __dt);
           if (window.__perfMarkBackendError) window.__perfMarkBackendError();
           return { ok: false, error: String(e && e.message || e) };
         }
@@ -102,6 +112,7 @@ pub const JS: &str = r##"
         const r = await __postSketchCommand('/api/matter/sketch/add-point', payload);
         if (!r.ok) {
           sketchState.backendStatus = { ok: false, message: 'Backend unavailable', lastValidation: null };
+          sketchState.lastCommandMsg = 'Backend unavailable';
           window.__setStatusMessage('Backend unavailable — using local sketch mode');
           return { ok: false, error: r.error };
         }
@@ -109,7 +120,11 @@ pub const JS: &str = r##"
         if (result.ok) {
           window.__applyBackendSketchResult(result);
           const pid = result.createdPointId || result.reusedPointId;
-          window.__setStatusMessage(result.message || ('Backend point ' + pid));
+          const msg = result.createdPointId
+            ? 'Backend created point ' + pid
+            : 'Backend reused point ' + pid;
+          sketchState.lastCommandMsg = msg;
+          window.__setStatusMessage(msg);
           return {
             ok: true,
             pointId: pid,
@@ -117,12 +132,14 @@ pub const JS: &str = r##"
             message: result.message,
           };
         }
+        const errMsg = result.message || 'Backend rejected request';
         sketchState.backendStatus = {
           ok: false,
-          message: result.message || 'Backend rejected request',
+          message: errMsg,
           lastValidation: result.validation || null,
         };
-        window.__setStatusMessage(result.message || 'Backend rejected request');
+        sketchState.lastCommandMsg = '✕ ' + errMsg;
+        window.__setStatusMessage(errMsg);
         return { ok: false, error: result.message };
       };
 
@@ -141,6 +158,7 @@ pub const JS: &str = r##"
         const r = await __postSketchCommand('/api/matter/sketch/add-edge', payload);
         if (!r.ok) {
           sketchState.backendStatus = { ok: false, message: 'Backend unavailable', lastValidation: null };
+          sketchState.lastCommandMsg = 'Backend unavailable';
           window.__setStatusMessage('Backend unavailable — using local sketch mode');
           return { ok: false, error: r.error };
         }
@@ -149,7 +167,10 @@ pub const JS: &str = r##"
         // because the backend may have inserted new endpoint points already.
         if (result.sketch) window.__applyBackendSketchResult(result);
         if (result.ok) {
-          window.__setStatusMessage(result.message || 'Backend created edge');
+          const eid = result.createdEdgeId || '?';
+          const msg = 'Backend created edge ' + eid;
+          sketchState.lastCommandMsg = msg;
+          window.__setStatusMessage(msg);
           return {
             ok: true,
             edgeId: result.createdEdgeId,
@@ -157,7 +178,9 @@ pub const JS: &str = r##"
             message: result.message,
           };
         }
-        window.__setStatusMessage(result.message || 'Backend rejected edge');
+        const errMsg = result.message || 'Backend rejected edge';
+        sketchState.lastCommandMsg = '✕ ' + errMsg;
+        window.__setStatusMessage(errMsg);
         return { ok: false, error: result.message };
       };
 
