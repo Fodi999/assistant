@@ -19,6 +19,7 @@ mod sketch_dim;
 mod sketch_tools;
 mod sketch_io;
 mod sketch_backend;
+mod perf_hud;
 mod extrude;
 
 /// Assembles the complete JS source, embedding both WGSL shaders.
@@ -44,6 +45,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + matter_ui::JS.len()
             + render_loop::JS.len()
             + extrude::JS.len()
+            + perf_hud::JS.len()
             + 256,
     );
     out.push_str(init::JS);
@@ -65,6 +67,8 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch_io::JS);
     // 9. Backend precision commands (Phase 7) — POST add-point / add-edge
     out.push_str(sketch_backend::JS);
+    // 10. Performance HUD (Phase 9) — perfState + frame/render/overlay/pick/backend ms
+    out.push_str(perf_hud::JS);
     out.push_str(matter_state::JS);
     out.push_str(buffers::JS);
     // ── WGSL shaders ────────────────────────────────────────────

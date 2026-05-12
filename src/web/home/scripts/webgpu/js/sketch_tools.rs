@@ -347,6 +347,10 @@ pub const JS: &str = r##"
 
         // Tools.
         if (k === 's') { window.__setSketchTool && window.__setSketchTool('select'); return true; }
+        if (k === 'p' && e.shiftKey) {
+          if (window.__togglePerfHud) window.__togglePerfHud();
+          return true;
+        }
         if (k === 'p') { window.__setSketchTool && window.__setSketchTool('point');  return true; }
         if (k === 'l') { window.__setSketchTool && window.__setSketchTool('line');   return true; }
         if (k === 'g') {

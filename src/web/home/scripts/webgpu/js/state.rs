@@ -134,6 +134,9 @@ pub const JS: &str = r##"
         mouse.ndcY = 1 - ((e.clientY - rect.top) / rect.height) * 2;
         mouse.active = true;
 
+        // Perf: hover / picking block.
+        const __pfPick = performance.now();
+
         // Hover + snap (always while pointer is on canvas, regardless of drag).
         const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY);
         sketchState.hoverWorld = hit || null;
@@ -172,6 +175,8 @@ pub const JS: &str = r##"
         }
         if (window.__updateLinePreview) window.__updateLinePreview();
         if (sketchState.grab.active && hit) window.__updateGrab(hit);
+
+        if (window.__perfSample) window.__perfSample('pick', performance.now() - __pfPick);
 
         if (!dragging) return;
 

@@ -14,6 +14,31 @@ pub fn matter_lab_section() -> String {
         <!-- Axis gizmo -->
         <canvas id="axis-gizmo" width="96" height="96" title="Click axis to snap view"></canvas>
 
+        <!-- Performance HUD (Shift+P toggle) -->
+        <div id="perf-hud" class="perf-hud">
+          <div id="perf-hud-header" class="perf-hud-header" title="Click to collapse · Shift+P toggle">
+            <span id="perf-hud-caret">▾</span>
+            <span class="perf-hud-title">PERF</span>
+          </div>
+          <div id="perf-hud-body" class="perf-hud-body">
+            <div class="perf-row"><span class="perf-key">FPS</span>      <span id="perf-fps"      class="perf-val">0</span></div>
+            <div class="perf-row"><span class="perf-key">Frame</span>    <span id="perf-frame"    class="perf-val">0 ms</span></div>
+            <div class="perf-row"><span class="perf-key">Render</span>   <span id="perf-render"   class="perf-val">0 ms</span></div>
+            <div class="perf-row"><span class="perf-key">Overlay</span>  <span id="perf-overlay"  class="perf-val">0 ms</span></div>
+            <div class="perf-row"><span class="perf-key">Pick</span>     <span id="perf-pick"     class="perf-val">0 ms</span></div>
+            <div class="perf-row"><span class="perf-key">Backend</span>  <span id="perf-backend"  class="perf-val">—</span></div>
+            <div class="perf-sep"></div>
+            <div class="perf-row"><span class="perf-key">Pts</span>      <span id="perf-pts"      class="perf-val">0</span></div>
+            <div class="perf-row"><span class="perf-key">Edges</span>    <span id="perf-edges"    class="perf-val">0</span></div>
+            <div class="perf-row"><span class="perf-key">Profiles</span> <span id="perf-profiles" class="perf-val">0</span></div>
+            <div class="perf-row"><span class="perf-key">Sel</span>      <span id="perf-selected" class="perf-val">0</span></div>
+            <div class="perf-sep"></div>
+            <div class="perf-row"><span class="perf-key">DPR</span>      <span id="perf-dpr"      class="perf-val">1.00</span></div>
+            <div class="perf-row"><span class="perf-key">Canvas</span>   <span id="perf-canvas"   class="perf-val">—</span></div>
+            <div class="perf-row"><span class="perf-key">Scale</span>    <span id="perf-scale"    class="perf-val">1.00</span></div>
+          </div>
+        </div>
+
         <!-- Mini command bar (top center) -->
         <div id="mini-bar">
           <span class="mb-cell"><b>Tool</b> <span id="mini-tool">SELECT</span></span>
@@ -36,6 +61,7 @@ pub fn matter_lab_section() -> String {
           <span><b>H</b> Horiz</span>
           <span><b>V</b> Vert</span>
           <span><b>⇧V</b> Valid</span>
+          <span><b>⇧P</b> Perf</span>
           <span><b>1/2/3</b> Plane</span>
           <span><b>⌫</b> Del</span>
           <span><b>⌘Z</b> Undo</span>

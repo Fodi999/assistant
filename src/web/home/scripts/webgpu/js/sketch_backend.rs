@@ -67,6 +67,7 @@ pub const JS: &str = r##"
       // Network failures are swallowed so callers can fall back gracefully.
       // ─────────────────────────────────────────────────────────
       async function __postSketchCommand(path, body) {
+        const __pfT0 = performance.now();
         try {
           const res = await fetch(path, {
             method: 'POST',
@@ -74,11 +75,16 @@ pub const JS: &str = r##"
             body: JSON.stringify(body),
           });
           if (!res.ok) {
+            if (window.__perfSample) window.__perfSample('backend', performance.now() - __pfT0);
+            if (window.__perfMarkBackendError) window.__perfMarkBackendError();
             return { ok: false, error: 'HTTP ' + res.status };
           }
           const json = await res.json();
+          if (window.__perfSample) window.__perfSample('backend', performance.now() - __pfT0);
           return { ok: true, json };
         } catch (e) {
+          if (window.__perfSample) window.__perfSample('backend', performance.now() - __pfT0);
+          if (window.__perfMarkBackendError) window.__perfMarkBackendError();
           return { ok: false, error: String(e && e.message || e) };
         }
       }

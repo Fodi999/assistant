@@ -28,6 +28,11 @@ pub const JS: &str = r##"
             globalThis.__matterPerf.frameMs = cpuFrameMs;
           }
         }
+        // Perf HUD: per-frame sample (skip 1st frame — bogus delta).
+        if (frameCount > 1 && window.__perfSample) {
+          window.__perfSample('frame', cpuFrameMs);
+        }
+        if (window.perfState) window.perfState.fps = fps;
         if (cam.autoRotate) cam.yaw += dt * 0.25;
 
         const cy = Math.cos(cam.yaw),   sy = Math.sin(cam.yaw);
@@ -81,6 +86,8 @@ pub const JS: &str = r##"
         ubo[60] = 0; ubo[61] = 0; ubo[62] = 0; ubo[63] = 0;
         device.queue.writeBuffer(uniformBuf, 0, ubo);
 
+        // Perf: WebGPU render block.
+        const __pfRender = performance.now();
         const enc  = device.createCommandEncoder();
         ensureDepth();
         const view      = gpuCtx.getCurrentTexture().createView();
@@ -96,7 +103,10 @@ pub const JS: &str = r##"
           pass.end();
         }
         device.queue.submit([enc.finish()]);
+        if (window.__perfSample) window.__perfSample('render', performance.now() - __pfRender);
 
+        // Perf: 2D overlay block.
+        const __pfOverlay = performance.now();
         const sk = document.getElementById('sketch-canvas');
         if (sk) {
           if (sk.width !== canvas.width || sk.height !== canvas.height) {
@@ -433,6 +443,9 @@ pub const JS: &str = r##"
             }
           }
         }
+
+        if (window.__perfSample)    window.__perfSample('overlay', performance.now() - __pfOverlay);
+        if (window.__updatePerfHud) window.__updatePerfHud();
 
         gpuRafId = requestAnimationFrame(frame);
       }

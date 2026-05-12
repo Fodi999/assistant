@@ -1131,6 +1131,68 @@ pub fn matter_status_styles() -> &'static str {
     }
     #sketch-io-panel .sio-btn:active { transform: translateY(0); }
 
+    /* === Performance HUD (Phase 9) ===================================== */
+    .perf-hud {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      z-index: 30;
+      min-width: 168px;
+      padding: 6px 8px 8px;
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 8px;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #cbd5e1;
+      font: 11px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      pointer-events: auto;
+      user-select: none;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+    .perf-hud-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      padding: 1px 2px 4px;
+      color: #94a3b8;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      margin-bottom: 4px;
+    }
+    .perf-hud-header:hover { color: #e2e8f0; }
+    .perf-hud-title { font-size: 10px; }
+    #perf-hud-caret { font-size: 9px; color: #64748b; }
+    .perf-hud-body { display: block; }
+    .perf-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1px 2px;
+      gap: 12px;
+    }
+    .perf-key {
+      color: #64748b;
+      text-transform: uppercase;
+      font-size: 9.5px;
+      letter-spacing: 0.05em;
+    }
+    .perf-val {
+      color: #e2e8f0;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+    .perf-val.ok   { color: #4ade80; }
+    .perf-val.warn { color: #fbbf24; }
+    .perf-val.bad  { color: #f87171; }
+    .perf-sep {
+      height: 1px;
+      background: rgba(148, 163, 184, 0.12);
+      margin: 4px 0;
+    }
+
     /* ─── end ────────────────────────────── */
 "##
 }
