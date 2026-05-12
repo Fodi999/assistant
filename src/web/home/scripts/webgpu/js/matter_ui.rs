@@ -307,6 +307,31 @@ pub const JS: &str = r##"
           });
         }
 
+        // ── WASM engine controls (Phase 10) ──
+        const wLoad = document.getElementById('si-wasm-load');
+        if (wLoad) {
+          wLoad.addEventListener('click', async () => {
+            await window.__loadSketchWasm();
+            window.__updateSketchInspector();
+          });
+        }
+        const wValid = document.getElementById('si-wasm-validate');
+        if (wValid) {
+          wValid.addEventListener('click', async () => {
+            const r = await window.__wasmValidateSketch();
+            if (!r) { window.__setStatusMessage('WASM validate failed'); return; }
+            window.__updateSketchInspector();
+          });
+        }
+        const wUse = document.getElementById('si-use-wasm');
+        if (wUse) {
+          wUse.addEventListener('change', () => {
+            window.__setUseWasmEngine(wUse.checked);
+            const onoff = document.getElementById('si-wasm-onoff');
+            if (onoff) onoff.textContent = wUse.checked ? 'ON' : 'OFF';
+          });
+        }
+
         window.__updateSketchInspector();
         setInterval(() => {
           const fps = (globalThis.__matterPerf && globalThis.__matterPerf.fps) || 0;

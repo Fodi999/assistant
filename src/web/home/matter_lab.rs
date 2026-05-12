@@ -202,6 +202,25 @@ pub fn matter_lab_section() -> String {
             <dt>Coord prec.</dt> <dd>3 dec</dd>
           </dl>
 
+          <!-- ── WASM Engine (Phase 10) ── -->
+          <div class="si-divider"></div>
+          <div class="si-block-title">Sketch WASM Engine</div>
+          <dl class="si-grid">
+            <dt>Status</dt> <dd><span id="si-wasm-status" class="si-wasm-status si-wasm-not_loaded">not_loaded</span></dd>
+            <dt>Engine</dt>
+            <dd>
+              <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+                <input id="si-use-wasm" type="checkbox"
+                       style="accent-color:#a855f7;">
+                <span id="si-wasm-onoff">OFF</span>
+              </label>
+            </dd>
+          </dl>
+          <div class="sio-actions">
+            <button id="si-wasm-load"     class="sio-btn" title="Lazy-import /wasm/sketch_engine/">⬇ Load WASM</button>
+            <button id="si-wasm-validate" class="sio-btn" title="Run validation in WASM">✓ Validate WASM</button>
+          </div>
+
           <!-- ── JSON Export / Import ── -->
           <div class="si-divider"></div>
           <div id="sketch-io-panel">

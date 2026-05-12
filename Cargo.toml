@@ -3,7 +3,13 @@ name = "restaurant-backend"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = [".", "crates/sketch_engine"]
+
 [dependencies]
+# Shared sketch geometry engine (also compilable to WASM)
+sketch_engine = { path = "crates/sketch_engine" }
+
 # Web framework
 axum = { version = "0.7", features = ["macros", "multipart"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }

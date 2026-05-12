@@ -1,4 +1,4 @@
-.PHONY: help setup db-create db-migrate db-drop test run clean lint format check
+.PHONY: help setup db-create db-migrate db-drop test run clean lint format check wasm
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -12,6 +12,14 @@ setup: ## Install dependencies and setup project
 	@echo "Copying .env.example to .env..."
 	cp -n .env.example .env || true
 	@echo "Setup complete! Edit .env file with your database credentials."
+
+wasm: ## Build the shared sketch_engine crate to WebAssembly and copy to static/wasm
+	@echo "Building sketch_engine → WASM …"
+	wasm-pack build crates/sketch_engine --target web --features wasm
+	@mkdir -p static/wasm
+	@rm -rf static/wasm/sketch_engine
+	@cp -r crates/sketch_engine/pkg static/wasm/sketch_engine
+	@echo "✓ static/wasm/sketch_engine/sketch_engine.js"
 
 db-create: ## Create database
 	createdb restaurant_db || echo "Database may already exist"

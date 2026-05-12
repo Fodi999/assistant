@@ -1193,6 +1193,34 @@ pub fn matter_status_styles() -> &'static str {
       margin: 4px 0;
     }
 
+    /* === WASM engine status badge (Phase 10) ============================= */
+    .si-wasm-status {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      letter-spacing: 0.04em;
+      background: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .si-wasm-status.si-wasm-loading {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .si-wasm-status.si-wasm-ready {
+      background: rgba(168, 85, 247, 0.18);
+      color: #c084fc;
+      border-color: rgba(168, 85, 247, 0.45);
+    }
+    .si-wasm-status.si-wasm-error {
+      background: rgba(248, 113, 113, 0.18);
+      color: #f87171;
+      border-color: rgba(248, 113, 113, 0.45);
+    }
+
     /* ─── end ────────────────────────────── */
 "##
 }

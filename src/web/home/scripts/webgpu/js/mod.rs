@@ -19,6 +19,7 @@ mod sketch_dim;
 mod sketch_tools;
 mod sketch_io;
 mod sketch_backend;
+mod sketch_wasm;
 mod perf_hud;
 mod extrude;
 
@@ -46,6 +47,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + render_loop::JS.len()
             + extrude::JS.len()
             + perf_hud::JS.len()
+            + sketch_wasm::JS.len()
             + 256,
     );
     out.push_str(init::JS);
@@ -67,7 +69,9 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch_io::JS);
     // 9. Backend precision commands (Phase 7) — POST add-point / add-edge
     out.push_str(sketch_backend::JS);
-    // 10. Performance HUD (Phase 9) — perfState + frame/render/overlay/pick/backend ms
+    // 10. WASM bridge (Phase 10) — shared sketch_engine in the browser
+    out.push_str(sketch_wasm::JS);
+    // 11. Performance HUD (Phase 9) — perfState + frame/render/overlay/pick/backend ms
     out.push_str(perf_hud::JS);
     out.push_str(matter_state::JS);
     out.push_str(buffers::JS);

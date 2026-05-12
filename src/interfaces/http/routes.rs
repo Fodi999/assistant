@@ -1307,6 +1307,15 @@ pub fn create_router(
                 .nest_service("/", ServeDir::new("uploads"))
                 .layer(middleware::from_fn(fix_static_mime)),
         )
+        // 🆕 Phase 10: shared sketch_engine compiled to WebAssembly.
+        // Served by `wasm-pack build` output copied into `./static/wasm/`.
+        // Request /wasm/sketch_engine/sketch_engine.js to bootstrap the module.
+        .nest_service(
+            "/wasm",
+            Router::new()
+                .nest_service("/", ServeDir::new("static/wasm"))
+                .layer(middleware::from_fn(fix_static_mime)),
+        )
         .nest("/public", public_router)
         .nest("/api/auth", auth_routes)
         .nest("/api/admin/auth", admin_routes)
@@ -1370,6 +1379,12 @@ async fn fix_static_mime(
         res.headers_mut().insert(
             axum::http::header::CONTENT_TYPE,
             axum::http::HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+    } else if path.ends_with(".wasm") {
+        // Required by browsers for streaming compilation (WebAssembly.instantiateStreaming).
+        res.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("application/wasm"),
         );
     }
     res
