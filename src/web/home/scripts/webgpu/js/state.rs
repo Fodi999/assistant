@@ -134,9 +134,6 @@ pub const JS: &str = r##"
         mouse.ndcY = 1 - ((e.clientY - rect.top) / rect.height) * 2;
         mouse.active = true;
 
-        // Perf: hover / picking block.
-        const __pfPick = performance.now();
-
         // Hover + snap (always while pointer is on canvas, regardless of drag).
         const __pfPick = performance.now();
         const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY);
