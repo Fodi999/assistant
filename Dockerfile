@@ -13,6 +13,7 @@ COPY Cargo.toml Cargo.lock ./
 
 # Copy source code and migrations
 COPY src ./src
+COPY crates ./crates
 COPY migrations ./migrations
 
 # Deterministic build with locked dependencies
