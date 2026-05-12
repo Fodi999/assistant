@@ -119,6 +119,20 @@ pub const JS: &str = r##"
           // Show dashed projection guide-lines through hovered / selected points.
           showGuides: true,
         },
+
+        // ── Copy Connect (Phase 14) ──
+        // Plasticity-style "pull copy": duplicate selected geometry, move with
+        // cursor, then auto-connect originals → copies with bridge edges.
+        copy: {
+          active:          false,
+          source:          null,         // 'profile' | 'edges' | 'points'
+          pointIds:        [],           // original points being duplicated
+          edges:           [],           // [[aId, bId, kind], …] inner edges to clone
+          originals:       new Map(),    // id → { x, y, z }
+          startMouseWorld: null,         // hover at the moment Shift+G was pressed
+          delta:           { dx: 0, dy: 0, dz: 0 }, // grid-snapped offset
+          axisLock:        null,         // 'X' | 'Y' | 'Z' | null
+        },
       };
       window.sketchState = sketchState;
 

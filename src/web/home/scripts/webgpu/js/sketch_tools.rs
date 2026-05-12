@@ -13,6 +13,7 @@ pub const JS: &str = r##"
         const tool = sketchState.activeTool;
 
         if (sketchState.grab.active) { __confirmGrab(); return; }
+        if (sketchState.copy.active) { __confirmCopyConnect(); return; }
 
         if (tool === SM.SELECT) {
           const pId = window.__pickPointAt(ndcX, ndcY);
@@ -359,6 +360,16 @@ pub const JS: &str = r##"
           return true;
         }
 
+        // Copy Connect hotkeys (Phase 14).
+        if (sketchState.copy.active) {
+          if (k === 'escape') { __cancelCopyConnect(); return true; }
+          if (k === 'enter')  { __confirmCopyConnect(); return true; }
+          if (k === 'x') { __copyAxisToggle('X'); return true; }
+          if (k === 'y') { __copyAxisToggle('Y'); return true; }
+          if (k === 'z') { __copyAxisToggle('Z'); return true; }
+          return true;
+        }
+
         // Working plane.
         if (k === '1') { window.__setWorkingPlane('XZ'); return true; }
         if (k === '2') { window.__setWorkingPlane('XY'); return true; }
@@ -423,9 +434,19 @@ pub const JS: &str = r##"
         }
         if (k === 'p') { window.__setSketchTool && window.__setSketchTool('point');  return true; }
         if (k === 'l') { window.__setSketchTool && window.__setSketchTool('line');   return true; }
+        if (k === 'g' && e.shiftKey) {
+          __startCopyConnect();
+          return true;
+        }
         if (k === 'g') {
           if (!sketchState.selectedPointIds.size) { window.__setStatusMessage('G: select points first'); return true; }
           __startGrab();
+          return true;
+        }
+
+        // Mirror — reserved for a future tool (currently a no-op stub).
+        if (k === 'm' && !e.shiftKey && !meta) {
+          window.__setStatusMessage('M: Mirror — coming soon');
           return true;
         }
 
@@ -530,6 +551,177 @@ pub const JS: &str = r##"
         window.__setStatusMessage('Grab cancelled');
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       }
+
+      // ─────────────────────────────────────────────────────────
+      // Copy Connect (Phase 14) — Plasticity-style pull-copy.
+      //   Shift+G   → start
+      //   X / Y / Z → toggle axis lock
+      //   Enter / click → confirm
+      //   Esc       → cancel
+      // The copy lives in a preview-only state; nothing is mutated on the
+      // sketch model until __confirmCopyConnect() runs.
+      // ─────────────────────────────────────────────────────────
+      function __collectCopySource() {
+        // Returns { source, pointIds:[…], edges:[[a,b,kind], …] } or null.
+        const eById = new Map(sketchState.edges.map(e => [e.id, e]));
+
+        if (sketchState.selectedProfileId) {
+          const prof = window.__getProfileById
+            ? window.__getProfileById(sketchState.selectedProfileId)
+            : null;
+          if (prof && prof.pointIds && prof.pointIds.length) {
+            const edges = (prof.edgeIds || [])
+              .map(id => eById.get(id))
+              .filter(Boolean)
+              .map(e => [e.a, e.b, e.kind || 'normal']);
+            return { source: 'profile', pointIds: [...prof.pointIds], edges };
+          }
+        }
+        if (sketchState.selectedEdgeIds && sketchState.selectedEdgeIds.size > 0) {
+          const ptSet = new Set();
+          const edges = [];
+          for (const eid of sketchState.selectedEdgeIds) {
+            const e = eById.get(eid);
+            if (!e) continue;
+            ptSet.add(e.a); ptSet.add(e.b);
+            edges.push([e.a, e.b, e.kind || 'normal']);
+          }
+          if (ptSet.size) return { source: 'edges', pointIds: [...ptSet], edges };
+        }
+        if (sketchState.selectedPointIds && sketchState.selectedPointIds.size > 0) {
+          return { source: 'points', pointIds: [...sketchState.selectedPointIds], edges: [] };
+        }
+        return null;
+      }
+
+      function __startCopyConnect() {
+        if (sketchState.grab.active) {
+          window.__setStatusMessage('Finish grab first');
+          return;
+        }
+        const src = __collectCopySource();
+        if (!src) {
+          window.__setStatusMessage('Select profile, edges, or points to copy');
+          return;
+        }
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        const originals = new Map();
+        const validIds = [];
+        for (const id of src.pointIds) {
+          const p = byId.get(id);
+          if (!p) continue;
+          originals.set(id, { x: p.x, y: p.y, z: p.z });
+          validIds.push(id);
+        }
+        if (!validIds.length) {
+          window.__setStatusMessage('Copy: nothing valid to copy');
+          return;
+        }
+        const startWorld = sketchState.hoverWorld
+          ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
+          : { x: 0, y: 0, z: 0 };
+        sketchState.copy = {
+          active: true,
+          source: src.source,
+          pointIds: validIds,
+          edges: src.edges,
+          originals,
+          startMouseWorld: startWorld,
+          delta: { dx: 0, dy: 0, dz: 0 },
+          axisLock: null,
+        };
+        const label = src.source === 'profile' ? 'profile'
+                    : src.source === 'edges'   ? (src.edges.length + ' edge' + (src.edges.length === 1 ? '' : 's'))
+                    : (validIds.length + ' pt');
+        window.__setStatusMessage('⎘ Copy Connect ' + label + ' — X/Y/Z lock · Enter confirm · Esc cancel');
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      }
+
+      function __copyAxisToggle(axis) {
+        sketchState.copy.axisLock = (sketchState.copy.axisLock === axis) ? null : axis;
+      }
+
+      window.__updateCopyConnect = function(hoverWorld) {
+        const cp = sketchState.copy;
+        if (!cp.active || !hoverWorld || !cp.startMouseWorld) return;
+        let dx = hoverWorld.x - cp.startMouseWorld.x;
+        let dy = hoverWorld.y - cp.startMouseWorld.y;
+        let dz = hoverWorld.z - cp.startMouseWorld.z;
+        if (cp.axisLock === 'X') { dy = 0; dz = 0; }
+        if (cp.axisLock === 'Y') { dx = 0; dz = 0; }
+        if (cp.axisLock === 'Z') { dx = 0; dy = 0; }
+        const g = sketchState.gridSize || 1.0;
+        cp.delta.dx = Math.round(dx / g) * g;
+        cp.delta.dy = Math.round(dy / g) * g;
+        cp.delta.dz = Math.round(dz / g) * g;
+      };
+
+      async function __confirmCopyConnect() {
+        const cp = sketchState.copy;
+        if (!cp.active) return;
+        const { dx, dy, dz } = cp.delta;
+        if (dx === 0 && dy === 0 && dz === 0) {
+          window.__setStatusMessage('Copy: zero offset — move cursor first');
+          return;
+        }
+        // Snapshot for undo; locked while we await engine commits.
+        if (window.__pushHistory) window.__pushHistory();
+        const g = sketchState.gridSize || 1.0;
+        const origToCopy = new Map();   // originalId → copiedId
+        const originals = cp.originals;
+
+        // 1) Create copied points.
+        for (const id of cp.pointIds) {
+          const orig = originals.get(id);
+          if (!orig) continue;
+          const gx = Math.round((orig.x + dx) / g);
+          const gy = Math.round((orig.y + dy) / g);
+          const gz = Math.round((orig.z + dz) / g);
+          const newId = await window.__createPointViaEngine(gx, gy, gz);
+          if (newId) origToCopy.set(id, newId);
+        }
+        // 2) Mirror the inner edges between copied points.
+        for (const [a, b, kind] of cp.edges) {
+          const a2 = origToCopy.get(a);
+          const b2 = origToCopy.get(b);
+          if (a2 && b2 && a2 !== b2) {
+            await window.__createEdgeViaEngine(a2, b2, kind || 'normal');
+          }
+        }
+        // 3) Connector edges: original → its copy (skip if collapsed).
+        let connectorCount = 0;
+        for (const [origId, newId] of origToCopy.entries()) {
+          if (!origId || !newId || origId === newId) continue;
+          await window.__createEdgeViaEngine(origId, newId, 'normal');
+          connectorCount += 1;
+        }
+
+        const total = origToCopy.size;
+        sketchState.copy = {
+          active: false, source: null, pointIds: [], edges: [],
+          originals: new Map(), startMouseWorld: null,
+          delta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
+        };
+        if (window.__notifySketchChanged) window.__notifySketchChanged();
+        window.__setStatusMessage(
+          '⎘ Copy Connect ✓ ' + total + ' pt · ' + cp.edges.length + ' edge · ' + connectorCount + ' connector'
+        );
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      }
+
+      function __cancelCopyConnect() {
+        sketchState.copy = {
+          active: false, source: null, pointIds: [], edges: [],
+          originals: new Map(), startMouseWorld: null,
+          delta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
+        };
+        window.__setStatusMessage('Copy Connect cancelled');
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      }
+      // Expose for UI buttons if needed.
+      window.__startCopyConnect    = __startCopyConnect;
+      window.__confirmCopyConnect  = __confirmCopyConnect;
+      window.__cancelCopyConnect   = __cancelCopyConnect;
 
       // ─────────────────────────────────────────────────────────
       // __updateLinePreview()

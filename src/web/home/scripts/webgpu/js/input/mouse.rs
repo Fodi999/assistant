@@ -129,6 +129,7 @@ pub const JS: &str = r##"
 
         if (window.__updateLinePreview) window.__updateLinePreview();
         if (sketchState.grab.active && hit) window.__updateGrab(hit);
+        if (sketchState.copy.active && hit) window.__updateCopyConnect(hit);
         if (window.__perfSample) window.__perfSample('pick', performance.now() - __pfPick);
 
         if (!dragging) return;

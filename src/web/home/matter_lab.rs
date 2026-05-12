@@ -64,6 +64,7 @@ pub fn matter_lab_section() -> String {
           <span><b>P</b> Point</span>
           <span><b>L</b> Line</span>
           <span><b>G</b> Grab</span>
+          <span><b>⇧G</b> Copy</span>
           <span><b>D</b> Dim</span>
           <span><b>F</b> Fix</span>
           <span><b>H</b> Horiz</span>
