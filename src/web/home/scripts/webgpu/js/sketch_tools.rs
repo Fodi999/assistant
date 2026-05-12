@@ -34,6 +34,14 @@ pub const JS: &str = r##"
           if (!hit) return;
           const existing = window.__findPointAtGrid(hit.gx, hit.gy, hit.gz);
           if (existing) return;
+          // ── Backend precision path (Phase 7) ──
+          if (sketchState.useBackendCommands) {
+            window.__pushHistory();
+            window.__backendAddPoint(hit.gx, hit.gy, hit.gz).then(() => {
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            });
+            return;
+          }
           window.__pushHistory();
           window.__addPoint(hit.gx, hit.gy, hit.gz);
           if (window.__updateSketchInspector) window.__updateSketchInspector();
@@ -42,6 +50,32 @@ pub const JS: &str = r##"
 
         if (tool === SM.LINE) {
           const hoveredId = window.__pickPointAt(ndcX, ndcY);
+          // ── Backend precision path ──
+          if (sketchState.useBackendCommands) {
+            (async () => {
+              window.__pushHistory();
+              let targetId = hoveredId;
+              if (!targetId) {
+                const hit = window.__raycastSketchPlane(ndcX, ndcY);
+                if (!hit) return;
+                const r = await window.__backendAddPoint(hit.gx, hit.gy, hit.gz);
+                if (!r.ok) return;
+                targetId = r.pointId;
+              }
+              const startId = sketchState.line.startPointId;
+              if (startId && startId !== targetId) {
+                await window.__backendAddEdge(
+                  { pointId: startId },
+                  { pointId: targetId },
+                );
+              }
+              sketchState.line.startPointId = targetId;
+              sketchState.phase = "line_pending";
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            })();
+            return;
+          }
+          // ── Legacy local path ──
           let targetId = hoveredId;
           let createdPoint = false;
           if (!targetId) {

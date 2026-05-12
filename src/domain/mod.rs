@@ -9,6 +9,7 @@ pub mod dish;
 pub mod engines; // 🆕 Culinary Intelligence Platform — 5 engine traits + registry
 pub mod geometry; // 🆕 Precise B-Rep geometry domain (Parasolid-style, f64)
 pub mod inventory;
+pub mod matter; // 🆕 Precision sketch commands (point/edge creation, validation, profiles)
 pub mod menu_engineering;
 pub mod processing_state; // 🆕 Product states (raw, boiled, fried, etc.)
 pub mod recipe;

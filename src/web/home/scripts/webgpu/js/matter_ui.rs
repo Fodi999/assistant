@@ -170,6 +170,24 @@ pub const JS: &str = r##"
         document.querySelectorAll('.plane-pill[data-plane]').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.plane === (sketchState.workingPlane || 'XZ'));
         });
+
+        // ── Precision block (Phase 7) ──
+        const gridInput = document.getElementById('si-grid-size');
+        if (gridInput && document.activeElement !== gridInput) {
+          const cur = parseFloat(gridInput.value);
+          if (!isFinite(cur) || Math.abs(cur - sketchState.gridSize) > 1e-9) {
+            gridInput.value = String(sketchState.gridSize);
+          }
+        }
+        const beChk = document.getElementById('si-use-backend');
+        if (beChk) beChk.checked = !!sketchState.useBackendCommands;
+        set('si-backend-onoff', sketchState.useBackendCommands ? 'ON' : 'OFF');
+        const bs = sketchState.backendStatus || {};
+        let last;
+        if (bs.ok === true)       last = '✓ ' + (bs.message || 'OK');
+        else if (bs.ok === false) last = '✕ ' + (bs.message || 'ERROR');
+        else                      last = '—';
+        set('si-backend-last', last);
       };
 
       function bindMatterUi() {
@@ -199,6 +217,28 @@ pub const JS: &str = r##"
         if (window.__setCursorForTool) window.__setCursorForTool();
         if (window.__notifySketchChanged) window.__notifySketchChanged();
         if (window.__bindSketchIO) window.__bindSketchIO();
+
+        // ── Precision controls (Phase 7) ──
+        const gridInput = document.getElementById('si-grid-size');
+        if (gridInput) {
+          gridInput.addEventListener('change', () => {
+            let v = parseFloat(gridInput.value);
+            if (!isFinite(v)) v = 1;
+            v = Math.max(0.001, Math.min(1000, v));
+            sketchState.gridSize = v;
+            gridInput.value = String(v);
+            window.__setStatusMessage('Grid size: ' + v);
+            if (window.__notifySketchChanged) window.__notifySketchChanged();
+            window.__updateSketchInspector();
+          });
+        }
+        const beChk = document.getElementById('si-use-backend');
+        if (beChk) {
+          beChk.addEventListener('change', () => {
+            window.__setUseBackendCommands(beChk.checked);
+          });
+        }
+
         window.__updateSketchInspector();
         setInterval(() => {
           const fps = (globalThis.__matterPerf && globalThis.__matterPerf.fps) || 0;

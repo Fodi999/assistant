@@ -1322,6 +1322,9 @@ pub fn create_router(
         .nest("/api", smart_from_text_router) // 🆕 POST /api/smart/from-text
         .route("/api/matter/mesh/generate", axum::routing::post(crate::interfaces::http::public::matter::generate_mesh_endpoint)) // 🆕 CAD endpoint
         .route("/api/matter/sketch/extrude", axum::routing::post(crate::interfaces::http::public::matter_sketch::extrude_sketch_endpoint)) // 🆕 Sketch B-Rep via truck
+        .route("/api/matter/sketch/validate",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::validate_sketch_endpoint)) // 🆕 Phase 7
+        .route("/api/matter/sketch/add-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_point_endpoint)) // 🆕 Phase 7
+        .route("/api/matter/sketch/add-edge",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_edge_endpoint)) // 🆕 Phase 7
         .nest("/api", protected_chat_routes) // 🔒 POST /api/chat + /api/chat/event (auth + billing)
         .nest("/api", protected_routes);
 

@@ -56,6 +56,10 @@ pub const JS: &str = r##"
         // ── Undo/redo ──
         _history: { undo: [], redo: [] },
         _historyLimit: 100,
+
+        // ── Backend precision commands (Phase 7) ──
+        useBackendCommands: true,
+        backendStatus: { ok: null, message: null, lastValidation: null },
       };
       window.sketchState = sketchState;
 

@@ -18,6 +18,7 @@ mod sketch_circle;
 mod sketch_dim;
 mod sketch_tools;
 mod sketch_io;
+mod sketch_backend;
 mod extrude;
 
 /// Assembles the complete JS source, embedding both WGSL shaders.
@@ -62,6 +63,8 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch_tools::JS);
     // 8. Sketch I/O — JSON export / import / backend payload preview
     out.push_str(sketch_io::JS);
+    // 9. Backend precision commands (Phase 7) — POST add-point / add-edge
+    out.push_str(sketch_backend::JS);
     out.push_str(matter_state::JS);
     out.push_str(buffers::JS);
     // ── WGSL shaders ────────────────────────────────────────────

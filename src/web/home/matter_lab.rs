@@ -128,6 +128,29 @@ pub fn matter_lab_section() -> String {
           <div class="si-divider"></div>
           <div class="si-hint" id="si-hint">Click to pick · Shift+click to add</div>
 
+          <!-- ── Precision (Phase 7) ── -->
+          <div class="si-divider"></div>
+          <div class="si-block-title">Precision</div>
+          <dl class="si-grid">
+            <dt>Grid size</dt>
+            <dd>
+              <input id="si-grid-size" type="number" step="any" min="0.001" max="1000"
+                     value="1" style="width:64px; background:rgba(15,23,42,0.7); color:#e2e8f0;
+                     border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 4px;
+                     font:inherit; text-align:right;">
+            </dd>
+            <dt>Backend</dt>
+            <dd>
+              <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+                <input id="si-use-backend" type="checkbox" checked
+                       style="accent-color:#38bdf8;">
+                <span id="si-backend-onoff">ON</span>
+              </label>
+            </dd>
+            <dt>Last result</dt> <dd id="si-backend-last">—</dd>
+            <dt>Coord prec.</dt> <dd>3 dec</dd>
+          </dl>
+
           <!-- ── JSON Export / Import ── -->
           <div class="si-divider"></div>
           <div id="sketch-io-panel">
