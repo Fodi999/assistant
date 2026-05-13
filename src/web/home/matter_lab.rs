@@ -189,48 +189,6 @@ pub fn matter_lab_section() -> String {
             </ul>
           </div>
 
-          <!-- ── Projection Drafting (Phase 13) ── -->
-          <div class="si-divider"></div>
-          <div class="si-block-title">Projection Draft</div>
-          <dl class="si-grid">
-            <dt>Mode</dt>
-            <dd>
-              <label style="display:inline-flex; gap:6px; align-items:center;">
-                <input type="checkbox" id="si-draft-mode">
-                <span id="si-draft-mode-label">free3d</span>
-              </label>
-            </dd>
-            <dt>Active</dt>      <dd id="si-proj-active">—</dd>
-            <dt>Visible</dt>     <dd id="si-proj-visible">—</dd>
-            <dt>Hidden</dt>      <dd id="si-proj-hidden">—</dd>
-            <dt>Selected</dt>    <dd id="si-proj-selpt">—</dd>
-            <dt>Proj. length</dt><dd id="si-proj-len">—</dd>
-          </dl>
-          <div style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
-            <label style="font-size:10px;">W
-              <input id="si-proj-w" type="number" min="1" max="100" value="6"
-                     style="width:44px; background:rgba(15,23,42,0.7); color:#e2e8f0;
-                            border:1px solid rgba(148,163,184,0.25); border-radius:4px;
-                            padding:1px 4px; font:inherit; text-align:right;">
-            </label>
-            <label style="font-size:10px;">H
-              <input id="si-proj-h" type="number" min="1" max="100" value="5"
-                     style="width:44px; background:rgba(15,23,42,0.7); color:#e2e8f0;
-                            border:1px solid rgba(148,163,184,0.25); border-radius:4px;
-                            padding:1px 4px; font:inherit; text-align:right;">
-            </label>
-            <label style="font-size:10px;">D
-              <input id="si-proj-d" type="number" min="1" max="100" value="4"
-                     style="width:44px; background:rgba(15,23,42,0.7); color:#e2e8f0;
-                            border:1px solid rgba(148,163,184,0.25); border-radius:4px;
-                            padding:1px 4px; font:inherit; text-align:right;">
-            </label>
-          </div>
-          <div style="display:flex; gap:6px; margin-top:6px;">
-            <button id="si-proj-box"   class="sio-btn" style="flex:1;">⬚ Box</button>
-            <button id="si-proj-block" class="sio-btn" style="flex:1;">▦ Sample block</button>
-          </div>
-
           <!-- ── Precision (Phase 7) ── -->
           <div class="si-divider"></div>
           <div class="si-block-title">Precision</div>

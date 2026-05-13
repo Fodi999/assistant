@@ -224,6 +224,9 @@ pub const JS: &str = r##"
           }
 
           // ── Edges ──
+          const grabPointSet = sketchState.grab.active
+            ? new Set(sketchState.grab.pointIds)
+            : null;
           for (const e of sketchState.edges) {
             const a = pById.get(e.a), b = pById.get(e.b);
             if (!a || !b) continue;
@@ -231,19 +234,21 @@ pub const JS: &str = r##"
             if (!sa || !sb) continue;
             const isHover = sketchState.hoverEdgeId === e.id;
             const isSel   = sketchState.selectedEdgeIds.has(e.id);
+            const isGrab  = grabPointSet && grabPointSet.has(e.a) && grabPointSet.has(e.b);
+            const edgeCol = isGrab ? '#facc15' : isSel ? '#fb923c' : isHover ? '#facc15' : null;
             const kind    = e.kind || 'normal';
             ctx.save();
             if (kind === 'construction') {
-              ctx.strokeStyle = isSel ? '#fb923c' : isHover ? '#facc15' : '#67e8f9';
-              ctx.lineWidth   = isSel ? 1.6 : 1.2;
+              ctx.strokeStyle = edgeCol || '#67e8f9';
+              ctx.lineWidth   = (isSel || isGrab) ? 1.6 : 1.2;
               ctx.setLineDash([4, 3]);
             } else if (kind === 'hidden') {
-              ctx.strokeStyle = isSel ? '#fb923c' : isHover ? '#facc15' : '#94a3b8';
-              ctx.lineWidth   = isSel ? 1.8 : 1.4;
+              ctx.strokeStyle = edgeCol || '#94a3b8';
+              ctx.lineWidth   = (isSel || isGrab) ? 1.8 : 1.4;
               ctx.setLineDash([6, 4]);
             } else {
-              ctx.strokeStyle = isSel ? '#fb923c' : isHover ? '#facc15' : '#cbd5e1';
-              ctx.lineWidth   = isSel ? 3.0 : isHover ? 2.5 : 2.0;
+              ctx.strokeStyle = edgeCol || '#cbd5e1';
+              ctx.lineWidth   = (isSel || isGrab) ? 3.0 : isHover ? 2.5 : 2.0;
             }
             ctx.beginPath();
             ctx.moveTo(sa.x, sa.y);
@@ -348,12 +353,13 @@ pub const JS: &str = r##"
             if (!s) continue;
             const isHover  = sketchState.hoverPointId === p.id;
             const isSel    = sketchState.selectedPointIds.has(p.id);
+            const isGrabPt = grabPointSet && grabPointSet.has(p.id);
             const isAnchor = sketchState.line.startPointId === p.id;
             const isFixed  = window.__isPointFixed && window.__isPointFixed(p.id);
-            const r = isSel ? 8 : isAnchor ? 7.5 : isHover ? 7 : 6;
+            const r = (isSel || isGrabPt) ? 8 : isAnchor ? 7.5 : isHover ? 7 : 6;
             ctx.beginPath();
             ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
-            ctx.fillStyle = isSel ? '#fb923c' : isHover ? '#facc15' : isAnchor ? '#10b981' : '#38bdf8';
+            ctx.fillStyle = isGrabPt ? '#facc15' : isSel ? '#fb923c' : isHover ? '#facc15' : isAnchor ? '#10b981' : '#38bdf8';
             ctx.fill();
             ctx.strokeStyle = '#0f172a';
             ctx.lineWidth = 1.8;
@@ -525,22 +531,20 @@ pub const JS: &str = r##"
             ctx.fillText(txt, sk.width/2, y0 + 13);
           }
 
-          // ── Grab HUD + Axis Gizmo with draggable handles ──
+          // ── Grab HUD + Axis Gizmo (tools/grab_gizmo.rs) ──
+          if (typeof window.__drawGrabGizmo === 'function') {
+            window.__drawGrabGizmo(ctx, sketchState, w2s, sk);
+          }
           if (sketchState.grab.active) {
             const grab = sketchState.grab;
             const lock = grab.axisLock;
             const lockColor = lock === 'X' ? '#ef4444' : lock === 'Y' ? '#22c55e' : lock === 'Z' ? '#3b82f6' : '#a78bfa';
-
-            // ── Compute centroid of grabbed points ──
             const byId = new Map(sketchState.points.map(p => [p.id, p]));
             let cx = 0, cy0 = 0, cz = 0, n = 0;
-            for (const id of grab.pointIds) {
-              const p = byId.get(id);
-              if (!p) continue;
-              cx += p.x; cy0 += p.y; cz += p.z; n++;
-            }
+            for (const id of grab.pointIds) { const p = byId.get(id); if (!p) continue; cx += p.x; cy0 += p.y; cz += p.z; n++; }
             if (n > 0) { cx /= n; cy0 /= n; cz /= n; }
             const center = w2s(cx, cy0, cz);
+            if (false) { // legacy inline code below — kept for reference, replaced by grab_gizmo.rs
 
             // ── Draw Minimalist Axis Gizmo (Plasticity Style) ──
             const hoveredHandle = window.__gizmoHoverAxis || null;
@@ -726,9 +730,7 @@ pub const JS: &str = r##"
             ctx.fillStyle = lockColor;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(txt, sk.width/2, 29);
-          } else {
-            window.__gizmoHandles = null;
-            window.__gizmoHoverAxis = null;
+            } // end if(false) legacy block
           }
 
           // ── Copy Connect preview (Phase 14) ──

@@ -7,6 +7,7 @@ mod gizmo;
 mod hud;
 mod init;
 pub mod input;
+pub mod tools;
 mod matter_state;
 mod matter_ui;
 mod pipeline;
@@ -37,7 +38,10 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + sketch_rect::JS.len()
             + sketch_circle::JS.len()
             + sketch_dim::JS.len()
-            + sketch_tools::JS.len()
+            + tools::select_tool::JS.len()
+            + tools::grab_tool::JS.len()
+            + tools::copy_tool::JS.len()
+            + tools::hotkeys::JS.len()
             + sketch_io::JS.len()
             + matter_state::JS.len()
             + buffers::JS.len()
@@ -73,8 +77,14 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch_circle::JS);
     // 6. Dimension tool
     out.push_str(sketch_dim::JS);
-    // 7. Sketch tools dispatcher
-    out.push_str(sketch_tools::JS);
+    // 7a. Select tool (click / double-click dispatch) — tools/select_tool.rs
+    out.push_str(tools::select_tool::JS);
+    // 7b. Grab tool — G-key + toolbar grab
+    out.push_str(tools::grab_tool::JS);
+    // 7c. Copy-connect tool — Shift+G
+    out.push_str(tools::copy_tool::JS);
+    // 7d. Hotkeys + constraints + line preview
+    out.push_str(tools::hotkeys::JS);
     // 8. Sketch I/O — JSON export / import / backend payload preview
     out.push_str(sketch_io::JS);
     // 9. Backend precision commands (Phase 7) — POST add-point / add-edge

@@ -1,0 +1,250 @@
+// ── Select Tool ──────────────────────────────────────────────────────────────
+// Handles:
+//   __handleSketchClick   — click dispatch for select / point / line / delete
+//   __handleSketchDoubleClick — double-click profile / edge selection
+//
+// Loaded before sketch_tools.rs (which still owns grab/copy/constraints).
+
+pub const JS: &str = r##"
+      // ─────────────────────────────────────────────────────────
+      // __handleSketchClick(ndcX, ndcY, shiftKey)
+      // ─────────────────────────────────────────────────────────
+      window.__handleSketchClick = function(ndcX, ndcY, shiftKey) {
+        // Ignore clicks that are the tail end of a wheel/pinch zoom gesture.
+        if (window.__wheelZoomActive) return;
+
+        const SM   = window.SelectionMode;
+        const tool = sketchState.activeTool;
+
+        if (sketchState.grab.active) { window.__confirmGrab(); return; }
+        if (sketchState.copy.active) { window.__confirmCopyConnect(); return; }
+
+        if (tool === SM.SELECT) {
+          const pId = window.__pickPointAt(ndcX, ndcY);
+          const eId = pId ? null : window.__pickEdgeAt(ndcX, ndcY);
+          if (!shiftKey) {
+            sketchState.selectedPointIds.clear();
+            sketchState.selectedEdgeIds.clear();
+            sketchState.selectedProfileId = null;
+          }
+          if (pId) {
+            if (sketchState.selectedPointIds.has(pId)) sketchState.selectedPointIds.delete(pId);
+            else                                       sketchState.selectedPointIds.add(pId);
+          } else if (eId) {
+            if (sketchState.selectedEdgeIds.has(eId)) sketchState.selectedEdgeIds.delete(eId);
+            else                                      sketchState.selectedEdgeIds.add(eId);
+          } else {
+            // Profile picking — only on the active working plane.
+            const hit = window.__raycastSketchPlane(ndcX, ndcY);
+            if (hit) {
+              const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
+              if (profId) {
+                window.__selectProfile(profId);
+              } else if (!shiftKey) {
+                sketchState.selectedProfileId = null;
+              }
+            }
+          }
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+          return;
+        }
+
+        // ── Resolve current snap target (single source of truth for geometry creation) ──
+        // Used by POINT and LINE tools. Refreshed at click time so it works even
+        // on touch / first-frame click where pointermove never fired.
+        function __resolveClickSnap() {
+          const canvasEl = document.getElementById('matterCanvas');
+          const mpx = canvasEl
+            ? { x: (ndcX + 1) * 0.5 * canvasEl.width, y: (1 - ndcY) * 0.5 * canvasEl.height }
+            : { x: 0, y: 0 };
+
+          const hit = window.__raycastSketchPlane(ndcX, ndcY);
+
+          // Fallback: even if the ray misses the working plane (oblique camera),
+          // snap to a nearby existing point — so connecting lines always works.
+          if (!hit) {
+            if (!window.__resolveSnapTarget) return null;
+            // Use camera-origin projected onto working plane as a dummy free pos.
+            const dummy = { x: 0, y: 0, z: 0 };
+            const result = window.__resolveSnapTarget(dummy, mpx, { force: true });
+            if (result && result.kind === 'point') return result;
+            return null;
+          }
+
+          if (!window.__resolveSnapTarget) {
+            return {
+              kind: 'grid', pointId: null,
+              gx: hit.gx, gy: hit.gy, gz: hit.gz,
+              x: hit.x, y: hit.y, z: hit.z, valid: true,
+            };
+          }
+          return window.__resolveSnapTarget(
+            { x: hit.freeX, y: hit.freeY, z: hit.freeZ },
+            mpx,
+            { force: true },
+          );
+        }
+
+        if (tool === SM.POINT) {
+          const snap = __resolveClickSnap();
+          if (!snap || !snap.valid) return;
+          if (snap.kind === 'point') return;
+          const mode = sketchState.engineMode || 'backend';
+          if (mode === 'wasm' || mode === 'hybrid') {
+            window.__pushHistory();
+            window.__wasmAddPointAndApply(snap.gx, snap.gy, snap.gz).then(() => {
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            });
+            return;
+          }
+          if (mode === 'backend') {
+            window.__pushHistory();
+            window.__backendAddPoint(snap.gx, snap.gy, snap.gz).then(() => {
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            });
+            return;
+          }
+          window.__pushHistory();
+          window.__addPoint(snap.gx, snap.gy, snap.gz);
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+          return;
+        }
+
+        if (tool === SM.LINE) {
+          const snap = __resolveClickSnap();
+          if (!snap || !snap.valid) return;
+          const hoveredId = snap.kind === 'point' ? snap.pointId : null;
+          const mode = sketchState.engineMode || 'backend';
+          if (mode === 'wasm' || mode === 'hybrid') {
+            (async () => {
+              window.__pushHistory();
+              let targetId = hoveredId;
+              if (!targetId) {
+                const r = await window.__wasmAddPointAndApply(snap.gx, snap.gy, snap.gz);
+                if (!r.ok) return;
+                targetId = r.pointId;
+              }
+              const startId = sketchState.line.startPointId;
+              if (startId && startId !== targetId) {
+                await window.__wasmAddEdgeAndApply({ pointId: startId }, { pointId: targetId });
+              }
+              sketchState.line.startPointId = targetId;
+              sketchState.phase = "line_pending";
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            })();
+            return;
+          }
+          if (mode === 'backend') {
+            (async () => {
+              window.__pushHistory();
+              let targetId = hoveredId;
+              if (!targetId) {
+                const r = await window.__backendAddPoint(snap.gx, snap.gy, snap.gz);
+                if (!r.ok) return;
+                targetId = r.pointId;
+              }
+              const startId = sketchState.line.startPointId;
+              if (startId && startId !== targetId) {
+                await window.__backendAddEdge({ pointId: startId }, { pointId: targetId });
+              }
+              sketchState.line.startPointId = targetId;
+              sketchState.phase = "line_pending";
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            })();
+            return;
+          }
+          // Legacy local path
+          let targetId = hoveredId;
+          let createdPoint = false;
+          if (!targetId) {
+            const existing = window.__findPointAtGrid(snap.gx, snap.gy, snap.gz);
+            if (existing) targetId = existing.id;
+            else {
+              window.__pushHistory();
+              targetId = window.__addPoint(snap.gx, snap.gy, snap.gz).id;
+              createdPoint = true;
+            }
+          }
+          const startId = sketchState.line.startPointId;
+          if (startId && startId !== targetId) {
+            if (!window.__findEdgeBetween(startId, targetId)) {
+              if (!createdPoint) window.__pushHistory();
+              window.__addEdge(startId, targetId);
+            }
+          }
+          sketchState.line.startPointId = targetId;
+          sketchState.phase = "line_pending";
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+          return;
+        }
+
+        if (tool === SM.DELETE) {
+          const pId = window.__pickPointAt(ndcX, ndcY);
+          if (pId) {
+            window.__pushHistory();
+            sketchState.selectedPointIds = new Set([pId]);
+            sketchState.selectedEdgeIds  = new Set();
+            window.__deleteSelected();
+          } else {
+            const eId = window.__pickEdgeAt(ndcX, ndcY);
+            if (eId) {
+              window.__pushHistory();
+              sketchState.selectedEdgeIds  = new Set([eId]);
+              sketchState.selectedPointIds = new Set();
+              window.__deleteSelected();
+            }
+          }
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+          return;
+        }
+      };
+
+      // ─────────────────────────────────────────────────────────
+      // __handleSketchDoubleClick(ndcX, ndcY)
+      // Select tool: double-click edge → select profile or endpoints.
+      // ─────────────────────────────────────────────────────────
+      window.__handleSketchDoubleClick = function(ndcX, ndcY) {
+        if (sketchState.activeTool !== "select") return;
+        const eId = window.__pickEdgeAt(ndcX, ndcY);
+        if (!eId) {
+          const hit = window.__raycastSketchPlane(ndcX, ndcY);
+          if (hit) {
+            const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
+            if (profId) {
+              const prof = window.__selectProfile(profId);
+              if (prof) {
+                sketchState.selectedPointIds = new Set(prof.pointIds);
+                sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+              }
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            }
+          }
+          return;
+        }
+        const profs = window.__getProfilesForEdge(eId);
+        let prof = null;
+        if (profs.length === 1) prof = profs[0];
+        else if (profs.length > 1) {
+          prof = profs
+            .map(p => ({ p, a: window.__profileArea(p) }))
+            .filter(h => h.a > 0)
+            .sort((a, b) => a.a - b.a)[0]?.p || profs[0];
+        }
+        if (prof) {
+          if (sketchState.selectedProfileId === prof.id) {
+            sketchState.selectedPointIds = new Set(prof.pointIds);
+            sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+          } else {
+            window.__selectProfile(prof.id);
+            sketchState.selectedPointIds = new Set(prof.pointIds);
+            sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+          }
+        } else {
+          const e = sketchState.edges.find(x => x.id === eId);
+          if (!e) return;
+          sketchState.selectedPointIds = new Set([e.a, e.b]);
+          sketchState.selectedEdgeIds  = new Set([eId]);
+        }
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+      };
+"##;

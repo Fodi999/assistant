@@ -20,27 +20,15 @@ pub const JS: &str = r##"
           sketchState.phase = 'idle';
         }
         sketchState.activeTool = tool;
-        if (tool === 'grab' && sketchState.selectedPointIds.size > 0 && !sketchState.grab.active) {
-          const allIds  = [...sketchState.selectedPointIds];
-          const moveIds = allIds.filter(id => !(window.__isPointFixed && window.__isPointFixed(id)));
-          if (!moveIds.length) {
-            window.__setStatusMessage('Cannot move fixed point');
+        if (tool === 'grab' && !sketchState.grab.active) {
+          const hasSelection = sketchState.selectedPointIds.size > 0
+            || sketchState.selectedEdgeIds.size > 0
+            || sketchState.selectedProfileId != null;
+          if (hasSelection) {
+            // Delegate to __startGrab which handles edges + profiles too
+            if (window.__startGrab) window.__startGrab();
           } else {
-            const byId = new Map(sketchState.points.map(p => [p.id, p]));
-            const snapshot = new Map();
-            for (const id of moveIds) {
-              const p = byId.get(id);
-              if (p) snapshot.set(id, { x: p.x, y: p.y, z: p.z });
-            }
-            window.__pushHistory();
-            sketchState.grab = {
-              active: true, pointIds: moveIds,
-              startMouseWorld: sketchState.hoverWorld
-                ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
-                : { x: 0, y: 0, z: 0 },
-              originalPoints: snapshot,
-              axisLock: null,
-            };
+            window.__setStatusMessage('Grab: select points, edges, or a profile first');
           }
         }
         document.querySelectorAll('.utb-btn[data-tool]').forEach(btn => {
@@ -199,47 +187,6 @@ pub const JS: &str = r##"
         // Last result: use unified lastCommandMsg (set by all engine modes).
         set('si-backend-last', sketchState.lastCommandMsg || '—');
 
-        // ── Projection Drafting block (Phase 13) ──
-        const draftChk = document.getElementById('si-draft-mode');
-        if (draftChk) draftChk.checked = sketchState.draftMode === 'projection';
-        const draftLbl = document.getElementById('si-draft-mode-label');
-        if (draftLbl) draftLbl.textContent = sketchState.draftMode === 'projection' ? 'projection' : 'free3d';
-        const projDesc = window.__planeDescriptor
-          ? window.__planeDescriptor(sketchState.workingPlane)
-          : (sketchState.workingPlane || '—');
-        set('si-proj-active', projDesc);
-        const _pl = sketchState.workingPlane || 'XZ';
-        let _visTxt = '—', _hidTxt = '—';
-        if (_pl === 'XZ') { _visTxt = 'X, Z'; _hidTxt = 'Y'; }
-        else if (_pl === 'XY') { _visTxt = 'X, Y'; _hidTxt = 'Z'; }
-        else if (_pl === 'YZ') { _visTxt = 'Y, Z'; _hidTxt = 'X'; }
-        set('si-proj-visible', _visTxt);
-        set('si-proj-hidden',  _hidTxt);
-        if (selPts.length === 1) {
-          const _p = sketchState.points.find(pp => pp.id === selPts[0]);
-          const _m = _p && window.__projectionCoordsForPlane
-            ? window.__projectionCoordsForPlane(_p, _pl) : null;
-          if (_m) set('si-proj-selpt',
-            _m.hAxis + '=' + fmtC(_m.h) + '  ' + _m.vAxis + '=' + fmtC(_m.v) +
-            '   (' + _m.hiddenAxis + '=' + fmtC(_m.hidden) + ')');
-          else set('si-proj-selpt', '—');
-        } else {
-          set('si-proj-selpt', '—');
-        }
-        if (selEds.length === 1) {
-          const _e = sketchState.edges.find(x => x.id === selEds[0]);
-          const _a = _e && sketchState.points.find(p => p.id === _e.a);
-          const _b = _e && sketchState.points.find(p => p.id === _e.b);
-          if (_a && _b && window.__projectionCoordsForPlane) {
-            const _ma = window.__projectionCoordsForPlane(_a, _pl);
-            const _mb = window.__projectionCoordsForPlane(_b, _pl);
-            const _dh = _mb.h - _ma.h, _dv = _mb.v - _ma.v;
-            set('si-proj-len', fmtL(Math.hypot(_dh, _dv)) + ' u');
-          } else set('si-proj-len', '—');
-        } else {
-          set('si-proj-len', '—');
-        }
-
         // ── Engine mode + perf metrics (Phase 11) ──
         const modeSel = document.getElementById('si-engine-mode');
         if (modeSel && document.activeElement !== modeSel) {
@@ -393,39 +340,6 @@ pub const JS: &str = r##"
           modeSel.value = sketchState.engineMode || 'backend';
           modeSel.addEventListener('change', () => {
             window.__setEngineMode(modeSel.value);
-          });
-        }
-
-        // ── Projection Drafting controls (Phase 13) ──
-        const draftEl = document.getElementById('si-draft-mode');
-        if (draftEl) {
-          draftEl.checked = sketchState.draftMode === 'projection';
-          draftEl.addEventListener('change', () => {
-            window.__setDraftMode(draftEl.checked ? 'projection' : 'free3d');
-          });
-        }
-        const projW = document.getElementById('si-proj-w');
-        const projH = document.getElementById('si-proj-h');
-        const projD = document.getElementById('si-proj-d');
-        function syncProjInputsToState() {
-          const pr = sketchState.projection || {};
-          if (projW) { const v = parseInt(projW.value, 10); if (isFinite(v)) pr.boxWidth  = v; }
-          if (projH) { const v = parseInt(projH.value, 10); if (isFinite(v)) pr.boxHeight = v; }
-          if (projD) { const v = parseInt(projD.value, 10); if (isFinite(v)) pr.boxDepth  = v; }
-        }
-        [projW, projH, projD].forEach(el => { if (el) el.addEventListener('change', syncProjInputsToState); });
-        const projBoxBtn = document.getElementById('si-proj-box');
-        if (projBoxBtn) {
-          projBoxBtn.addEventListener('click', async () => {
-            syncProjInputsToState();
-            const pr = sketchState.projection || {};
-            await window.__createProjectionBox(pr.boxWidth, pr.boxHeight, pr.boxDepth);
-          });
-        }
-        const projBlockBtn = document.getElementById('si-proj-block');
-        if (projBlockBtn) {
-          projBlockBtn.addEventListener('click', async () => {
-            await window.__createSampleSlopedBlock();
           });
         }
 
