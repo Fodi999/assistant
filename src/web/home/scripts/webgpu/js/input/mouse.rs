@@ -231,8 +231,11 @@ pub const JS: &str = r##"
         const __pfPick = performance.now();
         const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY);
 
-        // CSS-pixel cursor position — consistent with hit-test projections.
-        const mpx = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        // Device-pixel cursor position — must match __worldToScreenPx output used inside __resolveSnapTarget.
+        const mpx = {
+          x: (mouse.ndcX + 1) * 0.5 * canvas.width,
+          y: (1 - mouse.ndcY) * 0.5 * canvas.height,
+        };
 
         // ── Point snap priority ───────────────────────────────────────────────
         // __pickPointAt uses NDC; if a point is nearby, snap directly to it —
@@ -284,8 +287,10 @@ pub const JS: &str = r##"
             sketchState.hoverProfileId = null;
           }
         } else if (tool === 'line') {
-          // hoverPointId already set above via point-snap priority block
-          sketchState.hoverPointId  = _ppId || null;
+          // hoverPointId: prefer direct pick, then fallback snap-to-point from __resolveSnapTarget
+          const _snapPtId = (!_ppId && sketchState.snap && sketchState.snap.kind === 'point')
+            ? sketchState.snap.pointId : null;
+          sketchState.hoverPointId  = _ppId || _snapPtId || null;
           sketchState.hoverEdgeId   = null;
           sketchState.hoverProfileId = null;
         } else {

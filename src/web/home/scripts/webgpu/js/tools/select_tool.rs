@@ -53,6 +53,34 @@ pub const JS: &str = r##"
         // Used by POINT and LINE tools. Refreshed at click time so it works even
         // on touch / first-frame click where pointermove never fired.
         function __resolveClickSnap() {
+          // Priority 0: fresh pick at click-time NDC — most reliable, avoids
+          // timing gaps between pointermove and pointerup clearing hoverPointId.
+          const freshPickId = window.__pickPointAt ? window.__pickPointAt(ndcX, ndcY) : null;
+          const freshPickData = freshPickId ? sketchState.points.find(p => p.id === freshPickId) : null;
+          if (freshPickId && freshPickData) {
+            return {
+              kind: 'point',
+              pointId: freshPickId,
+              gx: freshPickData.gx, gy: freshPickData.gy, gz: freshPickData.gz,
+              x: freshPickData.x, y: freshPickData.y, z: freshPickData.z,
+              valid: true,
+            };
+          }
+
+          // Priority 1: use the already-highlighted hover point (set by pointermove
+          // point-snap priority). This is what the user sees as the yellow dot.
+          if (sketchState.hoverPointId && sketchState.hoverWorld) {
+            const hw = sketchState.hoverWorld;
+            return {
+              kind: 'point',
+              pointId: sketchState.hoverPointId,
+              gx: hw.gx, gy: hw.gy, gz: hw.gz,
+              x: hw.x, y: hw.y, z: hw.z,
+              valid: true,
+            };
+          }
+
+          // Priority 2: snap from plane raycast + resolveSnapTarget
           const canvasEl = document.getElementById('matterCanvas');
           const mpx = canvasEl
             ? { x: (ndcX + 1) * 0.5 * canvasEl.width, y: (1 - ndcY) * 0.5 * canvasEl.height }
