@@ -118,10 +118,19 @@ pub const JS: &str = r##"
             grab.screenAcc = { x: 0, y: 0, z: 0 };
             const byId = new Map(sketchState.points.map(p => [p.id, p]));
             grab.dragBase = new Map();
+            let _kcx=0, _kcy=0, _kcz=0, _kcn=0;
             for (const id of grab.pointIds) {
               const p = byId.get(id);
-              if (p) grab.dragBase.set(id, { x: p.x, y: p.y, z: p.z });
+              if (p) {
+                grab.dragBase.set(id, { x: p.x, y: p.y, z: p.z });
+                _kcx+=p.x; _kcy+=p.y; _kcz+=p.z; _kcn++;
+              }
             }
+            // Re-anchor drag plane center + reset startDragPoint for new axis
+            grab.startCenter = _kcn ? { x:_kcx/_kcn, y:_kcy/_kcn, z:_kcz/_kcn } : grab.startCenter;
+            grab.startDragPoint = null; // will be re-set on next pointermove
+            const lockName = grab.axisLock || 'free';
+            window.__setStatusMessage('⤢ Grab · ' + lockName.toUpperCase() + ' — drag · Enter ✓ · Esc ✗');
             console.log('[Grab] axis lock: ' + grab.axisLock);
           }
           if (k === 'x') { __setGrabAxisLock('X'); return true; }

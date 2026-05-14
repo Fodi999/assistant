@@ -56,14 +56,32 @@ pub const JS: &str = r##"
         const startWorld = sketchState.hoverWorld
           ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
           : { x: 0, y: 0, z: 0 };
-        const startScreen = (sketchState.precision && sketchState.precision.lastMouseScreen)
-          ? { x: sketchState.precision.lastMouseScreen.x, y: sketchState.precision.lastMouseScreen.y }
-          : { x: 0, y: 0 };
+        // Compute selection center (for drag plane anchor)
+        let _cx=0, _cy=0, _cz=0, _cn=0;
+        for (const id of moveIds) {
+          const p = byId.get(id); if(!p) continue;
+          _cx+=p.x; _cy+=p.y; _cz+=p.z; _cn++;
+        }
+        const startCenter = _cn ? { x:_cx/_cn, y:_cy/_cn, z:_cz/_cn } : { x:0, y:0, z:0 };
+        // startScreen in canvas device-px, anchored to gizmo center (object center).
+        // Falls back to lastMouseScreen (also canvas device-px).
+        const _ctrG = window.__gizmoCenterScreen;
+        const _lms  = sketchState.precision?.lastMouseScreen;
+        const startScreen = _ctrG
+          ? { x: _ctrG.x, y: _ctrG.y }
+          : _lms
+            ? { x: _lms.x, y: _lms.y }
+            : { x: 0, y: 0 };
         sketchState.grab = {
           active: true,
           pointIds: moveIds,
           startMouseWorld: startWorld,
           startScreen,
+          startCenter,
+          // startDragPoint = selection center projected to drag plane.
+          // This means delta=0 at grab start, object follows mouse from that position.
+          // Will be properly set on first __updateGizmoDrag call with real NDC.
+          startDragPoint: null,
           originalPoints: snapshot,
           dragBase,
           screenAcc: { x: 0, y: 0, z: 0 },
@@ -206,8 +224,29 @@ pub const JS: &str = r##"
       ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
       : { x: 0, y: 0, z: 0 };
     const canvas = document.getElementById('matterCanvas');
-    const rect = canvas ? canvas.getBoundingClientRect() : { left:0, top:0 };
-    const startScreen = { x: clientX - rect.left, y: clientY - rect.top };
+    const rect = canvas ? canvas.getBoundingClientRect() : { left:0, top:0, width:1, height:1 };
+    const dpr2 = window.devicePixelRatio || 1;
+
+    // Compute selection center from grabbed points (drag plane anchor)
+    let _scx=0, _scy=0, _scz=0, _scn=0;
+    for (const id of moveIds) {
+      const p = byId.get(id); if(!p) continue;
+      _scx+=p.x; _scy+=p.y; _scz+=p.z; _scn++;
+    }
+    const startCenter = _scn
+      ? { x:_scx/_scn, y:_scy/_scn, z:_scz/_scn }
+      : { x:0, y:0, z:0 };
+
+    // Compute initial drag point from click NDC position
+    const ndcClickX = ((clientX - rect.left) / rect.width)  * 2 - 1;
+    const ndcClickY = 1 - ((clientY - rect.top)  / rect.height) * 2;
+    const startDragPoint = __raycastDragPlane(ndcClickX, ndcClickY, startCenter);
+
+    // startScreen anchored to gizmo center (canvas device-px).
+    const _ctr = window.__gizmoCenterScreen;
+    const startScreen = _ctr
+      ? { x: _ctr.x, y: _ctr.y }
+      : { x: (clientX - rect.left) * dpr2, y: (clientY - rect.top) * dpr2 };
     const dragBase = new Map();
     for (const id of moveIds) {
       const p = byId.get(id);
@@ -218,6 +257,8 @@ pub const JS: &str = r##"
       pointIds: moveIds,
       startMouseWorld: startWorld,
       startScreen,
+      startCenter,
+      startDragPoint,
       originalPoints: snapshot,
       axisLock: (axis === 'FREE') ? null : axis,
       dragBase,
@@ -227,6 +268,93 @@ pub const JS: &str = r##"
     window.__grabIsScreenProjection = true;
     if (window.__resetGrabTracking) window.__resetGrabTracking();
     if (window.__updateSketchInspector) window.__updateSketchInspector();
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // __raycastDragPlane(ndcX, ndcY, center) → world point | null
+  // Intersects the mouse ray with a view-aligned plane at `center`.
+  // This gives a stable 3D world position under the cursor at every frame.
+  // ─────────────────────────────────────────────────────────
+  function __raycastDragPlane(ndcX, ndcY, center) {
+    const r = __pickRay(ndcX, ndcY);
+    // Plane normal = camera forward direction (view-aligned plane)
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const cy = Math.cos(cam.yaw),   sy = Math.sin(cam.yaw);
+    const nx = -sy * cp, ny = -sp, nz = cy * cp;
+    // Ray–plane intersection:  t = dot(center - rayOrigin, n) / dot(rayDir, n)
+    const denom = r.dx*nx + r.dy*ny + r.dz*nz;
+    if (Math.abs(denom) < 1e-6) return null;
+    const t = ((center.x-r.ox)*nx + (center.y-r.oy)*ny + (center.z-r.oz)*nz) / denom;
+    if (t < 0) return null;
+    return { x: r.ox + r.dx*t, y: r.oy + r.dy*t, z: r.oz + r.dz*t };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // window.__updateGizmoDrag(ndcX, ndcY)
+  // Called every pointermove while grab.active.
+  //
+  // Implements canonical CAD gizmo formula:
+  //
+  //   currentPoint = raycastDragPlane(ndcX, ndcY, center)
+  //   delta = dot(currentPoint - startPoint, axisVector)
+  //   offset = axisVector * delta
+  //   newPosition = basePosition + offset
+  //
+  // All math in world-space — no screen-pixel heuristics.
+  // ─────────────────────────────────────────────────────────
+  window.__updateGizmoDrag = function(ndcX, ndcY) {
+    const grab = sketchState.grab;
+    if (!grab.active) return;
+
+    const center = grab.startCenter;
+    if (!center) return;
+
+    const cur = __raycastDragPlane(ndcX, ndcY, center);
+    if (!cur) return;
+
+    // First pointermove after grab start: set startDragPoint from current cursor position.
+    // Delta will be zero on this frame (object stays in place), then grows as cursor moves.
+    if (!grab.startDragPoint) {
+      grab.startDragPoint = { x: cur.x, y: cur.y, z: cur.z };
+    }
+
+    const start = grab.startDragPoint;
+    const lock  = grab.axisLock; // 'X' | 'Y' | 'Z' | 'XY' | 'YZ' | 'XZ' | null (FREE)
+
+    // Full 3D delta from drag start (world units)
+    let dx = cur.x - start.x;
+    let dy = cur.y - start.y;
+    let dz = cur.z - start.z;
+
+    // ── Canonical projection formula ──
+    // Axis lock:   amount = dot(delta, axisVec)   offset = axisVec * amount
+    // Plane lock:  zero out the perpendicular component
+    // FREE:        use full 3D delta
+    if      (lock === 'X')  { const a = dx; dx = a; dy = 0; dz = 0; }
+    else if (lock === 'Y')  { const a = dy; dx = 0; dy = a; dz = 0; }
+    else if (lock === 'Z')  { const a = dz; dx = 0; dy = 0; dz = a; }
+    else if (lock === 'XY') { dz = 0; }
+    else if (lock === 'XZ') { dy = 0; }
+    else if (lock === 'YZ') { dx = 0; }
+    // lock === null (FREE): no projection, use full delta
+
+    const g  = sketchState.gridSize || 1.0;
+    const fx = Math.round(dx / g) * g;
+    const fy = Math.round(dy / g) * g;
+    const fz = Math.round(dz / g) * g;
+
+    const byId = new Map(sketchState.points.map(p => [p.id, p]));
+    for (const [id, base] of grab.dragBase.entries()) {
+      const p = byId.get(id);
+      if (!p) continue;
+      // newPosition = startPosition + axisDirection * delta
+      p.x = base.x + fx;
+      p.y = base.y + fy;
+      p.z = base.z + fz;
+      p.gx = Math.round(p.x / g);
+      p.gy = Math.round(p.y / g);
+      p.gz = Math.round(p.z / g);
+    }
   };
 
   function drawGrabGizmo(ctx, sketchState, w2s, sk) {

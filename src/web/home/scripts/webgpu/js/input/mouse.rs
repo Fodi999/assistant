@@ -68,22 +68,33 @@ pub const JS: &str = r##"
           window.__hitGizmoOnDown = true;
 
           if (isGrab) {
-            // Already grabbing — just change axis lock + reset base
+            // Already grabbing — change axis lock and reset transform base
             const tState = sketchState.grab;
             tState.axisLock = (hitAxis === 'FREE') ? null : hitAxis;
-            tState.screenAcc = { x: 0, y: 0, z: 0 };  // reset accumulator on re-lock
+            tState.screenAcc = { x: 0, y: 0, z: 0 };
             if (sketchState.hoverWorld) {
               tState.startMouseWorld = { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z };
             }
-            if (sketchState.precision?.lastMouseScreen) {
-              tState.startScreen = { x: sketchState.precision.lastMouseScreen.x, y: sketchState.precision.lastMouseScreen.y };
-            }
+            // Re-anchor startScreen to gizmo center (canvas device-px) on re-lock
+            const _ctrRL = window.__gizmoCenterScreen;
+            const _lmsRL = sketchState.precision?.lastMouseScreen;
+            tState.startScreen = _ctrRL
+              ? { x: _ctrRL.x, y: _ctrRL.y }
+              : _lmsRL ? { x: _lmsRL.x, y: _lmsRL.y } : tState.startScreen;
+            // Reset drag base to current point positions (re-lock starts from here)
             const byId = new Map(sketchState.points.map(p => [p.id, p]));
             tState.dragBase = new Map();
+            let _rcx=0,_rcy=0,_rcz=0,_rcn=0;
             for (const id of tState.pointIds) {
               const p = byId.get(id);
-              if (p) tState.dragBase.set(id, { x: p.x, y: p.y, z: p.z });
+              if (p) {
+                tState.dragBase.set(id, { x: p.x, y: p.y, z: p.z });
+                _rcx+=p.x; _rcy+=p.y; _rcz+=p.z; _rcn++;
+              }
             }
+            // Re-anchor drag plane to current center + reset start drag point
+            tState.startCenter = _rcn ? { x:_rcx/_rcn, y:_rcy/_rcn, z:_rcz/_rcn } : tState.startCenter;
+            tState.startDragPoint = null; // will be set on next __updateGizmoDrag call
           } else {
             // Not yet grabbing — start grab from selection via gizmo
             if (window.__startGrabFromGizmo) {
@@ -265,91 +276,53 @@ pub const JS: &str = r##"
         const grabTarget = hit || sketchState.hoverWorld;
         if (sketchState.copy.active) window.__updateCopyConnect(grabTarget);
 
-        // ── Gizmo handle hover (works on selection AND during grab) ──
+        // ── Cursor state machine (CAD-style 4 states) ────────────────────────
+        // grabbing → grab → pointer → default
         {
           const rect3 = canvas.getBoundingClientRect();
           const hAxis = __hitGizmoHandle(e.clientX - rect3.left, e.clientY - rect3.top);
           window.__gizmoHoverAxis = hAxis || null;
-          if (hAxis) {
+          if (sketchState.grab?.active) {
+            // During active grab: grabbing (will be overridden to 'grab' on hover)
+            canvas.style.cursor = hAxis ? 'grab' : 'grabbing';
+          } else if (hAxis) {
             canvas.style.cursor = 'grab';
-          } else if (sketchState.grab.active) {
-            canvas.style.cursor = 'crosshair';
+          } else if (sketchState.hoverPointId || sketchState.hoverEdgeId || sketchState.hoverProfileId) {
+            canvas.style.cursor = 'pointer';
           } else {
             __setCursorForTool();
           }
         }
         if (window.__perfSample) window.__perfSample('pick', performance.now() - __pfPick);
 
-        // ── Grab movement — independent of dragging/buttons ───────────────────
-        // Works with touchpad hover (e.buttons===0) and regular mouse drag alike.
+        // ── Grab movement ──────────────────────────────────────────────────────
+        // CAD-style: cursor → axis → world-space delta → selected points
+        //
+        // Flow: SELECT → GIZMO → HIT AXIS → DRAG → CONFIRM / CANCEL
+        //
+        // Formula (world-space, no screen heuristics):
+        //   currentPoint = raycastDragPlane(ndcX, ndcY, center)
+        //   delta        = dot(currentPoint - startPoint, axisVector)
+        //   newPosition  = basePosition + axisVector * delta
         if (sketchState.grab?.active) {
           const useProj = gizmoHandleDrag || window.__grabIsScreenProjection;
 
-          // Initialise tracking on first call after grab started.
+          // Maintain grabLastX/Y for legacy __updateGrab path
           if (grabLastX < 0) { grabLastX = e.clientX; grabLastY = e.clientY; }
-          const gdx = e.clientX - grabLastX;
-          const gdy = e.clientY - grabLastY;
           grabLastX = e.clientX; grabLastY = e.clientY;
 
-          if (useProj && (gdx !== 0 || gdy !== 0)) {
-            const grab3 = sketchState.grab;
-            const lock3 = grab3.axisLock || null;
-            let wdx = 0, wdy = 0, wdz = 0;
-
-            const axDirs = window.__gizmoAxisScreenDirs;
-            if ((lock3 === 'X' || lock3 === 'Y' || lock3 === 'Z') && axDirs && axDirs[lock3]) {
-              // dot(mouseDeltaPx, axisScreenDir) / pxPerUnit → world delta along axis
-              const ad = axDirs[lock3];
-              const pxSq = ad.pxPerUnit * ad.pxPerUnit || 1;
-              const worldDelta = (gdx * ad.dx + gdy * ad.dy) / pxSq;
-              if (lock3 === 'X') wdx = worldDelta;
-              else if (lock3 === 'Y') wdy = worldDelta;
-              else                    wdz = worldDelta;
-            } else {
-              // Camera basis decomposition for plane locks and FREE
-              const k3  = cam.dist / canvas.height;
-              const cY3 = cam.yaw, cP3 = cam.pitch;
-              const rX3 = Math.cos(cY3), rZ3 = Math.sin(cY3);
-              const uX3 =  Math.sin(cY3) * Math.sin(cP3);
-              const uY3 =  Math.cos(cP3);
-              const uZ3 = -Math.cos(cY3) * Math.sin(cP3);
-              wdx = (gdx * rX3 - gdy * uX3) * k3;
-              wdy = (gdx * 0   - gdy * uY3) * k3;
-              wdz = (gdx * rZ3 - gdy * uZ3) * k3;
-              if      (lock3 === 'XY') { wdz = 0; }
-              else if (lock3 === 'XZ') { wdy = 0; }
-              else if (lock3 === 'YZ') { wdx = 0; }
-              // FREE: no zeroing
+          if (useProj) {
+            // World-space projection path (axis/plane/free lock)
+            if (window.__updateGizmoDrag) {
+              window.__updateGizmoDrag(mouse.ndcX, mouse.ndcY);
             }
-
-            if (!grab3.screenAcc) grab3.screenAcc = { x: 0, y: 0, z: 0 };
-            grab3.screenAcc.x += wdx;
-            grab3.screenAcc.y += wdy;
-            grab3.screenAcc.z += wdz;
-
-            const g3 = sketchState.gridSize || 1.0;
-            const fdx = Math.round(grab3.screenAcc.x / g3) * g3;
-            const fdy = Math.round(grab3.screenAcc.y / g3) * g3;
-            const fdz = Math.round(grab3.screenAcc.z / g3) * g3;
-
-            const byId3 = new Map(sketchState.points.map(p => [p.id, p]));
-            for (const id3 of grab3.pointIds) {
-              const base3 = grab3.dragBase.get(id3);
-              const p3    = byId3.get(id3);
-              if (!base3 || !p3) continue;
-              p3.x = base3.x + fdx;
-              p3.y = base3.y + fdy;
-              p3.z = base3.z + fdz;
-              const g4 = sketchState.gridSize || 1.0;
-              p3.gx = Math.round(p3.x / g4);
-              p3.gy = Math.round(p3.y / g4);
-              p3.gz = Math.round(p3.z / g4);
-            }
-          } else if (!useProj) {
+          } else {
             window.__updateGrab(grabTarget);
           }
 
-          // Mark drag moved if pointer has travelled enough.
+          // Cursor: grabbing while dragging
+          canvas.style.cursor = 'grabbing';
+
           if (Math.hypot(e.clientX - startX, e.clientY - startY) >= CLICK_THRESH_PX) dragMoved = true;
           return; // skip orbit / pan
         }
