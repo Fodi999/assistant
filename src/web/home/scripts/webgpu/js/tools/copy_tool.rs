@@ -67,9 +67,6 @@ pub const JS: &str = r##"
           window.__setStatusMessage('Copy: nothing valid to copy');
           return;
         }
-        const startWorld = sketchState.hoverWorld
-          ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
-          : { x: 0, y: 0, z: 0 };
         const cpStartScreen = (sketchState.precision && sketchState.precision.lastMouseScreen)
           ? { x: sketchState.precision.lastMouseScreen.x, y: sketchState.precision.lastMouseScreen.y }
           : { x: 0, y: 0 };
@@ -79,10 +76,8 @@ pub const JS: &str = r##"
           pointIds: validIds,
           edges: src.edges,
           originals,
-          startMouseWorld: startWorld,
           startScreen: cpStartScreen,
           delta: { dx: 0, dy: 0, dz: 0 },
-          baseDelta: { dx: 0, dy: 0, dz: 0 },
           axisLock: null,
         };
         const label = src.source === 'profile' ? 'profile'
@@ -93,32 +88,63 @@ pub const JS: &str = r##"
       };
 
       window.__copyAxisToggle = function(axis) {
-        sketchState.copy.axisLock = (sketchState.copy.axisLock === axis) ? null : axis;
+        const cp = sketchState.copy;
+        cp.axisLock = (cp.axisLock === axis) ? null : axis;
+        // Re-anchor start screen so delta resets from current position
+        const cur = sketchState.precision?.lastMouseScreen;
+        if (cur) cp.startScreen = { x: cur.x, y: cur.y };
+        cp.delta = { dx: 0, dy: 0, dz: 0 };
+        const lockName = cp.axisLock || 'free';
+        if (window.__setStatusMessage) {
+          window.__setStatusMessage('⎘ Copy Connect · ' + lockName.toUpperCase() + ' · move mouse · Enter ✓ · Esc ✗');
+        }
       };
 
       // ─────────────────────────────────────────────────────────
-      // __updateCopyConnect(hoverWorld) — mouse move delta
+      // __updateCopyConnect() — screen-space delta formula
       // ─────────────────────────────────────────────────────────
-      window.__updateCopyConnect = function(hoverWorld) {
+      window.__updateCopyConnect = function() {
         const cp = sketchState.copy;
-        if (!cp.active || !hoverWorld || !cp.startMouseWorld) return;
-        if (!cp.baseDelta) return;
+        if (!cp?.active) return;
 
-        let dx = hoverWorld.x - cp.startMouseWorld.x;
-        let dy = hoverWorld.y - cp.startMouseWorld.y;
-        let dz = hoverWorld.z - cp.startMouseWorld.z;
-
-        if      (cp.axisLock === 'X')  { dy = 0; dz = 0; }
-        else if (cp.axisLock === 'Y')  { dx = 0; dz = 0; }
-        else if (cp.axisLock === 'Z')  { dx = 0; dy = 0; }
-        else if (cp.axisLock === 'XY') { dz = 0; }
-        else if (cp.axisLock === 'YZ') { dx = 0; }
-        else if (cp.axisLock === 'XZ') { dy = 0; }
+        const curScreen   = sketchState.precision?.lastMouseScreen;
+        const startScreen = cp.startScreen;
+        if (!curScreen || !startScreen) return;
 
         const g = sketchState.gridSize || 1.0;
-        cp.delta.dx = cp.baseDelta.dx + Math.round(dx / g) * g;
-        cp.delta.dy = cp.baseDelta.dy + Math.round(dy / g) * g;
-        cp.delta.dz = cp.baseDelta.dz + Math.round(dz / g) * g;
+        const worldPerPixel = cam.dist / canvas.height;
+
+        const screenDx = curScreen.x - startScreen.x;
+        const screenDy = curScreen.y - startScreen.y;
+
+        let dx = 0, dy = 0, dz = 0;
+
+        if      (cp.axisLock === 'Y')  { dy = -screenDy * worldPerPixel; }
+        else if (cp.axisLock === 'X')  { dx =  screenDx * worldPerPixel; }
+        else if (cp.axisLock === 'Z')  { dz = -screenDy * worldPerPixel; }
+        else if (cp.axisLock === 'XY') { dx =  screenDx * worldPerPixel; dy = -screenDy * worldPerPixel; }
+        else if (cp.axisLock === 'XZ') { dx =  screenDx * worldPerPixel; dz = -screenDy * worldPerPixel; }
+        else if (cp.axisLock === 'YZ') { dz =  screenDx * worldPerPixel; dy = -screenDy * worldPerPixel; }
+        else {
+          // Free: map screen X → world X, screen Y → world Z (sketch plane)
+          dx = screenDx * worldPerPixel;
+          dz = -screenDy * worldPerPixel;
+        }
+
+        cp.delta.dx = Math.round(dx / g) * g;
+        cp.delta.dy = Math.round(dy / g) * g;
+        cp.delta.dz = Math.round(dz / g) * g;
+
+        if (window.__setStatusMessage) {
+          window.__setStatusMessage(
+            '⎘ Copy Connect · Δ ' +
+            cp.delta.dx.toFixed(2) + ', ' +
+            cp.delta.dy.toFixed(2) + ', ' +
+            cp.delta.dz.toFixed(2) +
+            (cp.axisLock ? ' · ' + cp.axisLock : '') +
+            ' · Enter ✓ · Esc ✗'
+          );
+        }
       };
 
       // ─────────────────────────────────────────────────────────
@@ -163,8 +189,8 @@ pub const JS: &str = r##"
         const total = origToCopy.size;
         sketchState.copy = {
           active: false, source: null, pointIds: [], edges: [],
-          originals: new Map(), startMouseWorld: null,
-          delta: { dx: 0, dy: 0, dz: 0 }, baseDelta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
+          originals: new Map(), startScreen: null,
+          delta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
         };
         if (window.__notifySketchChanged) window.__notifySketchChanged();
         window.__setStatusMessage(
@@ -179,8 +205,8 @@ pub const JS: &str = r##"
       window.__cancelCopyConnect = function() {
         sketchState.copy = {
           active: false, source: null, pointIds: [], edges: [],
-          originals: new Map(), startMouseWorld: null,
-          delta: { dx: 0, dy: 0, dz: 0 }, baseDelta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
+          originals: new Map(), startScreen: null,
+          delta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
         };
         window.__setStatusMessage('Copy Connect cancelled');
         if (window.__updateSketchInspector) window.__updateSketchInspector();

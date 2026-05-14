@@ -219,6 +219,13 @@ pub const JS: &str = r##"
         mouse.ndcY = 1 - ((e.clientY - rect.top)  / rect.height) * 2;
         mouse.active = true;
 
+        // Always update lastMouseScreen — needed by Copy Connect even off sketch plane
+        if (!sketchState.precision) sketchState.precision = {};
+        sketchState.precision.lastMouseScreen = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        };
+
         // Hover + snap (always, even without dragging).
         const __pfPick = performance.now();
         const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY);
@@ -274,7 +281,7 @@ pub const JS: &str = r##"
 
         if (window.__updateLinePreview) window.__updateLinePreview();
         const grabTarget = hit || sketchState.hoverWorld;
-        if (sketchState.copy.active) window.__updateCopyConnect(grabTarget);
+        if (sketchState.copy.active) window.__updateCopyConnect();
 
         // ── Cursor state machine (CAD-style 4 states) ────────────────────────
         // grabbing → grab → pointer → default
