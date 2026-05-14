@@ -82,6 +82,7 @@ pub const JS: &str = r##"
           startMouseWorld: startWorld,
           startScreen: cpStartScreen,
           delta: { dx: 0, dy: 0, dz: 0 },
+          baseDelta: { dx: 0, dy: 0, dz: 0 },
           axisLock: null,
         };
         const label = src.source === 'profile' ? 'profile'
@@ -101,7 +102,6 @@ pub const JS: &str = r##"
       window.__updateCopyConnect = function(hoverWorld) {
         const cp = sketchState.copy;
         if (!cp.active || !hoverWorld || !cp.startMouseWorld) return;
-        if (!window.__isPointerDragging || !window.__isPointerDragging()) return;
         if (!cp.baseDelta) return;
 
         let dx = hoverWorld.x - cp.startMouseWorld.x;
@@ -164,7 +164,7 @@ pub const JS: &str = r##"
         sketchState.copy = {
           active: false, source: null, pointIds: [], edges: [],
           originals: new Map(), startMouseWorld: null,
-          delta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
+          delta: { dx: 0, dy: 0, dz: 0 }, baseDelta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
         };
         if (window.__notifySketchChanged) window.__notifySketchChanged();
         window.__setStatusMessage(
@@ -180,7 +180,7 @@ pub const JS: &str = r##"
         sketchState.copy = {
           active: false, source: null, pointIds: [], edges: [],
           originals: new Map(), startMouseWorld: null,
-          delta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
+          delta: { dx: 0, dy: 0, dz: 0 }, baseDelta: { dx: 0, dy: 0, dz: 0 }, axisLock: null,
         };
         window.__setStatusMessage('Copy Connect cancelled');
         if (window.__updateSketchInspector) window.__updateSketchInspector();

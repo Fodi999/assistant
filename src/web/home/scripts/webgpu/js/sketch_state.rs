@@ -131,6 +131,7 @@ pub const JS: &str = r##"
           originals:       new Map(),    // id → { x, y, z }
           startMouseWorld: null,         // hover at the moment Shift+G was pressed
           delta:           { dx: 0, dy: 0, dz: 0 }, // grid-snapped offset
+          baseDelta:       { dx: 0, dy: 0, dz: 0 }, // accumulated offset on axis re-lock
           axisLock:        null,         // 'X' | 'Y' | 'Z' | null
         },
       };
