@@ -138,71 +138,8 @@ pub const JS: &str = r##"
           return;
         }
 
-        if (tool === SM.LINE) {
-          const snap = __resolveClickSnap();
-          if (!snap || !snap.valid) return;
-          const hoveredId = snap.kind === 'point' ? snap.pointId : null;
-          const mode = sketchState.engineMode || 'backend';
-          if (mode === 'wasm' || mode === 'hybrid') {
-            (async () => {
-              window.__pushHistory();
-              let targetId = hoveredId;
-              if (!targetId) {
-                const r = await window.__wasmAddPointAndApply(snap.gx, snap.gy, snap.gz);
-                if (!r.ok) return;
-                targetId = r.pointId;
-              }
-              const startId = sketchState.line.startPointId;
-              if (startId && startId !== targetId) {
-                await window.__wasmAddEdgeAndApply({ pointId: startId }, { pointId: targetId });
-              }
-              sketchState.line.startPointId = targetId;
-              sketchState.phase = "line_pending";
-              if (window.__updateSketchInspector) window.__updateSketchInspector();
-            })();
-            return;
-          }
-          if (mode === 'backend') {
-            (async () => {
-              window.__pushHistory();
-              let targetId = hoveredId;
-              if (!targetId) {
-                const r = await window.__backendAddPoint(snap.gx, snap.gy, snap.gz);
-                if (!r.ok) return;
-                targetId = r.pointId;
-              }
-              const startId = sketchState.line.startPointId;
-              if (startId && startId !== targetId) {
-                await window.__backendAddEdge({ pointId: startId }, { pointId: targetId });
-              }
-              sketchState.line.startPointId = targetId;
-              sketchState.phase = "line_pending";
-              if (window.__updateSketchInspector) window.__updateSketchInspector();
-            })();
-            return;
-          }
-          // Legacy local path
-          let targetId = hoveredId;
-          let createdPoint = false;
-          if (!targetId) {
-            const existing = window.__findPointAtGrid(snap.gx, snap.gy, snap.gz);
-            if (existing) targetId = existing.id;
-            else {
-              window.__pushHistory();
-              targetId = window.__addPoint(snap.gx, snap.gy, snap.gz).id;
-              createdPoint = true;
-            }
-          }
-          const startId = sketchState.line.startPointId;
-          if (startId && startId !== targetId) {
-            if (!window.__findEdgeBetween(startId, targetId)) {
-              if (!createdPoint) window.__pushHistory();
-              window.__addEdge(startId, targetId);
-            }
-          }
-          sketchState.line.startPointId = targetId;
-          sketchState.phase = "line_pending";
-          if (window.__updateSketchInspector) window.__updateSketchInspector();
+        if (tool === SM.LINE || tool === 'line') {
+          if (window.__lineClick) window.__lineClick(ndcX, ndcY);
           return;
         }
 
@@ -225,6 +162,142 @@ pub const JS: &str = r##"
           if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
         }
+      };
+
+      // ─────────────────────────────────────────────────────────
+      // __lineClick(ndcX, ndcY) — Line Tool click handler
+      //
+      // Click 1 on point/grid → save startPointId + startWorld
+      // Click 2 on point/grid → create edge A→B, reset line state
+      // Enter → finish mode (no edge)
+      // ─────────────────────────────────────────────────────────
+      window.__lineClick = function(ndcX, ndcY) {
+        // Resolve snap at click time (same priority-0 fresh-pick logic)
+        const freshPickId   = window.__pickPointAt ? window.__pickPointAt(ndcX, ndcY) : null;
+        const freshPickData = freshPickId ? sketchState.points.find(p => p.id === freshPickId) : null;
+
+        let snap = null;
+        if (freshPickId && freshPickData) {
+          snap = {
+            kind: 'point', pointId: freshPickId,
+            gx: freshPickData.gx, gy: freshPickData.gy, gz: freshPickData.gz,
+            x: freshPickData.x, y: freshPickData.y, z: freshPickData.z, valid: true,
+          };
+        } else {
+          // fallback: hoverWorld from pointermove
+          const hw = sketchState.hoverWorld;
+          if (hw) {
+            const snapPtId = (sketchState.snap && sketchState.snap.kind === 'point') ? sketchState.snap.pointId : null;
+            snap = {
+              kind: snapPtId ? 'point' : (hw.snapKind || 'grid'),
+              pointId: snapPtId || null,
+              gx: hw.gx, gy: hw.gy, gz: hw.gz,
+              x: hw.x, y: hw.y, z: hw.z, valid: true,
+            };
+          } else {
+            // Last resort: raycast
+            const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(ndcX, ndcY);
+            if (hit && window.__resolveSnapTarget) {
+              const canvasEl = document.getElementById('matterCanvas');
+              const mpx = canvasEl
+                ? { x: (ndcX+1)*0.5*canvasEl.width, y: (1-ndcY)*0.5*canvasEl.height }
+                : { x: 0, y: 0 };
+              snap = window.__resolveSnapTarget({ x: hit.freeX, y: hit.freeY, z: hit.freeZ }, mpx, { force: true });
+            }
+          }
+        }
+
+        if (!snap || !snap.valid) {
+          window.__setStatusMessage('Line: no snap target');
+          return;
+        }
+
+        console.log('[Line] click snap=', snap, 'line=', sketchState.line);
+
+        const line = sketchState.line;
+
+        // ── FIRST CLICK ──
+        if (!line.active) {
+          sketchState.line = {
+            active: true,
+            startPointId: snap.kind === 'point' ? snap.pointId : null,
+            startWorld: { x: snap.x, y: snap.y, z: snap.z, gx: snap.gx, gy: snap.gy, gz: snap.gz },
+          };
+          const label = snap.kind === 'point' ? 'point · click second point' : 'grid · click second point';
+          window.__setStatusMessage('Line start set · ' + label);
+          return;
+        }
+
+        // ── SECOND CLICK ──
+        window.__finishLineClick(snap);
+      };
+
+      window.__finishLineClick = async function(snap) {
+        const line = sketchState.line;
+        if (!line || !line.active || !line.startWorld) return;
+
+        const g = sketchState.gridSize || 1.0;
+        const mode = sketchState.engineMode || 'backend';
+
+        let aId = line.startPointId;
+        let bId = snap.kind === 'point' ? snap.pointId : null;
+
+        window.__pushHistory();
+
+        // Create start point if it was on grid (no existing point)
+        if (!aId) {
+          const a = line.startWorld;
+          const gx = Math.round(a.x / g), gy = Math.round(a.y / g), gz = Math.round(a.z / g);
+          if (mode === 'backend') {
+            const r = await window.__backendAddPoint(gx, gy, gz);
+            aId = r?.pointId || null;
+          } else if (mode === 'wasm' || mode === 'hybrid') {
+            const r = await window.__wasmAddPointAndApply(gx, gy, gz);
+            aId = r?.ok ? r.pointId : null;
+          } else {
+            aId = window.__addPoint(gx, gy, gz)?.id || null;
+          }
+        }
+
+        // Create end point if it was on grid (no existing point)
+        if (!bId) {
+          const gx = Math.round(snap.x / g), gy = Math.round(snap.y / g), gz = Math.round(snap.z / g);
+          if (mode === 'backend') {
+            const r = await window.__backendAddPoint(gx, gy, gz);
+            bId = r?.pointId || null;
+          } else if (mode === 'wasm' || mode === 'hybrid') {
+            const r = await window.__wasmAddPointAndApply(gx, gy, gz);
+            bId = r?.ok ? r.pointId : null;
+          } else {
+            bId = window.__addPoint(gx, gy, gz)?.id || null;
+          }
+        }
+
+        if (!aId || !bId) {
+          window.__setStatusMessage('Line: failed to resolve points');
+          sketchState.line = { active: false, startPointId: null, startWorld: null };
+          return;
+        }
+        if (aId === bId) {
+          window.__setStatusMessage('Line: same point — click a different location');
+          sketchState.line = { active: false, startPointId: null, startWorld: null };
+          return;
+        }
+
+        if (mode === 'backend') {
+          await window.__backendAddEdge({ pointId: aId }, { pointId: bId });
+        } else if (mode === 'wasm' || mode === 'hybrid') {
+          await window.__wasmAddEdgeAndApply({ pointId: aId }, { pointId: bId });
+        } else {
+          window.__addEdge(aId, bId);
+        }
+
+        sketchState.line = { active: false, startPointId: null, startWorld: null };
+        sketchState.phase = 'idle';
+
+        if (window.__notifySketchChanged) window.__notifySketchChanged();
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+        window.__setStatusMessage('Line created · click to start new line');
       };
 
       // ─────────────────────────────────────────────────────────

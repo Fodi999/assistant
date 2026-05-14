@@ -174,10 +174,10 @@ pub const JS: &str = r##"
         }
 
         if (k === 'escape') {
-          if (sketchState.line.startPointId) {
-            sketchState.line.startPointId = null;
+          if (sketchState.line.active || sketchState.line.startPointId) {
+            sketchState.line = { active: false, startPointId: null, startWorld: null };
             sketchState.phase = 'idle';
-            window.__setStatusMessage('Line chain cancelled');
+            window.__setStatusMessage('Line cancelled');
           } else {
             sketchState.selectedPointIds.clear();
             sketchState.selectedEdgeIds.clear();
@@ -187,28 +187,11 @@ pub const JS: &str = r##"
         }
 
         if (k === 'enter') {
-          if (sketchState.line.startPointId) {
-            // If there is a highlighted hover point — snap to it and create edge first,
-            // then finish the chain.
-            const hoverId = sketchState.hoverPointId;
-            const hoverW  = sketchState.hoverWorld;
-            if (hoverId && hoverId !== sketchState.line.startPointId) {
-              (async () => {
-                const startId = sketchState.line.startPointId;
-                // Snap to existing point — NO new point created
-                await window.__backendAddEdge({ pointId: startId }, { pointId: hoverId });
-                sketchState.line.startPointId = null;
-                sketchState.phase = 'idle';
-                window.__setStatusMessage('Line chain finished · snapped to point');
-                if (window.__notifySketchChanged) window.__notifySketchChanged();
-                if (window.__updateSketchInspector) window.__updateSketchInspector();
-              })();
-            } else {
-              sketchState.line.startPointId = null;
-              sketchState.phase = 'idle';
-              window.__setStatusMessage('Line chain finished');
-              if (window.__updateSketchInspector) window.__updateSketchInspector();
-            }
+          if (sketchState.line.active || sketchState.line.startPointId) {
+            sketchState.line = { active: false, startPointId: null, startWorld: null };
+            sketchState.phase = 'idle';
+            window.__setStatusMessage('Line mode finished');
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
           }
           return true;
         }
