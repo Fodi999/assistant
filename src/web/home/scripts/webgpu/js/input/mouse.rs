@@ -227,20 +227,36 @@ pub const JS: &str = r##"
         };
 
         // Hover + snap (always, even without dragging).
+        // Priority: POINT SNAP → EDGE/GRID SNAP (via __resolveSnapTarget)
         const __pfPick = performance.now();
         const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY);
 
-        if (hit && window.__resolveSnapTarget) {
-          // Convert NDC → screen px for snap radius checks.
-          const mpx = {
-            x: (mouse.ndcX + 1) * 0.5 * canvas.width,
-            y: (1 - mouse.ndcY) * 0.5 * canvas.height,
+        // CSS-pixel cursor position — consistent with hit-test projections.
+        const mpx = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+        // ── Point snap priority ───────────────────────────────────────────────
+        // __pickPointAt uses NDC; if a point is nearby, snap directly to it —
+        // even if it doesn't lie on the current sketch plane hit.
+        const _ppId = window.__pickPointAt ? window.__pickPointAt(mouse.ndcX, mouse.ndcY) : null;
+        const _ppData = _ppId ? sketchState.points.find(pt => pt.id === _ppId) : null;
+
+        if (_ppId && _ppData) {
+          sketchState.hoverPointId = _ppId;
+          sketchState.hoverWorld = {
+            x: _ppData.x, y: _ppData.y, z: _ppData.z,
+            gx: _ppData.gx, gy: _ppData.gy, gz: _ppData.gz,
+            freeX: _ppData.x, freeY: _ppData.y, freeZ: _ppData.z,
+            snapKind: 'point', pointId: _ppId,
+            screenX: mpx.x, screenY: mpx.y,
           };
+          sketchState.snap = {
+            kind: 'point', pointId: _ppId,
+            gx: _ppData.gx, gy: _ppData.gy, gz: _ppData.gz,
+          };
+        } else if (hit && window.__resolveSnapTarget) {
+          // Fallback: snap to grid / edge via plane intersection
           const free   = { x: hit.freeX, y: hit.freeY, z: hit.freeZ };
           const target = window.__resolveSnapTarget(free, mpx, null);
-          // Populate hoverWorld with the snapped position (not raw).
-          // screenX/Y = actual cursor tip on canvas — used by render_loop
-          // so the crosshair is drawn exactly under the pointer.
           sketchState.hoverWorld = {
             x: target.x, y: target.y, z: target.z,
             gx: target.gx, gy: target.gy, gz: target.gz,
@@ -248,10 +264,8 @@ pub const JS: &str = r##"
             snapKind: target.kind, pointId: target.pointId,
             screenX: mpx.x, screenY: mpx.y,
           };
-          // Snap status for HUD / mini-bar.
           sketchState.snap = {
-            kind: target.kind,
-            pointId: target.pointId,
+            kind: target.kind, pointId: target.pointId,
             gx: target.gx, gy: target.gy, gz: target.gz,
           };
         } else {
@@ -261,7 +275,7 @@ pub const JS: &str = r##"
 
         const tool = sketchState.activeTool;
         if (tool === 'select' || tool === 'delete') {
-          sketchState.hoverPointId = window.__pickPointAt(mouse.ndcX, mouse.ndcY);
+          sketchState.hoverPointId = _ppId || window.__pickPointAt(mouse.ndcX, mouse.ndcY);
           sketchState.hoverEdgeId  = sketchState.hoverPointId
             ? null : window.__pickEdgeAt(mouse.ndcX, mouse.ndcY);
           if (tool === 'select' && !sketchState.hoverPointId && !sketchState.hoverEdgeId && hit) {
@@ -270,7 +284,8 @@ pub const JS: &str = r##"
             sketchState.hoverProfileId = null;
           }
         } else if (tool === 'line') {
-          sketchState.hoverPointId  = window.__pickPointAt(mouse.ndcX, mouse.ndcY);
+          // hoverPointId already set above via point-snap priority block
+          sketchState.hoverPointId  = _ppId || null;
           sketchState.hoverEdgeId   = null;
           sketchState.hoverProfileId = null;
         } else {
