@@ -41,6 +41,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + tools::select_tool::JS.len()
             + tools::grab_tool::JS.len()
             + tools::copy_tool::JS.len()
+            + tools::line_tool::JS.len()
             + tools::hotkeys::JS.len()
             + sketch_io::JS.len()
             + matter_state::JS.len()
@@ -83,7 +84,9 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(tools::grab_tool::JS);
     // 7c. Copy-connect tool — Shift+G
     out.push_str(tools::copy_tool::JS);
-    // 7d. Hotkeys + constraints + line preview
+    // 7d. Line tool — L key, click1=start, click2=edge
+    out.push_str(tools::line_tool::JS);
+    // 7e. Hotkeys + constraints + line preview
     out.push_str(tools::hotkeys::JS);
     // 8. Sketch I/O — JSON export / import / backend payload preview
     out.push_str(sketch_io::JS);
