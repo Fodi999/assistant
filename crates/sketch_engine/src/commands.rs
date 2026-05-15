@@ -20,6 +20,17 @@ pub struct AddPointRequest {
     pub gx: i32,
     pub gy: i32,
     pub gz: i32,
+    /// When `true`, the engine accepts grid coordinates outside the active
+    /// working plane. Required for 3D polyline / connect-vertical-edges
+    /// workflows where points naturally live above/below the sketch plane.
+    /// Accepts both `ignorePlaneConstraint` (JS camelCase) and
+    /// `ignore_plane_constraint` (Rust snake_case).
+    #[serde(
+        default,
+        alias = "ignorePlaneConstraint",
+        rename = "ignore_plane_constraint"
+    )]
+    pub ignore_plane_constraint: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +54,15 @@ pub struct AddEdgeRequest {
     pub grid_size: f64,
     pub start: PointRefOrGrid,
     pub end: PointRefOrGrid,
+    /// See [`AddPointRequest::ignore_plane_constraint`]. When true, endpoint
+    /// resolution accepts grid coords on any plane (required for 3D edges
+    /// connecting verts above/below the active sketch plane).
+    #[serde(
+        default,
+        alias = "ignorePlaneConstraint",
+        rename = "ignore_plane_constraint"
+    )]
+    pub ignore_plane_constraint: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,8 +119,10 @@ pub fn apply_add_point(req: AddPointRequest) -> SketchCommandResult {
         }
     };
 
-    // Enforce plane constraint on grid coords.
-    if !plane.accepts_grid(req.gx, req.gy, req.gz) {
+    // Enforce plane constraint on grid coords (unless explicitly bypassed
+    // for 3D polyline / connect workflows).
+    let ignore_plane = req.ignore_plane_constraint.unwrap_or(false);
+    if !ignore_plane && !plane.accepts_grid(req.gx, req.gy, req.gz) {
         let msg = format!(
             "Invalid grid coordinate for plane {}: ({},{},{})",
             plane.as_str(),
@@ -166,6 +188,7 @@ fn resolve_endpoint(
     grid_size: f64,
     r: &PointRefOrGrid,
     label: &str,
+    ignore_plane: bool,
 ) -> Result<(String, Option<String>), String> {
     if let Some(pid) = &r.point_id {
         if sketch.find_point(pid).is_some() {
@@ -184,7 +207,7 @@ fn resolve_endpoint(
         }
     };
 
-    if !plane.accepts_grid(gx, gy, gz) {
+    if !ignore_plane && !plane.accepts_grid(gx, gy, gz) {
         return Err(format!(
             "Invalid {} grid coordinate for plane {}: ({},{},{})",
             label,
@@ -229,13 +252,15 @@ pub fn apply_add_edge(req: AddEdgeRequest) -> SketchCommandResult {
         }
     };
 
+    let ignore_plane = req.ignore_plane_constraint.unwrap_or(false);
+
     // Resolve start.
-    let (start_id, created_a) = match resolve_endpoint(&mut sketch, plane, req.grid_size, &req.start, "start") {
+    let (start_id, created_a) = match resolve_endpoint(&mut sketch, plane, req.grid_size, &req.start, "start", ignore_plane) {
         Ok(v) => v,
         Err(e) => return err_result(sketch, e),
     };
     // Resolve end.
-    let (end_id, created_b) = match resolve_endpoint(&mut sketch, plane, req.grid_size, &req.end, "end") {
+    let (end_id, created_b) = match resolve_endpoint(&mut sketch, plane, req.grid_size, &req.end, "end", ignore_plane) {
         Ok(v) => v,
         Err(e) => return err_result(sketch, e),
     };
@@ -309,6 +334,7 @@ mod tests {
             gx: 2,
             gy: 0,
             gz: 3,
+            ignore_plane_constraint: None,
         });
         assert!(res.ok, "expected ok, got {:?}", res.message);
         assert_eq!(res.created_point_id.as_deref(), Some("p_1"));
@@ -326,6 +352,7 @@ mod tests {
             gx: 2,
             gy: 0,
             gz: 3,
+            ignore_plane_constraint: None,
         });
         let r2 = apply_add_point(AddPointRequest {
             sketch: r1.sketch.clone(),
@@ -334,6 +361,7 @@ mod tests {
             gx: 2,
             gy: 0,
             gz: 3,
+            ignore_plane_constraint: None,
         });
         assert!(r2.ok);
         assert_eq!(r2.created_point_id, None);
@@ -350,9 +378,28 @@ mod tests {
             gx: 0,
             gy: 1,
             gz: 0,
+            ignore_plane_constraint: None,
         });
         assert!(!res.ok);
         assert!(res.message.unwrap().contains("plane"));
+    }
+
+    #[test]
+    fn add_point_xz_with_gy_nonzero_allowed_when_ignored() {
+        // 3D polyline use-case: connecting vertices above the active plane.
+        let res = apply_add_point(AddPointRequest {
+            sketch: empty_xz(),
+            working_plane: "XZ".into(),
+            grid_size: 1.0,
+            gx: 0,
+            gy: 5,
+            gz: 0,
+            ignore_plane_constraint: Some(true),
+        });
+        assert!(res.ok, "expected ok, got {:?}", res.message);
+        assert_eq!(res.sketch.points.len(), 1);
+        let p = &res.sketch.points[0];
+        assert_eq!((p.gx, p.gy, p.gz), (0, 5, 0));
     }
 
     #[test]
@@ -365,6 +412,7 @@ mod tests {
             gx: 0,
             gy: 0,
             gz: 0,
+            ignore_plane_constraint: None,
         });
         // Add edge whose end-point doesn't yet exist.
         let r2 = apply_add_edge(AddEdgeRequest {
@@ -383,6 +431,7 @@ mod tests {
                 gy: Some(0),
                 gz: Some(0),
             },
+            ignore_plane_constraint: None,
         });
         assert!(r2.ok);
         assert_eq!(r2.created_point_id.as_deref(), Some("p_2"));
@@ -400,6 +449,7 @@ mod tests {
             gx: 0,
             gy: 0,
             gz: 0,
+            ignore_plane_constraint: None,
         });
         let r2 = apply_add_edge(AddEdgeRequest {
             sketch: r1.sketch,
@@ -417,6 +467,7 @@ mod tests {
                 gy: None,
                 gz: None,
             },
+            ignore_plane_constraint: None,
         });
         assert!(!r2.ok);
         assert!(r2.message.unwrap().contains("self-loop"));
@@ -432,6 +483,7 @@ mod tests {
             gx: 0,
             gy: 0,
             gz: 0,
+            ignore_plane_constraint: None,
         });
         let r2 = apply_add_edge(AddEdgeRequest {
             sketch: r1.sketch,
@@ -439,6 +491,7 @@ mod tests {
             grid_size: 1.0,
             start: PointRefOrGrid { point_id: Some("p_1".into()), gx: None, gy: None, gz: None },
             end:   PointRefOrGrid { point_id: None, gx: Some(2), gy: Some(0), gz: Some(0) },
+            ignore_plane_constraint: None,
         });
         // Now try B — A (reversed).
         let r3 = apply_add_edge(AddEdgeRequest {
@@ -447,6 +500,7 @@ mod tests {
             grid_size: 1.0,
             start: PointRefOrGrid { point_id: Some("p_2".into()), gx: None, gy: None, gz: None },
             end:   PointRefOrGrid { point_id: Some("p_1".into()), gx: None, gy: None, gz: None },
+            ignore_plane_constraint: None,
         });
         assert!(!r3.ok);
         assert_eq!(r3.message.as_deref(), Some("Edge already exists"));
@@ -464,6 +518,7 @@ mod tests {
                 gx,
                 gy: 0,
                 gz,
+                ignore_plane_constraint: None,
             })
             .sketch;
         }
@@ -475,6 +530,7 @@ mod tests {
                 grid_size: 1.0,
                 start: PointRefOrGrid { point_id: Some(a.into()), gx: None, gy: None, gz: None },
                 end:   PointRefOrGrid { point_id: Some(b.into()), gx: None, gy: None, gz: None },
+            ignore_plane_constraint: None,
             })
             .sketch;
         }
@@ -493,6 +549,7 @@ mod tests {
             gx: 4,
             gy: 0,
             gz: -2,
+            ignore_plane_constraint: None,
         });
         assert!(res.ok);
         let p = &res.sketch.points[0];
