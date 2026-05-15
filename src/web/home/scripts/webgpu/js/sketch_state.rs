@@ -145,6 +145,22 @@ pub const JS: &str = r##"
           delta:           { dx: 0, dy: 0, dz: 0 }, // grid-snapped offset
           axisLock:        null,         // 'X' | 'Y' | 'Z' | null
         },
+
+        // ── Drafting Overlay (Phase 16) ─────────────────────────
+        // Pure visual layer drawn on top of geometry. Does not alter the
+        // sketch — only renders engineering-drawing decorations.
+        drafting: {
+          showDimensions:    true,   // dim line + arrows + label for selected edges & profile
+          showEdgeLengths:   false,  // length label on every edge (or only hovered/selected)
+          showPointLabels:   false,  // coord labels on hovered/selected points
+          showGridNumbers:   false,  // ruler-style numbers along viewport edges
+          showCenterlines:   false,  // dashed centerlines through profile centroid
+          unit:              'mm',
+          decimals:          1,
+          dimensionOffsetPx: 20,
+          arrowSizePx:       7,
+          textGapPx:         6,
+        },
       };
       window.sketchState = sketchState;
 
@@ -219,6 +235,37 @@ pub const JS: &str = r##"
         if (!isFinite(n)) return '—';
         const p = sketchState.coordPrecision || 3;
         return n.toFixed(p);
+      };
+
+      // ── Drafting helpers (Phase 16) ────────────────────────────
+      // True engineering measurements are derived from integer gx/gy/gz so
+      // they are exact and unit-stable (1 internal step = 0.01 mm).
+      // __edgeLengthMm(a, b) → length in millimetres.
+      window.__edgeLengthMm = function(a, b) {
+        if (!a || !b) return 0;
+        const internalMm = ((sketchState.precision && sketchState.precision.internalStepM) || 0.00001) * 1000;
+        const dx = (b.gx - a.gx);
+        const dy = (b.gy - a.gy);
+        const dz = (b.gz - a.gz);
+        return Math.hypot(dx, dy, dz) * internalMm;
+      };
+      // __formatDim(valueMm) → "10,0" (locale comma, configurable decimals).
+      window.__formatDim = function(valueMm) {
+        const d  = (sketchState.drafting && sketchState.drafting.decimals);
+        const dp = (typeof d === 'number' && d >= 0) ? d : 1;
+        const n  = Number(valueMm);
+        if (!isFinite(n)) return '—';
+        return n.toFixed(dp).replace('.', ',');
+      };
+      // __pointCoordsMm(p) → { x:"10,0", y:"0,0", z:"-30,0" }.
+      window.__pointCoordsMm = function(p) {
+        const internalMm = ((sketchState.precision && sketchState.precision.internalStepM) || 0.00001) * 1000;
+        const fmt = window.__formatDim;
+        return {
+          x: fmt(p.gx * internalMm),
+          y: fmt(p.gy * internalMm),
+          z: fmt(p.gz * internalMm),
+        };
       };
 
       // __setSnapMode(key, on) — toggles one of: gridSnap | pointSnap | midpointSnap | freeMode.

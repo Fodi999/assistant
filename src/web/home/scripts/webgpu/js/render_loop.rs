@@ -267,18 +267,21 @@ pub const JS: &str = r##"
             const dimC = window.__getEdgeLengthConstraint && window.__getEdgeLengthConstraint(e.id);
             const isH  = window.__hasHorizontalConstraint && window.__hasHorizontalConstraint(e.id);
             const isV  = window.__hasVerticalConstraint   && window.__hasVerticalConstraint(e.id);
-            const len  = Math.hypot(b.x-a.x, b.y-a.y, b.z-a.z);
             const mx   = (sa.x + sb.x) * 0.5;
             const my   = (sa.y + sb.y) * 0.5;
 
-            if (dimC || isHover || isSel) {
-              const txt = len.toFixed(2) + 'u';
+            // Legacy edge-length label kept only for constrained edges (the
+            // dimension constraint is part of the sketch model, not the
+            // drafting overlay). Hover/selected previews now go through the
+            // Drafting Overlay pass.
+            if (dimC) {
+              const lenMm = (window.__edgeLengthMm && window.__edgeLengthMm(a, b)) || 0;
+              const txt = (window.__formatDim ? window.__formatDim(lenMm) : lenMm.toFixed(1));
               ctx.font = '11px "JetBrains Mono", system-ui, monospace';
               const w = ctx.measureText(txt).width + 8;
-              const bright = !!dimC;
-              ctx.fillStyle = bright ? 'rgba(15,23,42,0.95)' : 'rgba(15,23,42,0.85)';
+              ctx.fillStyle = 'rgba(15,23,42,0.95)';
               ctx.fillRect(mx - w/2, my - 18, w, 16);
-              ctx.fillStyle = bright ? '#67e8f9' : (isSel ? '#fb923c' : '#facc15');
+              ctx.fillStyle = '#67e8f9';
               ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
               ctx.fillText(txt, mx, my - 10);
             }
@@ -521,6 +524,269 @@ pub const JS: &str = r##"
               ctx.restore();
             }
           }
+
+          // ── Drafting Overlay (Phase 16) ──────────────────────────
+          // Engineering-drawing decorations on top of geometry. Pure visual.
+          (function drawDraftingOverlay() {
+            const df = sketchState.drafting;
+            if (!df) return;
+
+            const internalMm = ((sketchState.precision && sketchState.precision.internalStepM) || 0.00001) * 1000;
+            const DIM_COL    = 'rgba(226,232,240,0.85)';
+            const DIM_FILL   = 'rgba(15,23,42,0.85)';
+            const EXT_COL    = 'rgba(148,163,184,0.75)';
+            const CENTER_COL = 'rgba(167,139,250,0.65)';
+            const fontMain   = '11px "JetBrains Mono", system-ui, monospace';
+            const fontTiny   = '10px "JetBrains Mono", system-ui, monospace';
+
+            // ── Primitive: arrowhead at (x,y) along direction (dx,dy) ──
+            function arrow(x, y, dx, dy, size) {
+              const L  = Math.hypot(dx, dy) || 1;
+              const ux = dx / L, uy = dy / L;
+              const px = -uy,    py = ux; // perpendicular
+              const bx = x - ux * size,   by = y - uy * size;
+              const lx = bx + px * size * 0.4, ly = by + py * size * 0.4;
+              const rx = bx - px * size * 0.4, ry = by - py * size * 0.4;
+              ctx.beginPath();
+              ctx.moveTo(x, y); ctx.lineTo(lx, ly); ctx.lineTo(rx, ry); ctx.closePath();
+              ctx.fill();
+            }
+
+            // ── Primitive: full dimension line A→B with extension lines,
+            //              arrowheads and centered label. Screen-space.
+            function drawDimension(saX, saY, sbX, sbY, label, opts) {
+              opts = opts || {};
+              const off  = (opts.offsetPx  != null) ? opts.offsetPx  : (df.dimensionOffsetPx || 20);
+              const arrS = (opts.arrowPx   != null) ? opts.arrowPx   : (df.arrowSizePx       || 7);
+              const gap  = (opts.gapPx     != null) ? opts.gapPx     : (df.textGapPx         || 6);
+              const flip = !!opts.flip; // mirror offset to the other side
+              let dx = sbX - saX, dy = sbY - saY;
+              const L = Math.hypot(dx, dy);
+              if (L < 1) return;
+              const ux = dx / L, uy = dy / L;
+              // normal: 90° CCW; flip → flip side.
+              let nx = -uy, ny = ux;
+              if (flip) { nx = -nx; ny = -ny; }
+              const off1 = off;
+              const dax = saX + nx * off1, day = saY + ny * off1;
+              const dbx = sbX + nx * off1, dby = sbY + ny * off1;
+
+              ctx.save();
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = EXT_COL;
+              // Extension lines (from geometry to slightly past the dim line).
+              ctx.beginPath();
+              ctx.moveTo(saX + nx * gap, saY + ny * gap);
+              ctx.lineTo(saX + nx * (off1 + 4), saY + ny * (off1 + 4));
+              ctx.moveTo(sbX + nx * gap, sbY + ny * gap);
+              ctx.lineTo(sbX + nx * (off1 + 4), sbY + ny * (off1 + 4));
+              ctx.stroke();
+
+              // Dimension line.
+              ctx.strokeStyle = DIM_COL;
+              ctx.lineWidth = 1.1;
+              ctx.beginPath();
+              ctx.moveTo(dax, day); ctx.lineTo(dbx, dby);
+              ctx.stroke();
+
+              // Arrowheads (pointing outward at each end).
+              ctx.fillStyle = DIM_COL;
+              arrow(dax, day, -ux, -uy, arrS);
+              arrow(dbx, dby,  ux,  uy, arrS);
+
+              // Label centered.
+              const mx = (dax + dbx) * 0.5;
+              const my = (day + dby) * 0.5;
+              ctx.font = fontMain;
+              const tw = ctx.measureText(label).width + 10;
+              const th = 16;
+              ctx.fillStyle = DIM_FILL;
+              ctx.fillRect(mx - tw / 2, my - th / 2, tw, th);
+              ctx.fillStyle = '#e2e8f0';
+              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              ctx.fillText(label, mx, my);
+              ctx.restore();
+            }
+
+            // ── Dimensions for selected edges ──
+            if (df.showDimensions) {
+              for (const eid of sketchState.selectedEdgeIds) {
+                const e = eById.get(eid); if (!e) continue;
+                const a = pById.get(e.a), b = pById.get(e.b); if (!a || !b) continue;
+                const sa = w2s(a.x, a.y, a.z), sb = w2s(b.x, b.y, b.z);
+                if (!sa || !sb) continue;
+                const lenMm = window.__edgeLengthMm(a, b);
+                drawDimension(sa.x, sa.y, sb.x, sb.y, window.__formatDim(lenMm));
+              }
+
+              // ── Profile main dimensions (width on top, height on right) ──
+              const profId = sketchState.selectedProfileId;
+              if (profId) {
+                const prof = (sketchState.profiles || []).find(p => p.id === profId);
+                if (prof && prof.pointIds && prof.pointIds.length >= 3) {
+                  // Compute screen-space bounding box of the profile.
+                  let minSx = Infinity, minSy = Infinity, maxSx = -Infinity, maxSy = -Infinity;
+                  // Also compute world-space extents in the working plane axes
+                  // so the label is exact engineering length.
+                  let minGx = Infinity, maxGx = -Infinity;
+                  let minGy = Infinity, maxGy = -Infinity;
+                  let minGz = Infinity, maxGz = -Infinity;
+                  let okScreen = true;
+                  for (const pid of prof.pointIds) {
+                    const p = pById.get(pid); if (!p) { okScreen = false; break; }
+                    const s = w2s(p.x, p.y, p.z); if (!s) { okScreen = false; break; }
+                    if (s.x < minSx) minSx = s.x;
+                    if (s.y < minSy) minSy = s.y;
+                    if (s.x > maxSx) maxSx = s.x;
+                    if (s.y > maxSy) maxSy = s.y;
+                    if (p.gx < minGx) minGx = p.gx; if (p.gx > maxGx) maxGx = p.gx;
+                    if (p.gy < minGy) minGy = p.gy; if (p.gy > maxGy) maxGy = p.gy;
+                    if (p.gz < minGz) minGz = p.gz; if (p.gz > maxGz) maxGz = p.gz;
+                  }
+                  if (okScreen) {
+                    // Pick width/height axes from the plane.
+                    const pl = prof.plane || sketchState.workingPlane || 'XZ';
+                    let widthMm, heightMm;
+                    if      (pl === 'XZ') { widthMm = (maxGx - minGx) * internalMm; heightMm = (maxGz - minGz) * internalMm; }
+                    else if (pl === 'XY') { widthMm = (maxGx - minGx) * internalMm; heightMm = (maxGy - minGy) * internalMm; }
+                    else                  { widthMm = (maxGz - minGz) * internalMm; heightMm = (maxGy - minGy) * internalMm; }
+
+                    // Top horizontal dim (width): from top-left to top-right.
+                    if (widthMm > 0) {
+                      drawDimension(minSx, minSy, maxSx, minSy,
+                                    window.__formatDim(widthMm),
+                                    { flip: true /* offset upward */ });
+                    }
+                    // Right vertical dim (height): from top-right to bottom-right.
+                    if (heightMm > 0) {
+                      drawDimension(maxSx, minSy, maxSx, maxSy,
+                                    window.__formatDim(heightMm));
+                    }
+                  }
+                }
+              }
+            }
+
+            // ── Edge lengths (every edge, throttled when many) ──
+            if (df.showEdgeLengths) {
+              const total = sketchState.edges.length;
+              const showAll = total < 20;
+              for (const e of sketchState.edges) {
+                const isHover = sketchState.hoverEdgeId === e.id;
+                const isSel   = sketchState.selectedEdgeIds.has(e.id);
+                if (!showAll && !isHover && !isSel) continue;
+                if (df.showDimensions && isSel) continue; // already drawn as proper dim
+                const a = pById.get(e.a), b = pById.get(e.b); if (!a || !b) continue;
+                const sa = w2s(a.x, a.y, a.z), sb = w2s(b.x, b.y, b.z);
+                if (!sa || !sb) continue;
+                const lenMm = window.__edgeLengthMm(a, b);
+                const txt = window.__formatDim(lenMm);
+                const mx = (sa.x + sb.x) * 0.5, my = (sa.y + sb.y) * 0.5;
+                ctx.font = fontTiny;
+                const tw = ctx.measureText(txt).width + 8;
+                ctx.fillStyle = DIM_FILL;
+                ctx.fillRect(mx - tw / 2, my - 8, tw, 14);
+                ctx.fillStyle = '#cbd5e1';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(txt, mx, my - 1);
+              }
+            }
+
+            // ── Point coordinate labels (hovered + selected only) ──
+            if (df.showPointLabels) {
+              const ids = new Set(sketchState.selectedPointIds);
+              if (sketchState.hoverPointId) ids.add(sketchState.hoverPointId);
+              for (const id of ids) {
+                const p = pById.get(id); if (!p) continue;
+                const s = w2s(p.x, p.y, p.z); if (!s) continue;
+                const c = window.__pointCoordsMm(p);
+                const t = 'X ' + c.x + '  Y ' + c.y + '  Z ' + c.z;
+                ctx.font = fontTiny;
+                const tw = ctx.measureText(t).width + 8;
+                ctx.fillStyle = DIM_FILL;
+                ctx.fillRect(s.x + 10, s.y - 22, tw, 14);
+                ctx.fillStyle = '#cbd5e1';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                ctx.fillText(t, s.x + 14, s.y - 15);
+              }
+            }
+
+            // ── Centerlines (dashed crosses through profile centroids) ──
+            if (df.showCenterlines && sketchState.profiles && sketchState.profiles.length) {
+              ctx.save();
+              ctx.setLineDash([8, 3, 2, 3]);
+              ctx.lineWidth = 0.8;
+              ctx.strokeStyle = CENTER_COL;
+              for (const prof of sketchState.profiles) {
+                let cx = 0, cy = 0, cz = 0, n = 0;
+                for (const pid of prof.pointIds) {
+                  const p = pById.get(pid); if (!p) { n = 0; break; }
+                  cx += p.x; cy += p.y; cz += p.z; n++;
+                }
+                if (!n) continue;
+                cx /= n; cy /= n; cz /= n;
+                const sc = w2s(cx, cy, cz); if (!sc) continue;
+                ctx.beginPath();
+                ctx.moveTo(sc.x - 18, sc.y); ctx.lineTo(sc.x + 18, sc.y);
+                ctx.moveTo(sc.x, sc.y - 18); ctx.lineTo(sc.x, sc.y + 18);
+                ctx.stroke();
+              }
+              ctx.restore();
+            }
+
+            // ── Grid numbers (ruler along left + bottom viewport edges) ──
+            if (df.showGridNumbers) {
+              const pr      = sketchState.precision || {};
+              const dispM   = (pr.displayGridStepM > 0) ? pr.displayGridStepM : 0.001;
+              const pl      = sketchState.workingPlane || 'XZ';
+              const minStep = 60; // do not draw labels closer than 60 px
+              // For each axis on this plane, walk integer multiples of dispM
+              // around the visible extent and project to screen.
+              function rulerAxis(getWorld, dimEdge /* 'bottom' | 'left' */, axisName) {
+                // Scan from -N .. N around origin; in practice the camera frames
+                // origin, so this catches everything visible.
+                const N = 200;
+                let lastPx = -Infinity;
+                ctx.font = fontTiny;
+                ctx.fillStyle = '#94a3b8';
+                ctx.textAlign = (dimEdge === 'bottom') ? 'center' : 'right';
+                ctx.textBaseline = (dimEdge === 'bottom') ? 'bottom' : 'middle';
+                for (let i = -N; i <= N; i++) {
+                  const w = getWorld(i * dispM);
+                  const s = w2s(w[0], w[1], w[2]);
+                  if (!s) continue;
+                  const key = (dimEdge === 'bottom') ? s.x : s.y;
+                  if (Math.abs(key - lastPx) < minStep) continue;
+                  // Clip to viewport edge zone.
+                  if (dimEdge === 'bottom') {
+                    if (s.x < 30 || s.x > sk.width - 30) continue;
+                  } else {
+                    if (s.y < 30 || s.y > sk.height - 30) continue;
+                  }
+                  lastPx = key;
+                  const valMm = (i * dispM) * 1000;
+                  const txt = window.__formatDim(valMm);
+                  if (dimEdge === 'bottom') {
+                    ctx.fillText(txt, s.x, sk.height - 6);
+                  } else {
+                    ctx.fillText(txt, sk.width - 6, s.y);
+                  }
+                }
+              }
+              // Bottom ruler = horizontal axis of current plane.
+              // Left   ruler = vertical   axis of current plane.
+              if (pl === 'XZ') {
+                rulerAxis(v => [v, 0, 0], 'bottom', 'X');
+                rulerAxis(v => [0, 0, v], 'left',   'Z');
+              } else if (pl === 'XY') {
+                rulerAxis(v => [v, 0, 0], 'bottom', 'X');
+                rulerAxis(v => [0, v, 0], 'left',   'Y');
+              } else { // YZ
+                rulerAxis(v => [0, 0, v], 'bottom', 'Z');
+                rulerAxis(v => [0, v, 0], 'left',   'Y');
+              }
+            }
+          })();
 
           // ── Status message banner (bottom-center) ──
           if (sketchState.statusMessage) {

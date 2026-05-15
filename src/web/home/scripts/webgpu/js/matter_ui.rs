@@ -200,6 +200,25 @@ pub const JS: &str = r##"
           const cur = parseFloat(dispInput.value);
           if (!isFinite(cur) || Math.abs(cur - mm) > 1e-6) dispInput.value = String(mm);
         }
+
+        // ── Drafting overlay sync (Phase 16) ──
+        const df = sketchState.drafting || {};
+        const dfMap = [
+          ['si-df-dims',   'showDimensions'],
+          ['si-df-edges',  'showEdgeLengths'],
+          ['si-df-points', 'showPointLabels'],
+          ['si-df-grid',   'showGridNumbers'],
+          ['si-df-center', 'showCenterlines'],
+        ];
+        for (const [id, key] of dfMap) {
+          const el = document.getElementById(id);
+          if (el && document.activeElement !== el) el.checked = !!df[key];
+        }
+        const decEl = document.getElementById('si-df-decimals');
+        if (decEl && document.activeElement !== decEl) {
+          const v = (typeof df.decimals === 'number') ? df.decimals : 1;
+          if (parseInt(decEl.value, 10) !== v) decEl.value = String(v);
+        }
         const beChk = document.getElementById('si-use-backend');
         if (beChk) beChk.checked = !!sketchState.useBackendCommands;
         const onoffEl = document.getElementById('si-backend-onoff');
@@ -332,6 +351,44 @@ pub const JS: &str = r##"
             sketchState.precision.displayGridStepM = mm / 1000;
             window.__setStatusMessage('Display grid: ' + mm + ' mm');
             window.__updateSketchInspector();
+          });
+        }
+
+        // ── Drafting overlay toggles (Phase 16) ──
+        if (!sketchState.drafting) {
+          sketchState.drafting = {
+            showDimensions: true, showEdgeLengths: false,
+            showPointLabels: false, showGridNumbers: false, showCenterlines: false,
+            unit: 'mm', decimals: 1,
+            dimensionOffsetPx: 20, arrowSizePx: 7, textGapPx: 6,
+          };
+        }
+        const dfBindings = [
+          ['si-df-dims',   'showDimensions'],
+          ['si-df-edges',  'showEdgeLengths'],
+          ['si-df-points', 'showPointLabels'],
+          ['si-df-grid',   'showGridNumbers'],
+          ['si-df-center', 'showCenterlines'],
+        ];
+        for (const [id, key] of dfBindings) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          el.checked = !!sketchState.drafting[key];
+          el.addEventListener('change', () => {
+            sketchState.drafting[key] = el.checked;
+            window.__setStatusMessage('Drafting · ' + key + ' = ' + (el.checked ? 'on' : 'off'));
+          });
+        }
+        const decEl = document.getElementById('si-df-decimals');
+        if (decEl) {
+          decEl.value = String((typeof sketchState.drafting.decimals === 'number')
+                               ? sketchState.drafting.decimals : 1);
+          decEl.addEventListener('change', () => {
+            let v = parseInt(decEl.value, 10);
+            if (!isFinite(v)) v = 1;
+            v = Math.max(0, Math.min(3, v));
+            decEl.value = String(v);
+            sketchState.drafting.decimals = v;
           });
         }
         const beChk = document.getElementById('si-use-backend');

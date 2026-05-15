@@ -220,6 +220,28 @@ pub fn matter_lab_section() -> String {
             <dd><label><input type="checkbox" id="si-touchpad-mode" checked> precision lock</label></dd>
           </dl>
 
+          <!-- ── Drafting Overlay (Phase 16) ── -->
+          <div class="si-divider"></div>
+          <div class="si-block-title">Drafting</div>
+          <dl class="si-grid">
+            <dt>Show</dt>
+            <dd style="display:flex; flex-direction:column; gap:2px; font-size:11px;">
+              <label><input type="checkbox" id="si-df-dims"     checked> Dimensions</label>
+              <label><input type="checkbox" id="si-df-edges">          Edge lengths</label>
+              <label><input type="checkbox" id="si-df-points">         Point coords</label>
+              <label><input type="checkbox" id="si-df-grid">           Grid numbers</label>
+              <label><input type="checkbox" id="si-df-center">         Centerlines</label>
+            </dd>
+            <dt>Unit</dt>     <dd>mm</dd>
+            <dt>Decimals</dt>
+            <dd>
+              <input id="si-df-decimals" type="number" step="1" min="0" max="3"
+                     value="1" style="width:42px; background:rgba(15,23,42,0.7); color:#e2e8f0;
+                     border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 4px;
+                     font:inherit; text-align:right;">
+            </dd>
+          </dl>
+
           <!-- ── CAD Engine (unified WASM-first + backend sync) ── -->
           <div class="si-divider"></div>
           <div class="si-block-title">CAD Engine</div>
