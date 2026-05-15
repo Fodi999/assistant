@@ -189,13 +189,21 @@ pub fn matter_lab_section() -> String {
             </ul>
           </div>
 
-          <!-- ── Precision (Phase 7) ── -->
+          <!-- ── Precision (Phase 15: split internal / snap / display) ── -->
           <div class="si-divider"></div>
           <div class="si-block-title">Precision</div>
           <dl class="si-grid">
-            <dt>Grid size</dt>
+            <dt>Precision</dt>     <dd id="si-internal-step">0.01 mm</dd>
+            <dt>Snap (mm)</dt>
             <dd>
-              <input id="si-grid-size" type="number" step="any" min="0.001" max="1000"
+              <input id="si-snap-step" type="number" step="any" min="0.001" max="1000"
+                     value="1" style="width:64px; background:rgba(15,23,42,0.7); color:#e2e8f0;
+                     border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 4px;
+                     font:inherit; text-align:right;">
+            </dd>
+            <dt>Display grid (mm)</dt>
+            <dd>
+              <input id="si-display-step" type="number" step="any" min="0.01" max="1000"
                      value="1" style="width:64px; background:rgba(15,23,42,0.7); color:#e2e8f0;
                      border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 4px;
                      font:inherit; text-align:right;">
@@ -212,31 +220,17 @@ pub fn matter_lab_section() -> String {
             <dd><label><input type="checkbox" id="si-touchpad-mode" checked> precision lock</label></dd>
           </dl>
 
-          <!-- ── Sketch Engine (Phase 11) ── -->
+          <!-- ── CAD Engine (unified WASM-first + backend sync) ── -->
           <div class="si-divider"></div>
-          <div class="si-block-title">Sketch Engine</div>
+          <div class="si-block-title">CAD Engine</div>
           <dl class="si-grid">
-            <dt>Mode</dt>
-            <dd>
-              <select id="si-engine-mode"
-                      style="background:rgba(15,23,42,0.7); color:#e2e8f0;
-                             border:1px solid rgba(148,163,184,0.25); border-radius:4px;
-                             padding:1px 4px; font:inherit;">
-                <option value="backend">Backend</option>
-                <option value="wasm">WASM</option>
-                <option value="hybrid">Hybrid</option>
-              </select>
-            </dd>
-            <dt>WASM</dt> <dd><span id="si-wasm-status" class="si-wasm-status si-wasm-not_loaded">not_loaded</span></dd>
-            <dt>Last backend</dt> <dd id="si-last-be-ms">— ms</dd>
+            <dt>WASM</dt>         <dd><span id="si-wasm-status" class="si-wasm-status si-wasm-not_loaded">not_loaded</span></dd>
+            <dt>Backend</dt>      <dd><span id="si-sync-status" class="si-sync si-sync-idle">—</span></dd>
             <dt>Last WASM</dt>    <dd id="si-last-wasm-ms">— ms</dd>
-            <dt>Sync</dt>         <dd><span id="si-sync-status" class="si-sync si-sync-idle">—</span></dd>
+            <dt>Last backend</dt> <dd id="si-last-be-ms">— ms</dd>
+            <dt>Pending</dt>      <dd id="si-cad-pending">0</dd>
             <dt>Last result</dt>  <dd id="si-backend-last">—</dd>
           </dl>
-          <div class="sio-actions">
-            <button id="si-wasm-load"     class="sio-btn" title="Lazy-import /wasm/sketch_engine/">⬇ Load WASM</button>
-            <button id="si-wasm-validate" class="sio-btn" title="Run validation in WASM">✓ Validate WASM</button>
-          </div>
 
           <!-- ── JSON Export / Import ── -->
           <div class="si-divider"></div>

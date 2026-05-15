@@ -40,7 +40,11 @@ pub const JS: &str = r##"
         snap: { kind: "grid", pointId: null, gx: 0, gy: 0, gz: 0 },
 
         // ── Grid / plane ──
-        gridSize: 1.0,
+        // gridSize == precision.internalStepM (0.01 mm). It is the *engine*
+        // grid step — what the CAD core (WASM + backend) uses to convert
+        // (gx,gy,gz) ↔ world meters. Do not edit directly; use
+        // sketchState.precision.{internalStepM, snapStepM, displayGridStepM}.
+        gridSize: 0.00001,
         workingPlane: "XZ",
         showGrid: true,
         plane: "XZ",
@@ -72,9 +76,17 @@ pub const JS: &str = r##"
         selectedProfileId: null,
         hoverProfileId: null,
 
-        // ── Precision / Snap (Phase 12) ──
+        // ── Precision / Snap (Phase 12 + Phase 15: split precision) ──
         coordPrecision: 3,
         precision: {
+          // ── Three-tier precision model ──
+          // internalStepM  = engine resolution (0.01 mm). Drives gx/gy/gz.
+          // snapStepM      = visible snap step in world meters (1 mm default).
+          // displayGridStepM = rendered grid line spacing in world meters.
+          internalStepM:    0.00001,  // 0.01 mm
+          snapStepM:        0.001,    // 1 mm
+          displayGridStepM: 0.001,    // 1 mm
+
           touchpadMode: true,
           snapEnabled: true,
           gridSnap:    true,
@@ -154,24 +166,43 @@ pub const JS: &str = r##"
       };
 
       // ── Coordinate helpers ─────────────────────────────────────
+      // Internal step = engine grid resolution (0.01 mm). Snap step = visible
+      // user-facing snap quantum (e.g. 1 mm). Snap rounds in world space first,
+      // then the snapped world value is converted to internal grid coords.
+      function __internalStep() {
+        const pr = sketchState.precision;
+        const s = (pr && pr.internalStepM) || sketchState.gridSize || 1.0;
+        return (isFinite(s) && s > 0) ? s : 1.0;
+      }
+      function __snapStep() {
+        const pr = sketchState.precision;
+        const s = pr && pr.snapStepM;
+        return (isFinite(s) && s > 0) ? s : __internalStep();
+      }
       window.__gridToWorld = function(gx, gy, gz) {
-        const g = sketchState.gridSize || 1.0;
+        const g = __internalStep();
         return { x: gx * g, y: gy * g, z: gz * g };
       };
       window.__worldToGrid = function(x, y, z) {
-        const g = sketchState.gridSize || 1.0;
+        const g = __internalStep();
         return { gx: Math.round(x / g), gy: Math.round(y / g), gz: Math.round(z / g) };
       };
       window.__snapWorldToGrid = function(world, plane) {
-        const g = sketchState.gridSize || 1.0;
+        const internal = __internalStep();
+        const snap     = __snapStep();
         const pl = plane || sketchState.workingPlane || "XZ";
-        let gx = Math.round(world.x / g);
-        let gy = Math.round(world.y / g);
-        let gz = Math.round(world.z / g);
+        // 1. Round world coords to the visible snap step.
+        const sx = Math.round(world.x / snap) * snap;
+        const sy = Math.round(world.y / snap) * snap;
+        const sz = Math.round(world.z / snap) * snap;
+        // 2. Convert to internal grid coords (always integers at 0.01 mm).
+        let gx = Math.round(sx / internal);
+        let gy = Math.round(sy / internal);
+        let gz = Math.round(sz / internal);
         if (pl === "XZ") gy = 0;
         if (pl === "XY") gz = 0;
         if (pl === "YZ") gx = 0;
-        return { gx, gy, gz, x: gx * g, y: gy * g, z: gz * g };
+        return { gx, gy, gz, x: gx * internal, y: gy * internal, z: gz * internal };
       };
 
       // ── Precision helpers (Phase 12) ───────────────────────────
@@ -206,15 +237,17 @@ pub const JS: &str = r##"
         }
       };
 
-      // __cycleGridSize(direction) — halve (-1) or double (+1) gridSize.
-      // Clamps to [0.001, 100].
+      // __cycleGridSize(direction) — halve (-1) or double (+1) the visible
+      // snap step (precision.snapStepM). Internal engine step is unaffected.
+      // Clamps to [0.0001 m, 1 m] (0.1 mm … 1 m).
       window.__cycleGridSize = function(direction) {
-        const cur = sketchState.gridSize || 1.0;
+        const pr = sketchState.precision;
+        const cur = (pr && pr.snapStepM) || 0.001;
         const next = (direction > 0) ? cur * 2 : cur / 2;
-        const clamped = Math.max(0.001, Math.min(100, next));
-        sketchState.gridSize = clamped;
+        const clamped = Math.max(0.0001, Math.min(1.0, next));
+        pr.snapStepM = clamped;
         if (window.__setStatusMessage) {
-          window.__setStatusMessage('Grid size: ' + clamped);
+          window.__setStatusMessage('Snap step: ' + (clamped * 1000).toFixed(3) + ' mm');
         }
         if (window.__notifySketchChanged) window.__notifySketchChanged();
       };
@@ -412,7 +445,8 @@ pub const JS: &str = r##"
         if (pl === 'YZ') point.x = 0;
       }
       function __refreshGridCoords(point) {
-        const g = sketchState.gridSize || 1.0;
+        const g = (sketchState.precision && sketchState.precision.internalStepM)
+                  || sketchState.gridSize || 1.0;
         point.gx = Math.round(point.x / g);
         point.gy = Math.round(point.y / g);
         point.gz = Math.round(point.z / g);
@@ -748,7 +782,7 @@ pub const JS: &str = r##"
       window.__addPoint = function(gx, gy, gz) {
         const existing = window.__findPointAtGrid(gx, gy, gz);
         if (existing) return existing;
-        const g = sketchState.gridSize || 1.0;
+        const g = __internalStep();
         const p = { id: window.__nextPointId(), gx, gy, gz, x: gx * g, y: gy * g, z: gz * g };
         sketchState.points.push(p);
         window.__notifySketchChanged();
@@ -1135,6 +1169,18 @@ pub const JS: &str = r##"
 
         const g = (obj.gridSize == null) ? 1.0 : obj.gridSize;
         sketchState.gridSize     = g;
+        // Keep three-tier precision in sync: imported gridSize *is* the
+        // internal engine step. snap/display steps are preserved from the
+        // current session (or fall back to sensible defaults).
+        if (sketchState.precision) {
+          sketchState.precision.internalStepM = g;
+          if (!isFinite(sketchState.precision.snapStepM) || sketchState.precision.snapStepM <= 0) {
+            sketchState.precision.snapStepM = 0.001;
+          }
+          if (!isFinite(sketchState.precision.displayGridStepM) || sketchState.precision.displayGridStepM <= 0) {
+            sketchState.precision.displayGridStepM = 0.001;
+          }
+        }
         sketchState.workingPlane = obj.workingPlane || 'XZ';
         sketchState.plane        = sketchState.workingPlane;
 

@@ -137,8 +137,15 @@ pub const JS: &str = r##"
           }
 
           // ── Plane-aware grid ──
-          const g     = sketchState.gridSize || 1.0;
-          const N     = 20;
+          // Use the *display* grid step (separate from the engine's internal
+          // 0.01 mm precision step). Falls back to gridSize for legacy.
+          const pr    = sketchState.precision;
+          const g     = (pr && pr.displayGridStepM > 0)
+                        ? pr.displayGridStepM
+                        : (sketchState.gridSize || 1.0);
+          // Adaptive cell count: keep visible extent ≈ 0.5 m for small steps,
+          // 20 cells minimum, 200 maximum (legacy big-step sketches stay calm).
+          const N     = Math.max(20, Math.min(200, Math.round(0.5 / g)));
           const plane = sketchState.workingPlane || 'XZ';
           function gridLineA(i) {
             if (plane === 'XZ') return { a: [i*g, 0, -N*g], b: [i*g, 0,  N*g] };

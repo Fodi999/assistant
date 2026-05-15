@@ -178,13 +178,27 @@ pub const JS: &str = r##"
           btn.classList.toggle('active', btn.dataset.plane === (sketchState.workingPlane || 'XZ'));
         });
 
-        // ── Precision block (Phase 7) ──
-        const gridInput = document.getElementById('si-grid-size');
-        if (gridInput && document.activeElement !== gridInput) {
-          const cur = parseFloat(gridInput.value);
-          if (!isFinite(cur) || Math.abs(cur - sketchState.gridSize) > 1e-9) {
-            gridInput.value = String(sketchState.gridSize);
-          }
+        // ── Precision block (Phase 15: split internal / snap / display) ──
+        const pr = sketchState.precision || {};
+        // Internal step is a fixed-from-UI read-only label (in mm).
+        const internalEl = document.getElementById('si-internal-step');
+        if (internalEl) {
+          const mm = (pr.internalStepM || 0.00001) * 1000;
+          internalEl.textContent = mm.toFixed(3).replace(/\.?0+$/, '') + ' mm';
+        }
+        // Snap step input (mm).
+        const snapInput = document.getElementById('si-snap-step');
+        if (snapInput && document.activeElement !== snapInput) {
+          const mm  = (pr.snapStepM || 0.001) * 1000;
+          const cur = parseFloat(snapInput.value);
+          if (!isFinite(cur) || Math.abs(cur - mm) > 1e-6) snapInput.value = String(mm);
+        }
+        // Display-grid step input (mm).
+        const dispInput = document.getElementById('si-display-step');
+        if (dispInput && document.activeElement !== dispInput) {
+          const mm  = (pr.displayGridStepM || 0.001) * 1000;
+          const cur = parseFloat(dispInput.value);
+          if (!isFinite(cur) || Math.abs(cur - mm) > 1e-6) dispInput.value = String(mm);
         }
         const beChk = document.getElementById('si-use-backend');
         if (beChk) beChk.checked = !!sketchState.useBackendCommands;
@@ -193,31 +207,28 @@ pub const JS: &str = r##"
         // Last result: use unified lastCommandMsg (set by all engine modes).
         set('si-backend-last', sketchState.lastCommandMsg || '—');
 
-        // ── Engine mode + perf metrics (Phase 11) ──
-        const modeSel = document.getElementById('si-engine-mode');
-        if (modeSel && document.activeElement !== modeSel) {
-          modeSel.value = sketchState.engineMode || 'backend';
-        }
-        set('si-last-be-ms',   (sketchState.lastBackendMs || 0).toFixed(1)  + ' ms');
-        set('si-last-wasm-ms', (sketchState.lastWasmMs    || 0).toFixed(2) + ' ms');
-        const syncEl = document.getElementById('si-sync-status');
-        if (syncEl) {
-          const s = sketchState.lastSyncStatus || '—';
-          let label = s, cls = 'idle';
-          if      (s === 'ok')      { label = 'OK';      cls = 'ok';      }
-          else if (s === 'diff')    { label = 'DIFF';    cls = 'diff';    }
-          else if (s === 'pending') { label = 'pending'; cls = 'pending'; }
-          else if (s === 'err')     { label = 'ERR';     cls = 'err';     }
-          syncEl.textContent = label;
-          syncEl.className   = 'si-sync si-sync-' + cls;
-        }
-        // WASM status badge (Phase 10) — kept in same block.
+        // ── CAD Engine metrics (unified WASM-first + backend sync) ──
+        // WASM status
         const wstatusEl = document.getElementById('si-wasm-status');
-        if (wstatusEl && window.wasmState) {
-          const st = window.wasmState.status || 'not_loaded';
+        if (wstatusEl && window.cadState) {
+          const st = window.cadState.wasmStatus || 'not_loaded';
           wstatusEl.textContent = st;
           wstatusEl.className   = 'si-wasm-status si-wasm-' + st;
         }
+        // Backend status (sync)
+        const bestatusEl = document.getElementById('si-backend-status');
+        if (bestatusEl && window.cadState) {
+          const st = window.cadState.backendStatus || 'idle';
+          bestatusEl.textContent = st;
+          bestatusEl.className = 'si-backend-status si-backend-' + st;
+        }
+        // Timing metrics
+        if (window.cadState) {
+          set('si-last-wasm-ms', (window.cadState.lastWasmMs || 0).toFixed(2) + ' ms');
+          set('si-last-be-ms',   (window.cadState.lastBackendMs || 0).toFixed(1) + ' ms');
+        }
+        // Pending operations count
+        set('si-cad-pending', window.cadState ? String(window.cadState.pending) : '0');
 
         // ── Profile selection block (Phase 8) ──
         const profSel = window.__getSelectedProfile && window.__getSelectedProfile();
@@ -293,17 +304,33 @@ pub const JS: &str = r##"
         if (window.__notifySketchChanged) window.__notifySketchChanged();
         if (window.__bindSketchIO) window.__bindSketchIO();
 
-        // ── Precision controls (Phase 7) ──
-        const gridInput = document.getElementById('si-grid-size');
-        if (gridInput) {
-          gridInput.addEventListener('change', () => {
-            let v = parseFloat(gridInput.value);
-            if (!isFinite(v)) v = 1;
-            v = Math.max(0.001, Math.min(1000, v));
-            sketchState.gridSize = v;
-            gridInput.value = String(v);
-            window.__setStatusMessage('Grid size: ' + v);
+        // ── Precision controls (Phase 15: split internal / snap / display) ──
+        // Snap step (UI in mm, stored in meters).
+        const snapInput = document.getElementById('si-snap-step');
+        if (snapInput) {
+          snapInput.addEventListener('change', () => {
+            let mm = parseFloat(snapInput.value);
+            if (!isFinite(mm) || mm <= 0) mm = 1;
+            mm = Math.max(0.001, Math.min(1000, mm));
+            snapInput.value = String(mm);
+            if (!sketchState.precision) sketchState.precision = {};
+            sketchState.precision.snapStepM = mm / 1000;
+            window.__setStatusMessage('Snap step: ' + mm + ' mm');
             if (window.__notifySketchChanged) window.__notifySketchChanged();
+            window.__updateSketchInspector();
+          });
+        }
+        // Display grid step (UI in mm, stored in meters).
+        const dispInput = document.getElementById('si-display-step');
+        if (dispInput) {
+          dispInput.addEventListener('change', () => {
+            let mm = parseFloat(dispInput.value);
+            if (!isFinite(mm) || mm <= 0) mm = 1;
+            mm = Math.max(0.01, Math.min(1000, mm));
+            dispInput.value = String(mm);
+            if (!sketchState.precision) sketchState.precision = {};
+            sketchState.precision.displayGridStepM = mm / 1000;
+            window.__setStatusMessage('Display grid: ' + mm + ' mm');
             window.__updateSketchInspector();
           });
         }
@@ -340,14 +367,7 @@ pub const JS: &str = r##"
           });
         }
 
-        // ── Engine mode select (Phase 11) ──
-        const modeSel = document.getElementById('si-engine-mode');
-        if (modeSel) {
-          modeSel.value = sketchState.engineMode || 'backend';
-          modeSel.addEventListener('change', () => {
-            window.__setEngineMode(modeSel.value);
-          });
-        }
+        // Engine mode dropdown removed — CAD Engine is now the only unified mode
 
         // ── Profile selection buttons (Phase 8) ──
         const pfCopy = document.getElementById('si-pf-copy');
@@ -372,22 +392,7 @@ pub const JS: &str = r##"
           });
         }
 
-        // ── WASM engine controls (Phase 10) ──
-        const wLoad = document.getElementById('si-wasm-load');
-        if (wLoad) {
-          wLoad.addEventListener('click', async () => {
-            await window.__loadSketchWasm();
-            window.__updateSketchInspector();
-          });
-        }
-        const wValid = document.getElementById('si-wasm-validate');
-        if (wValid) {
-          wValid.addEventListener('click', async () => {
-            const r = await window.__wasmValidateSketch();
-            if (!r) { window.__setStatusMessage('WASM validate failed'); return; }
-            window.__updateSketchInspector();
-          });
-        }
+        // WASM controls removed — CAD Engine auto-loads WASM at startup
 
         window.__updateSketchInspector();
         setInterval(() => {
