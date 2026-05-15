@@ -15,8 +15,14 @@ pub const JS: &str = r##"
         const valid = ['select', 'point', 'line', 'grab', 'delete'];
         if (!valid.includes(tool)) return;
         if (sketchState.activeTool !== tool) {
-          sketchState.line.startPointId = null;
-          sketchState.line.previewPoint = null;
+          // Tear down any active Line Tool chain when switching tools.
+          if (sketchState.line && (sketchState.line.active || sketchState.line.startPointId)) {
+            if (window.__finishLineChain) window.__finishLineChain('tool switched');
+            else {
+              sketchState.line = { active: false, startPointId: null, startWorld: null };
+              sketchState.phase = 'idle';
+            }
+          }
           sketchState.phase = 'idle';
         }
         sketchState.activeTool = tool;

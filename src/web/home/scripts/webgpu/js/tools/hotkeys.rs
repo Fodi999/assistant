@@ -175,9 +175,12 @@ pub const JS: &str = r##"
 
         if (k === 'escape') {
           if (sketchState.line.active || sketchState.line.startPointId) {
-            sketchState.line = { active: false, startPointId: null, startWorld: null };
-            sketchState.phase = 'idle';
-            window.__setStatusMessage('Line cancelled');
+            if (window.__finishLineChain) window.__finishLineChain('cancelled');
+            else {
+              sketchState.line = { active: false, startPointId: null, startWorld: null };
+              sketchState.phase = 'idle';
+              window.__setStatusMessage('Line cancelled');
+            }
           } else {
             sketchState.selectedPointIds.clear();
             sketchState.selectedEdgeIds.clear();
@@ -188,10 +191,13 @@ pub const JS: &str = r##"
 
         if (k === 'enter') {
           if (sketchState.line.active || sketchState.line.startPointId) {
-            sketchState.line = { active: false, startPointId: null, startWorld: null };
-            sketchState.phase = 'idle';
-            window.__setStatusMessage('Line mode finished');
-            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            if (window.__finishLineChain) window.__finishLineChain();
+            else {
+              sketchState.line = { active: false, startPointId: null, startWorld: null };
+              sketchState.phase = 'idle';
+              window.__setStatusMessage('Line mode finished');
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            }
           }
           return true;
         }
