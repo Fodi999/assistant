@@ -24,6 +24,8 @@ mod sketch_backend;
 mod sketch_wasm;
 mod sketch_cad_engine;
 mod dimension_editor;
+mod sketch_constraints;
+mod profile_popup;
 mod perf_hud;
 mod extrude;
 
@@ -61,6 +63,8 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + sketch_wasm::JS.len()
             + sketch_cad_engine::JS.len()
             + dimension_editor::JS.len()
+            + sketch_constraints::JS.len()
+            + profile_popup::JS.len()
             + 256,
     );
     out.push_str(init::JS);
@@ -103,6 +107,10 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch_cad_engine::JS);
     // 10c. Dimension editor popup — click drafting labels to edit geometry.
     out.push_str(dimension_editor::JS);
+    // 10d. Profile constraints — Analyze / Make Rectangle / Make Square / Equalize.
+    out.push_str(sketch_constraints::JS);
+    // 10e. Profile Check popup — floating panel opened by double-clicking a profile.
+    out.push_str(profile_popup::JS);
     // 11. Performance HUD (Phase 9) — perfState + frame/render/overlay/pick/backend ms
     out.push_str(perf_hud::JS);
     out.push_str(matter_state::JS);

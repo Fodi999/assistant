@@ -165,10 +165,11 @@ pub const JS: &str = r##"
       };
 
       // ─────────────────────────────────────────────────────────
-      // __handleSketchDoubleClick(ndcX, ndcY)
-      // Select tool: double-click edge → select profile or endpoints.
+      // __handleSketchDoubleClick(ndcX, ndcY, px, py)
+      // Select tool: double-click profile/edge → open Profile popup or select endpoints.
+      // px, py = CSS pixel position from the original pointer event.
       // ─────────────────────────────────────────────────────────
-      window.__handleSketchDoubleClick = function(ndcX, ndcY) {
+      window.__handleSketchDoubleClick = function(ndcX, ndcY, px, py) {
         if (sketchState.activeTool !== "select") return;
         const eId = window.__pickEdgeAt(ndcX, ndcY);
         if (!eId) {
@@ -182,6 +183,8 @@ pub const JS: &str = r##"
                 sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
               }
               if (window.__updateSketchInspector) window.__updateSketchInspector();
+              // Open Profile Check popup at click position.
+              if (window.__openProfilePopup) window.__openProfilePopup(px || 200, py || 200);
             }
           }
           return;
@@ -199,10 +202,14 @@ pub const JS: &str = r##"
           if (sketchState.selectedProfileId === prof.id) {
             sketchState.selectedPointIds = new Set(prof.pointIds);
             sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+            // Already selected — open popup.
+            if (window.__openProfilePopup) window.__openProfilePopup(px || 200, py || 200);
           } else {
             window.__selectProfile(prof.id);
             sketchState.selectedPointIds = new Set(prof.pointIds);
             sketchState.selectedEdgeIds  = new Set(prof.edgeIds);
+            // First selection — open popup immediately too.
+            if (window.__openProfilePopup) window.__openProfilePopup(px || 200, py || 200);
           }
         } else {
           const e = sketchState.edges.find(x => x.id === eId);

@@ -58,13 +58,18 @@ pub const JS: &str = r##"
         const px      = e.clientX - rect2.left;
         const py      = e.clientY - rect2.top;
 
-        // ── Dimension label click: open editor, suppress orbit ──
+        // ── Dimension label click: open editor, suppress orbit/pan/select ──
         if (e.button === 0) {
           const labelHit = window.__hitDraftingLabel?.(px, py);
           if (labelHit) {
             window.__openDimensionEditor?.(labelHit, e.clientX, e.clientY);
+            try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
             dragging        = false;
+            panning         = false;
+            orbiting        = false;
             gizmoHandleDrag = false;
+            e.preventDefault();
+            e.stopPropagation();
             return;
           }
         }
@@ -221,7 +226,7 @@ pub const JS: &str = r##"
         const rect = canvas.getBoundingClientRect();
         const ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
         const ndcY = 1 - ((e.clientY - rect.top)  / rect.height) * 2;
-        if (window.__handleSketchDoubleClick) window.__handleSketchDoubleClick(ndcX, ndcY);
+        if (window.__handleSketchDoubleClick) window.__handleSketchDoubleClick(ndcX, ndcY, e.clientX, e.clientY);
       });
 
       // ── Pointer move — hover, snap, orbit, pan ───────────────────
@@ -237,6 +242,23 @@ pub const JS: &str = r##"
           x: e.clientX - rect.left,
           y: e.clientY - rect.top,
         };
+
+        // ── Dimension label hover (only when not dragging) ──
+        // Show text-cursor over editable dim labels so users discover the
+        // click-to-edit affordance. Drops back to tool cursor when leaving.
+        if (!dragging && !orbiting && !panning) {
+          const _pxCss = e.clientX - rect.left;
+          const _pyCss = e.clientY - rect.top;
+          const labelHover = window.__hitDraftingLabel?.(_pxCss, _pyCss);
+          if (labelHover) {
+            canvas.style.cursor = 'text';
+            window.__draftingLabelHover = labelHover;
+            return;
+          } else if (window.__draftingLabelHover) {
+            window.__draftingLabelHover = null;
+            __setCursorForTool();
+          }
+        }
 
         // Hover + snap (always, even without dragging).
         // Priority: POINT SNAP → EDGE/GRID SNAP (via __resolveSnapTarget)
