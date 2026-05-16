@@ -311,6 +311,90 @@ pub fn apply_add_edge(req: AddEdgeRequest) -> SketchCommandResult {
     }
 }
 
+// ── Move point ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MovePointRequest {
+    pub sketch: SketchGraph,
+    #[serde(rename = "workingPlane")]
+    pub working_plane: String,
+    #[serde(rename = "gridSize")]
+    pub grid_size: f64,
+    #[serde(rename = "pointId")]
+    pub point_id: String,
+    pub gx: i32,
+    pub gy: i32,
+    pub gz: i32,
+    #[serde(
+        default,
+        alias = "ignorePlaneConstraint",
+        rename = "ignore_plane_constraint"
+    )]
+    pub ignore_plane_constraint: Option<bool>,
+}
+
+pub fn apply_move_point(req: MovePointRequest) -> SketchCommandResult {
+    let mut sketch = req.sketch;
+    sketch.working_plane = req.working_plane.clone();
+    sketch.grid_size = req.grid_size;
+
+    if !(req.grid_size.is_finite() && req.grid_size > 0.0) {
+        return err_result(sketch, format!("gridSize must be positive finite, got {}", req.grid_size));
+    }
+
+    let plane = match WorkingPlane::parse(&req.working_plane) {
+        Some(p) => p,
+        None => return err_result(sketch, format!("Invalid workingPlane: {}", req.working_plane)),
+    };
+
+    let ignore_plane = req.ignore_plane_constraint.unwrap_or(false);
+    if !ignore_plane && !plane.accepts_grid(req.gx, req.gy, req.gz) {
+        return err_result(sketch, format!(
+            "Invalid grid coordinate for plane {}: ({},{},{})",
+            plane.as_str(), req.gx, req.gy, req.gz
+        ));
+    }
+
+    // Ensure the point exists.
+    if sketch.find_point(&req.point_id).is_none() {
+        return err_result(sketch, format!("pointId not found: {}", req.point_id));
+    }
+
+    // Reject if a DIFFERENT point already occupies the target grid position.
+    if let Some(existing_id) = sketch.find_point_by_grid(req.gx, req.gy, req.gz).map(|p| p.id.clone()) {
+        if existing_id != req.point_id {
+            return err_result(sketch, format!(
+                "Target ({},{},{}) is already occupied by point {}",
+                req.gx, req.gy, req.gz, existing_id
+            ));
+        }
+    }
+
+    // Apply move.
+    let g = req.grid_size;
+    if let Some(pt) = sketch.points.iter_mut().find(|p| p.id == req.point_id) {
+        pt.gx = req.gx;
+        pt.gy = req.gy;
+        pt.gz = req.gz;
+        pt.x  = (req.gx as f64) * g;
+        pt.y  = (req.gy as f64) * g;
+        pt.z  = (req.gz as f64) * g;
+    }
+
+    let validation = finalize(sketch.clone());
+    sketch.profiles = detect_profiles(&sketch);
+
+    SketchCommandResult {
+        ok: true,
+        sketch,
+        created_point_id: None,
+        reused_point_id: None,
+        created_edge_id: None,
+        validation,
+        message: Some(format!("Moved point {} to ({},{},{})", req.point_id, req.gx, req.gy, req.gz)),
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

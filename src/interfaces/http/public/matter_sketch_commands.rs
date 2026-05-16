@@ -3,6 +3,7 @@
 //!   POST /api/matter/sketch/validate
 //!   POST /api/matter/sketch/add-point
 //!   POST /api/matter/sketch/add-edge
+//!   POST /api/matter/sketch/move-point
 //!
 //! All endpoints accept a SketchGraph + parameters and return a
 //! `SketchCommandResult` (or `ValidationResult` for /validate). Pure
@@ -12,8 +13,8 @@ use axum::{Json, http::StatusCode};
 use serde::Deserialize;
 
 use crate::domain::matter::{
-    apply_add_edge, apply_add_point,
-    commands::{AddEdgeRequest, AddPointRequest, SketchCommandResult},
+    apply_add_edge, apply_add_point, apply_move_point,
+    commands::{AddEdgeRequest, AddPointRequest, MovePointRequest, SketchCommandResult},
     sketch::SketchGraph,
     validation::{validate, ValidationResult},
 };
@@ -39,4 +40,10 @@ pub async fn add_edge_endpoint(
     Json(req): Json<AddEdgeRequest>,
 ) -> Result<Json<SketchCommandResult>, (StatusCode, Json<serde_json::Value>)> {
     Ok(Json(apply_add_edge(req)))
+}
+
+pub async fn move_point_endpoint(
+    Json(req): Json<MovePointRequest>,
+) -> Result<Json<SketchCommandResult>, (StatusCode, Json<serde_json::Value>)> {
+    Ok(Json(apply_move_point(req)))
 }

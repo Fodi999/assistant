@@ -23,6 +23,7 @@ mod sketch_io;
 mod sketch_backend;
 mod sketch_wasm;
 mod sketch_cad_engine;
+mod dimension_editor;
 mod perf_hud;
 mod extrude;
 
@@ -59,6 +60,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + perf_hud::JS.len()
             + sketch_wasm::JS.len()
             + sketch_cad_engine::JS.len()
+            + dimension_editor::JS.len()
             + 256,
     );
     out.push_str(init::JS);
@@ -99,6 +101,8 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     // 10b. CAD Engine adapter — WASM-first + backend-sync, single entry point
     //      for all tools. Overrides __createPointViaEngine / __createEdgeViaEngine.
     out.push_str(sketch_cad_engine::JS);
+    // 10c. Dimension editor popup — click drafting labels to edit geometry.
+    out.push_str(dimension_editor::JS);
     // 11. Performance HUD (Phase 9) — perfState + frame/render/overlay/pick/backend ms
     out.push_str(perf_hud::JS);
     out.push_str(matter_state::JS);

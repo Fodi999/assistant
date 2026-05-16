@@ -161,6 +161,7 @@ pub const JS: &str = r##"
           arrowSizePx:       7,
           textGapPx:         6,
         },
+        draftingHitLabels: [], // populated each frame by drafting overlay
       };
       window.sketchState = sketchState;
 
@@ -266,6 +267,42 @@ pub const JS: &str = r##"
           y: fmt(p.gy * internalMm),
           z: fmt(p.gz * internalMm),
         };
+      };
+
+      // __hitDraftingLabel(px, py) → hit descriptor | null.
+      // Checks screen-space rectangles registered by the drafting overlay each frame.
+      window.__hitDraftingLabel = function(px, py) {
+        const labels = sketchState.draftingHitLabels;
+        if (!labels || !labels.length) return null;
+        for (const lbl of labels) {
+          const r = lbl.rect;
+          if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+            return lbl;
+          }
+        }
+        return null;
+      };
+
+      // __setEdgeLengthMm(edgeId, lengthMm) — moves the B-endpoint of the
+      // specified edge to achieve the requested length while keeping A fixed.
+      window.__setEdgeLengthMm = async function(edgeId, lengthMm) {
+        const edge = (sketchState.edges || []).find(e => e.id === edgeId);
+        if (!edge) { window.__setStatusMessage?.('Edge not found: ' + edgeId); return; }
+        const a = (sketchState.points || []).find(p => p.id === edge.a);
+        const b = (sketchState.points || []).find(p => p.id === edge.b);
+        if (!a || !b) { window.__setStatusMessage?.('Points not found for edge ' + edgeId); return; }
+        const internalMm = ((sketchState.precision && sketchState.precision.internalStepM) || 0.00001) * 1000;
+        const dx = b.gx - a.gx, dy = b.gy - a.gy, dz = b.gz - a.gz;
+        const oldLen = Math.hypot(dx, dy, dz);
+        if (oldLen < 0.001) { window.__setStatusMessage?.('Edge too short to resize'); return; }
+        const newLenInternal = Math.round(lengthMm / internalMm);
+        if (newLenInternal < 1) { window.__setStatusMessage?.('Length too small'); return; }
+        const scale = newLenInternal / oldLen;
+        const newGx = a.gx + Math.round(dx * scale);
+        const newGy = a.gy + Math.round(dy * scale);
+        const newGz = a.gz + Math.round(dz * scale);
+        await window.__movePointViaEngine?.(b.id, newGx, newGy, newGz);
+        window.__setStatusMessage?.('Edge length → ' + window.__formatDim(lengthMm) + ' mm');
       };
 
       // __setSnapMode(key, on) — toggles one of: gridSnap | pointSnap | midpointSnap | freeMode.

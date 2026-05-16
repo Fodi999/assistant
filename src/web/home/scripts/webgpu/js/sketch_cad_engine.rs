@@ -312,6 +312,62 @@ pub const JS: &str = r##"
         return null;
       };
 
+      // ── Move point (WASM-first + backend-sync) ──────────────────────────
+      window.__cadMovePoint = async function(pointId, gx, gy, gz, options) {
+        options = options || {};
+        const commandId = ++cadState.commandSeq;
+        const preSketch = window.__sketchExportPayload ? window.__sketchExportPayload() : null;
+        if (!preSketch) return { ok: false, error: 'no sketch payload' };
+
+        const payload = Object.assign({
+          sketch: preSketch.sketch,
+          workingPlane: preSketch.workingPlane,
+          gridSize:     preSketch.gridSize,
+          pointId, gx, gy, gz,
+          ignorePlaneConstraint: true,
+        }, options);
+
+        // WASM-first — instant local update.
+        let wasmResult = null;
+        if (window.sketch_engine && window.sketch_engine.wasm_move_point) {
+          try {
+            const raw = window.sketch_engine.wasm_move_point(JSON.stringify(payload));
+            wasmResult = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          } catch (e) {
+            wasmResult = null;
+          }
+        }
+        if (wasmResult && wasmResult.ok && wasmResult.sketch) {
+          if (window.__sketchApply) window.__sketchApply(wasmResult.sketch);
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+        }
+
+        // Backend sync — fire-and-forget; reconcile on return.
+        const skipBackend = options.skipBackend || false;
+        if (!skipBackend) {
+          (async () => {
+            try {
+              const resp = await fetch('/api/matter/sketch/move-point', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              if (!resp.ok) return;
+              const backendResult = await resp.json();
+              if (backendResult && backendResult.ok && backendResult.sketch) {
+                window.__cadReconcile(backendResult.sketch, commandId, cadState.commandSeq);
+              }
+            } catch (_) {}
+          })();
+        }
+
+        const source = wasmResult;
+        if (!source || !source.ok) {
+          return { ok: false, error: (source && source.message) || 'CAD: move-point failed' };
+        }
+        return { ok: true, pointId };
+      };
+
       // ── FACADE — override legacy engine helpers ─────────────────────────
       // All tools (Line, Rect, Circle, Copy Connect, presets in sketch_state)
       // call these two functions. By routing them through the CAD adapter we
@@ -330,6 +386,11 @@ pub const JS: &str = r##"
         if (existing) return existing.id;
         const r = await window.__cadAddEdge(aId, bId, kind || 'normal', { ignorePlaneConstraint: true });
         return r && r.ok ? r.edgeId : null;
+      };
+
+      window.__movePointViaEngine = async function(pointId, gx, gy, gz) {
+        const r = await window.__cadMovePoint(pointId, gx, gy, gz, { ignorePlaneConstraint: true });
+        return r && r.ok;
       };
 
       // ── Auto-bootstrap WASM on first use ────────────────────────────────

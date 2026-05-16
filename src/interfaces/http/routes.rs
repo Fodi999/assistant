@@ -1334,6 +1334,7 @@ pub fn create_router(
         .route("/api/matter/sketch/validate",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::validate_sketch_endpoint)) // 🆕 Phase 7
         .route("/api/matter/sketch/add-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_point_endpoint)) // 🆕 Phase 7
         .route("/api/matter/sketch/add-edge",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_edge_endpoint)) // 🆕 Phase 7
+        .route("/api/matter/sketch/move-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::move_point_endpoint)) // 🆕 Phase 17
         .nest("/api", protected_chat_routes) // 🔒 POST /api/chat + /api/chat/event (auth + billing)
         .nest("/api", protected_routes);
 

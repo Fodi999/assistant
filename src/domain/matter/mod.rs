@@ -12,7 +12,9 @@ pub use sketch_engine::sketch;
 pub use sketch_engine::validation;
 
 pub use sketch_engine::{
-    apply_add_edge, apply_add_point, detect_profiles, validate, AddEdgeRequest, AddPointRequest,
+    apply_add_edge, apply_add_point, apply_move_point,
+    detect_profiles, validate,
+    AddEdgeRequest, AddPointRequest, MovePointRequest,
     Constraint, Edge, Point, PointRefOrGrid, Profile, SketchCommandResult, SketchGraph,
     ValidationIssue, ValidationResult, WorkingPlane,
 };

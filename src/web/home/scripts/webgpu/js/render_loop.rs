@@ -531,6 +531,9 @@ pub const JS: &str = r##"
             const df = sketchState.drafting;
             if (!df) return;
 
+            // Reset hit-test registry for this frame.
+            sketchState.draftingHitLabels = [];
+
             const internalMm = ((sketchState.precision && sketchState.precision.internalStepM) || 0.00001) * 1000;
             const DIM_COL    = 'rgba(226,232,240,0.85)';
             const DIM_FILL   = 'rgba(15,23,42,0.85)';
@@ -554,7 +557,7 @@ pub const JS: &str = r##"
 
             // ── Primitive: full dimension line A→B with extension lines,
             //              arrowheads and centered label. Screen-space.
-            function drawDimension(saX, saY, sbX, sbY, label, opts) {
+            function drawDimension(saX, saY, sbX, sbY, label, opts, hitMeta) {
               opts = opts || {};
               const off  = (opts.offsetPx  != null) ? opts.offsetPx  : (df.dimensionOffsetPx || 20);
               const arrS = (opts.arrowPx   != null) ? opts.arrowPx   : (df.arrowSizePx       || 7);
@@ -606,6 +609,14 @@ pub const JS: &str = r##"
               ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
               ctx.fillText(label, mx, my);
               ctx.restore();
+
+              // Register hit rect (6px padding) for click-to-edit.
+              if (hitMeta) {
+                const pad = 6;
+                sketchState.draftingHitLabels.push(Object.assign({}, hitMeta, {
+                  rect: { x: mx - tw / 2 - pad, y: my - th / 2 - pad, w: tw + pad * 2, h: th + pad * 2 },
+                }));
+              }
             }
 
             // ── Dimensions for selected edges ──
@@ -616,7 +627,8 @@ pub const JS: &str = r##"
                 const sa = w2s(a.x, a.y, a.z), sb = w2s(b.x, b.y, b.z);
                 if (!sa || !sb) continue;
                 const lenMm = window.__edgeLengthMm(a, b);
-                drawDimension(sa.x, sa.y, sb.x, sb.y, window.__formatDim(lenMm));
+                drawDimension(sa.x, sa.y, sb.x, sb.y, window.__formatDim(lenMm), undefined,
+                  { kind: 'edge_length_dimension', edgeId: eid, aPointId: a.id, bPointId: b.id, valueMm: lenMm });
               }
 
               // ── Profile main dimensions (width on top, height on right) ──
@@ -655,12 +667,15 @@ pub const JS: &str = r##"
                     if (widthMm > 0) {
                       drawDimension(minSx, minSy, maxSx, minSy,
                                     window.__formatDim(widthMm),
-                                    { flip: true /* offset upward */ });
+                                    { flip: true /* offset upward */ },
+                                    { kind: 'profile_width_dimension', profileId: profId, valueMm: widthMm });
                     }
                     // Right vertical dim (height): from top-right to bottom-right.
                     if (heightMm > 0) {
                       drawDimension(maxSx, minSy, maxSx, maxSy,
-                                    window.__formatDim(heightMm));
+                                    window.__formatDim(heightMm),
+                                    {},
+                                    { kind: 'profile_height_dimension', profileId: profId, valueMm: heightMm });
                     }
                   }
                 }
@@ -689,6 +704,12 @@ pub const JS: &str = r##"
                 ctx.fillStyle = '#cbd5e1';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillText(txt, mx, my - 1);
+                // Register hit rect for click-to-edit.
+                const pad = 6;
+                sketchState.draftingHitLabels.push({
+                  kind: 'edge_length_dimension', edgeId: e.id, aPointId: a.id, bPointId: b.id, valueMm: lenMm,
+                  rect: { x: mx - tw / 2 - pad, y: my - 8 - pad, w: tw + pad * 2, h: 14 + pad * 2 },
+                });
               }
             }
 

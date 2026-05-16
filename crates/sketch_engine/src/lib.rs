@@ -23,6 +23,7 @@ pub use sketch::{Constraint, Edge, Point, SketchGraph, WorkingPlane};
 pub use validation::{validate, ValidationIssue, ValidationResult};
 pub use profiles::{detect_profiles, Profile};
 pub use commands::{
-    apply_add_edge, apply_add_point, AddEdgeRequest, AddPointRequest, PointRefOrGrid,
+    apply_add_edge, apply_add_point, apply_move_point,
+    AddEdgeRequest, AddPointRequest, MovePointRequest, PointRefOrGrid,
     SketchCommandResult,
 };

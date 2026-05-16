@@ -57,6 +57,18 @@ pub const JS: &str = r##"
         const rect2   = canvas.getBoundingClientRect();
         const px      = e.clientX - rect2.left;
         const py      = e.clientY - rect2.top;
+
+        // ── Dimension label click: open editor, suppress orbit ──
+        if (e.button === 0) {
+          const labelHit = window.__hitDraftingLabel?.(px, py);
+          if (labelHit) {
+            window.__openDimensionEditor?.(labelHit, e.clientX, e.clientY);
+            dragging        = false;
+            gizmoHandleDrag = false;
+            return;
+          }
+        }
+
         const hitAxis = __hitGizmoHandle(px, py);
 
         const isGrab = sketchState.grab?.active;

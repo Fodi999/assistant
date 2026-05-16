@@ -12,7 +12,7 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::commands::{apply_add_edge, apply_add_point, AddEdgeRequest, AddPointRequest};
+use crate::commands::{apply_add_edge, apply_add_point, apply_move_point, AddEdgeRequest, AddPointRequest, MovePointRequest};
 use crate::sketch::SketchGraph;
 use crate::validation::validate;
 
@@ -54,6 +54,17 @@ pub fn wasm_add_edge(json: &str) -> String {
         Err(e) => return err_json(format!("bad json: {e}")),
     };
     let result = apply_add_edge(req);
+    serde_json::to_string(&result).unwrap_or_else(|e| err_json(e.to_string()))
+}
+
+/// JSON-encoded `MovePointRequest` → JSON-encoded `SketchCommandResult`.
+#[wasm_bindgen]
+pub fn wasm_move_point(json: &str) -> String {
+    let req: MovePointRequest = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(e) => return err_json(format!("bad json: {e}")),
+    };
+    let result = apply_move_point(req);
     serde_json::to_string(&result).unwrap_or_else(|e| err_json(e.to_string()))
 }
 
