@@ -110,6 +110,17 @@ pub const JS: &str = r##"
         try { return JSON.parse(out); } catch (e) { return null; }
       };
 
+      window.__wasmMovePoint = function(request) {
+        if (wasmState.status !== 'ready' || !window.__wasmModule) return null;
+        if (!window.__wasmModule.wasm_move_point) return null;
+        const payload = JSON.stringify(request);
+        const t0  = performance.now();
+        const out = window.__wasmModule.wasm_move_point(payload);
+        const dt  = performance.now() - t0;
+        wasmState.lastAddMs = dt;
+        try { return JSON.parse(out); } catch (e) { return null; }
+      };
+
       // ── Sketch signature for hybrid cross-check ───────────────
       // Stable canonical fingerprint: ignores ordering, normalises edge
       // endpoints (lo-hi) and includes profile shape.

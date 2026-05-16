@@ -313,57 +313,87 @@ pub const JS: &str = r##"
       };
 
       // ── Move point (WASM-first + backend-sync) ──────────────────────────
+      // Mirrors __cadAddPoint pattern exactly.
       window.__cadMovePoint = async function(pointId, gx, gy, gz, options) {
-        options = options || {};
-        const commandId = ++cadState.commandSeq;
-        const preSketch = window.__sketchExportPayload ? window.__sketchExportPayload() : null;
-        if (!preSketch) return { ok: false, error: 'no sketch payload' };
+        const opts = options || {};
+        const commandId = __cadNextId();
+        const skipBackend = !!opts.skipBackend;
 
-        const payload = Object.assign({
-          sketch: preSketch.sketch,
-          workingPlane: preSketch.workingPlane,
-          gridSize:     preSketch.gridSize,
-          pointId, gx, gy, gz,
-          ignorePlaneConstraint: true,
-        }, options);
-
-        // WASM-first — instant local update.
+        // 1) WASM first — instant local apply.
         let wasmResult = null;
-        if (window.sketch_engine && window.sketch_engine.wasm_move_point) {
-          try {
-            const raw = window.sketch_engine.wasm_move_point(JSON.stringify(payload));
-            wasmResult = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          } catch (e) {
-            wasmResult = null;
+        let wasmReady  = false;
+        if (window.__ensureSketchWasm) {
+          wasmReady = await window.__ensureSketchWasm();
+        }
+        __cadSetWasmStatus();
+
+        const preSketch = window.__sketchToJSON();
+
+        if (wasmReady && window.__wasmMovePoint) {
+          const t0 = performance.now();
+          wasmResult = window.__wasmMovePoint({
+            commandId,
+            sketch:                preSketch,
+            workingPlane:          sketchState.workingPlane || 'XZ',
+            gridSize:              sketchState.gridSize,
+            pointId,
+            gx: gx | 0, gy: gy | 0, gz: gz | 0,
+            ignorePlaneConstraint: true,
+          });
+          const dt = performance.now() - t0;
+          cadState.lastWasmMs    = dt;
+          sketchState.lastWasmMs = dt;
+          if (window.__perfSample) window.__perfSample('wasm', dt);
+          if (wasmResult && wasmResult.ok && wasmResult.sketch) {
+            window.__applyBackendSketchResult(wasmResult);
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
           }
         }
-        if (wasmResult && wasmResult.ok && wasmResult.sketch) {
-          if (window.__sketchApply) window.__sketchApply(wasmResult.sketch);
-          if (window.__updateSketchInspector) window.__updateSketchInspector();
-        }
 
-        // Backend sync — fire-and-forget; reconcile on return.
-        const skipBackend = options.skipBackend || false;
+        // 2) Backend sync — fire-and-forget; reconcile on return.
         if (!skipBackend) {
           (async () => {
+            cadState.pending++;
+            __cadSetSyncStatus('pending');
             try {
-              const resp = await fetch('/api/matter/sketch/move-point', {
-                method: 'POST',
+              const t0 = performance.now();
+              const res = await fetch('/api/matter/sketch/move-point', {
+                method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({
+                  commandId,
+                  sketch:                preSketch,
+                  workingPlane:          sketchState.workingPlane || 'XZ',
+                  gridSize:              sketchState.gridSize,
+                  pointId,
+                  gx: gx | 0, gy: gy | 0, gz: gz | 0,
+                  ignorePlaneConstraint: true,
+                }),
               });
-              if (!resp.ok) return;
-              const backendResult = await resp.json();
-              if (backendResult && backendResult.ok && backendResult.sketch) {
-                window.__cadReconcile(backendResult.sketch, commandId, cadState.commandSeq);
+              const dt = performance.now() - t0;
+              cadState.lastBackendMs   = dt;
+              cadState.lastSyncMs      = dt;
+              sketchState.lastBackendMs = dt;
+              if (window.__perfSample) window.__perfSample('backend', dt);
+              if (res.ok) {
+                const json = await res.json();
+                __cadReconcile(json, wasmResult);
+              } else {
+                __cadSetSyncStatus('error');
+                if (window.__perfMarkBackendError) window.__perfMarkBackendError();
               }
-            } catch (_) {}
+            } catch (_) {
+              __cadSetSyncStatus('offline');
+              if (window.__perfMarkBackendError) window.__perfMarkBackendError();
+            } finally {
+              cadState.pending = Math.max(0, cadState.pending - 1);
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+            }
           })();
         }
 
-        const source = wasmResult;
-        if (!source || !source.ok) {
-          return { ok: false, error: (source && source.message) || 'CAD: move-point failed' };
+        if (!wasmResult || !wasmResult.ok) {
+          return { ok: false, error: (wasmResult && wasmResult.message) || 'CAD: move-point failed' };
         }
         return { ok: true, pointId };
       };
@@ -390,7 +420,7 @@ pub const JS: &str = r##"
 
       window.__movePointViaEngine = async function(pointId, gx, gy, gz) {
         const r = await window.__cadMovePoint(pointId, gx, gy, gz, { ignorePlaneConstraint: true });
-        return r && r.ok;
+        return r || { ok: false, error: 'move-point: no result' };
       };
 
       // ── Auto-bootstrap WASM on first use ────────────────────────────────

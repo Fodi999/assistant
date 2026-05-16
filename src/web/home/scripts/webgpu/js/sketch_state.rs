@@ -283,26 +283,115 @@ pub const JS: &str = r##"
         return null;
       };
 
-      // __setEdgeLengthMm(edgeId, lengthMm) — moves the B-endpoint of the
-      // specified edge to achieve the requested length while keeping A fixed.
-      window.__setEdgeLengthMm = async function(edgeId, lengthMm) {
+      // ── CAD mm/internal conversion helpers ─────────────────────
+      // 1 internal step = 0.01 mm (internalStepM = 0.00001 m).
+      window.__cadInternalStepMm = function() {
+        return ((sketchState.precision && sketchState.precision.internalStepM) || 0.00001) * 1000;
+      };
+      window.__parseCadNumber = function(v) {
+        if (typeof v !== 'string') return Number(v);
+        return Number(v.trim().replace(',', '.'));
+      };
+      window.__formatCadNumberMm = function(valueMm, decimals) {
+        const dp = (typeof decimals === 'number') ? decimals : 1;
+        const n  = Number(valueMm);
+        if (!isFinite(n)) return '—';
+        return n.toFixed(dp).replace('.', ',');
+      };
+      window.__gridToMm = function(g) {
+        return g * window.__cadInternalStepMm();
+      };
+      window.__mmToGrid = function(mm) {
+        return Math.round(mm / window.__cadInternalStepMm());
+      };
+      window.__pointToMm = function(p) {
+        const s = window.__cadInternalStepMm();
+        return { x: p.gx * s, y: p.gy * s, z: p.gz * s };
+      };
+      // __pointMmById(id) → { x, y, z } numeric mm | null.
+      window.__pointMmById = function(id) {
+        const p = (sketchState.points || []).find(q => q.id === id);
+        return p ? window.__pointToMm(p) : null;
+      };
+      // __edgeMmById(id) → { a:{x,y,z}, b:{x,y,z}, lengthMm } | null.
+      window.__edgeMmById = function(id) {
+        const e = (sketchState.edges || []).find(q => q.id === id);
+        if (!e) return null;
+        const a = window.__pointMmById(e.a);
+        const b = window.__pointMmById(e.b);
+        if (!a || !b) return null;
+        const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        return { a, b, lengthMm: Math.hypot(dx, dy, dz) };
+      };
+
+      // __setEdgeLengthMm(edgeId, lengthMm, options)
+      //   options.mode: 'fixA_moveB' (default) | 'fixB_moveA' | 'center_moveBoth'
+      // Returns { ok: bool, error?: string }.
+      window.__setEdgeLengthMm = async function(edgeId, lengthMm, options) {
+        const mode = (options && options.mode) || 'fixA_moveB';
         const edge = (sketchState.edges || []).find(e => e.id === edgeId);
-        if (!edge) { window.__setStatusMessage?.('Edge not found: ' + edgeId); return; }
-        const a = (sketchState.points || []).find(p => p.id === edge.a);
-        const b = (sketchState.points || []).find(p => p.id === edge.b);
-        if (!a || !b) { window.__setStatusMessage?.('Points not found for edge ' + edgeId); return; }
-        const internalMm = ((sketchState.precision && sketchState.precision.internalStepM) || 0.00001) * 1000;
+        if (!edge) return { ok: false, error: 'Edge not found: ' + edgeId };
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        const a = byId.get(edge.a);
+        const b = byId.get(edge.b);
+        if (!a || !b) return { ok: false, error: 'Endpoints not found' };
+
+        const stepMm = window.__cadInternalStepMm();
         const dx = b.gx - a.gx, dy = b.gy - a.gy, dz = b.gz - a.gz;
         const oldLen = Math.hypot(dx, dy, dz);
-        if (oldLen < 0.001) { window.__setStatusMessage?.('Edge too short to resize'); return; }
-        const newLenInternal = Math.round(lengthMm / internalMm);
-        if (newLenInternal < 1) { window.__setStatusMessage?.('Length too small'); return; }
+        if (oldLen <= 0) return { ok: false, error: 'Zero-length edge cannot be resized' };
+
+        const newLenInternal = Math.round(lengthMm / stepMm);
+        if (newLenInternal <= 0) return { ok: false, error: 'Length too small' };
+
         const scale = newLenInternal / oldLen;
-        const newGx = a.gx + Math.round(dx * scale);
-        const newGy = a.gy + Math.round(dy * scale);
-        const newGz = a.gz + Math.round(dz * scale);
-        await window.__movePointViaEngine?.(b.id, newGx, newGy, newGz);
-        window.__setStatusMessage?.('Edge length → ' + window.__formatDim(lengthMm) + ' mm');
+
+        if (mode === 'fixA_moveB') {
+          const nx = a.gx + Math.round(dx * scale);
+          const ny = a.gy + Math.round(dy * scale);
+          const nz = a.gz + Math.round(dz * scale);
+          const r = await window.__movePointViaEngine(b.id, nx, ny, nz);
+          if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move B failed' };
+          return { ok: true };
+        }
+        if (mode === 'fixB_moveA') {
+          const nx = b.gx - Math.round(dx * scale);
+          const ny = b.gy - Math.round(dy * scale);
+          const nz = b.gz - Math.round(dz * scale);
+          const r = await window.__movePointViaEngine(a.id, nx, ny, nz);
+          if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move A failed' };
+          return { ok: true };
+        }
+        if (mode === 'center_moveBoth') {
+          const cx = (a.gx + b.gx) / 2;
+          const cy = (a.gy + b.gy) / 2;
+          const cz = (a.gz + b.gz) / 2;
+          const hdx = (dx * scale) / 2;
+          const hdy = (dy * scale) / 2;
+          const hdz = (dz * scale) / 2;
+          const nAx = Math.round(cx - hdx);
+          const nAy = Math.round(cy - hdy);
+          const nAz = Math.round(cz - hdz);
+          const nBx = Math.round(cx + hdx);
+          const nBy = Math.round(cy + hdy);
+          const nBz = Math.round(cz + hdz);
+          const ra = await window.__movePointViaEngine(a.id, nAx, nAy, nAz);
+          if (!ra || !ra.ok) return { ok: false, error: (ra && ra.error) || 'move A failed' };
+          const rb = await window.__movePointViaEngine(b.id, nBx, nBy, nBz);
+          if (!rb || !rb.ok) return { ok: false, error: (rb && rb.error) || 'move B failed' };
+          return { ok: true };
+        }
+        return { ok: false, error: 'Unknown fix mode: ' + mode };
+      };
+
+      // __setPointCoordsMm(pointId, xMm, yMm, zMm) → { ok, error? }.
+      window.__setPointCoordsMm = async function(pointId, xMm, yMm, zMm) {
+        const gx = window.__mmToGrid(xMm);
+        const gy = window.__mmToGrid(yMm);
+        const gz = window.__mmToGrid(zMm);
+        const r = await window.__movePointViaEngine(pointId, gx, gy, gz);
+        if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move failed' };
+        return { ok: true, gx, gy, gz };
       };
 
       // __setSnapMode(key, on) — toggles one of: gridSnap | pointSnap | midpointSnap | freeMode.
