@@ -269,11 +269,26 @@ pub const JS: &str = r##"
         };
       };
 
-      // __hitDraftingLabel(px, py) → hit descriptor | null.
-      // Checks screen-space rectangles registered by the drafting overlay each frame.
-      window.__hitDraftingLabel = function(px, py) {
+      // __hitDraftingLabel(pxCss, pyCss) → hit descriptor | null.
+      //
+      // The drafting overlay (#sketch-canvas) has its backing-buffer sized to
+      // canvas.width/height which equals the WebGPU canvas backing buffer
+      // (DPR-scaled = device pixels). The hit rects in
+      // sketchState.draftingHitLabels are therefore stored in *device pixels*.
+      // Pointer events arrive in CSS pixels (clientX/Y - rect.left/top).
+      // We convert CSS → device by multiplying with (backingW / cssRectW).
+      window.__hitDraftingLabel = function(pxCss, pyCss) {
         const labels = sketchState.draftingHitLabels;
         if (!labels || !labels.length) return null;
+        const sk = document.getElementById('sketch-canvas');
+        let sx = 1, sy = 1;
+        if (sk) {
+          const r = sk.getBoundingClientRect();
+          if (r.width  > 0) sx = sk.width  / r.width;
+          if (r.height > 0) sy = sk.height / r.height;
+        }
+        const px = pxCss * sx;
+        const py = pyCss * sy;
         for (const lbl of labels) {
           const r = lbl.rect;
           if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
@@ -345,12 +360,20 @@ pub const JS: &str = r##"
         if (newLenInternal <= 0) return { ok: false, error: 'Length too small' };
 
         const scale = newLenInternal / oldLen;
+        console.log('[setEdgeLengthMm]', {
+          edgeId, lengthMm, mode,
+          a: { id: a.id, gx: a.gx, gy: a.gy, gz: a.gz },
+          b: { id: b.id, gx: b.gx, gy: b.gy, gz: b.gz },
+          stepMm, oldLen, newLenInternal, scale,
+        });
 
         if (mode === 'fixA_moveB') {
           const nx = a.gx + Math.round(dx * scale);
           const ny = a.gy + Math.round(dy * scale);
           const nz = a.gz + Math.round(dz * scale);
+          console.log('[setEdgeLengthMm] moving B →', { nx, ny, nz });
           const r = await window.__movePointViaEngine(b.id, nx, ny, nz);
+          console.log('[setEdgeLengthMm] move B result', r);
           if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move B failed' };
           return { ok: true };
         }
@@ -358,7 +381,9 @@ pub const JS: &str = r##"
           const nx = b.gx - Math.round(dx * scale);
           const ny = b.gy - Math.round(dy * scale);
           const nz = b.gz - Math.round(dz * scale);
+          console.log('[setEdgeLengthMm] moving A →', { nx, ny, nz });
           const r = await window.__movePointViaEngine(a.id, nx, ny, nz);
+          console.log('[setEdgeLengthMm] move A result', r);
           if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move A failed' };
           return { ok: true };
         }
@@ -375,6 +400,7 @@ pub const JS: &str = r##"
           const nBx = Math.round(cx + hdx);
           const nBy = Math.round(cy + hdy);
           const nBz = Math.round(cz + hdz);
+          console.log('[setEdgeLengthMm] center mode', { nAx, nAy, nAz, nBx, nBy, nBz });
           const ra = await window.__movePointViaEngine(a.id, nAx, nAy, nAz);
           if (!ra || !ra.ok) return { ok: false, error: (ra && ra.error) || 'move A failed' };
           const rb = await window.__movePointViaEngine(b.id, nBx, nBy, nBz);
@@ -389,7 +415,9 @@ pub const JS: &str = r##"
         const gx = window.__mmToGrid(xMm);
         const gy = window.__mmToGrid(yMm);
         const gz = window.__mmToGrid(zMm);
+        console.log('[setPointCoordsMm]', { pointId, xMm, yMm, zMm, gx, gy, gz });
         const r = await window.__movePointViaEngine(pointId, gx, gy, gz);
+        console.log('[setPointCoordsMm] result', r);
         if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move failed' };
         return { ok: true, gx, gy, gz };
       };

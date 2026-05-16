@@ -313,11 +313,20 @@ pub const JS: &str = r##"
       };
 
       // ── Move point (WASM-first + backend-sync) ──────────────────────────
-      // Mirrors __cadAddPoint pattern exactly.
+      // Mirrors __cadAddPoint pattern, with a synchronous backend fallback
+      // for the case when WASM is unavailable (e.g. stale cached module).
       window.__cadMovePoint = async function(pointId, gx, gy, gz, options) {
         const opts = options || {};
         const commandId = __cadNextId();
         const skipBackend = !!opts.skipBackend;
+
+        console.log('[MovePoint] request', { pointId, gx, gy, gz, commandId });
+        console.log('[MovePoint] sketchState', {
+          gridSize: sketchState.gridSize,
+          workingPlane: sketchState.workingPlane,
+          points: (sketchState.points || []).length,
+          edges: (sketchState.edges || []).length,
+        });
 
         // 1) WASM first — instant local apply.
         let wasmResult = null;
@@ -328,74 +337,118 @@ pub const JS: &str = r##"
         __cadSetWasmStatus();
 
         const preSketch = window.__sketchToJSON();
+        const payload = {
+          commandId,
+          sketch:                preSketch,
+          workingPlane:          sketchState.workingPlane || 'XZ',
+          gridSize:              sketchState.gridSize,
+          pointId,
+          gx: gx | 0, gy: gy | 0, gz: gz | 0,
+          ignorePlaneConstraint: true,
+        };
 
         if (wasmReady && window.__wasmMovePoint) {
           const t0 = performance.now();
-          wasmResult = window.__wasmMovePoint({
-            commandId,
-            sketch:                preSketch,
-            workingPlane:          sketchState.workingPlane || 'XZ',
-            gridSize:              sketchState.gridSize,
-            pointId,
-            gx: gx | 0, gy: gy | 0, gz: gz | 0,
-            ignorePlaneConstraint: true,
-          });
+          wasmResult = window.__wasmMovePoint(payload);
           const dt = performance.now() - t0;
           cadState.lastWasmMs    = dt;
           sketchState.lastWasmMs = dt;
           if (window.__perfSample) window.__perfSample('wasm', dt);
+          console.log('[MovePoint] wasmResult', wasmResult);
           if (wasmResult && wasmResult.ok && wasmResult.sketch) {
             window.__applyBackendSketchResult(wasmResult);
             if (window.__updateSketchInspector) window.__updateSketchInspector();
           }
+        } else {
+          console.warn('[MovePoint] WASM not ready', { wasmReady, hasFn: !!window.__wasmMovePoint });
         }
 
-        // 2) Backend sync — fire-and-forget; reconcile on return.
-        if (!skipBackend) {
-          (async () => {
-            cadState.pending++;
-            __cadSetSyncStatus('pending');
-            try {
-              const t0 = performance.now();
-              const res = await fetch('/api/matter/sketch/move-point', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  commandId,
-                  sketch:                preSketch,
-                  workingPlane:          sketchState.workingPlane || 'XZ',
-                  gridSize:              sketchState.gridSize,
-                  pointId,
-                  gx: gx | 0, gy: gy | 0, gz: gz | 0,
-                  ignorePlaneConstraint: true,
-                }),
-              });
-              const dt = performance.now() - t0;
-              cadState.lastBackendMs   = dt;
-              cadState.lastSyncMs      = dt;
-              sketchState.lastBackendMs = dt;
-              if (window.__perfSample) window.__perfSample('backend', dt);
-              if (res.ok) {
-                const json = await res.json();
-                __cadReconcile(json, wasmResult);
-              } else {
-                __cadSetSyncStatus('error');
+        const wasmOk = !!(wasmResult && wasmResult.ok);
+
+        // 2a) WASM SUCCESS → fire-and-forget backend sync, return immediately.
+        if (wasmOk) {
+          if (!skipBackend) {
+            (async () => {
+              cadState.pending++;
+              __cadSetSyncStatus('pending');
+              try {
+                const t0 = performance.now();
+                const res = await fetch('/api/matter/sketch/move-point', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify(payload),
+                });
+                const dt = performance.now() - t0;
+                cadState.lastBackendMs   = dt;
+                cadState.lastSyncMs      = dt;
+                sketchState.lastBackendMs = dt;
+                if (window.__perfSample) window.__perfSample('backend', dt);
+                if (res.ok) {
+                  const json = await res.json();
+                  console.log('[MovePoint] backendResult (bg)', json);
+                  __cadReconcile(json, wasmResult);
+                } else {
+                  console.warn('[MovePoint] backend HTTP', res.status);
+                  __cadSetSyncStatus('error');
+                  if (window.__perfMarkBackendError) window.__perfMarkBackendError();
+                }
+              } catch (err) {
+                console.warn('[MovePoint] backend offline', err);
+                __cadSetSyncStatus('offline');
                 if (window.__perfMarkBackendError) window.__perfMarkBackendError();
+              } finally {
+                cadState.pending = Math.max(0, cadState.pending - 1);
+                if (window.__updateSketchInspector) window.__updateSketchInspector();
               }
-            } catch (_) {
-              __cadSetSyncStatus('offline');
-              if (window.__perfMarkBackendError) window.__perfMarkBackendError();
-            } finally {
-              cadState.pending = Math.max(0, cadState.pending - 1);
-              if (window.__updateSketchInspector) window.__updateSketchInspector();
-            }
-          })();
+            })();
+          }
+          return { ok: true, pointId, source: 'wasm' };
         }
 
-        if (!wasmResult || !wasmResult.ok) {
-          return { ok: false, error: (wasmResult && wasmResult.message) || 'CAD: move-point failed' };
+        // 2b) WASM FAILED / UNAVAILABLE → await backend synchronously so
+        //     the caller learns the real outcome rather than seeing a false
+        //     "failed" while the backend is still in flight.
+        if (skipBackend) {
+          return { ok: false, error: (wasmResult && wasmResult.message) || 'CAD: WASM failed, backend skipped' };
         }
-        return { ok: true, pointId };
+        try {
+          cadState.pending++;
+          __cadSetSyncStatus('pending');
+          const t0 = performance.now();
+          const res = await fetch('/api/matter/sketch/move-point', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload),
+          });
+          const dt = performance.now() - t0;
+          cadState.lastBackendMs   = dt;
+          cadState.lastSyncMs      = dt;
+          sketchState.lastBackendMs = dt;
+          if (window.__perfSample) window.__perfSample('backend', dt);
+          if (!res.ok) {
+            __cadSetSyncStatus('error');
+            if (window.__perfMarkBackendError) window.__perfMarkBackendError();
+            return { ok: false, error: 'CAD: backend HTTP ' + res.status };
+          }
+          const json = await res.json();
+          console.log('[MovePoint] backendResult (await)', json);
+          if (json && json.ok && json.sketch) {
+            // Apply the backend authoritative state directly.
+            window.__applyBackendSketchResult(json);
+            __cadReconcile(json, null);
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            return { ok: true, pointId, source: 'backend', result: json };
+          }
+          return { ok: false, error: (json && json.message) || 'CAD: backend rejected move-point' };
+        } catch (err) {
+          console.warn('[MovePoint] backend offline (await)', err);
+          __cadSetSyncStatus('offline');
+          if (window.__perfMarkBackendError) window.__perfMarkBackendError();
+          return { ok: false, error: 'CAD: backend offline' };
+        } finally {
+          cadState.pending = Math.max(0, cadState.pending - 1);
+          if (window.__updateSketchInspector) window.__updateSketchInspector();
+        }
       };
 
       // ── FACADE — override legacy engine helpers ─────────────────────────

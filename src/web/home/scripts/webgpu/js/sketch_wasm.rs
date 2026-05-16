@@ -38,11 +38,23 @@ pub const JS: &str = r##"
         if (window.__updateSketchInspector) window.__updateSketchInspector();
         try {
           if (!__wasmModulePromise) {
-            __wasmModulePromise = import('/wasm/sketch_engine/sketch_engine.js');
+            // Cache-buster: a per-page-load nonce so the browser never serves
+            // a stale sketch_engine.js / _bg.wasm after `make wasm`.
+            const v = '?v=' + Date.now();
+            __wasmModulePromise = import('/wasm/sketch_engine/sketch_engine.js' + v);
           }
           const mod = await __wasmModulePromise;
-          await mod.default({ module_or_path: '/wasm/sketch_engine/sketch_engine_bg.wasm' });
+          await mod.default({ module_or_path: '/wasm/sketch_engine/sketch_engine_bg.wasm?v=' + Date.now() });
           window.__wasmModule = mod;
+          // Phase 17 self-check — surface available exports in the console
+          // so we can verify wasm_move_point is actually shipped.
+          try {
+            const exported = Object.keys(mod).filter(k => k.startsWith('wasm_'));
+            console.log('[sketch_wasm] loaded; exports:', exported);
+            if (!mod.wasm_move_point) {
+              console.warn('[sketch_wasm] wasm_move_point MISSING from this bundle — server is serving a stale build.');
+            }
+          } catch (_) {}
           // Handshake check.
           try {
             const info = JSON.parse(mod.wasm_engine_info());
@@ -111,14 +123,30 @@ pub const JS: &str = r##"
       };
 
       window.__wasmMovePoint = function(request) {
-        if (wasmState.status !== 'ready' || !window.__wasmModule) return null;
-        if (!window.__wasmModule.wasm_move_point) return null;
+        if (wasmState.status !== 'ready' || !window.__wasmModule) {
+          console.warn('[wasmMovePoint] not ready', { status: wasmState.status, hasModule: !!window.__wasmModule });
+          return null;
+        }
+        if (!window.__wasmModule.wasm_move_point) {
+          console.warn('[wasmMovePoint] wasm_move_point not exported from module. Exported keys:', Object.keys(window.__wasmModule).join(','));
+          return null;
+        }
         const payload = JSON.stringify(request);
-        const t0  = performance.now();
-        const out = window.__wasmModule.wasm_move_point(payload);
-        const dt  = performance.now() - t0;
-        wasmState.lastAddMs = dt;
-        try { return JSON.parse(out); } catch (e) { return null; }
+        console.log('[wasmMovePoint] calling wasm_move_point with payload len', payload.length, 'gridSize=', request.gridSize);
+        let out;
+        try {
+          const t0 = performance.now();
+          out = window.__wasmModule.wasm_move_point(payload);
+          const dt = performance.now() - t0;
+          wasmState.lastAddMs = dt;
+        } catch (e) {
+          console.error('[wasmMovePoint] wasm threw:', e);
+          return null;
+        }
+        try { return JSON.parse(out); } catch (e) {
+          console.error('[wasmMovePoint] JSON.parse failed, raw output:', out);
+          return null;
+        }
       };
 
       // ── Sketch signature for hybrid cross-check ───────────────

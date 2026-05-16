@@ -59,6 +59,13 @@ pub const JS: &str = r##"
                 <label><input type="radio" name="dim-mode" value="fixB_moveA"> Fix B · move A</label>
                 <label><input type="radio" name="dim-mode" value="center_moveBoth"> Center · move both</label>
               </div>
+              <div class="dim-align-label">Align</div>
+              <div class="dim-align">
+                <button class="dim-axis-btn dim-axis-active" type="button" data-axis="free">Free</button>
+                <button class="dim-axis-btn"                type="button" data-axis="X">X</button>
+                <button class="dim-axis-btn"                type="button" data-axis="Y">Y</button>
+                <button class="dim-axis-btn"                type="button" data-axis="Z">Z</button>
+              </div>
             </div>
 
             <div class="dim-sep"></div>
@@ -117,6 +124,29 @@ pub const JS: &str = r##"
               #__dim-editor .dim-modes input[type=radio] {
                 accent-color:${COLORS.accent2};
               }
+              #__dim-editor .dim-align-label {
+                font-size:10px; color:${COLORS.mute};
+                margin:8px 0 4px; text-transform:uppercase;
+                letter-spacing:0.5px;
+              }
+              #__dim-editor .dim-align {
+                display:grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap:4px;
+              }
+              #__dim-editor .dim-axis-btn {
+                background:${COLORS.panel};
+                border:1px solid ${COLORS.border};
+                border-radius:4px;
+                color:${COLORS.fg};
+                font-family:inherit; font-size:11px;
+                padding:3px 0; cursor:pointer;
+              }
+              #__dim-editor .dim-axis-btn:hover { filter:brightness(1.2); }
+              #__dim-editor .dim-axis-btn.dim-axis-active {
+                background:${COLORS.accent}; border-color:${COLORS.accent2};
+                color:#fff;
+              }
               #__dim-editor .dim-row {
                 display:grid;
                 grid-template-columns: 14px 1fr 14px 1fr 14px 1fr;
@@ -174,8 +204,16 @@ pub const JS: &str = r##"
 
           // Block global click/pointer handlers from closing the editor or
           // hitting the canvas behind it.
-          ['pointerdown','mousedown','click','dblclick','contextmenu'].forEach((evt) => {
+          // IMPORTANT: pointerdown/mousedown use capture=true so the canvas
+          // orbit handler (which runs in bubble phase) never sees them.
+          // click/dblclick/contextmenu use bubble phase (capture=false) so
+          // stopPropagation() only prevents them going UP to the canvas —
+          // the event still descends normally to the Apply/Cancel buttons.
+          ['pointerdown','mousedown'].forEach((evt) => {
             el.addEventListener(evt, (e) => { e.stopPropagation(); }, true);
+          });
+          ['click','dblclick','contextmenu'].forEach((evt) => {
+            el.addEventListener(evt, (e) => { e.stopPropagation(); }, false);
           });
 
           return el;
@@ -227,13 +265,104 @@ pub const JS: &str = r##"
           return null;
         }
 
+        // ── Axis align (preview) ─────────────────────────────────────────
+        // Internal CAD step is 0.01 mm (see CAD_INTERNAL_STEP_MM).
+        const STEP_MM = 0.01;
+        function mmToGrid(mm) { return Math.round((Number(mm) || 0) / STEP_MM); }
+        function gridToMm(g)  { return g * STEP_MM; }
+
+        function getAxisSign(axis, a, b) {
+          if (axis === 'X') return Math.sign(b.gx - a.gx) || 1;
+          if (axis === 'Y') return Math.sign(b.gy - a.gy) || 1;
+          if (axis === 'Z') return Math.sign(b.gz - a.gz) || 1;
+          return 1;
+        }
+
+        function writePointAInputsMm(el, g) {
+          const fmt = window.__formatCadNumberMm || ((n) => String(n));
+          getInput(el, 'ax').value = fmt(gridToMm(g.gx), 2);
+          getInput(el, 'ay').value = fmt(gridToMm(g.gy), 2);
+          getInput(el, 'az').value = fmt(gridToMm(g.gz), 2);
+        }
+        function writePointBInputsMm(el, g) {
+          const fmt = window.__formatCadNumberMm || ((n) => String(n));
+          getInput(el, 'bx').value = fmt(gridToMm(g.gx), 2);
+          getInput(el, 'by').value = fmt(gridToMm(g.gy), 2);
+          getInput(el, 'bz').value = fmt(gridToMm(g.gz), 2);
+        }
+
+        // Apply axis preview to inputs. Returns true on success.
+        function applyAxisPreview(el, axis) {
+          if (axis === 'free') {
+            el.__direction = 'free';
+            setError(el, '');
+            window.__setStatusMessage?.('Free direction');
+            return true;
+          }
+          const form = readForm(el);
+          if (!isFinite(form.len) || form.len <= 0) {
+            setError(el, 'Invalid length'); return false;
+          }
+          const aG = { gx: mmToGrid(form.a.x), gy: mmToGrid(form.a.y), gz: mmToGrid(form.a.z) };
+          const bG = { gx: mmToGrid(form.b.x), gy: mmToGrid(form.b.y), gz: mmToGrid(form.b.z) };
+          const len = Math.round(form.len / STEP_MM);
+          if (len <= 0) { setError(el, 'Length must be > 0'); return false; }
+          const sign = getAxisSign(axis, aG, bG);
+
+          let newA = { ...aG };
+          let newB = { ...bG };
+
+          if (form.mode === 'fixA_moveB') {
+            newA = { ...aG };
+            newB = { gx: aG.gx, gy: aG.gy, gz: aG.gz };
+            if (axis === 'X') newB.gx = aG.gx + sign * len;
+            if (axis === 'Y') newB.gy = aG.gy + sign * len;
+            if (axis === 'Z') newB.gz = aG.gz + sign * len;
+          } else if (form.mode === 'fixB_moveA') {
+            newB = { ...bG };
+            newA = { gx: bG.gx, gy: bG.gy, gz: bG.gz };
+            if (axis === 'X') newA.gx = bG.gx - sign * len;
+            if (axis === 'Y') newA.gy = bG.gy - sign * len;
+            if (axis === 'Z') newA.gz = bG.gz - sign * len;
+          } else { // center_moveBoth
+            const cx = Math.round((aG.gx + bG.gx) / 2);
+            const cy = Math.round((aG.gy + bG.gy) / 2);
+            const cz = Math.round((aG.gz + bG.gz) / 2);
+            const halfA = Math.floor(len / 2);
+            const halfB = len - halfA;
+            newA = { gx: cx, gy: cy, gz: cz };
+            newB = { gx: cx, gy: cy, gz: cz };
+            if (axis === 'X') { newA.gx = cx - sign * halfA; newB.gx = cx + sign * halfB; }
+            if (axis === 'Y') { newA.gy = cy - sign * halfA; newB.gy = cy + sign * halfB; }
+            if (axis === 'Z') { newA.gz = cz - sign * halfA; newB.gz = cz + sign * halfB; }
+          }
+
+          writePointAInputsMm(el, newA);
+          writePointBInputsMm(el, newB);
+          el.__direction = axis;
+          setError(el, '');
+          window.__setStatusMessage?.('Preview: aligned ' + axis);
+          console.log('[DimEditor] align', axis, { mode: form.mode, sign, newA, newB });
+          return true;
+        }
+
+        function updateAxisButtons(el, axis) {
+          el.querySelectorAll('.dim-axis-btn').forEach((b) => {
+            b.classList.toggle('dim-axis-active', b.dataset.axis === axis);
+          });
+        }
+
         // ── Apply ────────────────────────────────────────────────────────
         async function applyEdit(el) {
+          console.log('[DimEditor] Apply clicked');
           const st = el.__state;
-          if (!st) return;
+          if (!st) { console.warn('[DimEditor] no state on popup'); return; }
           const form = readForm(el);
           const verr = validate(form);
-          if (verr) { setError(el, verr); return; }
+          if (verr) {
+            console.warn('[DimEditor] validation error:', verr);
+            setError(el, verr); return;
+          }
           setError(el, '');
 
           // Detect changes.
@@ -247,12 +376,26 @@ pub const JS: &str = r##"
             || !approxEq(form.b.z, st.initial.b.z);
           const lenChanged = !approxEq(form.len, st.initial.len);
 
+          console.log('[DimEditor] parsed values', {
+            edgeId:    st.edgeId,
+            aPointId:  st.aPointId,
+            bPointId:  st.bPointId,
+            lengthMm:  form.len,
+            mode:      form.mode,
+            aCoords:   form.a,
+            bCoords:   form.b,
+            initial:   st.initial,
+            aChanged, bChanged, lenChanged,
+          });
+
           // Coord changes take priority over length.
           if (aChanged || bChanged) {
             if (aChanged) {
               const r = await window.__setPointCoordsMm(
                 st.aPointId, form.a.x, form.a.y, form.a.z);
+              console.log('[DimEditor] setPointCoordsMm(A) →', r);
               if (!r || !r.ok) {
+                console.warn('[DimEditor] apply failed (A)', r);
                 setError(el, 'A: ' + ((r && r.error) || 'move failed'));
                 return;
               }
@@ -260,12 +403,18 @@ pub const JS: &str = r##"
             if (bChanged) {
               const r = await window.__setPointCoordsMm(
                 st.bPointId, form.b.x, form.b.y, form.b.z);
+              console.log('[DimEditor] setPointCoordsMm(B) →', r);
               if (!r || !r.ok) {
+                console.warn('[DimEditor] apply failed (B)', r);
                 setError(el, 'B: ' + ((r && r.error) || 'move failed'));
                 return;
               }
             }
-            window.__setStatusMessage?.('Point coords updated');
+            window.__setStatusMessage?.(
+              (el.__direction && el.__direction !== 'free'
+                ? ('Edge aligned ' + el.__direction + ' · ')
+                : '')
+              + 'Point coords updated');
             closeEditor();
             return;
           }
@@ -273,7 +422,9 @@ pub const JS: &str = r##"
           if (lenChanged) {
             const r = await window.__setEdgeLengthMm(
               st.edgeId, form.len, { mode: form.mode });
+            console.log('[DimEditor] setEdgeLengthMm →', r);
             if (!r || !r.ok) {
+              console.warn('[DimEditor] apply failed (length)', r);
               setError(el, (r && r.error) || 'length update failed');
               return;
             }
@@ -284,6 +435,8 @@ pub const JS: &str = r##"
           }
 
           // Nothing changed.
+          console.log('[DimEditor] no changes — closing');
+          window.__setStatusMessage?.('No changes');
           closeEditor();
         }
 
@@ -341,6 +494,9 @@ pub const JS: &str = r##"
           // Default mode.
           const radio = el.querySelector('input[name="dim-mode"][value="fixA_moveB"]');
           if (radio) radio.checked = true;
+          // Default direction.
+          el.__direction = 'free';
+          updateAxisButtons(el, 'free');
           setError(el, '');
 
           // Position near click, keep within viewport.
@@ -373,11 +529,28 @@ pub const JS: &str = r##"
                 closeEditor();
               }
             });
-            $(el, '.dim-apply').addEventListener('click', (e) => {
-              e.stopPropagation(); applyEdit(el);
+            const applyBtn  = $(el, '.dim-apply');
+            const cancelBtn = $(el, '.dim-cancel');
+            console.log('[DimEditor] wiring buttons', {
+              applyBtn:  !!applyBtn,
+              cancelBtn: !!cancelBtn,
             });
-            $(el, '.dim-cancel').addEventListener('click', (e) => {
-              e.stopPropagation(); closeEditor();
+            applyBtn.addEventListener('click', (e) => {
+              console.log('[DimEditor] apply button click');
+              e.preventDefault(); e.stopPropagation();
+              applyEdit(el);
+            });
+            cancelBtn.addEventListener('click', (e) => {
+              e.preventDefault(); e.stopPropagation();
+              closeEditor();
+            });
+            // Wire Align buttons (Free / X / Y / Z).
+            el.querySelectorAll('.dim-axis-btn').forEach((btn) => {
+              btn.addEventListener('click', (e) => {
+                e.preventDefault(); e.stopPropagation();
+                const axis = btn.dataset.axis || 'free';
+                if (applyAxisPreview(el, axis)) updateAxisButtons(el, axis);
+              });
             });
           }
         };

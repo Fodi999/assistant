@@ -182,6 +182,26 @@ pub fn matter_lab_section() -> String {
             </div>
           </div>
 
+          <!-- ── Profile Check (Phase 18) ── -->
+          <div id="si-block-pcheck" class="si-block" style="display:none;">
+            <div class="si-block-title">Profile Check</div>
+            <dl class="si-grid">
+              <dt>Type</dt>   <dd id="si-pc-type">—</dd>
+              <dt>Width</dt>  <dd id="si-pc-width">—</dd>
+              <dt>Height</dt> <dd id="si-pc-height">—</dd>
+              <dt>Status</dt> <dd id="si-pc-status">—</dd>
+            </dl>
+            <ul id="si-pc-errors" style="list-style:none; padding:0; margin:6px 0 0;
+                 max-height:120px; overflow-y:auto; font-size:11px; color:#fca5a5;"></ul>
+            <div style="margin-top:8px; display:grid;
+                 grid-template-columns:repeat(2, 1fr); gap:6px;">
+              <button id="si-pc-analyze"   class="sio-btn">Analyze</button>
+              <button id="si-pc-rectangle" class="sio-btn">Make Rectangle</button>
+              <button id="si-pc-square"    class="sio-btn">Make Square</button>
+              <button id="si-pc-equalize"  class="sio-btn">Equalize Edges</button>
+            </div>
+          </div>
+
           <div id="si-block-profile-list" class="si-block">
             <div class="si-block-title">Profiles · <span id="si-pf-count">0</span></div>
             <ul id="si-pf-list" style="list-style:none; padding:0; margin:6px 0 0;

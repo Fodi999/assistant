@@ -1388,6 +1388,14 @@ async fn fix_static_mime(
             axum::http::HeaderValue::from_static("application/wasm"),
         );
     }
+    // Never cache `/wasm/*` — we rebuild the bundle frequently and must not
+    // serve a stale sketch_engine.js / _bg.wasm after `make wasm`.
+    if path.starts_with("/wasm/") {
+        res.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+        );
+    }
     res
 }
 
