@@ -1133,7 +1133,7 @@ pub fn matter_status_styles() -> &'static str {
 
     /* === Performance HUD (Phase 9) ===================================== */
     .perf-hud {
-      position: absolute;
+      position: fixed;
       left: 12px;
       bottom: 12px;
       z-index: 30;
@@ -1154,7 +1154,7 @@ pub fn matter_status_styles() -> &'static str {
       display: flex;
       align-items: center;
       gap: 6px;
-      cursor: pointer;
+      cursor: grab;
       padding: 1px 2px 4px;
       color: #94a3b8;
       letter-spacing: 0.08em;
@@ -1162,6 +1162,7 @@ pub fn matter_status_styles() -> &'static str {
       border-bottom: 1px solid rgba(148, 163, 184, 0.15);
       margin-bottom: 4px;
     }
+    .perf-hud-header:active { cursor: grabbing; }
     .perf-hud-header:hover { color: #e2e8f0; }
     .perf-hud-title { font-size: 10px; }
     #perf-hud-caret { font-size: 9px; color: #64748b; }

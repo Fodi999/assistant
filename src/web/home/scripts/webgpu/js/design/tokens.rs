@@ -24,19 +24,33 @@ pub const JS: &str = r##"
     // ЦВЕТА — единая палитра для всех модальных окон
     // ──────────────────────────────────────────────────────────────────────
     const COLORS = {
-      bg:      'rgba(15,23,42,0.97)',       // фон попапа
-      panel:   'rgba(30,41,59,0.9)',        // фон инпутов и кнопок
-      border:  'rgba(148,163,184,0.35)',    // бордер кнопок/инпутов
-      frame:   'rgba(226,232,240,0.25)',    // бордер попапа и разделители
-      fg:      '#e2e8f0',                   // основной текст
-      mute:    '#94a3b8',                   // второстепенный текст / лейблы
-      dim:     '#64748b',                   // подсказки
-      input:   '#f1f5f9',                   // текст значений в инпутах
-      accent:  'rgba(99,102,241,0.85)',     // акцентная кнопка (фон)
-      accent2: 'rgba(99,102,241,1.0)',      // акцентная кнопка (бордер) / focus
-      danger:  '#f87171',                   // ошибка
-      warn:    '#fbbf24',                   // предупреждение
-      ok:      '#34d399',                   // успех
+      // ── Base ─────────────────────────────────────────────────────
+      bg:          'rgba(15,23,42,0.97)',       // фон попапа
+      bgHud:       'rgba(2,6,23,0.82)',         // фон HUD (чуть темнее)
+      panel:       'rgba(30,41,59,0.9)',        // фон инпутов и кнопок
+      panelSolid:  '#1e293b',                   // сплошной фон (разделители HUD)
+      panelActive: '#0e7490',                   // активная кнопка формации
+      panelBorder: '#334155',                   // неактивный бордер кнопок HUD
+      border:      'rgba(148,163,184,0.35)',    // бордер кнопок/инпутов
+      frame:       'rgba(226,232,240,0.25)',    // бордер попапа и разделители
+      frameHud:    'rgba(103,232,249,0.35)',    // бордер HUD (cyan tint)
+      // ── Text ─────────────────────────────────────────────────────
+      fg:      '#e2e8f0',   // основной текст
+      mute:    '#94a3b8',   // второстепенный текст / лейблы
+      dim:     '#64748b',   // подсказки
+      dimDark: '#475569',   // совсем тусклый (interior count)
+      input:   '#f1f5f9',   // текст значений в инпутах
+      // ── Accent ───────────────────────────────────────────────────
+      accent:  'rgba(99,102,241,0.85)',  // акцентная кнопка (фон)
+      accent2: 'rgba(99,102,241,1.0)',   // акцентная кнопка (бордер) / focus
+      info:    '#67e8f9',   // cyan — заголовки HUD, активная формация border
+      violet:  '#a78bfa',   // количество частиц, surface count
+      pink:    '#f0abfc',   // debug hide-low
+      warn2:   '#fcd34d',   // dist / cam coordinates
+      // ── Semantic ─────────────────────────────────────────────────
+      danger:  '#f87171',   // ошибка
+      warn:    '#fbbf24',   // предупреждение / shape label
+      ok:      '#34d399',   // успех
     };
 
     // ──────────────────────────────────────────────────────────────────────
@@ -165,8 +179,8 @@ pub const JS: &str = r##"
 
       handle.addEventListener('pointerdown', e => {
         if (e.button !== 0) return;
-        // Если тащим за весь попап — игнорируем интерактивные элементы
-        if (wholePopup && e.target.closest('input, button, label, select')) return;
+        // Всегда пропускаем кликабельные элементы — и когда handle=el, и когда handle=titlebar
+        if (e.target.closest('input, button, label, select, a')) return;
         active = true;
         const r = el.getBoundingClientRect();
         ox = e.clientX - r.left;
@@ -223,12 +237,41 @@ pub const JS: &str = r##"
         el.addEventListener(ev, e => e.stopPropagation(), false));
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // Применить стиль HUD-панели (info/perf overlay, не popup)
+    //   opts.top / right / bottom / left — позиция (default top:72px right:356px)
+    //   opts.zIndex — default '9999'
+    // ──────────────────────────────────────────────────────────────────────
+    function applyHudStyle(el, opts) {
+      opts = opts || {};
+      Object.assign(el.style, {
+        position:         'fixed',
+        top:              opts.top    || '72px',
+        right:            opts.right  || '356px',
+        zIndex:           opts.zIndex || '9999',
+        padding:          '10px 14px',
+        borderRadius:     LAYOUT.borderRadius,
+        background:       COLORS.bgHud,
+        backdropFilter:   'blur(10px)',
+        webkitBackdropFilter: 'blur(10px)',
+        border:           '1px solid ' + COLORS.frameHud,
+        font:             '500 ' + LAYOUT.fontSize + '/1.5 ' + LAYOUT.font,
+        color:            COLORS.fg,
+        letterSpacing:    '.02em',
+        pointerEvents:    'auto',
+        userSelect:       'none',
+        boxShadow:        LAYOUT.shadow,
+        display:          opts.display || 'none',
+      });
+    }
+
     // Вставить базовые классы сразу при регистрации темы
     injectBaseCSS();
 
     return {
       COLORS, LAYOUT,
-      applyPopupStyle, injectCSS, injectBaseCSS,
+      applyPopupStyle, applyHudStyle,
+      injectCSS, injectBaseCSS,
       makeDraggable, positionNear, blockCanvasEvents,
     };
   })();

@@ -157,6 +157,7 @@ pub const JS: &str = r##"
       // Header click → collapse/expand body.
       document.addEventListener('DOMContentLoaded', () => {
         const hd = document.getElementById('perf-hud-header');
+        const ph = document.getElementById('perf-hud');
         if (hd) {
           hd.addEventListener('click', () => {
             const s = window.perfState;
@@ -165,8 +166,13 @@ pub const JS: &str = r##"
             s.collapsed = !s.collapsed;
             body.style.display = s.collapsed ? 'none' : '';
             const caret = document.getElementById('perf-hud-caret');
-            if (caret) caret.textContent = s.collapsed ? '▸' : '▾';
+            if (caret) caret.textContent = s.collapsed ? '\u25b8' : '\u25be';
           });
+        }
+        // Make perf-hud draggable via its header
+        if (ph && hd && window.__modalTheme) {
+          window.__modalTheme.makeDraggable(ph, hd);
+          window.__modalTheme.blockCanvasEvents(ph);
         }
       });
 "##;

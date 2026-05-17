@@ -2,15 +2,11 @@
 // Composes shader WGSL + JS infrastructure into the single script string
 // served by the home page.
 //
-// DDD layers:
-//   scene/    — domain model  (what exists in the world: objects, transforms,
-//                              ingredients, recipes, selections, actions)
+// Layers:
 //   shader/   — WGSL GPU program (uniforms, background, geometry, SDF, vertex, fragment)
-//   js/       — JS application  (init, state, buffers, pipeline, hud, controls, benchmark,
-//                                render_loop)
+//   js/       — JS application domains: core, input, sketch, tools, ui, design
 
 mod js;
-pub mod scene;
 mod shader;
 
 use std::sync::OnceLock;

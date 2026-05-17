@@ -47,13 +47,13 @@ pub const JS: &str = r##"
             </div>
 
             <div data-k="msg" class="cad-popup-msg"></div>
-            <div class="cad-popup-hint">Esc = close · drag title to move</div>
+            <div class="cad-popup-hint">Esc = close · drag to move</div>
           `;
 
           document.body.appendChild(el);
 
-          // Перетаскивание за заголовок и блокировка canvas событий
-          T.makeDraggable(el, el.querySelector('[data-k="titlebar"]'));
+          // Перетаскивание за весь попап (кроме кнопок/инпутов) — как в dimension_editor
+          T.makeDraggable(el, el);
           T.blockCanvasEvents(el);
 
           return el;
