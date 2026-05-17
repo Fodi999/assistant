@@ -262,66 +262,6 @@ pub const JS: &str = r##"
           set('si-pf-ready', window.__isSelectedProfileExtrudable() ? 'yes' : 'no');
         }
 
-        // ── Profile Check block (Phase 18) ──
-        showBlock('si-block-pcheck', !!profSel);
-        const pcState = window.__profileCheckState || { report: null, profileId: null };
-        // Drop stale report if selection changed.
-        if (profSel && pcState.profileId && pcState.profileId !== profSel.id) {
-          window.__profileCheckState = { report: null, profileId: null };
-        }
-        const pcRep = (profSel && pcState.profileId === profSel.id) ? pcState.report : null;
-        const pcTypeEl = document.getElementById('si-pc-type');
-        const pcWEl    = document.getElementById('si-pc-width');
-        const pcHEl    = document.getElementById('si-pc-height');
-        const pcStEl   = document.getElementById('si-pc-status');
-        const pcErrsEl = document.getElementById('si-pc-errors');
-        if (pcTypeEl && pcWEl && pcHEl && pcStEl && pcErrsEl) {
-          if (!pcRep) {
-            pcTypeEl.textContent = '—';
-            pcWEl.textContent    = '—';
-            pcHEl.textContent    = '—';
-            pcStEl.textContent   = 'Press Analyze';
-            pcStEl.style.color   = '#94a3b8';
-            pcErrsEl.innerHTML   = '';
-          } else {
-            pcTypeEl.textContent = pcRep.type || '—';
-            pcWEl.textContent    = isFinite(pcRep.widthMm)  ? pcRep.widthMm.toFixed(2)  + ' mm' : '—';
-            pcHEl.textContent    = isFinite(pcRep.heightMm) ? pcRep.heightMm.toFixed(2) + ' mm' : '—';
-            const errN  = (pcRep.errors || []).filter(e => e.severity === 'error').length;
-            const warnN = (pcRep.errors || []).filter(e => e.severity === 'warn').length;
-            if (errN > 0) {
-              pcStEl.textContent = 'errors (' + errN + ')';
-              pcStEl.style.color = '#f87171';
-            } else if (warnN > 0) {
-              pcStEl.textContent = 'warnings (' + warnN + ')';
-              pcStEl.style.color = '#fbbf24';
-            } else {
-              pcStEl.textContent = 'ok';
-              pcStEl.style.color = '#34d399';
-            }
-            pcErrsEl.innerHTML = '';
-            for (const er of (pcRep.errors || [])) {
-              const li = document.createElement('li');
-              li.style.padding = '2px 0';
-              li.style.color   = er.severity === 'error' ? '#fca5a5' : '#fde68a';
-              let msg = '';
-              if (er.kind === 'not_axis_aligned') {
-                msg = er.edgeId + ' ' + er.orient + ' drift '
-                    + er.driftMm.toFixed(2) + ' mm';
-              } else if (er.kind === 'length_mismatch') {
-                msg = er.edgeId + ' length ' + er.actualMm.toFixed(2)
-                    + ' vs ' + er.expectedMm.toFixed(2) + ' mm';
-              } else if (er.kind === 'angle_not_90') {
-                msg = er.vertexPointId + ' angle ' + er.angleDeg.toFixed(2) + '°';
-              } else {
-                msg = JSON.stringify(er);
-              }
-              li.textContent = msg;
-              pcErrsEl.appendChild(li);
-            }
-          }
-        }
-
         // Edge inspector — show all profiles if edge belongs to many.
         if (totalSel === 1 && selEds.length === 1) {
           const eid = selEds[0];
@@ -349,13 +289,6 @@ pub const JS: &str = r##"
             li.addEventListener('click', () => {
               window.__selectProfile(pf.id);
               window.__updateSketchInspector();
-              // Scroll Profile Check into view so user doesn't have to hunt.
-              setTimeout(() => {
-                const pc = document.getElementById('si-block-pcheck');
-                if (pc && pc.style.display !== 'none') {
-                  pc.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-              }, 30);
             });
             listEl.appendChild(li);
           }
@@ -513,50 +446,6 @@ pub const JS: &str = r##"
           pfClear.addEventListener('click', () => {
             window.__clearProfileSelection();
             window.__updateSketchInspector();
-          });
-        }
-
-        // ── Profile Check buttons (Phase 18) ──
-        const pcAnalyze = document.getElementById('si-pc-analyze');
-        if (pcAnalyze) {
-          pcAnalyze.addEventListener('click', () => {
-            const rep = window.__runProfileCheck && window.__runProfileCheck();
-            if (!rep) { window.__setStatusMessage('No profile selected'); return; }
-            if (rep.ok) window.__setStatusMessage('Profile ok · ' + rep.type);
-            else window.__setStatusMessage('Profile issues: ' + (rep.errors || []).length);
-          });
-        }
-        const pcRect = document.getElementById('si-pc-rectangle');
-        if (pcRect) {
-          pcRect.addEventListener('click', async () => {
-            const r = await window.__makeSelectedProfileRectangle();
-            if (!r || !r.ok) {
-              window.__setStatusMessage('Rectangle failed: ' + ((r && r.error) || '?'));
-              return;
-            }
-            if (window.__runProfileCheck) window.__runProfileCheck();
-          });
-        }
-        const pcSq = document.getElementById('si-pc-square');
-        if (pcSq) {
-          pcSq.addEventListener('click', async () => {
-            const r = await window.__makeSelectedProfileSquare();
-            if (!r || !r.ok) {
-              window.__setStatusMessage('Square failed: ' + ((r && r.error) || '?'));
-              return;
-            }
-            if (window.__runProfileCheck) window.__runProfileCheck();
-          });
-        }
-        const pcEq = document.getElementById('si-pc-equalize');
-        if (pcEq) {
-          pcEq.addEventListener('click', async () => {
-            const r = await window.__equalizeSelectedEdges();
-            if (!r || !r.ok) {
-              window.__setStatusMessage('Equalize failed: ' + ((r && r.error) || '?'));
-              return;
-            }
-            if (window.__runProfileCheck) window.__runProfileCheck();
           });
         }
 
