@@ -15,40 +15,15 @@
 pub const JS: &str = r##"
       (function registerDimensionEditor() {
 
-        const COLORS = {
-          bg:      'rgba(15,23,42,0.97)',
-          panel:   'rgba(30,41,59,0.9)',
-          border:  'rgba(148,163,184,0.35)',
-          frame:   'rgba(226,232,240,0.25)',
-          fg:      '#e2e8f0',
-          mute:    '#94a3b8',
-          dim:     '#64748b',
-          input:   '#f1f5f9',
-          accent:  'rgba(99,102,241,0.85)',
-          accent2: 'rgba(99,102,241,1.0)',
-          danger:  '#f87171',
-        };
+        // Используем единую тему — меняй цвета в components/modal_theme.rs
+        const T = window.__modalTheme;
+        const C = T.COLORS;
 
         // ── Build / reuse popup ──────────────────────────────────────────
         function buildPopup() {
           const el = document.createElement('div');
           el.id = '__dim-editor';
-          Object.assign(el.style, {
-            position:      'fixed',
-            zIndex:        '9999',
-            display:       'none',
-            background:    COLORS.bg,
-            border:        '1px solid ' + COLORS.frame,
-            borderRadius:  '8px',
-            padding:       '12px 14px',
-            boxShadow:     '0 8px 32px rgba(0,0,0,0.7)',
-            fontFamily:    '"JetBrains Mono", system-ui, monospace',
-            fontSize:      '12px',
-            color:         COLORS.fg,
-            minWidth:      '260px',
-            pointerEvents: 'all',
-            userSelect:    'none',
-          });
+          T.applyPopupStyle(el, { zIndex: '9999', minWidth: '260px', maxWidth: '340px' });
 
           el.innerHTML = `
             <div class="dim-section">
@@ -99,33 +74,30 @@ pub const JS: &str = r##"
           `;
 
           // Inject scoped styles once.
-          if (!document.getElementById('__dim-editor-style')) {
-            const css = document.createElement('style');
-            css.id = '__dim-editor-style';
-            css.textContent = `
+          T.injectCSS('__dim-editor-style', `
               #__dim-editor .dim-section { margin-bottom:8px; }
               #__dim-editor .dim-sep {
-                height:1px; background:${COLORS.frame};
+                height:1px; background:${C.frame};
                 margin:8px 0;
               }
               #__dim-editor .dim-label {
-                font-size:10px; color:${COLORS.mute};
+                font-size:10px; color:${C.mute};
                 margin-bottom:4px; text-transform:uppercase;
                 letter-spacing:0.5px;
               }
               #__dim-editor .dim-modes {
                 display:flex; flex-direction:column; gap:2px;
-                margin-top:6px; font-size:11px; color:${COLORS.fg};
+                margin-top:6px; font-size:11px; color:${C.fg};
               }
               #__dim-editor .dim-modes label {
                 display:flex; align-items:center; gap:6px;
                 cursor:pointer;
               }
               #__dim-editor .dim-modes input[type=radio] {
-                accent-color:${COLORS.accent2};
+                accent-color:${C.accent2};
               }
               #__dim-editor .dim-align-label {
-                font-size:10px; color:${COLORS.mute};
+                font-size:10px; color:${C.mute};
                 margin:8px 0 4px; text-transform:uppercase;
                 letter-spacing:0.5px;
               }
@@ -135,16 +107,16 @@ pub const JS: &str = r##"
                 gap:4px;
               }
               #__dim-editor .dim-axis-btn {
-                background:${COLORS.panel};
-                border:1px solid ${COLORS.border};
+                background:${C.panel};
+                border:1px solid ${C.border};
                 border-radius:4px;
-                color:${COLORS.fg};
+                color:${C.fg};
                 font-family:inherit; font-size:11px;
                 padding:3px 0; cursor:pointer;
               }
               #__dim-editor .dim-axis-btn:hover { filter:brightness(1.2); }
               #__dim-editor .dim-axis-btn.dim-axis-active {
-                background:${COLORS.accent}; border-color:${COLORS.accent2};
+                background:${C.accent}; border-color:${C.accent2};
                 color:#fff;
               }
               #__dim-editor .dim-row {
@@ -153,25 +125,25 @@ pub const JS: &str = r##"
                 gap:4px; align-items:center;
               }
               #__dim-editor .dim-axis {
-                color:${COLORS.mute}; font-size:11px; text-align:center;
+                color:${C.mute}; font-size:11px; text-align:center;
               }
               #__dim-editor .dim-input {
-                background:${COLORS.panel};
-                border:1px solid ${COLORS.border};
+                background:${C.panel};
+                border:1px solid ${C.border};
                 border-radius:4px;
                 padding:3px 6px;
-                color:${COLORS.input};
+                color:${C.input};
                 font-family:inherit; font-size:12px;
                 outline:none;
                 width:100%; box-sizing:border-box;
                 min-width:0;
               }
               #__dim-editor .dim-input:focus {
-                border-color:${COLORS.accent2};
+                border-color:${C.accent2};
               }
               #__dim-editor .dim-section > .dim-input { width:90px; }
               #__dim-editor .dim-error {
-                color:${COLORS.danger};
+                color:${C.danger};
                 font-size:11px;
                 min-height:14px;
                 margin:4px 0;
@@ -181,40 +153,28 @@ pub const JS: &str = r##"
                 margin-top:6px;
               }
               #__dim-editor .dim-btn {
-                background:${COLORS.panel};
-                border:1px solid ${COLORS.border};
+                background:${C.panel};
+                border:1px solid ${C.border};
                 border-radius:4px;
-                color:${COLORS.fg};
+                color:${C.fg};
                 font-family:inherit; font-size:12px;
                 padding:4px 12px; cursor:pointer;
               }
               #__dim-editor .dim-btn.dim-apply {
-                background:${COLORS.accent}; border-color:${COLORS.accent2};
+                background:${C.accent}; border-color:${C.accent2};
                 color:#fff;
               }
               #__dim-editor .dim-btn:hover { filter:brightness(1.15); }
               #__dim-editor .dim-hint {
-                margin-top:6px; font-size:9px; color:${COLORS.dim};
+                margin-top:6px; font-size:9px; color:${C.dim};
               }
-            `;
-            document.head.appendChild(css);
-          }
+          `);
 
           document.body.appendChild(el);
 
-          // Block global click/pointer handlers from closing the editor or
-          // hitting the canvas behind it.
-          // IMPORTANT: pointerdown/mousedown use capture=true so the canvas
-          // orbit handler (which runs in bubble phase) never sees them.
-          // click/dblclick/contextmenu use bubble phase (capture=false) so
-          // stopPropagation() only prevents them going UP to the canvas —
-          // the event still descends normally to the Apply/Cancel buttons.
-          ['pointerdown','mousedown'].forEach((evt) => {
-            el.addEventListener(evt, (e) => { e.stopPropagation(); }, true);
-          });
-          ['click','dblclick','contextmenu'].forEach((evt) => {
-            el.addEventListener(evt, (e) => { e.stopPropagation(); }, false);
-          });
+          // Перетаскивание и блокировка canvas событий — из modal_theme
+          T.makeDraggable(el, el);
+          T.blockCanvasEvents(el);
 
           return el;
         }
@@ -500,17 +460,7 @@ pub const JS: &str = r##"
           setError(el, '');
 
           // Position near click, keep within viewport.
-          el.style.display = 'block';
-          const vw = window.innerWidth, vh = window.innerHeight;
-          const w = el.offsetWidth  || 280;
-          const h = el.offsetHeight || 260;
-          let left = px + 12, top = py - 12;
-          if (left + w > vw - 8) left = px - w - 12;
-          if (top  + h > vh - 8) top  = vh - h - 8;
-          if (left < 8) left = 8;
-          if (top  < 8) top  = 8;
-          el.style.left = left + 'px';
-          el.style.top  = top  + 'px';
+          T.positionNear(el, px, py);
 
           // Focus length input by default.
           const lenInput = getInput(el, 'len');

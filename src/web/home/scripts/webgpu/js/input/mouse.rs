@@ -15,6 +15,12 @@ pub const JS: &str = r##"
       let dragging  = false, panning = false, orbiting = false;
       let lastX = 0, lastY = 0, startX = 0, startY = 0;
       let dragMoved = false;
+
+      // ── Double-tap detector (trackpad fallback) ───────────────────
+      // On macOS Safari, double-tap on a trackpad may trigger smart-zoom
+      // before dblclick fires. We detect two rapid pointerdowns instead.
+      let __lastTapTime = 0, __lastTapX = 0, __lastTapY = 0;
+      let __dblTapFired = false;  // prevent firing both dblclick + pointerdown double-tap
       // Separate tracking for grab movement — works even without button press (touchpad hover).
       let grabLastX = -1, grabLastY = -1;
       // True when the current pointer-down landed on a gizmo handle.
@@ -53,6 +59,28 @@ pub const JS: &str = r##"
         dragging       = true;
         dragMoved      = false;
         gizmoHandleDrag = false;
+
+        // ── Trackpad double-tap detector ──────────────────────────
+        // Fires __handleSketchDoubleClick via pointerdown timing so it works
+        // even when the browser intercepts 'dblclick' for smart-zoom gestures.
+        if (e.button === 0) {
+          const now = Date.now();
+          const ddx = e.clientX - __lastTapX;
+          const ddy = e.clientY - __lastTapY;
+          const isDoubleTap = (now - __lastTapTime) < 350 && Math.hypot(ddx, ddy) < 20;
+          __lastTapTime = now;
+          __lastTapX    = e.clientX;
+          __lastTapY    = e.clientY;
+          if (isDoubleTap) {
+            __dblTapFired = true;
+            const rectDT  = canvas.getBoundingClientRect();
+            const ndcXdt  = ((e.clientX - rectDT.left) / rectDT.width)  * 2 - 1;
+            const ndcYdt  = 1 - ((e.clientY - rectDT.top)  / rectDT.height) * 2;
+            if (window.__handleSketchDoubleClick)
+              window.__handleSketchDoubleClick(ndcXdt, ndcYdt, e.clientX, e.clientY);
+            setTimeout(() => { __dblTapFired = false; }, 400);
+          }
+        }
 
         const rect2   = canvas.getBoundingClientRect();
         const px      = e.clientX - rect2.left;
@@ -223,6 +251,8 @@ pub const JS: &str = r##"
 
       // ── Double-click ─────────────────────────────────────────────
       canvas.addEventListener('dblclick', (e) => {
+        // Skip if the pointerdown double-tap detector already handled this.
+        if (__dblTapFired) { __dblTapFired = false; return; }
         const rect = canvas.getBoundingClientRect();
         const ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
         const ndcY = 1 - ((e.clientY - rect.top)  / rect.height) * 2;

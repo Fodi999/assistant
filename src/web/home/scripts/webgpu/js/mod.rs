@@ -3,6 +3,7 @@
 
 mod buffers;
 mod controls;
+pub mod components;
 mod gizmo;
 mod hud;
 mod init;
@@ -62,6 +63,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
             + perf_hud::JS.len()
             + sketch_wasm::JS.len()
             + sketch_cad_engine::JS.len()
+            + components::modal_theme::JS.len()
             + dimension_editor::JS.len()
             + sketch_constraints::JS.len()
             + profile_popup::JS.len()
@@ -105,7 +107,9 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     // 10b. CAD Engine adapter — WASM-first + backend-sync, single entry point
     //      for all tools. Overrides __createPointViaEngine / __createEdgeViaEngine.
     out.push_str(sketch_cad_engine::JS);
-    // 10c. Dimension editor popup — click drafting labels to edit geometry.
+    // 10c. Modal theme — единый стиль для всех CAD попапов (меняй здесь).
+    out.push_str(components::modal_theme::JS);
+    // 10d. Dimension editor popup — click drafting labels to edit geometry.
     out.push_str(dimension_editor::JS);
     // 10d. Profile constraints — Analyze / Make Rectangle / Make Square / Equalize.
     out.push_str(sketch_constraints::JS);
