@@ -676,11 +676,12 @@ pub fn matter_status_styles() -> &'static str {
     /* ── Axis gizmo ─────────────────────────────── */
     #axis-gizmo {
       position: absolute;
-      top: 60px;
-      right: 36px; /* 32px (tabs width) + 4px gap */
+      bottom: 48px;   /* выше статус-бара */
+      right: 12px;
+      top: auto;
       left: auto;
       width: 96px; height: 96px;
-      z-index: 20;
+      z-index: 31;    /* поверх cad-side-panel (z-index:30) */
       cursor: grab;
       border-radius: 50%;
       background: rgba(8, 14, 28, 0.55);
@@ -689,13 +690,13 @@ pub fn matter_status_styles() -> &'static str {
       pointer-events: auto;
       transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s;
     }
-    
-    /* When a sidebar panel is open, push the gizmo to the left of the panel */
+
+    /* When a sidebar panel is open — гизмо уже вне панели, ничего двигать не нужно */
     body.panel-open #axis-gizmo {
       right: calc(var(--panel-width, 420px) + 51px);
     }
 
-    /* When N-panel (sketch inspector) is open, push gizmo left */
+    /* N-panel rules — больше не актуально, но оставляем для совместимости */
     #sketch-inspector.open ~ #axis-gizmo,
     .matter-stage:has(#sketch-inspector.open) #axis-gizmo,
     .matter-stage.inspector-open #axis-gizmo {

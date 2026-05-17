@@ -5,7 +5,7 @@ pub const JS: &str = r##"
     // ══════════════════════════════════════════════════════════════
     // WebGPU Scene v2.1 — Cell-SDF megashape (kernel::particle_shape port)
     //   • drag / shift+drag  — orbit / pan camera
-    //   • wheel              — zoom 0.5…80
+    //   • wheel              — zoom 0.002…500 m (2 mm → 500 m)
     //   • 1-5                — 1K / 10K / 100K / 500K / 1M
     //   • + / -              — ×1.5 fine
     //   • C / V / W          — cloud / cube / wall formation

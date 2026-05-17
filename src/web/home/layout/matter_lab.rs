@@ -76,6 +76,7 @@ pub fn matter_lab_section() -> String {
           <span><b>⌫</b> Del</span>
           <span><b>⌘Z</b> Undo</span>
           <span><b>Esc</b> Cancel</span>
+          <span><b>Space</b> Centre</span>
         </div>
 
         <!-- Working plane pills (top-left) -->

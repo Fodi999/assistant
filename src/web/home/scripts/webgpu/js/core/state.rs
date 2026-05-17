@@ -69,5 +69,59 @@ pub const JS: &str = r##"
       function toggleCellSdf()  { cellSdf.on = !cellSdf.on; }
       function cycleColorMode() { cellSdf.colorMode = (cellSdf.colorMode+1)%3; }
 
+      // ── Frame / Center scene (Space) ─────────────────────────────────────
+      // Animates cam.target → centroid of all sketch points (or origin if empty),
+      // and cam.dist → a comfortable viewing distance.
+      window.__frameCenterScene = function() {
+        const ss = window.sketchState;
+        let cx = 0, cy = 0, cz = 0, n = 0;
+
+        // Compute centroid of all sketch points
+        if (ss && ss.points && ss.points.length > 0) {
+          for (const p of ss.points) { cx += p.x; cy += p.y; cz += p.z; }
+          n = ss.points.length;
+          cx /= n; cy /= n; cz /= n;
+        } // empty scene → centroid stays (0,0,0)
+
+        // Animate cam.target → centroid, dist stays as-is
+        const FRAMES = 30;
+        const t0x = cam.target[0], t0y = cam.target[1], t0z = cam.target[2];
+        let f = 0;
+        function _step() {
+          f++;
+          const ease = 1 - Math.pow(1 - f / FRAMES, 3); // cubic ease-out
+          cam.target[0] = t0x + (cx - t0x) * ease;
+          cam.target[1] = t0y + (cy - t0y) * ease;
+          cam.target[2] = t0z + (cz - t0z) * ease;
+          // cam.dist intentionally not changed — Space only centres, not zooms
+          if (f < FRAMES) requestAnimationFrame(_step);
+        }
+        requestAnimationFrame(_step);
+
+        if (window.__setStatusMessage)
+          window.__setStatusMessage('⌖ Scene centred' + (n ? ' (' + n + ' pts)' : ''));
+      };
+
+      // ── Reset camera to default iso view ─────────────────────────────────
+      window.__resetCamera = function() {
+        const FRAMES = 30;
+        const t0x = cam.target[0], t0y = cam.target[1], t0z = cam.target[2];
+        const d0 = cam.dist, y0 = cam.yaw, p0 = cam.pitch;
+        const ty = Math.PI / 4, tp = -0.615, td = 10.0;
+        let f = 0;
+        function _step() {
+          f++;
+          const ease = 1 - Math.pow(1 - f / FRAMES, 3);
+          cam.target[0] = t0x * (1 - ease);
+          cam.target[1] = t0y * (1 - ease);
+          cam.target[2] = t0z * (1 - ease);
+          cam.dist  = d0  + (td - d0)  * ease;
+          cam.yaw   = y0  + (ty - y0)  * ease;
+          cam.pitch = p0  + (tp - p0)  * ease;
+          if (f < FRAMES) requestAnimationFrame(_step);
+        }
+        requestAnimationFrame(_step);
+      };
+
       // mouse NDC state declared in input/mouse.rs
 "##;

@@ -46,6 +46,8 @@ pub fn cad_side_panel_html() -> &'static str {
                   <span class="csp-caret">▾</span>
                 </button>
                 <div class="csp-section-body">
+
+                  <!-- toggles -->
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-show-grid" checked>
                     <span>Show grid</span>
@@ -54,38 +56,34 @@ pub fn cad_side_panel_html() -> &'static str {
                     <input type="checkbox" id="csp-snap-grid" checked>
                     <span>Snap to grid</span>
                   </label>
-                  <div class="csp-row">
-                    <span class="csp-lbl">Step</span>
-                    <div class="csp-stepper">
-                      <button class="csp-step-btn" onclick="window.__cadStepGrid(-1)">−</button>
-                      <input  id="csp-grid-step" type="number" value="1" min="0.001" max="10000" step="any" class="csp-num-input">
-                      <span class="csp-unit">mm</span>
-                      <button class="csp-step-btn" onclick="window.__cadStepGrid(+1)">+</button>
+
+                  <!-- slider row -->
+                  <div class="csp-row" style="flex-direction:column; gap:6px; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="csp-lbl">Grid step</span>
+                      <div style="display:flex; align-items:center; gap:4px;">
+                        <input id="csp-grid-step-num"
+                               type="number" min="1" max="100" step="1" value="10"
+                               style="width:52px; background:rgba(0,0,0,0.5); color:#e2e8f0;
+                                      border:1px solid rgba(103,232,249,0.25); border-radius:6px;
+                                      padding:2px 6px; font:inherit; text-align:right; font-size:12px;">
+                        <span class="csp-unit">mm</span>
+                      </div>
+                    </div>
+                    <input id="csp-grid-step-slider"
+                           type="range" min="1" max="100" step="1" value="10"
+                           style="width:100%; accent-color:#67e8f9; cursor:pointer;">
+                    <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                      <button class="csp-preset-btn" onclick="window.__cadSetGrid(1)">1</button>
+                      <button class="csp-preset-btn" onclick="window.__cadSetGrid(5)">5</button>
+                      <button class="csp-preset-btn csp-preset-active" onclick="window.__cadSetGrid(10)">10</button>
+                      <button class="csp-preset-btn" onclick="window.__cadSetGrid(25)">25</button>
+                      <button class="csp-preset-btn" onclick="window.__cadSetGrid(50)">50</button>
+                      <button class="csp-preset-btn" onclick="window.__cadSetGrid(100)">100</button>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              <!-- UNITS section -->
-              <div class="csp-section" data-section="units">
-                <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('units')">
-                  <span>UNITS</span>
-                  <span class="csp-caret">▾</span>
-                </button>
-                <div class="csp-section-body">
-                  <div class="csp-row">
-                    <span class="csp-lbl">Units</span>
-                    <span class="csp-val">Millimeter</span>
-                  </div>
-                  <div class="csp-row">
-                    <span class="csp-lbl">Grid size</span>
-                    <input id="csp-grid-size" type="number" value="120" min="1" max="1000" class="csp-num-input">
-                  </div>
-                  <div class="csp-row">
-                    <span class="csp-lbl">Line every</span>
-                    <input id="csp-grid-major" type="number" value="10" min="1" max="100" class="csp-num-input">
-                  </div>
-                  <button class="csp-btn-sm" onclick="window.__cadResetGrid()">Reset to default</button>
+                  <button class="csp-btn-sm" style="margin-top:4px;" onclick="window.__cadResetGrid()">↺ Reset</button>
                 </div>
               </div>
 

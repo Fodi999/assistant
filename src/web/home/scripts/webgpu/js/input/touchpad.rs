@@ -34,8 +34,13 @@ pub const JS: &str = r##"
         dy = Math.max(-120, Math.min(120, dy));
 
         // 3. Choose factor: pinch (ctrlKey synthesised by macOS) vs. wheel.
+        //    At very small distances use a gentler factor so 1 mm grid is reachable.
         const isPinch = e.ctrlKey;
-        const factor  = isPinch ? 0.005 : 0.002;
+        const baseFactor = isPinch ? 0.005 : 0.003;
+        // Scale factor down when already close so fine-zoom stays controllable
+        const factor = cam.dist < 0.1
+          ? baseFactor * (cam.dist / 0.1)   // gentler below 100 mm
+          : baseFactor;
 
         // 4. Zoom-to-cursor: sample world point BEFORE distance change.
         const rect   = canvas.getBoundingClientRect();
@@ -44,8 +49,14 @@ pub const JS: &str = r##"
         const before = __worldUnderCursor(ndcX, ndcY);
 
         // 5. Apply zoom.
+        //    Min = gridStepM * 5 so you can never zoom past "see 1 cell clearly".
+        //    Absolute floor = 0.002 m (2 mm) in case grid is not set yet.
+        //    Max = 500 m for large scene overview.
+        const gridM   = (window.sketchState && sketchState.precision && sketchState.precision.displayGridStepM)
+                        ? sketchState.precision.displayGridStepM : 0.001;
+        const minDist = Math.max(0.002, gridM * 5);
         const oldDist = cam.dist;
-        cam.dist = Math.max(0.5, Math.min(200, cam.dist * Math.exp(dy * factor)));
+        cam.dist = Math.max(minDist, Math.min(500, cam.dist * Math.exp(dy * factor)));
 
         // 6. Zoom-to-cursor: sample world point AFTER and shift cam.target.
         if (before) {

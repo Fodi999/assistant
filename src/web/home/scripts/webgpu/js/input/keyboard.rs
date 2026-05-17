@@ -19,11 +19,16 @@ pub const JS: &str = r##"
         log(`↻ particles = ${n.toLocaleString()}`, '#a78bfa');
       }
 
-      // ── Space key — pan modifier ─────────────────────────────────
+      // ── Space key — pan modifier + frame scene ───────────────────
       let spaceHeld = false;
+      let _spacePressTime = 0;
 
       document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space') { spaceHeld = true; }
+        if (e.code === 'Space') {
+          spaceHeld = true;
+          _spacePressTime = performance.now();
+          e.preventDefault(); // не скроллить страницу
+        }
         // Track Shift for temporary snap-disable / free-mode (Phase 12).
         if (e.shiftKey && window.sketchState && window.sketchState.precision) {
           window.sketchState.precision.shiftHeld = true;
@@ -33,7 +38,13 @@ pub const JS: &str = r##"
       });
 
       document.addEventListener('keyup', (e) => {
-        if (e.code === 'Space') { spaceHeld = false; }
+        if (e.code === 'Space') {
+          spaceHeld = false;
+          // Если удержание было меньше 300 мс — считаем кликом, центрируем сцену
+          if (performance.now() - _spacePressTime < 300) {
+            if (window.__frameCenterScene) window.__frameCenterScene();
+          }
+        }
         if (!e.shiftKey && window.sketchState && window.sketchState.precision) {
           window.sketchState.precision.shiftHeld = false;
         }

@@ -50,26 +50,68 @@ window.__cadPanelToggleSection = function(name) {
   }
 };
 
-// ── Grid step stepper ──────────────────────────────
+// ── Grid step — central setter (mm → displayGridStepM in meters) ──
+window.__cadSetGrid = function(mm) {
+  mm = Math.min(100, Math.max(1, Math.round(mm)));
+  // update number input
+  const num = document.getElementById('csp-grid-step-num');
+  if (num) num.value = mm;
+  // update slider
+  const sl = document.getElementById('csp-grid-step-slider');
+  if (sl) sl.value = mm;
+  // apply to sketchState
+  if (window.sketchState && sketchState.precision) {
+    sketchState.precision.displayGridStepM = mm / 1000;
+    sketchState.precision.snapStepMm       = mm;
+  }
+  // highlight active preset button
+  document.querySelectorAll('#cad-side-panel .csp-preset-btn').forEach(b => {
+    const v = parseInt(b.textContent);
+    b.classList.toggle('csp-preset-active', v === mm);
+  });
+
+  // ── Auto-zoom: smoothly bring cam.dist to a comfortable view of this grid ──
+  // Target = 15 cells wide on screen (dist ≈ gridM * 15).
+  // Only animate if we are way outside the "good" range for this grid size.
+  if (window.cam) {
+    const gridM   = mm / 1000;
+    const minDist = gridM * 5;   // floor: at least 5 cells → grid always visible
+    const tgtDist = gridM * 15;  // comfortable: ~15 cells on screen
+    const maxDist = gridM * 200; // ceiling: not so zoomed out cells are invisible
+
+    // Decide if a zoom adjustment is needed
+    let newDist = null;
+    if (cam.dist < minDist)        newDist = minDist;  // too close → pull out
+    else if (cam.dist > maxDist)   newDist = tgtDist;  // too far   → zoom in
+
+    if (newDist !== null) {
+      const d0 = cam.dist;
+      const FRAMES = 30;
+      let f = 0;
+      (function _step() {
+        f++;
+        const ease = 1 - Math.pow(1 - f / FRAMES, 3);
+        cam.dist = d0 + (newDist - d0) * ease;
+        if (f < FRAMES) requestAnimationFrame(_step);
+      })();
+      if (window.__setStatusMessage)
+        window.__setStatusMessage('Grid ' + mm + ' mm — zoom adjusted');
+    }
+  }
+};
+
+// ── Grid step stepper (kept for backward compat) ──────────────────
 window.__cadStepGrid = function(dir) {
-  const inp = document.getElementById('csp-grid-step');
-  if (!inp) return;
-  const steps = [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
-  const cur = parseFloat(inp.value) || 1;
+  const sl = document.getElementById('csp-grid-step-slider');
+  const cur = sl ? parseInt(sl.value) || 10 : 10;
+  const steps = [1, 2, 5, 10, 25, 50, 100];
   let idx = steps.findIndex(s => s >= cur);
   if (idx < 0) idx = steps.length - 1;
-  const next = steps[Math.min(Math.max(idx + dir, 0), steps.length - 1)];
-  inp.value = next;
-  inp.dispatchEvent(new Event('change'));
+  window.__cadSetGrid(steps[Math.min(Math.max(idx + dir, 0), steps.length - 1)]);
 };
 
 window.__cadResetGrid = function() {
-  const gs  = document.getElementById('csp-grid-step');
-  const gsi = document.getElementById('csp-grid-size');
-  const gm  = document.getElementById('csp-grid-major');
-  if (gs)  { gs.value  = 1;   gs.dispatchEvent(new Event('change')); }
-  if (gsi) { gsi.value = 120; gsi.dispatchEvent(new Event('change')); }
-  if (gm)  { gm.value  = 10;  gm.dispatchEvent(new Event('change')); }
+  window.__cadSetGrid(10);
 };
 
 // ── Sync snap tab checkboxes → sketchState.precision ───
@@ -107,14 +149,14 @@ window.__cadPanelSyncSnap = function() {
       if (window.__toggleOrthoLock) window.__toggleOrthoLock();
     }
   });
-  // Grid step → snap step input
-  const cspStep = document.getElementById('csp-grid-step');
-  if (cspStep) cspStep.addEventListener('change', () => {
-    const v = parseFloat(cspStep.value);
-    if (!isFinite(v) || v <= 0) return;
-    const siSnap = document.getElementById('si-snap-step');
-    if (siSnap) { siSnap.value = v; siSnap.dispatchEvent(new Event('change')); }
-    if (sketchState && sketchState.precision) sketchState.precision.snapStepMm = v;
+  // Grid slider ↔ number input sync
+  const cspSlider = document.getElementById('csp-grid-step-slider');
+  const cspNum    = document.getElementById('csp-grid-step-num');
+  if (cspSlider) cspSlider.addEventListener('input', () => {
+    window.__cadSetGrid(parseInt(cspSlider.value));
+  });
+  if (cspNum) cspNum.addEventListener('change', () => {
+    window.__cadSetGrid(parseInt(cspNum.value));
   });
   // Show grid checkbox
   _wire('csp-show-grid', e => {
@@ -198,4 +240,13 @@ window.__cadPanelTick = function() {
   if (tab === 'object') window.__cadPanelUpdateSelection();
   if (tab === 'dev')    window.__cadPanelUpdateDev();
 };
+
+// ── Init: apply default grid step once sketchState is ready ──
+(function _initGrid() {
+  if (window.sketchState && sketchState.precision) {
+    window.__cadSetGrid(10); // 10 mm default
+  } else {
+    setTimeout(_initGrid, 200);
+  }
+})();
 "#;

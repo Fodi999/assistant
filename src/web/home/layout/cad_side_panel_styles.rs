@@ -294,5 +294,30 @@ pub fn cad_side_panel_styles() -> &'static str {
       word-break: break-all;
       margin: 0;
     }
+    /* ── Grid preset buttons ── */
+    .csp-preset-btn {
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.09);
+      color: #64748b;
+      font: 600 10px/1.4 -apple-system, system-ui, monospace;
+      cursor: pointer;
+      transition: background 100ms, color 100ms, border-color 100ms;
+      flex: 1 1 auto;
+      text-align: center;
+    }
+    .csp-preset-btn:hover {
+      background: rgba(103,232,249,0.12);
+      border-color: rgba(103,232,249,0.30);
+      color: #67e8f9;
+    }
+    .csp-preset-active,
+    .csp-preset-btn.csp-preset-active {
+      background: rgba(103,232,249,0.14);
+      border-color: rgba(103,232,249,0.45);
+      color: #67e8f9;
+    }
+
 "##
 }
