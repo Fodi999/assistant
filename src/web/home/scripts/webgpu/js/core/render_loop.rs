@@ -416,25 +416,25 @@ pub const JS: &str = r##"
             if (cx === null || cx === undefined) { /* skip */ } else {
 
             // ── Constants (normal / precision) ───────────────────
-            const CROSS_ARM   = prec ? 8  : 6;   // half-length of crosshair arm
+            const _dpr       = window.devicePixelRatio || 1;
+            const CROSS_ARM   = prec ? 8  : 6;   // half-length of crosshair arm (canvas px)
             const CROSS_GAP   = prec ? 3  : 2;   // center dead-zone radius
             const MARKER_SZ   = prec ? 4  : 3;   // snap marker half-size
             const LBL_OX      = prec ? 48 : 34;  // tooltip X offset
             const LBL_OY      = prec ? 32 : 26;  // tooltip Y offset
             const CROSS_COLOR = snapPt ? 'rgba(16,185,129,0.90)'
                               : snapFr ? 'rgba(203,213,225,0.50)'
-                              :          'rgba(103,232,249,0.85)'; // cyan for grid
+                              :          'rgba(103,232,249,0.85)';
 
             ctx.save();
 
-            // ── 1. Crosshair (4 arms with center gap) ────────────
+            // ── 1. Crosshair — тонкий плюс с дыркой в центре ────
+            // lineWidth делим на DPR: 0.5 CSS-пикселя = 1 физ. пиксель на Retina
             ctx.strokeStyle = CROSS_COLOR;
-            ctx.lineWidth   = prec ? 0.9 : 0.7;  // тонкие линии
+            ctx.lineWidth   = (prec ? 0.9 : 0.5) * _dpr;
             ctx.beginPath();
-            // horizontal
             ctx.moveTo(cx - CROSS_ARM, cy); ctx.lineTo(cx - CROSS_GAP, cy);
             ctx.moveTo(cx + CROSS_GAP, cy); ctx.lineTo(cx + CROSS_ARM, cy);
-            // vertical
             ctx.moveTo(cx, cy - CROSS_ARM); ctx.lineTo(cx, cy - CROSS_GAP);
             ctx.moveTo(cx, cy + CROSS_GAP); ctx.lineTo(cx, cy + CROSS_ARM);
             ctx.stroke();
@@ -443,7 +443,7 @@ pub const JS: &str = r##"
             if (cs.showSnapMarker !== false) {
               const sm = MARKER_SZ;
               ctx.strokeStyle = CROSS_COLOR;
-              ctx.lineWidth   = 1.5;
+              ctx.lineWidth   = 0.8 * _dpr;
               if (snapPt) {
                 // Endpoint → cyan square
                 ctx.strokeRect(cx - sm, cy - sm, sm * 2, sm * 2);
