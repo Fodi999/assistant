@@ -417,21 +417,47 @@ pub const JS: &str = r##"
 
             // ── Constants (normal / precision) ───────────────────
             const _dpr       = window.devicePixelRatio || 1;
-            const CROSS_ARM   = prec ? 8  : 6;   // half-length of crosshair arm (canvas px)
-            const CROSS_GAP   = prec ? 3  : 2;   // center dead-zone radius
-            const MARKER_SZ   = prec ? 4  : 3;   // snap marker half-size
+            const CROSS_ARM   = prec ? 14 : 10;  // half-length of crosshair arm (device px)
+            const CROSS_GAP   = prec ?  4 :  3;  // center dead-zone radius
+            const MARKER_SZ   = prec ?  4 :  3;  // snap marker half-size
             const LBL_OX      = prec ? 48 : 34;  // tooltip X offset
             const LBL_OY      = prec ? 32 : 26;  // tooltip Y offset
-            const CROSS_COLOR = snapPt ? 'rgba(16,185,129,0.90)'
-                              : snapFr ? 'rgba(203,213,225,0.50)'
-                              :          'rgba(103,232,249,0.85)';
+            const snapGrid = kind === 'grid';
+
+            // ── Determine if cursor is truly near a grid intersection ──────
+            // snap.kind='grid' always — it just means "nearest grid node snapped".
+            // We check the screen-distance between the actual mouse pixel and the
+            // projected snapped world position. If < SNAP_HIT_PX the cursor is
+            // visually ON the intersection → highlight.
+            const SNAP_HIT_PX = 10;  // device pixels threshold
+            let onGridIntersection = false;
+            if (snapGrid) {
+              const _gs = w2s(hw.x, hw.y, hw.z);
+              if (_gs) {
+                const _sd = Math.hypot(cx - _gs.x, cy - _gs.y);
+                onGridIntersection = _sd < SNAP_HIT_PX;
+              }
+            }
+
+            // Colors: on grid intersection = bright yellow glow, point = green, free/roaming = cyan
+            const CROSS_COLOR = snapPt            ? 'rgba(16,185,129,0.95)'
+                              : onGridIntersection ? 'rgba(250,255,80,1.00)'
+                              : snapFr            ? 'rgba(203,213,225,0.50)'
+                              :                     'rgba(103,232,249,0.70)';   // roaming between grid lines
 
             ctx.save();
 
             // ── 1. Crosshair — тонкий плюс с дыркой в центре ────
-            // lineWidth делим на DPR: 0.5 CSS-пикселя = 1 физ. пиксель на Retina
+            // Canvas buffer = device pixels (no ctx.scale), lineWidth 1 = 1 device px = thin on Retina
             ctx.strokeStyle = CROSS_COLOR;
-            ctx.lineWidth   = (prec ? 0.9 : 0.5) * _dpr;
+            ctx.lineWidth   = onGridIntersection ? 2 : 1;   // чуть толще при попадании в перекрёсток
+
+            // Grid intersection → glow через shadowBlur
+            if (onGridIntersection) {
+              ctx.shadowColor = 'rgba(250,255,80,0.75)';
+              ctx.shadowBlur  = 6 * _dpr;
+            }
+
             ctx.beginPath();
             ctx.moveTo(cx - CROSS_ARM, cy); ctx.lineTo(cx - CROSS_GAP, cy);
             ctx.moveTo(cx + CROSS_GAP, cy); ctx.lineTo(cx + CROSS_ARM, cy);
@@ -439,20 +465,22 @@ pub const JS: &str = r##"
             ctx.moveTo(cx, cy + CROSS_GAP); ctx.lineTo(cx, cy + CROSS_ARM);
             ctx.stroke();
 
+            // Сбрасываем glow чтобы не влиял на остальные элементы
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur  = 0;
+
             // ── 2. Snap marker ───────────────────────────────────
             if (cs.showSnapMarker !== false) {
               const sm = MARKER_SZ;
               ctx.strokeStyle = CROSS_COLOR;
-              ctx.lineWidth   = 0.8 * _dpr;
+              ctx.lineWidth   = 1;
               if (snapPt) {
-                // Endpoint → cyan square
+                // Endpoint → green square
                 ctx.strokeRect(cx - sm, cy - sm, sm * 2, sm * 2);
-              } else if (!snapFr) {
-                // Grid → small cross (distinct from crosshair, slightly rotated)
-                ctx.beginPath();
-                ctx.moveTo(cx - sm, cy - sm); ctx.lineTo(cx + sm, cy + sm);
-                ctx.moveTo(cx + sm, cy - sm); ctx.lineTo(cx - sm, cy + sm);
-                ctx.stroke();
+              } else if (onGridIntersection) {
+                // Grid intersection → маленький заполненный квадрат (dot) в центре
+                ctx.fillStyle = CROSS_COLOR;
+                ctx.fillRect(cx - 2, cy - 2, 4, 4);
               }
               // free → no extra marker (crosshair alone is enough)
             }
@@ -461,7 +489,7 @@ pub const JS: &str = r##"
             if (prec) {
               ctx.beginPath();
               ctx.arc(cx, cy, CROSS_ARM + 4, 0, Math.PI * 2);
-              ctx.strokeStyle = 'rgba(103,232,249,0.25)';
+              ctx.strokeStyle = onGridIntersection ? 'rgba(250,255,80,0.30)' : 'rgba(103,232,249,0.25)';
               ctx.lineWidth = 1;
               ctx.stroke();
             }
@@ -1185,6 +1213,7 @@ pub const JS: &str = r##"
 
         if (window.__perfSample)    window.__perfSample('overlay', performance.now() - __pfOverlay);
         if (window.__updatePerfHud) window.__updatePerfHud();
+        if (window.__cadPanelTick)  window.__cadPanelTick();
 
         gpuRafId = requestAnimationFrame(frame);
       }

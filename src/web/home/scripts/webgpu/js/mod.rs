@@ -54,6 +54,8 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + ui::matter_ui::JS.len()
         + ui::dimension_editor::JS.len()
         + ui::profile_popup::JS.len()
+        + ui::cad_side_panel::JS.len()
+        + ui::cad_side_panel::JS.len()
         + shader.len()
         + cad_shader.len()
         + 512,
@@ -110,6 +112,8 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(ui::matter_ui::JS);
     out.push_str(ui::dimension_editor::JS);
     out.push_str(ui::profile_popup::JS);
+    out.push_str(ui::cad_side_panel::JS);
+    out.push_str(ui::cad_side_panel::JS);
 
     // ── 8. Render loop (last — depends on everything above) ──────────────────
     out.push_str(core::render_loop::JS);

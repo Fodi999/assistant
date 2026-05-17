@@ -7,3 +7,5 @@ pub mod matter_lab;
 pub mod matter_lab_styles;
 pub mod panels;
 pub mod outliner;
+pub mod cad_side_panel;
+pub mod cad_side_panel_styles;

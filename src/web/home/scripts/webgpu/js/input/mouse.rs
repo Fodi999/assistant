@@ -36,7 +36,7 @@ pub const JS: &str = r##"
       function __setCursorForTool() {
         const t = sketchState.activeTool;
         let cur = 'default';
-        if      (t === 'point' || t === 'line') cur = 'crosshair';
+        if      (t === 'point' || t === 'line') cur = 'none';   // hide native cursor — our CAD crosshair is drawn on canvas
         else if (t === 'grab')                  cur = 'move';
         else if (t === 'delete')                cur = 'not-allowed';
         canvas.style.cursor = cur;

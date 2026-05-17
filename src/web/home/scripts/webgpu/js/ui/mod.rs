@@ -7,3 +7,4 @@ pub mod dimension_editor;
 pub mod profile_popup;
 pub mod matter_ui;
 pub mod matter_state;
+pub mod cad_side_panel;
