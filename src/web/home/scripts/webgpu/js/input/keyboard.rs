@@ -23,11 +23,57 @@ pub const JS: &str = r##"
       let spaceHeld = false;
       let _spacePressTime = 0;
 
+      // ── Shortcuts / cursor-info toggle helpers ────────────────────────
+      window.__cursorInfoVisible = false;
+
+      function __toggleShortcutsOverlay() {
+        const ov = document.getElementById('shortcuts-overlay');
+        if (!ov) return;
+        ov.style.display = ov.style.display === 'none' ? '' : 'none';
+      }
+
+      function __toggleCursorInfo() {
+        window.__cursorInfoVisible = !window.__cursorInfoVisible;
+        // Update ? button visual state
+        const btn = document.getElementById('shortcuts-toggle');
+        if (btn) btn.classList.toggle('active', window.__cursorInfoVisible);
+        if (!window.__cursorInfoVisible) {
+          const hud = document.getElementById('cursor-hud');
+          if (hud) hud.style.display = 'none';
+        }
+        if (window.__setStatusMessage)
+          window.__setStatusMessage(window.__cursorInfoVisible ? '⊙ Cursor info ON' : '⊙ Cursor info OFF');
+      }
+
+      // Event delegation — works regardless of DOM ready state
+      document.addEventListener('click', (e) => {
+        const id = e.target && e.target.id;
+        if (id === 'shortcuts-toggle') {
+          __toggleCursorInfo();
+          return;
+        }
+        if (id === 'shortcuts-close') {
+          const ov = document.getElementById('shortcuts-overlay');
+          if (ov) ov.style.display = 'none';
+          return;
+        }
+      });
+
       document.addEventListener('keydown', (e) => {
         if (e.code === 'Space') {
           spaceHeld = true;
           _spacePressTime = performance.now();
-          e.preventDefault(); // не скроллить страницу
+          e.preventDefault();
+        }
+        // ? key — toggle cursor info HUD
+        if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+          __toggleCursorInfo();
+          return;
+        }
+        // / key (same physical key, no shift) — open shortcuts overlay
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          __toggleShortcutsOverlay();
+          return;
         }
         // Track Shift for temporary snap-disable / free-mode (Phase 12).
         if (e.shiftKey && window.sketchState && window.sketchState.precision) {

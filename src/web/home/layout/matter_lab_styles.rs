@@ -929,7 +929,7 @@ pub fn matter_status_styles() -> &'static str {
     }
     #sketch-inspector #si-pf-list li.selected .pf-meta { color: #fdba74; }
 
-    /* ─── Mini command bar (top center, above hotkey strip) ─── */
+    /* ─── Mini command bar (top center) ─── */
     #mini-bar {
       position: absolute;
       top: 14px;
@@ -948,7 +948,6 @@ pub fn matter_status_styles() -> &'static str {
       letter-spacing: 0.02em;
       z-index: 21;
       box-shadow: 0 4px 18px rgba(0,0,0,0.45);
-      pointer-events: none;
       user-select: none;
     }
     #mini-bar .mb-cell b {
@@ -959,33 +958,103 @@ pub fn matter_status_styles() -> &'static str {
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
-    #mini-bar .mb-sep { color: #475569; }
+    #mini-bar .mb-sep { color: #475569; pointer-events: none; }
     #mini-bar #mini-tool   { color: #fbbf24; }
     #mini-bar #mini-plane  { color: #a78bfa; }
     #mini-bar #mini-snap   { color: #10b981; }
-    #mini-bar #mini-length { color: #38bdf8; }
+    /* Shortcuts toggle button inside mini-bar */
+    #shortcuts-toggle {
+      appearance: none; border: none; cursor: pointer;
+      background: rgba(56,189,248,0.15);
+      color: #67e8f9;
+      font: 700 11px/1 "JetBrains Mono", monospace;
+      border-radius: 50%;
+      width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; margin-left: 4px;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    #shortcuts-toggle:hover { background: rgba(56,189,248,0.30); }
+    #shortcuts-toggle.active {
+      background: rgba(56,189,248,0.40);
+      box-shadow: 0 0 0 2px rgba(56,189,248,0.6);
+      color: #fff;
+    }
 
-    /* ─── Hotkey strip (top center, below mini-bar) ─── */
-    #hotkey-strip {
+    /* ─── Shortcuts overlay ─── */
+    #shortcuts-overlay {
       position: absolute;
-      top: 54px;
+      top: 52px;
       left: 50%;
       transform: translateX(-50%);
-      display: flex;
-      gap: 14px;
-      padding: 6px 14px;
-      border-radius: 999px;
-      background: rgba(15, 20, 30, 0.70);
-      border: 1px solid rgba(148, 163, 184, 0.18);
+      z-index: 40;
+      background: rgba(10, 14, 22, 0.95);
+      border: 1px solid rgba(56,189,248,0.30);
+      border-radius: 14px;
+      backdrop-filter: blur(16px);
+      padding: 14px 18px 16px;
+      min-width: 220px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      font: 500 12px/1.5 "JetBrains Mono", system-ui, monospace;
+      color: #e2e8f0;
+    }
+    .sco-title {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; font-weight: 700; color: #67e8f9;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    #shortcuts-close {
+      appearance: none; border: none; background: transparent;
+      color: #475569; cursor: pointer; font-size: 13px; padding: 0;
+    }
+    #shortcuts-close:hover { color: #e2e8f0; }
+    .sco-grid {
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      row-gap: 4px;
+      column-gap: 10px;
+    }
+    .sco-key {
+      background: rgba(56,189,248,0.12);
+      color: #67e8f9;
+      border-radius: 5px;
+      padding: 1px 6px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 11px;
+    }
+
+    /* ─── Cursor measurement HUD ─── */
+    #cursor-hud {
+      position: absolute;
+      /* positioned dynamically by JS near cursor; default top-left offset */
+      top: 120px; left: 80px;
+      z-index: 35;
+      background: rgba(10, 14, 22, 0.88);
+      border: 1px solid rgba(56,189,248,0.25);
+      border-radius: 8px;
       backdrop-filter: blur(10px);
-      font: 500 11px/1.4 -apple-system, system-ui, monospace;
-      color: #94a3b8;
-      letter-spacing: 0.02em;
-      z-index: 19;
+      padding: 8px 12px;
+      font: 600 11px/1.5 "JetBrains Mono", system-ui, monospace;
+      color: #e2e8f0;
       pointer-events: none;
       user-select: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      min-width: 110px;
     }
-    #hotkey-strip b { color: #67e8f9; font-weight: 700; margin-right: 4px; }
+    .chud-row { display: flex; justify-content: space-between; gap: 12px; }
+    .chud-lbl { color: #67e8f9; font-weight: 700; font-size: 10px; letter-spacing: 0.08em; }
+    .chud-sep { border-top: 1px solid rgba(56,189,248,0.18); margin: 4px 0; }
+    .chud-len span:last-child { color: #38bdf8; font-weight: 700; }
+    .chud-ang span:last-child { color: #a78bfa; }
+    .chud-snap-row span:last-child { color: #10b981; font-size: 10px; text-transform: uppercase; }
+    /* ? button active = cursor info is ON */
+    #shortcuts-toggle.active {
+      background: rgba(56,189,248,0.35);
+      color: #fff;
+      outline: 1px solid rgba(56,189,248,0.7);
+    }
 
     /* ─── Working plane pills (top-left) ─── */
     #plane-switch {

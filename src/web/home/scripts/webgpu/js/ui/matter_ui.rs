@@ -158,24 +158,78 @@ pub const JS: &str = r##"
           : (sketchState.workingPlane || 'XZ'));
         const snap = sketchState.snap || { kind: 'none' };
         const hw   = sketchState.hoverWorld;
-        const fmtC = window.__fmtCoord || (v => Number(v).toFixed(3));
-        const fmtL = window.__fmtLength || (v => (Number(v) * 1000).toFixed(1) + ' mm');
+
+        // ── Shared format helpers ─────────────────────────────────────────
+        const formatCoord   = window.__fmtCoord  || (v => Number(v).toFixed(3));
+        const formatLengthMm = window.__fmtLength || (v => (Number(v) * 1000).toFixed(1) + ' mm');
+        // Keep legacy aliases used elsewhere in this function
+        const fmtC = formatCoord;
+        const fmtL = formatLengthMm;
+
         let snapTxt;
         if (snap.kind === 'point' && snap.pointId)  snapTxt = 'POINT ' + snap.pointId;
         else if (snap.kind === 'grid')               snapTxt = 'GRID '  + snap.gx + ',' + snap.gy + ',' + snap.gz;
-        else if (snap.kind === 'free' && hw)         snapTxt = 'FREE '  + fmtC(hw.x) + ' ' + fmtC(hw.y) + ' ' + fmtC(hw.z);
+        else if (snap.kind === 'free' && hw)         snapTxt = 'FREE '  + formatCoord(hw.x) + ' ' + formatCoord(hw.y) + ' ' + formatCoord(hw.z);
         else                                          snapTxt = '—';
         set('mini-snap', snapTxt);
-        if (hw)  set('mini-grid', fmtC(hw.x) + ' ' + fmtC(hw.y) + ' ' + fmtC(hw.z));
-        else     set('mini-grid', '—');
-        let lenTxt = '—';
-        if (tool === 'line' && sketchState.line.startPointId && sketchState.line.previewPoint) {
-          lenTxt = fmtL(sketchState.line.previewLength || 0);
-        } else if (totalSel === 1 && selEds.length === 1) {
-          const e = sketchState.edges.find(x => x.id === selEds[0]);
-          if (e) lenTxt = fmtL(window.__edgeLength(e));
+
+        // ── Cursor HUD: coordinates + length — shown only when __cursorInfoVisible ──
+        const cursorHud = document.getElementById('cursor-hud');
+        // Initialise global toggle state on first call
+        if (window.__cursorInfoVisible === undefined) window.__cursorInfoVisible = false;
+
+        // ? button reflects active state
+        const shortcutsToggle = document.getElementById('shortcuts-toggle');
+        if (shortcutsToggle) shortcutsToggle.classList.toggle('active', !!window.__cursorInfoVisible);
+
+        const isDrawing = (tool === 'line' && sketchState.line && sketchState.line.startPointId)
+                        || (tool === 'grab' && sketchState.selectedPointIds && sketchState.selectedPointIds.size > 0);
+
+        if (cursorHud) {
+          // Show only when user toggled cursor info ON AND cursor is over the canvas
+          if (window.__cursorInfoVisible && (isDrawing || hw)) {
+            cursorHud.style.display = '';
+            const setH = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            if (hw) {
+              setH('chud-x', formatCoord(hw.x));
+              setH('chud-y', formatCoord(hw.y));
+              setH('chud-z', formatCoord(hw.z));
+            }
+            // Length and angle
+            let lenTxt = '—', angTxt = null;
+            if (tool === 'line' && sketchState.line.startPointId && sketchState.line.previewPoint) {
+              lenTxt = formatLengthMm(sketchState.line.previewLength || 0);
+              if (sketchState.line.previewAngleDeg !== undefined)
+                angTxt = sketchState.line.previewAngleDeg.toFixed(1) + '°';
+            } else if (totalSel === 1 && selEds.length === 1) {
+              const e = sketchState.edges.find(x => x.id === selEds[0]);
+              if (e) lenTxt = formatLengthMm(window.__edgeLength(e));
+            }
+            setH('chud-len', lenTxt);
+            // Snap type row
+            setH('chud-snap', snap.kind ? snap.kind.toUpperCase() : '—');
+            const angRow = cursorHud.querySelector('.chud-ang');
+            if (angRow) {
+              angRow.style.display = angTxt !== null ? '' : 'none';
+              if (angTxt !== null) setH('chud-ang', angTxt);
+            }
+            // Follow cursor with auto-flip to avoid going off-screen
+            if (window._lastMouseX !== undefined) {
+              const labW = document.getElementById('matter-lab');
+              const labRect = labW ? labW.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+              const hudW = cursorHud.offsetWidth  || 120;
+              const hudH = cursorHud.offsetHeight || 100;
+              const ox = window._lastMouseX - labRect.left;
+              const oy = window._lastMouseY - labRect.top;
+              const flipX = (ox + 24 + hudW) > labRect.width;
+              const flipY = (oy + 24 + hudH) > labRect.height;
+              cursorHud.style.left = (flipX ? ox - hudW - 8 : ox + 20) + 'px';
+              cursorHud.style.top  = (flipY ? oy - hudH - 8 : oy + 20) + 'px';
+            }
+          } else {
+            cursorHud.style.display = 'none';
+          }
         }
-        set('mini-length', lenTxt);
 
         // Plane pill highlight
         document.querySelectorAll('.plane-pill[data-plane]').forEach(btn => {

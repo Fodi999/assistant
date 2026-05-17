@@ -265,6 +265,9 @@ pub const JS: &str = r##"
         mouse.ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
         mouse.ndcY = 1 - ((e.clientY - rect.top)  / rect.height) * 2;
         mouse.active = true;
+        // Track global cursor position for cursor-hud positioning
+        window._lastMouseX = e.clientX;
+        window._lastMouseY = e.clientY;
 
         // Always update lastMouseScreen — needed by Copy Connect even off sketch plane
         if (!sketchState.precision) sketchState.precision = {};

@@ -43,7 +43,7 @@ pub fn matter_lab_section() -> String {
           </div>
         </div>
 
-        <!-- Mini command bar (top center) -->
+        <!-- Mini command bar (top center) — MODE · TOOL · PLANE · SNAP only -->
         <div id="mini-bar">
           <span class="mb-cell"><b>Mode</b> <span id="mini-mode">Free 3D</span></span>
           <span class="mb-sep">·</span>
@@ -52,31 +52,44 @@ pub fn matter_lab_section() -> String {
           <span class="mb-cell"><b>Plane</b> <span id="mini-plane">XZ</span></span>
           <span class="mb-sep">·</span>
           <span class="mb-cell"><b>Snap</b> <span id="mini-snap">—</span></span>
-          <span class="mb-sep">·</span>
-          <span class="mb-cell"><b>Coord</b> <span id="mini-grid">—</span></span>
-          <span class="mb-sep">·</span>
-          <span class="mb-cell"><b>Length</b> <span id="mini-length">—</span></span>
+          <!-- Shortcuts toggle button -->
+          <button id="shortcuts-toggle" title="Keyboard shortcuts (?)">?</button>
         </div>
 
-        <!-- Hotkey strip -->
-        <div id="hotkey-strip">
-          <span><b>S</b> Select</span>
-          <span><b>P</b> Point</span>
-          <span><b>L</b> Line</span>
-          <span><b>G</b> Grab</span>
-          <span><b>⇧G</b> Copy</span>
-          <span><b>D</b> Dim</span>
-          <span><b>F</b> Fix</span>
-          <span><b>H</b> Horiz</span>
-          <span><b>V</b> Vert</span>
-          <span><b>⇧V</b> Valid</span>
-          <span><b>⇧P</b> Perf</span>
-          <span><b>1/2/3</b> Plane</span>
-          <span><b>J</b> Proj</span>
-          <span><b>⌫</b> Del</span>
-          <span><b>⌘Z</b> Undo</span>
-          <span><b>Esc</b> Cancel</span>
-          <span><b>Space</b> Centre</span>
+        <!-- Shortcuts overlay (hidden by default, toggled by ? button or ? key) -->
+        <div id="shortcuts-overlay" style="display:none">
+          <div class="sco-title">Keyboard Shortcuts <button id="shortcuts-close">✕</button></div>
+          <div class="sco-grid">
+            <span class="sco-key">S</span><span>Select</span>
+            <span class="sco-key">P</span><span>Point</span>
+            <span class="sco-key">L</span><span>Line</span>
+            <span class="sco-key">G</span><span>Grab</span>
+            <span class="sco-key">⇧G</span><span>Copy</span>
+            <span class="sco-key">D</span><span>Dimension</span>
+            <span class="sco-key">F</span><span>Fix</span>
+            <span class="sco-key">H</span><span>Horizontal</span>
+            <span class="sco-key">V</span><span>Vertical</span>
+            <span class="sco-key">J</span><span>Project</span>
+            <span class="sco-key">O</span><span>Ortho lock</span>
+            <span class="sco-key">1/2/3</span><span>Switch plane</span>
+            <span class="sco-key">Space</span><span>Centre scene</span>
+            <span class="sco-key">⌫</span><span>Delete</span>
+            <span class="sco-key">⌘Z</span><span>Undo</span>
+            <span class="sco-key">⇧P</span><span>Perf HUD</span>
+            <span class="sco-key">Esc</span><span>Cancel</span>
+          </div>
+        </div>
+
+        <!-- Floating cursor measurement HUD (shown only when __cursorInfoVisible=true) -->
+        <div id="cursor-hud" style="display:none">
+          <div class="chud-row"><span class="chud-lbl">X</span><span id="chud-x">—</span></div>
+          <div class="chud-row"><span class="chud-lbl">Y</span><span id="chud-y">—</span></div>
+          <div class="chud-row"><span class="chud-lbl">Z</span><span id="chud-z">—</span></div>
+          <div class="chud-sep"></div>
+          <div class="chud-row chud-len"><span class="chud-lbl">L</span><span id="chud-len">—</span></div>
+          <div class="chud-row chud-ang" style="display:none"><span class="chud-lbl">∠</span><span id="chud-ang">—</span></div>
+          <div class="chud-sep"></div>
+          <div class="chud-row chud-snap-row"><span class="chud-lbl">⊙</span><span id="chud-snap">—</span></div>
         </div>
 
         <!-- Working plane pills (top-left) -->
