@@ -15,6 +15,8 @@ pub mod validation;
 pub mod profiles;
 pub mod commands;
 pub mod constraints;
+pub mod profile_repair;
+pub mod solver;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
@@ -26,4 +28,13 @@ pub use commands::{
     apply_add_edge, apply_add_point, apply_move_point,
     AddEdgeRequest, AddPointRequest, MovePointRequest, PointRefOrGrid,
     SketchCommandResult,
+};
+pub use profile_repair::{
+    analyze_profile, repair_profile,
+    ProfileAnalyzeRequest, ProfileAnalyzeResponse,
+    ProfileRepairRequest, ProfileRepairResponse,
+};
+pub use solver::{
+    solve_constraints, apply_constraint_once,
+    SolveResult, SolveConstraintsRequest, ConstraintApplyResult,
 };

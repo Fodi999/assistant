@@ -10,6 +10,8 @@ pub use sketch_engine::commands;
 pub use sketch_engine::profiles;
 pub use sketch_engine::sketch;
 pub use sketch_engine::validation;
+pub use sketch_engine::profile_repair;
+pub use sketch_engine::solver;
 
 pub use sketch_engine::{
     apply_add_edge, apply_add_point, apply_move_point,
@@ -17,4 +19,9 @@ pub use sketch_engine::{
     AddEdgeRequest, AddPointRequest, MovePointRequest,
     Constraint, Edge, Point, PointRefOrGrid, Profile, SketchCommandResult, SketchGraph,
     ValidationIssue, ValidationResult, WorkingPlane,
+    analyze_profile, repair_profile,
+    ProfileAnalyzeRequest, ProfileAnalyzeResponse,
+    ProfileRepairRequest, ProfileRepairResponse,
+    solve_constraints, apply_constraint_once,
+    SolveResult, SolveConstraintsRequest, ConstraintApplyResult,
 };

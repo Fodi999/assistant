@@ -128,14 +128,17 @@ pub const JS: &str = r##"
         }
 
         // ── Public: open at (px, py) ────────────────────────────────────
-        window.__openProfilePopup = function(px, py) {
+        window.__openProfilePopup = async function(px, py) {
           const prof = window.__getSelectedProfile && window.__getSelectedProfile();
           if (!prof) return;
 
           const el = getPopup();
 
-          // Auto-run analyze.
-          const rep = window.__analyzeProfile && window.__analyzeProfile(prof);
+          // Auto-run analyze (backend if available, local fallback).
+          setMsg(el, '⏳ Analyzing…', '#475569');
+          const rep = window.__backendAnalyzeProfile
+            ? await window.__backendAnalyzeProfile(prof)
+            : (window.__analyzeProfile && window.__analyzeProfile(prof));
           if (window.__profileCheckState)
             window.__profileCheckState = { report: rep, profileId: prof.id };
           renderReport(el, prof, rep);
@@ -156,58 +159,91 @@ pub const JS: &str = r##"
             q(el,'analyze').addEventListener('click', async () => {
               const p = window.__getSelectedProfile && window.__getSelectedProfile();
               if (!p) { setMsg(el, 'No profile selected', C.danger); return; }
-              const r = window.__analyzeProfile && window.__analyzeProfile(p);
+              setMsg(el, '⏳ Analyzing…', C.mute);
+              q(el,'analyze').disabled = true;
+              // Try backend first, fall back to local
+              const r = window.__backendAnalyzeProfile
+                ? await window.__backendAnalyzeProfile(p)
+                : (window.__analyzeProfile && window.__analyzeProfile(p));
+              q(el,'analyze').disabled = false;
               if (window.__profileCheckState)
                 window.__profileCheckState = { report: r, profileId: p.id };
               renderReport(el, p, r);
               if (window.__updateSketchInspector) window.__updateSketchInspector();
-              setMsg(el, r && r.ok ? 'Profile ok' : 'Issues found', r && r.ok ? C.ok : C.warn);
+              const src = r && r.source === 'backend' ? ' (backend)' : '';
+              setMsg(el, r && r.ok ? 'Profile ok ✓' + src : 'Issues found' + src,
+                        r && r.ok ? C.ok : C.warn);
             });
 
             q(el,'rectangle').addEventListener('click', async () => {
-              setMsg(el, 'Working…', C.mute);
-              const r = await window.__makeSelectedProfileRectangle();
+              setMsg(el, '⏳ Repairing…', C.mute);
+              q(el,'rectangle').disabled = true;
+              // Backend repair → FIX_RECTANGLE
+              const p0 = window.__getSelectedProfile && window.__getSelectedProfile();
+              const r = window.__backendRepairProfile
+                ? await window.__backendRepairProfile(p0, 'FIX_RECTANGLE')
+                : await window.__makeSelectedProfileRectangle();
+              q(el,'rectangle').disabled = false;
               if (!r || !r.ok) {
                 setMsg(el, r && r.error ? r.error : 'Failed', C.danger); return;
               }
               // Re-analyze after fix.
               const p = window.__getSelectedProfile && window.__getSelectedProfile();
-              const rep2 = window.__analyzeProfile && window.__analyzeProfile(p);
+              const rep2 = window.__backendAnalyzeProfile
+                ? await window.__backendAnalyzeProfile(p)
+                : (window.__analyzeProfile && window.__analyzeProfile(p));
               if (window.__profileCheckState && p)
                 window.__profileCheckState = { report: rep2, profileId: p.id };
               renderReport(el, p, rep2);
               if (window.__updateSketchInspector) window.__updateSketchInspector();
-              setMsg(el, 'Made rectangle ✓', C.ok);
+              const dims = r.widthMm ? ` ${r.widthMm.toFixed(1)}×${(r.heightMm||0).toFixed(1)} mm` : '';
+              setMsg(el, 'Rectangle ✓' + dims, C.ok);
             });
 
             q(el,'square').addEventListener('click', async () => {
-              setMsg(el, 'Working…', C.mute);
-              const r = await window.__makeSelectedProfileSquare();
+              setMsg(el, '⏳ Repairing…', C.mute);
+              q(el,'square').disabled = true;
+              const p0 = window.__getSelectedProfile && window.__getSelectedProfile();
+              const r = window.__backendRepairProfile
+                ? await window.__backendRepairProfile(p0, 'FIX_SQUARE')
+                : await window.__makeSelectedProfileSquare();
+              q(el,'square').disabled = false;
               if (!r || !r.ok) {
                 setMsg(el, r && r.error ? r.error : 'Failed', C.danger); return;
               }
               const p = window.__getSelectedProfile && window.__getSelectedProfile();
-              const rep2 = window.__analyzeProfile && window.__analyzeProfile(p);
+              const rep2 = window.__backendAnalyzeProfile
+                ? await window.__backendAnalyzeProfile(p)
+                : (window.__analyzeProfile && window.__analyzeProfile(p));
               if (window.__profileCheckState && p)
                 window.__profileCheckState = { report: rep2, profileId: p.id };
               renderReport(el, p, rep2);
               if (window.__updateSketchInspector) window.__updateSketchInspector();
-              setMsg(el, 'Made square ✓', C.ok);
+              const dims = r.widthMm ? ` ${r.widthMm.toFixed(1)} mm` : '';
+              setMsg(el, 'Square ✓' + dims, C.ok);
             });
 
             q(el,'equalize').addEventListener('click', async () => {
-              setMsg(el, 'Working…', C.mute);
-              const r = await window.__equalizeSelectedEdges();
+              setMsg(el, '⏳ Equalizing…', C.mute);
+              q(el,'equalize').disabled = true;
+              const p0 = window.__getSelectedProfile && window.__getSelectedProfile();
+              const r = window.__backendRepairProfile
+                ? await window.__backendRepairProfile(p0, 'EQUALIZE_EDGES')
+                : await window.__equalizeSelectedEdges();
+              q(el,'equalize').disabled = false;
               if (!r || !r.ok) {
                 setMsg(el, r && r.error ? r.error : 'Failed', C.danger); return;
               }
               const p = window.__getSelectedProfile && window.__getSelectedProfile();
-              const rep2 = window.__analyzeProfile && window.__analyzeProfile(p);
+              const rep2 = window.__backendAnalyzeProfile
+                ? await window.__backendAnalyzeProfile(p)
+                : (window.__analyzeProfile && window.__analyzeProfile(p));
               if (window.__profileCheckState && p)
                 window.__profileCheckState = { report: rep2, profileId: p.id };
               renderReport(el, p, rep2);
               if (window.__updateSketchInspector) window.__updateSketchInspector();
-              setMsg(el, 'Equalized → ' + (r.avgMm || 0).toFixed(2) + ' mm ✓', C.ok);
+              const avg = r.avgMm ? ` → ${r.avgMm.toFixed(2)} mm` : '';
+              setMsg(el, 'Equalized ✓' + avg, C.ok);
             });
           } else {
             // Already wired — just re-render with current profile.

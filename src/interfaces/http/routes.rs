@@ -1335,6 +1335,9 @@ pub fn create_router(
         .route("/api/matter/sketch/add-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_point_endpoint)) // 🆕 Phase 7
         .route("/api/matter/sketch/add-edge",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_edge_endpoint)) // 🆕 Phase 7
         .route("/api/matter/sketch/move-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::move_point_endpoint)) // 🆕 Phase 17
+        .route("/api/matter/sketch/profile/analyze", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::profile_analyze_endpoint)) // 🆕 Profile analyze
+        .route("/api/matter/sketch/profile/repair",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::profile_repair_endpoint))  // 🆕 Profile repair
+        .route("/api/matter/sketch/solve-constraints", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::solve_constraints_endpoint)) // 🆕 Constraint solver
         .nest("/api", protected_chat_routes) // 🔒 POST /api/chat + /api/chat/event (auth + billing)
         .nest("/api", protected_routes);
 

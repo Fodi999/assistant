@@ -17,6 +17,11 @@ use crate::domain::matter::{
     commands::{AddEdgeRequest, AddPointRequest, MovePointRequest, SketchCommandResult},
     sketch::SketchGraph,
     validation::{validate, ValidationResult},
+    analyze_profile, repair_profile,
+    ProfileAnalyzeRequest, ProfileAnalyzeResponse,
+    ProfileRepairRequest, ProfileRepairResponse,
+    solve_constraints, apply_constraint_once,
+    SolveConstraintsRequest, SolveResult,
 };
 
 #[derive(Deserialize)]
@@ -46,4 +51,31 @@ pub async fn move_point_endpoint(
     Json(req): Json<MovePointRequest>,
 ) -> Result<Json<SketchCommandResult>, (StatusCode, Json<serde_json::Value>)> {
     Ok(Json(apply_move_point(req)))
+}
+
+pub async fn profile_analyze_endpoint(
+    Json(req): Json<ProfileAnalyzeRequest>,
+) -> Result<Json<ProfileAnalyzeResponse>, (StatusCode, Json<serde_json::Value>)> {
+    Ok(Json(analyze_profile(req)))
+}
+
+pub async fn profile_repair_endpoint(
+    Json(req): Json<ProfileRepairRequest>,
+) -> Result<Json<ProfileRepairResponse>, (StatusCode, Json<serde_json::Value>)> {
+    Ok(Json(repair_profile(req)))
+}
+
+/// POST /api/matter/sketch/solve-constraints
+/// Applies HORIZONTAL / VERTICAL / EQUAL_LENGTH constraints to the sketch.
+/// If `constraint` field is provided, applies only that one (preview mode).
+/// Otherwise applies all constraints in sketch.constraints.
+pub async fn solve_constraints_endpoint(
+    Json(req): Json<SolveConstraintsRequest>,
+) -> Result<Json<SolveResult>, (StatusCode, Json<serde_json::Value>)> {
+    let result = if let Some(ref c) = req.constraint {
+        apply_constraint_once(req.sketch, c)
+    } else {
+        solve_constraints(req.sketch)
+    };
+    Ok(Json(result))
 }

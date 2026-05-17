@@ -15,6 +15,7 @@ use wasm_bindgen::prelude::*;
 use crate::commands::{apply_add_edge, apply_add_point, apply_move_point, AddEdgeRequest, AddPointRequest, MovePointRequest};
 use crate::sketch::SketchGraph;
 use crate::validation::validate;
+use crate::solver::{solve_constraints, apply_constraint_once, SolveConstraintsRequest};
 
 fn err_json(msg: impl Into<String>) -> String {
     serde_json::json!({ "ok": false, "error": msg.into() }).to_string()
@@ -78,4 +79,29 @@ pub fn wasm_engine_info() -> String {
         "schemaVersion": 1u32
     })
     .to_string()
+}
+
+/// JSON-encoded `SolveConstraintsRequest` → JSON-encoded `SolveResult`.
+///
+/// Applies HORIZONTAL / VERTICAL / EQUAL_LENGTH constraints.
+/// If `constraint` is provided, applies only that one.
+/// Otherwise applies all constraints in sketch.constraints in order.
+///
+/// Example (apply all):
+///   wasm_solve_constraints('{"sketch": <SketchGraph>}')
+///
+/// Example (single, preview):
+///   wasm_solve_constraints('{"sketch": ..., "constraint": {"type":"HORIZONTAL","targetType":"edge","targetId":"e1"}}')
+#[wasm_bindgen]
+pub fn wasm_solve_constraints(json: &str) -> String {
+    let req: SolveConstraintsRequest = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(e) => return err_json(format!("bad json: {e}")),
+    };
+    let result = if let Some(ref c) = req.constraint {
+        apply_constraint_once(req.sketch, c)
+    } else {
+        solve_constraints(req.sketch)
+    };
+    serde_json::to_string(&result).unwrap_or_else(|e| err_json(e.to_string()))
 }
