@@ -1,5 +1,5 @@
 pub fn template(styles: &str, scripts: &str) -> String {
-    let matter = crate::web::home::matter_lab::matter_lab_section();
+    let matter = crate::web::home::layout::matter_lab::matter_lab_section();
     let head = r##"<!doctype html>
 <!-- ChefOS Interactive Engine — v2: fullscreen render mode -->
 <html lang="ru">
