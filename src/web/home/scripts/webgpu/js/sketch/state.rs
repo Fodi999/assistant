@@ -39,6 +39,17 @@ pub const JS: &str = r##"
         // ── Ortho / Angle Lock (0° 45° 90° …) ──
         orthoLock: false,   // toggled by O key or ORTHO button
 
+        // ── Precision cursor mode (Alt held) ──
+        precisionMode: false,
+
+        // ── Cursor display settings ──
+        cursorSettings: {
+          showCoords:    true,
+          showSnapMarker: true,
+          showLength:    true,
+          autoFlipLabel: true,
+        },
+
         // ── Snap status ──
         snap: { kind: "grid", pointId: null, gx: 0, gy: 0, gz: 0 },
 
@@ -235,10 +246,22 @@ pub const JS: &str = r##"
         return n.toFixed(p);
       };
       window.__fmtLength = function(v) {
+        // v is in world meters (1 world unit = 1 m = 1000 mm).
         const n = Number(v);
         if (!isFinite(n)) return '—';
-        const p = sketchState.coordPrecision || 3;
-        return n.toFixed(p);
+        const mm = n * 1000.0;
+        if (mm >= 1000.0) return (mm / 1000.0).toFixed(3) + ' m';
+        const dp = (sketchState.drafting && typeof sketchState.drafting.decimals === 'number')
+                   ? sketchState.drafting.decimals : 1;
+        return mm.toFixed(dp) + ' mm';
+      };
+      // __fmtArea(worldArea) → "1000.0 mm²" | "1.000 m²"
+      window.__fmtArea = function(v) {
+        const n = Number(v);
+        if (!isFinite(n)) return '—';
+        const mm2 = n * 1e6;
+        if (mm2 >= 1e6) return (mm2 / 1e6).toFixed(3) + ' m\u00b2';
+        return mm2.toFixed(1) + ' mm\u00b2';
       };
 
       // ── Drafting helpers (Phase 16) ────────────────────────────

@@ -86,32 +86,44 @@ pub const JS: &str = r##"
 
       // ─────────────────────────────────────────────────────────
       // __applyOrthoSnap(a, h, plane) → snapped hover point
-      // Snaps the preview endpoint to the nearest 0°/45°/90°/135°…
-      // direction from the start point `a`, in the working plane.
+      // TRUE axis-lock: dominant axis wins → line becomes exactly
+      // 0° (horizontal) or 90° (vertical). No 45° — pure CAD ortho.
+      //   |dx| > |dz|  →  lock Z  (horizontal line)
+      //   |dz| >= |dx| →  lock X  (vertical line)
+      // After axis lock the endpoint is also re-snapped to grid.
       // ─────────────────────────────────────────────────────────
       window.__applyOrthoSnap = function(a, h, plane) {
+        const gs = sketchState.gridSize || 0.00001;
+        const r  = Object.assign({}, h);
+
         let dx, dy;
         if      (plane === 'XY') { dx = h.x - a.x; dy = h.y - a.y; }
         else if (plane === 'YZ') { dx = h.y - a.y; dy = h.z - a.z; }
         else /* XZ default */    { dx = h.x - a.x; dy = h.z - a.z; }
 
-        const len = Math.hypot(dx, dy);
-        if (len < 1e-10) return h;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          // Horizontal: lock the secondary axis to start point
+          if      (plane === 'XY') { r.y = a.y; }
+          else if (plane === 'YZ') { r.z = a.z; }
+          else /* XZ */            { r.z = a.z; }
+          // store which axis was locked for badge display
+          r._orthoAxis = plane === 'YZ' ? 'ORTHO Y' : 'ORTHO X';
+        } else {
+          // Vertical: lock the primary axis to start point
+          if      (plane === 'XY') { r.x = a.x; }
+          else if (plane === 'YZ') { r.y = a.y; }
+          else /* XZ */            { r.x = a.x; }
+          r._orthoAxis = plane === 'YZ' ? 'ORTHO Z' : 'ORTHO Z';
+        }
 
-        const angle   = Math.atan2(dy, dx);
-        const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
-        const sx = Math.cos(snapped) * len;
-        const sy = Math.sin(snapped) * len;
-
-        const r  = Object.assign({}, h);
-        if      (plane === 'XY') { r.x = a.x + sx; r.y = a.y + sy; }
-        else if (plane === 'YZ') { r.y = a.y + sx; r.z = a.z + sy; }
-        else /* XZ */            { r.x = a.x + sx; r.z = a.z + sy; }
-
-        const gs = sketchState.gridSize || 0.00001;
+        // Snap the locked point back to grid
         r.gx = Math.round(r.x / gs);
         r.gy = Math.round(r.y / gs);
         r.gz = Math.round(r.z / gs);
+        // Re-align world coords to grid (removes sub-grid drift)
+        r.x  = r.gx * gs;
+        r.y  = r.gy * gs;
+        r.z  = r.gz * gs;
         return r;
       };
 
@@ -322,7 +334,8 @@ pub const JS: &str = r##"
         if (sketchState.orthoLock) {
           h = window.__applyOrthoSnap(a, h, sketchState.workingPlane || 'XZ');
         }
-        line.previewPoint  = { x: h.x, y: h.y, z: h.z, gx: h.gx, gy: h.gy, gz: h.gz };
+        line.previewPoint  = { x: h.x, y: h.y, z: h.z, gx: h.gx, gy: h.gy, gz: h.gz,
+                               _orthoAxis: h._orthoAxis || null };
         line.previewLength = Math.hypot(h.x - a.x, h.y - a.y, h.z - a.z);
         const samePos        = (a.gx === h.gx && a.gy === h.gy && a.gz === h.gz);
         const targetExisting = window.__findPointAtGrid(h.gx, h.gy, h.gz);

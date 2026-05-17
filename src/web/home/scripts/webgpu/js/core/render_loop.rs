@@ -315,7 +315,7 @@ pub const JS: &str = r##"
                 ctx.stroke();
                 ctx.restore();
                 const len = sketchState.line.previewLength || 0;
-                const txt = len.toFixed(2) + 'u';
+                const txt = window.__fmtLength ? window.__fmtLength(len) : (len * 1000).toFixed(1) + ' mm';
                 const mx = (sa.x + sb.x) * 0.5;
                 const my = (sa.y + sb.y) * 0.5;
                 ctx.font = '12px "JetBrains Mono", system-ui, monospace';
@@ -390,64 +390,133 @@ pub const JS: &str = r##"
             }
           }
 
-          // ── Snap marker + ghost preview point ──
+          // ═══════════════════════════════════════════════════════════
+          // PRECISION CAD CURSOR v1
+          // ─ Crosshair with center gap
+          // ─ Snap marker: grid=cross · point=square · free=nothing
+          // ─ Detached auto-flip tooltip (34–48 px offset)
+          // ─ Alt = precision mode (bigger markers + larger offset)
+          // ═══════════════════════════════════════════════════════════
           if (sketchState.hoverWorld &&
               (sketchState.activeTool === 'point' || sketchState.activeTool === 'line')) {
-            const hw = sketchState.hoverWorld;
-            // Use the stored cursor screen position so the crosshair is
-            // always exactly at the pointer tip (snapped world projected back
-            // via w2s can drift by sub-pixel on non-integer grids).
+            const hw     = sketchState.hoverWorld;
+            const prec   = !!sketchState.precisionMode;
+            const cs     = sketchState.cursorSettings || {};
+            const kind   = sketchState.snap.kind;            // 'grid' | 'point' | 'free' | 'none'
+            const snapPt = kind === 'point';
+            const snapFr = kind === 'free';
+
+            // ── Screen position ──────────────────────────────────
             let cx, cy;
-            if (hw.screenX !== undefined && hw.screenY !== undefined) {
-              cx = hw.screenX;
-              cy = hw.screenY;
-            } else {
+            if (hw.screenX !== undefined) { cx = hw.screenX; cy = hw.screenY; }
+            else {
               const _c = w2s(hw.x, hw.y, hw.z);
-              if (!_c) { cx = null; }
-              else { cx = _c.x; cy = _c.y; }
+              if (!_c) { cx = null; } else { cx = _c.x; cy = _c.y; }
             }
-            if (cx !== null && cx !== undefined) {
-              const kind = sketchState.snap.kind;
-              const snapPoint = kind === 'point';
-              const snapFree  = kind === 'free';
-              const snapColor = snapPoint ? '#10b981'
-                              : snapFree  ? '#cbd5e1'
-                              : '#67e8f9';
-              if (!snapPoint) {
-                ctx.save();
+            if (cx === null || cx === undefined) { /* skip */ } else {
+
+            // ── Constants (normal / precision) ───────────────────
+            const CROSS_ARM   = prec ? 8  : 6;   // half-length of crosshair arm
+            const CROSS_GAP   = prec ? 3  : 2;   // center dead-zone radius
+            const MARKER_SZ   = prec ? 4  : 3;   // snap marker half-size
+            const LBL_OX      = prec ? 48 : 34;  // tooltip X offset
+            const LBL_OY      = prec ? 32 : 26;  // tooltip Y offset
+            const CROSS_COLOR = snapPt ? 'rgba(16,185,129,0.90)'
+                              : snapFr ? 'rgba(203,213,225,0.50)'
+                              :          'rgba(103,232,249,0.85)'; // cyan for grid
+
+            ctx.save();
+
+            // ── 1. Crosshair (4 arms with center gap) ────────────
+            ctx.strokeStyle = CROSS_COLOR;
+            ctx.lineWidth   = prec ? 0.9 : 0.7;  // тонкие линии
+            ctx.beginPath();
+            // horizontal
+            ctx.moveTo(cx - CROSS_ARM, cy); ctx.lineTo(cx - CROSS_GAP, cy);
+            ctx.moveTo(cx + CROSS_GAP, cy); ctx.lineTo(cx + CROSS_ARM, cy);
+            // vertical
+            ctx.moveTo(cx, cy - CROSS_ARM); ctx.lineTo(cx, cy - CROSS_GAP);
+            ctx.moveTo(cx, cy + CROSS_GAP); ctx.lineTo(cx, cy + CROSS_ARM);
+            ctx.stroke();
+
+            // ── 2. Snap marker ───────────────────────────────────
+            if (cs.showSnapMarker !== false) {
+              const sm = MARKER_SZ;
+              ctx.strokeStyle = CROSS_COLOR;
+              ctx.lineWidth   = 1.5;
+              if (snapPt) {
+                // Endpoint → cyan square
+                ctx.strokeRect(cx - sm, cy - sm, sm * 2, sm * 2);
+              } else if (!snapFr) {
+                // Grid → small cross (distinct from crosshair, slightly rotated)
                 ctx.beginPath();
-                ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
-                ctx.fillStyle = snapFree
-                  ? 'rgba(203,213,225,0.25)'
-                  : 'rgba(56,189,248,0.35)';
-                ctx.strokeStyle = snapColor;
-                ctx.setLineDash([2, 2]);
-                ctx.lineWidth = 1.5;
-                ctx.fill();
+                ctx.moveTo(cx - sm, cy - sm); ctx.lineTo(cx + sm, cy + sm);
+                ctx.moveTo(cx + sm, cy - sm); ctx.lineTo(cx - sm, cy + sm);
                 ctx.stroke();
-                ctx.restore();
               }
-              ctx.strokeStyle = snapPoint ? 'rgba(16,185,129,0.9)'
-                              : snapFree  ? 'rgba(203,213,225,0.7)'
-                              : 'rgba(250,204,21,0.7)';
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
-              ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
-              ctx.stroke();
-              const fmtC = window.__fmtCoord || (v => Number(v).toFixed(3));
-              const line1 = 'g ' + hw.gx + ',' + hw.gy + ',' + hw.gz;
-              const line2 = fmtC(hw.x) + ' ' + fmtC(hw.y) + ' ' + fmtC(hw.z);
-              ctx.font = '11px "JetBrains Mono", system-ui, monospace';
-              const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 10;
-              ctx.fillStyle = 'rgba(15,23,42,0.88)';
-              ctx.fillRect(cx + 14, cy - 18, w, 34);
-              ctx.fillStyle = snapColor;
-              ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-              ctx.fillText(line1, cx + 19, cy - 9);
-              ctx.fillStyle = '#e2e8f0';
-              ctx.fillText(line2, cx + 19, cy + 7);
+              // free → no extra marker (crosshair alone is enough)
             }
+
+            // ── 3. Precision mode: extra outer ring ─────────────
+            if (prec) {
+              ctx.beginPath();
+              ctx.arc(cx, cy, CROSS_ARM + 4, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(103,232,249,0.25)';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            }
+
+            // ── 4. Snap kind badge (small, near cursor, auto-flip) ──────
+            // Only shows snap type: GRID / POINT / MID / ORTHO X|Z / FREE
+            // Full coordinates stay in the HUD — cursor stays clean.
+            if (cs.showCoords !== false) {
+              // determine badge text
+              let badge;
+              const previewPt = sketchState.line && sketchState.line.previewPoint;
+              if (sketchState.orthoLock && previewPt && previewPt._orthoAxis) {
+                badge = previewPt._orthoAxis;          // e.g. "ORTHO X" / "ORTHO Z"
+              } else if (kind === 'point')  { badge = 'POINT'; }
+              else if (kind === 'grid')     { badge = 'GRID';  }
+              else if (kind === 'free')     { badge = 'FREE';  }
+              else                          { badge = null; }
+
+              if (badge) {
+                ctx.font = (prec ? '10px' : '9.5px') + ' "JetBrains Mono", system-ui, monospace';
+                const tw   = ctx.measureText(badge).width;
+                const boxW = tw + 10;
+                const boxH = 16;
+                const cw = ctx.canvas.width, ch = ctx.canvas.height;
+                let lx = cx + LBL_OX;
+                let ly = cy + LBL_OY;
+                if (lx + boxW > cw - 12) lx = cx - LBL_OX - boxW;
+                if (ly + boxH > ch - 12) ly = cy - LBL_OY - boxH;
+
+                ctx.fillStyle   = 'rgba(10,14,26,0.88)';
+                ctx.strokeStyle = snapPt          ? 'rgba(16,185,129,0.50)'
+                                : sketchState.orthoLock ? 'rgba(251,191,36,0.55)'
+                                :                  'rgba(56,189,248,0.35)';
+                ctx.lineWidth = 1;
+                const rr = 3;
+                ctx.beginPath();
+                ctx.moveTo(lx + rr, ly);
+                ctx.lineTo(lx + boxW - rr, ly);        ctx.arcTo(lx + boxW, ly,          lx + boxW, ly + rr,          rr);
+                ctx.lineTo(lx + boxW, ly + boxH - rr); ctx.arcTo(lx + boxW, ly + boxH,  lx + boxW - rr, ly + boxH,  rr);
+                ctx.lineTo(lx + rr, ly + boxH);        ctx.arcTo(lx,        ly + boxH,  lx,          ly + boxH - rr, rr);
+                ctx.lineTo(lx, ly + rr);               ctx.arcTo(lx,        ly,          lx + rr,    ly,             rr);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle    = sketchState.orthoLock ? '#fbbf24'
+                                 : snapPt               ? '#6ee7b7'
+                                 :                        '#67e8f9';
+                ctx.textAlign    = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(badge, lx + 5, ly + boxH * 0.5);
+              }
+            }
+
+            ctx.restore();
+            } // end cx !== null
           }
 
           // ── Projection drafting overlays (Phase 13) ──

@@ -292,6 +292,8 @@ pub const JS: &str = r##"
 
         // Hover + snap (always, even without dragging).
         // Priority: POINT SNAP → EDGE/GRID SNAP (via __resolveSnapTarget)
+        // Track Alt key for precision cursor mode.
+        sketchState.precisionMode = !!e.altKey;
         const __pfPick = performance.now();
         const hit = window.__raycastSketchPlane && window.__raycastSketchPlane(mouse.ndcX, mouse.ndcY);
 

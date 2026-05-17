@@ -98,9 +98,9 @@ pub const JS: &str = r##"
             set('si-eg-id', e.id);
             set('si-eg-from', a ? (a.id + ' (' + a.gx + ',' + a.gy + ',' + a.gz + ')') : '—');
             set('si-eg-to',   b ? (b.id + ' (' + b.gx + ',' + b.gy + ',' + b.gz + ')') : '—');
-            set('si-eg-len', window.__edgeLength(e).toFixed(3) + ' u');
+            set('si-eg-len', window.__fmtLength ? window.__fmtLength(window.__edgeLength(e)) : window.__edgeLength(e).toFixed(3) + ' u');
             const dim = window.__getEdgeLengthConstraint(e.id);
-            set('si-eg-dim', dim ? (dim.value.toFixed(3) + ' u') : '—');
+            set('si-eg-dim', dim ? (window.__fmtLength ? window.__fmtLength(dim.value) : dim.value.toFixed(3) + ' u') : '—');
             set('si-eg-orient', __orientationOfEdge(e.id));
             const prof = window.__getProfileForEdge(e.id);
             set('si-eg-profile', prof ? prof.id + ' (' + prof.plane + ')' : '—');
@@ -118,7 +118,7 @@ pub const JS: &str = r##"
             const e = sketchState.edges.find(x => x.id === id);
             if (e) totalLen += window.__edgeLength(e);
           }
-          set('si-multi-len', totalLen.toFixed(3) + ' u');
+          set('si-multi-len', window.__fmtLength ? window.__fmtLength(totalLen) : totalLen.toFixed(3) + ' u');
           let fixedN = 0;
           for (const pid of selPts) if (window.__isPointFixed(pid)) fixedN++;
           let constrainedN = 0;
@@ -159,7 +159,7 @@ pub const JS: &str = r##"
         const snap = sketchState.snap || { kind: 'none' };
         const hw   = sketchState.hoverWorld;
         const fmtC = window.__fmtCoord || (v => Number(v).toFixed(3));
-        const fmtL = window.__fmtLength || (v => Number(v).toFixed(3));
+        const fmtL = window.__fmtLength || (v => (Number(v) * 1000).toFixed(1) + ' mm');
         let snapTxt;
         if (snap.kind === 'point' && snap.pointId)  snapTxt = 'POINT ' + snap.pointId;
         else if (snap.kind === 'grid')               snapTxt = 'GRID '  + snap.gx + ',' + snap.gy + ',' + snap.gz;
@@ -170,10 +170,10 @@ pub const JS: &str = r##"
         else     set('mini-grid', '—');
         let lenTxt = '—';
         if (tool === 'line' && sketchState.line.startPointId && sketchState.line.previewPoint) {
-          lenTxt = fmtL(sketchState.line.previewLength || 0) + ' u';
+          lenTxt = fmtL(sketchState.line.previewLength || 0);
         } else if (totalSel === 1 && selEds.length === 1) {
           const e = sketchState.edges.find(x => x.id === selEds[0]);
-          if (e) lenTxt = fmtL(window.__edgeLength(e)) + ' u';
+          if (e) lenTxt = fmtL(window.__edgeLength(e));
         }
         set('mini-length', lenTxt);
 
@@ -262,7 +262,7 @@ pub const JS: &str = r##"
           set('si-pf-points', String(profSel.pointIds.length));
           set('si-pf-edges',  String(profSel.edgeIds.length));
           const area = window.__profileArea(profSel);
-          set('si-pf-area', area.toFixed(3) + ' u²');
+          set('si-pf-area', window.__fmtArea ? window.__fmtArea(area) : (area * 1e6).toFixed(1) + ' mm\u00b2');
           set('si-pf-ready', window.__isSelectedProfileExtrudable() ? 'yes' : 'no');
         }
 
