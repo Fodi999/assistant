@@ -247,6 +247,7 @@ pub const JS: &str = r##"
         }
         panning  = false;
         orbiting = false;
+        window.__orbitActive = false;
       });
 
       // ── Double-click ─────────────────────────────────────────────
@@ -453,6 +454,7 @@ pub const JS: &str = r##"
           cam.yaw   += dx * 0.005;
           cam.pitch += dy * 0.005;
           cam.pitch = Math.max(-Math.PI/2 + 0.05, Math.min(Math.PI/2 - 0.05, cam.pitch));
+          window.__orbitActive = true;
         }
       });
 

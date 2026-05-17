@@ -189,6 +189,57 @@ pub const JS: &str = r##"
             }
           }
 
+          // ── 3D Helper: Orbit pivot ring ──────────────────────────────────────
+          // Drawn AFTER grid/axes but BEFORE sketch geometry (background layer).
+          // Visible only when actively orbiting + flag enabled.
+          if (window.__showOrbitGuide && window.__orbitActive) {
+            const helperAlpha = window.__fadeBackgroundHelpers ? 0.12 : 0.30;
+            const orbitR = Math.max(0.05, cam.dist * 0.18);
+            const SEG = 64;
+            const orbPl = sketchState.workingPlane || 'XZ';
+            ctx.save();
+            ctx.setLineDash([6, 5]);
+            ctx.lineWidth = 1.2;
+            ctx.strokeStyle = 'rgba(167,139,250,' + helperAlpha + ')';
+            ctx.globalAlpha = 1;
+            ctx.beginPath();
+            let firstValid = true;
+            for (let i = 0; i <= SEG; i++) {
+              const a = (i / SEG) * Math.PI * 2;
+              let wx, wy, wz;
+              if (orbPl === 'XZ') {
+                wx = cam.target[0] + Math.cos(a) * orbitR;
+                wy = cam.target[1];
+                wz = cam.target[2] + Math.sin(a) * orbitR;
+              } else if (orbPl === 'XY') {
+                wx = cam.target[0] + Math.cos(a) * orbitR;
+                wy = cam.target[1] + Math.sin(a) * orbitR;
+                wz = cam.target[2];
+              } else { // YZ
+                wx = cam.target[0];
+                wy = cam.target[1] + Math.cos(a) * orbitR;
+                wz = cam.target[2] + Math.sin(a) * orbitR;
+              }
+              const sp = w2s(wx, wy, wz);
+              if (!sp) { firstValid = true; continue; }
+              if (firstValid) { ctx.moveTo(sp.x, sp.y); firstValid = false; }
+              else ctx.lineTo(sp.x, sp.y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+            // Small pivot dot at camera target
+            const pivotS = w2s(cam.target[0], cam.target[1], cam.target[2]);
+            if (pivotS) {
+              ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.arc(pivotS.x, pivotS.y, 3.5, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(167,139,250,' + (helperAlpha * 2.5) + ')';
+              ctx.lineWidth = 1.2;
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+
           const pById = new Map(sketchState.points.map(p => [p.id, p]));
           const eById = new Map(sketchState.edges.map(e  => [e.id, e]));
 
@@ -548,7 +599,7 @@ pub const JS: &str = r##"
           }
 
           // ── Projection drafting overlays (Phase 13) ──
-          if (sketchState.draftMode === 'projection') {
+          if (sketchState.draftMode === 'projection' && window.__showProjectionGuide !== false) {
             // Plane badge (top-left, below plane pills).
             const lbl = window.__planeDescriptor
               ? window.__planeDescriptor(sketchState.workingPlane)
@@ -577,9 +628,11 @@ pub const JS: &str = r##"
             }
             if (guideTargets.length && sketchState.projection.showGuides) {
               const D = 50;
+              const guideAlpha = window.__fadeBackgroundHelpers ? 0.28 : 0.65;
               ctx.save();
               ctx.setLineDash([3, 3]);
               ctx.lineWidth = 1;
+              ctx.globalAlpha = guideAlpha;
               for (const g of guideTargets) {
                 const p = g.p;
                 let line1A, line1B, line2A, line2B;

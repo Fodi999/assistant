@@ -11,7 +11,7 @@ window.__cadPanel = {
   openSections: {
     grid: true, units: true,
     snapping: true,
-    shader: true, camera: false,
+    shader: true, camera: false, helpers: true,
     selection: true, analyze: false,
     engine: true, devjson: false, devsnapstate: false,
   }
@@ -248,5 +248,35 @@ window.__cadPanelTick = function() {
   } else {
     setTimeout(_initGrid, 200);
   }
+})();
+
+// ── Helper guide toggles (VIEW tab) ─────────────────
+(function _initHelperGuideToggles() {
+  function _wire() {
+    const orbitChk   = document.getElementById('csp-show-orbit-guide');
+    const projChk    = document.getElementById('csp-show-projection-guide');
+    const fadeChk    = document.getElementById('csp-fade-bg-helpers');
+    if (!orbitChk || !projChk || !fadeChk) { setTimeout(_wire, 200); return; }
+
+    // Sync initial state → DOM
+    orbitChk.checked = !!window.__showOrbitGuide;
+    projChk.checked  = !!window.__showProjectionGuide;
+    fadeChk.checked  = !!window.__fadeBackgroundHelpers;
+
+    orbitChk.addEventListener('change', () => {
+      window.__showOrbitGuide = orbitChk.checked;
+    });
+    projChk.addEventListener('change', () => {
+      window.__showProjectionGuide = projChk.checked;
+      // Also sync underlying sketchState projection.showGuides
+      if (window.sketchState && window.sketchState.projection) {
+        window.sketchState.projection.showGuides = projChk.checked;
+      }
+    });
+    fadeChk.addEventListener('change', () => {
+      window.__fadeBackgroundHelpers = fadeChk.checked;
+    });
+  }
+  _wire();
 })();
 "#;

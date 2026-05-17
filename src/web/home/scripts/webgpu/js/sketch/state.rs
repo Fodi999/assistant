@@ -143,7 +143,7 @@ pub const JS: &str = r##"
           boxHeight: 5,   // Y
           boxDepth:  4,   // Z
           // Show dashed projection guide-lines through hovered / selected points.
-          showGuides: true,
+          showGuides: false,  // controlled by window.__showProjectionGuide (VIEW panel)
         },
 
         // ── Copy Connect (Phase 14) ──
@@ -178,6 +178,17 @@ pub const JS: &str = r##"
         draftingHitLabels: [], // populated each frame by drafting overlay
       };
       window.sketchState = sketchState;
+
+      // ── 3D Helper Guide flags ──────────────────────────────────
+      // Controlled by VIEW panel toggles.
+      // __showOrbitGuide     — draw dashed orbit-pivot ring while orbiting
+      // __showProjectionGuide — draw dashed guide lines in projection mode
+      // __fadeBackgroundHelpers — draw background helpers at reduced opacity
+      // __orbitActive        — true while the user is actively dragging to orbit
+      window.__showOrbitGuide       = false;
+      window.__showProjectionGuide  = false;
+      window.__fadeBackgroundHelpers = true;
+      window.__orbitActive          = false;
 
       // ── Id generation ──────────────────────────────────────────
       let __pointCounter = 0, __edgeCounter = 0, __constraintCounter = 0, __profileCounter = 0;

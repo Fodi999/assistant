@@ -174,6 +174,27 @@ pub fn cad_side_panel_html() -> &'static str {
                 </div>
               </div>
 
+              <div class="csp-section" data-section="helpers">
+                <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('helpers')">
+                  <span>HELPERS</span>
+                  <span class="csp-caret">▾</span>
+                </button>
+                <div class="csp-section-body">
+                  <label class="csp-row csp-check">
+                    <input type="checkbox" id="csp-show-orbit-guide">
+                    <span>Show orbit guide</span>
+                  </label>
+                  <label class="csp-row csp-check">
+                    <input type="checkbox" id="csp-show-projection-guide">
+                    <span>Show projection guide</span>
+                  </label>
+                  <label class="csp-row csp-check">
+                    <input type="checkbox" id="csp-fade-bg-helpers" checked>
+                    <span>Fade background helpers</span>
+                  </label>
+                </div>
+              </div>
+
             </div><!-- /page:view -->
 
             <!-- ════ TAB: OBJECT ════ -->
