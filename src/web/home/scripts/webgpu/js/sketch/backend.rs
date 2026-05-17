@@ -113,7 +113,7 @@ pub const JS: &str = r##"
         if (!r.ok) {
           sketchState.backendStatus = { ok: false, message: 'Backend unavailable', lastValidation: null };
           sketchState.lastCommandMsg = 'Backend unavailable';
-          window.__setStatusMessage('Backend unavailable — using local sketch mode');
+          window.__setStatusMessage('Бэкенд недоступен — локальный режим');
           return { ok: false, error: r.error };
         }
         const result = r.json;
@@ -121,8 +121,8 @@ pub const JS: &str = r##"
           window.__applyBackendSketchResult(result);
           const pid = result.createdPointId || result.reusedPointId;
           const msg = result.createdPointId
-            ? 'Backend created point ' + pid
-            : 'Backend reused point ' + pid;
+            ? 'Бэкенд создал точку ' + pid
+            : 'Бэкенд использовал точку ' + pid;
           sketchState.lastCommandMsg = msg;
           window.__setStatusMessage(msg);
           return {
@@ -132,7 +132,7 @@ pub const JS: &str = r##"
             message: result.message,
           };
         }
-        const errMsg = result.message || 'Backend rejected request';
+        const errMsg = result.message || 'Бэкенд отклонил запрос';
         sketchState.backendStatus = {
           ok: false,
           message: errMsg,
@@ -159,7 +159,7 @@ pub const JS: &str = r##"
         if (!r.ok) {
           sketchState.backendStatus = { ok: false, message: 'Backend unavailable', lastValidation: null };
           sketchState.lastCommandMsg = 'Backend unavailable';
-          window.__setStatusMessage('Backend unavailable — using local sketch mode');
+          window.__setStatusMessage('Бэкенд недоступен — локальный режим');
           return { ok: false, error: r.error };
         }
         const result = r.json;
@@ -168,7 +168,7 @@ pub const JS: &str = r##"
         if (result.sketch) window.__applyBackendSketchResult(result);
         if (result.ok) {
           const eid = result.createdEdgeId || '?';
-          const msg = 'Backend created edge ' + eid;
+          const msg = 'Бэкенд создал ребро ' + eid;
           sketchState.lastCommandMsg = msg;
           window.__setStatusMessage(msg);
           return {
@@ -178,7 +178,7 @@ pub const JS: &str = r##"
             message: result.message,
           };
         }
-        const errMsg = result.message || 'Backend rejected edge';
+        const errMsg = result.message || 'Бэкенд отклонил ребро';
         sketchState.lastCommandMsg = '✕ ' + errMsg;
         window.__setStatusMessage(errMsg);
         return { ok: false, error: result.message };
@@ -189,7 +189,7 @@ pub const JS: &str = r##"
       // ─────────────────────────────────────────────────────────
       window.__setUseBackendCommands = function(v) {
         sketchState.useBackendCommands = !!v;
-        window.__setStatusMessage('Backend commands: ' + (v ? 'ON' : 'OFF'));
+        window.__setStatusMessage('Команды бэкенда: ' + (v ? 'ВКЛ' : 'ВЫКЛ'));
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
 "##;

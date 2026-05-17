@@ -95,7 +95,7 @@ window.__cadSetGrid = function(mm) {
         if (f < FRAMES) requestAnimationFrame(_step);
       })();
       if (window.__setStatusMessage)
-        window.__setStatusMessage('Grid ' + mm + ' mm — zoom adjusted');
+        window.__setStatusMessage('Сетка ' + mm + ' мм — масштаб скорректирован');
     }
   }
 };

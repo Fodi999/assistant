@@ -265,9 +265,9 @@ pub const JS: &str = r##"
           if (!res.ok) return res;
 
           if (window.__setStatusMessage) {
-            window.__setStatusMessage('Profile made rectangle ('
+            window.__setStatusMessage('Профиль → прямоугольник ('
               + gridToMm(maxU - minU).toFixed(2) + ' × '
-              + gridToMm(maxV - minV).toFixed(2) + ' mm)');
+              + gridToMm(maxV - minV).toFixed(2) + ' мм)');
           }
           return { ok:true };
         };
@@ -322,8 +322,8 @@ pub const JS: &str = r##"
           if (!res.ok) return res;
 
           if (window.__setStatusMessage) {
-            window.__setStatusMessage('Profile made square ('
-              + gridToMm(sizeG).toFixed(2) + ' mm)');
+            window.__setStatusMessage('Профиль → квадрат ('
+              + gridToMm(sizeG).toFixed(2) + ' мм)');
           }
           return { ok:true };
         };
@@ -351,8 +351,8 @@ pub const JS: &str = r##"
             }
           }
           if (window.__setStatusMessage) {
-            window.__setStatusMessage('Equalized ' + ids.length
-              + ' edges → ' + avgMm.toFixed(2) + ' mm');
+            window.__setStatusMessage('Уравнено ' + ids.length
+              + ' рёбер → ' + avgMm.toFixed(2) + ' мм');
           }
           return { ok:true, avgMm };
         };

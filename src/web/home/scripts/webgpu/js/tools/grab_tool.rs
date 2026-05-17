@@ -14,6 +14,28 @@ pub const JS: &str = r##"
       // Collects selected points (+ edge endpoints + profile points).
       // Uses screen-projection path (same as gizmo drag).
       // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────
+      // __raycastSketchPlane(ndcX, ndcY, center)
+      // Intersects the mouse ray with the active SKETCH PLANE at `center`.
+      //   XZ  → plane y = center.y  (normal 0,1,0)
+      //   XY  → plane z = center.z  (normal 0,0,1)
+      //   YZ  → plane x = center.x  (normal 1,0,0)
+      // Falls back to view-aligned plane when ray is nearly parallel.
+      // ─────────────────────────────────────────────────────────
+      function __raycastSketchPlane(ndcX, ndcY, center) {
+        const r = __pickRay(ndcX, ndcY);
+        const plane = sketchState.workingPlane || 'XZ';
+        let nx = 0, ny = 0, nz = 0, d;
+        if      (plane === 'XY') { nz = 1; d = center.z; }
+        else if (plane === 'YZ') { nx = 1; d = center.x; }
+        else /* XZ */            { ny = 1; d = center.y; }
+        const denom = r.dx * nx + r.dy * ny + r.dz * nz;
+        if (Math.abs(denom) < 1e-6) return __raycastDragPlane(ndcX, ndcY, center);
+        const t = (d - (r.ox * nx + r.oy * ny + r.oz * nz)) / denom;
+        if (t < 0) return __raycastDragPlane(ndcX, ndcY, center);
+        return { x: r.ox + r.dx * t, y: r.oy + r.dy * t, z: r.oz + r.dz * t };
+      }
+
       window.__startGrab = function() {
         // Auto-collect from edges if no points selected
         if (!sketchState.selectedPointIds.size && sketchState.selectedEdgeIds.size > 0) {
@@ -39,7 +61,7 @@ pub const JS: &str = r##"
         const allIds  = [...sketchState.selectedPointIds];
         const moveIds = allIds.filter(id => !window.__isPointFixed(id));
         if (!moveIds.length) {
-          window.__setStatusMessage('Cannot move fixed point');
+          window.__setStatusMessage('Нельзя двигать: все точки зафиксированы');
           return;
         }
         window.__pushHistory();
@@ -78,22 +100,21 @@ pub const JS: &str = r##"
           startMouseWorld: startWorld,
           startScreen,
           startCenter,
-          // startDragPoint = selection center projected to drag plane.
-          // This means delta=0 at grab start, object follows mouse from that position.
-          // Will be properly set on first __updateGizmoDrag call with real NDC.
           startDragPoint: null,
           originalPoints: snapshot,
           dragBase,
           screenAcc: { x: 0, y: 0, z: 0 },
           axisLock: null,
+          numericInput: '',
           useScreenProjection: true,
         };
         window.__grabIsScreenProjection = true;
         if (window.__resetGrabTracking) window.__resetGrabTracking();
         const skipped = allIds.length - moveIds.length;
-        const msg = '⤢ Grab ' + moveIds.length + ' pt'
-          + (skipped ? ' (' + skipped + ' fixed)' : '')
-          + ' — drag · X/Y/Z lock · Enter ✓ · Esc ✗';
+        const planeName = sketchState.workingPlane || 'XZ';
+        const msg = '⤢ Захват ' + moveIds.length + ' т'
+          + (skipped ? ' (' + skipped + ' зафикс.)' : '')
+          + ' · пл. ' + planeName + ' · X/Y/Z · Enter ✓ · Esc ✗';
         window.__setStatusMessage(msg);
         console.log('[Grab] start, points: ' + moveIds.length);
         if (window.__updateSketchInspector) window.__updateSketchInspector();
@@ -140,15 +161,35 @@ pub const JS: &str = r##"
       // __confirmGrab() — Enter / click confirm
       // ─────────────────────────────────────────────────────────
       window.__confirmGrab = function() {
-        const n = sketchState.grab.pointIds.length;
+        const grab = sketchState.grab;
+        // Apply numeric input if user typed a value (e.g. G X 120 Enter → 120 mm)
+        const numStr = (grab.numericInput || '').trim();
+        if (numStr !== '' && grab.axisLock && ['X','Y','Z'].includes(grab.axisLock)) {
+          const val = parseFloat(numStr) / 1000;  // user types mm → metres
+          if (isFinite(val)) {
+            const g = sketchState.gridSize || 1.0;
+            const byId = new Map(sketchState.points.map(p => [p.id, p]));
+            for (const [id, base] of grab.dragBase.entries()) {
+              const p = byId.get(id);
+              if (!p) continue;
+              p.x = base.x + (grab.axisLock === 'X' ? val : 0);
+              p.y = base.y + (grab.axisLock === 'Y' ? val : 0);
+              p.z = base.z + (grab.axisLock === 'Z' ? val : 0);
+              p.gx = Math.round(p.x / g);
+              p.gy = Math.round(p.y / g);
+              p.gz = Math.round(p.z / g);
+            }
+          }
+        }
+        const n = grab.pointIds.length;
         sketchState.grab = {
           active: false, pointIds: [], startMouseWorld: null,
-          originalPoints: new Map(), axisLock: null, screenAcc: null,
+          originalPoints: new Map(), axisLock: null, screenAcc: null, numericInput: '',
         };
         window.__grabIsScreenProjection = false;
         if (window.__resetGrabTracking) window.__resetGrabTracking();
         window.__notifySketchChanged();
-        window.__setStatusMessage('Grab confirmed (' + n + ' pt)');
+        window.__setStatusMessage('Захват подтверждён (' + n + ' т.)');
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
 
@@ -170,12 +211,12 @@ pub const JS: &str = r##"
         }
         sketchState.grab = {
           active: false, pointIds: [], startMouseWorld: null,
-          originalPoints: new Map(), axisLock: null, screenAcc: null,
+          originalPoints: new Map(), axisLock: null, screenAcc: null, numericInput: '',
         };
         window.__grabIsScreenProjection = false;
         if (window.__resetGrabTracking) window.__resetGrabTracking();
         if (sketchState._history.undo.length) sketchState._history.undo.pop();
-        window.__setStatusMessage('Grab cancelled');
+        window.__setStatusMessage('Захват отменён');
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
 
@@ -212,7 +253,7 @@ pub const JS: &str = r##"
     const ids = window.__collectSelectedPointIdsForGizmo();
     if (!ids.size) return;
     const moveIds = [...ids].filter(id => !window.__isPointFixed || !window.__isPointFixed(id));
-    if (!moveIds.length) { window.__setStatusMessage('Cannot move fixed point'); return; }
+    if (!moveIds.length) { window.__setStatusMessage('Нельзя двигать зафиксированные точки'); return; }
     window.__pushHistory();
     const byId = new Map(sketchState.points.map(p => [p.id, p]));
     const snapshot = new Map();
@@ -263,8 +304,9 @@ pub const JS: &str = r##"
       axisLock: (axis === 'FREE') ? null : axis,
       dragBase,
       screenAcc: { x: 0, y: 0, z: 0 },
+      numericInput: '',
     };
-    window.__setStatusMessage('⤢ Grab ' + moveIds.length + ' pt — ' + (axis === 'FREE' ? 'free' : axis + '-lock'));
+    window.__setStatusMessage('⤢ Захват ' + moveIds.length + ' т. — ' + (axis === 'FREE' ? 'свободно' : axis + '-ось'));
     window.__grabIsScreenProjection = true;
     if (window.__resetGrabTracking) window.__resetGrabTracking();
     if (window.__updateSketchInspector) window.__updateSketchInspector();
@@ -309,34 +351,56 @@ pub const JS: &str = r##"
     const center = grab.startCenter;
     if (!center) return;
 
-    const cur = __raycastDragPlane(ndcX, ndcY, center);
+    // ── Numeric input mode: apply typed value (user types mm), freeze mouse drag ──
+    const numStr = (grab.numericInput || '').trim();
+    if (numStr !== '' && grab.axisLock && ['X','Y','Z'].includes(grab.axisLock)) {
+      const val = parseFloat(numStr) / 1000;  // user types mm → convert to metres
+      if (isFinite(val)) {
+        const g = sketchState.gridSize || 1.0;
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        for (const [id, base] of grab.dragBase.entries()) {
+          const p = byId.get(id);
+          if (!p) continue;
+          p.x = base.x + (grab.axisLock === 'X' ? val : 0);
+          p.y = base.y + (grab.axisLock === 'Y' ? val : 0);
+          p.z = base.z + (grab.axisLock === 'Z' ? val : 0);
+          p.gx = Math.round(p.x / g);
+          p.gy = Math.round(p.y / g);
+          p.gz = Math.round(p.z / g);
+        }
+      }
+      return;
+    }
+
+    // ── Mouse drag: project onto active sketch plane ──
+    const cur = __raycastSketchPlane(ndcX, ndcY, center);
     if (!cur) return;
 
-    // First pointermove after grab start: set startDragPoint from current cursor position.
-    // Delta will be zero on this frame (object stays in place), then grows as cursor moves.
     if (!grab.startDragPoint) {
       grab.startDragPoint = { x: cur.x, y: cur.y, z: cur.z };
     }
 
     const start = grab.startDragPoint;
-    const lock  = grab.axisLock; // 'X' | 'Y' | 'Z' | 'XY' | 'YZ' | 'XZ' | null (FREE)
+    const lock  = grab.axisLock;
+    const plane = sketchState.workingPlane || 'XZ';
 
-    // Full 3D delta from drag start (world units)
     let dx = cur.x - start.x;
     let dy = cur.y - start.y;
     let dz = cur.z - start.z;
 
-    // ── Canonical projection formula ──
-    // Axis lock:   amount = dot(delta, axisVec)   offset = axisVec * amount
-    // Plane lock:  zero out the perpendicular component
-    // FREE:        use full 3D delta
-    if      (lock === 'X')  { const a = dx; dx = a; dy = 0; dz = 0; }
-    else if (lock === 'Y')  { const a = dy; dx = 0; dy = a; dz = 0; }
-    else if (lock === 'Z')  { const a = dz; dx = 0; dy = 0; dz = a; }
+    // ── Axis lock (explicit) ──
+    if      (lock === 'X')  { dy = 0; dz = 0; }
+    else if (lock === 'Y')  { dx = 0; dz = 0; }
+    else if (lock === 'Z')  { dx = 0; dy = 0; }
     else if (lock === 'XY') { dz = 0; }
     else if (lock === 'XZ') { dy = 0; }
     else if (lock === 'YZ') { dx = 0; }
-    // lock === null (FREE): no projection, use full delta
+    else {
+      // ── Free: constrain to active sketch plane ──
+      if      (plane === 'XZ') { dy = 0; }
+      else if (plane === 'XY') { dz = 0; }
+      else if (plane === 'YZ') { dx = 0; }
+    }
 
     const g  = sketchState.gridSize || 1.0;
     const fx = Math.round(dx / g) * g;
@@ -347,7 +411,6 @@ pub const JS: &str = r##"
     for (const [id, base] of grab.dragBase.entries()) {
       const p = byId.get(id);
       if (!p) continue;
-      // newPosition = startPosition + axisDirection * delta
       p.x = base.x + fx;
       p.y = base.y + fy;
       p.z = base.z + fz;
@@ -509,7 +572,9 @@ pub const JS: &str = r##"
         const ddy  = (sNow.y - sOrig.y).toFixed(2);
         const ddz  = (sNow.z - sOrig.z).toFixed(2);
         const dist = Math.hypot(sNow.x-sOrig.x, sNow.y-sOrig.y, sNow.z-sOrig.z).toFixed(2);
-        const label = (lock ? lock+' ' : '') + '|Δ|'+dist + '  Δx'+ddx+' Δy'+ddy+' Δz'+ddz;
+        const numStr = (grab.numericInput || '').trim();
+        const numPart = numStr ? ' ⌨ ' + (lock || '?') + ' ' + numStr + '▌' : '';
+        const label = (lock ? lock+' ' : '') + '|Δ|'+dist + '  Δx'+ddx+' Δy'+ddy+' Δz'+ddz + numPart;
         const sx = (sketchState.hoverWorld && sketchState.hoverWorld.screenX) || origin.x;
         const sy = (sketchState.hoverWorld && sketchState.hoverWorld.screenY)
                  ? sketchState.hoverWorld.screenY - 24 : origin.y - 24;
@@ -525,9 +590,15 @@ pub const JS: &str = r##"
     }
 
     // Top banner
-    const txt = '⤢ GRAB ' + (grab.pointIds ? grab.pointIds.length : n)
-      + (lock ? ' · ' + lock : ' · free')
-      + '   X/Y/Z · XY/YZ/XZ · Enter ✓ · Esc ✗';
+    const planeName = sketchState.workingPlane || 'XZ';
+    const numStr2 = (grab.numericInput || '').trim();
+    const numDisp = numStr2 ? '  ⌨ ' + (lock || '?') + ' ' + numStr2 + '▌' : '';
+    const gStep = ((sketchState.gridSize || 0.001) * 1000).toFixed(1);
+    const txt = '⤢ ЗАХВАТ ' + (grab.pointIds ? grab.pointIds.length : n)
+      + ' · пл.' + planeName
+      + (lock ? ' · ось ' + lock : ' · свободно')
+      + numDisp
+      + '   X/Y/Z · Enter ✓ · Esc ✗  |  шаг ' + gStep + ' мм';
     ctx.save();
     ctx.font = '11.5px "JetBrains Mono", monospace';
     const bw = ctx.measureText(txt).width + 20;

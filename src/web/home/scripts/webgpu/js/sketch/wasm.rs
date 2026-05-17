@@ -63,12 +63,12 @@ pub const JS: &str = r##"
             wasmState.info = null;
           }
           wasmState.status = 'ready';
-          window.__setStatusMessage('WASM engine ready'
+          window.__setStatusMessage('WASM движок готов'
             + (wasmState.info ? (' v' + wasmState.info.version) : ''));
         } catch (e) {
           wasmState.status = 'error';
           wasmState.error  = String(e && e.message || e);
-          window.__setStatusMessage('WASM load failed: ' + wasmState.error);
+          window.__setStatusMessage('WASM: ошибка загрузки — ' + wasmState.error);
           __wasmModulePromise = null;
         }
         if (window.__updateSketchInspector) window.__updateSketchInspector();
@@ -92,9 +92,9 @@ pub const JS: &str = r##"
         let parsed = null;
         try { parsed = JSON.parse(out); } catch (e) { parsed = null; }
         if (parsed) {
-          window.__setStatusMessage('WASM validate ok ' + dt.toFixed(2) + ' ms');
+          window.__setStatusMessage('WASM проверка ОК ' + dt.toFixed(2) + ' мс');
         } else {
-          window.__setStatusMessage('WASM validate parse error');
+          window.__setStatusMessage('WASM: ошибка разбора результата проверки');
         }
         return parsed;
       };
@@ -255,7 +255,7 @@ pub const JS: &str = r##"
       // ──────────────────────────────────────────────────────────
       window.__wasmAddPointAndApply = async function(gx, gy, gz) {
         if (!(await window.__ensureSketchWasm())) {
-          window.__setStatusMessage('WASM not ready — point not added');
+          window.__setStatusMessage('WASM не готов — точка не добавлена');
           return { ok: false, error: wasmState.error || 'wasm not ready' };
         }
         const preSketch = window.__sketchToJSON();
@@ -268,7 +268,7 @@ pub const JS: &str = r##"
         const result = window.__wasmAddPoint(request);
         sketchState.lastWasmMs = wasmState.lastAddMs;
         if (!result) {
-          window.__setStatusMessage('WASM add-point parse error');
+          window.__setStatusMessage('WASM: ошибка разбора точки');
           return { ok: false, error: 'parse' };
         }
         if (result.ok) {
@@ -298,7 +298,7 @@ pub const JS: &str = r##"
 
       window.__wasmAddEdgeAndApply = async function(startRef, endRef) {
         if (!(await window.__ensureSketchWasm())) {
-          window.__setStatusMessage('WASM not ready — edge not added');
+          window.__setStatusMessage('WASM не готов — ребро не добавлено');
           return { ok: false, error: wasmState.error || 'wasm not ready' };
         }
         const preSketch = window.__sketchToJSON();
@@ -312,7 +312,7 @@ pub const JS: &str = r##"
         const result = window.__wasmAddEdge(request);
         sketchState.lastWasmMs = wasmState.lastAddMs;
         if (!result) {
-          window.__setStatusMessage('WASM add-edge parse error');
+          window.__setStatusMessage('WASM: ошибка разбора ребра');
           return { ok: false, error: 'parse' };
         }
         // Even on ok=false (duplicate / self-loop) the engine may have
@@ -358,7 +358,7 @@ pub const JS: &str = r##"
             if (window.__updateSketchInspector) window.__updateSketchInspector();
           });
         }
-        window.__setStatusMessage('Engine mode: ' + mode.toUpperCase());
+        window.__setStatusMessage('Режим движка: ' + mode.toUpperCase());
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
 

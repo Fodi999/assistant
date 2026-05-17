@@ -11,23 +11,23 @@ pub fn cad_side_panel_html() -> &'static str {
 
           <!-- ── Top icon tabs ── -->
           <nav class="csp-tabs" role="tablist">
-            <button class="csp-tab active" data-tab="grid"   title="Grid & Units"   onclick="window.__cadPanelTab('grid')">
+            <button class="csp-tab active" data-tab="grid"   title="Сетка и единицы"   onclick="window.__cadPanelTab('grid')">
               <span class="csp-tab-icon">▦</span>
-              <span class="csp-tab-label">Grid</span>
+              <span class="csp-tab-label">Сетка</span>
             </button>
-            <button class="csp-tab" data-tab="snap"   title="Snapping & Ortho" onclick="window.__cadPanelTab('snap')">
+            <button class="csp-tab" data-tab="snap"   title="Привязка и ортогональность" onclick="window.__cadPanelTab('snap')">
               <span class="csp-tab-icon">⌘</span>
-              <span class="csp-tab-label">Snap</span>
+              <span class="csp-tab-label">Привязка</span>
             </button>
-            <button class="csp-tab" data-tab="view"   title="Viewport & Shading" onclick="window.__cadPanelTab('view')">
+            <button class="csp-tab" data-tab="view"   title="Вид и отображение" onclick="window.__cadPanelTab('view')">
               <span class="csp-tab-icon">◐</span>
-              <span class="csp-tab-label">View</span>
+              <span class="csp-tab-label">Вид</span>
             </button>
-            <button class="csp-tab" data-tab="object" title="Selection & Objects" onclick="window.__cadPanelTab('object')">
+            <button class="csp-tab" data-tab="object" title="Выделение и объекты" onclick="window.__cadPanelTab('object')">
               <span class="csp-tab-icon">⬚</span>
-              <span class="csp-tab-label">Object</span>
+              <span class="csp-tab-label">Объект</span>
             </button>
-            <button class="csp-tab" data-tab="dev"    title="Dev & Debug"       onclick="window.__cadPanelTab('dev')">
+            <button class="csp-tab" data-tab="dev"    title="Разработка и отладка" onclick="window.__cadPanelTab('dev')">
               <span class="csp-tab-icon">⚙</span>
               <span class="csp-tab-label">Dev</span>
             </button>
@@ -42,7 +42,7 @@ pub fn cad_side_panel_html() -> &'static str {
               <!-- GRID section -->
               <div class="csp-section" data-section="grid">
                 <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('grid')">
-                  <span>GRID</span>
+                  <span>СЕТКА</span>
                   <span class="csp-caret">▾</span>
                 </button>
                 <div class="csp-section-body">
@@ -50,24 +50,24 @@ pub fn cad_side_panel_html() -> &'static str {
                   <!-- toggles -->
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-show-grid" checked>
-                    <span>Show grid</span>
+                    <span>Показать сетку</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-grid" checked>
-                    <span>Snap to grid</span>
+                    <span>Привязка к сетке</span>
                   </label>
 
                   <!-- slider row -->
                   <div class="csp-row" style="flex-direction:column; gap:6px; align-items:stretch;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                      <span class="csp-lbl">Grid step</span>
+                      <span class="csp-lbl">Шаг сетки</span>
                       <div style="display:flex; align-items:center; gap:4px;">
                         <input id="csp-grid-step-num"
                                type="number" min="1" max="100" step="1" value="10"
                                style="width:52px; background:rgba(0,0,0,0.5); color:#e2e8f0;
                                       border:1px solid rgba(103,232,249,0.25); border-radius:6px;
                                       padding:2px 6px; font:inherit; text-align:right; font-size:12px;">
-                        <span class="csp-unit">mm</span>
+                        <span class="csp-unit">мм</span>
                       </div>
                     </div>
                     <input id="csp-grid-step-slider"
@@ -83,7 +83,7 @@ pub fn cad_side_panel_html() -> &'static str {
                     </div>
                   </div>
 
-                  <button class="csp-btn-sm" style="margin-top:4px;" onclick="window.__cadResetGrid()">↺ Reset</button>
+                  <button class="csp-btn-sm" style="margin-top:4px;" onclick="window.__cadResetGrid()">↺ Сбросить</button>
                 </div>
               </div>
 
@@ -94,41 +94,41 @@ pub fn cad_side_panel_html() -> &'static str {
 
               <div class="csp-section" data-section="snapping">
                 <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('snapping')">
-                  <span>SNAPPING</span>
+                  <span>ПРИВЯЗКА</span>
                   <span class="csp-caret">▾</span>
                 </button>
                 <div class="csp-section-body">
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-to-grid"  checked>
-                    <span>Grid</span>
+                    <span>Сетка</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-to-point" checked>
-                    <span>Point</span>
+                    <span>Точка</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-endpoint" checked>
-                    <span>Endpoint</span>
+                    <span>Конечная точка</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-midpoint">
-                    <span>Midpoint</span>
+                    <span>Средняя точка</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-center">
-                    <span>Center</span>
+                    <span>Центр</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-intersect">
-                    <span>Intersection</span>
+                    <span>Пересечение</span>
                   </label>
                   <div class="csp-divider"></div>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-snap-ortho">
-                    <span>Ortho lock (O)</span>
+                    <span>Ортогональность (O)</span>
                   </label>
                   <div class="csp-row">
-                    <span class="csp-lbl">Precision</span>
+                    <span class="csp-lbl">Точность</span>
                     <span class="csp-val">Alt</span>
                   </div>
                 </div>
@@ -141,56 +141,56 @@ pub fn cad_side_panel_html() -> &'static str {
 
               <div class="csp-section" data-section="shader">
                 <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('shader')">
-                  <span>SHADER MODE</span>
+                  <span>РЕЖИМ ОТОБРАЖЕНИЯ</span>
                   <span class="csp-caret">▾</span>
                 </button>
                 <div class="csp-section-body">
                   <div class="csp-radio-group" id="csp-shader-group">
-                    <label class="csp-radio"><input type="radio" name="csp-shader" value="wireframe"> Wireframe</label>
-                    <label class="csp-radio"><input type="radio" name="csp-shader" value="solid" checked> Solid</label>
-                    <label class="csp-radio"><input type="radio" name="csp-shader" value="rendered"> Rendered</label>
+                    <label class="csp-radio"><input type="radio" name="csp-shader" value="wireframe"> Каркас</label>
+                    <label class="csp-radio"><input type="radio" name="csp-shader" value="solid" checked> Твёрдое тело</label>
+                    <label class="csp-radio"><input type="radio" name="csp-shader" value="rendered"> Рендер</label>
                   </div>
                 </div>
               </div>
 
               <div class="csp-section" data-section="camera">
                 <button class="csp-section-hdr" onclick="window.__cadPanelToggleSection('camera')">
-                  <span>CAMERA</span>
+                  <span>КАМЕРА</span>
                   <span class="csp-caret">▸</span>
                 </button>
                 <div class="csp-section-body" style="display:none;">
                   <div class="csp-radio-group">
-                    <label class="csp-radio"><input type="radio" name="csp-proj" value="perspective" checked> Perspective</label>
-                    <label class="csp-radio"><input type="radio" name="csp-proj" value="ortho"> Orthographic</label>
+                    <label class="csp-radio"><input type="radio" name="csp-proj" value="perspective" checked> Перспектива</label>
+                    <label class="csp-radio"><input type="radio" name="csp-proj" value="ortho"> Ортографическая</label>
                   </div>
                   <div class="csp-divider"></div>
                   <div class="csp-btn-row">
-                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('front')">Front</button>
-                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('top')">Top</button>
-                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('right')">Right</button>
-                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('iso')">Iso</button>
+                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('front')">Спереди</button>
+                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('top')">Сверху</button>
+                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('right')">Справа</button>
+                    <button class="csp-btn-sm" onclick="window.__snapView && window.__snapView('iso')">Изо</button>
                   </div>
-                  <button class="csp-btn-sm csp-btn-full" onclick="window.__resetCamera && window.__resetCamera()">Reset Camera</button>
+                  <button class="csp-btn-sm csp-btn-full" onclick="window.__resetCamera && window.__resetCamera()">Сбросить камеру</button>
                 </div>
               </div>
 
               <div class="csp-section" data-section="helpers">
                 <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('helpers')">
-                  <span>HELPERS</span>
+                  <span>ПОМОЩНИКИ</span>
                   <span class="csp-caret">▾</span>
                 </button>
                 <div class="csp-section-body">
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-show-orbit-guide">
-                    <span>Show orbit guide</span>
+                    <span>Кольцо орбиты</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-show-projection-guide">
-                    <span>Show projection guide</span>
+                    <span>Направляющие проекции</span>
                   </label>
                   <label class="csp-row csp-check">
                     <input type="checkbox" id="csp-fade-bg-helpers" checked>
-                    <span>Fade background helpers</span>
+                    <span>Затухание помощников</span>
                   </label>
                 </div>
               </div>
@@ -202,36 +202,36 @@ pub fn cad_side_panel_html() -> &'static str {
 
               <div class="csp-section" data-section="selection">
                 <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('selection')">
-                  <span>SELECTION</span>
+                  <span>ВЫДЕЛЕНИЕ</span>
                   <span class="csp-caret">▾</span>
                 </button>
                 <div class="csp-section-body">
-                  <div class="csp-row"><span class="csp-lbl">Type</span>   <span id="csp-sel-type"  class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">Length</span> <span id="csp-sel-len"   class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">Angle</span>  <span id="csp-sel-angle" class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">Plane</span>  <span id="csp-sel-plane" class="csp-val">XZ</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Тип</span>    <span id="csp-sel-type"  class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Длина</span>  <span id="csp-sel-len"   class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Угол</span>   <span id="csp-sel-angle" class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Плоскость</span> <span id="csp-sel-plane" class="csp-val">XZ</span></div>
                 </div>
               </div>
 
               <div class="csp-section" data-section="analyze">
                 <button class="csp-section-hdr" onclick="window.__cadPanelToggleSection('analyze')">
-                  <span>ANALYZE</span>
+                  <span>АНАЛИЗ</span>
                   <span class="csp-caret">▸</span>
                 </button>
                 <div class="csp-section-body" style="display:none;">
                   <div class="csp-row">
-                    <span class="csp-lbl">Status</span>
+                    <span class="csp-lbl">Статус</span>
                     <span id="csp-analyze-status" class="csp-val csp-status-ok">OK</span>
                   </div>
                   <div id="csp-analyze-errors" class="csp-error-list" style="display:none;"></div>
                   <div class="csp-divider"></div>
                   <div class="csp-btn-row">
-                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('make_rect')">Make Rect</button>
-                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('equalize')">Equalize</button>
+                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('make_rect')">Прямоугольник</button>
+                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('equalize')">Уравнять</button>
                   </div>
                   <div class="csp-btn-row">
-                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('snap_to_grid')">Snap to Grid</button>
-                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('lock_constraints')">Lock</button>
+                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('snap_to_grid')">На сетку</button>
+                    <button class="csp-btn-sm" onclick="window.__cadAction && window.__cadAction('lock_constraints')">Зафиксировать</button>
                   </div>
                 </div>
               </div>
@@ -243,28 +243,28 @@ pub fn cad_side_panel_html() -> &'static str {
 
               <div class="csp-section" data-section="engine">
                 <button class="csp-section-hdr open" onclick="window.__cadPanelToggleSection('engine')">
-                  <span>CAD ENGINE</span>
+                  <span>CAD ДВИЖОК</span>
                   <span class="csp-caret">▾</span>
                 </button>
                 <div class="csp-section-body">
-                  <div class="csp-row"><span class="csp-lbl">WASM</span>    <span id="csp-wasm-status" class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">Backend</span> <span id="csp-be-status"   class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">WASM ms</span> <span id="csp-wasm-ms"    class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">BE ms</span>   <span id="csp-be-ms"      class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">Pending</span> <span id="csp-pending"    class="csp-val">0</span></div>
+                  <div class="csp-row"><span class="csp-lbl">WASM</span>       <span id="csp-wasm-status" class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Бэкенд</span>     <span id="csp-be-status"   class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">WASM мс</span>    <span id="csp-wasm-ms"    class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">BE мс</span>      <span id="csp-be-ms"      class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">В очереди</span>  <span id="csp-pending"    class="csp-val">0</span></div>
                 </div>
               </div>
 
               <div class="csp-section" data-section="devjson">
                 <button class="csp-section-hdr" onclick="window.__cadPanelToggleSection('devjson')">
-                  <span>JSON EXPORT</span>
+                  <span>ЭКСПОРТ JSON</span>
                   <span class="csp-caret">▸</span>
                 </button>
                 <div class="csp-section-body" style="display:none;">
                   <div class="csp-btn-row">
-                    <button class="csp-btn-sm" onclick="window.__sioRefresh && window.__sioRefresh()">↻ Refresh</button>
-                    <button class="csp-btn-sm" onclick="window.__sioCopy   && window.__sioCopy()">⧉ Copy</button>
-                    <button class="csp-btn-sm" onclick="window.__sioDownload && window.__sioDownload()">⬇ Save</button>
+                    <button class="csp-btn-sm" onclick="window.__sioRefresh && window.__sioRefresh()">↻ Обновить</button>
+                    <button class="csp-btn-sm" onclick="window.__sioCopy   && window.__sioCopy()">⧉ Копировать</button>
+                    <button class="csp-btn-sm" onclick="window.__sioDownload && window.__sioDownload()">⬇ Сохранить</button>
                   </div>
                   <pre id="csp-json-preview" class="csp-json-pre">{}</pre>
                 </div>
@@ -272,13 +272,13 @@ pub fn cad_side_panel_html() -> &'static str {
 
               <div class="csp-section" data-section="devsnapstate">
                 <button class="csp-section-hdr" onclick="window.__cadPanelToggleSection('devsnapstate')">
-                  <span>SNAP DEBUG</span>
+                  <span>ОТЛАДКА ПРИВЯЗКИ</span>
                   <span class="csp-caret">▸</span>
                 </button>
                 <div class="csp-section-body" style="display:none;">
-                  <div class="csp-row"><span class="csp-lbl">Kind</span>  <span id="csp-snap-kind"  class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">Grid</span>  <span id="csp-snap-gxyz"  class="csp-val">—</span></div>
-                  <div class="csp-row"><span class="csp-lbl">World</span> <span id="csp-snap-world" class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Тип</span>   <span id="csp-snap-kind"  class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Сетка</span> <span id="csp-snap-gxyz"  class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Мир</span>   <span id="csp-snap-world" class="csp-val">—</span></div>
                 </div>
               </div>
 

@@ -471,7 +471,7 @@ pub const JS: &str = r##"
           pr.snapEnabled = true;
         }
         if (window.__setStatusMessage) {
-          window.__setStatusMessage('Snap · ' + key + ' = ' + (on ? 'on' : 'off'));
+          window.__setStatusMessage('Привязка · ' + key + ' = ' + (on ? 'вкл' : 'выкл'));
         }
       };
 
@@ -485,7 +485,7 @@ pub const JS: &str = r##"
         const clamped = Math.max(0.0001, Math.min(1.0, next));
         pr.snapStepM = clamped;
         if (window.__setStatusMessage) {
-          window.__setStatusMessage('Snap step: ' + (clamped * 1000).toFixed(3) + ' mm');
+          window.__setStatusMessage('Шаг привязки: ' + (clamped * 1000).toFixed(3) + ' мм');
         }
         if (window.__notifySketchChanged) window.__notifySketchChanged();
       };
@@ -698,7 +698,7 @@ pub const JS: &str = r##"
         const aFixed = window.__isPointFixed(a.id);
         const bFixed = window.__isPointFixed(b.id);
         if (aFixed && bFixed) {
-          window.__setStatusMessage('Cannot dimension edge with both endpoints fixed');
+          window.__setStatusMessage('Нельзя задать размер: обе точки зафиксированы');
           return false;
         }
         let dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -731,7 +731,7 @@ pub const JS: &str = r##"
         const aFixed = window.__isPointFixed(a.id);
         const bFixed = window.__isPointFixed(b.id);
         if (aFixed && bFixed) {
-          window.__setStatusMessage('Cannot constrain edge with both endpoints fixed');
+          window.__setStatusMessage('Нельзя ограничить: обе точки зафиксированы');
           return false;
         }
         const moveB = !bFixed;
@@ -906,7 +906,7 @@ pub const JS: &str = r##"
         const prof = window.__getProfileById(profileId);
         if (!prof) { sketchState.selectedProfileId = null; return null; }
         sketchState.selectedProfileId = prof.id;
-        window.__setStatusMessage('Selected ' + prof.id + ' (' + prof.edgeIds.length + ' edges)');
+        window.__setStatusMessage('Выбран ' + prof.id + ' (' + prof.edgeIds.length + ' рёбер)');
         return prof;
       };
 
@@ -1139,7 +1139,7 @@ pub const JS: &str = r##"
         if (sketchState.draftMode === mode) return;
         sketchState.draftMode = mode;
         if (window.__setStatusMessage) {
-          window.__setStatusMessage('Draft mode: ' + (mode === 'projection' ? 'Projection' : 'Free 3D'));
+          window.__setStatusMessage('Режим черчения: ' + (mode === 'projection' ? 'Проекция' : 'Свободный 3D'));
         }
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
@@ -1207,7 +1207,7 @@ pub const JS: &str = r##"
           await window.__createEdgeViaEngine(u, v, 'normal');
         }
         if (window.__setStatusMessage) {
-          window.__setStatusMessage('Projection box ' + W + '×' + H + '×' + D + ' created');
+          window.__setStatusMessage('Блок проекции ' + W + '×' + H + '×' + D + ' создан');
         }
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
@@ -1244,7 +1244,7 @@ pub const JS: &str = r##"
           await window.__createEdgeViaEngine(u, v, 'normal');
         }
         if (window.__setStatusMessage) {
-          window.__setStatusMessage('Sample sloped block created (wireframe)');
+          window.__setStatusMessage('Образец наклонного блока создан (каркас)');
         }
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
@@ -1466,9 +1466,9 @@ pub const JS: &str = r##"
 
         // Recompute derived sets.
         window.__notifySketchChanged();
-        window.__setStatusMessage('Imported ' + sketchState.points.length + ' pts · '
-          + sketchState.edges.length + ' edges · '
-          + sketchState.constraints.length + ' constraints');
+        window.__setStatusMessage('Импортировано ' + sketchState.points.length + ' точек · '
+          + sketchState.edges.length + ' рёбер · '
+          + sketchState.constraints.length + ' ограничений');
         return {
           ok: true,
           stats: {

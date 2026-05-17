@@ -42,7 +42,7 @@ pub const JS: &str = r##"
           if (hud) hud.style.display = 'none';
         }
         if (window.__setStatusMessage)
-          window.__setStatusMessage(window.__cursorInfoVisible ? '⊙ Cursor info ON' : '⊙ Cursor info OFF');
+          window.__setStatusMessage(window.__cursorInfoVisible ? '⊙ Курсор ВКЛ' : '⊙ Курсор ВЫКЛ');
       }
 
       // Event delegation — works regardless of DOM ready state

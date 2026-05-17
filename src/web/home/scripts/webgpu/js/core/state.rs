@@ -99,7 +99,7 @@ pub const JS: &str = r##"
         requestAnimationFrame(_step);
 
         if (window.__setStatusMessage)
-          window.__setStatusMessage('⌖ Scene centred' + (n ? ' (' + n + ' pts)' : ''));
+          window.__setStatusMessage('⌖ Сцена центрирована' + (n ? ' (' + n + ' точек)' : ''));
       };
 
       // ── Reset camera to default iso view ─────────────────────────────────

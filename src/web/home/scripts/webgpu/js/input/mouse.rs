@@ -217,13 +217,13 @@ pub const JS: &str = r##"
             // Just update status — do NOT confirm, let user keep dragging other axes.
             if (window.__setStatusMessage) {
               const lock = sketchState.grab.axisLock;
-              window.__setStatusMessage('⤢ Grab' + (lock ? ' · ' + lock : ' · free') + ' — drag again · Enter ✓ · Esc ✗');
+              window.__setStatusMessage('⤢ Захват' + (lock ? ' · ' + lock : ' · свободно') + ' — тяни · Enter ✓ · Esc ✗');
             }
           } else if (!dragMoved) {
             // Pure tap on handle: axis was locked, show status.
             if (sketchState.grab?.active && window.__setStatusMessage) {
               const lock = sketchState.grab.axisLock;
-              window.__setStatusMessage('⤢ Grab ready — drag to move' + (lock ? ' · ' + lock : ' · free') + ' · Enter ✓ · Esc ✗');
+              window.__setStatusMessage('⤢ Захват готов — тяни' + (lock ? ' · ' + lock : ' · свободно') + ' · Enter ✓ · Esc ✗');
             }
           }
           panning = false; orbiting = false;

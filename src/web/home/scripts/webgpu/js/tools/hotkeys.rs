@@ -13,7 +13,7 @@ pub const JS: &str = r##"
       // ─────────────────────────────────────────────────────────
       function __requireSingleEdge() {
         if (sketchState.selectedEdgeIds.size !== 1 || sketchState.selectedPointIds.size > 0) {
-          window.__setStatusMessage('Select exactly one edge');
+          window.__setStatusMessage('Выберите ровно одно ребро');
           return null;
         }
         const id = [...sketchState.selectedEdgeIds][0];
@@ -27,13 +27,13 @@ pub const JS: &str = r##"
         const input = window.prompt('Edge length:', cur.toFixed(3));
         if (input === null) return;
         const v = parseFloat(input);
-        if (!isFinite(v) || v <= 0) { window.__setStatusMessage('Invalid length'); return; }
+        if (!isFinite(v) || v <= 0) { window.__setStatusMessage('Некорректная длина'); return; }
         window.__pushHistory();
         const ok = window.__applyEdgeLength(edge, v);
         if (ok) {
           window.__addConstraint('edge_length', 'edge', edge.id, v);
           window.__notifySketchChanged();
-          window.__setStatusMessage('Length = ' + v.toFixed(3));
+          window.__setStatusMessage('Длина = ' + v.toFixed(3));
         }
       }
 
@@ -47,7 +47,7 @@ pub const JS: &str = r##"
           if (v) window.__removeConstraint(v.id);
           window.__addConstraint('horizontal', 'edge', edge.id, null);
           window.__notifySketchChanged();
-          window.__setStatusMessage('Edge horizontal');
+          window.__setStatusMessage('Ребро горизонтально');
         }
       }
 
@@ -61,13 +61,13 @@ pub const JS: &str = r##"
           if (h) window.__removeConstraint(h.id);
           window.__addConstraint('vertical', 'edge', edge.id, null);
           window.__notifySketchChanged();
-          window.__setStatusMessage('Edge vertical');
+          window.__setStatusMessage('Ребро вертикально');
         }
       }
 
       function __keyFixToggle() {
         if (sketchState.selectedPointIds.size === 0) {
-          window.__setStatusMessage('F: select points first');
+          window.__setStatusMessage('F: сначала выберите точки');
           return;
         }
         window.__pushHistory();
@@ -81,7 +81,7 @@ pub const JS: &str = r##"
             nFixed++;
           }
         }
-        window.__setStatusMessage('Fixed ' + nFixed + ' · Unfixed ' + nUnfixed);
+        window.__setStatusMessage('Зафиксировано ' + nFixed + ' · Снято ' + nUnfixed);
       }
 
       // ─────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ pub const JS: &str = r##"
         if (btn) btn.classList.toggle('active', sketchState.orthoLock);
         // Show status
         if (window.__setStatusMessage)
-          window.__setStatusMessage(sketchState.orthoLock ? 'Ortho Lock ON  (0° 45° 90°)' : 'Ortho Lock OFF');
+          window.__setStatusMessage(sketchState.orthoLock ? 'Ортогональность ВКЛ  (0° 45° 90°)' : 'Ортогональность ВЫКЛ');
         if (window.__updateLinePreview) window.__updateLinePreview();
       };
 
@@ -167,9 +167,24 @@ pub const JS: &str = r##"
         if (sketchState.grab.active) {
           if (k === 'escape') { window.__cancelGrab(); return true; }
           if (k === 'enter')  { window.__confirmGrab(); return true; }
+          // Numeric input: digits, sign, decimal point
+          if (/^[0-9]$/.test(k) || (k === '-' && !(sketchState.grab.numericInput||'').includes('-')) || k === '.') {
+            sketchState.grab.numericInput = (sketchState.grab.numericInput || '') + e.key;
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            e.preventDefault();
+            return true;
+          }
+          if (k === 'backspace') {
+            const ni = sketchState.grab.numericInput || '';
+            sketchState.grab.numericInput = ni.slice(0, -1);
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            e.preventDefault();
+            return true;
+          }
           function __setGrabAxisLock(axis) {
             const grab = sketchState.grab;
             grab.axisLock = (grab.axisLock === axis) ? null : axis;
+            grab.numericInput = '';   // reset numeric on axis change
             grab.screenAcc = { x: 0, y: 0, z: 0 };
             const byId = new Map(sketchState.points.map(p => [p.id, p]));
             grab.dragBase = new Map();
@@ -185,7 +200,7 @@ pub const JS: &str = r##"
             grab.startCenter = _kcn ? { x:_kcx/_kcn, y:_kcy/_kcn, z:_kcz/_kcn } : grab.startCenter;
             grab.startDragPoint = null; // will be re-set on next pointermove
             const lockName = grab.axisLock || 'free';
-            window.__setStatusMessage('⤢ Grab · ' + lockName.toUpperCase() + ' — drag · Enter ✓ · Esc ✗');
+            window.__setStatusMessage('⤢ Захват · ось ' + lockName.toUpperCase() + ' — тяни · Enter ✓ · Esc ✗');
             console.log('[Grab] axis lock: ' + grab.axisLock);
           }
           if (k === 'x') { __setGrabAxisLock('X'); return true; }
@@ -234,7 +249,7 @@ pub const JS: &str = r##"
             else {
               sketchState.line = { active: false, startPointId: null, startWorld: null };
               sketchState.phase = 'idle';
-              window.__setStatusMessage('Line cancelled');
+              window.__setStatusMessage('Линия отменена');
             }
           } else {
             sketchState.selectedPointIds.clear();
@@ -250,7 +265,7 @@ pub const JS: &str = r##"
             else {
               sketchState.line = { active: false, startPointId: null, startWorld: null };
               sketchState.phase = 'idle';
-              window.__setStatusMessage('Line mode finished');
+              window.__setStatusMessage('Режим линии завершён');
               if (window.__updateSketchInspector) window.__updateSketchInspector();
             }
           }
@@ -284,7 +299,7 @@ pub const JS: &str = r##"
           if (!sketchState.selectedPointIds.size &&
               !sketchState.selectedEdgeIds.size &&
               !sketchState.selectedProfileId) {
-            window.__setStatusMessage('G: select points, edges, or a profile first');
+            window.__setStatusMessage('G: сначала выберите точки, рёбра или профиль');
             return true;
           }
           window.__startGrab();
@@ -293,7 +308,7 @@ pub const JS: &str = r##"
 
         // M — Mirror stub
         if (k === 'm' && !e.shiftKey && !meta) {
-          window.__setStatusMessage('M: Mirror — coming soon');
+          window.__setStatusMessage('M: Зеркало — скоро');
           return true;
         }
 
@@ -304,7 +319,7 @@ pub const JS: &str = r##"
         if (k === 'v') {
           if (e.shiftKey) {
             sketchState.showValidation = !sketchState.showValidation;
-            window.__setStatusMessage('Validation: ' + (sketchState.showValidation ? 'on' : 'off'));
+            window.__setStatusMessage('Проверка: ' + (sketchState.showValidation ? 'вкл' : 'выкл'));
           } else {
             __keyVertical();
           }

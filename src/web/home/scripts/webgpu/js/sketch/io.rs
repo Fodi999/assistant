@@ -48,9 +48,9 @@ pub const JS: &str = r##"
             document.body.appendChild(ta); ta.select();
             document.execCommand('copy'); document.body.removeChild(ta);
           }
-          window.__setStatusMessage('Copied ' + new Blob([txt]).size + ' B JSON to clipboard');
+          window.__setStatusMessage('Скопировано ' + new Blob([txt]).size + ' Б JSON в буфер');
         } catch (err) {
-          window.__setStatusMessage('Copy failed: ' + (err && err.message ? err.message : err));
+          window.__setStatusMessage('Ошибка копирования: ' + (err && err.message ? err.message : err));
         }
       };
 
@@ -70,19 +70,19 @@ pub const JS: &str = r##"
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        window.__setStatusMessage('Downloaded ' + a.download);
+        window.__setStatusMessage('Загружено ' + a.download);
       };
 
       window.__loadSketchJSON = function(text) {
         let obj;
         try { obj = JSON.parse(text); }
         catch (e) {
-          window.__setStatusMessage('Import failed: invalid JSON');
+          window.__setStatusMessage('Ошибка импорта: некорректный JSON');
           return { ok:false, error:'invalid JSON: ' + e.message };
         }
         const res = window.__sketchFromJSON(obj);
         if (!res.ok) {
-          window.__setStatusMessage('Import failed: ' + res.error);
+          window.__setStatusMessage('Ошибка импорта: ' + res.error);
         } else if (window.__updateSketchInspector) {
           window.__updateSketchInspector();
         }
@@ -124,7 +124,7 @@ pub const JS: &str = r##"
               fileInput.value = '';
             };
             reader.onerror = () => {
-              window.__setStatusMessage('File read failed');
+              window.__setStatusMessage('Ошибка чтения файла');
               fileInput.value = '';
             };
             reader.readAsText(file);

@@ -43,6 +43,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + sketch::constraints::JS.len()
         + tools::select_tool::JS.len()
         + tools::grab_tool::JS.len()
+        + tools::grab_gizmo::JS.len()
         + tools::copy_tool::JS.len()
         + tools::line_tool::JS.len()
         + tools::hotkeys::JS.len()
@@ -89,6 +90,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     // ── 5. Tools ─────────────────────────────────────────────────────────────
     out.push_str(tools::select_tool::JS);
     out.push_str(tools::grab_tool::JS);
+    out.push_str(tools::grab_gizmo::JS);  // overrides drawGrabGizmo + __startGrabFromGizmo
     out.push_str(tools::copy_tool::JS);
     out.push_str(tools::line_tool::JS);
     out.push_str(tools::hotkeys::JS);

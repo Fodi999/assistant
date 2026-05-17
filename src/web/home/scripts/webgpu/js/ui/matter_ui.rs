@@ -4,12 +4,13 @@
 pub const JS: &str = r##"
       // ── Per-tool helper text ──
       const TOOL_HINTS = {
-        select: 'Click pick · Shift+click toggle · Dbl-click edge → endpoints / profile · D dim · F fix · H/V align',
-        point:  'Click to place point on current plane · 1/2/3 switch plane',
-        line:   'Click two points to draw an edge · keep clicking to chain · Enter/Esc to finish',
-        grab:   'Drag selected (non-fixed) points · X / Y / Z to lock axis · Enter/click confirm · Esc cancel',
-        delete: 'Click a point or edge to delete · ⌫/Del removes current selection · cascades constraints',
+        select: 'Клик — выбор · Shift+клик — переключение · Двойной клик на ребре → точки / профиль · D размер · F фикс · H/V выравнивание',
+        point:  'Клик — разместить точку на текущей плоскости · 1/2/3 — сменить плоскость',
+        line:   'Клик двух точек — провести ребро · продолжай кликать для цепочки · Enter/Esc — завершить',
+        grab:   'Тяни выбранные (незафиксированные) точки · X / Y / Z — ограничить ось · Enter/клик — подтвердить · Esc — отмена',
+        delete: 'Клик на точку или ребро — удалить · ⌫/Del удаляет выделение · каскадно удаляет связанные ограничения',
       };
+      const TOOL_NAMES_RU = { select: 'ВЫБОР', point: 'ТОЧКА', line: 'ЛИНИЯ', grab: 'ЗАХВАТ', delete: 'УДАЛИТЬ' };
 
       window.__setSketchTool = function(tool) {
         const valid = ['select', 'point', 'line', 'grab', 'delete'];
@@ -34,7 +35,7 @@ pub const JS: &str = r##"
             // Delegate to __startGrab which handles edges + profiles too
             if (window.__startGrab) window.__startGrab();
           } else {
-            window.__setStatusMessage('Grab: select points, edges, or a profile first');
+            window.__setStatusMessage('Захват: сначала выделите точки, рёбра или профиль');
           }
         }
         document.querySelectorAll('.utb-btn[data-tool]').forEach(btn => {
@@ -46,15 +47,15 @@ pub const JS: &str = r##"
 
       // ── Helpers for inspector formatting ──
       function __orientationOfEdge(edgeId) {
-        if (window.__hasHorizontalConstraint && window.__hasHorizontalConstraint(edgeId)) return 'Horizontal';
-        if (window.__hasVerticalConstraint   && window.__hasVerticalConstraint(edgeId))   return 'Vertical';
+        if (window.__hasHorizontalConstraint && window.__hasHorizontalConstraint(edgeId)) return 'Горизонталь';
+        if (window.__hasVerticalConstraint   && window.__hasVerticalConstraint(edgeId))   return 'Вертикаль';
         return '—';
       }
       function __validationOfPoint(pointId) {
         const deg = window.__pointDegree ? window.__pointDegree(pointId) : 0;
-        if (deg === 0) return 'isolated';
-        if (deg === 1) return 'open';
-        return 'connected';
+        if (deg === 0) return 'изолирована';
+        if (deg === 1) return 'открыта';
+        return 'соединена';
       }
 
       window.__updateSketchInspector = function() {
@@ -62,7 +63,7 @@ pub const JS: &str = r##"
         const showBlock = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
 
         const tool = (sketchState.activeTool || 'select');
-        set('si-tool',  tool.toUpperCase());
+        set('si-tool',  TOOL_NAMES_RU[tool] || tool.toUpperCase());
         set('si-plane', sketchState.workingPlane || 'XZ');
         set('si-points', String(sketchState.points.length));
         set('si-edges',  String(sketchState.edges.length));
@@ -151,8 +152,8 @@ pub const JS: &str = r##"
         const planeLbl = window.__planeLabel
           ? window.__planeLabel(sketchState.workingPlane)
           : (sketchState.workingPlane || 'XZ');
-        set('mini-mode',  sketchState.draftMode === 'projection' ? 'Projection' : 'Free 3D');
-        set('mini-tool',  tool.toUpperCase());
+        set('mini-mode',  sketchState.draftMode === 'projection' ? 'Проекция' : 'Свободный 3D');
+        set('mini-tool',  TOOL_NAMES_RU[tool] || tool.toUpperCase());
         set('mini-plane', sketchState.draftMode === 'projection'
           ? (sketchState.workingPlane + ' ' + planeLbl)
           : (sketchState.workingPlane || 'XZ'));
@@ -167,9 +168,9 @@ pub const JS: &str = r##"
         const fmtL = formatLengthMm;
 
         let snapTxt;
-        if (snap.kind === 'point' && snap.pointId)  snapTxt = 'POINT ' + snap.pointId;
-        else if (snap.kind === 'grid')               snapTxt = 'GRID '  + snap.gx + ',' + snap.gy + ',' + snap.gz;
-        else if (snap.kind === 'free' && hw)         snapTxt = 'FREE '  + formatCoord(hw.x) + ' ' + formatCoord(hw.y) + ' ' + formatCoord(hw.z);
+        if (snap.kind === 'point' && snap.pointId)  snapTxt = 'ТОЧКА ' + snap.pointId;
+        else if (snap.kind === 'grid')               snapTxt = 'СЕТКА '  + snap.gx + ',' + snap.gy + ',' + snap.gz;
+        else if (snap.kind === 'free' && hw)         snapTxt = 'СВОБОДНО '  + formatCoord(hw.x) + ' ' + formatCoord(hw.y) + ' ' + formatCoord(hw.z);
         else                                          snapTxt = '—';
         set('mini-snap', snapTxt);
 
@@ -207,7 +208,7 @@ pub const JS: &str = r##"
             }
             setH('chud-len', lenTxt);
             // Snap type row
-            setH('chud-snap', snap.kind ? snap.kind.toUpperCase() : '—');
+            setH('chud-snap', snap.kind ? (({point:'ТОЧКА',grid:'СЕТКА',free:'СВОБОДНО'}[snap.kind] || snap.kind.toUpperCase())) : '—');
             const angRow = cursorHud.querySelector('.chud-ang');
             if (angRow) {
               angRow.style.display = angTxt !== null ? '' : 'none';
@@ -392,7 +393,7 @@ pub const JS: &str = r##"
             snapInput.value = String(mm);
             if (!sketchState.precision) sketchState.precision = {};
             sketchState.precision.snapStepM = mm / 1000;
-            window.__setStatusMessage('Snap step: ' + mm + ' mm');
+            window.__setStatusMessage('Шаг привязки: ' + mm + ' мм');
             if (window.__notifySketchChanged) window.__notifySketchChanged();
             window.__updateSketchInspector();
           });
@@ -407,7 +408,7 @@ pub const JS: &str = r##"
             dispInput.value = String(mm);
             if (!sketchState.precision) sketchState.precision = {};
             sketchState.precision.displayGridStepM = mm / 1000;
-            window.__setStatusMessage('Display grid: ' + mm + ' mm');
+            window.__setStatusMessage('Сетка отображения: ' + mm + ' мм');
             window.__updateSketchInspector();
           });
         }
@@ -434,7 +435,7 @@ pub const JS: &str = r##"
           el.checked = !!sketchState.drafting[key];
           el.addEventListener('change', () => {
             sketchState.drafting[key] = el.checked;
-            window.__setStatusMessage('Drafting · ' + key + ' = ' + (el.checked ? 'on' : 'off'));
+            window.__setStatusMessage('Черчение · ' + key + ' = ' + (el.checked ? 'вкл' : 'выкл'));
           });
         }
         const decEl = document.getElementById('si-df-decimals');
@@ -478,7 +479,7 @@ pub const JS: &str = r##"
           tpEl.checked = !!(sketchState.precision && sketchState.precision.touchpadMode);
           tpEl.addEventListener('change', () => {
             if (sketchState.precision) sketchState.precision.touchpadMode = tpEl.checked;
-            window.__setStatusMessage('Touchpad precision: ' + (tpEl.checked ? 'on' : 'off'));
+            window.__setStatusMessage('Точность тачпада: ' + (tpEl.checked ? 'вкл' : 'выкл'));
           });
         }
 
@@ -489,13 +490,13 @@ pub const JS: &str = r##"
         if (pfCopy) {
           pfCopy.addEventListener('click', async () => {
             const payload = window.__selectedProfileToPayload();
-            if (!payload) { window.__setStatusMessage('No profile selected'); return; }
+            if (!payload) { window.__setStatusMessage('Профиль не выбран'); return; }
             const txt = JSON.stringify(payload, null, 2);
             try {
               await navigator.clipboard.writeText(txt);
-              window.__setStatusMessage('Copied profile ' + payload.profileId);
+              window.__setStatusMessage('Профиль скопирован: ' + payload.profileId);
             } catch (e) {
-              window.__setStatusMessage('Clipboard failed');
+              window.__setStatusMessage('Ошибка буфера обмена');
             }
           });
         }
