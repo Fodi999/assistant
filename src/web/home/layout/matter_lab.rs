@@ -85,13 +85,19 @@ pub fn matter_lab_section() -> String {
           <button class="plane-pill"        data-plane="YZ" title="Right plane (3)">YZ</button>
         </div>
 
-        <!-- Universal Toolbar — 5 sketch tools -->
+        <!-- Universal Toolbar — 5 sketch tools + Ortho Lock -->
         <nav id="universal-toolbar" aria-label="Sketch tools">
           <button class="utb-btn active" data-tool="select" title="Select (S)">↖<span class="utb-label">Select</span></button>
           <button class="utb-btn"        data-tool="point"  title="Point (P)">•<span class="utb-label">Point</span></button>
           <button class="utb-btn"        data-tool="line"   title="Line (L)">╱<span class="utb-label">Line</span></button>
           <button class="utb-btn"        data-tool="grab"   title="Grab (G)">✥<span class="utb-label">Grab</span></button>
           <button class="utb-btn"        data-tool="delete" title="Delete (⌫)">⌫<span class="utb-label">Delete</span></button>
+          <div class="utb-sep"></div>
+          <button class="utb-btn" id="btn-ortho" data-toggle="ortho"
+                  title="Ortho Lock — snap to 0° 45° 90° (O)"
+                  onclick="if(window.__toggleOrthoLock) window.__toggleOrthoLock()">
+            ⊾<span class="utb-label">Ortho</span>
+          </button>
         </nav>
 
         <!-- Sketch Inspector — Blender-style N-panel (slides from right edge) -->

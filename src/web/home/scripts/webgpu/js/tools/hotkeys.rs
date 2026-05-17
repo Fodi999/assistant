@@ -85,8 +85,51 @@ pub const JS: &str = r##"
       }
 
       // ─────────────────────────────────────────────────────────
-      // __handleSketchKey(e) → bool consumed
+      // __applyOrthoSnap(a, h, plane) → snapped hover point
+      // Snaps the preview endpoint to the nearest 0°/45°/90°/135°…
+      // direction from the start point `a`, in the working plane.
       // ─────────────────────────────────────────────────────────
+      window.__applyOrthoSnap = function(a, h, plane) {
+        let dx, dy;
+        if      (plane === 'XY') { dx = h.x - a.x; dy = h.y - a.y; }
+        else if (plane === 'YZ') { dx = h.y - a.y; dy = h.z - a.z; }
+        else /* XZ default */    { dx = h.x - a.x; dy = h.z - a.z; }
+
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-10) return h;
+
+        const angle   = Math.atan2(dy, dx);
+        const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+        const sx = Math.cos(snapped) * len;
+        const sy = Math.sin(snapped) * len;
+
+        const r  = Object.assign({}, h);
+        if      (plane === 'XY') { r.x = a.x + sx; r.y = a.y + sy; }
+        else if (plane === 'YZ') { r.y = a.y + sx; r.z = a.z + sy; }
+        else /* XZ */            { r.x = a.x + sx; r.z = a.z + sy; }
+
+        const gs = sketchState.gridSize || 0.00001;
+        r.gx = Math.round(r.x / gs);
+        r.gy = Math.round(r.y / gs);
+        r.gz = Math.round(r.z / gs);
+        return r;
+      };
+
+      // ─────────────────────────────────────────────────────────
+      // __toggleOrthoLock() — O key or ORTHO button
+      // ─────────────────────────────────────────────────────────
+      window.__toggleOrthoLock = function() {
+        sketchState.orthoLock = !sketchState.orthoLock;
+        // Update toolbar button visual state
+        const btn = document.getElementById('btn-ortho');
+        if (btn) btn.classList.toggle('active', sketchState.orthoLock);
+        // Show status
+        if (window.__setStatusMessage)
+          window.__setStatusMessage(sketchState.orthoLock ? 'Ortho Lock ON  (0° 45° 90°)' : 'Ortho Lock OFF');
+        if (window.__updateLinePreview) window.__updateLinePreview();
+      };
+
+
       window.__handleSketchKey = function(e) {
         const k    = e.key.toLowerCase();
         const meta = e.metaKey || e.ctrlKey;
@@ -213,6 +256,7 @@ pub const JS: &str = r##"
 
         // Tool switches
         if (k === 's') { window.__setSketchTool && window.__setSketchTool('select'); return true; }
+        if (k === 'o') { window.__toggleOrthoLock && window.__toggleOrthoLock(); return true; }
         if (k === 'p' && e.shiftKey) { if (window.__togglePerfHud) window.__togglePerfHud(); return true; }
         if (k === 'p') { window.__setSketchTool && window.__setSketchTool('point'); return true; }
         if (k === 'l') { window.__setSketchTool && window.__setSketchTool('line');  return true; }
@@ -273,7 +317,11 @@ pub const JS: &str = r##"
         const byId = new Map(sketchState.points.map(p => [p.id, p]));
         const a = byId.get(line.startPointId);
         if (!a) { line.previewPoint = null; return; }
-        const h = sketchState.hoverWorld;
+        let h = sketchState.hoverWorld;
+        // ── Ortho / Angle lock: snap to nearest 45° from start point ──
+        if (sketchState.orthoLock) {
+          h = window.__applyOrthoSnap(a, h, sketchState.workingPlane || 'XZ');
+        }
         line.previewPoint  = { x: h.x, y: h.y, z: h.z, gx: h.gx, gy: h.gy, gz: h.gz };
         line.previewLength = Math.hypot(h.x - a.x, h.y - a.y, h.z - a.z);
         const samePos        = (a.gx === h.gx && a.gy === h.gy && a.gz === h.gz);

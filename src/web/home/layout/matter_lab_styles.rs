@@ -239,6 +239,21 @@ pub fn matter_toolbar_styles() -> &'static str {
       border-color: rgba(167, 139, 250, 0.40);
       color: #c4b5fd;
     }
+    /* ortho + any data-toggle toggle buttons */
+    .utb-btn[data-toggle].active {
+      background: rgba(52, 211, 153, 0.15);
+      border-color: rgba(52, 211, 153, 0.50);
+      color: #6ee7b7;
+      box-shadow: 0 0 6px rgba(52, 211, 153, 0.20);
+    }
+    /* toolbar separator line */
+    .utb-sep {
+      width: 1px;
+      height: 26px;
+      background: rgba(255,255,255,0.10);
+      margin: 0 2px;
+      flex-shrink: 0;
+    }
     /* primitive buttons */
     .utb-btn[data-asset]:hover {
       background: rgba(167, 139, 250, 0.10);

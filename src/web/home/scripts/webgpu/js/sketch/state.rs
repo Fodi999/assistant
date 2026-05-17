@@ -36,6 +36,9 @@ pub const JS: &str = r##"
           previewValid: true,
         },
 
+        // ── Ortho / Angle Lock (0° 45° 90° …) ──
+        orthoLock: false,   // toggled by O key or ORTHO button
+
         // ── Snap status ──
         snap: { kind: "grid", pointId: null, gx: 0, gy: 0, gz: 0 },
 

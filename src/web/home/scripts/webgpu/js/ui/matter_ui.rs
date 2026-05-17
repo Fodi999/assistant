@@ -143,6 +143,10 @@ pub const JS: &str = r##"
         // ── Tool hint ──
         set('si-hint', TOOL_HINTS[tool] || '');
 
+        // ── Ortho button sync ──
+        const btnO = document.getElementById('btn-ortho');
+        if (btnO) btnO.classList.toggle('active', !!sketchState.orthoLock);
+
         // ── Mini status bar ──
         const planeLbl = window.__planeLabel
           ? window.__planeLabel(sketchState.workingPlane)
