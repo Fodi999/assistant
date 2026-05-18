@@ -25,6 +25,11 @@ pub const JS: &str = r##"
         window.__extrudeKeyInited = true;
         document.addEventListener('keydown', function(e) {
           if (!window.sketchState?.extrude?.active) return;
+          // If focus is inside the modal input, let the input handle it —
+          // do NOT stopImmediatePropagation or the input's own keydown fires.
+          const inp = document.getElementById('__extrude-modal-input');
+          if (inp && document.activeElement === inp) return;
+          // Otherwise intercept (e.g. Esc/Enter while canvas has focus)
           if (window.__handleExtrudeKey && window.__handleExtrudeKey(e)) {
             e.stopImmediatePropagation();
           }
@@ -210,6 +215,7 @@ pub const JS: &str = r##"
         if (inp && inp.value) ex.heightInput = inp.value;
 
         const heightMm = parseFloat(ex.heightInput);
+        console.log('[Extrude.commit] heightInput=', ex.heightInput, 'heightMm=', heightMm, 'edgeIds=', ex.edgeIds);
         if (!isFinite(heightMm) || heightMm === 0) {
           window.__setStatusMessage('Extrude: введите высоту в мм, например 2500');
           if (inp) inp.focus();
@@ -344,18 +350,13 @@ pub const JS: &str = r##"
         if (!sketchState.extrude.active) return false;
         const k = e.key.toLowerCase();
 
-        // If focus is already inside the modal input, let the input's own
-        // keydown listener handle it — don't double-process.
-        const inp = document.getElementById('__extrude-modal-input');
-        if (inp && document.activeElement === inp) return true; // consumed, but handled by input
-
         if (k === 'escape') {
           window.__cancelEdgeExtrude();
           e.preventDefault();
           return true;
         }
         if (k === 'enter') {
-          // Sync value from input before committing
+          const inp = document.getElementById('__extrude-modal-input');
           if (inp) sketchState.extrude.heightInput = inp.value;
           window.__commitEdgeExtrude();
           e.preventDefault();
@@ -363,6 +364,7 @@ pub const JS: &str = r##"
         }
         // For digit keys — forward focus to input so the user can keep typing
         if (/^[0-9\.\-]$/.test(e.key)) {
+          const inp = document.getElementById('__extrude-modal-input');
           if (inp) { inp.focus(); }
           e.preventDefault();
           return true;
