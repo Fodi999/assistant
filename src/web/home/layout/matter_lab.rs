@@ -58,27 +58,66 @@ pub fn matter_lab_section() -> String {
 
         <!-- Shortcuts overlay (hidden by default, toggled by ? button or ? key) -->
         <div id="shortcuts-overlay" style="display:none">
-          <div class="sco-title">Горячие клавиши <button id="shortcuts-close">✕</button></div>
-          <div class="sco-grid">
-            <span class="sco-key">S</span><span>Выбор</span>
-            <span class="sco-key">P</span><span>Точка</span>
-            <span class="sco-key">L</span><span>Линия</span>
-            <span class="sco-key">G</span><span>Захват</span>
-            <span class="sco-key">⇧G</span><span>Копировать</span>
-            <span class="sco-key">D</span><span>Размер</span>
-            <span class="sco-key">F</span><span>Зафиксировать</span>
-            <span class="sco-key">H</span><span>Горизонталь</span>
-            <span class="sco-key">V</span><span>Вертикаль</span>
-            <span class="sco-key">J</span><span>Проекция</span>
-            <span class="sco-key">O</span><span>Ортогональность</span>
-            <span class="sco-key">1/2/3</span><span>Сменить плоскость</span>
-            <span class="sco-key">Space</span><span>Центровать сцену</span>
-            <span class="sco-key">⌫</span><span>Удалить</span>
-            <span class="sco-key">⌘Z</span><span>Отменить</span>
-            <span class="sco-key">⇧P</span><span>Счётчик FPS</span>
-            <span class="sco-key">Esc</span><span>Отмена</span>
+          <div class="sco-title" id="sco-drag-handle"><span class="sco-grip">⠿</span>Горячие клавиши <button id="shortcuts-close">✕</button></div>
+          <input id="sco-search" type="text" placeholder="Поиск…" autocomplete="off"
+                 oninput="(function(v){var rows=document.querySelectorAll('#shortcuts-overlay .sco-row');rows.forEach(function(r){r.style.display=r.dataset.kw.indexOf(v.toLowerCase())>=0?'contents':'none';});})(this.value)"
+                 style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:4px 8px;background:rgba(255,255,255,0.07);border:1px solid rgba(56,189,248,0.25);border-radius:6px;color:#e2e8f0;font:500 12px/1.5 'JetBrains Mono',monospace;outline:none;">
+          <div class="sco-grid" id="sco-list">
+            <span class="sco-key sco-row" data-kw="s выбор select">S</span><span class="sco-row" data-kw="s выбор select">Выбор</span>
+            <span class="sco-key sco-row" data-kw="p точка point">P</span><span class="sco-row" data-kw="p точка point">Точка</span>
+            <span class="sco-key sco-row" data-kw="l линия line">L</span><span class="sco-row" data-kw="l линия line">Линия</span>
+            <span class="sco-key sco-row" data-kw="g захват grab">G</span><span class="sco-row" data-kw="g захват grab">Захват</span>
+            <span class="sco-key sco-row" data-kw="shift g копировать copy">⇧G</span><span class="sco-row" data-kw="shift g копировать copy">Копировать</span>
+            <span class="sco-key sco-row" data-kw="d размер dimension">D</span><span class="sco-row" data-kw="d размер dimension">Размер</span>
+            <span class="sco-key sco-row" data-kw="w разбить ребро split edge">W</span><span class="sco-row" data-kw="w разбить ребро split edge">Разбить ребро (Split Edge)</span>
+            <span class="sco-key sco-row" data-kw="f зафиксировать fix">F</span><span class="sco-row" data-kw="f зафиксировать fix">Зафиксировать</span>
+            <span class="sco-key sco-row" data-kw="h горизонталь horizontal">H</span><span class="sco-row" data-kw="h горизонталь horizontal">Горизонталь</span>
+            <span class="sco-key sco-row" data-kw="v вертикаль vertical">V</span><span class="sco-row" data-kw="v вертикаль vertical">Вертикаль</span>
+            <span class="sco-key sco-row" data-kw="j проекция project">J</span><span class="sco-row" data-kw="j проекция project">Проекция</span>
+            <span class="sco-key sco-row" data-kw="o ортогональность ortho">O</span><span class="sco-row" data-kw="o ортогональность ortho">Ортогональность</span>
+            <span class="sco-key sco-row" data-kw="1 2 3 плоскость plane">1/2/3</span><span class="sco-row" data-kw="1 2 3 плоскость plane">Сменить плоскость</span>
+            <span class="sco-key sco-row" data-kw="space пробел центр center">Space</span><span class="sco-row" data-kw="space пробел центр center">Центровать сцену</span>
+            <span class="sco-key sco-row" data-kw="del delete удалить">⌫</span><span class="sco-row" data-kw="del delete удалить">Удалить</span>
+            <span class="sco-key sco-row" data-kw="ctrl z отменить undo">⌘Z</span><span class="sco-row" data-kw="ctrl z отменить undo">Отменить</span>
+            <span class="sco-key sco-row" data-kw="shift p fps счётчик">⇧P</span><span class="sco-row" data-kw="shift p fps счётчик">Счётчик FPS</span>
+            <span class="sco-key sco-row" data-kw="esc отмена cancel">Esc</span><span class="sco-row" data-kw="esc отмена cancel">Отмена</span>
           </div>
         </div>
+
+        <!-- Shortcuts overlay drag logic -->
+        <script>
+          (function() {
+            function initScoDrag() {
+              var overlay = document.getElementById('shortcuts-overlay');
+              var handle  = document.getElementById('sco-drag-handle');
+              if (!overlay || !handle) return;
+              var dragging = false, ox = 0, oy = 0;
+              handle.addEventListener('mousedown', function(e) {
+                if (e.target.id === 'shortcuts-close') return;
+                dragging = true;
+                var r = overlay.getBoundingClientRect();
+                ox = e.clientX - r.left;
+                oy = e.clientY - r.top;
+                overlay.style.transform = 'none';
+                overlay.style.left = r.left + 'px';
+                overlay.style.top  = r.top  + 'px';
+                handle.style.cursor = 'grabbing';
+                e.preventDefault();
+              });
+              document.addEventListener('mousemove', function(e) {
+                if (!dragging) return;
+                overlay.style.left = (e.clientX - ox) + 'px';
+                overlay.style.top  = (e.clientY - oy) + 'px';
+              });
+              document.addEventListener('mouseup', function() {
+                if (dragging) { dragging = false; handle.style.cursor = 'grab'; }
+              });
+            }
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', initScoDrag);
+            } else { initScoDrag(); }
+          })();
+        </script>
 
         <!-- Floating cursor measurement HUD (shown only when __cursorInfoVisible=true) -->
         <div id="cursor-hud" style="display:none">
@@ -112,7 +151,13 @@ pub fn matter_lab_section() -> String {
                   onclick="if(window.__toggleOrthoLock) window.__toggleOrthoLock()">
             ⊾<span class="utb-label">Ортогон.</span>
           </button>
+          <div class="utb-sep"></div>
+          <button class="utb-btn" id="btn-help" title="Справка по клавишам"
+                  onclick="var o=document.getElementById('shortcuts-overlay');o.style.display=(o.style.display==='none'?'block':'none')">
+            ?<span class="utb-label">Справка</span>
+          </button>
         </nav>
+
 "##;
 
     let cad_panel = crate::web::home::layout::cad_side_panel::cad_side_panel_html();

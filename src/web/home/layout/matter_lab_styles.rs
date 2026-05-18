@@ -993,11 +993,35 @@ pub fn matter_status_styles() -> &'static str {
       border-radius: 14px;
       backdrop-filter: blur(16px);
       padding: 14px 18px 16px;
-      min-width: 220px;
+      min-width: 260px;
+      max-height: calc(100vh - 80px);
+      display: flex;
+      flex-direction: column;
       box-shadow: 0 8px 32px rgba(0,0,0,0.6);
       font: 500 12px/1.5 "JetBrains Mono", system-ui, monospace;
       color: #e2e8f0;
     }
+    #sco-list {
+      overflow-y: auto;
+      flex: 1;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(56,189,248,0.35) transparent;
+    }
+    #sco-list::-webkit-scrollbar { width: 5px; }
+    #sco-list::-webkit-scrollbar-track { background: transparent; }
+    #sco-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 3px; }
+    #sco-search:focus { border-color: rgba(56,189,248,0.6); background: rgba(255,255,255,0.10); }
+    #sco-drag-handle { cursor: grab; user-select: none; }
+    #sco-drag-handle:active { cursor: grabbing; }
+    .sco-grip {
+      font-size: 16px;
+      color: rgba(56,189,248,0.5);
+      margin-right: 6px;
+      line-height: 1;
+      vertical-align: middle;
+      transition: color 0.15s;
+    }
+    #sco-drag-handle:hover .sco-grip { color: rgba(56,189,248,0.9); }
     .sco-title {
       display: flex; justify-content: space-between; align-items: center;
       font-size: 11px; font-weight: 700; color: #67e8f9;

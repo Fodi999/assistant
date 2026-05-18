@@ -191,6 +191,16 @@ pub const JS: &str = r##"
 
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return false;
 
+        // Close help overlay on Esc (before other Esc handlers)
+        if (e.key === 'Escape') {
+          const helpModal = document.getElementById('shortcuts-overlay');
+          if (helpModal && helpModal.style.display !== 'none') {
+            helpModal.style.display = 'none';
+            e.preventDefault();
+            return true;
+          }
+        }
+
         // Undo / Redo
         if (meta && k === 'z') {
           if (e.shiftKey) window.__redo();
