@@ -399,37 +399,84 @@ pub const JS: &str = r##"
             ctx.stroke();
             ctx.restore();
 
-            // Constraint badges + length.
-            const dimC = window.__getEdgeLengthConstraint && window.__getEdgeLengthConstraint(e.id);
-            const isH  = window.__hasHorizontalConstraint && window.__hasHorizontalConstraint(e.id);
-            const isV  = window.__hasVerticalConstraint   && window.__hasVerticalConstraint(e.id);
-            const mx   = (sa.x + sb.x) * 0.5;
-            const my   = (sa.y + sb.y) * 0.5;
+            // ── Constraint badges ──────────────────────────────────────────
+            // Collect all constraint icons for this edge, then render them
+            // stacked perpendicular to the edge (Fusion/SolidWorks style).
+            {
+              // All constraints whose targetId === e.id
+              const eCons = sketchState.constraints.filter(c => c.targetId === e.id);
 
-            // Legacy edge-length label kept only for constrained edges (the
-            // dimension constraint is part of the sketch model, not the
-            // drafting overlay). Hover/selected previews now go through the
-            // Drafting Overlay pass.
-            if (dimC) {
-              const lenMm = (window.__edgeLengthMm && window.__edgeLengthMm(a, b)) || 0;
-              const txt = (window.__formatDim ? window.__formatDim(lenMm) : lenMm.toFixed(1));
-              ctx.font = '11px "JetBrains Mono", system-ui, monospace';
-              const w = ctx.measureText(txt).width + 8;
-              ctx.fillStyle = 'rgba(15,23,42,0.95)';
-              ctx.fillRect(mx - w/2, my - 18, w, 16);
-              ctx.fillStyle = '#67e8f9';
-              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText(txt, mx, my - 10);
-            }
-            if (isH || isV) {
-              const tag = isH ? 'H' : 'V';
-              ctx.font = 'bold 11px "JetBrains Mono", system-ui, monospace';
-              const wt = ctx.measureText(tag).width + 8;
-              ctx.fillStyle = 'rgba(167,139,250,0.95)';
-              ctx.fillRect(mx + 8, my - 8, wt, 16);
-              ctx.fillStyle = '#0f172a';
-              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText(tag, mx + 8 + wt/2, my);
+              // Map type → icon glyph + color
+              const iconMap = {
+                HORIZONTAL:   { glyph: 'H', color: '#a78bfa' },
+                VERTICAL:     { glyph: 'V', color: '#a78bfa' },
+                FIXED_LENGTH: { glyph: 'L', color: '#34d399' },
+                EQUAL:        { glyph: '=', color: '#fbbf24' },
+                PERPENDICULAR:{ glyph: '⊥', color: '#f472b6' },
+                PARALLEL:     { glyph: '∥', color: '#f472b6' },
+                MIDPOINT:     { glyph: '◇', color: '#38bdf8' },
+                COINCIDENT:   { glyph: '●', color: '#fb923c' },
+              };
+
+              if (eCons.length > 0) {
+                // Edge direction vector in screen space
+                const dx = sb.x - sa.x, dy = sb.y - sa.y;
+                const len = Math.sqrt(dx*dx + dy*dy) || 1;
+                // Perpendicular offset direction (always toward top-left of edge)
+                let nx = -dy / len, ny = dx / len;
+                // Flip so icons go above the edge (negative screen-Y = up)
+                if (ny > 0) { nx = -nx; ny = -ny; }
+
+                const BADGE_W = 16, BADGE_H = 16, GAP = 4;
+                const totalW  = eCons.length * BADGE_W + (eCons.length - 1) * GAP;
+                // Start X at edge midpoint offset perpendicular
+                const PERP_DIST = 18;
+                const bx0 = mx + nx * PERP_DIST - totalW * 0.5;
+                const by0 = my + ny * PERP_DIST - BADGE_H * 0.5;
+
+                ctx.save();
+                ctx.font = 'bold 10px "JetBrains Mono", system-ui, monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                eCons.forEach((c, i) => {
+                  const info = iconMap[c.type] || { glyph: '?', color: '#64748b' };
+                  const bx = bx0 + i * (BADGE_W + GAP);
+                  const by = by0;
+
+                  // Pill background
+                  const radius = 4;
+                  ctx.beginPath();
+                  ctx.roundRect
+                    ? ctx.roundRect(bx, by, BADGE_W, BADGE_H, radius)
+                    : (ctx.rect(bx, by, BADGE_W, BADGE_H));
+                  ctx.fillStyle = 'rgba(15,23,42,0.88)';
+                  ctx.fill();
+                  ctx.strokeStyle = info.color;
+                  ctx.lineWidth = 1.2;
+                  ctx.stroke();
+
+                  // Glyph
+                  ctx.fillStyle = info.color;
+                  ctx.fillText(info.glyph, bx + BADGE_W * 0.5, by + BADGE_H * 0.5);
+                });
+
+                ctx.restore();
+              }
+
+              // Dimension constraint: fixed-length value label (keep separate, below midpoint)
+              const dimC = window.__getEdgeLengthConstraint && window.__getEdgeLengthConstraint(e.id);
+              if (dimC) {
+                const lenMm = (window.__edgeLengthMm && window.__edgeLengthMm(a, b)) || 0;
+                const txt = (window.__formatDim ? window.__formatDim(lenMm) : lenMm.toFixed(1));
+                ctx.font = '11px "JetBrains Mono", system-ui, monospace';
+                const w = ctx.measureText(txt).width + 8;
+                ctx.fillStyle = 'rgba(15,23,42,0.95)';
+                ctx.fillRect(mx - w/2, my + 6, w, 16);
+                ctx.fillStyle = '#34d399';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(txt, mx, my + 14);
+              }
             }
           }
 

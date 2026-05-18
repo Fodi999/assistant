@@ -146,7 +146,7 @@ pub const JS: &str = r##"
 
         const getPoint = (id) => sketchState.points.find(p => p.id === id);
 
-        if (window.__wasmSolveConstraints) {
+        if (window.sketchWasm && typeof sketchWasm.wasm_solve_constraints === 'function') {
           try {
             const pts = ptIds.map(id => {
               const p = getPoint(id);
@@ -155,28 +155,36 @@ pub const JS: &str = r##"
 
             if (pts.length !== 4) throw new Error('missing points');
 
+            // Edge schema: { id, a, b } — matches WASM sketch_graph format
             const edges = [
-              { id: 'eT', p1: ptIds[0], p2: ptIds[1] },
-              { id: 'eR', p1: ptIds[1], p2: ptIds[2] },
-              { id: 'eB', p1: ptIds[3], p2: ptIds[2] },
-              { id: 'eL', p1: ptIds[0], p2: ptIds[3] },
+              { id: 'eT', a: ptIds[0], b: ptIds[1] },
+              { id: 'eR', a: ptIds[1], b: ptIds[2] },
+              { id: 'eB', a: ptIds[3], b: ptIds[2] },
+              { id: 'eL', a: ptIds[0], b: ptIds[3] },
             ];
 
-            const constraints = [];
-            let ci = 0;
-            for (const [a, b] of horizontalPairs) {
-              constraints.push({ id: 'cH' + ci++, type: 'HORIZONTAL', edgeId: edges.find(e =>
-                (e.p1 === a && e.p2 === b) || (e.p1 === b && e.p2 === a))?.id || 'eT' });
-            }
-            for (const [a, b] of verticalPairs) {
-              constraints.push({ id: 'cV' + ci++, type: 'VERTICAL', edgeId: edges.find(e =>
-                (e.p1 === a && e.p2 === b) || (e.p1 === b && e.p2 === a))?.id || 'eL' });
-            }
+            // Constraint schema: { id, type, targetType, targetId, value }
+            const constraints = [
+              { id: 'cH0', type: 'HORIZONTAL', targetType: 'edge', targetId: 'eT', value: null },
+              { id: 'cH1', type: 'HORIZONTAL', targetType: 'edge', targetId: 'eB', value: null },
+              { id: 'cV0', type: 'VERTICAL',   targetType: 'edge', targetId: 'eR', value: null },
+              { id: 'cV1', type: 'VERTICAL',   targetType: 'edge', targetId: 'eL', value: null },
+            ];
 
-            const snap = { points: pts, edges, constraints };
-            const result = window.__wasmSolveConstraints(snap);
-            if (result && result.points) {
-              for (const rp of result.points) {
+            const sketch = {
+              schema: 'sketch_graph',
+              version: 1,
+              workingPlane: plane,
+              gridSize: sketchState.gridSize || 0.01,
+              points: pts,
+              edges,
+              constraints,
+              profiles: [],
+            };
+            const raw    = sketchWasm.wasm_solve_constraints(JSON.stringify({ sketch }));
+            const result = JSON.parse(raw);
+            if (result && result.ok && result.sketch && result.sketch.points) {
+              for (const rp of result.sketch.points) {
                 const sp = getPoint(rp.id);
                 if (sp) {
                   sp.gx = rp.gx; sp.gy = rp.gy; sp.gz = rp.gz;
