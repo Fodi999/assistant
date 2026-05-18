@@ -13,7 +13,7 @@ pub const JS: &str = r##"
       const TOOL_NAMES_RU = { select: 'ВЫБОР', point: 'ТОЧКА', line: 'ЛИНИЯ', grab: 'ЗАХВАТ', delete: 'УДАЛИТЬ' };
 
       window.__setSketchTool = function(tool) {
-        const valid = ['select', 'point', 'line', 'grab', 'delete'];
+        const valid = ['select', 'point', 'line', 'rect', 'grab', 'delete'];
         if (!valid.includes(tool)) return;
         if (sketchState.activeTool !== tool) {
           // Tear down any active Line Tool chain when switching tools.
@@ -23,6 +23,11 @@ pub const JS: &str = r##"
               sketchState.line = { active: false, startPointId: null, startWorld: null };
               sketchState.phase = 'idle';
             }
+          }
+          // Tear down any active Rect Tool when switching tools.
+          if (sketchState.rect && sketchState.rect.active) {
+            if (window.__cancelRectTool) window.__cancelRectTool();
+            else sketchState.rect = { active: false, startSnap: null };
           }
           sketchState.phase = 'idle';
         }

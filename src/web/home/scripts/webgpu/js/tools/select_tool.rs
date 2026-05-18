@@ -222,6 +222,11 @@ pub const JS: &str = r##"
           return;
         }
 
+        if (tool === 'rect') {
+          if (window.__rectClick) window.__rectClick(ndcX, ndcY);
+          return;
+        }
+
         if (tool === SM.DELETE) {
           const pId = window.__pickPointAt(ndcX, ndcY);
           if (pId) {

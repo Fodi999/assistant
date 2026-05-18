@@ -313,7 +313,9 @@ pub const JS: &str = r##"
         }
 
         if (k === 'escape') {
-          if (sketchState.line.active || sketchState.line.startPointId) {
+          if (sketchState.rect && sketchState.rect.active) {
+            if (window.__cancelRectTool) window.__cancelRectTool();
+          } else if (sketchState.line.active || sketchState.line.startPointId) {
             if (window.__finishLineChain) window.__finishLineChain('cancelled');
             else {
               sketchState.line = { active: false, startPointId: null, startWorld: null };
@@ -356,6 +358,7 @@ pub const JS: &str = r##"
         if (k === 'p' && e.shiftKey) { if (window.__togglePerfHud) window.__togglePerfHud(); return true; }
         if (k === 'p') { window.__setSketchTool && window.__setSketchTool('point'); return true; }
         if (k === 'l') { window.__setSketchTool && window.__setSketchTool('line');  return true; }
+        if (k === 'r') { window.__setSketchTool && window.__setSketchTool('rect');  return true; }
 
         // E → Edge Extrude
         if (k === 'e') {

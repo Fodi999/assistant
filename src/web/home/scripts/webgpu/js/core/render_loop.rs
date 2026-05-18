@@ -465,6 +465,61 @@ pub const JS: &str = r##"
             }
           }
 
+          // ── Rect tool: preview rectangle ──
+          if (sketchState.activeTool === 'rect' && sketchState.rect && sketchState.rect.active && sketchState.rect.startSnap && sketchState.hoverWorld) {
+            const g1   = sketchState.rect.startSnap;
+            const hw   = sketchState.hoverWorld;
+            const gs   = sketchState.gridSize || 1.0;
+            const plane = sketchState.workingPlane || 'XZ';
+            // Build 4 world corners for preview
+            let c0, c1, c2, c3;
+            const g2gx = Math.round(hw.gx !== undefined ? hw.gx : hw.x / gs);
+            const g2gy = Math.round(hw.gy !== undefined ? hw.gy : hw.y / gs);
+            const g2gz = Math.round(hw.gz !== undefined ? hw.gz : hw.z / gs);
+            if (plane === 'XZ') {
+              c0 = { x: g1.gx*gs, y: 0, z: g1.gz*gs };
+              c1 = { x: g2gx*gs, y: 0, z: g1.gz*gs };
+              c2 = { x: g2gx*gs, y: 0, z: g2gz*gs };
+              c3 = { x: g1.gx*gs, y: 0, z: g2gz*gs };
+            } else if (plane === 'XY') {
+              c0 = { x: g1.gx*gs, y: g1.gy*gs, z: 0 };
+              c1 = { x: g2gx*gs, y: g1.gy*gs, z: 0 };
+              c2 = { x: g2gx*gs, y: g2gy*gs, z: 0 };
+              c3 = { x: g1.gx*gs, y: g2gy*gs, z: 0 };
+            } else {
+              c0 = { x: 0, y: g1.gy*gs, z: g1.gz*gs };
+              c1 = { x: 0, y: g1.gy*gs, z: g2gz*gs };
+              c2 = { x: 0, y: g2gy*gs, z: g2gz*gs };
+              c3 = { x: 0, y: g2gy*gs, z: g1.gz*gs };
+            }
+            const sc0 = w2s(c0.x, c0.y, c0.z);
+            const sc1 = w2s(c1.x, c1.y, c1.z);
+            const sc2 = w2s(c2.x, c2.y, c2.z);
+            const sc3 = w2s(c3.x, c3.y, c3.z);
+            if (sc0 && sc1 && sc2 && sc3) {
+              ctx.save();
+              ctx.setLineDash([6, 4]);
+              ctx.strokeStyle = 'rgba(56,189,248,0.85)';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(sc0.x, sc0.y);
+              ctx.lineTo(sc1.x, sc1.y);
+              ctx.lineTo(sc2.x, sc2.y);
+              ctx.lineTo(sc3.x, sc3.y);
+              ctx.closePath();
+              ctx.stroke();
+              // Filled semi-transparent rect
+              ctx.fillStyle = 'rgba(56,189,248,0.07)';
+              ctx.fill();
+              ctx.restore();
+              // Anchor corner dot
+              ctx.beginPath();
+              ctx.arc(sc0.x, sc0.y, 5, 0, Math.PI * 2);
+              ctx.fillStyle = '#10b981';
+              ctx.fill();
+            }
+          }
+
           // ── Validation markers (drawn under points so points still visible) ──
           if (sketchState.showValidation) {
             const isoSet = new Set(sketchState.validation.isolatedIds);
@@ -534,7 +589,7 @@ pub const JS: &str = r##"
           // ─ Alt = precision mode (bigger markers + larger offset)
           // ═══════════════════════════════════════════════════════════
           if (sketchState.hoverWorld &&
-              (sketchState.activeTool === 'point' || sketchState.activeTool === 'line')) {
+              (sketchState.activeTool === 'point' || sketchState.activeTool === 'line' || sketchState.activeTool === 'rect')) {
             const hw     = sketchState.hoverWorld;
             const prec   = !!sketchState.precisionMode;
             const cs     = sketchState.cursorSettings || {};

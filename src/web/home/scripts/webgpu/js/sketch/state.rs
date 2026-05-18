@@ -49,6 +49,12 @@ pub const JS: &str = r##"
           previewValid: true,
         },
 
+        // ── Rectangle tool state ──
+        rect: {
+          active:    false,
+          startSnap: null,   // { gx, gy, gz } of first corner
+        },
+
         // ── Ortho / Angle Lock (0° 45° 90° …) ──
         orthoLock: false,   // toggled by O key or ORTHO button
 

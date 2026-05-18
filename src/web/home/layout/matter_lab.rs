@@ -181,6 +181,7 @@ pub fn matter_lab_section() -> String {
           <button class="utb-btn active" data-tool="select" title="Выбор (S)">↖<span class="utb-label">Выбор</span></button>
           <button class="utb-btn"        data-tool="point"  title="Точка (P)">•<span class="utb-label">Точка</span></button>
           <button class="utb-btn"        data-tool="line"   title="Линия (L)">╱<span class="utb-label">Линия</span></button>
+          <button class="utb-btn"        data-tool="rect"   title="Прямоугольник (R)">▭<span class="utb-label">Прямоуг.</span></button>
           <button class="utb-btn"        data-tool="grab"   title="Захват (G)">✥<span class="utb-label">Захват</span></button>
           <button class="utb-btn"        data-tool="delete" title="Удалить (⌫)">⌫<span class="utb-label">Удалить</span></button>
           <button class="utb-btn" id="btn-extrude" title="Extrude выбранные рёбра (E)"
