@@ -116,8 +116,15 @@ pub const JS: &str = r#"
 
 function drawGrabGizmo(ctx, sketchState, w2s, sk) {
   const isGrabbing = sketchState.grab.active;
+  // Also show when grab TOOL is active and there is a selection (command mode)
+  const hasSelection =
+    (sketchState.selectedPointIds && sketchState.selectedPointIds.size > 0) ||
+    (sketchState.selectedEdgeIds  && sketchState.selectedEdgeIds.size  > 0) ||
+    !!sketchState.selectedProfileId;
+  const isGrabTool   = sketchState.activeTool === 'grab';
+  const shouldDraw   = isGrabbing || (isGrabTool && hasSelection);
 
-  if (!isGrabbing) {
+  if (!shouldDraw) {
     window.__gizmoHandles   = null;
     window.__gizmoHoverAxis = null;
     return;
@@ -358,8 +365,8 @@ function drawGrabGizmo(ctx, sketchState, w2s, sk) {
     ctx.fillText(a.axis, lx, ly);
 
     ctx.restore();
-    // Expand hit zone proportionally when hovered
-    handles.push({ axis: a.axis, x: tx, y: ty, r: HIT_A * scale });
+    // Handle stores TIP position + SHAFT ORIGIN for corridor hit-testing
+    handles.push({ axis: a.axis, x: tx, y: ty, r: HIT_A * scale, ox: origin.x, oy: origin.y });
   }
 
   // ════════════════════════════════════════════════════════════════

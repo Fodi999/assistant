@@ -41,16 +41,28 @@ pub const JS: &str = r##"
 
       // ── Hit-test against handles published by drawGrabGizmo ──────────────
       // Handles array is filled every frame by grab_gizmo.rs into
-      // window.__gizmoHandles = [{axis:'X', x, y, r}, ...]
-      // IMPORTANT: x,y,r are in DEVICE pixels (canvas.width space, dpr-scaled).
-      // ev.clientX/Y are in CSS pixels. We must divide handle coords by dpr.
+      // window.__gizmoHandles = [{axis:'X', x, y, r, ox, oy}, ...]
+      // x,y = arrowhead tip in DEVICE pixels; ox,oy = shaft origin in DEVICE px.
+      // IMPORTANT: all coords are DEVICE pixels — divide by dpr for CSS.
       //
-      // Strict: only return axis if cursor is within (r/dpr + 8) px (CSS).
+      // Hit logic: point is in circle around tip OR within CORRIDOR along shaft.
       window.__hitTestGrabGizmo = function(mx, my) {
         const handles = window.__gizmoHandles;
         if (!handles || !handles.length) return null;
 
         const dpr = window.devicePixelRatio || 1;
+        // Extra padding around all hit areas (CSS px)
+        const PAD = 10;
+
+        // Helper: distance from point (px,py) to segment (ax,ay)-(bx,by)
+        function distToSegment(px, py, ax, ay, bx, by) {
+          const dx = bx - ax, dy = by - ay;
+          const lenSq = dx*dx + dy*dy;
+          if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+          let t = ((px - ax)*dx + (py - ay)*dy) / lenSq;
+          t = Math.max(0, Math.min(1, t));
+          return Math.hypot(px - (ax + t*dx), py - (ay + t*dy));
+        }
 
         let bestAxis = null;
         let bestDist = Infinity;
@@ -59,8 +71,21 @@ pub const JS: &str = r##"
           const hx = h.x / dpr;
           const hy = h.y / dpr;
           const hr = h.r / dpr;
-          const d = Math.hypot(mx - hx, my - hy);
-          if (d <= hr + 8 && d < bestDist) {
+
+          let d;
+          if (h.ox != null && h.oy != null) {
+            // Shaft corridor hit (all along the arrow length)
+            const sox = h.ox / dpr;
+            const soy = h.oy / dpr;
+            const CORRIDOR = hr * 0.5 + PAD;  // half-corridor width in CSS px
+            d = distToSegment(mx, my, sox, soy, hx, hy);
+            if (d > CORRIDOR) d = Infinity;
+          } else {
+            // FREE ring / legacy: circle hit only
+            d = Math.hypot(mx - hx, my - hy);
+            if (d > hr + PAD) d = Infinity;
+          }
+          if (d < bestDist) {
             bestDist = d;
             bestAxis = h.axis;
           }
