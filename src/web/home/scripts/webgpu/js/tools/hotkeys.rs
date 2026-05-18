@@ -65,6 +65,49 @@ pub const JS: &str = r##"
         }
       }
 
+      // ─────────────────────────────────────────────────────────
+      // __keySplitEdge() — W: Split selected edge at midpoint
+      // CAD-standard: removes edge A–B, inserts midpoint M, creates A–M + M–B.
+      // The new midpoint M is selected automatically so the user can grab/move it.
+      // ─────────────────────────────────────────────────────────
+      async function __keySplitEdge() {
+        const edge = __requireSingleEdge();
+        if (!edge) return;
+
+        const pA = sketchState.points.find(p => p.id === edge.a);
+        const pB = sketchState.points.find(p => p.id === edge.b);
+        if (!pA || !pB) { window.__setStatusMessage('Split: конечные точки не найдены'); return; }
+
+        const gs = sketchState.gridSize || 1.0;
+        const mgx = Math.round((pA.gx + pB.gx) / 2);
+        const mgy = Math.round((pA.gy + pB.gy) / 2);
+        const mgz = Math.round((pA.gz + pB.gz) / 2);
+
+        window.__pushHistory();
+
+        // Remove original edge
+        const edgeKind = edge.kind || 'normal';
+        sketchState.edges = sketchState.edges.filter(e => e.id !== edge.id);
+        // Remove constraints on the removed edge
+        sketchState.constraints = sketchState.constraints.filter(c =>
+          !(c.targetType === 'edge' && c.targetId === edge.id)
+        );
+
+        // Create midpoint M and two new edges
+        const mId = await window.__createPointViaEngine(mgx, mgy, mgz);
+        if (!mId) { window.__setStatusMessage('Split: не удалось создать среднюю точку'); return; }
+        await window.__createEdgeViaEngine(edge.a, mId, edgeKind);
+        await window.__createEdgeViaEngine(mId, edge.b, edgeKind);
+
+        // Select the new midpoint for immediate grab
+        sketchState.selectedPointIds = new Set([mId]);
+        sketchState.selectedEdgeIds  = new Set();
+
+        if (window.__notifySketchChanged)   window.__notifySketchChanged();
+        if (window.__updateSketchInspector) window.__updateSketchInspector();
+        window.__setStatusMessage('✂ Ребро разбито · точка M выбрана · G чтобы переместить');
+      }
+
       function __keyFixToggle() {
         if (sketchState.selectedPointIds.size === 0) {
           window.__setStatusMessage('F: сначала выберите точки');
@@ -320,6 +363,7 @@ pub const JS: &str = r##"
         if (k === 'd') { __keyDimension();  if (window.__updateSketchInspector) window.__updateSketchInspector(); return true; }
         if (k === 'f') { __keyFixToggle();  if (window.__updateSketchInspector) window.__updateSketchInspector(); return true; }
         if (k === 'h') { __keyHorizontal(); if (window.__updateSketchInspector) window.__updateSketchInspector(); return true; }
+        if (k === 'w') { __keySplitEdge();  return true; }
         if (k === 'v') {
           if (e.shiftKey) {
             sketchState.showValidation = !sketchState.showValidation;
