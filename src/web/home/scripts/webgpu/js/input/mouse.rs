@@ -35,10 +35,10 @@ pub const JS: &str = r##"
 
       function __setCursorForTool() {
         const t = sketchState.activeTool;
+        // Unified cursor standard: always default (Arrow) unless tool draws its own crosshair.
+        // Gizmo hover/drag overrides happen in the cursor state machine below.
         let cur = 'default';
-        if      (t === 'point' || t === 'line') cur = 'none';   // hide native cursor — our CAD crosshair is drawn on canvas
-        else if (t === 'grab')                  cur = 'move';
-        else if (t === 'delete')                cur = 'not-allowed';
+        if (t === 'point' || t === 'line') cur = 'none';  // crosshair drawn on canvas overlay
         canvas.style.cursor = cur;
       }
       window.__setCursorForTool = __setCursorForTool;
@@ -50,6 +50,14 @@ pub const JS: &str = r##"
 
       // ── Pointer down ─────────────────────────────────────────────
       canvas.addEventListener('pointerdown', (e) => {
+        // Update NDC coords immediately — pointerdown may arrive before a pointermove.
+        // This ensures __gizmoPointerDown receives accurate mouse.ndcX/Y.
+        {
+          const _rect = canvas.getBoundingClientRect();
+          mouse.ndcX = ((e.clientX - _rect.left) / _rect.width)  * 2 - 1;
+          mouse.ndcY = 1 - ((e.clientY - _rect.top)  / _rect.height) * 2;
+          mouse.active = true;
+        }
         // 1) Gizmo controller has first say — if it consumes, we're done.
         if (window.__gizmoPointerDown && window.__gizmoPointerDown(mouse, e)) {
           dragging = true;
@@ -179,16 +187,8 @@ pub const JS: &str = r##"
 
         if (wasGizmo) {
           window.__hitGizmoOnDown = false;
-
-          // Confirm grab on mouse release if user actually dragged
-          if (dragMoved && sketchState.grab?.active) {
-            if (window.__confirmGrab) window.__confirmGrab();
-          } else if (!dragMoved && sketchState.grab?.active && window.__setStatusMessage) {
-            const lock = sketchState.grab.axisLock;
-            window.__setStatusMessage('⤢ Захват готов — тяни' + (lock ? ' · ' + lock : ' · свободно') + ' · Enter ✓ · Esc ✗');
-          }
-
-          // Reset gizmoDrag state
+          // NOTE: confirm/cancel is handled exclusively by __gizmoPointerUp (called above).
+          // This block only clears any legacy gizmo state that may remain.
           sketchState.gizmoDrag = { active: false, axis: null, pointerId: null };
           panning = false; orbiting = false;
           return;
@@ -346,7 +346,8 @@ pub const JS: &str = r##"
         if (sketchState.copy.active) window.__updateCopyConnect();
 
         // ── Cursor state machine ────────────────────────
-        // gizmo-drag → arrow ; gizmo-hover → pointer ; entity-hover → pointer ; else tool
+        // Standard: default (Arrow) for all tools.
+        // Overrides: gizmo-drag → grabbing ; gizmo/entity-hover → pointer ; point/line → none (canvas crosshair)
         {
           const hAxis = sketchState.gizmo?.hoverAxis || null;
           window.__gizmoHoverAxis = hAxis;  // legacy alias for renderer

@@ -62,7 +62,7 @@ pub const JS: &str = r##"
         if (window.__raycastSketchPlane && window.__resolveSnapTarget) {
           const hit = window.__raycastSketchPlane(ndcX, ndcY);
           if (hit) {
-            const canvasEl = document.getElementById('matterCanvas');
+            const canvasEl = document.getElementById('webgpu-canvas');
             const mpx = canvasEl
               ? { x: (ndcX + 1) * 0.5 * canvasEl.width, y: (1 - ndcY) * 0.5 * canvasEl.height }
               : { x: 0, y: 0 };

@@ -42,19 +42,25 @@ pub const JS: &str = r##"
       // ── Hit-test against handles published by drawGrabGizmo ──────────────
       // Handles array is filled every frame by grab_gizmo.rs into
       // window.__gizmoHandles = [{axis:'X', x, y, r}, ...]
-      // (x,y in CSS px relative to canvas, r is hit radius in px)
+      // IMPORTANT: x,y,r are in DEVICE pixels (canvas.width space, dpr-scaled).
+      // ev.clientX/Y are in CSS pixels. We must divide handle coords by dpr.
       //
-      // Strict: only return axis if cursor is within (r + 8) px.
+      // Strict: only return axis if cursor is within (r/dpr + 8) px (CSS).
       window.__hitTestGrabGizmo = function(mx, my) {
         const handles = window.__gizmoHandles;
         if (!handles || !handles.length) return null;
 
-        // Two-pass: prefer FREE only if it's the closest, otherwise axes get priority
+        const dpr = window.devicePixelRatio || 1;
+
         let bestAxis = null;
         let bestDist = Infinity;
         for (const h of handles) {
-          const d = Math.hypot(mx - h.x, my - h.y);
-          if (d <= h.r + 8 && d < bestDist) {
+          // Convert handle position from device-px to CSS-px
+          const hx = h.x / dpr;
+          const hy = h.y / dpr;
+          const hr = h.r / dpr;
+          const d = Math.hypot(mx - hx, my - hy);
+          if (d <= hr + 8 && d < bestDist) {
             bestDist = d;
             bestAxis = h.axis;
           }
@@ -81,14 +87,27 @@ pub const JS: &str = r##"
 
         window.__ensureGizmoState();
 
-        const canvas = document.getElementById('matterCanvas');
+        const canvas = document.getElementById('webgpu-canvas');
         if (!canvas) return false;
         const rect = canvas.getBoundingClientRect();
         const mx = ev.clientX - rect.left;
         const my = ev.clientY - rect.top;
 
         const hitAxis = window.__hitTestGrabGizmo(mx, my);
-        if (!hitAxis) return false;
+        const handles = window.__gizmoHandles;
+        const _dpr = window.devicePixelRatio || 1;
+        console.log('[GIZMO DOWN]', {
+          'cursor(css)': { mx: mx.toFixed(1), my: my.toFixed(1) },
+          hitAxis,
+          dpr: _dpr,
+          'handles(css)': handles ? handles.map(h => ({axis:h.axis, x:(h.x/_dpr).toFixed(1), y:(h.y/_dpr).toFixed(1), r:(h.r/_dpr).toFixed(1)})) : null,
+          grabActive: sketchState.grab?.active,
+          grabMode: sketchState.grab?.mode,
+        });
+        if (!hitAxis) {
+          console.log('[GIZMO DOWN] → miss, not consumed');
+          return false;
+        }
 
         // Mark gizmoDrag active BEFORE starting grab so the move handler
         // can validate the chain. __startGrabFromGizmo must not reset this.
@@ -129,9 +148,9 @@ pub const JS: &str = r##"
           if (n) g.startCenter = { x:cx/n, y:cy/n, z:cz/n };
           g.startDragPoint = null;  // will be set on next __updateGizmoDrag
         } else {
-          // No grab yet — start one from gizmo
+          // No grab yet — start one from gizmo (NDC coords, not clientX/Y)
           if (window.__startGrabFromGizmo) {
-            window.__startGrabFromGizmo(hitAxis, ev.clientX, ev.clientY);
+            window.__startGrabFromGizmo(hitAxis, mouse.ndcX, mouse.ndcY);
           }
           // __startGrabFromGizmo creates grab; ensure dragging flag is set
           if (sketchState.grab) {
@@ -145,10 +164,12 @@ pub const JS: &str = r##"
 
         // If grab wasn't created (e.g. no selection) — undo gizmoDrag
         if (!sketchState.grab?.active) {
+          console.log('[GIZMO DOWN] → grab not created (no selection?), aborting');
           window.__resetGizmoDrag();
           return false;
         }
 
+        console.log('[GIZMO DOWN] → consumed axis=' + hitAxis + ' mode=' + sketchState.grab?.mode);
         try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
         ev.preventDefault();
         ev.stopPropagation();
@@ -165,7 +186,7 @@ pub const JS: &str = r##"
       window.__gizmoPointerMove = function(mouse, ev) {
         window.__ensureGizmoState();
 
-        const canvas = document.getElementById('matterCanvas');
+        const canvas = document.getElementById('webgpu-canvas');
         if (!canvas) return false;
         const rect = canvas.getBoundingClientRect();
         const mx = ev.clientX - rect.left;
@@ -185,8 +206,11 @@ pub const JS: &str = r##"
         // 2) Hover-only — update hoverAxis (cheap, no geometry change)
         const hitAxis = window.__hitTestGrabGizmo(mx, my);
         if (sketchState.gizmo.hoverAxis !== hitAxis) {
+          console.log('[GIZMO HOVER]', hitAxis, '| handles:', window.__gizmoHandles?.length ?? 'null');
           sketchState.gizmo.hoverAxis = hitAxis;
           window.__gizmoHoverAxis = hitAxis;  // legacy alias for renderer
+          canvas.style.cursor = hitAxis ? 'pointer' : 'default';
+          window.__requestRedraw?.();
         }
         return false;  // not consumed — caller may still run snap/hover logic
       };
@@ -200,14 +224,20 @@ pub const JS: &str = r##"
 
         if (!sketchState.gizmoDrag.active) return false;
 
-        const canvas = document.getElementById('matterCanvas');
+        const canvas = document.getElementById('webgpu-canvas');
         const pointerId = sketchState.gizmoDrag.pointerId;
 
-        // Confirm only if grab is still active (could have been cancelled)
-        if (sketchState.grab?.active && sketchState.grab.dragging) {
-          if (window.__confirmGrab) {
-            window.__confirmGrab().catch?.(e => console.warn('[gizmo] confirmGrab', e));
-          }
+        // Strict: confirm ONLY if this was a real gizmo-drag (not command mode)
+        const isRealGizmoDrag =
+          sketchState.gizmoDrag?.active === true &&
+          sketchState.grab?.active === true &&
+          sketchState.grab?.dragging === true &&
+          sketchState.grab?.mode === 'gizmo-drag';
+
+        console.log('[GIZMO UP]', { isRealGizmoDrag, grabMode: sketchState.grab?.mode, grabDragging: sketchState.grab?.dragging });
+
+        if (isRealGizmoDrag && window.__confirmGrab) {
+          window.__confirmGrab().catch?.(e => console.warn('[gizmo] confirmGrab', e));
         }
 
         window.__resetGizmoDrag();
@@ -215,7 +245,7 @@ pub const JS: &str = r##"
         if (canvas && pointerId != null) {
           try { canvas.releasePointerCapture(pointerId); } catch (_) {}
         }
-        if (canvas) canvas.style.cursor = '';
+        if (canvas) canvas.style.cursor = 'default';
 
         ev.preventDefault();
         ev.stopPropagation();
@@ -234,8 +264,8 @@ pub const JS: &str = r##"
           window.__cancelGrab();
         }
         window.__resetGizmoDrag();
-        const canvas = document.getElementById('matterCanvas');
-        if (canvas) canvas.style.cursor = '';
+        const canvas = document.getElementById('webgpu-canvas');
+        if (canvas) canvas.style.cursor = 'default';
         return true;
       };
 "##;

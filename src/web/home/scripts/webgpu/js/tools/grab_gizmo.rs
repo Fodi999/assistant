@@ -57,7 +57,7 @@ pub const JS: &str = r#"
     const startWorld = sketchState.hoverWorld
       ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
       : { x: 0, y: 0, z: 0 };
-    const canvas = document.getElementById('matterCanvas');
+    const canvas = document.getElementById('webgpu-canvas');
     const rect = canvas ? canvas.getBoundingClientRect() : { left:0, top:0, width:1, height:1 };
     const dpr2 = window.devicePixelRatio || 1;
 

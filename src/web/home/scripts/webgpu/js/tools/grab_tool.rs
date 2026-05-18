@@ -319,7 +319,9 @@ pub const JS: &str = r##"
     return pts;
   };
 
-  window.__startGrabFromGizmo = function(axis, clientX, clientY) {
+  // axis      — 'X' | 'Y' | 'Z' | 'FREE'
+  // ndcX/ndcY — NDC coords of the click (range -1..1), passed by gizmo_controller.rs
+  window.__startGrabFromGizmo = function(axis, ndcX, ndcY) {
     const ids = window.__collectSelectedPointIdsForGizmo();
     if (!ids.size) return;
     const moveIds = [...ids].filter(id => !window.__isPointFixed || !window.__isPointFixed(id));
@@ -334,8 +336,7 @@ pub const JS: &str = r##"
     const startWorld = sketchState.hoverWorld
       ? { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z }
       : { x: 0, y: 0, z: 0 };
-    const canvas = document.getElementById('matterCanvas');
-    const rect = canvas ? canvas.getBoundingClientRect() : { left:0, top:0, width:1, height:1 };
+    const canvas = document.getElementById('webgpu-canvas');
     const dpr2 = window.devicePixelRatio || 1;
 
     // Compute selection center from grabbed points (drag plane anchor)
@@ -348,16 +349,15 @@ pub const JS: &str = r##"
       ? { x:_scx/_scn, y:_scy/_scn, z:_scz/_scn }
       : { x:0, y:0, z:0 };
 
-    // Compute initial drag point from click NDC position
-    const ndcClickX = ((clientX - rect.left) / rect.width)  * 2 - 1;
-    const ndcClickY = 1 - ((clientY - rect.top)  / rect.height) * 2;
-    const startDragPoint = __raycastDragPlane(ndcClickX, ndcClickY, startCenter);
+    // Compute initial drag point from NDC click position
+    const startDragPoint = __raycastDragPlane(ndcX, ndcY, startCenter);
 
     // startScreen anchored to gizmo center (canvas device-px).
     const _ctr = window.__gizmoCenterScreen;
     const startScreen = _ctr
       ? { x: _ctr.x, y: _ctr.y }
-      : { x: (clientX - rect.left) * dpr2, y: (clientY - rect.top) * dpr2 };
+      : { x: (ndcX + 1) * 0.5 * (canvas ? canvas.width : 1),
+          y: (1 - ndcY) * 0.5 * (canvas ? canvas.height : 1) };
     const dragBase = new Map();
     for (const id of moveIds) {
       const p = byId.get(id);
@@ -377,7 +377,7 @@ pub const JS: &str = r##"
       numericInput: '',
     };
     window.__setStatusMessage('⤢ Захват ' + moveIds.length + ' т. — ' + (axis === 'FREE' ? 'свободно' : axis + '-ось'));
-    window.__grabIsScreenProjection = true;
+    window.__grabIsScreenProjection = false;  // gizmo drag uses world-space raycasting, not screen projection
     if (window.__resetGrabTracking) window.__resetGrabTracking();
     if (window.__updateSketchInspector) window.__updateSketchInspector();
   };

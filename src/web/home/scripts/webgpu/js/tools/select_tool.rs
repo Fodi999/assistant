@@ -16,7 +16,16 @@ pub const JS: &str = r##"
         const SM   = window.SelectionMode;
         const tool = sketchState.activeTool;
 
-        if (sketchState.grab.active) { window.__confirmGrab().catch(e => console.warn('[select] confirmGrab err', e)); return; }
+        // Grab command mode: click outside gizmo handles does NOT auto-confirm.
+        // Confirm only happens via: gizmo pointerup (after real drag), Enter key, or numeric input.
+        // In command mode (dragging=false) a click outside should be silently ignored.
+        if (sketchState.grab?.active) {
+          if (sketchState.grab.dragging) {
+            window.__confirmGrab().catch(e => console.warn('[select] confirmGrab err', e));
+          }
+          // else: command mode — swallow the click, keep grab open
+          return;
+        }
         if (sketchState.copy.active) { window.__confirmCopyConnect(); return; }
 
         if (tool === SM.SELECT) {
@@ -81,7 +90,7 @@ pub const JS: &str = r##"
           }
 
           // Priority 2: snap from plane raycast + resolveSnapTarget
-          const canvasEl = document.getElementById('matterCanvas');
+          const canvasEl = document.getElementById('webgpu-canvas');
           const mpx = canvasEl
             ? { x: (ndcX + 1) * 0.5 * canvasEl.width, y: (1 - ndcY) * 0.5 * canvasEl.height }
             : { x: 0, y: 0 };
