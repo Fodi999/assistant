@@ -8,6 +8,15 @@ pub const JS: &str = r##"
         GRAB:   "grab",   DELETE: "delete",
       });
 
+      // ── Geometry selection sub-mode (within SELECT tool) ──────
+      // 1=vertex 2=edge 3=face 4=body
+      window.GeomSelMode = Object.freeze({
+        VERTEX: "vertex",
+        EDGE:   "edge",
+        FACE:   "face",
+        BODY:   "body",
+      });
+
       // ── Sketch State ───────────────────────────────────────────
       const sketchState = {
         points: [], edges: [],
@@ -19,6 +28,10 @@ pub const JS: &str = r##"
 
         selectedPointIds: new Set(),
         selectedEdgeIds:  new Set(),
+        selectedFaceIds:  new Set(),
+        selectedBodyIds:  new Set(),
+
+        geomSelMode: "edge",  // vertex | edge | face | body
 
         hoverPointId: null,
         hoverEdgeId:  null,

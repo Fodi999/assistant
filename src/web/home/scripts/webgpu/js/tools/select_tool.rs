@@ -29,31 +29,101 @@ pub const JS: &str = r##"
         if (sketchState.copy.active) { window.__confirmCopyConnect(); return; }
 
         if (tool === SM.SELECT) {
-          const pId = window.__pickPointAt(ndcX, ndcY);
-          const eId = pId ? null : window.__pickEdgeAt(ndcX, ndcY);
+          const gsm = sketchState.geomSelMode || 'edge';
+          console.log('[SelectClick] gsm =', gsm);
+
           if (!shiftKey) {
             sketchState.selectedPointIds.clear();
             sketchState.selectedEdgeIds.clear();
+            sketchState.selectedFaceIds.clear();
+            sketchState.selectedBodyIds.clear();
             sketchState.selectedProfileId = null;
           }
-          if (pId) {
-            if (sketchState.selectedPointIds.has(pId)) sketchState.selectedPointIds.delete(pId);
-            else                                       sketchState.selectedPointIds.add(pId);
-          } else if (eId) {
-            if (sketchState.selectedEdgeIds.has(eId)) sketchState.selectedEdgeIds.delete(eId);
-            else                                      sketchState.selectedEdgeIds.add(eId);
-          } else {
-            // Profile picking — only on the active working plane.
+
+          if (gsm === 'vertex') {
+            // ── Vertex mode: only pick points ──────────────────────────────
+            const pId = window.__pickPointAt(ndcX, ndcY);
+            if (pId) {
+              if (sketchState.selectedPointIds.has(pId)) sketchState.selectedPointIds.delete(pId);
+              else                                       sketchState.selectedPointIds.add(pId);
+            }
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            return;
+          }
+
+          if (gsm === 'edge') {
+            // ── Edge mode: points first, then edges (original behavior) ────
+            const pId = window.__pickPointAt(ndcX, ndcY);
+            const eId = pId ? null : window.__pickEdgeAt(ndcX, ndcY);
+            if (pId) {
+              if (sketchState.selectedPointIds.has(pId)) sketchState.selectedPointIds.delete(pId);
+              else                                       sketchState.selectedPointIds.add(pId);
+            } else if (eId) {
+              if (sketchState.selectedEdgeIds.has(eId)) sketchState.selectedEdgeIds.delete(eId);
+              else                                      sketchState.selectedEdgeIds.add(eId);
+            } else {
+              const hit = window.__raycastSketchPlane(ndcX, ndcY);
+              if (hit) {
+                const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
+                if (profId) window.__selectProfile(profId);
+                else if (!shiftKey) sketchState.selectedProfileId = null;
+              }
+            }
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            return;
+          }
+
+          if (gsm === 'face') {
+            // ── Face mode: pick profiles / wall surfaces ────────────────────
+            // Highlights the profile fill + all its edges (orange outline).
             const hit = window.__raycastSketchPlane(ndcX, ndcY);
             if (hit) {
               const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
               if (profId) {
-                window.__selectProfile(profId);
-              } else if (!shiftKey) {
-                sketchState.selectedProfileId = null;
+                if (sketchState.selectedFaceIds.has(profId)) {
+                  // Deselect — remove face + edges
+                  sketchState.selectedFaceIds.delete(profId);
+                  sketchState.selectedEdgeIds.clear();
+                  sketchState.selectedProfileId = null;
+                } else {
+                  sketchState.selectedFaceIds.add(profId);
+                  const prof = window.__selectProfile(profId);  // sets selectedProfileId
+                  // Highlight outline: add all edges of this face to selectedEdgeIds
+                  if (prof && prof.edgeIds) {
+                    for (const eid of prof.edgeIds) sketchState.selectedEdgeIds.add(eid);
+                  }
+                }
               }
             }
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            return;
           }
+
+          if (gsm === 'body') {
+            // ── Body mode: select all edges+points of a profile ─────────────
+            const hit = window.__raycastSketchPlane(ndcX, ndcY);
+            if (hit) {
+              const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
+              if (profId) {
+                if (sketchState.selectedBodyIds.has(profId)) {
+                  sketchState.selectedBodyIds.delete(profId);
+                  sketchState.selectedPointIds.clear();
+                  sketchState.selectedEdgeIds.clear();
+                  sketchState.selectedProfileId = null;
+                } else {
+                  sketchState.selectedBodyIds.add(profId);
+                  const prof = window.__selectProfile(profId);
+                  if (prof) {
+                    for (const id of prof.pointIds) sketchState.selectedPointIds.add(id);
+                    for (const id of prof.edgeIds)  sketchState.selectedEdgeIds.add(id);
+                  }
+                }
+              }
+            }
+            if (window.__updateSketchInspector) window.__updateSketchInspector();
+            return;
+          }
+
           if (window.__updateSketchInspector) window.__updateSketchInspector();
           return;
         }

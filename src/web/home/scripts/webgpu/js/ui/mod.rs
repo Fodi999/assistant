@@ -11,3 +11,4 @@ pub mod matter_state;
 pub mod cad_side_panel;
 pub mod constraint_solver;
 pub mod view_cube;
+pub mod selection_mode_hud;

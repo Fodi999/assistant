@@ -280,6 +280,14 @@ pub const JS: &str = r##"
           return true;
         }
 
+        // Geometry selection sub-mode (1/2/3/4 when in SELECT tool)
+        if (sketchState.activeTool === window.SelectionMode.SELECT) {
+          if (k === '1') { window.__setGeomSelMode('vertex'); return true; }
+          if (k === '2') { window.__setGeomSelMode('edge');   return true; }
+          if (k === '3') { window.__setGeomSelMode('face');   return true; }
+          if (k === '4') { window.__setGeomSelMode('body');   return true; }
+        }
+
         // Working plane
         if (k === '1') { window.__setWorkingPlane('XZ'); return true; }
         if (k === '2') { window.__setWorkingPlane('XY'); return true; }

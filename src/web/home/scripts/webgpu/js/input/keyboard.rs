@@ -173,8 +173,6 @@ pub const JS: &str = r##"
         if (e.shiftKey && window.sketchState && window.sketchState.precision) {
           window.sketchState.precision.shiftHeld = true;
         }
-        // Delegate to sketch tool handler first.
-        if (window.__handleSketchKey && window.__handleSketchKey(e)) return;
       });
 
       document.addEventListener('keyup', (e) => {
@@ -192,6 +190,8 @@ pub const JS: &str = r##"
 
       // ── General keyboard shortcuts ───────────────────────────────
       const onKey = (e) => {
+        // If sketch tool handler already consumed this key, skip particle/scene shortcuts.
+        if (window.__handleSketchKey && window.__handleSketchKey(e)) return;
         switch (e.key) {
           case '1': setParticleCount(    1_000); break;
           case '2': setParticleCount(   10_000); break;
