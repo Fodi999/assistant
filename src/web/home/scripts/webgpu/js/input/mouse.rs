@@ -52,6 +52,11 @@ pub const JS: &str = r##"
       canvas.addEventListener('pointerdown', (e) => {
         // Block canvas interaction while extrude (or other modal tools) are active.
         if (window.sketchState?.extrude?.active) {
+          // Allow the extrude gizmo to handle this click first.
+          if (typeof window.__extrudeGizmoPointerDown === 'function'
+              && window.__extrudeGizmoPointerDown(e)) {
+            return; // gizmo consumed — drag will proceed via its own listeners
+          }
           e.preventDefault();
           e.stopPropagation();
           // Re-focus the extrude modal input so the user can keep typing.

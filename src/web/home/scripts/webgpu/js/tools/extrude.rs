@@ -36,79 +36,137 @@ pub const JS: &str = r##"
         }, true /* capture */);
       }
 
-      // ── Extrude height modal ─────────────────────────────────
-      // Floating overlay with a real <input> field so the user can
-      // click it, type digits, press Enter/Esc without confusion.
-
+      // ── Extrude height modal — единый стиль через window.__modalTheme ──
       function __extrudeModalEl() {
         let el = document.getElementById('__extrude-modal');
-        if (!el) {
-          el = document.createElement('div');
-          el.id = '__extrude-modal';
-          el.style.cssText = [
-            'position:fixed',
-            'left:50%',
-            'bottom:80px',
-            'transform:translateX(-50%)',
-            'background:rgba(15,20,30,0.95)',
-            'border:1.5px solid rgba(255,170,40,0.7)',
-            'border-radius:12px',
-            'padding:18px 28px 16px',
-            'display:none',
-            'flex-direction:column',
-            'align-items:center',
-            'gap:10px',
-            'z-index:9999',
-            'font-family:monospace',
-            'box-shadow:0 8px 40px rgba(0,0,0,0.7)',
-            'min-width:260px',
-          ].join(';');
+        if (el) return el;
 
-          el.innerHTML = [
-            '<div style="font-size:11px;color:#94a3b8;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px;">Высота выдавливания (мм)</div>',
-            '<input id="__extrude-modal-input" type="number" min="1" step="1" placeholder="2500"',
-            '  style="',
-            '    width:160px;text-align:center;font-size:32px;font-weight:700;',
-            '    color:#ffaa28;background:rgba(255,170,40,0.08);',
-            '    border:1.5px solid rgba(255,170,40,0.4);border-radius:8px;',
-            '    padding:6px 10px;outline:none;font-family:monospace;',
-            '    -moz-appearance:textfield;',
-            '  "',
-            '/>',
-            '<div style="font-size:11px;color:#64748b;">Enter ✓ &nbsp;·&nbsp; Esc ✗</div>',
-          ].join('');
+        const T = window.__modalTheme;
+        const C = T.COLORS;
+        const L = T.LAYOUT;
 
-          document.body.appendChild(el);
+        el = document.createElement('div');
+        el.id = '__extrude-modal';
 
-          // Wire Enter/Esc on the input itself
-          const inp = el.querySelector('#__extrude-modal-input');
-          inp.addEventListener('keydown', function(ev) {
-            ev.stopPropagation();
-            if (ev.key === 'Enter') {
-              ev.preventDefault();
-              // Sync value to sketchState then commit
-              sketchState.extrude.heightInput = inp.value;
-              if (window.__commitEdgeExtrude) window.__commitEdgeExtrude();
-            } else if (ev.key === 'Escape') {
-              ev.preventDefault();
-              if (window.__cancelEdgeExtrude) window.__cancelEdgeExtrude();
-            }
-          });
-          // Keep sketchState in sync as user types
-          inp.addEventListener('input', function() {
+        // Базовые стили из темы (те же что у DimEditor / ProfilePopup)
+        T.applyPopupStyle(el, { zIndex: '9999', minWidth: '240px', maxWidth: '300px' });
+        // Начальная позиция: по центру внизу
+        Object.assign(el.style, {
+          display:   'none',
+          left:      '50%',
+          bottom:    '72px',
+          top:       'auto',
+          transform: 'translateX(-50%)',
+          position:  'fixed',
+        });
+
+        T.injectBaseCSS();
+
+        el.innerHTML = `
+          <div id="__extrude-modal-grip"
+            style="
+              display:flex; align-items:center; justify-content:space-between;
+              margin-bottom:8px; cursor:grab; user-select:none;
+              padding:2px 0 6px; border-bottom:1px solid ${C.border};
+            ">
+            <span style="font-size:10px;font-weight:600;letter-spacing:.6px;
+              text-transform:uppercase;color:${C.mute};">
+              ⬆ Extrude — высота (мм)
+            </span>
+            <span style="font-size:14px;color:${C.dim};line-height:1;" title="Перетащить">⠿</span>
+          </div>
+
+          <input id="__extrude-modal-input"
+            type="number" min="1" step="1" placeholder="2500"
+            style="
+              display:block; width:100%; box-sizing:border-box;
+              text-align:center; font-size:26px; font-weight:700;
+              font-family:${L.font}; color:${C.input};
+              background:${C.panel}; border:1px solid ${C.border};
+              border-radius:${L.borderRadius}; padding:6px 8px;
+              outline:none; -moz-appearance:textfield;
+            "
+          />
+
+          <div class="cad-popup-sep" style="margin:10px 0 8px;"></div>
+
+          <div style="display:flex;gap:6px;">
+            <button id="__extrude-cancel-btn" class="cad-popup-btn" style="flex:1;">Esc · Отмена</button>
+            <button id="__extrude-apply-btn"  class="cad-popup-btn cad-popup-btn-accent" style="flex:1;">Enter · ОК</button>
+          </div>
+        `;
+
+        document.body.appendChild(el);
+
+        // ── Drag logic ───────────────────────────────────────────
+        const grip = el.querySelector('#__extrude-modal-grip');
+        let dragActive = false, ox = 0, oy = 0;
+
+        grip.addEventListener('pointerdown', function(ev) {
+          if (ev.button !== 0) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          dragActive = true;
+          // Switch from bottom-anchor to top-anchor so translateX still works
+          const rect = el.getBoundingClientRect();
+          el.style.top       = rect.top + 'px';
+          el.style.bottom    = 'auto';
+          el.style.left      = rect.left + 'px';
+          el.style.transform = 'none';
+          ox = ev.clientX - rect.left;
+          oy = ev.clientY - rect.top;
+          grip.style.cursor = 'grabbing';
+          el.setPointerCapture(ev.pointerId);
+        });
+
+        el.addEventListener('pointermove', function(ev) {
+          if (!dragActive) return;
+          ev.stopPropagation();
+          el.style.left = (ev.clientX - ox) + 'px';
+          el.style.top  = (ev.clientY - oy) + 'px';
+        });
+
+        el.addEventListener('pointerup', function(ev) {
+          if (!dragActive) return;
+          dragActive = false;
+          grip.style.cursor = 'grab';
+        });
+
+        // ── Key / button wiring ──────────────────────────────────
+        const inp = el.querySelector('#__extrude-modal-input');
+        inp.addEventListener('keydown', function(ev) {
+          ev.stopPropagation();
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
             sketchState.extrude.heightInput = inp.value;
-          });
-        }
+            if (window.__commitEdgeExtrude) window.__commitEdgeExtrude();
+          } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            if (window.__cancelEdgeExtrude) window.__cancelEdgeExtrude();
+          }
+        });
+        inp.addEventListener('input', function() {
+          sketchState.extrude.heightInput = inp.value;
+        });
+        el.querySelector('#__extrude-apply-btn').addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          sketchState.extrude.heightInput = inp.value;
+          if (window.__commitEdgeExtrude) window.__commitEdgeExtrude();
+        });
+        el.querySelector('#__extrude-cancel-btn').addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          if (window.__cancelEdgeExtrude) window.__cancelEdgeExtrude();
+        });
+
         return el;
       }
 
       window.__extrudeModalShow = function(heightInput) {
-        const el  = __extrudeModalEl();
-        el.style.display = 'flex';
+        const el = __extrudeModalEl();
+        el.style.display = 'block';
         const inp = el.querySelector('#__extrude-modal-input');
         if (inp) {
           if (heightInput !== undefined && heightInput !== '') inp.value = heightInput;
-          // Small delay so the element is visible before focus
           setTimeout(() => { inp.focus(); inp.select(); }, 30);
         }
       };

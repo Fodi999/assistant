@@ -7,3 +7,4 @@ pub mod copy_tool;
 pub mod line_tool;
 pub mod hotkeys;
 pub mod extrude;
+pub mod extrude_gizmo;

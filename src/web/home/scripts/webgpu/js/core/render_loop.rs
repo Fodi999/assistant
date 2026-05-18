@@ -314,6 +314,58 @@ pub const JS: &str = r##"
             }
           }
 
+          // ── Extrude Live Preview ─────────────────────────────────────────────
+          // While extrude is active (before commit) draw the wall quad in real-time.
+          // This makes the surface follow the gizmo arrow immediately during drag.
+          if (sketchState.extrude && sketchState.extrude.active
+              && sketchState.extrude.edgeIds && sketchState.extrude.edgeIds.length) {
+            const ex      = sketchState.extrude;
+            const inp     = document.getElementById('__extrude-modal-input');
+            const heightMm = parseFloat(inp ? inp.value : (ex.heightInput || '0')) || 0;
+            const heightM  = heightMm / 1000;
+            const plane    = sketchState.workingPlane || 'XZ';
+            const dir      = window.__getExtrudeDir ? window.__getExtrudeDir(plane) : { x:0, y:1, z:0 };
+
+            if (heightM > 0.0001) {
+              for (const edgeId of ex.edgeIds) {
+                const edge = sketchState.edges.find(e => e.id === edgeId);
+                if (!edge) continue;
+                const pA = pById.get(edge.a), pB = pById.get(edge.b);
+                if (!pA || !pB) continue;
+
+                const sBA = w2s(pA.x, pA.y, pA.z);
+                const sBB = w2s(pB.x, pB.y, pB.z);
+                const sTA = w2s(pA.x + dir.x * heightM, pA.y + dir.y * heightM, pA.z + dir.z * heightM);
+                const sTB = w2s(pB.x + dir.x * heightM, pB.y + dir.y * heightM, pB.z + dir.z * heightM);
+                if (!sBA || !sBB || !sTA || !sTB) continue;
+
+                ctx.save();
+                // Filled face — brighter during drag
+                const dragging = window.__extrudeGizmoDrag;
+                ctx.beginPath();
+                ctx.moveTo(sBA.x, sBA.y);
+                ctx.lineTo(sBB.x, sBB.y);
+                ctx.lineTo(sTB.x, sTB.y);
+                ctx.lineTo(sTA.x, sTA.y);
+                ctx.closePath();
+                ctx.fillStyle = dragging ? 'rgba(255,200,60,0.22)' : 'rgba(255,170,40,0.14)';
+                ctx.fill();
+
+                // Wire edges — dashed to show it's preview
+                ctx.strokeStyle = dragging ? 'rgba(255,220,80,0.95)' : 'rgba(255,180,40,0.85)';
+                ctx.lineWidth   = 2;
+                ctx.setLineDash([6, 3]);
+                // top edge
+                ctx.beginPath(); ctx.moveTo(sTA.x, sTA.y); ctx.lineTo(sTB.x, sTB.y); ctx.stroke();
+                // verticals
+                ctx.beginPath(); ctx.moveTo(sBA.x, sBA.y); ctx.lineTo(sTA.x, sTA.y); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sBB.x, sBB.y); ctx.lineTo(sTB.x, sTB.y); ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+              }
+            }
+          }
+
           // ── Edges ──
           const grabPointSet = sketchState.grab.active
             ? new Set(sketchState.grab.pointIds)
@@ -1011,6 +1063,10 @@ pub const JS: &str = r##"
           // ── Grab HUD + Axis Gizmo (tools/grab_gizmo.rs) ──
           if (typeof window.__drawGrabGizmo === 'function') {
             window.__drawGrabGizmo(ctx, sketchState, w2s, sk);
+          }
+          // ── Extrude Height Gizmo (tools/extrude_gizmo.rs) ──
+          if (typeof window.__drawExtrudeGizmo === 'function') {
+            window.__drawExtrudeGizmo(ctx, sketchState, w2s, sk);
           }
           if (sketchState.grab.active) {
             const grab = sketchState.grab;
