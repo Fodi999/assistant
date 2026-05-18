@@ -87,6 +87,9 @@ pub const JS: &str = r#"
 
     sketchState.grab = {
       active: true,
+      mode: 'gizmo-drag',
+      dragging: true,
+      source: 'gizmo',
       pointIds: moveIds,
       startMouseWorld: startWorld,
       startScreen,
@@ -94,16 +97,19 @@ pub const JS: &str = r#"
       startDragPoint: null,  // set on first __updateGizmoDrag call
       originalPoints: snapshot,
       axisLock: (axis === 'FREE') ? null : axis,
+      dragAxis: axis,
+      useDragPlane: axis !== 'FREE',
       dragBase,
       screenAcc: { x: 0, y: 0, z: 0 },
       numericInput: '',
       useScreenProjection: true,
+      plane: sketchState.workingPlane || 'XZ',
     };
 
     const planeName = sketchState.workingPlane || 'XZ';
     window.__setStatusMessage('⤢ Захват ' + moveIds.length + ' т. · пл.' + planeName + ' · ' + (axis === 'FREE' ? 'свободно' : axis + '-ось') + ' · Enter ✓ · Esc ✗');
     console.log('[Gizmo] start axis ' + axis + ', points: ' + moveIds.length);
-    window.__grabIsScreenProjection = true;
+    window.__grabIsScreenProjection = false;  // movement only via gizmoDrag, not free mousemove
     if (window.__resetGrabTracking) window.__resetGrabTracking();
     if (window.__updateSketchInspector) window.__updateSketchInspector();
   };

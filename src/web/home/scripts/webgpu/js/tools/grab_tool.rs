@@ -111,6 +111,9 @@ pub const JS: &str = r##"
             : { x: 0, y: 0 };
         sketchState.grab = {
           active: true,
+          mode: 'command',           // G-key opens command mode — no auto-drag
+          dragging: false,           // becomes true only when user clicks gizmo handle
+          source: 'keyboard',
           pointIds: moveIds,
           startMouseWorld: startWorld,
           startScreen,
@@ -120,10 +123,15 @@ pub const JS: &str = r##"
           dragBase,
           screenAcc: { x: 0, y: 0, z: 0 },
           axisLock: null,
+          dragAxis: null,
+          useDragPlane: false,
           numericInput: '',
-          useScreenProjection: true,
+          useScreenProjection: false,
+          plane: sketchState.workingPlane || 'XZ',
         };
-        window.__grabIsScreenProjection = true;
+        // Ensure gizmoDrag is OFF — G-key shows gizmo but does not start drag
+        if (window.__resetGizmoDrag) window.__resetGizmoDrag();
+        window.__grabIsScreenProjection = false;  // G-key does NOT auto-move on mousemove
         if (window.__resetGrabTracking) window.__resetGrabTracking();
         window.__grabLogCount = 0;  // сброс счётчика диагностики
         const skipped = allIds.length - moveIds.length;
@@ -229,7 +237,10 @@ pub const JS: &str = r##"
         sketchState.grab = {
           active: false, pointIds: [], startMouseWorld: null,
           originalPoints: new Map(), axisLock: null, screenAcc: null, numericInput: '',
+          mode: null, dragging: false, source: null,
+          dragAxis: null, useDragPlane: false,
         };
+        if (window.__resetGizmoDrag) window.__resetGizmoDrag();
         window.__grabIsScreenProjection = false;
         if (window.__resetGrabTracking) window.__resetGrabTracking();
         window.__notifySketchChanged();
@@ -268,7 +279,10 @@ pub const JS: &str = r##"
         sketchState.grab = {
           active: false, pointIds: [], startMouseWorld: null,
           originalPoints: new Map(), axisLock: null, screenAcc: null, numericInput: '',
+          mode: null, dragging: false, source: null,
+          dragAxis: null, useDragPlane: false,
         };
+        if (window.__resetGizmoDrag) window.__resetGizmoDrag();
         window.__grabIsScreenProjection = false;
         if (window.__resetGrabTracking) window.__resetGrabTracking();
         if (sketchState._history.undo.length) sketchState._history.undo.pop();
@@ -389,8 +403,12 @@ pub const JS: &str = r##"
   // All math in world-space — no screen-pixel heuristics.
   // ─────────────────────────────────────────────────────────
   window.__updateGizmoDrag = function(ndcX, ndcY) {
+    // ── Strict guards: movement only allowed during a real gizmo drag ──
+    if (!sketchState.gizmoDrag?.active) return;
+    if (!sketchState.grab?.active) return;
+    if (!sketchState.grab?.dragging) return;
+
     const grab = sketchState.grab;
-    if (!grab.active) return;
 
     const center = grab.startCenter;
     if (!center) return;

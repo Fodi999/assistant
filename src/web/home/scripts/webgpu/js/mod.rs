@@ -91,6 +91,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(tools::select_tool::JS);
     out.push_str(tools::grab_tool::JS);
     out.push_str(tools::grab_gizmo::JS);  // overrides drawGrabGizmo + __startGrabFromGizmo
+    out.push_str(tools::gizmo_controller::JS);  // single source of truth for gizmo pointer events
     out.push_str(tools::copy_tool::JS);
     out.push_str(tools::line_tool::JS);
     out.push_str(tools::hotkeys::JS);

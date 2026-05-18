@@ -43,18 +43,23 @@ pub const JS: &str = r##"
       }
       window.__setCursorForTool = __setCursorForTool;
 
-      // ── Gizmo handle hit test ─────────────────────────────────
+      // ── Gizmo handle hit test (delegates to gizmo_controller.rs) ──
       function __hitGizmoHandle(px, py) {
-        const handles = window.__gizmoHandles;
-        if (!handles) return null;
-        for (const h of handles) {
-          if (Math.hypot(px - h.x, py - h.y) <= h.r + 8) return h.axis;
-        }
-        return null;
+        return window.__hitTestGrabGizmo ? window.__hitTestGrabGizmo(px, py) : null;
       }
 
       // ── Pointer down ─────────────────────────────────────────────
       canvas.addEventListener('pointerdown', (e) => {
+        // 1) Gizmo controller has first say — if it consumes, we're done.
+        if (window.__gizmoPointerDown && window.__gizmoPointerDown(mouse, e)) {
+          dragging = true;
+          dragMoved = false;
+          gizmoHandleDrag = true;
+          startX = e.clientX; startY = e.clientY;
+          lastX = e.clientX;  lastY = e.clientY;
+          return;
+        }
+
         canvas.setPointerCapture(e.pointerId);
         dragging       = true;
         dragMoved      = false;
@@ -107,52 +112,8 @@ pub const JS: &str = r##"
         const isGrab = sketchState.grab?.active;
         const isCopy = sketchState.copy?.active;
 
-        // ── Gizmo handle click: start or re-configure grab ──
-        if (hitAxis !== null && e.button === 0 && !isCopy) {
-          gizmoHandleDrag = true;
-          window.__hitGizmoOnDown = true;
-
-          if (isGrab) {
-            // Already grabbing — change axis lock and reset transform base
-            const tState = sketchState.grab;
-            tState.axisLock = (hitAxis === 'FREE') ? null : hitAxis;
-            tState.screenAcc = { x: 0, y: 0, z: 0 };
-            if (sketchState.hoverWorld) {
-              tState.startMouseWorld = { x: sketchState.hoverWorld.x, y: sketchState.hoverWorld.y, z: sketchState.hoverWorld.z };
-            }
-            // Re-anchor startScreen to gizmo center (canvas device-px) on re-lock
-            const _ctrRL = window.__gizmoCenterScreen;
-            const _lmsRL = sketchState.precision?.lastMouseScreen;
-            tState.startScreen = _ctrRL
-              ? { x: _ctrRL.x, y: _ctrRL.y }
-              : _lmsRL ? { x: _lmsRL.x, y: _lmsRL.y } : tState.startScreen;
-            // Reset drag base to current point positions (re-lock starts from here)
-            const byId = new Map(sketchState.points.map(p => [p.id, p]));
-            tState.dragBase = new Map();
-            let _rcx=0,_rcy=0,_rcz=0,_rcn=0;
-            for (const id of tState.pointIds) {
-              const p = byId.get(id);
-              if (p) {
-                tState.dragBase.set(id, { x: p.x, y: p.y, z: p.z });
-                _rcx+=p.x; _rcy+=p.y; _rcz+=p.z; _rcn++;
-              }
-            }
-            // Re-anchor drag plane to current center + reset start drag point
-            tState.startCenter = _rcn ? { x:_rcx/_rcn, y:_rcy/_rcn, z:_rcz/_rcn } : tState.startCenter;
-            tState.startDragPoint = null; // will be set on next __updateGizmoDrag call
-          } else {
-            // Not yet grabbing — start grab from selection via gizmo
-            if (window.__startGrabFromGizmo) {
-              window.__startGrabFromGizmo(hitAxis, e.clientX, e.clientY);
-            }
-          }
-
-          panning  = false;
-          orbiting = false;
-          lastX = e.clientX; lastY = e.clientY;
-          startX = e.clientX; startY = e.clientY;
-          return;
-        }
+        // Gizmo handle clicks are handled at the top of pointerdown by
+        // __gizmoPointerDown. Here we only handle the copy-tool variant.
 
         if (isCopy && e.button === 0) {
           const tState = sketchState.copy;
@@ -199,6 +160,15 @@ pub const JS: &str = r##"
 
       // ── Pointer up / click ───────────────────────────────────────
       canvas.addEventListener('pointerup', (e) => {
+        // 1) Gizmo controller has first say
+        if (window.__gizmoPointerUp && window.__gizmoPointerUp(mouse, e)) {
+          dragging = false;
+          gizmoHandleDrag = false;
+          panning = false; orbiting = false;
+          startX = 0; startY = 0;
+          return;
+        }
+
         const wasDragging = dragging;
         dragging = false;
         const wasGizmo = gizmoHandleDrag;
@@ -208,24 +178,18 @@ pub const JS: &str = r##"
         startX = 0; startY = 0;
 
         if (wasGizmo) {
-          // Reset the one-shot flag so future empty-canvas clicks work normally.
           window.__hitGizmoOnDown = false;
 
-          // If they dragged from a gizmo handle — keep grab active (don't confirm).
-          // User confirms with Enter or by clicking empty canvas.
+          // Confirm grab on mouse release if user actually dragged
           if (dragMoved && sketchState.grab?.active) {
-            // Just update status — do NOT confirm, let user keep dragging other axes.
-            if (window.__setStatusMessage) {
-              const lock = sketchState.grab.axisLock;
-              window.__setStatusMessage('⤢ Захват' + (lock ? ' · ' + lock : ' · свободно') + ' — тяни · Enter ✓ · Esc ✗');
-            }
-          } else if (!dragMoved) {
-            // Pure tap on handle: axis was locked, show status.
-            if (sketchState.grab?.active && window.__setStatusMessage) {
-              const lock = sketchState.grab.axisLock;
-              window.__setStatusMessage('⤢ Захват готов — тяни' + (lock ? ' · ' + lock : ' · свободно') + ' · Enter ✓ · Esc ✗');
-            }
+            if (window.__confirmGrab) window.__confirmGrab();
+          } else if (!dragMoved && sketchState.grab?.active && window.__setStatusMessage) {
+            const lock = sketchState.grab.axisLock;
+            window.__setStatusMessage('⤢ Захват готов — тяни' + (lock ? ' · ' + lock : ' · свободно') + ' · Enter ✓ · Esc ✗');
           }
+
+          // Reset gizmoDrag state
+          sketchState.gizmoDrag = { active: false, axis: null, pointerId: null };
           panning = false; orbiting = false;
           return;
         }
@@ -276,6 +240,14 @@ pub const JS: &str = r##"
           x: e.clientX - rect.left,
           y: e.clientY - rect.top,
         };
+
+        // 1) Gizmo controller has first say. If actively dragging a handle,
+        //    it consumes the event and moves geometry. Otherwise it only
+        //    updates hoverAxis and lets the rest of the pipeline run.
+        if (window.__gizmoPointerMove && window.__gizmoPointerMove(mouse, e)) {
+          if (Math.hypot(e.clientX - startX, e.clientY - startY) >= CLICK_THRESH_PX) dragMoved = true;
+          return;
+        }
 
         // ── Dimension label hover (only when not dragging) ──
         // Show text-cursor over editable dim labels so users discover the
@@ -373,17 +345,15 @@ pub const JS: &str = r##"
         const grabTarget = hit || sketchState.hoverWorld;
         if (sketchState.copy.active) window.__updateCopyConnect();
 
-        // ── Cursor state machine (CAD-style 4 states) ────────────────────────
-        // grabbing → grab → pointer → default
+        // ── Cursor state machine ────────────────────────
+        // gizmo-drag → arrow ; gizmo-hover → pointer ; entity-hover → pointer ; else tool
         {
-          const rect3 = canvas.getBoundingClientRect();
-          const hAxis = __hitGizmoHandle(e.clientX - rect3.left, e.clientY - rect3.top);
-          window.__gizmoHoverAxis = hAxis || null;
-          if (sketchState.grab?.active) {
-            // During active grab: grabbing (will be overridden to 'grab' on hover)
-            canvas.style.cursor = hAxis ? 'grab' : 'grabbing';
+          const hAxis = sketchState.gizmo?.hoverAxis || null;
+          window.__gizmoHoverAxis = hAxis;  // legacy alias for renderer
+          if (sketchState.gizmoDrag?.active) {
+            canvas.style.cursor = 'grabbing';
           } else if (hAxis) {
-            canvas.style.cursor = 'grab';
+            canvas.style.cursor = 'pointer';
           } else if (sketchState.hoverPointId || sketchState.hoverEdgeId || sketchState.hoverProfileId) {
             canvas.style.cursor = 'pointer';
           } else {
@@ -392,40 +362,8 @@ pub const JS: &str = r##"
         }
         if (window.__perfSample) window.__perfSample('pick', performance.now() - __pfPick);
 
-        // ── Grab movement ──────────────────────────────────────────────────────
-        // CAD-style: cursor → axis → world-space delta → selected points
-        //
-        // Flow: SELECT → GIZMO → HIT AXIS → DRAG → CONFIRM / CANCEL
-        //
-        // Formula (world-space, no screen heuristics):
-        //   currentPoint = raycastDragPlane(ndcX, ndcY, center)
-        //   delta        = dot(currentPoint - startPoint, axisVector)
-        //   newPosition  = basePosition + axisVector * delta
-        if (sketchState.grab?.active) {
-          const useProj = gizmoHandleDrag || window.__grabIsScreenProjection;
-
-          // Maintain grabLastX/Y for legacy __updateGrab path
-          if (grabLastX < 0) { grabLastX = e.clientX; grabLastY = e.clientY; }
-          grabLastX = e.clientX; grabLastY = e.clientY;
-
-          if (useProj) {
-            // World-space projection path (axis/plane/free lock)
-            if (window.__updateGizmoDrag) {
-              window.__updateGizmoDrag(mouse.ndcX, mouse.ndcY);
-            }
-          } else {
-            window.__updateGrab(grabTarget);
-          }
-
-          // Cursor: grabbing while dragging
-          canvas.style.cursor = 'grabbing';
-
-          if (Math.hypot(e.clientX - startX, e.clientY - startY) >= CLICK_THRESH_PX) dragMoved = true;
-          return; // skip orbit / pan
-        }
-
-        // No grab active — reset grab tracking so next grab starts clean.
-        grabLastX = -1; grabLastY = -1;
+        // Grab movement is fully delegated to gizmo_controller.rs at the top
+        // of this handler. No grab-related logic remains here.
 
         if (!dragging) return;
 

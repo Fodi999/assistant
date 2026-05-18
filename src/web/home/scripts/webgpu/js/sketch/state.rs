@@ -71,6 +71,9 @@ pub const JS: &str = r##"
           axisLock: null,
         },
 
+        // ── Gizmo drag state (set active only when pointer is down on a handle) ──
+        gizmoDrag: { active: false, axis: null, pointerId: null },
+
         // ── Undo/redo ──
         _history: { undo: [], redo: [] },
         _historyLimit: 100,
