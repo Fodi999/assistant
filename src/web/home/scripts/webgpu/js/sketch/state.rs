@@ -671,16 +671,18 @@ pub const JS: &str = r##"
         return sketchState.constraints.filter(c => c.targetId === targetId);
       };
       window.__getConstraintForTarget = function(type, targetId) {
+        const tNorm = (type || '').toUpperCase();
         for (const c of sketchState.constraints) {
-          if (c.type === type && c.targetId === targetId) return c;
+          if ((c.type || '').toUpperCase() === tNorm && c.targetId === targetId) return c;
         }
         return null;
       };
       window.__addConstraint = function(type, targetType, targetId, value) {
+        const normType = (type || '').toUpperCase();
         // Replace existing of same type+target.
-        const existing = window.__getConstraintForTarget(type, targetId);
+        const existing = window.__getConstraintForTarget(normType, targetId);
         if (existing) { existing.value = (value === undefined) ? existing.value : value; return existing; }
-        const c = { id: window.__nextConstraintId(), type, targetType, targetId, value: value == null ? null : value };
+        const c = { id: window.__nextConstraintId(), type: normType, targetType, targetId, value: value == null ? null : value };
         sketchState.constraints.push(c);
         return c;
       };

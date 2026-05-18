@@ -406,19 +406,23 @@ pub const JS: &str = r##"
               // All constraints whose targetId === e.id
               const eCons = sketchState.constraints.filter(c => c.targetId === e.id);
 
-              // Map type → icon glyph + color
+              // Map type → icon glyph + color (keys uppercase, lookup normalised)
               const iconMap = {
                 HORIZONTAL:   { glyph: 'H', color: '#a78bfa' },
                 VERTICAL:     { glyph: 'V', color: '#a78bfa' },
                 FIXED_LENGTH: { glyph: 'L', color: '#34d399' },
                 EQUAL:        { glyph: '=', color: '#fbbf24' },
+                EQUAL_LENGTH: { glyph: '=', color: '#fbbf24' },
                 PERPENDICULAR:{ glyph: '⊥', color: '#f472b6' },
                 PARALLEL:     { glyph: '∥', color: '#f472b6' },
                 MIDPOINT:     { glyph: '◇', color: '#38bdf8' },
                 COINCIDENT:   { glyph: '●', color: '#fb923c' },
+                EDGE_LENGTH:  { glyph: 'L', color: '#34d399' },
               };
 
               if (eCons.length > 0) {
+                const mx = (sa.x + sb.x) * 0.5;
+                const my = (sa.y + sb.y) * 0.5;
                 // Edge direction vector in screen space
                 const dx = sb.x - sa.x, dy = sb.y - sa.y;
                 const len = Math.sqrt(dx*dx + dy*dy) || 1;
@@ -440,7 +444,7 @@ pub const JS: &str = r##"
                 ctx.textBaseline = 'middle';
 
                 eCons.forEach((c, i) => {
-                  const info = iconMap[c.type] || { glyph: '?', color: '#64748b' };
+                  const info = iconMap[(c.type || '').toUpperCase()] || { glyph: '?', color: '#64748b' };
                   const bx = bx0 + i * (BADGE_W + GAP);
                   const by = by0;
 
@@ -467,6 +471,8 @@ pub const JS: &str = r##"
               // Dimension constraint: fixed-length value label (keep separate, below midpoint)
               const dimC = window.__getEdgeLengthConstraint && window.__getEdgeLengthConstraint(e.id);
               if (dimC) {
+                const mx = (sa.x + sb.x) * 0.5;
+                const my = (sa.y + sb.y) * 0.5;
                 const lenMm = (window.__edgeLengthMm && window.__edgeLengthMm(a, b)) || 0;
                 const txt = (window.__formatDim ? window.__formatDim(lenMm) : lenMm.toFixed(1));
                 ctx.font = '11px "JetBrains Mono", system-ui, monospace';

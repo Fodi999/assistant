@@ -107,7 +107,8 @@ pub const JS: &str = r##"
           ptIds.push(id);
         }
 
-        // Create 4 edges: 0→1 (top), 1→2 (right), 2→3 (bottom), 3→0 (left)
+        // Create 4 edges: 0→1 (top H), 1→2 (right V), 2→3 (bottom H), 3→0 (left V)
+        // edgeIds[0]=top, [1]=right, [2]=bottom, [3]=left
         const edgeIds = [];
         for (let i = 0; i < 4; i++) {
           const eid = await window.__createEdgeViaEngine(ptIds[i], ptIds[(i + 1) % 4], 'normal');
@@ -116,9 +117,17 @@ pub const JS: &str = r##"
 
         console.log('[Rect] created', { ptIds, edgeIds, corners, plane });
 
-        // Apply H/V constraints via WASM solver if available
-        if (window.__solveRectConstraints) {
-          window.__solveRectConstraints(ptIds, plane);
+        // ── Add H/V constraints to sketchState.constraints ──────────────────
+        // edgeIds[0] = top    → HORIZONTAL
+        // edgeIds[1] = right  → VERTICAL
+        // edgeIds[2] = bottom → HORIZONTAL
+        // edgeIds[3] = left   → VERTICAL
+        if (edgeIds.length === 4 && window.__addConstraint) {
+          await window.__addConstraint('HORIZONTAL', 'edge', edgeIds[0], null);
+          await window.__addConstraint('VERTICAL',   'edge', edgeIds[1], null);
+          await window.__addConstraint('HORIZONTAL', 'edge', edgeIds[2], null);
+          await window.__addConstraint('VERTICAL',   'edge', edgeIds[3], null);
+          console.log('[Rect] H/V constraints added to sketchState');
         }
 
         // Reset rect state
