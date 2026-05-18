@@ -64,10 +64,20 @@ pub const JS: &str = r##"
           return Math.hypot(px - (ax + t*dx), py - (ay + t*dy));
         }
 
+        // ── Priority pass: FREE ring always wins if cursor is inside it ──────
+        // Arrow corridors start at origin too (ox=origin), so distToSegment=0
+        // for all arrows at center — FREE must be checked first.
+        for (const h of handles) {
+          if (h.axis !== 'FREE') continue;
+          const hx = h.x / dpr, hy = h.y / dpr, hr = h.r / dpr;
+          if (Math.hypot(mx - hx, my - hy) <= hr + PAD) return 'FREE';
+        }
+
+        // ── Arrow / axis handles (corridor hit) ───────────────────────────
         let bestAxis = null;
         let bestDist = Infinity;
         for (const h of handles) {
-          // Convert handle position from device-px to CSS-px
+          if (h.axis === 'FREE') continue;  // already handled above
           const hx = h.x / dpr;
           const hy = h.y / dpr;
           const hr = h.r / dpr;
@@ -81,7 +91,7 @@ pub const JS: &str = r##"
             d = distToSegment(mx, my, sox, soy, hx, hy);
             if (d > CORRIDOR) d = Infinity;
           } else {
-            // FREE ring / legacy: circle hit only
+            // Legacy: circle hit only
             d = Math.hypot(mx - hx, my - hy);
             if (d > hr + PAD) d = Infinity;
           }
