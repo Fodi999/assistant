@@ -49,7 +49,7 @@ pub const JS: &str = r##"
       document.addEventListener('click', (e) => {
         const id = e.target && e.target.id;
         if (id === 'shortcuts-toggle') {
-          __toggleCursorInfo();
+          __toggleShortcutsOverlay();
           return;
         }
         if (id === 'shortcuts-close') {

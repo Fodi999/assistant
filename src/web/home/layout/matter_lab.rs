@@ -90,10 +90,32 @@ pub fn matter_lab_section() -> String {
             function initScoDrag() {
               var overlay = document.getElementById('shortcuts-overlay');
               var handle  = document.getElementById('sco-drag-handle');
+              var closeBtn = document.getElementById('shortcuts-close');
               if (!overlay || !handle) return;
               var dragging = false, ox = 0, oy = 0;
-              handle.addEventListener('mousedown', function(e) {
-                if (e.target.id === 'shortcuts-close') return;
+
+              // ── Close button ──────────────────────────────────────────────
+              if (closeBtn) {
+                closeBtn.addEventListener('click', function(e) {
+                  overlay.style.display = 'none';
+                  e.stopPropagation();
+                  e.preventDefault();
+                }, true);
+              }
+
+              // Block canvas orbit/pick from firing through the overlay.
+              // Use bubble phase (false) — capture=true would block child elements (handle, close btn).
+              // Overlay and canvas are siblings, so bubble never reaches canvas anyway.
+              ['pointerdown','mousedown','pointermove','mousemove','pointerup','mouseup'].forEach(function(ev) {
+                overlay.addEventListener(ev, function(e) { e.stopPropagation(); }, false);
+              });
+              ['click','dblclick','contextmenu'].forEach(function(ev) {
+                overlay.addEventListener(ev, function(e) { e.stopPropagation(); }, false);
+              });
+
+              handle.addEventListener('pointerdown', function(e) {
+                if (e.button !== 0) return;
+                if (e.target.closest('input, button')) return;
                 dragging = true;
                 var r = overlay.getBoundingClientRect();
                 ox = e.clientX - r.left;
@@ -101,16 +123,31 @@ pub fn matter_lab_section() -> String {
                 overlay.style.transform = 'none';
                 overlay.style.left = r.left + 'px';
                 overlay.style.top  = r.top  + 'px';
+                handle.setPointerCapture(e.pointerId);
                 handle.style.cursor = 'grabbing';
                 e.preventDefault();
-              });
-              document.addEventListener('mousemove', function(e) {
+                e.stopPropagation();
+              }, false);
+
+              handle.addEventListener('pointermove', function(e) {
                 if (!dragging) return;
-                overlay.style.left = (e.clientX - ox) + 'px';
-                overlay.style.top  = (e.clientY - oy) + 'px';
-              });
-              document.addEventListener('mouseup', function() {
-                if (dragging) { dragging = false; handle.style.cursor = 'grab'; }
+                var vw = window.innerWidth, vh = window.innerHeight;
+                var left = Math.max(0, Math.min(vw - overlay.offsetWidth,  e.clientX - ox));
+                var top  = Math.max(0, Math.min(vh - overlay.offsetHeight, e.clientY - oy));
+                overlay.style.left = left + 'px';
+                overlay.style.top  = top  + 'px';
+                e.stopPropagation();
+              }, false);
+
+              handle.addEventListener('pointerup', function(e) {
+                if (!dragging) return;
+                dragging = false;
+                handle.style.cursor = 'grab';
+                e.stopPropagation();
+              }, false);
+
+              handle.addEventListener('pointercancel', function() {
+                dragging = false; handle.style.cursor = 'grab';
               });
             }
             if (document.readyState === 'loading') {
@@ -153,7 +190,7 @@ pub fn matter_lab_section() -> String {
           </button>
           <div class="utb-sep"></div>
           <button class="utb-btn" id="btn-help" title="Справка по клавишам"
-                  onclick="var o=document.getElementById('shortcuts-overlay');o.style.display=(o.style.display==='none'?'block':'none')">
+                  onclick="if(window.__toggleShortcutsOverlay)window.__toggleShortcutsOverlay();else{var o=document.getElementById('shortcuts-overlay');o.style.display=(o.style.display==='none'?'':'none');}">
             ?<span class="utb-label">Справка</span>
           </button>
         </nav>

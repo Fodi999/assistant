@@ -988,6 +988,7 @@ pub fn matter_status_styles() -> &'static str {
       left: 50%;
       transform: translateX(-50%);
       z-index: 40;
+      pointer-events: auto;
       background: rgba(10, 14, 22, 0.95);
       border: 1px solid rgba(56,189,248,0.30);
       border-radius: 14px;
