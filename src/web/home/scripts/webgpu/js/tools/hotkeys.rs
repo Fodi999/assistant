@@ -216,9 +216,13 @@ pub const JS: &str = r##"
           return true;
         }
 
+        // Extrude mode hotkeys (highest priority after grab/copy)
+        if (sketchState.extrude && sketchState.extrude.active) {
+          return window.__handleExtrudeKey ? window.__handleExtrudeKey(e) : false;
+        }
+
         // Grab mode hotkeys
-        if (sketchState.grab.active) {
-          if (k === 'escape') {
+        if (sketchState.grab.active) {          if (k === 'escape') {
             if (window.__gizmoCancel) window.__gizmoCancel();
             else window.__cancelGrab();
             return true;
@@ -344,6 +348,12 @@ pub const JS: &str = r##"
         if (k === 'p' && e.shiftKey) { if (window.__togglePerfHud) window.__togglePerfHud(); return true; }
         if (k === 'p') { window.__setSketchTool && window.__setSketchTool('point'); return true; }
         if (k === 'l') { window.__setSketchTool && window.__setSketchTool('line');  return true; }
+
+        // E → Edge Extrude
+        if (k === 'e') {
+          if (window.__startEdgeExtrude) window.__startEdgeExtrude();
+          return true;
+        }
 
         // Shift+G → Copy Connect
         if (k === 'g' && e.shiftKey) {

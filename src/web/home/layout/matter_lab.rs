@@ -67,6 +67,7 @@ pub fn matter_lab_section() -> String {
             <span class="sco-key sco-row" data-kw="p точка point">P</span><span class="sco-row" data-kw="p точка point">Точка</span>
             <span class="sco-key sco-row" data-kw="l линия line">L</span><span class="sco-row" data-kw="l линия line">Линия</span>
             <span class="sco-key sco-row" data-kw="g захват grab">G</span><span class="sco-row" data-kw="g захват grab">Захват</span>
+            <span class="sco-key sco-row" data-kw="e extrude выдавить стена wall">E</span><span class="sco-row" data-kw="e extrude выдавить стена wall">Extrude (стена)</span>
             <span class="sco-key sco-row" data-kw="shift g копировать copy">⇧G</span><span class="sco-row" data-kw="shift g копировать copy">Копировать</span>
             <span class="sco-key sco-row" data-kw="d размер dimension">D</span><span class="sco-row" data-kw="d размер dimension">Размер</span>
             <span class="sco-key sco-row" data-kw="w разбить ребро split edge">W</span><span class="sco-row" data-kw="w разбить ребро split edge">Разбить ребро (Split Edge)</span>
@@ -182,6 +183,8 @@ pub fn matter_lab_section() -> String {
           <button class="utb-btn"        data-tool="line"   title="Линия (L)">╱<span class="utb-label">Линия</span></button>
           <button class="utb-btn"        data-tool="grab"   title="Захват (G)">✥<span class="utb-label">Захват</span></button>
           <button class="utb-btn"        data-tool="delete" title="Удалить (⌫)">⌫<span class="utb-label">Удалить</span></button>
+          <button class="utb-btn" id="btn-extrude" title="Extrude выбранные рёбра (E)"
+                  onclick="if(window.__startEdgeExtrude)window.__startEdgeExtrude();">⬆<span class="utb-label">Extrude</span></button>
           <div class="utb-sep"></div>
           <button class="utb-btn" id="btn-ortho" data-toggle="ortho"
                   title="Ортогональность — привязка к 0° 45° 90° (O)"

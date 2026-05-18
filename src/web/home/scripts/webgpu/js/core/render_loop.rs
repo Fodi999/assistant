@@ -281,6 +281,39 @@ pub const JS: &str = r##"
             }
           }
 
+          // ── Wall Surfaces (Edge Extrude) — drawn BEFORE edges ──
+          // Transparent quad fill + wire edges, Blender-style overlay.
+          if (sketchState.wallSurfaces && sketchState.wallSurfaces.length) {
+            for (const wall of sketchState.wallSurfaces) {
+              const sBA = w2s(wall.bottomA.x, wall.bottomA.y, wall.bottomA.z);
+              const sBB = w2s(wall.bottomB.x, wall.bottomB.y, wall.bottomB.z);
+              const sTA = w2s(wall.topA.x,    wall.topA.y,    wall.topA.z);
+              const sTB = w2s(wall.topB.x,    wall.topB.y,    wall.topB.z);
+              if (!sBA || !sBB || !sTA || !sTB) continue;
+              ctx.save();
+              // Transparent face fill
+              ctx.beginPath();
+              ctx.moveTo(sBA.x, sBA.y);
+              ctx.lineTo(sBB.x, sBB.y);
+              ctx.lineTo(sTB.x, sTB.y);
+              ctx.lineTo(sTA.x, sTA.y);
+              ctx.closePath();
+              ctx.fillStyle = 'rgba(255,170,40,0.10)';
+              ctx.fill();
+              // Wall wire edges
+              ctx.strokeStyle = 'rgba(255,180,40,0.75)';
+              ctx.lineWidth   = 1.8;
+              ctx.setLineDash([]);
+              // top edge
+              ctx.beginPath(); ctx.moveTo(sTA.x, sTA.y); ctx.lineTo(sTB.x, sTB.y); ctx.stroke();
+              // vertical A
+              ctx.beginPath(); ctx.moveTo(sBA.x, sBA.y); ctx.lineTo(sTA.x, sTA.y); ctx.stroke();
+              // vertical B
+              ctx.beginPath(); ctx.moveTo(sBB.x, sBB.y); ctx.lineTo(sTB.x, sTB.y); ctx.stroke();
+              ctx.restore();
+            }
+          }
+
           // ── Edges ──
           const grabPointSet = sketchState.grab.active
             ? new Set(sketchState.grab.pointIds)

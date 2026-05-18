@@ -93,6 +93,16 @@ pub const JS: &str = r##"
         selectedProfileId: null,
         hoverProfileId: null,
 
+        // ── Wall Surfaces (Edge Extrude) ──
+        wallSurfaces: [],
+
+        // ── Extrude tool state ──
+        extrude: {
+          active:      false,
+          heightInput: '',
+          edgeIds:     [],
+        },
+
         // ── Precision / Snap (Phase 12 + Phase 15: split precision) ──
         coordPrecision: 3,
         precision: {
