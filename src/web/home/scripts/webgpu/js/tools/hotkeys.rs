@@ -166,7 +166,7 @@ pub const JS: &str = r##"
         // Grab mode hotkeys
         if (sketchState.grab.active) {
           if (k === 'escape') { window.__cancelGrab(); return true; }
-          if (k === 'enter')  { window.__confirmGrab(); return true; }
+          if (k === 'enter')  { window.__confirmGrab().catch(e => console.warn('[hotkeys] confirmGrab err', e)); return true; }
           // Numeric input: digits, sign, decimal point
           if (/^[0-9]$/.test(k) || (k === '-' && !(sketchState.grab.numericInput||'').includes('-')) || k === '.') {
             sketchState.grab.numericInput = (sketchState.grab.numericInput || '') + e.key;

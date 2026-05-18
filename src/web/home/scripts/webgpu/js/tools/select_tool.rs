@@ -16,7 +16,7 @@ pub const JS: &str = r##"
         const SM   = window.SelectionMode;
         const tool = sketchState.activeTool;
 
-        if (sketchState.grab.active) { window.__confirmGrab(); return; }
+        if (sketchState.grab.active) { window.__confirmGrab().catch(e => console.warn('[select] confirmGrab err', e)); return; }
         if (sketchState.copy.active) { window.__confirmCopyConnect(); return; }
 
         if (tool === SM.SELECT) {

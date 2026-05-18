@@ -15,14 +15,16 @@ pub const JS: &str = r##"
       // Uses screen-projection path (same as gizmo drag).
       // ─────────────────────────────────────────────────────────
       // ─────────────────────────────────────────────────────────
-      // __raycastSketchPlane(ndcX, ndcY, center)
-      // Intersects the mouse ray with the active SKETCH PLANE at `center`.
+      // window.__raycastSketchPlaneAt(ndcX, ndcY, center)
+      // Like pick.rs __raycastSketchPlane but anchors the plane at `center`
+      // (not at origin). Exposed on window so outer-scope code can call it.
       //   XZ  → plane y = center.y  (normal 0,1,0)
       //   XY  → plane z = center.z  (normal 0,0,1)
       //   YZ  → plane x = center.x  (normal 1,0,0)
       // Falls back to view-aligned plane when ray is nearly parallel.
+      // Returns raw (unsnapped) {x,y,z} world point, or null.
       // ─────────────────────────────────────────────────────────
-      function __raycastSketchPlane(ndcX, ndcY, center) {
+      window.__raycastSketchPlaneAt = function(ndcX, ndcY, center) {
         const r = __pickRay(ndcX, ndcY);
         const plane = sketchState.workingPlane || 'XZ';
         let nx = 0, ny = 0, nz = 0, d;
@@ -30,11 +32,24 @@ pub const JS: &str = r##"
         else if (plane === 'YZ') { nx = 1; d = center.x; }
         else /* XZ */            { ny = 1; d = center.y; }
         const denom = r.dx * nx + r.dy * ny + r.dz * nz;
-        if (Math.abs(denom) < 1e-6) return __raycastDragPlane(ndcX, ndcY, center);
+        if (Math.abs(denom) < 1e-6) return window.__raycastDragPlaneAt(ndcX, ndcY, center);
         const t = (d - (r.ox * nx + r.oy * ny + r.oz * nz)) / denom;
-        if (t < 0) return __raycastDragPlane(ndcX, ndcY, center);
+        if (t < 0) return window.__raycastDragPlaneAt(ndcX, ndcY, center);
         return { x: r.ox + r.dx * t, y: r.oy + r.dy * t, z: r.oz + r.dz * t };
-      }
+      };
+
+      // view-aligned fallback — exposed on window for grab_gizmo.rs
+      window.__raycastDragPlaneAt = function(ndcX, ndcY, center) {
+        const r = __pickRay(ndcX, ndcY);
+        const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+        const cy = Math.cos(cam.yaw),   sy = Math.sin(cam.yaw);
+        const nx = -sy * cp, ny = -sp, nz = cy * cp;
+        const denom = r.dx*nx + r.dy*ny + r.dz*nz;
+        if (Math.abs(denom) < 1e-6) return null;
+        const t = ((center.x-r.ox)*nx + (center.y-r.oy)*ny + (center.z-r.oz)*nz) / denom;
+        if (t < 0) return null;
+        return { x: r.ox + r.dx*t, y: r.oy + r.dy*t, z: r.oz + r.dz*t };
+      };
 
       window.__startGrab = function() {
         // Auto-collect from edges if no points selected
@@ -110,13 +125,20 @@ pub const JS: &str = r##"
         };
         window.__grabIsScreenProjection = true;
         if (window.__resetGrabTracking) window.__resetGrabTracking();
+        window.__grabLogCount = 0;  // сброс счётчика диагностики
         const skipped = allIds.length - moveIds.length;
         const planeName = sketchState.workingPlane || 'XZ';
         const msg = '⤢ Захват ' + moveIds.length + ' т'
           + (skipped ? ' (' + skipped + ' зафикс.)' : '')
           + ' · пл. ' + planeName + ' · X/Y/Z · Enter ✓ · Esc ✗';
         window.__setStatusMessage(msg);
-        console.log('[Grab] start, points: ' + moveIds.length);
+        console.group('%c[GRAB START]', 'color:#3b82f6;font-weight:bold');
+        console.log('pointIds    :', moveIds);
+        console.log('plane       :', planeName);
+        console.log('startCenter :', { x:+(startCenter.x*1000).toFixed(2)+'mm', y:+(startCenter.y*1000).toFixed(2)+'mm', z:+(startCenter.z*1000).toFixed(2)+'mm' });
+        console.log('cam state   :', { yaw: +(cam.yaw*180/Math.PI).toFixed(1)+'°', pitch: +(cam.pitch*180/Math.PI).toFixed(1)+'°', dist: +cam.dist.toFixed(3)+'m' });
+        console.log('► Нажми Y чтобы зафиксировать ось, затем двигай тачпадом');
+        console.groupEnd();
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
 
@@ -141,7 +163,8 @@ pub const JS: &str = r##"
         else if (grab.axisLock === 'YZ') { dx = 0; }
         else if (grab.axisLock === 'XZ') { dy = 0; }
 
-        const g = sketchState.gridSize || 1.0;
+        const g = (sketchState.precision && sketchState.precision.internalStepM)
+                  || sketchState.gridSize || 0.00001;
         const sdx = Math.round(dx / g) * g;
         const sdy = Math.round(dy / g) * g;
         const sdz = Math.round(dz / g) * g;
@@ -159,15 +182,19 @@ pub const JS: &str = r##"
 
       // ─────────────────────────────────────────────────────────
       // __confirmGrab() — Enter / click confirm
+      // Applies numeric input, then persists ALL moved points through
+      // __movePointViaEngine (WASM-first + backend-sync).
       // ─────────────────────────────────────────────────────────
-      window.__confirmGrab = function() {
+      window.__confirmGrab = async function() {
         const grab = sketchState.grab;
-        // Apply numeric input if user typed a value (e.g. G X 120 Enter → 120 mm)
+        const g = (sketchState.precision && sketchState.precision.internalStepM)
+                  || sketchState.gridSize || 0.00001;
+
+        // ── Apply numeric input if user typed a value (e.g. G X 120 Enter = 120 mm) ──
         const numStr = (grab.numericInput || '').trim();
         if (numStr !== '' && grab.axisLock && ['X','Y','Z'].includes(grab.axisLock)) {
           const val = parseFloat(numStr) / 1000;  // user types mm → metres
           if (isFinite(val)) {
-            const g = sketchState.gridSize || 1.0;
             const byId = new Map(sketchState.points.map(p => [p.id, p]));
             for (const [id, base] of grab.dragBase.entries()) {
               const p = byId.get(id);
@@ -181,7 +208,24 @@ pub const JS: &str = r##"
             }
           }
         }
+
+        // ── Persist each moved point through WASM + backend ──
+        const byId = new Map(sketchState.points.map(p => [p.id, p]));
+        const moved = [];
+        for (const id of grab.pointIds) {
+          const p    = byId.get(id);
+          const orig = grab.originalPoints.get(id);
+          if (!p || !orig) continue;
+          // Only sync if position actually changed
+          if (p.gx === Math.round(orig.x / g) &&
+              p.gy === Math.round(orig.y / g) &&
+              p.gz === Math.round(orig.z / g)) continue;
+          moved.push({ id, gx: p.gx, gy: p.gy, gz: p.gz });
+        }
+
         const n = grab.pointIds.length;
+
+        // Clear grab state BEFORE async calls so UI feels instant
         sketchState.grab = {
           active: false, pointIds: [], startMouseWorld: null,
           originalPoints: new Map(), axisLock: null, screenAcc: null, numericInput: '',
@@ -191,6 +235,17 @@ pub const JS: &str = r##"
         window.__notifySketchChanged();
         window.__setStatusMessage('Захват подтверждён (' + n + ' т.)');
         if (window.__updateSketchInspector) window.__updateSketchInspector();
+
+        // Fire WASM + backend sync for each moved point (fire-and-forget after state is clear)
+        if (moved.length > 0 && window.__movePointViaEngine) {
+          for (const { id, gx, gy, gz } of moved) {
+            try {
+              await window.__movePointViaEngine(id, gx, gy, gz);
+            } catch (e) {
+              console.warn('[confirmGrab] movePointViaEngine failed for', id, e);
+            }
+          }
+        }
       };
 
       // ─────────────────────────────────────────────────────────
@@ -199,7 +254,8 @@ pub const JS: &str = r##"
       window.__cancelGrab = function() {
         const grab = sketchState.grab;
         const byId = new Map(sketchState.points.map(p => [p.id, p]));
-        const g = sketchState.gridSize || 1.0;
+        const g = (sketchState.precision && sketchState.precision.internalStepM)
+                  || sketchState.gridSize || 0.00001;
         for (const id of grab.pointIds) {
           const orig = grab.originalPoints.get(id);
           const p = byId.get(id);
@@ -313,22 +369,10 @@ pub const JS: &str = r##"
   };
 
   // ─────────────────────────────────────────────────────────
-  // __raycastDragPlane(ndcX, ndcY, center) → world point | null
-  // Intersects the mouse ray with a view-aligned plane at `center`.
-  // This gives a stable 3D world position under the cursor at every frame.
+  // __raycastDragPlane — alias kept for any legacy callers
   // ─────────────────────────────────────────────────────────
   function __raycastDragPlane(ndcX, ndcY, center) {
-    const r = __pickRay(ndcX, ndcY);
-    // Plane normal = camera forward direction (view-aligned plane)
-    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-    const cy = Math.cos(cam.yaw),   sy = Math.sin(cam.yaw);
-    const nx = -sy * cp, ny = -sp, nz = cy * cp;
-    // Ray–plane intersection:  t = dot(center - rayOrigin, n) / dot(rayDir, n)
-    const denom = r.dx*nx + r.dy*ny + r.dz*nz;
-    if (Math.abs(denom) < 1e-6) return null;
-    const t = ((center.x-r.ox)*nx + (center.y-r.oy)*ny + (center.z-r.oz)*nz) / denom;
-    if (t < 0) return null;
-    return { x: r.ox + r.dx*t, y: r.oy + r.dy*t, z: r.oz + r.dz*t };
+    return window.__raycastDragPlaneAt(ndcX, ndcY, center);
   }
 
   // ─────────────────────────────────────────────────────────
@@ -356,7 +400,8 @@ pub const JS: &str = r##"
     if (numStr !== '' && grab.axisLock && ['X','Y','Z'].includes(grab.axisLock)) {
       const val = parseFloat(numStr) / 1000;  // user types mm → convert to metres
       if (isFinite(val)) {
-        const g = sketchState.gridSize || 1.0;
+        const g = (sketchState.precision && sketchState.precision.internalStepM)
+                  || sketchState.gridSize || 0.00001;
         const byId = new Map(sketchState.points.map(p => [p.id, p]));
         for (const [id, base] of grab.dragBase.entries()) {
           const p = byId.get(id);
@@ -372,40 +417,76 @@ pub const JS: &str = r##"
       return;
     }
 
-    // ── Mouse drag: project onto active sketch plane ──
-    const cur = __raycastSketchPlane(ndcX, ndcY, center);
-    if (!cur) return;
+    // ── Mouse drag: всегда используем вид-выровненную плоскость ──
+    // __raycastSketchPlaneAt при pitch≈0 и center.y=0 возвращает t=0 (позицию
+    // камеры) потому что луч почти параллелен плоскости XZ.
+    // Решение: всегда dragPlaneAt — вид-выровненная плоскость всегда имеет
+    // ненулевой denom. Маскировка осей применяется после.
+    const lock  = grab.axisLock;
+    const cur = window.__raycastDragPlaneAt(ndcX, ndcY, center)
+             || window.__raycastSketchPlaneAt(ndcX, ndcY, center);
+
+    // ── ДИАГНОСТИКА захвата (каждые ~30 вызовов) ──────────────────
+    if (!window.__grabLogCount) window.__grabLogCount = 0;
+    window.__grabLogCount++;
+    if (window.__grabLogCount % 30 === 1) {
+      console.group('%c[GRAB DIAG]', 'color:#22c55e;font-weight:bold');
+      console.log('axisLock   :', lock);
+      console.log('ndc input  :', { ndcX: +ndcX.toFixed(4), ndcY: +ndcY.toFixed(4) });
+      console.log('center     :', center ? { x:+(center.x*1000).toFixed(2)+'mm', y:+(center.y*1000).toFixed(2)+'mm', z:+(center.z*1000).toFixed(2)+'mm' } : null);
+      console.log('cur point  :', cur  ? { x:+(cur.x*1000).toFixed(2)+'mm', y:+(cur.y*1000).toFixed(2)+'mm', z:+(cur.z*1000).toFixed(2)+'mm' } : 'NULL!');
+      if (grab.startDragPoint) {
+        const sp = grab.startDragPoint;
+        console.log('startDrag  :', { x:+(sp.x*1000).toFixed(2)+'mm', y:+(sp.y*1000).toFixed(2)+'mm', z:+(sp.z*1000).toFixed(2)+'mm' });
+      } else {
+        console.log('startDrag  : не задан (первый вызов)');
+      }
+      console.log('cam        :', { yaw: +(cam.yaw*180/Math.PI).toFixed(1)+'°', pitch: +(cam.pitch*180/Math.PI).toFixed(1)+'°', dist: +cam.dist.toFixed(3)+'m' });
+      console.log('workingPlane:', sketchState.workingPlane || 'XZ (default)');
+      console.groupEnd();
+    }
+
+    if (!cur) {
+      if (window.__grabLogCount % 30 === 1) console.warn('[GRAB] __raycastDragPlaneAt вернул null — камера параллельна плоскости?');
+      return;
+    }
 
     if (!grab.startDragPoint) {
       grab.startDragPoint = { x: cur.x, y: cur.y, z: cur.z };
     }
 
     const start = grab.startDragPoint;
-    const lock  = grab.axisLock;
-    const plane = sketchState.workingPlane || 'XZ';
 
     let dx = cur.x - start.x;
     let dy = cur.y - start.y;
     let dz = cur.z - start.z;
 
-    // ── Axis lock (explicit) ──
+    // ── Axis lock ──────────────────────────────────────────────────
+    // Явная ось (X/Y/Z/XY/XZ/YZ): обнуляем лишние компоненты.
+    // Свободный режим (null): НЕ обнуляем dy — двигаемся в плоскости
+    // экрана (как Blender). Плоскость __raycastDragPlaneAt уже выровнена
+    // по камере, поэтому все три компоненты могут быть ненулевыми.
     if      (lock === 'X')  { dy = 0; dz = 0; }
     else if (lock === 'Y')  { dx = 0; dz = 0; }
     else if (lock === 'Z')  { dx = 0; dy = 0; }
     else if (lock === 'XY') { dz = 0; }
     else if (lock === 'XZ') { dy = 0; }
     else if (lock === 'YZ') { dx = 0; }
-    else {
-      // ── Free: constrain to active sketch plane ──
-      if      (plane === 'XZ') { dy = 0; }
-      else if (plane === 'XY') { dz = 0; }
-      else if (plane === 'YZ') { dx = 0; }
-    }
+    // else: свободно — всё движение сохраняем как есть
 
-    const g  = sketchState.gridSize || 1.0;
+    const g  = (sketchState.precision && sketchState.precision.internalStepM)
+               || sketchState.gridSize || 0.00001;
     const fx = Math.round(dx / g) * g;
     const fy = Math.round(dy / g) * g;
     const fz = Math.round(dz / g) * g;
+
+    if (window.__grabLogCount % 30 === 1) {
+      console.log('%c[GRAB DELTA]', 'color:#ffe066', {
+        raw_mm: { dx: +(dx*1000).toFixed(3), dy: +(dy*1000).toFixed(3), dz: +(dz*1000).toFixed(3) },
+        snapped_mm: { fx: +(fx*1000).toFixed(3), fy: +(fy*1000).toFixed(3), fz: +(fz*1000).toFixed(3) },
+        gridStep_mm: +(g*1000).toFixed(4),
+      });
+    }
 
     const byId = new Map(sketchState.points.map(p => [p.id, p]));
     for (const [id, base] of grab.dragBase.entries()) {
@@ -418,9 +499,14 @@ pub const JS: &str = r##"
       p.gy = Math.round(p.y / g);
       p.gz = Math.round(p.z / g);
     }
+
+    // Rebuild profiles + dimensions so overlay stays in sync during drag
+    if (window.__recomputeProfiles) window.__recomputeProfiles();
   };
 
-  function drawGrabGizmo(ctx, sketchState, w2s, sk) {
+  // drawGrabGizmo is defined and exported in tools/grab_gizmo.rs
+  // DO NOT define it here — grab_gizmo.rs is the canonical source.
+  function __legacyDrawGrabGizmoUnused(ctx, sketchState, w2s, sk) {
     const isGrabbing = sketchState.grab.active;
     if (!isGrabbing) {
       window.__gizmoHandles   = null;
@@ -609,5 +695,5 @@ pub const JS: &str = r##"
     ctx.restore();
   }
 
-  window.__drawGrabGizmo = drawGrabGizmo;
+  // window.__drawGrabGizmo is assigned in tools/grab_gizmo.rs (loaded after this file)
 "##;
