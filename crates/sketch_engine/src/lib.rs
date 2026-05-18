@@ -1,40 +1,58 @@
 //! # sketch_engine
 //!
-//! Pure Rust SketchGraph engine: types, validation, profile detection,
-//! and the precision command processors (`add_point`, `add_edge`).
+//! Pure Rust parametric sketch engine.
+//! Works as a native Axum backend library **and** compiles to WASM for the browser.
 //!
-//! Same code is used by:
-//!   - the Axum backend (`crate::domain::matter` re-exports this lib)
-//!   - the WebAssembly bridge (`sketch_wasm.js` in the frontend)
+//! ## Module layout
 //!
-//! Wire format is the SketchGraph v1 contract emitted by the frontend
-//! `__sketchToJSON` / `__sketchExportPayload`.
+//! ```text
+//! sketch_engine/
+//!   types/          — pure data types (Point, Edge, Constraint, SketchGraph, …)
+//!   constraints/    — one file per constraint type (HORIZONTAL, PARALLEL, …)
+//!   solver/         — applies constraints, returns SolveResult
+//!   profiles/
+//!     detect.rs     — closed-loop detection
+//!     repair.rs     — analyze / snap / equalize profiles
+//!   validation/     — structural checks (duplicates, off-plane, open ends)
+//!   commands/       — add_point, add_edge, move_point
+//!   wasm/           — wasm-bindgen exports (feature = "wasm")
+//! ```
+//!
+//! ## Supported constraints
+//!
+//! | Type            | What it does                              |
+//! |-----------------|-------------------------------------------|
+//! | HORIZONTAL      | Both endpoints share the same V coord     |
+//! | VERTICAL        | Both endpoints share the same U coord     |
+//! | EQUAL_LENGTH    | Edge B gets the same length as edge A     |
+//! | FIX             | Point is locked (enforced in validation)  |
+//! | COINCIDENT      | Point B moves to point A's position       |
+//! | FIXED_LENGTH    | Edge length = value mm (snapped to grid)  |
+//! | PARALLEL        | Edge B parallel to edge A                 |
+//! | PERPENDICULAR   | Edge B perpendicular to edge A            |
+//! | MIDPOINT        | Point moves to midpoint of edge           |
 
-pub mod sketch;
-pub mod validation;
-pub mod profiles;
-pub mod commands;
+pub mod types;
 pub mod constraints;
-pub mod profile_repair;
 pub mod solver;
+pub mod profiles;
+pub mod validation;
+pub mod commands;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
-pub use sketch::{Constraint, Edge, Point, SketchGraph, WorkingPlane};
+// ── Public API (wire-compatible with previous flat layout) ────────────────
+pub use types::{Constraint, Edge, Point, Profile, SketchGraph, WorkingPlane};
 pub use validation::{validate, ValidationIssue, ValidationResult};
-pub use profiles::{detect_profiles, Profile};
+pub use profiles::{detect_profiles, analyze_profile, repair_profile,
+                   ProfileAnalyzeRequest, ProfileAnalyzeResponse,
+                   ProfileRepairRequest, ProfileRepairResponse};
 pub use commands::{
     apply_add_edge, apply_add_point, apply_move_point,
     AddEdgeRequest, AddPointRequest, MovePointRequest, PointRefOrGrid,
     SketchCommandResult,
 };
-pub use profile_repair::{
-    analyze_profile, repair_profile,
-    ProfileAnalyzeRequest, ProfileAnalyzeResponse,
-    ProfileRepairRequest, ProfileRepairResponse,
-};
-pub use solver::{
-    solve_constraints, apply_constraint_once,
-    SolveResult, SolveConstraintsRequest, ConstraintApplyResult,
-};
+pub use solver::{solve_constraints, apply_constraint_once,
+                 SolveResult, SolveConstraintsRequest};
+pub use constraints::ConstraintApplyResult;

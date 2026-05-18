@@ -62,6 +62,101 @@ pub const JS: &str = r##"
           } catch (e) {
             wasmState.info = null;
           }
+          // ── Solver smoke-test 1: HORIZONTAL ─────────────────────────────
+          try {
+            const testSketch = {
+              schema: 'sketch_graph', version: 1,
+              workingPlane: 'XZ', gridSize: 0.01,
+              points: [
+                { id: 'p1', gx: 0, gy: 0, gz: 0,  x: 0.0,  y: 0.0, z: 0.0  },
+                { id: 'p2', gx: 10, gy: 0, gz: 2, x: 0.1, y: 0.0, z: 0.02 }
+              ],
+              edges: [{ id: 'e1', a: 'p1', b: 'p2' }],
+              constraints: [{ id: 'c1', type: 'HORIZONTAL', targetType: 'edge', targetId: 'e1', value: null }],
+              profiles: []
+            };
+            console.log('[WASM TEST] engine info:', JSON.parse(mod.wasm_engine_info()));
+            console.log('[WASM TEST] solve INPUT:', testSketch);
+            const raw = mod.wasm_solve_constraints(JSON.stringify({ sketch: testSketch }));
+            console.log('[WASM TEST] solve RAW:', raw);
+            const solved = JSON.parse(raw);
+            console.log('[WASM TEST] solve OUTPUT:', solved);
+            if (solved.ok && solved.sketch) {
+              const pts = solved.sketch.points;
+              const p1gz = pts.find(p => p.id === 'p1')?.gz;
+              const p2gz = pts.find(p => p.id === 'p2')?.gz;
+              if (p1gz === p2gz) {
+                console.log('%c[WASM TEST] ✅ HORIZONTAL solver OK — p1.gz === p2.gz ===', 'color:green;font-weight:bold', p1gz);
+              } else {
+                console.warn('[WASM TEST] ⚠️ p1.gz:', p1gz, '!== p2.gz:', p2gz, '— solver may not be running');
+              }
+            } else {
+              console.warn('[WASM TEST] solve returned ok=false or no sketch:', solved);
+            }
+          } catch (e) {
+            console.error('[WASM TEST] solver smoke-test FAILED:', e);
+          }
+          // ── Solver smoke-test 2: RECTANGLE (4 constraints + FIXED_LENGTH) ─
+          try {
+            // Slightly imperfect rectangle on XZ plane:
+            //   p1(0,0) p2(10,0) p3(10,5) p4(0,4)  ← p4.gz off by 1
+            // After solve: top/bottom HORIZONTAL, left/right VERTICAL,
+            //   width FIXED_LENGTH=100 grid → gx span = 100
+            //   height FIXED_LENGTH=50 grid → gz span = 50
+            const rectSketch = {
+              schema: 'sketch_graph', version: 1,
+              workingPlane: 'XZ', gridSize: 0.01,
+              points: [
+                { id: 'p1', gx:  0, gy: 0, gz:  0, x: 0.00, y: 0.0, z: 0.00 },
+                { id: 'p2', gx: 11, gy: 0, gz:  1, x: 0.11, y: 0.0, z: 0.01 },
+                { id: 'p3', gx: 11, gy: 0, gz:  6, x: 0.11, y: 0.0, z: 0.06 },
+                { id: 'p4', gx:  1, gy: 0, gz:  5, x: 0.01, y: 0.0, z: 0.05 }
+              ],
+              edges: [
+                { id: 'eTop',    a: 'p4', b: 'p3' },
+                { id: 'eBottom', a: 'p1', b: 'p2' },
+                { id: 'eLeft',   a: 'p1', b: 'p4' },
+                { id: 'eRight',  a: 'p2', b: 'p3' }
+              ],
+              constraints: [
+                { id: 'cT', type: 'HORIZONTAL',   targetType: 'edge', targetId: 'eTop',    value: null },
+                { id: 'cB', type: 'HORIZONTAL',   targetType: 'edge', targetId: 'eBottom', value: null },
+                { id: 'cL', type: 'VERTICAL',     targetType: 'edge', targetId: 'eLeft',   value: null },
+                { id: 'cR', type: 'VERTICAL',     targetType: 'edge', targetId: 'eRight',  value: null },
+                { id: 'cW', type: 'FIXED_LENGTH', targetType: 'edge', targetId: 'eBottom', value: 100  },
+                { id: 'cH', type: 'FIXED_LENGTH', targetType: 'edge', targetId: 'eLeft',   value: 50   }
+              ],
+              profiles: []
+            };
+            console.groupCollapsed('[WASM TEST 2] Rectangle + FIXED_LENGTH');
+            console.log('INPUT:', rectSketch);
+            const raw2 = mod.wasm_solve_constraints(JSON.stringify({ sketch: rectSketch }));
+            const r2   = JSON.parse(raw2);
+            console.log('OUTPUT:', r2);
+            if (r2.ok && r2.sketch) {
+              const p = id => r2.sketch.points.find(pt => pt.id === id);
+              const allOk = r2.results.every(res => res.ok);
+              console.log('All constraints ok:', allOk);
+              console.log('Results:', r2.results.map(res => res.constraint_id + ': ' + (res.ok ? '✅' : '❌ ' + res.message)).join(' | '));
+              console.log('Points after solve:',
+                'p1(' + p('p1').gx + ',' + p('p1').gz + ')',
+                'p2(' + p('p2').gx + ',' + p('p2').gz + ')',
+                'p3(' + p('p3').gx + ',' + p('p3').gz + ')',
+                'p4(' + p('p4').gx + ',' + p('p4').gz + ')'
+              );
+              if (allOk) {
+                console.log('%c[WASM TEST 2] ✅ Rectangle solved!', 'color:green;font-weight:bold');
+              } else {
+                console.warn('[WASM TEST 2] ⚠️ Some constraints failed');
+              }
+            } else {
+              console.warn('[WASM TEST 2] ❌ solve failed:', r2);
+            }
+            console.groupEnd();
+          } catch (e) {
+            console.error('[WASM TEST 2] rectangle test FAILED:', e);
+          }
+          // ────────────────────────────────────────────────────────────────
           wasmState.status = 'ready';
           window.__setStatusMessage('WASM движок готов'
             + (wasmState.info ? (' v' + wasmState.info.version) : ''));

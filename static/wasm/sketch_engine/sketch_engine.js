@@ -1,7 +1,6 @@
 /* @ts-self-types="./sketch_engine.d.ts" */
 
 /**
- * JSON-encoded `AddEdgeRequest` → JSON-encoded `SketchCommandResult`.
  * @param {string} json
  * @returns {string}
  */
@@ -21,7 +20,6 @@ export function wasm_add_edge(json) {
 }
 
 /**
- * JSON-encoded `AddPointRequest` → JSON-encoded `SketchCommandResult`.
  * @param {string} json
  * @returns {string}
  */
@@ -41,7 +39,6 @@ export function wasm_add_point(json) {
 }
 
 /**
- * Returns engine version + build info — used for handshake checks.
  * @returns {string}
  */
 export function wasm_engine_info() {
@@ -58,7 +55,6 @@ export function wasm_engine_info() {
 }
 
 /**
- * JSON-encoded `MovePointRequest` → JSON-encoded `SketchCommandResult`.
  * @param {string} json
  * @returns {string}
  */
@@ -78,7 +74,25 @@ export function wasm_move_point(json) {
 }
 
 /**
- * `{ "sketch": <SketchGraph> }` → JSON-encoded `ValidationResult`.
+ * @param {string} json
+ * @returns {string}
+ */
+export function wasm_solve_constraints(json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasm_solve_constraints(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * @param {string} json
  * @returns {string}
  */

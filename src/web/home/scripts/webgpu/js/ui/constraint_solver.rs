@@ -45,6 +45,7 @@ pub const JS: &str = r##"
         ss.points[i].x  = upd.x;  ss.points[i].y  = upd.y;  ss.points[i].z  = upd.z;
       }
     }
+    console.log('[WASM SOLVE APPLIED] points updated:', JSON.parse(JSON.stringify(ss.points)));
     // Trigger recompute
     if (window.__recomputeProfiles)   window.__recomputeProfiles();
     if (window.__recomputeValidation) window.__recomputeValidation();
@@ -61,8 +62,14 @@ pub const JS: &str = r##"
   function tryWasm(payload) {
     try {
       if (window.sketchWasm && typeof sketchWasm.wasm_solve_constraints === 'function') {
-        const res = JSON.parse(sketchWasm.wasm_solve_constraints(JSON.stringify(payload)));
+        console.log('[WASM SOLVE INPUT]', JSON.stringify(payload, null, 2));
+        const raw = sketchWasm.wasm_solve_constraints(JSON.stringify(payload));
+        console.log('[WASM SOLVE RAW]', raw);
+        const res = JSON.parse(raw);
+        console.log('[WASM SOLVE OUTPUT]', res);
         return res;
+      } else {
+        console.warn('[WASM SOLVE] sketchWasm.wasm_solve_constraints not available');
       }
     } catch (e) {
       console.warn('[constraint] WASM error:', e);
@@ -144,14 +151,15 @@ pub const JS: &str = r##"
     const ss = window.sketchState;
     if (!ss) return;
     if (!ss.constraints) ss.constraints = [];
-    // Generate a stable id
-    const cid = type + '_' + targetId + '_' + Date.now();
-    const c = { id: cid, type, targetType, targetId };
+    // Normalize type to uppercase (solver expects HORIZONTAL, VERTICAL etc.)
+    const normalizedType = (type || '').toUpperCase();
+    const cid = normalizedType + '_' + targetId + '_' + Date.now();
+    const c = { id: cid, type: normalizedType, targetType, targetId };
     if (value !== undefined) c.value = value;
     // Avoid duplicates
-    const already = ss.constraints.find(x => x.type === type && x.targetId === targetId);
+    const already = ss.constraints.find(x => x.type === normalizedType && x.targetId === targetId);
     if (already) {
-      status('Constraint already exists: ' + type + ' on ' + targetId);
+      status('Constraint already exists: ' + normalizedType + ' on ' + targetId);
       return;
     }
     ss.constraints.push(c);

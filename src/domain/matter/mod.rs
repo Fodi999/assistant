@@ -8,9 +8,9 @@
 
 pub use sketch_engine::commands;
 pub use sketch_engine::profiles;
-pub use sketch_engine::sketch;
+pub use sketch_engine::types as sketch;      // was: sketch_engine::sketch
 pub use sketch_engine::validation;
-pub use sketch_engine::profile_repair;
+pub use sketch_engine::profiles as profile_repair; // was: sketch_engine::profile_repair
 pub use sketch_engine::solver;
 
 pub use sketch_engine::{

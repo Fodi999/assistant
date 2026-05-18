@@ -250,12 +250,14 @@ pub const JS: &str = r##"
       // ─────────────────────────────────────────────────────────
       window.__handleSketchDoubleClick = function(ndcX, ndcY, px, py) {
         if (sketchState.activeTool !== "select") return;
+        console.log('[DblClick] fired, tool=select, ndcX=', ndcX.toFixed(3), 'ndcY=', ndcY.toFixed(3));
         const eId = window.__pickEdgeAt(ndcX, ndcY);
         if (!eId) {
           const hit = window.__raycastSketchPlane(ndcX, ndcY);
           if (hit) {
             const profId = window.__pickProfileAtWorld(hit.freeX, hit.freeY, hit.freeZ);
             if (profId) {
+              console.log('[DblClick] hit profile via raycast:', profId);
               const prof = window.__selectProfile(profId);
               if (prof) {
                 sketchState.selectedPointIds = new Set(prof.pointIds);
@@ -269,6 +271,7 @@ pub const JS: &str = r##"
           return;
         }
         const profs = window.__getProfilesForEdge(eId);
+        console.log('[DblClick] hit edge:', eId, '→ profiles:', profs.map(p=>p.id));
         let prof = null;
         if (profs.length === 1) prof = profs[0];
         else if (profs.length > 1) {

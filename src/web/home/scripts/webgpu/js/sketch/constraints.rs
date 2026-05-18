@@ -236,6 +236,11 @@ pub const JS: &str = r##"
         }
 
         // ── Make Rectangle ───────────────────────────────────────────────
+        // Strategy:
+        //   1. If wasm_solve_constraints is available → add H/V constraints
+        //      and solve in one shot via WASM (preferred, instant).
+        //   2. Fallback: manually snap each point to bounding-box corner
+        //      via __movePointViaEngine (one request per point).
         window.__makeSelectedProfileRectangle = async function(/*options*/) {
           const prof = window.__getSelectedProfile && window.__getSelectedProfile();
           if (!prof) return { ok:false, error:'no selected profile' };
@@ -245,9 +250,76 @@ pub const JS: &str = r##"
           }
           const plane = prof.plane || sketchState.workingPlane || 'XZ';
           const pById = new Map(sketchState.points.map(p => [p.id, p]));
+          const eById = new Map(sketchState.edges.map(e => [e.id, e]));
           const ring  = prof.pointIds.map(id => pById.get(id));
           if (ring.some(p => !p)) return { ok:false, error:'missing point' };
 
+          // ── WASM solver path ──────────────────────────────────────────
+          const wasm = window.sketchWasm;
+          if (wasm && typeof wasm.wasm_solve_constraints === 'function') {
+            // Build sketch snapshot with H/V constraints for all profile edges.
+            const sketchSnap = {
+              schema: 'sketch_graph', version: 1,
+              workingPlane: plane,
+              gridSize: (sketchState.precision && sketchState.precision.displayGridStepM) || 0.01,
+              points: JSON.parse(JSON.stringify(sketchState.points)),
+              edges:  JSON.parse(JSON.stringify(sketchState.edges)),
+              constraints: JSON.parse(JSON.stringify(sketchState.constraints || [])),
+              profiles: []
+            };
+            // Classify each profile edge as H or V by dominant axis, add constraint.
+            const ts = Date.now();
+            for (const eid of prof.edgeIds) {
+              const e = eById.get(eid);
+              if (!e) continue;
+              const a = pById.get(e.a), b = pById.get(e.b);
+              if (!a || !b) continue;
+              const uva = projGrid(plane, a), uvb = projGrid(plane, b);
+              const du = Math.abs(uvb.u - uva.u), dv = Math.abs(uvb.v - uva.v);
+              const ty = du >= dv ? 'HORIZONTAL' : 'VERTICAL';
+              sketchSnap.constraints.push({
+                id: '__rect_' + eid + '_' + ts,
+                type: ty, targetType: 'edge', targetId: eid, value: null
+              });
+            }
+            console.log('[Make Rectangle] WASM solve, constraints:', sketchSnap.constraints.length);
+            let solved;
+            try {
+              solved = JSON.parse(wasm.wasm_solve_constraints(JSON.stringify({ sketch: sketchSnap })));
+            } catch(e) {
+              console.warn('[Make Rectangle] WASM error:', e);
+              solved = null;
+            }
+            if (solved && solved.ok && solved.sketch) {
+              console.log('[Make Rectangle] WASM OK, moved points:',
+                solved.results.flatMap(r => r.moved_points || []));
+              // Patch sketchState points from solver result.
+              const byId = {};
+              for (const p of solved.sketch.points) byId[p.id] = p;
+              for (let i = 0; i < sketchState.points.length; i++) {
+                const upd = byId[sketchState.points[i].id];
+                if (upd) {
+                  sketchState.points[i].gx = upd.gx;
+                  sketchState.points[i].gy = upd.gy;
+                  sketchState.points[i].gz = upd.gz;
+                  sketchState.points[i].x  = upd.x;
+                  sketchState.points[i].y  = upd.y;
+                  sketchState.points[i].z  = upd.z;
+                }
+              }
+              if (window.__recomputeProfiles)   window.__recomputeProfiles();
+              if (window.__recomputeValidation) window.__recomputeValidation();
+              if (window.__redrawSketch)        window.__redrawSketch();
+              if (window.__updateSketchInspector) window.__updateSketchInspector();
+              if (window.__setStatusMessage) {
+                window.__setStatusMessage('✓ Прямоугольник (WASM solver)');
+              }
+              return { ok:true };
+            }
+            console.warn('[Make Rectangle] WASM solve not ok, falling back to bbox snap');
+          }
+
+          // ── Fallback: bbox snap ───────────────────────────────────────
           const uv = ring.map(p => ({ p, ...projGrid(plane, p) }));
           let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
           for (const q of uv) {
@@ -259,11 +331,9 @@ pub const JS: &str = r##"
           if (maxU - minU <= 0 || maxV - minV <= 0) {
             return { ok:false, error:'degenerate bounding box' };
           }
-
           const targets = assignToCorners(uv, minU, maxU, minV, maxV);
           const res = await applyTargets(plane, targets);
           if (!res.ok) return res;
-
           if (window.__setStatusMessage) {
             window.__setStatusMessage('Профиль → прямоугольник ('
               + gridToMm(maxU - minU).toFixed(2) + ' × '

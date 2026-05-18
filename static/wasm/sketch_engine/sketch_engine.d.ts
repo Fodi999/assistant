@@ -1,29 +1,16 @@
 /* tslint:disable */
 /* eslint-disable */
 
-/**
- * JSON-encoded `AddEdgeRequest` → JSON-encoded `SketchCommandResult`.
- */
 export function wasm_add_edge(json: string): string;
 
-/**
- * JSON-encoded `AddPointRequest` → JSON-encoded `SketchCommandResult`.
- */
 export function wasm_add_point(json: string): string;
 
-/**
- * Returns engine version + build info — used for handshake checks.
- */
 export function wasm_engine_info(): string;
 
-/**
- * JSON-encoded `MovePointRequest` → JSON-encoded `SketchCommandResult`.
- */
 export function wasm_move_point(json: string): string;
 
-/**
- * `{ "sketch": <SketchGraph> }` → JSON-encoded `ValidationResult`.
- */
+export function wasm_solve_constraints(json: string): string;
+
 export function wasm_validate_sketch(json: string): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -34,6 +21,7 @@ export interface InitOutput {
     readonly wasm_add_point: (a: number, b: number) => [number, number];
     readonly wasm_engine_info: () => [number, number];
     readonly wasm_move_point: (a: number, b: number) => [number, number];
+    readonly wasm_solve_constraints: (a: number, b: number) => [number, number];
     readonly wasm_validate_sketch: (a: number, b: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
