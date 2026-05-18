@@ -143,15 +143,13 @@ function drawGrabGizmo(ctx, sketchState, w2s, sk) {
   const origin = w2s(cx, cy0, cz);
   if (!origin) { window.__gizmoHandles = null; return; }
 
-  // ── Constants ───────────────────────────────────────────────────
-  const ARM   = 74;  // axis arrow length px
-  const SHAFT_W_NORM = 1.7;
-  const SHAFT_W_ACT  = 3.1;
-  const ARROW_L = 14, ARROW_W = 5.5;  // arrowhead px
-  const LABEL_OFF = 10;               // label beyond arrow tip px
-  const SQ    = 14;                   // planar square half-size px
-  const SQ_OF = 24;                   // planar square offset from origin px
-  const HIT_A = 22, HIT_P = 18, HIT_C = 14;
+  // ── Constants (2× bigger gizmo) ────────────────────────────────
+  const ARM   = 148; // axis arrow length px (was 74)
+  const SHAFT_W_NORM = 2.2;
+  const SHAFT_W_ACT  = 4.0;
+  const ARROW_L = 22, ARROW_W = 9;    // arrowhead px
+  const LABEL_OFF = 14;               // label beyond arrow tip px
+  const HIT_A = 34, HIT_C = 20;
 
   const C_X = '#ef4444', C_Y = '#22c55e', C_Z = '#3b82f6', C_FREE = '#e5e7eb';
 
@@ -266,50 +264,39 @@ function drawGrabGizmo(ctx, sketchState, w2s, sk) {
   }
 
   // ════════════════════════════════════════════════════════════════
-  // 3. PLANAR SQUARES (XY / YZ / XZ) — small squares between axes
+  // 3. SELECT 2 MOST SCREEN-VISIBLE AXES
+  //    The axis whose screen projection is smallest (most depth-on)
+  //    is hidden — only 2 arrows are drawn at any time.
   // ════════════════════════════════════════════════════════════════
-  const planesDef = [
-    { axis: 'XY', col: C_X,    dA: dirX, dB: dirY },
-    { axis: 'YZ', col: C_Y,    dA: dirY, dB: dirZ },
-    { axis: 'XZ', col: C_Z,    dA: dirX, dB: dirZ },
+  const axisDefs = [
+    { axis: 'X', col: C_X, dir: dirX },
+    { axis: 'Y', col: C_Y, dir: dirY },
+    { axis: 'Z', col: C_Z, dir: dirZ },
   ];
-  for (const pl of planesDef) {
-    const isHovPl  = hov === pl.axis;
-    const isLockPl = lock === pl.axis;
-    const active   = isLockPl || isHovPl;
-    const plScale  = isHovPl ? 1.28 : (isLockPl ? 1.14 : 1.0);
-    const sqOf = SQ_OF * plScale;
-    const sqSz = SQ    * plScale;
-    const ox = origin.x + pl.dA.x * sqOf + pl.dB.x * sqOf;
-    const oy = origin.y + pl.dA.y * sqOf + pl.dB.y * sqOf;
-    const c0x = ox, c0y = oy;
-    const c1x = ox + pl.dA.x * sqSz,              c1y = oy + pl.dA.y * sqSz;
-    const c2x = c1x + pl.dB.x * sqSz,             c2y = c1y + pl.dB.y * sqSz;
-    const c3x = ox  + pl.dB.x * sqSz,             c3y = oy  + pl.dB.y * sqSz;
-    ctx.beginPath();
-    ctx.moveTo(c0x,c0y); ctx.lineTo(c1x,c1y);
-    ctx.lineTo(c2x,c2y); ctx.lineTo(c3x,c3y);
-    ctx.closePath();
-    if (active) {
-      ctx.globalAlpha = 0.55; ctx.fillStyle = pl.col; ctx.fill();
-      ctx.globalAlpha = ALPHA_HOVER; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6; ctx.stroke();
-    } else {
-      ctx.globalAlpha = lock ? ALPHA_INACTIVE * 0.4 : 0.15; ctx.fillStyle = pl.col; ctx.fill();
-      ctx.globalAlpha = lock ? ALPHA_INACTIVE : ALPHA_NORM * 0.7; ctx.strokeStyle = pl.col; ctx.lineWidth = 1.0; ctx.stroke();
-    }
-    ctx.globalAlpha = 1.0;
-    handles.push({ axis: pl.axis, x: (c0x+c2x)/2, y: (c0y+c2y)/2, r: HIT_P * plScale });
+  // Score = screen length of the projection vector (bigger = more visible)
+  function axisScore(a) {
+    const f = w2s(cx + a.wx, cy0 + a.wy, cz + a.wz);
+    if (!f) return 0;
+    return Math.hypot(f.x - origin.x, f.y - origin.y);
   }
+  const rawAxes = [
+    { axis: 'X', col: C_X, dir: dirX, wx: 1, wy: 0, wz: 0 },
+    { axis: 'Y', col: C_Y, dir: dirY, wx: 0, wy: 1, wz: 0 },
+    { axis: 'Z', col: C_Z, dir: dirZ, wx: 0, wy: 0, wz: 1 },
+  ];
+  // Sort by score descending, keep top 2
+  const sorted = rawAxes.slice().sort((a, b) => axisScore(b) - axisScore(a));
+  const visibleAxes = sorted.slice(0, 2);
 
   // ════════════════════════════════════════════════════════════════
-  // 4. AXIS ARROWS: shaft + solid arrowhead + axis label
+  // 4. AXIS ARROWS: only the 2 most visible axes
   // ════════════════════════════════════════════════════════════════
   const axesDef = [
     { axis: 'X', col: C_X, dir: dirX },
     { axis: 'Y', col: C_Y, dir: dirY },
     { axis: 'Z', col: C_Z, dir: dirZ },
   ];
-  for (const a of axesDef) {
+  for (const a of visibleAxes) {
     const isHov    = hov === a.axis;
     const isLocked = lock === a.axis;
     const active   = isLocked || isHov;
@@ -376,44 +363,36 @@ function drawGrabGizmo(ctx, sketchState, w2s, sk) {
   }
 
   // ════════════════════════════════════════════════════════════════
-  // 5. FREE-MOVE SQUARE at centre (replaces old circle)
+  // 5. FREE-MOVE RING at centre — expands on hover
   // ════════════════════════════════════════════════════════════════
-  const freeActive = !lock || lock === 'FREE' || hov === 'FREE';
-  const freeHov    = hov === 'FREE';
-  const freeScale  = freeHov ? 1.28 : 1.0;
-  const FS = 9 * freeScale; // half-size of the square px
+  const freeHov   = hov === 'FREE';
+  const freeActive = !lock || lock === 'FREE' || freeHov;
+  // Ring radii: inner/outer. On hover both expand.
+  const ringInner = freeHov ? 10 : 7;
+  const ringOuter = freeHov ? 20 : 14;
   ctx.save();
-  ctx.globalAlpha  = (lock && lock !== 'FREE') ? ALPHA_INACTIVE : ALPHA_FREE;
-  ctx.shadowColor  = freeHov ? 'rgba(229,231,235,0.5)' : 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur   = freeHov ? 14 : 6;
+  ctx.globalAlpha  = (lock && lock !== 'FREE') ? ALPHA_INACTIVE : (freeHov ? 1.0 : ALPHA_FREE);
+  ctx.shadowColor  = freeHov ? 'rgba(229,231,235,0.7)' : 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur   = freeHov ? 18 : 7;
   ctx.shadowOffsetY = 2;
-
-  // Filled square
-  ctx.fillStyle = freeActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.06)';
+  // Filled ring (annulus) via arc + arc reversed
   ctx.beginPath();
-  ctx.rect(origin.x - FS, origin.y - FS, FS * 2, FS * 2);
+  ctx.arc(origin.x, origin.y, ringOuter, 0, Math.PI * 2, false);
+  ctx.arc(origin.x, origin.y, ringInner, 0, Math.PI * 2, true);
+  ctx.fillStyle = freeHov ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.10)';
   ctx.fill();
-  // Border
+  // Ring border
   ctx.shadowBlur    = 0;
   ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = freeActive ? C_FREE : 'rgba(255,255,255,0.4)';
-  ctx.lineWidth   = freeActive ? 1.6 : 1.0;
+  ctx.beginPath();
+  ctx.arc(origin.x, origin.y, ringOuter, 0, Math.PI * 2);
+  ctx.strokeStyle = freeHov ? '#ffffff' : 'rgba(255,255,255,0.55)';
+  ctx.lineWidth   = freeHov ? 2.2 : 1.4;
   ctx.stroke();
-  ctx.restore();
-
-  // Centre dot — маленький круг
-  ctx.save();
-  ctx.shadowColor   = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur    = 6;
-  ctx.shadowOffsetY = 2;
   ctx.beginPath();
-  ctx.arc(origin.x, origin.y, 5, 0, Math.PI * 2);
-  ctx.fillStyle   = 'rgba(255,255,255,0.85)';
-  ctx.fill();
-  ctx.shadowBlur    = 0;
-  ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth   = 1.2;
+  ctx.arc(origin.x, origin.y, ringInner, 0, Math.PI * 2);
+  ctx.strokeStyle = freeHov ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)';
+  ctx.lineWidth   = freeHov ? 1.4 : 1.0;
   ctx.stroke();
   ctx.restore();
 
