@@ -168,14 +168,18 @@ pub const JS: &str = r##"
           return;
         }
 
-        const wantsPan = (e.button === 2) || (e.button === 1)
+        const wantsPan = (e.button === 2)                                       // Right drag = Pan
+                       || (e.button === 1 && e.shiftKey)                        // Shift+MMB  = Pan  (Blender)
                        || (e.shiftKey && !e.metaKey && !e.ctrlKey && e.button === 0)
                        || (spaceHeld   && e.button === 0);
+        // Middle mouse (no shift) = Orbit, like Blender & SketchUp.
         // Drawing tools (line / point / delete) must not start an orbit on left click —
         // the click is for geometry creation, not camera movement.
         const drawingTool = ['line', 'point', 'delete'].includes(sketchState.activeTool);
+        const wantsOrbit = (e.button === 1 && !e.shiftKey)                      // MMB alone   = Orbit
+                         || (!wantsPan && !drawingTool && e.button === 0);      // Left drag   = Orbit (non-draw)
         panning  = wantsPan;
-        orbiting = !wantsPan && !drawingTool;
+        orbiting = wantsOrbit && !wantsPan;
         lastX = e.clientX; lastY = e.clientY;
         startX = e.clientX; startY = e.clientY;
       });

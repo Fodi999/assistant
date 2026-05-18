@@ -93,6 +93,72 @@ pub const JS: &str = r##"
           _spacePressTime = performance.now();
           e.preventDefault();
         }
+
+        // ── Numpad camera presets (Blender / SketchUp style) ─────────
+        // Numpad 1 = Front, 3 = Right, 7 = Top, 9 = Back
+        // Numpad 5 = Ortho toggle, Numpad 0 = Iso
+        // Ctrl+Numpad = opposite view (Blender: Ctrl+1=Back, Ctrl+3=Left, Ctrl+7=Bottom)
+        if (e.code.startsWith('Numpad') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          // Don't fire if an input is focused
+          const ae = document.activeElement;
+          if (!ae || (ae.tagName !== 'INPUT' && ae.tagName !== 'TEXTAREA')) {
+            const __animCam = function(targetYaw, targetPitch) {
+              const FRAMES = 20;
+              const y0 = cam.yaw, p0 = cam.pitch;
+              // Normalize yaw delta to shortest arc
+              let dy = ((targetYaw - y0) % (Math.PI*2) + Math.PI*3) % (Math.PI*2) - Math.PI;
+              let dp = targetPitch - p0;
+              let f = 0;
+              function _s() {
+                f++;
+                const ease = 1 - Math.pow(1 - f/FRAMES, 3);
+                cam.yaw   = y0 + dy * ease;
+                cam.pitch = p0 + dp * ease;
+                if (f < FRAMES) requestAnimationFrame(_s);
+              }
+              requestAnimationFrame(_s);
+            };
+            let handled = true;
+            switch (e.code) {
+              case 'Numpad1': __animCam(0,              0);                     break; // Front
+              case 'Numpad3': __animCam(Math.PI*0.5,    0);                     break; // Right
+              case 'Numpad7': __animCam(cam.yaw,        -Math.PI*0.5 + 0.001); break; // Top
+              case 'Numpad9': __animCam(Math.PI,        0);                     break; // Back
+              case 'Numpad0': __animCam(Math.PI*0.25,  -0.615);                 break; // Iso
+              case 'Numpad5': cam.ortho = !cam.ortho;
+                              if (window.__setStatusMessage)
+                                window.__setStatusMessage(cam.ortho ? '□ Ortho' : '⊙ Perspective');
+                              break;
+              case 'NumpadAdd':      cam.dist = Math.max(0.01, cam.dist * 0.8); break; // Zoom in
+              case 'NumpadSubtract': cam.dist = Math.min(500,  cam.dist * 1.25);break; // Zoom out
+              default: handled = false;
+            }
+            if (handled) { e.preventDefault(); return; }
+          }
+        }
+        // Ctrl+Numpad: opposite views
+        if (e.ctrlKey && e.code.startsWith('Numpad')) {
+          const ae = document.activeElement;
+          if (!ae || (ae.tagName !== 'INPUT' && ae.tagName !== 'TEXTAREA')) {
+            const __animCam = function(ty, tp) {
+              const FRAMES = 20; const y0 = cam.yaw, p0 = cam.pitch;
+              let dy = ((ty - y0) % (Math.PI*2) + Math.PI*3) % (Math.PI*2) - Math.PI;
+              let f = 0;
+              function _s() { f++; const e2 = 1 - Math.pow(1 - f/FRAMES, 3);
+                cam.yaw = y0 + dy*e2; cam.pitch = p0 + (tp-p0)*e2;
+                if (f < FRAMES) requestAnimationFrame(_s); }
+              requestAnimationFrame(_s);
+            };
+            let handled = true;
+            switch (e.code) {
+              case 'Numpad1': __animCam(Math.PI,       0);                     break; // Back
+              case 'Numpad3': __animCam(-Math.PI*0.5,  0);                     break; // Left
+              case 'Numpad7': __animCam(cam.yaw,        Math.PI*0.5 - 0.001); break; // Bottom
+              default: handled = false;
+            }
+            if (handled) { e.preventDefault(); return; }
+          }
+        }
         // ? key — toggle cursor info HUD
         if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
           __toggleCursorInfo();
