@@ -8,6 +8,35 @@
 //   - Perf HUD toggle (Shift+P via perf_hud.rs __initPerfHud)
 
 pub const JS: &str = r##"
+      // ── Guard: keyboard listeners must be registered only once ───
+      // startWebGpuScene() can be called multiple times (auto-open +
+      // manual re-open). Without this guard every call stacks another
+      // keydown listener, causing shortcuts to fire N times.
+
+      // These must live on window so mouse.rs and other modules can read them
+      // even when the keyboard init guard skips re-registration.
+      if (typeof window.__spaceHeld === 'undefined') window.__spaceHeld = false;
+      if (typeof window.__spacePressTime === 'undefined') window.__spacePressTime = 0;
+
+      // Compatibility shim: code inside startWebGpuScene references the bare
+      // names; point them at the window properties so they stay accessible
+      // regardless of whether the if-block below runs.
+      Object.defineProperty(window, 'spaceHeld', {
+        get() { return window.__spaceHeld; },
+        set(v) { window.__spaceHeld = v; },
+        configurable: true,
+      });
+      if (!window.hasOwnProperty('_spacePressTime')) {
+        Object.defineProperty(window, '_spacePressTime', {
+          get() { return window.__spacePressTime; },
+          set(v) { window.__spacePressTime = v; },
+          configurable: true,
+        });
+      }
+
+      if (!window.__keyboardInited) {
+      window.__keyboardInited = true;
+
       // ── Particle count helper (used by keyboard shortcuts) ──────
       function setParticleCount(n) {
         n = Math.max(1, Math.min(MAX_PARTICLES, Math.floor(n)));
@@ -20,8 +49,7 @@ pub const JS: &str = r##"
       }
 
       // ── Space key — pan modifier + frame scene ───────────────────
-      let spaceHeld = false;
-      let _spacePressTime = 0;
+      // (spaceHeld / _spacePressTime live on window, defined above the guard)
 
       // ── Shortcuts / cursor-info toggle helpers ────────────────────────
       window.__cursorInfoVisible = false;
@@ -154,4 +182,6 @@ pub const JS: &str = r##"
         }
       };
       window.addEventListener('keydown', onKey);
+
+      } // end __keyboardInited guard
 "##;

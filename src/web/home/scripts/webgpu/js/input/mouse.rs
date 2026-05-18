@@ -50,6 +50,15 @@ pub const JS: &str = r##"
 
       // ── Pointer down ─────────────────────────────────────────────
       canvas.addEventListener('pointerdown', (e) => {
+        // Block canvas interaction while extrude (or other modal tools) are active.
+        if (window.sketchState?.extrude?.active) {
+          e.preventDefault();
+          e.stopPropagation();
+          // Re-focus the extrude modal input so the user can keep typing.
+          const inp = document.getElementById('__extrude-modal-input');
+          if (inp) inp.focus();
+          return;
+        }
         // Update NDC coords immediately — pointerdown may arrive before a pointermove.
         // This ensures __gizmoPointerDown receives accurate mouse.ndcX/Y.
         {

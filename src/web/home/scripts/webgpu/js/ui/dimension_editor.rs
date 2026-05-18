@@ -402,6 +402,10 @@ pub const JS: &str = r##"
 
         // ── Open ─────────────────────────────────────────────────────────
         window.__openDimensionEditor = function(hit, px, py) {
+          // Don't open while any modal tool is active (extrude, grab, copy…)
+          if (window.sketchState?.extrude?.active) return;
+          if (window.sketchState?.grab?.active)    return;
+          if (window.sketchState?.copy?.active)    return;
           if (!hit || hit.kind !== 'edge_length_dimension' || !hit.edgeId) {
             window.__setStatusMessage?.('Dimension type not editable: '
               + (hit && hit.kind));

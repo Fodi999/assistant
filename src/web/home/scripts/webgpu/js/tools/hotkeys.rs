@@ -351,7 +351,22 @@ pub const JS: &str = r##"
 
         // E → Edge Extrude
         if (k === 'e') {
-          if (window.__startEdgeExtrude) window.__startEdgeExtrude();
+          const selEdges  = [...(sketchState.selectedEdgeIds || [])];
+          const selProf   = sketchState.selectedProfileId || null;
+          const hasExtrude = !!window.__startEdgeExtrude;
+          console.log('[E key] Edge Extrude triggered', {
+            selectedEdgeIds: selEdges,
+            selectedProfileId: selProf,
+            extrudeActive:   sketchState.extrude?.active,
+            extrudeEdgeIds:  sketchState.extrude?.edgeIds,
+            __startEdgeExtrude: hasExtrude,
+          });
+          if (!hasExtrude) {
+            console.warn('[E key] __startEdgeExtrude не найден — extrude.rs не загружен?');
+            return true;
+          }
+          window.__startEdgeExtrude();
+          console.log('[E key] after __startEdgeExtrude → extrude.active =', sketchState.extrude?.active);
           return true;
         }
 
