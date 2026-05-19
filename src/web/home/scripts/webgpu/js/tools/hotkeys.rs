@@ -355,6 +355,7 @@ pub const JS: &str = r##"
         }
 
         // Tool switches
+        if (k === 's' && e.shiftKey) { if (window.__solveSketchWasm) window.__solveSketchWasm(); return true; }
         if (k === 's') { window.__setSketchTool && window.__setSketchTool('select'); return true; }
         if (k === 'o') { window.__toggleOrthoLock && window.__toggleOrthoLock(); return true; }
         if (k === 'p' && e.shiftKey) { if (window.__togglePerfHud) window.__togglePerfHud(); return true; }

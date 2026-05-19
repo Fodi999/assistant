@@ -81,6 +81,7 @@ pub fn matter_lab_section() -> String {
             <span class="sco-key sco-row" data-kw="del delete удалить">⌫</span><span class="sco-row" data-kw="del delete удалить">Удалить</span>
             <span class="sco-key sco-row" data-kw="ctrl z отменить undo">⌘Z</span><span class="sco-row" data-kw="ctrl z отменить undo">Отменить</span>
             <span class="sco-key sco-row" data-kw="shift p fps счётчик">⇧P</span><span class="sco-row" data-kw="shift p fps счётчик">Счётчик FPS</span>
+            <span class="sco-key sco-row" data-kw="shift s solve решить ограничения">⇧S</span><span class="sco-row" data-kw="shift s solve решить ограничения">Решить ограничения</span>
             <span class="sco-key sco-row" data-kw="esc отмена cancel">Esc</span><span class="sco-row" data-kw="esc отмена cancel">Отмена</span>
           </div>
         </div>
@@ -197,6 +198,11 @@ pub fn matter_lab_section() -> String {
           <button class="utb-btn" id="btn-help" title="Справка по клавишам"
                   onclick="if(window.__toggleShortcutsOverlay)window.__toggleShortcutsOverlay();else{var o=document.getElementById('shortcuts-overlay');o.style.display=(o.style.display==='none'?'':'none');}">
             ?<span class="utb-label">Справка</span>
+          </button>
+          <div class="utb-sep"></div>
+          <button class="utb-btn" id="btn-solve" title="Решить ограничения (Shift+S)"
+                  onclick="if(window.__solveSketchWasm)window.__solveSketchWasm();">
+            ⚙<span class="utb-label">Решить</span>
           </button>
         </nav>
 

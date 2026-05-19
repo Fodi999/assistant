@@ -255,6 +255,27 @@ pub fn cad_side_panel_html() -> &'static str {
                 </div>
               </div>
 
+              <div class="csp-section" data-section="solver">
+                <button class="csp-section-hdr" onclick="window.__cadPanelToggleSection('solver')">
+                  <span>РЕШАТЕЛЬ v2</span>
+                  <span class="csp-caret">▸</span>
+                </button>
+                <div class="csp-section-body" style="display:none;">
+                  <div class="csp-row">
+                    <button class="csp-btn-sm csp-btn-full" onclick="if(window.__solveSketchWasm)window.__solveSketchWasm();">⚙ Решить (Shift+S)</button>
+                  </div>
+                  <div class="csp-divider"></div>
+                  <div class="csp-row"><span class="csp-lbl">Статус</span>      <span id="csp-solve-status"  class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Итерации</span>    <span id="csp-solve-iter"    class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Макс. ошибка</span><span id="csp-solve-maxerr"  class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Сум. ошибка</span> <span id="csp-solve-toterr"  class="csp-val">—</span></div>
+                  <div class="csp-divider"></div>
+                  <div class="csp-row"><span class="csp-lbl">DOF</span>         <span id="csp-solve-dof"     class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">DOF статус</span>  <span id="csp-solve-dofst"   class="csp-val">—</span></div>
+                  <div class="csp-row"><span class="csp-lbl">Неудовл.</span>    <span id="csp-solve-unsat"   class="csp-val">—</span></div>
+                </div>
+              </div>
+
               <div class="csp-section" data-section="devjson">
                 <button class="csp-section-hdr" onclick="window.__cadPanelToggleSection('devjson')">
                   <span>ЭКСПОРТ JSON</span>

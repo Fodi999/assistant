@@ -13,7 +13,7 @@ window.__cadPanel = {
     snapping: true,
     shader: true, camera: false, helpers: true,
     selection: true, analyze: false,
-    engine: true, devjson: false, devsnapstate: false,
+    engine: true, solver: false, devjson: false, devsnapstate: false,
   }
 };
 
@@ -232,6 +232,19 @@ window.__cadPanelUpdateDev = function() {
   // Ortho checkbox sync
   const chk = document.getElementById('csp-snap-ortho');
   if (chk) chk.checked = !!(ss.orthoLock);
+
+  // ── Solver v2 results ──────────────────────────────────────────────────────
+  const ls = ss.lastSolve;
+  if (ls) {
+    set('csp-solve-status',  ls.status || '—');
+    set('csp-solve-iter',    String(ls.iterations != null ? ls.iterations : '—'));
+    set('csp-solve-maxerr',  ls.maxErrorMm != null ? ls.maxErrorMm.toFixed(4) + ' mm' : '—');
+    set('csp-solve-toterr',  ls.totalErrorMm != null ? ls.totalErrorMm.toFixed(4) + ' mm' : '—');
+    const diag = ls.diagnostics || {};
+    set('csp-solve-dof',     diag.dof != null ? String(diag.dof) : '—');
+    set('csp-solve-dofst',   diag.dof_status || '—');
+    set('csp-solve-unsat',   String((diag.unsatisfied || []).length));
+  }
 };
 
 // ── Tick: called from render loop (or requestAnimationFrame) ──

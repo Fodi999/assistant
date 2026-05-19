@@ -180,5 +180,68 @@ pub const JS: &str = r##"
     await window.__solveConstraints();
   };
 
+  // ── Manual full solve with v2 diagnostics ──────────────────────────────────
+  // Triggered by Solve button (⚙) in toolbar or Shift+S.
+  // Calls wasm_solve_constraints, stores v2 result in sketchState.lastSolve,
+  // and mirrors diagnostics to the CAD panel Dev › Solver v2 section.
+  window.__solveSketchWasm = async function() {
+    const wasm = window.__wasmModule;
+    if (!wasm || typeof wasm.wasm_solve_constraints !== 'function') {
+      status('⚠ WASM решатель не загружен');
+      return;
+    }
+    const sketch = sketchJSON();
+    if (!sketch) return;
+    if (window.__pushHistory) window.__pushHistory();
+    const payload = { sketch };
+    let raw, result;
+    try {
+      raw    = wasm.wasm_solve_constraints(JSON.stringify(payload));
+      result = JSON.parse(raw);
+    } catch (e) {
+      status('✗ WASM ошибка: ' + e.message);
+      console.error('[solveSketchWasm]', e);
+      return;
+    }
+    const ss = window.sketchState;
+    if (!ss) return;
+
+    if (result.ok) {
+      // Patch sketch from solver output
+      const byId = {};
+      for (const p of (result.sketch.points || [])) byId[p.id] = p;
+      for (let i = 0; i < ss.points.length; i++) {
+        const upd = byId[ss.points[i].id];
+        if (upd) {
+          ss.points[i].gx = upd.gx; ss.points[i].gy = upd.gy; ss.points[i].gz = upd.gz;
+          ss.points[i].x  = upd.x;  ss.points[i].y  = upd.y;  ss.points[i].z  = upd.z;
+        }
+      }
+      // Store v2 diagnostics
+      ss.lastSolve = {
+        status:       result.status      || 'ok',
+        iterations:   result.iterations  || 0,
+        maxErrorMm:   result.maxErrorMm  || 0,
+        totalErrorMm: result.totalErrorMm || 0,
+        movedPoints:  result.movedPoints || 0,
+        residuals:    result.residuals   || [],
+        diagnostics:  result.diagnostics || {},
+      };
+      const dof    = (result.diagnostics && result.diagnostics.dof != null) ? result.diagnostics.dof : '?';
+      const maxErr = (result.maxErrorMm || 0).toFixed(3);
+      status('✓ Решение: ' + (result.status || 'ok') + ' · ошибка ' + maxErr + ' мм · DOF ' + dof);
+      if (window.__recomputeProfiles)   window.__recomputeProfiles();
+      if (window.__recomputeValidation) window.__recomputeValidation();
+      if (window.__redrawSketch)        window.__redrawSketch();
+      if (window.__notifySketchChanged) window.__notifySketchChanged();
+      if (window.__updateSketchInspector) window.__updateSketchInspector();
+    } else {
+      ss.lastSolve = { status: 'error', diagnostics: result.diagnostics || {} };
+      status('✗ Решение не найдено — проверьте ограничения');
+    }
+    // Always refresh Dev panel so solver section stays current
+    if (window.__cadPanelUpdateDev) window.__cadPanelUpdateDev();
+  };
+
 })();
 "##;
