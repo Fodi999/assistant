@@ -20,17 +20,98 @@ pub const JS: &str = r##"
   // 1. Вспомогательные функции
   // ─────────────────────────────────────────────────────────────────────────
 
-  /** Выбрать профиль: явный id или первый замкнутый из sketchState */
+  /**
+   * Выбрать профиль для экструзии. Порядок приоритетов:
+   *   1. явный profileId
+   *   2. ss.selectedProfileId
+   *   3. профиль, содержащий выделенные рёбра
+   *   4. профиль, построенный из выделенных рёбер (цикл из selectedEdgeIds)
+   *   5. первый обнаруженный профиль
+   *
+   * Перед поиском всегда пересчитывает профили через __recomputeProfiles.
+   */
   function _pickProfile(profileId) {
     const ss = window.sketchState;
-    if (!ss || !ss.profiles || !ss.profiles.length) return null;
-    if (profileId) return ss.profiles.find(p => p.id === profileId) || null;
-    // Предпочитаем выбранный; иначе — первый
+    if (!ss) return null;
+
+    // Пересчитываем профили на случай если скетч изменился
+    if (window.__recomputeProfiles) window.__recomputeProfiles();
+
+    // 1. явный id
+    if (profileId) return (ss.profiles || []).find(p => p.id === profileId) || null;
+
+    // 2. выбранный профиль
     if (ss.selectedProfileId) {
-      const sel = ss.profiles.find(p => p.id === ss.selectedProfileId);
+      const sel = (ss.profiles || []).find(p => p.id === ss.selectedProfileId);
       if (sel) return sel;
     }
-    return ss.profiles[0];
+
+    // 3. профиль содержащий одно из выделенных рёбер
+    const selEdges = [...(ss.selectedEdgeIds || [])];
+    if (selEdges.length > 0) {
+      for (const prof of (ss.profiles || [])) {
+        if (selEdges.some(eid => prof.edgeIds.includes(eid))) return prof;
+      }
+
+      // 4. построить профиль из выделенных рёбер вручную (если цикл)
+      const built = _buildProfileFromEdges(selEdges, ss);
+      if (built) return built;
+    }
+
+    // 5. первый из найденных
+    return (ss.profiles && ss.profiles.length) ? ss.profiles[0] : null;
+  }
+
+  /**
+   * Попытаться собрать упорядоченный цикл точек из произвольного набора рёбер.
+   * Возвращает синтетический профиль-объект или null.
+   */
+  function _buildProfileFromEdges(edgeIds, ss) {
+    if (!edgeIds || edgeIds.length < 2) return null;
+    const byId = new Map((ss.edges || []).map(e => [e.id, e]));
+
+    // Строим смежность: pointId → [connected pointIds via selected edges]
+    const adj = new Map();
+    const addAdj = (a, b) => {
+      if (!adj.has(a)) adj.set(a, []);
+      adj.get(a).push(b);
+    };
+    for (const eid of edgeIds) {
+      const e = byId.get(eid);
+      if (!e) continue;
+      addAdj(e.a, e.b);
+      addAdj(e.b, e.a);
+    }
+
+    // Ищем вершину степени 2 (часть цикла)
+    const startId = [...adj.keys()].find(k => adj.get(k).length === 2);
+    if (!startId) return null;
+
+    // Обходим цикл
+    const path = [startId];
+    let prev = null, cur = startId;
+    for (let i = 0; i < edgeIds.length; i++) {
+      const neighbors = adj.get(cur) || [];
+      const next = neighbors.find(n => n !== prev);
+      if (!next || next === startId) break;
+      path.push(next);
+      prev = cur;
+      cur = next;
+    }
+    if (path.length < 3) return null;
+
+    // Проверяем что последняя точка соединена со startId
+    const lastNeighbors = adj.get(cur) || [];
+    if (!lastNeighbors.includes(startId)) return null;
+
+    return {
+      id: '_sel_profile',
+      pointIds: path,
+      edgeIds: edgeIds,
+      plane: ss.workingPlane || 'XZ',
+      closed: true,
+      _synthetic: true,
+    };
   }
 
   /** Преобразуем профиль в массив [{x,y,z}] (world metres, CCW) */
@@ -115,7 +196,10 @@ pub const JS: &str = r##"
         </button>
         <button id="__se_bridge_ok" style="flex:2;padding:8px 0;font-family:${L.font};
           font-size:12px;font-weight:700;background:rgba(56,189,248,.18);
-          border:1px solid rgba(56,189,248,.4);border-radius:7px;color:#38bdf8;cursor:pointer;">
+          border:1px solid rgba(56,189,248,.4);border-radius:7px;color:#38bdf8;cursor:pointer;
+          transition:opacity .15s;"
+          onmouseenter="if(!this.disabled)this.style.opacity='0.8'"
+          onmouseleave="this.style.opacity='1'">
           ↵ Выдавить
         </button>
       </div>
@@ -143,14 +227,34 @@ pub const JS: &str = r##"
     _activeProfile = _pickProfile(profileId);
     const modal = _getModal();
     const info  = document.getElementById('__se_bridge_info');
+    const okBtn = document.getElementById('__se_bridge_ok');
     if (info) {
+      const ss = window.sketchState;
       if (_activeProfile) {
-        const n = (_activeProfile.pointIds || []).length;
+        const n     = (_activeProfile.pointIds || []).length;
         const plane = _profilePlane(_activeProfile);
-        info.textContent = 'Профиль: ' + (_activeProfile.id || '—') + ' · ' + n + ' точек · плоскость ' + plane;
+        const src   = _activeProfile._synthetic
+          ? '📐 из выделенных рёбер'
+          : (_activeProfile.id === ss?.selectedProfileId ? '🖱 выбранный' : '🔍 авто');
+        info.style.color = '#86efac'; // green
+        info.textContent = src + ' · ' + n + ' точек · плоскость ' + plane;
       } else {
-        info.textContent = '⚠ Нет замкнутого профиля — нарисуйте замкнутый контур';
+        // Диагностика — что именно мешает
+        const nPts  = (ss?.points  || []).length;
+        const nEdg  = (ss?.edges   || []).length;
+        const nSel  = (ss?.selectedEdgeIds?.size || ss?.selectedEdgeIds?.length || 0);
+        info.style.color = '#fca5a5'; // red
+        if (nEdg === 0) {
+          info.textContent = '⚠ Нет рёбер — нарисуй линии (L) или прямоугольник (R)';
+        } else if (nEdg < 3) {
+          info.textContent = '⚠ Нужно минимум 3 ребра для замкнутого контура (сейчас: ' + nEdg + ')';
+        } else {
+          info.textContent = '⚠ Контур не замкнут — соедини последнюю точку с первой' +
+            (nSel ? ' (выделено рёбер: ' + nSel + ')' : '');
+        }
+        if (okBtn) okBtn.disabled = true;
       }
+      if (okBtn && _activeProfile) okBtn.disabled = false;
     }
     modal.style.display = 'block';
     setTimeout(() => {
@@ -170,8 +274,12 @@ pub const JS: &str = r##"
   // ─────────────────────────────────────────────────────────────────────────
 
   async function _submitExtrude() {
+    // Сбрасываем disabled на случай повторного вызова
+    const okBtn = document.getElementById('__se_bridge_ok');
+    if (okBtn) okBtn.disabled = false;
+
     if (!_activeProfile) {
-      if (window.__setStatusMessage) window.__setStatusMessage('⚠ Нет профиля для экструзии');
+      if (window.__setStatusMessage) window.__setStatusMessage('⚠ Нет замкнутого профиля. Нарисуй контур и замкни его.');
       _hideModal();
       return;
     }
@@ -544,11 +652,18 @@ pub const JS: &str = r##"
    * @param {number} [depthMm]    — глубина мм (необязательно; если передана, пропустить модал)
    */
   window.__extrudeToSolid = function(profileId, depthMm) {
+    // Если профиль не указан — пробуем найти сами
+    // (важно: вызываем _pickProfile до того как открывать модал)
     if (depthMm != null && isFinite(depthMm) && depthMm > 0) {
-      // Прямой вызов без диалога (например, из теста или другого инструмента)
       _activeProfile = _pickProfile(profileId);
-      const mock = document.getElementById('__se_bridge_depth');
-      if (mock) mock.value = String(depthMm);
+      if (!_activeProfile) {
+        if (window.__setStatusMessage)
+          window.__setStatusMessage('⚠ Нет замкнутого профиля — нарисуй контур (R или L+замкни)');
+        return;
+      }
+      // Прямой вызов без диалога
+      const inp = document.getElementById('__se_bridge_depth');
+      if (inp) inp.value = String(depthMm);
       _submitExtrude();
     } else {
       _showModal(profileId);
