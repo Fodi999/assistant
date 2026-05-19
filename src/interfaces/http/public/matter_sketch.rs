@@ -92,6 +92,10 @@ fn signed_area_2d(pts: &[(f64, f64)]) -> f64 {
 pub async fn extrude_sketch_endpoint(
     Json(req): Json<ExtrudeSketchRequest>,
 ) -> std::result::Result<Json<SketchMeshResponse>, (StatusCode, Json<ApiError>)> {
+    tracing::info!(
+        "🔧 sketch/extrude: plane={}, depth={:.4}m, pts={}, tol={:?}",
+        req.plane, req.depth, req.profile.len(), req.tolerance
+    );
     // ── 1. Validate ────────────────────────────────────────────────
     if req.profile.len() < 3 {
         return Err((

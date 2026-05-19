@@ -677,7 +677,15 @@ pub const JS: &str = r##"
     if (p) p.style.display = 'none';
   };
 
-  console.log('[sketch→solid bridge] зарегистрировано: __extrudeToSolid, __closeSolidPreview');
+  /**
+   * Публичный API для solid_extrude_gizmo.rs и других модулей.
+   * Показывает/обновляет панель превью + WebGL рендер.
+   */
+  window.__showSolidPreviewPanel = function(result, depthMm, plane) {
+    _showSolidPreview(result, depthMm || 0, plane || 'XZ');
+  };
+
+  console.log('[sketch→solid bridge] зарегистрировано: __extrudeToSolid, __closeSolidPreview, __showSolidPreviewPanel');
 
 })();
 "##;
