@@ -256,4 +256,165 @@ pub const JS: &str = r##"
         }
       };
 
+      // ─────────────────────────────────────────────────────────────────────
+      // __makeSquare(profileId?) — добавить EQUAL_LENGTH ко всем 4 сторонам
+      // профиля-прямоугольника, превращая его в квадрат.
+      //
+      // Алгоритм:
+      //   1. Берём профиль (выбранный или первый)
+      //   2. Находим все 4 ребра
+      //   3. Находим смежные пары (top+right, right+bottom, bottom+left)
+      //      и добавляем EQUAL_LENGTH
+      //   4. Принудительно устанавливаем длину самой короткой стороны для
+      //      всех рёбер через FIXED_LENGTH чтобы солвер «знал» целевой размер
+      //   5. Запускаем wasm_solve_constraints
+      // ─────────────────────────────────────────────────────────────────────
+      window.__makeSquare = async function(profileId) {
+        const ss = window.sketchState;
+        if (!ss) return;
+
+        // Пересчитываем профили
+        if (window.__recomputeProfiles) window.__recomputeProfiles();
+
+        // Находим профиль
+        let prof = null;
+        if (profileId) prof = (ss.profiles || []).find(p => p.id === profileId);
+        if (!prof && ss.selectedProfileId)
+          prof = (ss.profiles || []).find(p => p.id === ss.selectedProfileId);
+        if (!prof && ss.profiles && ss.profiles.length) prof = ss.profiles[0];
+        if (!prof) {
+          window.__setStatusMessage && window.__setStatusMessage('⚠ Квадрат: нет профиля');
+          return;
+        }
+        if (prof.edgeIds.length !== 4) {
+          window.__setStatusMessage && window.__setStatusMessage(
+            '⚠ Квадрат: нужен прямоугольник (4 ребра), сейчас: ' + prof.edgeIds.length
+          );
+          return;
+        }
+
+        window.__pushHistory && window.__pushHistory();
+
+        const byEdge = new Map((ss.edges || []).map(e => [e.id, e]));
+        const byPt   = new Map((ss.points || []).map(p => [p.id, p]));
+        const step   = (ss.precision && ss.precision.internalStepM) || 0.00001;
+        const stepMm = step * 1000;
+
+        // Вычисляем длины всех 4 рёбер
+        const edgeLens = prof.edgeIds.map(eid => {
+          const e = byEdge.get(eid);
+          if (!e) return { id: eid, len: 0 };
+          const a = byPt.get(e.a), b = byPt.get(e.b);
+          if (!a || !b) return { id: eid, len: 0 };
+          const dx = b.gx - a.gx, dy = b.gy - a.gy, dz = b.gz - a.gz;
+          return { id: eid, len: Math.hypot(dx, dy, dz) * stepMm };
+        });
+
+        // Целевой размер — минимальная ненулевая сторона (меньшая сторона)
+        const nonZero = edgeLens.filter(e => e.len > 0);
+        if (!nonZero.length) {
+          window.__setStatusMessage && window.__setStatusMessage('⚠ Квадрат: вырожденные рёбра');
+          return;
+        }
+        const targetMm = Math.min(...nonZero.map(e => e.len));
+        console.log('[makeSquare] target side =', targetMm.toFixed(2), 'мм, edges:', edgeLens);
+
+        // Удаляем старые EQUAL_LENGTH и FIXED_LENGTH для этих рёбер
+        ss.constraints = (ss.constraints || []).filter(c => {
+          const t = (c.type || '').toUpperCase();
+          if ((t === 'EQUAL_LENGTH' || t === 'FIXED_LENGTH') &&
+              prof.edgeIds.includes(c.targetId)) return false;
+          return true;
+        });
+
+        // Добавляем EQUAL_LENGTH между соседними парами рёбер (3 пары = достаточно)
+        const [e0, e1, e2, e3] = prof.edgeIds;
+        if (window.__addConstraint) {
+          window.__addConstraint('EQUAL_LENGTH', 'edge', e0 + ',' + e1, null);
+          window.__addConstraint('EQUAL_LENGTH', 'edge', e1 + ',' + e2, null);
+          window.__addConstraint('EQUAL_LENGTH', 'edge', e2 + ',' + e3, null);
+        }
+
+        // Фиксируем первое ребро в targetMm — солвер подтянет остальные
+        if (window.__addConstraint) {
+          window.__addConstraint('FIXED_LENGTH', 'edge', e0, targetMm);
+        }
+
+        // Немедленно принудительно выравниваем геометрию (без солвера как fallback)
+        _forceSquareGeometry(prof, targetMm, ss, byEdge, byPt, step);
+
+        if (window.__notifySketchChanged) window.__notifySketchChanged();
+
+        // Запускаем солвер чтобы применить ограничения
+        if (window.__solveSketchWasm) {
+          await window.__solveSketchWasm();
+        } else if (window.__solveConstraints) {
+          await window.__solveConstraints();
+        }
+
+        window.__setStatusMessage && window.__setStatusMessage(
+          '⬛ Квадрат создан: сторона ' + targetMm.toFixed(1) + ' мм'
+        );
+
+        if (window.__recomputeProfiles) window.__recomputeProfiles();
+        if (window.__redrawSketch)      window.__redrawSketch();
+        if (window.__updateDofBadge)    window.__updateDofBadge();
+      };
+
+      // Принудительное выравнивание сторон (геометрический fallback без солвера)
+      function _forceSquareGeometry(prof, targetMm, ss, byEdge, byPt, step) {
+        // Находим фиксированную точку профиля (якорь)
+        const fixed = prof.pointIds.find(id => window.__isPointFixed && window.__isPointFixed(id));
+        const anchorId = fixed || prof.pointIds[0];
+        const anchor   = byPt.get(anchorId);
+        if (!anchor) return;
+
+        const plane   = ss.workingPlane || 'XZ';
+        const target  = Math.round(targetMm / (step * 1000)); // в grid units
+
+        // Определяем два свободных направления плоскости
+        let uAxis, vAxis; // 'gx'/'gy'/'gz'
+        if (plane === 'XZ') { uAxis = 'gx'; vAxis = 'gz'; }
+        else if (plane === 'XY') { uAxis = 'gx'; vAxis = 'gy'; }
+        else { uAxis = 'gy'; vAxis = 'gz'; }
+
+        // Строим карту: pointId → позиция в порядке обхода профиля
+        // p0 = anchor, p1, p2, p3 по порядку обхода в profile.pointIds
+        const ordered = [...prof.pointIds];
+        const ai = ordered.indexOf(anchorId);
+        const sorted = [...ordered.slice(ai), ...ordered.slice(0, ai)];
+        const [id0, id1, id2, id3] = sorted;
+
+        const p0 = byPt.get(id0);
+        const p1 = byPt.get(id1);
+        const p2 = byPt.get(id2);
+        const p3 = byPt.get(id3);
+        if (!p0 || !p1 || !p2 || !p3) return;
+
+        // Определяем знаки направлений от p0→p1 и p0→p3
+        const du01 = Math.sign(p1[uAxis] - p0[uAxis]) || 1;
+        const dv01 = Math.sign(p1[vAxis] - p0[vAxis]) || 0;
+        const du03 = Math.sign(p3[uAxis] - p0[uAxis]) || 0;
+        const dv03 = Math.sign(p3[vAxis] - p0[vAxis]) || 1;
+
+        const setGPt = (p, u, v) => {
+          p[uAxis] = u; p[vAxis] = v;
+          p.x = p.gx * step; p.y = p.gy * step; p.z = p.gz * step;
+          // Зануляем ось нормали
+          if (plane === 'XZ') { p.gy = 0; p.y = 0; }
+          else if (plane === 'XY') { p.gz = 0; p.z = 0; }
+          else { p.gx = 0; p.x = 0; }
+        };
+
+        const u0 = p0[uAxis], v0 = p0[vAxis];
+        // p1 = p0 + target × (du01, dv01)
+        setGPt(p1, u0 + du01 * target, v0 + dv01 * target);
+        // p3 = p0 + target × (du03, dv03)
+        setGPt(p3, u0 + du03 * target, v0 + dv03 * target);
+        // p2 = p0 + target × (du01+du03, dv01+dv03)
+        setGPt(p2, u0 + (du01 + du03) * target, v0 + (dv01 + dv03) * target);
+
+        console.log('[makeSquare] geometry forced', { id0, id1, id2, id3, target, du01, dv01, du03, dv03 });
+      }
+
 "##;

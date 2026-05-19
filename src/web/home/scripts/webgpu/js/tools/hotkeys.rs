@@ -357,6 +357,7 @@ pub const JS: &str = r##"
         // Tool switches
         if (k === 's' && e.shiftKey) { if (window.__solveSketchWasm) window.__solveSketchWasm(); return true; }
         if (k === 't') { if (window.__extrudeToSolid) window.__extrudeToSolid(); return true; }
+        if (k === 'r' && e.shiftKey) { if (window.__makeSquare)    window.__makeSquare();       return true; }
         if (k === 's') { window.__setSketchTool && window.__setSketchTool('select'); return true; }
         if (k === 'o') { window.__toggleOrthoLock && window.__toggleOrthoLock(); return true; }
         if (k === 'p' && e.shiftKey) { if (window.__togglePerfHud) window.__togglePerfHud(); return true; }
@@ -365,24 +366,29 @@ pub const JS: &str = r##"
         if (k === 'r') { window.__setSketchTool && window.__setSketchTool('rect');   return true; }
         if (k === 'c') { window.__setSketchTool && window.__setSketchTool('circle'); return true; }
 
-        // E → Edge Extrude
+        // E → Solid Extrude (если есть профиль) или Edge Extrude (fallback)
         if (k === 'e') {
-          const selEdges  = [...(sketchState.selectedEdgeIds || [])];
-          const selProf   = sketchState.selectedProfileId || null;
+          // Если уже активен solid extrude гизмо — Enter-commit
+          if (window.__solidExtrudeState?.active) {
+            window.__commitSolidExtrude && window.__commitSolidExtrude();
+            return true;
+          }
+          // Проверяем наличие замкнутого профиля
+          const selProf = sketchState.selectedProfileId
+            || (sketchState.profiles && sketchState.profiles.length ? sketchState.profiles[0]?.id : null);
+          if (selProf && window.__startSolidExtrude) {
+            console.log('[E key] → __startSolidExtrude, profile=', selProf);
+            window.__startSolidExtrude(selProf);
+            return true;
+          }
+          // Fallback: wall edge extrude
           const hasExtrude = !!window.__startEdgeExtrude;
-          console.log('[E key] Edge Extrude triggered', {
-            selectedEdgeIds: selEdges,
-            selectedProfileId: selProf,
-            extrudeActive:   sketchState.extrude?.active,
-            extrudeEdgeIds:  sketchState.extrude?.edgeIds,
-            __startEdgeExtrude: hasExtrude,
-          });
           if (!hasExtrude) {
             console.warn('[E key] __startEdgeExtrude не найден — extrude.rs не загружен?');
             return true;
           }
+          console.log('[E key] → __startEdgeExtrude (no profile)');
           window.__startEdgeExtrude();
-          console.log('[E key] after __startEdgeExtrude → extrude.active =', sketchState.extrude?.active);
           return true;
         }
 

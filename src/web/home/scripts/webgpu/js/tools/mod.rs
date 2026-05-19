@@ -10,3 +10,4 @@ pub mod circle_tool;
 pub mod hotkeys;
 pub mod extrude;
 pub mod extrude_gizmo;
+pub mod solid_extrude_gizmo;

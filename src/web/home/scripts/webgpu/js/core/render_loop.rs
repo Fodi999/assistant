@@ -1327,6 +1327,10 @@ pub const JS: &str = r##"
           if (typeof window.__drawExtrudeGizmo === 'function') {
             window.__drawExtrudeGizmo(ctx, sketchState, w2s, sk);
           }
+          // ── Solid Extrude Gizmo / Plasticity-style (tools/solid_extrude_gizmo.rs) ──
+          if (typeof window.__drawSolidExtrudeGizmo === 'function') {
+            window.__drawSolidExtrudeGizmo(ctx, w2s);
+          }
           if (sketchState.grab.active) {
             const grab = sketchState.grab;
             const lock = grab.axisLock;

@@ -50,6 +50,11 @@ pub const JS: &str = r##"
 
       // ── Pointer down ─────────────────────────────────────────────
       canvas.addEventListener('pointerdown', (e) => {
+        // Solid extrude gizmo (Plasticity-style face extrude) gets first shot
+        if (typeof window.__solidExtrudePointerDown === 'function'
+            && window.__solidExtrudeState?.active) {
+          if (window.__solidExtrudePointerDown(e)) return;
+        }
         // Block canvas interaction while extrude (or other modal tools) are active.
         if (window.sketchState?.extrude?.active) {
           // Allow the extrude gizmo to handle this click first.

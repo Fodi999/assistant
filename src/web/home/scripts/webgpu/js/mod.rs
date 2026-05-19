@@ -51,6 +51,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + tools::hotkeys::JS.len()
         + tools::extrude::JS.len()
         + tools::extrude_gizmo::JS.len()
+        + tools::solid_extrude_gizmo::JS.len()
         + ui::matter_state::JS.len()
         + ui::hud::JS.len()
         + ui::controls::JS.len()
@@ -105,6 +106,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(tools::hotkeys::JS);
     out.push_str(tools::extrude::JS);
     out.push_str(tools::extrude_gizmo::JS);
+    out.push_str(tools::solid_extrude_gizmo::JS);
 
     // ── 6. GPU buffers + WGSL shaders + pipeline ─────────────────────────────
     out.push_str(core::buffers::JS);
