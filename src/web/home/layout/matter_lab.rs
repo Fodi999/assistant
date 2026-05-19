@@ -82,6 +82,7 @@ pub fn matter_lab_section() -> String {
             <span class="sco-key sco-row" data-kw="ctrl z отменить undo">⌘Z</span><span class="sco-row" data-kw="ctrl z отменить undo">Отменить</span>
             <span class="sco-key sco-row" data-kw="shift p fps счётчик">⇧P</span><span class="sco-row" data-kw="shift p fps счётчик">Счётчик FPS</span>
             <span class="sco-key sco-row" data-kw="shift s solve решить ограничения">⇧S</span><span class="sco-row" data-kw="shift s solve решить ограничения">Решить ограничения</span>
+            <span class="sco-key sco-row" data-kw="t truck solid b-rep выдавить 3d">T</span><span class="sco-row" data-kw="t truck solid b-rep выдавить 3d">Выдавить профиль → 3D Solid (truck)</span>
             <span class="sco-key sco-row" data-kw="f fix зафиксировать точку lock">F</span><span class="sco-row" data-kw="f fix зафиксировать точку lock">Зафиксировать / Снять фиксацию точки</span>
             <span class="sco-key sco-row" data-kw="esc отмена cancel">Esc</span><span class="sco-row" data-kw="esc отмена cancel">Отмена</span>
           </div>
@@ -221,6 +222,11 @@ pub fn matter_lab_section() -> String {
           <button class="utb-btn" id="btn-solve" title="Решить ограничения (Shift+S)"
                   onclick="if(window.__solveSketchWasm)window.__solveSketchWasm();">
             ⚙<span class="utb-label">Решить</span>
+          </button>
+          <div class="utb-sep"></div>
+          <button class="utb-btn" id="btn-solid" title="Выдавить профиль в 3D solid (truck B-Rep)"
+                  onclick="if(window.__extrudeToSolid)window.__extrudeToSolid();else alert('bridge not loaded');">
+            🧱<span class="utb-label">Solid</span>
           </button>
         </nav>
 

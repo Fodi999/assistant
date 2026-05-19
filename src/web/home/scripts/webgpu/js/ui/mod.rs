@@ -10,5 +10,6 @@ pub mod matter_ui;
 pub mod matter_state;
 pub mod cad_side_panel;
 pub mod constraint_solver;
+pub mod sketch_extrude_bridge;
 pub mod view_cube;
 pub mod selection_mode_hud;
