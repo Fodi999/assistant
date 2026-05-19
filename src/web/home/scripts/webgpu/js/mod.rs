@@ -47,6 +47,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + tools::copy_tool::JS.len()
         + tools::line_tool::JS.len()
         + tools::rect_tool::JS.len()
+        + tools::circle_tool::JS.len()
         + tools::hotkeys::JS.len()
         + tools::extrude::JS.len()
         + tools::extrude_gizmo::JS.len()
@@ -99,6 +100,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(tools::copy_tool::JS);
     out.push_str(tools::line_tool::JS);
     out.push_str(tools::rect_tool::JS);
+    out.push_str(tools::circle_tool::JS);
     out.push_str(tools::hotkeys::JS);
     out.push_str(tools::extrude::JS);
     out.push_str(tools::extrude_gizmo::JS);

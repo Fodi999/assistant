@@ -573,7 +573,71 @@ pub const JS: &str = r##"
             }
           }
 
-          // ── Validation markers (drawn under points so points still visible) ──
+          // ── Circle tool: preview circle ──
+          if (sketchState.activeTool === 'circle' && sketchState.circle && sketchState.circle.active &&
+              sketchState.circle.centerSnap && sketchState.hoverWorld) {
+            const gc    = sketchState.circle.centerSnap;
+            const hw    = sketchState.hoverWorld;
+            const gs    = sketchState.gridSize || 1.0;
+            const plane = sketchState.workingPlane || 'XZ';
+            const g2gx  = Math.round(hw.gx !== undefined ? hw.gx : hw.x / gs);
+            const g2gy  = Math.round(hw.gy !== undefined ? hw.gy : hw.y / gs);
+            const g2gz  = Math.round(hw.gz !== undefined ? hw.gz : hw.z / gs);
+
+            let radiusSq;
+            if (plane === 'XZ')      radiusSq = (g2gx - gc.gx) ** 2 + (g2gz - gc.gz) ** 2;
+            else if (plane === 'XY') radiusSq = (g2gx - gc.gx) ** 2 + (g2gy - gc.gy) ** 2;
+            else                     radiusSq = (g2gy - gc.gy) ** 2 + (g2gz - gc.gz) ** 2;
+
+            if (radiusSq >= 0.25) {
+              const radius = Math.sqrt(radiusSq) * gs; // world-space radius
+
+              // World-space centre
+              let cx, cy, cz;
+              if (plane === 'XZ')      { cx = gc.gx * gs; cy = 0;          cz = gc.gz * gs; }
+              else if (plane === 'XY') { cx = gc.gx * gs; cy = gc.gy * gs; cz = 0; }
+              else                     { cx = 0;          cy = gc.gy * gs; cz = gc.gz * gs; }
+
+              // Project centre + two rim reference points to screen space
+              const sc = w2s(cx, cy, cz);
+
+              // To get screen radius we project a rim point and measure distance
+              let rx, ry, rz;
+              if (plane === 'XZ')      { rx = cx + radius; ry = 0;          rz = cz; }
+              else if (plane === 'XY') { rx = cx + radius; ry = cy;         rz = 0; }
+              else                     { rx = 0;           ry = cy + radius; rz = cz; }
+              const sr = w2s(rx, ry, rz);
+
+              if (sc && sr) {
+                const scrRadius = Math.hypot(sr.x - sc.x, sr.y - sc.y);
+                if (scrRadius > 1) {
+                  ctx.save();
+                  ctx.setLineDash([6, 4]);
+                  ctx.strokeStyle = 'rgba(56,189,248,0.85)';
+                  ctx.lineWidth   = 2;
+                  ctx.beginPath();
+                  ctx.arc(sc.x, sc.y, scrRadius, 0, Math.PI * 2);
+                  ctx.stroke();
+                  // Semi-transparent fill
+                  ctx.fillStyle = 'rgba(56,189,248,0.06)';
+                  ctx.fill();
+                  ctx.restore();
+                  // Centre dot
+                  ctx.beginPath();
+                  ctx.arc(sc.x, sc.y, 5, 0, Math.PI * 2);
+                  ctx.fillStyle = '#10b981';
+                  ctx.fill();
+                  // Radius label
+                  ctx.save();
+                  ctx.font      = '11px monospace';
+                  ctx.fillStyle = 'rgba(56,189,248,0.9)';
+                  ctx.fillText('r≈' + (radius).toFixed(2), sc.x + 8, sc.y - 8);
+                  ctx.restore();
+                }
+              }
+            }
+          }
+
           if (sketchState.showValidation) {
             const isoSet = new Set(sketchState.validation.isolatedIds);
             const oeSet  = new Set(sketchState.validation.openEndIds);
@@ -642,7 +706,7 @@ pub const JS: &str = r##"
           // ─ Alt = precision mode (bigger markers + larger offset)
           // ═══════════════════════════════════════════════════════════
           if (sketchState.hoverWorld &&
-              (sketchState.activeTool === 'point' || sketchState.activeTool === 'line' || sketchState.activeTool === 'rect')) {
+              (sketchState.activeTool === 'point' || sketchState.activeTool === 'line' || sketchState.activeTool === 'rect' || sketchState.activeTool === 'circle')) {
             const hw     = sketchState.hoverWorld;
             const prec   = !!sketchState.precisionMode;
             const cs     = sketchState.cursorSettings || {};

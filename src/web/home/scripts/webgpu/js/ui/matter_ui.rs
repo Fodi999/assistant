@@ -13,7 +13,7 @@ pub const JS: &str = r##"
       const TOOL_NAMES_RU = { select: 'ВЫБОР', point: 'ТОЧКА', line: 'ЛИНИЯ', grab: 'ЗАХВАТ', delete: 'УДАЛИТЬ' };
 
       window.__setSketchTool = function(tool) {
-        const valid = ['select', 'point', 'line', 'rect', 'grab', 'delete'];
+        const valid = ['select', 'point', 'line', 'rect', 'circle', 'grab', 'delete'];
         if (!valid.includes(tool)) return;
         if (sketchState.activeTool !== tool) {
           // Tear down any active Line Tool chain when switching tools.
@@ -25,6 +25,10 @@ pub const JS: &str = r##"
             }
           }
           // Tear down any active Rect Tool when switching tools.
+          if (sketchState.circle && sketchState.circle.active) {
+            if (window.__cancelCircleTool) window.__cancelCircleTool();
+            else sketchState.circle = { active: false, centerSnap: null };
+          }
           if (sketchState.rect && sketchState.rect.active) {
             if (window.__cancelRectTool) window.__cancelRectTool();
             else sketchState.rect = { active: false, startSnap: null };

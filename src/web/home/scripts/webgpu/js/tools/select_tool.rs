@@ -227,6 +227,11 @@ pub const JS: &str = r##"
           return;
         }
 
+        if (tool === 'circle') {
+          if (window.__circleClick) window.__circleClick(ndcX, ndcY);
+          return;
+        }
+
         if (tool === SM.DELETE) {
           const pId = window.__pickPointAt(ndcX, ndcY);
           if (pId) {
