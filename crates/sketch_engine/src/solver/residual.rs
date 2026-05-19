@@ -52,7 +52,7 @@ pub fn residual_one(sketch: &SketchGraph, c: &Constraint) -> ConstraintResidual 
         "PARALLEL"      => res_parallel(sketch, c),
         "PERPENDICULAR" => res_perpendicular(sketch, c),
         "COINCIDENT"    => res_coincident(sketch, c),
-        "FIX"           => (0.0, None),
+        "FIX" | "FIXED_POINT" => (0.0, None),  // always satisfied — point is locked in place
         "MIDPOINT"      => res_midpoint(sketch, c),
         _               => (0.0, Some(format!("unknown type: {}", c.ty))),
     };

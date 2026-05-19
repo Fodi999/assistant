@@ -33,7 +33,7 @@ pub fn apply_one(sketch: &mut SketchGraph, c: &Constraint) -> ConstraintApplyRes
         "HORIZONTAL"    => horizontal::apply(sketch, c, cid),
         "VERTICAL"      => vertical::apply(sketch, c, cid),
         "EQUAL_LENGTH"  => equal_length::apply(sketch, c, cid),
-        "FIX"           => fix::apply(sketch, c, cid),
+        "FIX" | "FIXED_POINT" => fix::apply(sketch, c, cid),
         "COINCIDENT"    => coincident::apply(sketch, c, cid),
         "FIXED_LENGTH"  => fixed_length::apply(sketch, c, cid),
         "PARALLEL"      => parallel::apply(sketch, c, cid),

@@ -64,7 +64,7 @@ fn dof_cost(ty: &str) -> i32 {
         "PARALLEL"      => 1,
         "PERPENDICULAR" => 1,
         "COINCIDENT"    => 2,   // ties two points together — removes 2 DOF
-        "FIX"           => 2,   // fixes both coords of one point
+        "FIX" | "FIXED_POINT" => 2,   // fixes both coords of one point
         "MIDPOINT"      => 2,   // determines both coords of a point
         _               => 1,   // unknown: assume 1
     }

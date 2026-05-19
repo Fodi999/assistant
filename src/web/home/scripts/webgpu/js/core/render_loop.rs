@@ -468,20 +468,107 @@ pub const JS: &str = r##"
                 ctx.restore();
               }
 
-              // Dimension constraint: fixed-length value label (keep separate, below midpoint)
+              // ── CAD Dimension line (FIXED_LENGTH constraint) ─────────────
+              // Full SolidWorks-style: extension lines + arrowheads + value
               const dimC = window.__getEdgeLengthConstraint && window.__getEdgeLengthConstraint(e.id);
-              if (dimC) {
-                const mx = (sa.x + sb.x) * 0.5;
-                const my = (sa.y + sb.y) * 0.5;
-                const lenMm = (window.__edgeLengthMm && window.__edgeLengthMm(a, b)) || 0;
-                const txt = (window.__formatDim ? window.__formatDim(lenMm) : lenMm.toFixed(1));
-                ctx.font = '11px "JetBrains Mono", system-ui, monospace';
-                const w = ctx.measureText(txt).width + 8;
-                ctx.fillStyle = 'rgba(15,23,42,0.95)';
-                ctx.fillRect(mx - w/2, my + 6, w, 16);
+              if (dimC && dimC.value != null) {
+                const edx = sb.x - sa.x, edy = sb.y - sa.y;
+                const edgeScr = Math.sqrt(edx*edx + edy*edy) || 1;
+                // Unit edge direction (screen)
+                const ux = edx / edgeScr, uy = edy / edgeScr;
+                // Perpendicular unit vector — always toward the "up" side
+                let nx = -uy, ny = ux;
+                if (ny > 0) { nx = -nx; ny = -ny; }
+
+                const OFFSET = 32;  // pixels: perpendicular offset of dim line
+                const EXT_OVR = 5;  // extra overshoot of extension lines
+                const ARROW  = 7;   // arrowhead length
+                const ARROW_W = 3;  // arrowhead half-width
+
+                // Dim line endpoints (offset from edge midpoints — actually from A/B)
+                const d1x = sa.x + nx * OFFSET, d1y = sa.y + ny * OFFSET;
+                const d2x = sb.x + nx * OFFSET, d2y = sb.y + ny * OFFSET;
+
+                ctx.save();
+                ctx.strokeStyle = '#34d399';
+                ctx.fillStyle   = '#34d399';
+                ctx.lineWidth   = 1.3;
+                ctx.setLineDash([]);
+
+                // Extension line A: from edge point toward dim line (with overshoot)
+                ctx.beginPath();
+                ctx.moveTo(sa.x + nx * 5, sa.y + ny * 5);
+                ctx.lineTo(d1x + nx * EXT_OVR, d1y + ny * EXT_OVR);
+                ctx.stroke();
+
+                // Extension line B
+                ctx.beginPath();
+                ctx.moveTo(sb.x + nx * 5, sb.y + ny * 5);
+                ctx.lineTo(d2x + nx * EXT_OVR, d2y + ny * EXT_OVR);
+                ctx.stroke();
+
+                // Dimension line (between A and B at offset)
+                if (edgeScr >= ARROW * 3) {
+                  // Normal: line with inside arrows
+                  ctx.beginPath();
+                  ctx.moveTo(d1x, d1y);
+                  ctx.lineTo(d2x, d2y);
+                  ctx.stroke();
+                  // Arrow at d1 pointing toward d2
+                  ctx.beginPath();
+                  ctx.moveTo(d1x, d1y);
+                  ctx.lineTo(d1x + ux*ARROW + ny*ARROW_W, d1y + uy*ARROW - nx*ARROW_W);
+                  ctx.lineTo(d1x + ux*ARROW - ny*ARROW_W, d1y + uy*ARROW + nx*ARROW_W);
+                  ctx.closePath(); ctx.fill();
+                  // Arrow at d2 pointing toward d1
+                  ctx.beginPath();
+                  ctx.moveTo(d2x, d2y);
+                  ctx.lineTo(d2x - ux*ARROW + ny*ARROW_W, d2y - uy*ARROW - nx*ARROW_W);
+                  ctx.lineTo(d2x - ux*ARROW - ny*ARROW_W, d2y - uy*ARROW + nx*ARROW_W);
+                  ctx.closePath(); ctx.fill();
+                } else {
+                  // Too short: outside arrows
+                  ctx.beginPath();
+                  ctx.moveTo(d1x - ux*20, d1y - uy*20);
+                  ctx.lineTo(d1x, d1y);
+                  ctx.stroke();
+                  ctx.beginPath();
+                  ctx.moveTo(d2x + ux*20, d2y + uy*20);
+                  ctx.lineTo(d2x, d2y);
+                  ctx.stroke();
+                  ctx.beginPath();
+                  ctx.moveTo(d1x, d1y);
+                  ctx.lineTo(d1x - ux*ARROW + ny*ARROW_W, d1y - uy*ARROW - nx*ARROW_W);
+                  ctx.lineTo(d1x - ux*ARROW - ny*ARROW_W, d1y - uy*ARROW + nx*ARROW_W);
+                  ctx.closePath(); ctx.fill();
+                  ctx.beginPath();
+                  ctx.moveTo(d2x, d2y);
+                  ctx.lineTo(d2x + ux*ARROW + ny*ARROW_W, d2y + uy*ARROW - nx*ARROW_W);
+                  ctx.lineTo(d2x + ux*ARROW - ny*ARROW_W, d2y + uy*ARROW + nx*ARROW_W);
+                  ctx.closePath(); ctx.fill();
+                }
+
+                // Dimension text (value in mm, at dim line midpoint)
+                const dmx = (d1x + d2x) * 0.5, dmy = (d1y + d2y) * 0.5;
+                const txt = Number(dimC.value).toFixed(1) + ' мм';
+                ctx.font = 'bold 11px "JetBrains Mono", system-ui, monospace';
+                const tw = ctx.measureText(txt).width + 8;
+                ctx.fillStyle = 'rgba(10,20,35,0.93)';
+                // Pill background
+                const ph = 16, pr = 4;
+                ctx.beginPath();
+                ctx.roundRect
+                  ? ctx.roundRect(dmx - tw/2, dmy - ph/2, tw, ph, pr)
+                  : ctx.rect(dmx - tw/2, dmy - ph/2, tw, ph);
+                ctx.fill();
+                ctx.strokeStyle = '#34d399';
+                ctx.lineWidth = 1;
+                ctx.stroke();
                 ctx.fillStyle = '#34d399';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(txt, mx, my + 14);
+                ctx.fillText(txt, dmx, dmy);
+
+                ctx.restore();
               }
             }
           }

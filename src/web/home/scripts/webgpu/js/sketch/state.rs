@@ -444,6 +444,8 @@ pub const JS: &str = r##"
           const r = await window.__movePointViaEngine(b.id, nx, ny, nz);
           console.log('[setEdgeLengthMm] move B result', r);
           if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move B failed' };
+          window.__addConstraint('FIXED_LENGTH', 'edge', edgeId, lengthMm);
+          window.__notifySketchChanged();
           return { ok: true };
         }
         if (mode === 'fixB_moveA') {
@@ -454,6 +456,8 @@ pub const JS: &str = r##"
           const r = await window.__movePointViaEngine(a.id, nx, ny, nz);
           console.log('[setEdgeLengthMm] move A result', r);
           if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'move A failed' };
+          window.__addConstraint('FIXED_LENGTH', 'edge', edgeId, lengthMm);
+          window.__notifySketchChanged();
           return { ok: true };
         }
         if (mode === 'center_moveBoth') {
@@ -474,6 +478,8 @@ pub const JS: &str = r##"
           if (!ra || !ra.ok) return { ok: false, error: (ra && ra.error) || 'move A failed' };
           const rb = await window.__movePointViaEngine(b.id, nBx, nBy, nBz);
           if (!rb || !rb.ok) return { ok: false, error: (rb && rb.error) || 'move B failed' };
+          window.__addConstraint('FIXED_LENGTH', 'edge', edgeId, lengthMm);
+          window.__notifySketchChanged();
           return { ok: true };
         }
         return { ok: false, error: 'Unknown fix mode: ' + mode };
@@ -700,7 +706,9 @@ pub const JS: &str = r##"
         return !!window.__getConstraintForTarget('fixed_point', pointId);
       };
       window.__getEdgeLengthConstraint = function(edgeId) {
-        return window.__getConstraintForTarget('edge_length', edgeId);
+        // Check both stored type names (FIXED_LENGTH from solver, EDGE_LENGTH legacy)
+        return window.__getConstraintForTarget('FIXED_LENGTH', edgeId)
+            || window.__getConstraintForTarget('edge_length', edgeId);
       };
       window.__hasHorizontalConstraint = function(edgeId) {
         return !!window.__getConstraintForTarget('horizontal', edgeId);
@@ -1415,7 +1423,7 @@ pub const JS: &str = r##"
         }
 
         // Constraints: types & targets valid.
-        const validC = new Set(['fixed_point','edge_length','horizontal','vertical']);
+        const validC = new Set(['fixed_point','FIXED_POINT','edge_length','FIXED_LENGTH','horizontal','HORIZONTAL','vertical','VERTICAL']);
         for (let i = 0; i < constraints.length; i++) {
           const c = constraints[i];
           if (!c || !validC.has(c.type))                     return { ok:false, error:'constraints[' + i + '] invalid type: ' + (c && c.type) };

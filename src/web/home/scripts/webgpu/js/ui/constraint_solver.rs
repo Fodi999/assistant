@@ -244,19 +244,54 @@ pub const JS: &str = r##"
     if (window.__updateDofBadge)    window.__updateDofBadge();
   };
 
+  // ── Fix / unfix selected points (toolbar 🔒 button + hotkey F) ─────────────
+  window.__toggleFixSelectedPoints = function() {
+    const ss = window.sketchState;
+    if (!ss || !ss.selectedPointIds) return;
+    const pids = [...ss.selectedPointIds];
+    if (!pids.length) {
+      if (window.__setStatusMessage) window.__setStatusMessage('🔒 Фикс: сначала выберите точки');
+      return;
+    }
+    let nFixed = 0, nUnfixed = 0;
+    for (const pid of pids) {
+      if (window.__isPointFixed(pid)) {
+        const c = window.__getConstraintForTarget('FIXED_POINT', pid)
+               || window.__getConstraintForTarget('fixed_point', pid);
+        if (c) { window.__removeConstraint(c.id); nUnfixed++; }
+      } else {
+        window.__addConstraint('FIXED_POINT', 'point', pid, null);
+        nFixed++;
+      }
+    }
+    window.__notifySketchChanged();
+    if (window.__redrawSketch) window.__redrawSketch();
+    if (window.__updateDofBadge) window.__updateDofBadge();
+    const msg = (nFixed  ? '🔒 Зафиксировано ' + nFixed  : '')
+              + (nUnfixed ? (nFixed ? ' · ' : '') + '🔓 Снято ' + nUnfixed : '');
+    if (window.__setStatusMessage) window.__setStatusMessage(msg);
+  };
+
   // ── DOF / sketch stats badge ────────────────────────────────────────────────
   // Updates the #sketch-dof-badge element with live sketch stats.
   // Called after solve and on every __notifySketchChanged.
   window.__updateDofBadge = function() {
-    const badge = document.getElementById('sketch-dof-badge');
-    if (!badge) return;
-    const ss = window.sketchState;
-    if (!ss) return;
+    const skSt = window.sketchState;
 
-    const nPts = (ss.points  || []).length;
-    const nEdg = (ss.edges   || []).length;
-    const nCon = (ss.constraints || []).length;
-    const ls   = ss.lastSolve;
+    // Sync 🔒 Fix button state (highlight if ANY selected point is fixed)
+    const fixBtn = document.getElementById('btn-fix-point');
+    if (fixBtn && skSt && skSt.selectedPointIds) {
+      const anyFixed = [...skSt.selectedPointIds].some(id => window.__isPointFixed && window.__isPointFixed(id));
+      fixBtn.classList.toggle('active', anyFixed);
+    }
+
+    const badge = document.getElementById('sketch-dof-badge');
+    if (!badge || !skSt) return;
+
+    const nPts = (skSt.points  || []).length;
+    const nEdg = (skSt.edges   || []).length;
+    const nCon = (skSt.constraints || []).length;
+    const ls   = skSt.lastSolve;
 
     // Update counters
     const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -265,16 +300,18 @@ pub const JS: &str = r##"
     setTxt('sdob-con',   '⧖' + nCon);
 
     if (ls) {
-      const dof  = (ls.diagnostics && ls.diagnostics.dof != null) ? ls.diagnostics.dof : '?';
-      const st   = ls.status || 'ok';
+      const dof   = (ls.diagnostics && ls.diagnostics.dof != null) ? ls.diagnostics.dof : '?';
+      const st    = ls.status || 'ok';
       const unsat = (ls.diagnostics && ls.diagnostics.unsatisfied) ? ls.diagnostics.unsatisfied.length : 0;
       setTxt('sdob-dof', 'DOF:' + dof);
 
-      // Color class
       badge.classList.remove('sdob-ok', 'sdob-warn', 'sdob-error');
       if (st === 'error' || unsat > 0) {
         badge.classList.add(unsat > 0 ? 'sdob-warn' : 'sdob-error');
-        setTxt('sdob-status', unsat > 0 ? ('!' + unsat + ' неудовл.') : '✗ ошибка');
+        setTxt('sdob-status', unsat > 0 ? ('⚠ ' + unsat + ' неудовл.') : '✗ ошибка');
+      } else if (dof === 0) {
+        badge.classList.add('sdob-ok');
+        setTxt('sdob-status', '✅ fully defined');
       } else if (st === 'converged' || st === 'trivially_ok' || st === 'ok') {
         badge.classList.add('sdob-ok');
         setTxt('sdob-status', '✓');
@@ -283,7 +320,6 @@ pub const JS: &str = r##"
         setTxt('sdob-status', '~');
       }
     } else {
-      // No solve yet
       setTxt('sdob-dof', 'DOF:?');
       setTxt('sdob-status', '');
       badge.classList.remove('sdob-ok', 'sdob-warn', 'sdob-error');
