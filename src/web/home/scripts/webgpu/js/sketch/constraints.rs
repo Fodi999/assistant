@@ -255,7 +255,7 @@ pub const JS: &str = r##"
           if (ring.some(p => !p)) return { ok:false, error:'missing point' };
 
           // ── WASM solver path ──────────────────────────────────────────
-          const wasm = window.sketchWasm;
+          const wasm = window.__wasmModule;
           if (wasm && typeof wasm.wasm_solve_constraints === 'function') {
             // Build sketch snapshot with H/V constraints for all profile edges.
             const sketchSnap = {

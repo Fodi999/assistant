@@ -155,7 +155,7 @@ pub const JS: &str = r##"
 
         const getPoint = (id) => sketchState.points.find(p => p.id === id);
 
-        if (window.sketchWasm && typeof sketchWasm.wasm_solve_constraints === 'function') {
+        if (window.__wasmModule && typeof window.__wasmModule.wasm_solve_constraints === 'function') {
           try {
             const pts = ptIds.map(id => {
               const p = getPoint(id);
@@ -190,7 +190,7 @@ pub const JS: &str = r##"
               constraints,
               profiles: [],
             };
-            const raw    = sketchWasm.wasm_solve_constraints(JSON.stringify({ sketch }));
+            const raw    = window.__wasmModule.wasm_solve_constraints(JSON.stringify({ sketch }));
             const result = JSON.parse(raw);
             if (result && result.ok && result.sketch && result.sketch.points) {
               for (const rp of result.sketch.points) {

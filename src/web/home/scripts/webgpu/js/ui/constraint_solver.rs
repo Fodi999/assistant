@@ -61,15 +61,16 @@ pub const JS: &str = r##"
   // ── WASM path ───────────────────────────────────────────────────────────────
   function tryWasm(payload) {
     try {
-      if (window.sketchWasm && typeof sketchWasm.wasm_solve_constraints === 'function') {
+      const wasm = window.__wasmModule;
+      if (wasm && typeof wasm.wasm_solve_constraints === 'function') {
         console.log('[WASM SOLVE INPUT]', JSON.stringify(payload, null, 2));
-        const raw = sketchWasm.wasm_solve_constraints(JSON.stringify(payload));
+        const raw = wasm.wasm_solve_constraints(JSON.stringify(payload));
         console.log('[WASM SOLVE RAW]', raw);
         const res = JSON.parse(raw);
         console.log('[WASM SOLVE OUTPUT]', res);
         return res;
       } else {
-        console.warn('[WASM SOLVE] sketchWasm.wasm_solve_constraints not available');
+        console.warn('[WASM SOLVE] __wasmModule.wasm_solve_constraints not available');
       }
     } catch (e) {
       console.warn('[constraint] WASM error:', e);
