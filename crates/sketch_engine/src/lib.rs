@@ -53,6 +53,7 @@ pub use commands::{
     AddEdgeRequest, AddPointRequest, MovePointRequest, PointRefOrGrid,
     SketchCommandResult,
 };
-pub use solver::{solve_constraints, apply_constraint_once,
-                 SolveResult, SolveConstraintsRequest};
+pub use solver::{solve_constraints, solve_constraints_with_config, apply_constraint_once,
+                 SolveResult, SolveStatus, SolveConfig, SolveConstraintsRequest,
+                 ConstraintResidual, SolveDiagnostics, compute_residuals, residual_one};
 pub use constraints::ConstraintApplyResult;

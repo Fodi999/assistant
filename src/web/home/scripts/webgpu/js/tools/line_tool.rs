@@ -26,13 +26,16 @@
 
 pub const JS: &str = r##"
       // ─────────────────────────────────────────────────────────
-      // __resolveLineSnap(ndcX, ndcY) — pick snap target at click moment
+      // __resolveLineSnap(ndcX, ndcY, opts) — pick snap target at click moment
+      // opts.excludePointId — skip this point id in Priority 0 + Priority 1
       // Returns { kind, pointId, x, y, z, gx, gy, gz, valid } or null.
       // ─────────────────────────────────────────────────────────
-      window.__resolveLineSnap = function(ndcX, ndcY) {
+      window.__resolveLineSnap = function(ndcX, ndcY, opts) {
+        const excludeId = (opts && opts.excludePointId) || null;
+
         // ── Priority 0: fresh screen-space pick of existing point ──
         const freshPickId = window.__pickPointAt ? window.__pickPointAt(ndcX, ndcY) : null;
-        if (freshPickId) {
+        if (freshPickId && freshPickId !== excludeId) {
           const p = sketchState.points.find(pt => pt.id === freshPickId);
           if (p) {
             return {
@@ -47,10 +50,13 @@ pub const JS: &str = r##"
         // ── Priority 1: hoverWorld from last pointermove ──
         const hw = sketchState.hoverWorld;
         if (hw) {
-          const snapPtId = (sketchState.snap && sketchState.snap.kind === 'point')
+          // If the hover-snap points to the excluded anchor, strip the point ref
+          // and fall back to the plain grid coords so a new point can be placed.
+          const rawSnapPtId = (sketchState.snap && sketchState.snap.kind === 'point')
             ? sketchState.snap.pointId : null;
+          const snapPtId = (rawSnapPtId === excludeId) ? null : rawSnapPtId;
           return {
-            kind: snapPtId ? 'point' : (hw.snapKind || 'grid'),
+            kind: snapPtId ? 'point' : (hw.snapKind === 'point' ? 'grid' : (hw.snapKind || 'grid')),
             pointId: snapPtId || null,
             x: hw.x, y: hw.y, z: hw.z,
             gx: hw.gx, gy: hw.gy, gz: hw.gz,
@@ -72,7 +78,7 @@ pub const JS: &str = r##"
             if (t && t.valid !== false) {
               return {
                 kind: t.kind || 'grid',
-                pointId: t.pointId || null,
+                pointId: (t.pointId === excludeId) ? null : (t.pointId || null),
                 x: t.x, y: t.y, z: t.z,
                 gx: t.gx, gy: t.gy, gz: t.gz,
                 valid: true,
@@ -93,12 +99,6 @@ pub const JS: &str = r##"
       // ─────────────────────────────────────────────────────────
       window.__lineClick = async function(ndcX, ndcY) {
         const snap = window.__resolveLineSnap(ndcX, ndcY);
-
-        console.log('[Line click]', {
-          snap,
-          line: sketchState.line ? { ...sketchState.line } : null,
-          activeTool: sketchState.activeTool,
-        });
 
         if (!snap || !snap.valid) {
           window.__setStatusMessage('Line: no snap target');
@@ -152,18 +152,26 @@ pub const JS: &str = r##"
           return;
         }
 
+        // Re-resolve snap excluding the current anchor so we never accidentally
+        // snap back to it via the 14 px point-pick radius or stale hoverWorld.
+        const extSnap = window.__resolveLineSnap(ndcX, ndcY, { excludePointId: aId });
+        if (!extSnap || !extSnap.valid) {
+          window.__setStatusMessage('Line: no snap target');
+          return;
+        }
+
         window.__pushHistory();
-        const bId = await ensurePoint(snap);
+        const bId = await ensurePoint(extSnap);
 
         if (!bId) {
-          console.warn('[Line failed]', { aId, bId, snap, line });
+          console.warn('[Line failed]', { aId, bId, extSnap, line });
           window.__setStatusMessage('Line: failed to create next point');
           return;
         }
         if (aId === bId) {
-          // Same anchor — don't create degenerate edge but keep chain alive.
-          console.warn('[Line] skip — same point as anchor', { aId, snap });
-          window.__setStatusMessage('Line: same point — click a different location');
+          // Still same coords — grid too coarse or truly same cell; keep chain alive.
+          console.warn('[Line] still same grid cell as anchor', { aId, extSnap });
+          window.__setStatusMessage('Line: same grid cell — move further from the anchor');
           return;
         }
 
@@ -175,7 +183,7 @@ pub const JS: &str = r##"
         const bPt = sketchState.points.find(p => p.id === bId);
         const nextStartWorld = bPt
           ? { x: bPt.x, y: bPt.y, z: bPt.z, gx: bPt.gx, gy: bPt.gy, gz: bPt.gz }
-          : { x: snap.x, y: snap.y, z: snap.z, gx: snap.gx, gy: snap.gy, gz: snap.gz };
+          : { x: extSnap.x, y: extSnap.y, z: extSnap.z, gx: extSnap.gx, gy: extSnap.gy, gz: extSnap.gz };
 
         sketchState.line = {
           active: true,

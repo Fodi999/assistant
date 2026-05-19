@@ -11,7 +11,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::commands::{apply_add_edge, apply_add_point, apply_move_point,
                       AddEdgeRequest, AddPointRequest, MovePointRequest};
-use crate::solver::{apply_constraint_once, solve_constraints, SolveConstraintsRequest};
+use crate::solver::{apply_constraint_once, solve_constraints_with_config,
+                    SolveConfig, SolveConstraintsRequest};
 use crate::types::SketchGraph;
 use crate::validation::validate;
 
@@ -58,9 +59,10 @@ pub fn wasm_solve_constraints(json: &str) -> String {
     let req: SolveConstraintsRequest = match serde_json::from_str(json) {
         Ok(v) => v, Err(e) => return err_json(format!("bad json: {e}")),
     };
+    let cfg    = req.config.clone().unwrap_or_default();
     let result = match req.constraint {
         Some(ref c) => apply_constraint_once(req.sketch, c),
-        None        => solve_constraints(req.sketch),
+        None        => solve_constraints_with_config(req.sketch, &cfg),
     };
     serde_json::to_string(&result).unwrap_or_else(|e| err_json(e.to_string()))
 }
@@ -72,6 +74,8 @@ pub fn wasm_engine_info() -> String {
         "version": env!("CARGO_PKG_VERSION"),
         "schema": "sketch_graph",
         "schemaVersion": 1u32,
+        "solverVersion": 2u32,
+        "features": ["residuals", "diagnostics", "dof", "solve_config"],
         "constraints": [
             "HORIZONTAL","VERTICAL","EQUAL_LENGTH","FIX",
             "COINCIDENT","FIXED_LENGTH","PARALLEL","PERPENDICULAR","MIDPOINT"
