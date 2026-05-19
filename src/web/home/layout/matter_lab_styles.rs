@@ -1050,6 +1050,38 @@ pub fn matter_status_styles() -> &'static str {
       font-size: 11px;
     }
 
+    /* ─── Sketch DOF / stats badge ─── */
+    #sketch-dof-badge {
+      position: absolute;
+      bottom: 36px; left: 12px;
+      z-index: 35;
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(10, 14, 22, 0.80);
+      border: 1px solid rgba(100,116,139,0.35);
+      border-radius: 6px;
+      backdrop-filter: blur(8px);
+      padding: 4px 10px;
+      font: 600 10px/1.4 "JetBrains Mono", system-ui, monospace;
+      color: #94a3b8;
+      pointer-events: none;
+      user-select: none;
+      transition: border-color 0.3s, color 0.3s;
+    }
+    #sketch-dof-badge.sdob-ok    { border-color: rgba(16,185,129,0.5); color: #6ee7b7; }
+    #sketch-dof-badge.sdob-warn  { border-color: rgba(245,158,11,0.5);  color: #fcd34d; }
+    #sketch-dof-badge.sdob-error { border-color: rgba(239,68,68,0.5);   color: #fca5a5; }
+    .sdob-sep    { color: #475569; }
+    .sdob-divider{ color: #334155; margin: 0 2px; }
+    .sdob-item   { color: #94a3b8; }
+    .sdob-dof    { font-weight: 800; color: #67e8f9; }
+    #sketch-dof-badge.sdob-ok   .sdob-dof { color: #10b981; }
+    #sketch-dof-badge.sdob-warn .sdob-dof { color: #f59e0b; }
+    #sketch-dof-badge.sdob-error .sdob-dof { color: #ef4444; }
+    .sdob-status { font-size: 9px; color: #64748b; margin-left: 2px; }
+    #sketch-dof-badge.sdob-ok   .sdob-status { color: #059669; }
+    #sketch-dof-badge.sdob-warn .sdob-status { color: #d97706; }
+    #sketch-dof-badge.sdob-error .sdob-status { color: #dc2626; }
+
     /* ─── Cursor measurement HUD ─── */
     #cursor-hud {
       position: absolute;

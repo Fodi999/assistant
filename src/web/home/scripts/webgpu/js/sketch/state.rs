@@ -1048,6 +1048,8 @@ pub const JS: &str = r##"
             && !sketchState.profiles.some(p => p.id === sketchState.hoverProfileId)) {
           sketchState.hoverProfileId = null;
         }
+        // Update sketch stats badge (DOF / pts / edges / constraints)
+        if (window.__updateDofBadge) window.__updateDofBadge();
       };
 
       // ── Mutations ──────────────────────────────────────────────

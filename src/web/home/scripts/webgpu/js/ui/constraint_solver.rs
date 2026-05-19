@@ -241,6 +241,53 @@ pub const JS: &str = r##"
     }
     // Always refresh Dev panel so solver section stays current
     if (window.__cadPanelUpdateDev) window.__cadPanelUpdateDev();
+    if (window.__updateDofBadge)    window.__updateDofBadge();
+  };
+
+  // ── DOF / sketch stats badge ────────────────────────────────────────────────
+  // Updates the #sketch-dof-badge element with live sketch stats.
+  // Called after solve and on every __notifySketchChanged.
+  window.__updateDofBadge = function() {
+    const badge = document.getElementById('sketch-dof-badge');
+    if (!badge) return;
+    const ss = window.sketchState;
+    if (!ss) return;
+
+    const nPts = (ss.points  || []).length;
+    const nEdg = (ss.edges   || []).length;
+    const nCon = (ss.constraints || []).length;
+    const ls   = ss.lastSolve;
+
+    // Update counters
+    const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt('sdob-pts',   'Т:' + nPts);
+    setTxt('sdob-edges', 'Р:' + nEdg);
+    setTxt('sdob-con',   '⧖' + nCon);
+
+    if (ls) {
+      const dof  = (ls.diagnostics && ls.diagnostics.dof != null) ? ls.diagnostics.dof : '?';
+      const st   = ls.status || 'ok';
+      const unsat = (ls.diagnostics && ls.diagnostics.unsatisfied) ? ls.diagnostics.unsatisfied.length : 0;
+      setTxt('sdob-dof', 'DOF:' + dof);
+
+      // Color class
+      badge.classList.remove('sdob-ok', 'sdob-warn', 'sdob-error');
+      if (st === 'error' || unsat > 0) {
+        badge.classList.add(unsat > 0 ? 'sdob-warn' : 'sdob-error');
+        setTxt('sdob-status', unsat > 0 ? ('!' + unsat + ' неудовл.') : '✗ ошибка');
+      } else if (st === 'converged' || st === 'trivially_ok' || st === 'ok') {
+        badge.classList.add('sdob-ok');
+        setTxt('sdob-status', '✓');
+      } else {
+        badge.classList.add('sdob-warn');
+        setTxt('sdob-status', '~');
+      }
+    } else {
+      // No solve yet
+      setTxt('sdob-dof', 'DOF:?');
+      setTxt('sdob-status', '');
+      badge.classList.remove('sdob-ok', 'sdob-warn', 'sdob-error');
+    }
   };
 
 })();

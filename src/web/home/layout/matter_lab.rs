@@ -170,6 +170,18 @@ pub fn matter_lab_section() -> String {
           <div class="chud-row chud-snap-row"><span class="chud-lbl">⊙</span><span id="chud-snap">—</span></div>
         </div>
 
+        <!-- Sketch stats / DOF badge (bottom-left, above status bar) -->
+        <div id="sketch-dof-badge">
+          <span id="sdob-pts" class="sdob-item" title="Точек">Т:—</span>
+          <span class="sdob-sep">·</span>
+          <span id="sdob-edges" class="sdob-item" title="Рёбер">Р:—</span>
+          <span class="sdob-sep">·</span>
+          <span id="sdob-con" class="sdob-item" title="Ограничений">⧖—</span>
+          <span class="sdob-divider">|</span>
+          <span id="sdob-dof" class="sdob-dof" title="Степеней свободы">DOF:?</span>
+          <span id="sdob-status" class="sdob-status"></span>
+        </div>
+
         <!-- Working plane pills (top-left) -->
         <div id="plane-switch">
           <button class="plane-pill active" data-plane="XZ" title="Горизонтальная плоскость (1)">XZ</button>
