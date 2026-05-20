@@ -69,7 +69,7 @@ pub const JS: &str = r##"
           ]
         },
         fragment: { module: cadModule, entryPoint: 'fs_cad', targets: [{ format: fmt }] },
-        primitive: { topology: 'triangle-list', cullMode: 'back' },
+        primitive: { topology: 'triangle-list' },  // cullMode: 'none' — verify winding first
         depthStencil: { format: DEPTH_FMT, depthWriteEnabled: true, depthCompare: 'less' },
       });
 

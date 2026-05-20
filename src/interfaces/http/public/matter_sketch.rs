@@ -1,8 +1,8 @@
 //! Sketch → Extrude endpoint.
 //!
 //! Accepts a sketch profile + plane + depth from the WebGPU frontend and
-//! returns a triangulated solid produced by our own geometry kernel
-//! (`infrastructure/geometry/kernel/extrude`).
+//! returns a triangulated solid produced by `geometry_engine`
+//! (the first-party CAD crate with f64-precision internals).
 //!
 //! POST /api/matter/sketch/extrude
 //! {
@@ -17,9 +17,7 @@
 use axum::{Json, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::infrastructure::geometry::kernel::extrude::{
-    extrude_polygon, ExtrudeOptions, Point2,
-};
+use geometry_engine::{extrude_polygon, ExtrudeOptions, Point2};
 
 // ── Request / Response types ───────────────────────────────────────────────
 
@@ -63,9 +61,9 @@ pub struct ApiError {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-fn signed_area_2d(pts: &[(f32, f32)]) -> f32 {
+fn signed_area_2d(pts: &[(f64, f64)]) -> f64 {
     let n = pts.len();
-    let mut s = 0.0_f32;
+    let mut s = 0.0_f64;
     for i in 0..n {
         let (ax, ay) = pts[i];
         let (bx, by) = pts[(i + 1) % n];
@@ -102,10 +100,10 @@ pub async fn extrude_sketch_endpoint(
     //   XY: (x, y),  extrude along Z
     //   XZ: (x, z),  extrude along Y  ← most common in our CAD
     //   YZ: (y, z),  extrude along X
-    let mut pts2: Vec<(f32, f32)> = req.profile.iter().map(|p| match plane.as_str() {
-        "XY" => (p.x as f32, p.y as f32),
-        "YZ" => (p.y as f32, p.z as f32),
-        _    => (p.x as f32, p.z as f32), // XZ
+    let mut pts2: Vec<(f64, f64)> = req.profile.iter().map(|p| match plane.as_str() {
+        "XY" => (p.x, p.y),
+        "YZ" => (p.y, p.z),
+        _    => (p.x, p.z), // XZ
     }).collect();
 
     // Enforce CCW (our kernel expects it).
@@ -117,7 +115,7 @@ pub async fn extrude_sketch_endpoint(
     if pts2.len() > 3 {
         let first = pts2[0];
         let last = *pts2.last().unwrap();
-        if (first.0 - last.0).abs() < 1e-7 && (first.1 - last.1).abs() < 1e-7 {
+        if (first.0 - last.0).abs() < 1e-9 && (first.1 - last.1).abs() < 1e-9 {
             pts2.pop();
         }
     }
@@ -131,8 +129,8 @@ pub async fn extrude_sketch_endpoint(
     // ── 3. Build Point2 slice ──────────────────────────────────────────────
     let kernel_pts: Vec<Point2> = pts2.iter().map(|(u, v)| Point2::new(*u, *v)).collect();
 
-    let depth = req.depth as f32;
-    let bevel = req.bevel.unwrap_or(0.0) as f32;
+    let depth = req.depth;
+    let bevel = req.bevel.unwrap_or(0.0);
 
     // ── 4. Extrude via own kernel ─────────────────────────────────────────
     let parts = extrude_polygon(&kernel_pts, &ExtrudeOptions { depth, bevel })
@@ -150,11 +148,11 @@ pub async fn extrude_sketch_endpoint(
     let mut indices:   Vec<u32> = Vec::new();
     let mut face_ids:  Vec<u32> = Vec::new();
 
-    // Plane offset: where the sketch sits in the perpendicular axis.
-    let plane_offset: f32 = match plane.as_str() {
-        "XY" => req.profile.first().map(|p| p.z as f32).unwrap_or(0.0),
-        "YZ" => req.profile.first().map(|p| p.x as f32).unwrap_or(0.0),
-        _    => req.profile.first().map(|p| p.y as f32).unwrap_or(0.0),
+    // Plane offset: where the sketch sits in the perpendicular axis (f64).
+    let plane_offset: f64 = match plane.as_str() {
+        "XY" => req.profile.first().map(|p| p.z).unwrap_or(0.0),
+        "YZ" => req.profile.first().map(|p| p.x).unwrap_or(0.0),
+        _    => req.profile.first().map(|p| p.y).unwrap_or(0.0),
     };
 
     for (part_idx, part) in parts.iter().enumerate() {
@@ -162,34 +160,36 @@ pub async fn extrude_sketch_endpoint(
         let v_offset = (positions.len() / 3) as u32;
 
         for v in &part.vertices {
-            // kernel coords: v[0]=u, v[1]=v_coord, v[2]=depth_axis
-            // Lift back to 3D world space.
-            let (wx, wy, wz) = match plane.as_str() {
+            // kernel coords: v[0]=u, v[1]=v_coord, v[2]=depth_axis (all f64)
+            // Lift back to 3D world space, then cast to f32 for GPU.
+            let (wx, wy, wz): (f64, f64, f64) = match plane.as_str() {
                 "XY" => (v[0], v[1], plane_offset + v[2]),
                 "YZ" => (plane_offset + v[2], v[0], v[1]),
                 _    => (v[0], plane_offset + v[2], v[1]), // XZ
             };
-            positions.push(wx);
-            positions.push(wy);
-            positions.push(wz);
+            positions.push(wx as f32);
+            positions.push(wy as f32);
+            positions.push(wz as f32);
+            // face_id is per-vertex (vertex buffer stride=4, one u32 per vertex)
+            face_ids.push(face_id);
         }
 
         for n in &part.normals {
-            let (nx, ny, nz) = match plane.as_str() {
+            let (nx, ny, nz): (f64, f64, f64) = match plane.as_str() {
                 "XY" => (n[0], n[1], n[2]),
                 "YZ" => (n[2], n[0], n[1]),
                 _    => (n[0], n[2], n[1]), // XZ
             };
-            normals.push(nx);
-            normals.push(ny);
-            normals.push(nz);
+            normals.push(nx as f32);
+            normals.push(ny as f32);
+            normals.push(nz as f32);
         }
 
         for tri in &part.faces {
             indices.push(v_offset + tri[0] as u32);
             indices.push(v_offset + tri[1] as u32);
             indices.push(v_offset + tri[2] as u32);
-            face_ids.push(face_id);
+            // face_ids moved to per-vertex loop above
         }
     }
 

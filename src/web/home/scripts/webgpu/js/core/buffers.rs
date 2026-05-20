@@ -69,10 +69,9 @@ pub const JS: &str = r##"
         if (!result || !result.positions || !result.indices) return;
         const pos = new Float32Array(result.positions);
         const nrm = new Float32Array(result.normals || new Array(result.positions.length).fill(0));
-        const numTri = result.indices.length / 3;
-        const fidSrc = result.face_ids || new Array(numTri * 3).fill(1);
-        const fid = new Uint32Array(fidSrc);
+        const fid = new Uint32Array(result.face_ids || new Array(result.positions.length / 3).fill(1));
         const idx = new Uint32Array(result.indices);
+        console.log('[CAD upload] verts=' + (pos.length/3) + ' tris=' + (idx.length/3) + ' faceIds=' + fid.length);
         device.queue.writeBuffer(cadPosBuf,    0, pos);
         device.queue.writeBuffer(cadNormalBuf, 0, nrm);
         device.queue.writeBuffer(cadFaceIdBuf, 0, fid);

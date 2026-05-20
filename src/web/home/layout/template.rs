@@ -8,6 +8,9 @@ pub fn template(styles: &str, scripts: &str) -> String {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ChefOS Interactive Engine</title>
   <meta name="description" content="Интерактивная операционная система для шеф-повара: рецепты, склад, ингредиенты, себестоимость и лаборатория в одном игровом интерфейсе." />
+  <!-- Preload WASM module so the browser fetches it in parallel with other resources -->
+  <link rel="modulepreload" href="/wasm/sketch_engine/sketch_engine.js" />
+  <link rel="preload" href="/wasm/sketch_engine/sketch_engine_bg.wasm" as="fetch" type="application/wasm" crossorigin="anonymous" />
   <style>"##;
 
     let mid = r##"</style>

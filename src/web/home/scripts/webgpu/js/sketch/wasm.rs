@@ -461,4 +461,19 @@ pub const JS: &str = r##"
       window.__setUseWasmEngine = function(v) {
         window.__setEngineMode(v ? 'wasm' : 'backend');
       };
+
+      // ── Eager preload — start fetching WASM immediately on page load ──────
+      // The module is already hinted via <link rel="modulepreload"> in <head>,
+      // so the browser has it in the preload cache. This call instantiates it
+      // in the background so the first user action is instant.
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          window.__loadSketchWasm().catch(e => console.warn('[wasm preload]', e));
+        });
+      } else {
+        // DOMContentLoaded already fired (inline scripts run after it).
+        setTimeout(() => {
+          window.__loadSketchWasm().catch(e => console.warn('[wasm preload]', e));
+        }, 0);
+      }
 "##;
