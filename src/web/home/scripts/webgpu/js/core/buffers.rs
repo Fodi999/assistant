@@ -63,4 +63,20 @@ pub const JS: &str = r##"
         ],
       });
       const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bgl] });
+
+      // ── Upload a solid mesh from the geometry kernel into CAD GPU buffers ──
+      window.__uploadSolidToScene = function(result) {
+        if (!result || !result.positions || !result.indices) return;
+        const pos = new Float32Array(result.positions);
+        const nrm = new Float32Array(result.normals || new Array(result.positions.length).fill(0));
+        const numTri = result.indices.length / 3;
+        const fidSrc = result.face_ids || new Array(numTri * 3).fill(1);
+        const fid = new Uint32Array(fidSrc);
+        const idx = new Uint32Array(result.indices);
+        device.queue.writeBuffer(cadPosBuf,    0, pos);
+        device.queue.writeBuffer(cadNormalBuf, 0, nrm);
+        device.queue.writeBuffer(cadFaceIdBuf, 0, fid);
+        device.queue.writeBuffer(cadIndexBuf,  0, idx);
+        cadIndexCount = idx.length;
+      };
 "##;

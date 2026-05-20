@@ -211,6 +211,7 @@ pub const JS: &str = r##"
       result.__dt = dt;
       _state.previewMesh = result;
       window.__lastSolidResult = result;
+      if (window.__uploadSolidToScene) window.__uploadSolidToScene(result);
       if (window.__setStatusMessage)
         window.__setStatusMessage(
           (isFinal ? '✓ Solid' : 'preview') + ': ' +

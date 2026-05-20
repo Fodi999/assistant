@@ -102,6 +102,21 @@ pub const JS: &str = r##"
           pass.draw(3);
           pass.end();
         }
+        // ── CAD solid pass — renders any uploaded solid mesh ───────────────
+        if (cadIndexCount > 0) {
+          const cadPass = enc.beginRenderPass({
+            colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }],
+            depthStencilAttachment: { view: depthView, depthClearValue: 1.0, depthLoadOp: 'load', depthStoreOp: 'store' },
+          });
+          cadPass.setPipeline(cadPipeline);
+          cadPass.setBindGroup(0, bindGroup);
+          cadPass.setVertexBuffer(0, cadPosBuf);
+          cadPass.setVertexBuffer(1, cadNormalBuf);
+          cadPass.setVertexBuffer(2, cadFaceIdBuf);
+          cadPass.setIndexBuffer(cadIndexBuf, 'uint32');
+          cadPass.drawIndexed(cadIndexCount);
+          cadPass.end();
+        }
         device.queue.submit([enc.finish()]);
         if (window.__perfSample) window.__perfSample('render', performance.now() - __pfRender);
 
