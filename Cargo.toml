@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [".", "crates/sketch_engine"]
+members = [".", "crates/sketch_engine", "crates/geometry_engine"]
 
 [dependencies]
 # Shared sketch geometry engine (also compilable to WASM)
-sketch_engine = { path = "crates/sketch_engine" }
+sketch_engine    = { path = "crates/sketch_engine" }
+geometry_engine  = { path = "crates/geometry_engine" }
 
 # Web framework
 axum = { version = "0.7", features = ["macros", "multipart"] }

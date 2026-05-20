@@ -1442,6 +1442,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "geometry_engine"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2922,6 +2930,7 @@ dependencies = [
  "chrono",
  "deunicode",
  "dotenvy",
+ "geometry_engine",
  "governor",
  "hex",
  "hmac",
