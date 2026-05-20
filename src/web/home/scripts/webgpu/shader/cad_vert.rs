@@ -56,8 +56,8 @@ fn euler_to_matrix(deg: vec3f) -> mat3x3f {
   
   let rotMat      = euler_to_matrix(objRot);
   // position comes in absolute dimensions from backend, assuming it's around origin
-  // truck backend centers it at origin, we just apply rotation and translation
-  // position from truck-modeling / sketch extrude is in world metres — no mm conversion needed.
+  // geometry-kernel centers solid at origin; apply rotation and translation
+  // positions are in world metres — no mm conversion needed.
   // (Previously the cube endpoint used mm, but the sketch extrude pipeline uses metres directly.)
   let world_scale = 1.0;
   

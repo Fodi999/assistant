@@ -21,7 +21,7 @@ pub const JS: &str = r##"
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
 
-      // ── CAD Mesh Buffers (Полигональная сетка от Truck Backend) ──
+      // ── CAD Mesh Buffers (Полигональная сетка от geometry-kernel) ──
       // Выделяем пустые буферы с запасом на 100k вершин и треугольников.
       // Позже мы их обновим через device.queue.writeBuffer
       let cadPosBuf = device.createBuffer({ size: 100000 * 3 * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });

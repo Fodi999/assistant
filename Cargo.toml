@@ -74,11 +74,7 @@ rand = "0.8"
 home = "=0.5.9"  # Pin to avoid edition2024
 regex-lite = "0.1.9"
 deunicode = "1.6.2"
-truck-modeling = "0.6.0"
-truck-meshalgo = "0.4.0"
-truck-polymesh = "0.6.0"
-truck-stepio = "0.3.0"
-truck-topology = "0.6.0"
+
 
 [dev-dependencies]
 http-body-util = "0.1"

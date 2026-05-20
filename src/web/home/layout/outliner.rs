@@ -240,7 +240,7 @@ pub fn outliner_js() -> &'static str {
           let html = '<div class="outliner-section-header">⬡ Solids (' + solids.length + ')</div>';
           for (const s of solids) {
             const sel = s.id === selectedId ? ' selected' : '';
-            const kernel = (s.source === 'truck-modeling') ? '🔷' : '◇';
+            const kernel = (s.source === 'geometry-kernel') ? '🔷' : '◇';
             const tris = s.triangleCount || (s.mesh && s.mesh.meta && s.mesh.meta.triangleCount) || '?';
             html += '<div class="outliner-item' + sel + '" data-solid-id="' + escapeHtml(s.id) + '">'
               + '<span class="outliner-item-icon">⬚</span>'

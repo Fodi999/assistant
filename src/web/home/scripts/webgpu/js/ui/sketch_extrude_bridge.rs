@@ -1,12 +1,12 @@
 // ── Sketch → Solid Bridge ──────────────────────────────────────────────────
 //
-//  Соединяет две библиотеки:
+//  Соединяет две части:
 //    sketch_engine (WASM, браузер) — 2D constraint solver
-//    truck-modeling (Rust, сервер) — B-Rep solid / tessellation
+//    geometry-kernel (Rust, сервер) — собственный движок экструзии
 //
 //  Пайплайн:
 //    1. sketchState.profiles  → закрытые 2D профили (из sketch_engine)
-//    2. POST /api/matter/sketch/extrude  → truck: Wire → Face → Solid → меш
+//    2. POST /api/matter/sketch/extrude  → kernel: extrude_polygon → меш
 //    3. Результат: WebGL мини-превью + OBJ-скачать + статус-значок
 //
 //  Публичные функции:
@@ -173,7 +173,7 @@ pub const JS: &str = r##"
     el.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <span style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:${C.mute};">
-          🧱 Sketch → Solid (truck B-Rep)
+          🧱 Sketch → Solid
         </span>
         <button id="__se_bridge_close" style="background:none;border:none;color:${C.dim};font-size:16px;cursor:pointer;padding:0 2px;">✕</button>
       </div>
@@ -270,7 +270,7 @@ pub const JS: &str = r##"
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 3. Отправка на truck-modeling backend
+  // 3. Отправка на geometry-kernel backend
   // ─────────────────────────────────────────────────────────────────────────
 
   async function _submitExtrude() {
@@ -301,7 +301,7 @@ pub const JS: &str = r##"
     const plane = _profilePlane(_activeProfile);
 
     _hideModal();
-    if (window.__setStatusMessage) window.__setStatusMessage('⏳ truck: строю B-Rep solid…');
+    if (window.__setStatusMessage) window.__setStatusMessage('⏳ строю solid…');
 
     const body = { plane, depth: depthM, profile: pts, tolerance: 0.005 };
     console.log('[sketch→solid] POST /api/matter/sketch/extrude', body);
@@ -324,7 +324,7 @@ pub const JS: &str = r##"
     } catch (e) {
       console.error('[sketch→solid] error:', e);
       if (window.__setStatusMessage)
-        window.__setStatusMessage('✗ truck: ' + e.message);
+        window.__setStatusMessage('✗ kernel: ' + e.message);
       return;
     }
 
@@ -428,7 +428,7 @@ pub const JS: &str = r##"
         'Граней: <b>' + result.face_count + '</b> · ' +
         'Глубина: <b>' + depthMm.toFixed(1) + ' мм</b> · ' +
         'Плоскость: <b>' + plane + '</b><br>' +
-        'Движок: <b>' + (result.kernel || 'truck-modeling') + '</b>';
+        'Движок: <b>' + (result.kernel || 'geometry-kernel') + '</b>';
     }
 
     // WebGL render
@@ -646,7 +646,7 @@ pub const JS: &str = r##"
   /**
    * Главная точка входа.
    * Открывает модальное окно ввода глубины, затем:
-   *   sketch_engine (WASM, 2D профиль) → truck (Rust, 3D solid) → WebGL превью
+   *   sketch_engine (WASM, 2D профиль) → geometry-kernel (Rust, 3D solid) → WebGL превью
    *
    * @param {string} [profileId]  — id профиля (необязательно; default: первый/выбранный)
    * @param {number} [depthMm]    — глубина мм (необязательно; если передана, пропустить модал)

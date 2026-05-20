@@ -108,7 +108,7 @@ pub const JS: &str = r##"
     _state.active = false;
     if (_state._debounce) { clearTimeout(_state._debounce); _state._debounce = null; }
     _hideDepthHud();
-    await _sendToTruck(d, true);
+    await _sendToKernel(d, true);
   };
 
   // ── Depth HUD ─────────────────────────────────────────────────────────────
@@ -170,17 +170,17 @@ pub const JS: &str = r##"
     if (inp && document.activeElement !== inp) inp.value = Math.round(d);
   }
 
-  // ── Truck POST ────────────────────────────────────────────────────────────
+  // ── Kernel POST ───────────────────────────────────────────────────────────
 
   function _schedulePreview(depthMm) {
     if (_state._debounce) clearTimeout(_state._debounce);
     _state._debounce = setTimeout(function() {
       _state._debounce = null;
-      _sendToTruck(depthMm, false);
+      _sendToKernel(depthMm, false);
     }, 280);
   }
 
-  async function _sendToTruck(depthMm, isFinal) {
+  async function _sendToKernel(depthMm, isFinal) {
     if (_state.active && !_state.profile) _state.profile = _getProfile(_state.profileId);
     var prof = _state.profile || _getProfile(null);
     if (!prof) { console.warn('[SolidExtrude] no profile'); return; }
@@ -192,7 +192,7 @@ pub const JS: &str = r##"
     var plane  = _state.plane || 'XZ';
     var depthM = depthMm / 1000.0;
     if (window.__setStatusMessage)
-      window.__setStatusMessage('truck building ' + depthMm + ' mm...');
+      window.__setStatusMessage('⏳ building ' + depthMm + ' mm...');
     console.log('[SolidExtrude] POST /api/matter/sketch/extrude plane=' + plane +
       ' depth=' + depthM + 'm pts=' + pts.length + ' first=' + JSON.stringify(pts[0]));
     var body = { plane: plane, depth: depthM, profile: pts, tolerance: isFinal ? 0.003 : 0.008 };
@@ -213,16 +213,15 @@ pub const JS: &str = r##"
       window.__lastSolidResult = result;
       if (window.__setStatusMessage)
         window.__setStatusMessage(
-          (isFinal ? 'Solid OK' : 'preview') + ': ' +
+          (isFinal ? '✓ Solid' : 'preview') + ': ' +
           result.vertex_count + ' vert / ' + result.triangle_count + ' tri / ' + dt + 'ms'
         );
-      // Bridge-панель из sketch_extrude_bridge.rs
       if (window.__showSolidPreviewPanel) {
         window.__showSolidPreviewPanel(result, depthMm, plane);
       }
     } catch(e) {
-      console.error('[SolidExtrude] truck error:', e);
-      if (window.__setStatusMessage) window.__setStatusMessage('truck error: ' + e.message);
+      console.error('[SolidExtrude] kernel error:', e);
+      if (window.__setStatusMessage) window.__setStatusMessage('✗ kernel error: ' + e.message);
     }
   }
 
