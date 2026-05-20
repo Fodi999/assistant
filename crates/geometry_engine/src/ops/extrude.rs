@@ -28,16 +28,16 @@ use crate::mesh::GeometryError;
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A 2D point in the XY plane.
+/// A 2D point in the XY plane. Uses Real (f64) for CAD precision.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Point2 {
-    pub x: f32,
-    pub y: f32,
+    pub x: crate::math::Real,
+    pub y: crate::math::Real,
 }
 
 impl Point2 {
     #[inline]
-    pub const fn new(x: f32, y: f32) -> Self {
+    pub const fn new(x: crate::math::Real, y: crate::math::Real) -> Self {
         Self { x, y }
     }
 }
@@ -47,12 +47,9 @@ impl Point2 {
 pub struct ExtrudeOptions {
     /// Total depth (Z extent). The polygon is centred at z = 0, so the front
     /// cap sits at `+depth/2` and the back cap at `-depth/2`.
-    pub depth: f32,
-    /// Optional chamfer width. When > 0 the side-wall verts are split into
-    /// three rows — bevel-front / straight-wall / bevel-back — and the cap
-    /// contours are inset by this amount so the bevel face slopes at ~45°.
-    /// Clamped to `depth * 0.49` to keep geometry valid.
-    pub bevel: f32,
+    pub depth: crate::math::Real,
+    /// Optional chamfer width (metres). Clamped to `depth * 0.49`.
+    pub bevel: crate::math::Real,
 }
 
 impl Default for ExtrudeOptions {
@@ -116,25 +113,25 @@ pub fn extrude_polygon(
 // Cap (fan triangulation)
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn build_cap(points: &[Point2], z: f32, normal: [f32; 3], flip: bool) -> MeshPart {
+fn build_cap(points: &[Point2], z: f64, normal: [f64; 3], flip: bool) -> MeshPart {
     let n = points.len();
 
     // Normalised UV bounding box.
     let (min_x, max_x, min_y, max_y) = points.iter().fold(
         (
-            f32::INFINITY,
-            f32::NEG_INFINITY,
-            f32::INFINITY,
-            f32::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
         ),
         |(lx, hx, ly, hy), p| (lx.min(p.x), hx.max(p.x), ly.min(p.y), hy.max(p.y)),
     );
     let range_x = (max_x - min_x).max(1e-6);
     let range_y = (max_y - min_y).max(1e-6);
 
-    let mut vertices: Vec<[f32; 3]> = Vec::with_capacity(n);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(n);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(n);
+    let mut vertices: Vec<[f64; 3]> = Vec::with_capacity(n);
+    let mut normals: Vec<[f64; 3]> = Vec::with_capacity(n);
+    let mut uvs: Vec<[f64; 2]> = Vec::with_capacity(n);
 
     for p in points {
         vertices.push([p.x, p.y, z]);
@@ -164,15 +161,15 @@ fn build_cap(points: &[Point2], z: f32, normal: [f32; 3], flip: bool) -> MeshPar
 // Side walls — no bevel
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn build_sides_flat(points: &[Point2], half: f32) -> MeshPart {
+fn build_sides_flat(points: &[Point2], half: f64) -> MeshPart {
     let n = points.len();
 
     // Cumulative perimeter → U coordinate.
     let (edge_u, total_perim) = edge_u_coords(points);
 
-    let mut vertices: Vec<[f32; 3]> = Vec::with_capacity(n * 4);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(n * 4);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(n * 4);
+    let mut vertices: Vec<[f64; 3]> = Vec::with_capacity(n * 4);
+    let mut normals: Vec<[f64; 3]> = Vec::with_capacity(n * 4);
+    let mut uvs: Vec<[f64; 2]> = Vec::with_capacity(n * 4);
     let mut faces: Vec<[usize; 3]> = Vec::with_capacity(n * 2);
 
     for i in 0..n {
@@ -182,7 +179,7 @@ fn build_sides_flat(points: &[Point2], half: f32) -> MeshPart {
 
         // Outward edge normal in XY (perpendicular to edge direction).
         let (nx, ny) = outward_normal_2d(a, b);
-        let norm = [nx, ny, 0.0];
+        let norm: [f64; 3] = [nx, ny, 0.0];
 
         let u0 = edge_u[i] / total_perim;
         let u1 = edge_u[i + 1] / total_perim;
@@ -230,17 +227,17 @@ fn build_sides_flat(points: &[Point2], half: f32) -> MeshPart {
 // 3 quad rows → 6 triangles per edge.
 // Normals: bevel rows at 45° blend, wall rows pure outward.
 
-fn build_sides_beveled(points: &[Point2], half: f32, bevel: f32) -> MeshPart {
+fn build_sides_beveled(points: &[Point2], half: f64, bevel: f64) -> MeshPart {
     let n = points.len();
 
     let (edge_u, total_perim) = edge_u_coords(points);
 
-    let mut vertices: Vec<[f32; 3]> = Vec::with_capacity(n * 8);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(n * 8);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(n * 8);
+    let mut vertices: Vec<[f64; 3]> = Vec::with_capacity(n * 8);
+    let mut normals: Vec<[f64; 3]> = Vec::with_capacity(n * 8);
+    let mut uvs: Vec<[f64; 2]> = Vec::with_capacity(n * 8);
     let mut faces: Vec<[usize; 3]> = Vec::with_capacity(n * 6);
 
-    let inv_sqrt2 = 1.0_f32 / 2.0_f32.sqrt();
+    let inv_sqrt2 = 1.0_f64 / 2.0_f64.sqrt();
 
     for i in 0..n {
         let j = (i + 1) % n;
@@ -321,7 +318,7 @@ fn build_sides_beveled(points: &[Point2], half: f32, bevel: f32) -> MeshPart {
 /// Compute outward 2D normal for the edge `a → b`.
 /// The outward direction is `(dy, -dx)` normalised.
 #[inline]
-fn outward_normal_2d(a: Point2, b: Point2) -> (f32, f32) {
+fn outward_normal_2d(a: Point2, b: Point2) -> (f64, f64) {
     let dx = b.x - a.x;
     let dy = b.y - a.y;
     let len = (dx * dx + dy * dy).sqrt().max(1e-8);
@@ -331,10 +328,10 @@ fn outward_normal_2d(a: Point2, b: Point2) -> (f32, f32) {
 /// Cumulative edge lengths → U texture coordinate per vertex.
 /// Returns `(edge_u, total_perimeter)` where `edge_u[i]` is the arc length
 /// up to vertex `i` and `edge_u[n]` == total perimeter.
-fn edge_u_coords(points: &[Point2]) -> (Vec<f32>, f32) {
+fn edge_u_coords(points: &[Point2]) -> (Vec<f64>, f64) {
     let n = points.len();
     let mut edge_u = Vec::with_capacity(n + 1);
-    edge_u.push(0.0_f32);
+    edge_u.push(0.0_f64);
     for i in 0..n {
         let j = (i + 1) % n;
         let dx = points[j].x - points[i].x;
@@ -353,7 +350,7 @@ fn edge_u_coords(points: &[Point2]) -> (Vec<f32>, f32) {
 mod tests {
     use super::*;
 
-    fn square(s: f32) -> Vec<Point2> {
+    fn square(s: f64) -> Vec<Point2> {
         vec![
             Point2::new(s, s),
             Point2::new(-s, s),

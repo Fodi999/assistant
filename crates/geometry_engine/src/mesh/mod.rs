@@ -8,7 +8,7 @@ pub mod weld;
 mod error;
 
 pub use error::GeometryError;
-pub use mesh::{hex_to_rgb, Material, MaterialGroup, Mesh, MeshPart};
+pub use mesh::{hex_to_rgb, GpuMesh, Material, MaterialGroup, Mesh, MeshPart};
 pub use normals::recalculate_smooth_normals;
 pub use obj::{export_obj, ObjExport};
 pub use weld::weld_vertices;

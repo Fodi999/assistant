@@ -11,7 +11,7 @@ use crate::mesh::GeometryError;
 ///  * no two consecutive duplicate points
 pub fn validate_profile_3d(
     pts: &[[f64; 3]],
-) -> Result<Vec<(f32, f32, f32)>, GeometryError> {
+) -> Result<Vec<(f64, f64, f64)>, GeometryError> {
     if pts.len() < 3 {
         return Err(GeometryError::InvalidProfile(format!(
             "need ≥3 points, got {}", pts.len()
@@ -24,13 +24,13 @@ pub fn validate_profile_3d(
                 "point {i} has non-finite coordinate"
             )));
         }
-        let fp = (p[0] as f32, p[1] as f32, p[2] as f32);
+        let fp = (p[0] as f64, p[1] as f64, p[2] as f64);
         if i > 0 {
-            let prev: (f32, f32, f32) = out[i - 1];
+            let prev: (f64, f64, f64) = out[i - 1];
             let dx = fp.0 - prev.0;
             let dy = fp.1 - prev.1;
             let dz = fp.2 - prev.2;
-            if (dx*dx + dy*dy + dz*dz).sqrt() < 1e-9_f32 {
+            if (dx*dx + dy*dy + dz*dz).sqrt() < 1e-9_f64 {
                 return Err(GeometryError::InvalidProfile(format!(
                     "points {i} and {} are duplicate", i-1
                 )));

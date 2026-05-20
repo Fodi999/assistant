@@ -1,24 +1,17 @@
-//! 2D профиль для операции вращения вокруг оси Y (lathe).
-//!
-//! `LatheProfile` — упорядоченный список `(radius, y)` точек.
-//! При подаче в `ops::lathe::lathe_profile` вращается вокруг Y.
-//!
-//! Ограничения:
-//!   * radius >= 0
-//!   * y монотонно не убывает
-//!   * минимум 2 точки
+//! 2D профиль для операции вращения вокруг оси Y (lathe). Uses Real (f64).
 
+use crate::math::Real;
 use crate::mesh::GeometryError;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LathePoint {
-    pub radius: f32,
-    pub y: f32,
+    pub radius: Real,
+    pub y: Real,
 }
 
 impl LathePoint {
     #[inline]
-    pub const fn new(radius: f32, y: f32) -> Self { Self { radius, y } }
+    pub const fn new(radius: Real, y: Real) -> Self { Self { radius, y } }
 }
 
 #[derive(Debug, Clone)]
@@ -60,24 +53,24 @@ impl LatheProfile {
         Ok(Self { points })
     }
 
-    pub fn scaled(mut self, factor: f32) -> Self {
+    pub fn scaled(mut self, factor: Real) -> Self {
         for p in &mut self.points { p.radius *= factor; p.y *= factor; }
         self
     }
 
-    pub fn translated_y(mut self, dy: f32) -> Self {
+    pub fn translated_y(mut self, dy: Real) -> Self {
         for p in &mut self.points { p.y += dy; }
         self
     }
 
-    pub fn max_radius(&self) -> f32 {
-        self.points.iter().map(|p| p.radius).fold(0.0_f32, f32::max)
+    pub fn max_radius(&self) -> Real {
+        self.points.iter().map(|p| p.radius).fold(0.0_f64, f64::max)
     }
-    pub fn min_y(&self) -> f32 {
-        self.points.iter().map(|p| p.y).fold(f32::INFINITY, f32::min)
+    pub fn min_y(&self) -> Real {
+        self.points.iter().map(|p| p.y).fold(f64::INFINITY, f64::min)
     }
-    pub fn max_y(&self) -> f32 {
-        self.points.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max)
+    pub fn max_y(&self) -> Real {
+        self.points.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max)
     }
     pub fn len(&self) -> usize { self.points.len() }
     pub fn is_empty(&self) -> bool { self.points.is_empty() }

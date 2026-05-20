@@ -1,6 +1,6 @@
-//! Axis-aligned bounding box (f32, 3D).
+//! Axis-aligned bounding box — Real (f64), 3D.
 
-use crate::math::Vec3;
+use crate::math::{Real, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Aabb {
@@ -9,8 +9,8 @@ pub struct Aabb {
 }
 
 impl Aabb {
-    /// Construct from raw arrays (for compatibility with old kernel/csg.rs).
-    pub fn from_arrays(min: [f32; 3], max: [f32; 3]) -> Self {
+    /// Construct from raw arrays.
+    pub fn from_arrays(min: [Real; 3], max: [Real; 3]) -> Self {
         Self {
             min: Vec3::from_array(min),
             max: Vec3::from_array(max),
@@ -27,7 +27,7 @@ impl Aabb {
 
     /// Does point (array form) lie inside this AABB?
     #[inline]
-    pub fn contains_arr(&self, p: [f32; 3]) -> bool {
+    pub fn contains_arr(&self, p: [Real; 3]) -> bool {
         self.contains(Vec3::from_array(p))
     }
 

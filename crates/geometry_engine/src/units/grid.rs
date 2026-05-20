@@ -12,7 +12,8 @@ pub fn grid_to_f64(g: i32) -> f64 {
     g as f64 * GRID_SIZE
 }
 
-/// Конвертировать integer grid coordinate → метры (f32) для геометрии.
+/// Конвертировать integer grid coordinate → метры (f32) для GPU upload.
+/// Используй `grid_to_f64` для CAD вычислений.
 #[inline]
 pub fn grid_to_f32(g: i32) -> f32 {
     (g as f64 * GRID_SIZE) as f32

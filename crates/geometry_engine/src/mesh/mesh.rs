@@ -1,11 +1,17 @@
-//! Типы меша: Mesh, Material, MaterialGroup, MeshPart.
+//! Типы меша: Mesh, MeshPart, GpuMesh, Material, MaterialGroup.
+//!
+//! # Precision policy
+//! `Mesh` and `MeshPart` store geometry as `[Real; 3]` (f64) for CAD precision.
+//! `GpuMesh` stores f32 and is only created when uploading to WebGPU.
 
-/// Triangulated mesh for OBJ/GLTF export.
+use crate::math::Real;
+
+/// Triangulated mesh — internal precision (f64).
 #[derive(Debug, Clone)]
 pub struct Mesh {
-    pub vertices: Vec<[f32; 3]>,
-    pub normals:  Vec<[f32; 3]>,
-    pub uvs:      Vec<[f32; 2]>,
+    pub vertices: Vec<[Real; 3]>,
+    pub normals:  Vec<[Real; 3]>,
+    pub uvs:      Vec<[Real; 2]>,
     /// Legacy single-material faces (used when `groups` is empty).
     pub faces:    Vec<[usize; 3]>,
     pub material: Material,
@@ -15,9 +21,9 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new(
-        vertices: Vec<[f32; 3]>,
-        normals:  Vec<[f32; 3]>,
-        uvs:      Vec<[f32; 2]>,
+        vertices: Vec<[Real; 3]>,
+        normals:  Vec<[Real; 3]>,
+        uvs:      Vec<[Real; 2]>,
         faces:    Vec<[usize; 3]>,
         material: Material,
     ) -> Self {
@@ -27,9 +33,9 @@ impl Mesh {
     }
 
     pub fn new_multi(
-        vertices: Vec<[f32; 3]>,
-        normals:  Vec<[f32; 3]>,
-        uvs:      Vec<[f32; 2]>,
+        vertices: Vec<[Real; 3]>,
+        normals:  Vec<[Real; 3]>,
+        uvs:      Vec<[Real; 2]>,
         groups:   Vec<MaterialGroup>,
     ) -> Self {
         debug_assert_eq!(vertices.len(), normals.len());
@@ -37,6 +43,31 @@ impl Mesh {
         debug_assert!(!groups.is_empty());
         let first = groups[0].clone();
         Self { vertices, normals, uvs, faces: first.faces, material: first.material, groups }
+    }
+
+    /// Convert to GPU-ready format (f32).
+    /// Call this only when uploading to WebGPU — not during geometry operations.
+    pub fn to_gpu(&self) -> GpuMesh {
+        let positions: Vec<[f32; 3]> = self
+            .vertices.iter()
+            .map(|v| [v[0] as f32, v[1] as f32, v[2] as f32])
+            .collect();
+        let normals: Vec<[f32; 3]> = self
+            .normals.iter()
+            .map(|n| [n[0] as f32, n[1] as f32, n[2] as f32])
+            .collect();
+        let uvs: Vec<[f32; 2]> = self
+            .uvs.iter()
+            .map(|u| [u[0] as f32, u[1] as f32])
+            .collect();
+        let indices: Vec<u32> = if self.groups.is_empty() {
+            self.faces.iter().flat_map(|f| f.iter().map(|&i| i as u32)).collect()
+        } else {
+            self.groups.iter()
+                .flat_map(|g| g.faces.iter().flat_map(|f| f.iter().map(|&i| i as u32)))
+                .collect()
+        };
+        GpuMesh { positions, normals, uvs, indices }
     }
 }
 
@@ -48,12 +79,12 @@ pub struct MaterialGroup {
 }
 
 /// Self-contained vertex/index block returned by kernel operations.
-/// Can be appended into a Mesh via MeshBuilder.
+/// Can be appended into a Mesh via MeshBuilder. Uses f64 internally.
 #[derive(Debug, Clone)]
 pub struct MeshPart {
-    pub vertices: Vec<[f32; 3]>,
-    pub normals:  Vec<[f32; 3]>,
-    pub uvs:      Vec<[f32; 2]>,
+    pub vertices: Vec<[Real; 3]>,
+    pub normals:  Vec<[Real; 3]>,
+    pub uvs:      Vec<[Real; 2]>,
     pub faces:    Vec<[usize; 3]>,
 }
 
@@ -67,6 +98,23 @@ impl MeshPart {
         let faces   = self.faces.iter().map(|f| [f[0], f[2], f[1]]).collect();
         Self { vertices: self.vertices.clone(), normals, uvs: self.uvs.clone(), faces }
     }
+}
+
+// ── GpuMesh ───────────────────────────────────────────────────────────────────
+
+/// GPU-ready mesh for WebGPU upload — f32 only.
+///
+/// Created exclusively via [`Mesh::to_gpu`]. Never used in geometry operations.
+#[derive(Debug, Clone)]
+pub struct GpuMesh {
+    /// Vertex positions (metres, f32).
+    pub positions: Vec<[f32; 3]>,
+    /// Per-vertex normals (unit vectors, f32).
+    pub normals:   Vec<[f32; 3]>,
+    /// UV coordinates (f32).
+    pub uvs:       Vec<[f32; 2]>,
+    /// Flat triangle index list (u32 for WebGPU index buffers).
+    pub indices:   Vec<u32>,
 }
 
 // ── Material ─────────────────────────────────────────────────────────────────

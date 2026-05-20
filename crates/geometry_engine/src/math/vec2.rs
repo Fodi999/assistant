@@ -1,30 +1,33 @@
-//! 2D vector (f32).
+//! 2D vector — uses Real (f64) for CAD precision.
+
+use crate::math::Real;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec2 {
-    pub x: f32,
-    pub y: f32,
+    pub x: Real,
+    pub y: Real,
 }
 
 impl Vec2 {
     pub const ZERO: Vec2 = Vec2 { x: 0.0, y: 0.0 };
 
     #[inline]
-    pub const fn new(x: f32, y: f32) -> Self { Self { x, y } }
+    pub const fn new(x: Real, y: Real) -> Self { Self { x, y } }
 
     #[inline]
-    pub fn length(self) -> f32 { (self.x * self.x + self.y * self.y).sqrt() }
+    pub fn length(self) -> Real { (self.x * self.x + self.y * self.y).sqrt() }
 
     #[inline]
-    pub fn dot(self, o: Vec2) -> f32 { self.x * o.x + self.y * o.y }
+    pub fn dot(self, o: Vec2) -> Real { self.x * o.x + self.y * o.y }
 
+    /// Z-component of the 3D cross product (scalar in 2D).
     #[inline]
-    pub fn cross_z(self, o: Vec2) -> f32 { self.x * o.y - self.y * o.x }
+    pub fn cross_z(self, o: Vec2) -> Real { self.x * o.y - self.y * o.x }
 
     #[inline]
     pub fn normalized(self) -> Vec2 {
         let l = self.length();
-        if l > 1e-8 { Vec2::new(self.x / l, self.y / l) } else { Vec2::ZERO }
+        if l > 1e-15 { Vec2::new(self.x / l, self.y / l) } else { Vec2::ZERO }
     }
 
     #[inline]
@@ -39,7 +42,7 @@ impl std::ops::Sub for Vec2 {
     type Output = Vec2;
     fn sub(self, o: Vec2) -> Vec2 { Vec2::new(self.x - o.x, self.y - o.y) }
 }
-impl std::ops::Mul<f32> for Vec2 {
+impl std::ops::Mul<Real> for Vec2 {
     type Output = Vec2;
-    fn mul(self, s: f32) -> Vec2 { Vec2::new(self.x * s, self.y * s) }
+    fn mul(self, s: Real) -> Vec2 { Vec2::new(self.x * s, self.y * s) }
 }

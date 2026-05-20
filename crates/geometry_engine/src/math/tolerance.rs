@@ -1,24 +1,27 @@
 //! Константы точности и эпсилон-сравнения.
+//! Все значения в единицах Real (f64) — метры.
+
+use crate::math::Real;
 
 /// Минимальная длина ребра для CAD операций (метры).
-pub const EDGE_EPS: f32 = 1e-8;
+pub const EDGE_EPS:   Real = 1e-12;
 
 /// Эпсилон для нормалей.
-pub const NORMAL_EPS: f32 = 1e-6;
+pub const NORMAL_EPS: Real = 1e-10;
 
 /// Эпсилон для площади полигона.
-pub const AREA_EPS: f32 = 1e-10;
+pub const AREA_EPS:   Real = 1e-14;
 
-/// Эпсилон для weld вершин (2 точки считаются одной если ближе этого расстояния).
-pub const WELD_EPS: f32 = 1e-5;
+/// Эпсилон для weld вершин. f64 позволяет различать точки на расстоянии 1 нм.
+pub const WELD_EPS:   Real = 1e-9;
 
 /// Вспомогательная структура — хранит параметры точности как значение.
 #[derive(Debug, Clone, Copy)]
 pub struct Tolerance {
-    /// Tessellation chord tolerance.
-    pub chord: f32,
-    /// Vertex weld distance.
-    pub weld: f32,
+    /// Tessellation chord tolerance (metres).
+    pub chord: Real,
+    /// Vertex weld distance (metres).
+    pub weld: Real,
 }
 
 impl Default for Tolerance {

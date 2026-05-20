@@ -25,15 +25,15 @@ use crate::mesh::{hex_to_rgb, Material, MaterialGroup, Mesh};
 /// Axis-aligned bounding box used as the "cutter" volume.
 #[derive(Debug, Clone)]
 pub struct Aabb {
-    pub min: [f32; 3],
-    pub max: [f32; 3],
+    pub min: [f64; 3],
+    pub max: [f64; 3],
 }
 
 impl Aabb {
     /// Build AABB from a mesh group (the "cutter" shape).
     pub fn from_mesh(mesh: &Mesh) -> Self {
-        let mut min = [f32::MAX; 3];
-        let mut max = [f32::MIN; 3];
+        let mut min = [f64::MAX; 3];
+        let mut max = [f64::MIN; 3];
         for v in &mesh.vertices {
             for i in 0..3 {
                 min[i] = min[i].min(v[i]);
@@ -44,7 +44,7 @@ impl Aabb {
     }
 
     /// Build a cylinder-shaped AABB (tight box around a cylinder at origin).
-    pub fn cylinder(radius: f32, height: f32, center: [f32; 3]) -> Self {
+    pub fn cylinder(radius: f64, height: f64, center: [f64; 3]) -> Self {
         Self {
             min: [
                 center[0] - radius,
@@ -60,7 +60,7 @@ impl Aabb {
     }
 
     /// Build a box AABB.
-    pub fn cuboid(half: [f32; 3], center: [f32; 3]) -> Self {
+    pub fn cuboid(half: [f64; 3], center: [f64; 3]) -> Self {
         Self {
             min: [
                 center[0] - half[0],
@@ -76,7 +76,7 @@ impl Aabb {
     }
 
     /// Is point [x,y,z] strictly inside this AABB?
-    pub fn contains(&self, p: [f32; 3]) -> bool {
+    pub fn contains(&self, p: [f64; 3]) -> bool {
         p[0] > self.min[0]
             && p[0] < self.max[0]
             && p[1] > self.min[1]
@@ -113,9 +113,9 @@ pub fn subtract(a: &Mesh, b_aabb: &Aabb, cap_material: Option<Material>) -> Mesh
     let subdivided = subdivide_mesh(a, 3);
     let a = &subdivided;
     // ── Step 1: collect surviving faces per group ───────────────────────────
-    let mut out_vertices: Vec<[f32; 3]> = Vec::new();
-    let mut out_normals: Vec<[f32; 3]> = Vec::new();
-    let mut out_uvs: Vec<[f32; 2]> = Vec::new();
+    let mut out_vertices: Vec<[f64; 3]> = Vec::new();
+    let mut out_normals: Vec<[f64; 3]> = Vec::new();
+    let mut out_uvs: Vec<[f64; 2]> = Vec::new();
     let mut out_groups: Vec<MaterialGroup> = Vec::new();
 
     // Work face-by-face across all groups.
@@ -137,11 +137,11 @@ pub fn subtract(a: &Mesh, b_aabb: &Aabb, cap_material: Option<Material>) -> Mesh
         a.groups.iter().map(|_| vec![]).collect()
     };
 
-    let mut boundary_vertices: Vec<[f32; 3]> = Vec::new(); // vertices on the cut boundary
+    let mut boundary_vertices: Vec<[f64; 3]> = Vec::new(); // vertices on the cut boundary
 
     for (gi, face) in &all_faces {
         // Centroid of this triangle
-        let v: Vec<[f32; 3]> = face.iter().map(|&i| a.vertices[i]).collect();
+        let v: Vec<[f64; 3]> = face.iter().map(|&i| a.vertices[i]).collect();
         let cx = (v[0][0] + v[1][0] + v[2][0]) / 3.0;
         let cy = (v[0][1] + v[1][1] + v[2][1]) / 3.0;
         let cz = (v[0][2] + v[1][2] + v[2][2]) / 3.0;
@@ -262,9 +262,9 @@ fn subdivide_mesh(mesh: &Mesh, passes: u32) -> Mesh {
 
         let mut get_mid = |a: usize,
                            b: usize,
-                           nv: &mut Vec<[f32; 3]>,
-                           nn: &mut Vec<[f32; 3]>,
-                           nu: &mut Vec<[f32; 2]>|
+                           nv: &mut Vec<[f64; 3]>,
+                           nn: &mut Vec<[f64; 3]>,
+                           nu: &mut Vec<[f64; 2]>|
          -> usize {
             let key = if a < b { (a, b) } else { (b, a) };
             if let Some(&m) = edge_mid.get(&key) {
@@ -334,9 +334,9 @@ fn subdivide_mesh(mesh: &Mesh, passes: u32) -> Mesh {
 fn flatten_mesh(
     mesh: &Mesh,
 ) -> (
-    Vec<[f32; 3]>,
-    Vec<[f32; 3]>,
-    Vec<[f32; 2]>,
+    Vec<[f64; 3]>,
+    Vec<[f64; 3]>,
+    Vec<[f64; 2]>,
     Vec<(usize, [usize; 3])>,
     Vec<(usize, Material)>,
 ) {
@@ -361,17 +361,17 @@ fn flatten_mesh(
     (verts, normals, uvs, faces, group_map)
 }
 
-fn midpoint3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+fn midpoint3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [
         (a[0] + b[0]) * 0.5,
         (a[1] + b[1]) * 0.5,
         (a[2] + b[2]) * 0.5,
     ]
 }
-fn midpoint2(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+fn midpoint2(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
     [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5]
 }
-fn normalize3(v: [f32; 3]) -> [f32; 3] {
+fn normalize3(v: [f64; 3]) -> [f64; 3] {
     let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-9);
     [v[0] / len, v[1] / len, v[2] / len]
 }
@@ -381,16 +381,16 @@ fn normalize3(v: [f32; 3]) -> [f32; 3] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type CapGroup = (
-    Vec<[f32; 3]>,   // verts
-    Vec<[f32; 3]>,   // normals
-    Vec<[f32; 2]>,   // uvs
+    Vec<[f64; 3]>,   // verts
+    Vec<[f64; 3]>,   // normals
+    Vec<[f64; 2]>,   // uvs
     Vec<[usize; 3]>, // faces
     Material,
 );
 
 /// Build a flat cap polygon closing the open boundary loop.
 /// Uses a simple fan-triangulation from the centroid.
-fn build_cap(boundary: &[[f32; 3]], cutter: &Aabb, mat: Option<Material>) -> Option<CapGroup> {
+fn build_cap(boundary: &[[f64; 3]], cutter: &Aabb, mat: Option<Material>) -> Option<CapGroup> {
     if boundary.len() < 3 {
         return None;
     }
@@ -406,9 +406,9 @@ fn build_cap(boundary: &[[f32; 3]], cutter: &Aabb, mat: Option<Material>) -> Opt
     // Find which faces of the AABB boundary verts sit near.
     let faces_to_cap = aabb_faces_touched(boundary, cutter);
 
-    let mut all_verts: Vec<[f32; 3]> = vec![];
-    let mut all_normals: Vec<[f32; 3]> = vec![];
-    let mut all_uvs: Vec<[f32; 2]> = vec![];
+    let mut all_verts: Vec<[f64; 3]> = vec![];
+    let mut all_normals: Vec<[f64; 3]> = vec![];
+    let mut all_uvs: Vec<[f64; 2]> = vec![];
     let mut all_faces: Vec<[usize; 3]> = vec![];
 
     for (axis, side) in faces_to_cap {
@@ -418,7 +418,7 @@ fn build_cap(boundary: &[[f32; 3]], cutter: &Aabb, mat: Option<Material>) -> Opt
         } else {
             cutter.max[axis]
         };
-        let near: Vec<[f32; 3]> = boundary
+        let near: Vec<[f64; 3]> = boundary
             .iter()
             .filter(|v| (v[axis] - plane_coord).abs() < 0.02)
             .copied()
@@ -428,13 +428,13 @@ fn build_cap(boundary: &[[f32; 3]], cutter: &Aabb, mat: Option<Material>) -> Opt
         }
 
         // Normal points outward from the cutter face
-        let mut normal = [0.0f32; 3];
+        let mut normal = [0.0f64; 3];
         normal[axis] = if side == 0 { -1.0 } else { 1.0 };
 
         // Fan triangulation from centroid
-        let cx: f32 = near.iter().map(|v| v[0]).sum::<f32>() / near.len() as f32;
-        let cy: f32 = near.iter().map(|v| v[1]).sum::<f32>() / near.len() as f32;
-        let cz: f32 = near.iter().map(|v| v[2]).sum::<f32>() / near.len() as f32;
+        let cx: f64 = near.iter().map(|v| v[0]).sum::<f64>() / near.len() as f64;
+        let cy: f64 = near.iter().map(|v| v[1]).sum::<f64>() / near.len() as f64;
+        let cz: f64 = near.iter().map(|v| v[2]).sum::<f64>() / near.len() as f64;
 
         let base = all_verts.len();
         all_verts.push([cx, cy, cz]);
@@ -472,7 +472,7 @@ fn build_cap(boundary: &[[f32; 3]], cutter: &Aabb, mat: Option<Material>) -> Opt
 
 /// Returns (axis, side) pairs for each AABB face that has boundary verts near it.
 /// axis: 0=X, 1=Y, 2=Z   side: 0=min, 1=max
-fn aabb_faces_touched(boundary: &[[f32; 3]], aabb: &Aabb) -> Vec<(usize, usize)> {
+fn aabb_faces_touched(boundary: &[[f64; 3]], aabb: &Aabb) -> Vec<(usize, usize)> {
     let mut result = vec![];
     for axis in 0..3usize {
         let span = (aabb.max[axis] - aabb.min[axis]).max(1e-6);

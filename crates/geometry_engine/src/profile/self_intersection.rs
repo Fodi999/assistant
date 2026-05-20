@@ -2,7 +2,7 @@
 
 /// Возвращает `true` если полигон содержит самопересечения.
 /// O(n²) — только для небольших профилей (≤ 1000 точек).
-pub fn has_self_intersection(pts: &[(f32, f32)]) -> bool {
+pub fn has_self_intersection(pts: &[(f64, f64)]) -> bool {
     let n = pts.len();
     if n < 4 { return false; }
     for i in 0..n {
@@ -20,11 +20,11 @@ pub fn has_self_intersection(pts: &[(f32, f32)]) -> bool {
     false
 }
 
-fn cross2(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+fn cross2(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     ax * by - ay * bx
 }
 
-fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
+fn segments_intersect(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)) -> bool {
     let (ax, ay) = a;
     let (bx, by) = b;
     let (cx, cy) = c;

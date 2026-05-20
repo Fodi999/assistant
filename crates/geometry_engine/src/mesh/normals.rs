@@ -1,4 +1,4 @@
-//! Пересчёт сглаженных нормалей — area-weighted average.
+//! Пересчёт сглаженных нормалей — area-weighted average. Uses Real (f64).
 
 use crate::mesh::Mesh;
 use crate::math::Vec3;
@@ -8,7 +8,7 @@ pub fn recalculate_smooth_normals(mesh: &mut Mesh) {
     let vc = mesh.vertices.len();
     if vc == 0 { return; }
 
-    let mut acc = vec![[0.0_f32; 3]; vc];
+    let mut acc = vec![[0.0_f64; 3]; vc];
 
     let faces: Vec<[usize; 3]> = if mesh.groups.is_empty() {
         mesh.faces.clone()

@@ -1,10 +1,12 @@
-//! 3D vector (f32).
+//! 3D vector — uses Real (f64) for CAD precision.
+
+use crate::math::Real;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
+    pub x: Real,
+    pub y: Real,
+    pub z: Real,
 }
 
 impl Vec3 {
@@ -14,16 +16,20 @@ impl Vec3 {
     pub const Z:    Vec3 = Vec3 { x: 0.0, y: 0.0, z: 1.0 };
 
     #[inline]
-    pub const fn new(x: f32, y: f32, z: f32) -> Self { Self { x, y, z } }
+    pub const fn new(x: Real, y: Real, z: Real) -> Self { Self { x, y, z } }
 
     #[inline]
-    pub fn from_array(a: [f32; 3]) -> Self { Self { x: a[0], y: a[1], z: a[2] } }
+    pub fn from_array(a: [Real; 3]) -> Self { Self { x: a[0], y: a[1], z: a[2] } }
 
     #[inline]
-    pub fn to_array(self) -> [f32; 3] { [self.x, self.y, self.z] }
+    pub fn to_array(self) -> [Real; 3] { [self.x, self.y, self.z] }
+
+    /// Downcast to f32 for GPU upload.
+    #[inline]
+    pub fn to_gpu(self) -> [f32; 3] { [self.x as f32, self.y as f32, self.z as f32] }
 
     #[inline]
-    pub fn dot(self, o: Vec3) -> f32 { self.x*o.x + self.y*o.y + self.z*o.z }
+    pub fn dot(self, o: Vec3) -> Real { self.x*o.x + self.y*o.y + self.z*o.z }
 
     #[inline]
     pub fn cross(self, o: Vec3) -> Vec3 {
@@ -35,15 +41,15 @@ impl Vec3 {
     }
 
     #[inline]
-    pub fn length_sq(self) -> f32 { self.dot(self) }
+    pub fn length_sq(self) -> Real { self.dot(self) }
 
     #[inline]
-    pub fn length(self) -> f32 { self.length_sq().sqrt() }
+    pub fn length(self) -> Real { self.length_sq().sqrt() }
 
     #[inline]
     pub fn normalized(self) -> Vec3 {
         let l = self.length();
-        if l > 1e-8 {
+        if l > 1e-15 {
             Vec3::new(self.x/l, self.y/l, self.z/l)
         } else {
             Vec3::UP
@@ -64,9 +70,9 @@ impl std::ops::Sub for Vec3 {
     type Output = Vec3;
     fn sub(self, o: Vec3) -> Vec3 { Vec3::new(self.x-o.x, self.y-o.y, self.z-o.z) }
 }
-impl std::ops::Mul<f32> for Vec3 {
+impl std::ops::Mul<Real> for Vec3 {
     type Output = Vec3;
-    fn mul(self, s: f32) -> Vec3 { Vec3::new(self.x*s, self.y*s, self.z*s) }
+    fn mul(self, s: Real) -> Vec3 { Vec3::new(self.x*s, self.y*s, self.z*s) }
 }
 impl std::ops::Neg for Vec3 {
     type Output = Vec3;

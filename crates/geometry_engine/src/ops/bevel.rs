@@ -3,7 +3,7 @@
 //! Производит замкнутый CCW полигон трассирующий прямоугольник со скруглёнными углами.
 //! Подаётся прямо в `ops::extrude::extrude_polygon`.
 
-use std::f32::consts::PI;
+use std::f64::consts::PI;
 use crate::ops::extrude::Point2;
 
 /// Генерирует outline скруглённого прямоугольника как замкнутый CCW полигон.
@@ -12,9 +12,9 @@ use crate::ops::extrude::Point2;
 /// * `radius` — радиус угловой дуги, clamp до `min(w,h)/2`
 /// * `corner_segments` — число сегментов на 90° дугу (минимум 1)
 pub fn rounded_rect_points(
-    width: f32,
-    height: f32,
-    radius: f32,
+    width: f64,
+    height: f64,
+    radius: f64,
     corner_segments: usize,
 ) -> Vec<Point2> {
     let hw = width * 0.5;
@@ -23,7 +23,7 @@ pub fn rounded_rect_points(
     let segs = corner_segments.max(1);
 
     // Углы CCW, начиная с top-right (0°)
-    let corners: [(f32, f32, f32); 4] = [
+    let corners: [(f64, f64, f64); 4] = [
         ( hw-r,  hh-r, 0.0      ), // top-right   0° → 90°
         (-hw+r,  hh-r, PI*0.5   ), // top-left    90° → 180°
         (-hw+r, -hh+r, PI       ), // bottom-left 180° → 270°
@@ -33,7 +33,7 @@ pub fn rounded_rect_points(
     let mut points = Vec::with_capacity(segs * 4);
     for (cx, cy, start) in corners {
         for i in 0..segs {
-            let t = i as f32 / segs as f32;
+            let t = i as f64 / segs as f64;
             let angle = start + t * (PI * 0.5);
             points.push(Point2::new(cx + angle.cos() * r, cy + angle.sin() * r));
         }

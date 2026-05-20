@@ -22,8 +22,8 @@ pub mod units;
 pub mod wasm;
 
 // Flat re-exports для удобного `use geometry_engine::*`
-pub use math::{Aabb, Plane, Tolerance, Vec2, Vec3};
-pub use mesh::{GeometryError, Material, MaterialGroup, Mesh, MeshPart};
+pub use math::{Aabb, GpuReal, Plane, Real, Tolerance, Vec2, Vec3};
+pub use mesh::{GeometryError, GpuMesh, Material, MaterialGroup, Mesh, MeshPart};
 pub use ops::extrude::{extrude_polygon, ExtrudeOptions, Point2};
 pub use ops::lathe::lathe_profile;
 pub use profile::{LatheProfile, LathePoint};

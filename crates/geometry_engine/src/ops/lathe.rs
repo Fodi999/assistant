@@ -1,6 +1,6 @@
 //! Lathe / revolve operation — sweep LatheProfile around Y axis.
 
-use std::f32::consts::PI;
+use std::f64::consts::PI;
 
 use crate::math::Vec3;
 use crate::mesh::{GeometryError, MeshPart};
@@ -17,7 +17,7 @@ pub fn lathe_profile(profile: &Profile, segments: usize) -> Result<MeshPart, Geo
     let p_count = pts.len();
     let ring_size = segments + 1;
 
-    let mut arc: Vec<f32> = Vec::with_capacity(p_count);
+    let mut arc: Vec<f64> = Vec::with_capacity(p_count);
     arc.push(0.0);
     for i in 1..p_count {
         let dr = pts[i].radius - pts[i-1].radius;
@@ -26,9 +26,9 @@ pub fn lathe_profile(profile: &Profile, segments: usize) -> Result<MeshPart, Geo
     }
     let total_arc = arc.last().copied().unwrap_or(1.0).max(1e-6);
 
-    let mut vertices: Vec<[f32; 3]> = Vec::with_capacity(p_count * ring_size);
-    let mut normals:  Vec<[f32; 3]> = Vec::with_capacity(p_count * ring_size);
-    let mut uvs:      Vec<[f32; 2]> = Vec::with_capacity(p_count * ring_size);
+    let mut vertices: Vec<[f64; 3]> = Vec::with_capacity(p_count * ring_size);
+    let mut normals:  Vec<[f64; 3]> = Vec::with_capacity(p_count * ring_size);
+    let mut uvs:      Vec<[f64; 2]> = Vec::with_capacity(p_count * ring_size);
 
     for (pi, p) in pts.iter().enumerate() {
         let (dr, dy) = if pi == 0 {
@@ -44,13 +44,13 @@ pub fn lathe_profile(profile: &Profile, segments: usize) -> Result<MeshPart, Geo
         let v = arc[pi] / total_arc;
 
         for s in 0..=segments {
-            let theta = (s as f32 / segments as f32) * 2.0 * PI;
+            let theta = (s as f64 / segments as f64) * 2.0 * PI;
             let cos_t = theta.cos();
             let sin_t = theta.sin();
             vertices.push([cos_t * p.radius, p.y, sin_t * p.radius]);
             let n3 = Vec3::new(cos_t * nr, ny, sin_t * nr).normalized();
             normals.push(n3.to_array());
-            uvs.push([s as f32 / segments as f32, v]);
+            uvs.push([s as f64 / segments as f64, v]);
         }
     }
 
