@@ -1,1 +1,0 @@
-truck_topology::Solid<truck_modeling::cgmath::Point3<f64>, truck_modeling::Curve, Surface>

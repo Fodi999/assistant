@@ -4,19 +4,21 @@ version     = "0.1.0"
 edition     = "2021"
 description = "Procedural geometry kernel: extrude, lathe, CSG, OBJ/GLTF export"
 
-# No external geometry deps — pure Rust, auditable, zero unsafe.
+[lib]
+name       = "geometry_engine"
+path       = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
-serde      = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
+serde              = { version = "1",   features = ["derive"], optional = true }
+serde_json         = { version = "1",   optional = true }
+wasm-bindgen       = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
 
 [features]
-default     = []
-serde       = ["dep:serde", "dep:serde_json"]
-wasm        = []           # enables wasm/bindings.rs — set by the WASM build profile
-
-[lib]
-name = "geometry_engine"
-path = "src/lib.rs"
+default = []
+serde   = ["dep:serde", "dep:serde_json"]
+wasm    = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:serde", "dep:serde_json"]
 
 [dev-dependencies]
-# nothing — all tests are pure unit tests inside each module
+# nothing -- all tests are pure unit tests inside each module

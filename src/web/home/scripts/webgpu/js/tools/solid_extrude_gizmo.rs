@@ -74,6 +74,44 @@ pub const JS: &str = r##"
     console.log('[debugSolidRender] mode =', m, dsr);
   };
 
+  // ── Geometry Engine WASM loader ───────────────────────────────────────────
+  // Lazy-loads geometry_engine.wasm (extrude + rounded_rect).
+  // Falls back to server if WASM unavailable (network error, old build).
+  var _geoWasmState = { status: 'not_loaded', mod: null };  // 'not_loaded'|'loading'|'ready'|'error'
+  var _geoWasmPromise = null;
+
+  async function _loadGeoWasm() {
+    if (_geoWasmState.status === 'ready')   return true;
+    if (_geoWasmState.status === 'error')   return false;
+    if (_geoWasmState.status === 'loading') {
+      while (_geoWasmState.status === 'loading') await new Promise(r => setTimeout(r, 16));
+      return _geoWasmState.status === 'ready';
+    }
+    _geoWasmState.status = 'loading';
+    try {
+      if (!_geoWasmPromise) {
+        _geoWasmPromise = import('/wasm/geometry_engine/geometry_engine.js?v=' + Date.now());
+      }
+      var mod = await _geoWasmPromise;
+      await mod.default({ module_or_path: '/wasm/geometry_engine/geometry_engine_bg.wasm?v=' + Date.now() });
+      _geoWasmState.mod    = mod;
+      _geoWasmState.status = 'ready';
+      try {
+        var info = JSON.parse(mod.geometry_engine_info());
+        console.log('[geo_wasm] ready:', info);
+      } catch(_) {}
+      return true;
+    } catch(e) {
+      _geoWasmState.status = 'error';
+      console.warn('[geo_wasm] WASM unavailable, will fall back to server:', e.message);
+      return false;
+    }
+  }
+  window.__loadGeoWasm   = _loadGeoWasm;
+  window.__geoWasmState  = _geoWasmState;
+
+  // ── Profile helpers ───────────────────────────────────────────────────────
+
   function _getProfile(profileId) {
     var ss = window.sketchState;
     if (!ss) return null;
@@ -245,51 +283,83 @@ pub const JS: &str = r##"
     var depthM = depthMm / 1000.0;
     if (window.__setStatusMessage)
       window.__setStatusMessage('⏳ building ' + depthMm + ' mm...');
-    console.log('[SolidExtrude] POST /api/matter/sketch/extrude plane=' + plane +
-      ' depth=' + depthM + 'm pts=' + pts.length + ' first=' + JSON.stringify(pts[0]));
-    var body = { plane: plane, depth: depthM, profile: pts, tolerance: isFinal ? 0.003 : 0.008 };
-    try {
-      var t0 = performance.now();
-      var resp = await fetch('/api/matter/sketch/extrude', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      var dt = (performance.now() - t0).toFixed(0);
-      if (!resp.ok) {
-        var err = await resp.json().catch(function(){ return {}; });
-        throw new Error(err.error || resp.statusText);
-      }
-      var result = await resp.json();
-      result.__dt = dt;
-      _state.previewMesh = result;
-      window.__lastSolidResult = result;
 
-      // ── Задача 5: ghost preview vs committed solid ────────────────────────
-      var dsr = window.__debugSolidRender;
-      if (isFinal) {
-        // Committed solid — opaque, full depth, no sketch fill overlay.
-        if (dsr) {
-          dsr.solidOpacity           = 1.0;
-          dsr.transparent            = false;
-          dsr.depthWrite             = true;
-          dsr.depthTest              = true;
-          dsr.drawSolidPreviewGhost  = false;
-          dsr.drawSketchFill         = false;  // скрыть sketch-заливку под solid
-        }
-      } else {
-        // Preview ghost — semi-transparent.
-        if (dsr) {
-          dsr.solidOpacity           = 0.35;
-          dsr.transparent            = true;
-          dsr.drawSolidPreviewGhost  = true;
-          dsr.drawSketchFill         = true;   // sketch fill ещё видна в preview
+    // ── Routing: preview → WASM (zero latency), final → server ────────────
+    // boolean / export always remain on server (/api/matter/geometry/*).
+    var result = null;
+    var usedWasm = false;
+    var t0 = performance.now();
+
+    if (!isFinal) {
+      // Try WASM first for instant preview
+      var wasmReady = await _loadGeoWasm();
+      if (wasmReady && _geoWasmState.mod) {
+        try {
+          var body = { plane: plane, depth: depthM, bevel: 0, profile: pts };
+          var raw  = _geoWasmState.mod.extrude_json(JSON.stringify(body));
+          result   = JSON.parse(raw);
+          if (result.ok === false) throw new Error(result.error || 'wasm error');
+          usedWasm = true;
+        } catch(e) {
+          console.warn('[SolidExtrude] WASM extrude failed, falling back to server:', e.message);
+          result = null;
         }
       }
+    }
 
-      if (window.__uploadSolidToScene) window.__uploadSolidToScene(result);
+    // Server path: final commit OR wasm fallback
+    if (!result) {
+      console.log('[SolidExtrude] POST /api/matter/sketch/extrude plane=' + plane +
+        ' depth=' + depthM + 'm pts=' + pts.length + ' isFinal=' + isFinal);
+      var body = { plane: plane, depth: depthM, profile: pts, tolerance: isFinal ? 0.003 : 0.008 };
+      try {
+        var resp = await fetch('/api/matter/sketch/extrude', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          var err = await resp.json().catch(function(){ return {}; });
+          throw new Error(err.error || resp.statusText);
+        }
+        result = await resp.json();
+      } catch(e) {
+        console.error('[SolidExtrude] kernel error:', e);
+        if (window.__setStatusMessage) window.__setStatusMessage('✗ kernel error: ' + e.message);
+        return;
+      }
+    }
 
-      // ── Задача 6: console diagnostics ─────────────────────────────────────
-      if (result.positions && result.positions.length) {
+    var dt = (performance.now() - t0).toFixed(0);
+    result.__dt = dt;
+    _state.previewMesh = result;
+    window.__lastSolidResult = result;
+
+    // ── Задача 5: ghost preview vs committed solid ────────────────────────
+    var dsr = window.__debugSolidRender;
+    if (isFinal) {
+      // Committed solid — opaque, full depth, no sketch fill overlay.
+      if (dsr) {
+        dsr.solidOpacity           = 1.0;
+        dsr.transparent            = false;
+        dsr.depthWrite             = true;
+        dsr.depthTest              = true;
+        dsr.drawSolidPreviewGhost  = false;
+        dsr.drawSketchFill         = false;  // скрыть sketch-заливку под solid
+      }
+    } else {
+      // Preview ghost — semi-transparent.
+      if (dsr) {
+        dsr.solidOpacity           = 0.35;
+        dsr.transparent            = true;
+        dsr.drawSolidPreviewGhost  = true;
+        dsr.drawSketchFill         = true;   // sketch fill ещё видна в preview
+      }
+    }
+
+    if (window.__uploadSolidToScene) window.__uploadSolidToScene(result);
+
+    // ── Задача 6: console diagnostics ─────────────────────────────────────
+    if (result.positions && result.positions.length) {
         var pos = result.positions;
         var xs = pos.filter(function(_,i){ return i%3===0; });
         var ys = pos.filter(function(_,i){ return i%3===1; });
@@ -335,19 +405,15 @@ pub const JS: &str = r##"
           console.error('[SolidExtrude] ❌ Extrusion anchor problem! axis=' + expectedDepthAxis +
             ' range=[' + axisMin.toFixed(4) + ', ' + axisMax.toFixed(4) + '] depth=' + depthM);
         }
-      }
+    }
 
-      if (window.__setStatusMessage)
-        window.__setStatusMessage(
-          (isFinal ? '✓ Solid' : 'preview') + ': ' +
-          result.vertex_count + ' vert / ' + result.triangle_count + ' tri / ' + dt + 'ms'
-        );
-      if (window.__showSolidPreviewPanel) {
-        window.__showSolidPreviewPanel(result, depthMm, plane);
-      }
-    } catch(e) {
-      console.error('[SolidExtrude] kernel error:', e);
-      if (window.__setStatusMessage) window.__setStatusMessage('✗ kernel error: ' + e.message);
+    if (window.__setStatusMessage)
+      window.__setStatusMessage(
+        (isFinal ? '✓ Solid' : 'preview') + ': ' +
+        result.vertex_count + ' vert / ' + result.triangle_count + ' tri / ' + dt + 'ms'
+      );
+    if (window.__showSolidPreviewPanel) {
+      window.__showSolidPreviewPanel(result, depthMm, plane);
     }
   }
 

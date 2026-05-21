@@ -1,4 +1,4 @@
-.PHONY: help setup db-create db-migrate db-drop test run clean lint format check wasm
+.PHONY: help setup db-create db-migrate db-drop test run clean lint format check wasm wasm-geometry wasm-all
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -13,13 +13,24 @@ setup: ## Install dependencies and setup project
 	cp -n .env.example .env || true
 	@echo "Setup complete! Edit .env file with your database credentials."
 
-wasm: ## Build the shared sketch_engine crate to WebAssembly and copy to static/wasm
+wasm: ## Build sketch_engine → WASM (2D solver, constraint engine)
 	@echo "Building sketch_engine → WASM …"
 	wasm-pack build crates/sketch_engine --target web --features wasm
 	@mkdir -p static/wasm
 	@rm -rf static/wasm/sketch_engine
 	@cp -r crates/sketch_engine/pkg static/wasm/sketch_engine
 	@echo "✓ static/wasm/sketch_engine/sketch_engine.js"
+
+wasm-geometry: ## Build geometry_engine → WASM (extrude/preview, client-side)
+	@echo "Building geometry_engine → WASM …"
+	wasm-pack build crates/geometry_engine --target web --features wasm
+	@mkdir -p static/wasm
+	@rm -rf static/wasm/geometry_engine
+	@cp -r crates/geometry_engine/pkg static/wasm/geometry_engine
+	@echo "✓ static/wasm/geometry_engine/geometry_engine.js"
+
+wasm-all: wasm wasm-geometry ## Build both WASM crates (sketch_engine + geometry_engine)
+	@echo "✓ Both WASM crates built"
 
 db-create: ## Create database
 	createdb restaurant_db || echo "Database may already exist"
