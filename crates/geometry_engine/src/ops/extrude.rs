@@ -23,6 +23,9 @@
 
 use crate::mesh::MeshPart;
 use crate::mesh::GeometryError;
+use crate::brep::{BrepBuilder, BrepModel};
+use crate::topology::BodyId;
+use crate::tessellation::{tessellate_body, MeshWithMetadata, TessOptions};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -107,6 +110,65 @@ pub fn extrude_polygon(
     };
 
     Ok([front, back, sides])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B-Rep extrude — single source of truth
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Result of the canonical B-Rep extrude path:
+/// model owns the topology, body_id identifies the new body, and `mesh`
+/// is the tessellated triangle mesh with per-triangle [`FaceId`] metadata.
+#[derive(Debug)]
+pub struct ExtrudeBrepResult {
+    pub model:   BrepModel,
+    pub body_id: BodyId,
+    pub mesh:    MeshWithMetadata,
+}
+
+/// Canonical extrude: `polygon → BrepBuilder → tessellate → MeshWithMetadata`.
+///
+/// The polygon is interpreted as lying in the XY plane (z = 0) and is swept
+/// along `+Z` by `options.depth`. The resulting solid sits with its bottom
+/// at `z = 0` and its top at `z = depth`.
+///
+/// Bevel is currently ignored on the B-Rep path (planned: built via fillet
+/// op on the rim edges once `fillet/` is implemented).
+pub fn extrude_polygon_brep(
+    points: &[Point2],
+    options: &ExtrudeOptions,
+) -> Result<ExtrudeBrepResult, GeometryError> {
+    let n = points.len();
+    if n < 3 {
+        return Err(GeometryError::InvalidArgument(
+            "extrude_polygon_brep needs at least 3 points".into(),
+        ));
+    }
+    if !options.depth.is_finite() || options.depth <= 0.0 {
+        return Err(GeometryError::InvalidArgument(format!(
+            "extrude depth must be > 0 (got {})",
+            options.depth
+        )));
+    }
+
+    let polygon: Vec<crate::math::Point3> = points
+        .iter()
+        .map(|p| crate::math::Point3::new(p.x, p.y, 0.0))
+        .collect();
+
+    let mut builder = BrepBuilder::new();
+    builder.begin_body("extrude");
+    builder.prism_from_polygon(&polygon, [0.0, 0.0, options.depth]);
+    let body_id = builder
+        .context()
+        .body
+        .expect("begin_body should have set context");
+    let model = builder.build();
+
+    let opts = TessOptions::default();
+    let mesh = tessellate_body(&model, body_id, &opts);
+
+    Ok(ExtrudeBrepResult { model, body_id, mesh })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -417,6 +479,145 @@ mod tests {
         for n in front.normals.iter().chain(back.normals.iter()) {
             let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             assert!((len - 1.0).abs() < 1e-5, "non-unit normal: {len}");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // B-Rep path tests — the new canonical pipeline.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Helper: 100 × 50 mm rectangle in metres, CCW from +Z.
+    fn rect_100x50() -> Vec<Point2> {
+        // 100 mm along X, 50 mm along Y → in metres: 0.10 × 0.05
+        vec![
+            Point2::new(0.00, 0.00),
+            Point2::new(0.10, 0.00),
+            Point2::new(0.10, 0.05),
+            Point2::new(0.00, 0.05),
+        ]
+    }
+
+    fn bbox_extents_old(parts: &[MeshPart; 3]) -> [f64; 3] {
+        let mut mn = [f64::INFINITY; 3];
+        let mut mx = [f64::NEG_INFINITY; 3];
+        for part in parts {
+            for v in &part.vertices {
+                for k in 0..3 {
+                    if v[k] < mn[k] { mn[k] = v[k]; }
+                    if v[k] > mx[k] { mx[k] = v[k]; }
+                }
+            }
+        }
+        [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]]
+    }
+
+    fn bbox_extents_new(m: &crate::mesh::Mesh) -> [f64; 3] {
+        let mut mn = [f64::INFINITY; 3];
+        let mut mx = [f64::NEG_INFINITY; 3];
+        for v in &m.vertices {
+            for k in 0..3 {
+                if v[k] < mn[k] { mn[k] = v[k]; }
+                if v[k] > mx[k] { mx[k] = v[k]; }
+            }
+        }
+        [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]]
+    }
+
+    /// TEST 1 — old `[MeshPart;3]` and new `MeshWithMetadata` produce the
+    /// same bounding-box extents for a 100 × 50 mm rectangle extruded by 18 mm.
+    #[test]
+    fn test1_old_and_new_bbox_match() {
+        let pts = rect_100x50();
+        let opts = ExtrudeOptions { depth: 0.018, bevel: 0.0 };
+
+        let old = extrude_polygon(&pts, &opts).unwrap();
+        let new = extrude_polygon_brep(&pts, &opts).unwrap();
+
+        let e_old = bbox_extents_old(&old);
+        let e_new = bbox_extents_new(&new.mesh.mesh);
+
+        let eps = 1e-9;
+        for k in 0..3 {
+            assert!(
+                (e_old[k] - e_new[k]).abs() < eps,
+                "axis {} extent mismatch: old={} new={}",
+                k, e_old[k], e_new[k],
+            );
+        }
+        // And it really is 100 × 50 × 18 mm:
+        assert!((e_new[0] - 0.100).abs() < eps, "X extent: {}", e_new[0]);
+        assert!((e_new[1] - 0.050).abs() < eps, "Y extent: {}", e_new[1]);
+        assert!((e_new[2] - 0.018).abs() < eps, "Z (depth) extent: {}", e_new[2]);
+    }
+
+    /// TEST 2 — box topology counts (already in builder.rs, replicated here
+    /// against the public extrude API to guarantee the end-to-end pipeline
+    /// preserves them).
+    #[test]
+    fn test2_box_topology_counts() {
+        let pts = rect_100x50();
+        let opts = ExtrudeOptions { depth: 0.018, bevel: 0.0 };
+        let r = extrude_polygon_brep(&pts, &opts).unwrap();
+        let c = r.model.store.entity_counts();
+
+        assert_eq!(c.vertices, 8,  "V");
+        assert_eq!(c.edges,    12, "E");
+        assert_eq!(c.coedges,  24, "CE");
+        assert_eq!(c.loops,    6,  "L");
+        assert_eq!(c.faces,    6,  "F");
+        assert_eq!(c.shells,   1,  "Shell");
+        assert_eq!(c.solids,   1,  "Solid");
+        assert_eq!(c.bodies,   1,  "Body");
+    }
+
+    /// TEST 3 — every edge of a closed solid must be referenced by exactly
+    /// two co-edges (= 2-manifold). 1 ⇒ open shell, 3+ ⇒ non-manifold.
+    #[test]
+    fn test3_every_edge_has_two_coedges() {
+        let pts = rect_100x50();
+        let opts = ExtrudeOptions { depth: 0.018, bevel: 0.0 };
+        let r = extrude_polygon_brep(&pts, &opts).unwrap();
+        let store = &r.model.store;
+
+        let mut usage: std::collections::HashMap<_, usize> = Default::default();
+        for ce in store.coedges.values() {
+            *usage.entry(ce.edge).or_insert(0) += 1;
+        }
+
+        assert_eq!(usage.len(), 12, "expected 12 distinct edges, got {}", usage.len());
+        for (eid, n) in &usage {
+            assert_eq!(*n, 2, "edge {:?} referenced by {} co-edges (expected 2)", eid, n);
+        }
+    }
+
+    /// TEST 4 — triangle metadata count. Box ⇒ 12 triangles; one TriangleMeta
+    /// per triangle; every face_id resolves to a real Face in the store.
+    #[test]
+    fn test4_triangle_metadata() {
+        let pts = rect_100x50();
+        let opts = ExtrudeOptions { depth: 0.018, bevel: 0.0 };
+        let r = extrude_polygon_brep(&pts, &opts).unwrap();
+
+        let tri_count = r.mesh.triangle_count();
+        let meta_count = r.mesh.triangles.len();
+
+        assert_eq!(tri_count, 12, "expected 12 triangles for box, got {}", tri_count);
+        assert_eq!(meta_count, tri_count, "metadata length mismatch");
+
+        let store = &r.model.store;
+        for (i, meta) in r.mesh.triangles.iter().enumerate() {
+            assert!(
+                store.get_face(meta.face_id).is_some(),
+                "triangle #{} references missing face {:?}",
+                i, meta.face_id,
+            );
+        }
+
+        // And every B-Rep face contributed ≥1 triangle.
+        let by_face = r.mesh.triangles_by_face();
+        assert_eq!(by_face.len(), 6, "expected 6 faces in metadata, got {}", by_face.len());
+        for (fid, tris) in &by_face {
+            assert!(!tris.is_empty(), "face {:?} produced 0 triangles", fid);
         }
     }
 }

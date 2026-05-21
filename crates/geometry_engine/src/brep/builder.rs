@@ -237,36 +237,98 @@ impl BrepBuilder {
 
     /// Build a closed axis-aligned box from two corner points.
     ///
-    /// Six faces are created in `+X, -X, +Y, -Y, +Z, -Z` order. The current
-    /// shell is marked `is_closed = true`.
+    /// Internally delegates to [`Self::prism_from_polygon`] so the resulting
+    /// B-Rep has shared vertices/edges and is fully manifold (each edge is
+    /// referenced by exactly two co-edges).
     pub fn box_from_extents(&mut self, min: [Real; 3], max: [Real; 3]) -> &mut Self {
-        if self.cur_solid.is_none() { self.begin_solid(); }
-
         let [x0, y0, z0] = min;
         let [x1, y1, z1] = max;
+        // CCW rectangle in the Z = z0 plane.
+        let rect = [
+            Point3::new(x0, y0, z0),
+            Point3::new(x1, y0, z0),
+            Point3::new(x1, y1, z0),
+            Point3::new(x0, y1, z0),
+        ];
+        self.prism_from_polygon(&rect, [0.0, 0.0, z1 - z0])
+    }
 
-        let p = |x, y, z| Point3::new(x, y, z);
+    /// Build a straight prism by extruding a CCW polygon along `dir`.
+    ///
+    /// This is the **manifold** constructor: every vertex/edge is created
+    /// exactly once and shared between adjacent faces. For an N-gon profile
+    /// the resulting topology is:
+    ///
+    /// * `2 N` vertices  (bottom rim + top rim)
+    /// * `3 N` edges     (bottom rim + top rim + N verticals)
+    /// * `N + 2` faces   (bottom + top + N sides)
+    /// * `4 (N + 2)` co-edges  ⇒ exactly 2 per edge ⇒ closed manifold
+    ///
+    /// The bottom face is oriented so its outward normal points `-dir`,
+    /// the top face's outward normal points `+dir`, and each side face's
+    /// outward normal is the 2D edge normal (after rotation).
+    pub fn prism_from_polygon(&mut self, polygon: &[Point3], dir: [Real; 3]) -> &mut Self {
+        let n = polygon.len();
+        assert!(n >= 3, "prism_from_polygon needs ≥3 points");
+        if self.cur_solid.is_none() { self.begin_solid(); }
 
-        // 8 corners
-        let v000 = p(x0, y0, z0); let v100 = p(x1, y0, z0);
-        let v110 = p(x1, y1, z0); let v010 = p(x0, y1, z0);
-        let v001 = p(x0, y0, z1); let v101 = p(x1, y0, z1);
-        let v111 = p(x1, y1, z1); let v011 = p(x0, y1, z1);
+        let [dx, dy, dz] = dir;
 
-        // Faces — CCW when looking *into* the solid from outside.
-        // -Z (bottom): v000 v010 v110 v100
-        self.polyline_face(&[v000, v010, v110, v100]);
-        // +Z (top):    v001 v101 v111 v011
-        self.polyline_face(&[v001, v101, v111, v011]);
-        // -Y (front):  v000 v100 v101 v001
-        self.polyline_face(&[v000, v100, v101, v001]);
-        // +Y (back):   v010 v011 v111 v110
-        self.polyline_face(&[v010, v011, v111, v110]);
-        // -X (left):   v000 v001 v011 v010
-        self.polyline_face(&[v000, v001, v011, v010]);
-        // +X (right):  v100 v110 v111 v101
-        self.polyline_face(&[v100, v110, v111, v101]);
+        // ── 1. Shared vertices ──────────────────────────────────────────────
+        let bot_v: Vec<VertexId> = polygon
+            .iter()
+            .map(|&p| self.add_vertex(p))
+            .collect();
+        let top_v: Vec<VertexId> = polygon
+            .iter()
+            .map(|p| self.add_vertex(Point3::new(p.x + dx, p.y + dy, p.z + dz)))
+            .collect();
 
+        // ── 2. Shared edges ─────────────────────────────────────────────────
+        // bot_e[i]: bot[i] → bot[(i+1) % n]
+        // top_e[i]: top[i] → top[(i+1) % n]
+        // ver_e[i]: bot[i] → top[i]
+        let bot_e: Vec<EdgeId> = (0..n)
+            .map(|i| self.add_edge(bot_v[i], bot_v[(i + 1) % n]))
+            .collect();
+        let top_e: Vec<EdgeId> = (0..n)
+            .map(|i| self.add_edge(top_v[i], top_v[(i + 1) % n]))
+            .collect();
+        let ver_e: Vec<EdgeId> = (0..n)
+            .map(|i| self.add_edge(bot_v[i], top_v[i]))
+            .collect();
+
+        // ── 3. Bottom face — traverse rim in reverse so outward normal = -dir.
+        // Sequence of (edge, reversed) co-edges:
+        //   bot_e[n-1] reversed, bot_e[n-2] reversed, …, bot_e[0] reversed
+        let mut bottom_coedges: Vec<(EdgeId, bool)> = Vec::with_capacity(n);
+        for i in (0..n).rev() {
+            bottom_coedges.push((bot_e[i], true));
+        }
+        self.make_face_from_directed_edges(&bottom_coedges);
+
+        // ── 4. Top face — rim in forward order.
+        let top_coedges: Vec<(EdgeId, bool)> = (0..n).map(|i| (top_e[i], false)).collect();
+        self.make_face_from_directed_edges(&top_coedges);
+
+        // ── 5. Side faces.
+        // For side i (between rim verts i and (i+1)):
+        //   forward bot_e[i]      : bot[i]   → bot[i+1]
+        //   forward ver_e[(i+1)%n]: bot[i+1] → top[i+1]
+        //   reversed top_e[i]     : top[i+1] → top[i]
+        //   reversed ver_e[i]     : top[i]   → bot[i]
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let side: [(EdgeId, bool); 4] = [
+                (bot_e[i],  false),
+                (ver_e[j],  false),
+                (top_e[i],  true),
+                (ver_e[i],  true),
+            ];
+            self.make_face_from_directed_edges(&side);
+        }
+
+        // Mark shell closed.
         if let Some(shell) = self.cur_shell {
             if let Some(s) = self.model.store.get_shell_mut(shell) {
                 s.mark_closed();
@@ -275,40 +337,42 @@ impl BrepBuilder {
         self
     }
 
-    /// Build a straight prism by extruding a CCW polygon along `dir`.
-    ///
-    /// The bottom polygon is added with reversed orientation; the top with
-    /// the original orientation; side rectangles are stitched in between.
-    pub fn prism_from_polygon(&mut self, polygon: &[Point3], dir: [Real; 3]) -> &mut Self {
-        assert!(polygon.len() >= 3, "prism_from_polygon needs ≥3 points");
-        if self.cur_solid.is_none() { self.begin_solid(); }
+    /// Low-level: build a face from an ordered list of `(EdgeId, reversed)`
+    /// directed edges. Creates the Loop, the CoEdges (linked prev/next), the
+    /// Face, and attaches the face to the current shell. Returns the new
+    /// `FaceId`.
+    pub fn make_face_from_directed_edges(
+        &mut self,
+        directed: &[(EdgeId, bool)],
+    ) -> FaceId {
+        assert!(directed.len() >= 3, "face loop needs ≥3 co-edges");
+        let n = directed.len();
 
-        let [dx, dy, dz] = dir;
-        let top: Vec<Point3> = polygon
+        // Empty loop (face id patched in after face creation).
+        let sentinel_face = FaceId::fresh();
+        let loop_id = self.model.store.add_loop(Loop::outer(sentinel_face));
+
+        // Build all co-edges first.
+        let coedges: Vec<CoEdgeId> = directed
             .iter()
-            .map(|p| Point3::new(p.x + dx, p.y + dy, p.z + dz))
+            .map(|&(e, rev)| self.add_coedge(e, loop_id, rev))
             .collect();
 
-        // Bottom (reversed so its outward normal points -dir).
-        let bottom_rev: Vec<Point3> = polygon.iter().rev().copied().collect();
-        self.polyline_face(&bottom_rev);
-
-        // Top.
-        self.polyline_face(&top);
-
-        // Side rectangles.
-        let n = polygon.len();
+        // Link prev/next in a cyclic chain.
         for i in 0..n {
-            let j = (i + 1) % n;
-            self.polyline_face(&[polygon[i], polygon[j], top[j], top[i]]);
+            let cur = coedges[i];
+            let nxt = coedges[(i + 1) % n];
+            if let Some(c) = self.model.store.get_coedge_mut(cur) { c.next = Some(nxt); }
+            if let Some(c) = self.model.store.get_coedge_mut(nxt) { c.prev = Some(cur); }
         }
 
-        if let Some(shell) = self.cur_shell {
-            if let Some(s) = self.model.store.get_shell_mut(shell) {
-                s.mark_closed();
-            }
+        // Push the coedges into the loop.
+        if let Some(lp) = self.model.store.get_loop_mut(loop_id) {
+            lp.coedges = coedges;
         }
-        self
+
+        // Create the face & patch loop.face back-pointer.
+        self.add_face_in_current_shell(loop_id)
     }
 }
 
@@ -332,15 +396,17 @@ mod tests {
         let mut b = BrepBuilder::new();
         b.begin_body("box").box_from_extents([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         let c = b.counts();
-        // Each of the 6 faces allocates 4 unique vertices + 4 unique edges
-        // in this naïve builder (vertex-welding is a later optimisation),
-        // so we expect 24 V, 24 E, 24 CE, 6 L, 6 F, 1 S, 1 Solid, 1 Body.
-        assert_eq!(c.faces, 6);
-        assert_eq!(c.loops, 6);
-        assert_eq!(c.shells, 1);
-        assert_eq!(c.solids, 1);
-        assert_eq!(c.bodies, 1);
-        assert_eq!(c.coedges, 24);
+        // Welded prism topology: 2N vertices, 3N edges, N+2 faces (N=4).
+        assert_eq!(c.vertices, 8);
+        assert_eq!(c.edges,    12);
+        assert_eq!(c.faces,    6);
+        assert_eq!(c.loops,    6);
+        // Each of the 6 faces has 4 co-edges → 24 total, and since the box
+        // is a closed manifold every edge is referenced by exactly 2 co-edges.
+        assert_eq!(c.coedges,  24);
+        assert_eq!(c.shells,   1);
+        assert_eq!(c.solids,   1);
+        assert_eq!(c.bodies,   1);
     }
 
     #[test]
@@ -353,7 +419,32 @@ mod tests {
         let mut b = BrepBuilder::new();
         b.begin_body("prism").prism_from_polygon(&tri, [0.0, 0.0, 1.0]);
         let c = b.counts();
-        assert_eq!(c.faces, 2 + 3); // top + bottom + 3 sides
+        // N=3 ⇒ 6 V, 9 E, 5 F (top + bottom + 3 sides), 20 CE (5 faces × 4… wait)
+        // top has 3 CE, bottom has 3 CE, each side has 4 CE → 3+3+3*4 = 18 CE
+        // → so each edge has exactly 2 CE (3*2 + 3*2 + 3*2 = 18 ✓)
+        assert_eq!(c.vertices, 6);
+        assert_eq!(c.edges,    9);
+        assert_eq!(c.faces,    5);
+        assert_eq!(c.coedges,  18);
+    }
+
+    /// Every edge in a closed solid must be referenced by exactly two co-edges
+    /// (one per adjacent face). This is the manifoldness invariant.
+    #[test]
+    fn box_is_two_manifold() {
+        let mut b = BrepBuilder::new();
+        b.begin_body("box").box_from_extents([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let store = &b.model.store;
+
+        let mut usage: std::collections::HashMap<EdgeId, usize> =
+            std::collections::HashMap::new();
+        for ce in store.coedges.values() {
+            *usage.entry(ce.edge).or_insert(0) += 1;
+        }
+        for (eid, n) in &usage {
+            assert_eq!(*n, 2, "edge {:?} referenced by {} co-edges (expected 2)", eid, n);
+        }
+        assert_eq!(usage.len(), 12);
     }
 }
 
