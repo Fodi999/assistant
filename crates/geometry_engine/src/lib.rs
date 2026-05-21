@@ -61,3 +61,4 @@ pub use ops::extrude::{extrude_polygon, extrude_polygon_brep, ExtrudeBrepResult,
 pub use ops::lathe::lathe_profile;
 pub use profile::{LathePoint, LatheProfile};
 pub use tessellation::{tessellate_body, MeshWithMetadata, TessOptions, TriangleMeta};
+pub use selection::{pick_face, pick_face_from_many, FacePickResult, Hit, ray_triangle};

@@ -8,6 +8,8 @@ pub mod pick_vertex;
 pub mod ray;
 pub mod selection_set;
 
-pub use hit_test::Hit;
+pub use hit_test::{Hit, hit_mesh, hit_mesh_with_metadata, ray_triangle};
+pub use pick_face::{pick_face, pick_face_from_many, FacePickResult};
 pub use selection_set::SelectionSet;
+
 
