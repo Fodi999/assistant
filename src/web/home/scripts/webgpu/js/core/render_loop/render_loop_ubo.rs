@@ -99,7 +99,7 @@ pub const JS: &str = r##"
           pass.draw(3);
           pass.end();
         }
-        if (cadIndexCount > 0) {
+        if (cadIndexCount > 0 && (window.__debugSolidRender ? window.__debugSolidRender.drawSolid : true)) {
           const cadPass = enc.beginRenderPass({
             colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }],
             depthStencilAttachment: { view: depthView, depthClearValue: 1.0, depthLoadOp: 'load', depthStoreOp: 'store' },

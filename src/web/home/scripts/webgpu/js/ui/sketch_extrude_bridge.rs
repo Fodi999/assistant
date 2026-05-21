@@ -464,6 +464,16 @@ pub const JS: &str = r##"
     }
     _glCtx = gl;
 
+    // WebGL1 требует расширение для Uint32 индексов
+    const isWebGL2 = (typeof WebGL2RenderingContext !== 'undefined') && (gl instanceof WebGL2RenderingContext);
+    if (!isWebGL2) {
+      const ext = gl.getExtension('OES_element_index_uint');
+      if (!ext) {
+        console.warn('[SolidPreview] OES_element_index_uint недоступно — используем Uint16');
+      }
+    }
+    const INDEX_TYPE = isWebGL2 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+
     const vs = `
       attribute vec3 aPos;
       attribute vec3 aNorm;
@@ -512,7 +522,10 @@ pub const JS: &str = r##"
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(result.normals), gl.STATIC_DRAW);
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(result.indices), gl.STATIC_DRAW);
+    const idxData = isWebGL2
+      ? new Uint32Array(result.indices)
+      : new Uint16Array(result.indices);  // fallback WebGL1
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxData, gl.STATIC_DRAW);
 
     const aPos   = gl.getAttribLocation(prog, 'aPos');
     const aNorm  = gl.getAttribLocation(prog, 'aNorm');
@@ -576,7 +589,9 @@ pub const JS: &str = r##"
       gl.clearColor(0.059, 0.090, 0.165, 1.0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST);
-      gl.enable(gl.CULL_FACE);
+      gl.depthFunc(gl.LESS);
+      // CULL_FACE отключён: geometry_engine может иметь разный winding на платформах
+      gl.disable(gl.CULL_FACE);
 
       // MVP
       const model = _mat4mul(
@@ -609,7 +624,7 @@ pub const JS: &str = r##"
       gl.vertexAttribPointer(aNorm, 3, gl.FLOAT, false, 0, 0);
 
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-      gl.drawElements(gl.TRIANGLES, result.indices.length, gl.UNSIGNED_INT, 0);
+      gl.drawElements(gl.TRIANGLES, result.indices.length, INDEX_TYPE, 0);
 
       _rotY += 0.012;
       _rafId = requestAnimationFrame(_draw);

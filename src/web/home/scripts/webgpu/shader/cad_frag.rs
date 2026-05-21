@@ -33,9 +33,11 @@ fn sdBackendShape(p: vec3f, b: vec3f, bevel: f32) -> f32 {
 }
 
 @fragment fn fs_cad(p: Pv, @builtin(front_facing) is_front: bool) -> FragOut {
-  // Вычисляем производную от ID грани в screen-space (работает внутри 2x2 пиксельных блоков).
-  // Там, где пиксели соседних полигонов с разным face_id встречаются, fwidth будет > 0.
-  let is_edge = fwidth(f32(p.cellMask)) > 0.001;
+  // Edge detection по face_id градиенту.
+  // Порог 0.5 вместо 0.001 — только там где face_id меняется больше чем на 0.5
+  // (т.е. реальная граница двух разных граней), а не на каждом пикселе одной грани.
+  // Это убирает белую полосу на основании (base cap / side face boundary).
+  let is_edge = fwidth(f32(p.cellMask)) > 0.5;
 
   let ro  = u.u1.xyz;
   let dims = max(vec3f(0.001), u.u12.xyz); // Габариты в мм
@@ -83,7 +85,7 @@ fn sdBackendShape(p: vec3f, b: vec3f, bevel: f32) -> f32 {
   let sp  = pow(max(dot(nrm, h), 0.0), specPower) * 0.15;
   let fr  = pow(1.0 - max(dot(nrm, v), 0.0), 3.0) * 0.10;
   
-  var col = p.color * (0.15 + dA + dB + dC);
+  var col = p.color * (0.35 + dA + dB + dC);
   col    += vec3f(1.0) * sp;
   col    += vec3f(1.0) * fr;
   col     = pow(max(col, vec3f(0.0)), vec3f(1.0 / 2.2));

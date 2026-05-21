@@ -5,7 +5,16 @@ pub const JS: &str = r##"
           const eById = new Map(sketchState.edges.map(e  => [e.id, e]));
 
           // ── Closed profile fills ──
-          if (sketchState.profiles && sketchState.profiles.length) {
+          // Задача 5: не рисовать sketch-заливку поверх committed solid.
+          // Если solid зафиксирован (lastSolidResult) и гизмо не активен → скрываем fill.
+          // Управляется через window.__debugSolidRender.drawSketchFill (Задача 4).
+          const _dsr      = window.__debugSolidRender;
+          const _hasSolid = window.__lastSolidResult != null
+                         && !(window.__solidExtrudeState && window.__solidExtrudeState.active);
+          const _drawSketchFill = _dsr
+            ? (_dsr.drawSketchFill)                       // явное управление через debug object
+            : (!_hasSolid);                               // авто: скрыть если solid committed
+          if (_drawSketchFill && sketchState.profiles && sketchState.profiles.length) {
             for (const prof of sketchState.profiles) {
               const ringPts = prof.pointIds.map(id => pById.get(id)).filter(Boolean);
               if (ringPts.length < 3) continue;
@@ -40,7 +49,7 @@ pub const JS: &str = r##"
               ctx.stroke();
               ctx.restore();
             }
-          }
+          }  // end _drawSketchFill
 
           // ── Wall Surfaces (Edge Extrude) ──
           if (sketchState.wallSurfaces && sketchState.wallSurfaces.length) {
@@ -112,9 +121,14 @@ pub const JS: &str = r##"
           }
 
           // ── Edges ──
+          // Если solid зафиксирован и гизмо не активен — не рисуем рёбра профиля
+          // (они создают white-line артефакт поверх 3D solid).
+          // Управляется через window.__debugSolidRender.drawSketchFill (тот же флаг).
+          const _showEdges = _drawSketchFill;
           const grabPointSet = sketchState.grab.active
             ? new Set(sketchState.grab.pointIds)
             : null;
+          if (_showEdges) {
           for (const e of sketchState.edges) {
             const a = pById.get(e.a), b = pById.get(e.b);
             if (!a || !b) continue;
@@ -261,6 +275,7 @@ pub const JS: &str = r##"
               }
             }
           }
+          }  // end _showEdges
 
           // ── Line tool preview ──
           if (sketchState.activeTool === 'line' && sketchState.line.startPointId) {
@@ -420,7 +435,8 @@ pub const JS: &str = r##"
             }
           }
 
-          // ── Points ──
+          // ── Points ── (скрываем когда solid committed, как и рёбра)
+          if (_showEdges) {
           for (const p of sketchState.points) {
             const s = w2s(p.x, p.y, p.z);
             if (!s) continue;
@@ -450,4 +466,5 @@ pub const JS: &str = r##"
               ctx.restore();
             }
           }
+          }  // end _showEdges (points)
 "##;

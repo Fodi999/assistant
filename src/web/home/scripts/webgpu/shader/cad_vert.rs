@@ -30,7 +30,7 @@ pub const WGSL: &str = r##"
   var o: Pv;
   o.pos      = vec4f(cx, cy, zNdc, 1.0);
   o.quadUV   = vec2f(0.0);
-  o.color    = vec3f(0.72, 0.78, 0.85);   // neutral CAD grey
+  o.color    = vec3f(0.82, 0.84, 0.88);   // lighter CAD grey — более яркий solid
   o.depth    = mvz;
   o.phase    = 0.0;
   o.wCenter  = position;

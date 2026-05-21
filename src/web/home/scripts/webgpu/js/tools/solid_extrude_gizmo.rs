@@ -22,6 +22,58 @@ pub const JS: &str = r##"
   };
   window.__solidExtrudeState = _state;
 
+  // ── Debug / diagnostics object (Задача 4) ────────────────────────────────
+  // Управление из консоли:
+  //   window.__debugSolidRender.drawSketchFill = false
+  //   window.__debugSolidRender.solidOpacity   = 0.35  // ghost mode
+  //   window.__debugSolidRender.solidOpacity   = 1.0   // committed mode
+  //
+  // Render debug modes (Задача 7):
+  //   window.__debugSolidRender.mode = 'solid'        — только solid, без sketch
+  //   window.__debugSolidRender.mode = 'sketch'       — только sketch, без solid
+  //   window.__debugSolidRender.mode = 'profile_fill' — только profile fill
+  //   window.__debugSolidRender.mode = 'solid+sketch' — оба вместе (default)
+  //   window.__debugSolidRender.mode = 'wireframe'    — wireframe (cadIndexCount > 0)
+  //   window.__debugSolidRender.mode = 'normals'      — normal overlay (future)
+  //
+  // Быстрые пресеты:
+  //   window.__dbgMode = m => { window.__debugSolidRender.mode = m; }
+  //   window.__dbgMode('solid')     // скрыть sketch полностью
+  //   window.__dbgMode('sketch')    // скрыть solid
+  //   window.__dbgMode('solid+sketch')  // вернуть всё
+  window.__debugSolidRender = {
+    drawSketchFill:          true,   // рисовать ли sketch-заливку профиля над solid-ом
+    drawSolid:               true,   // рисовать ли CAD-solid в WebGPU pass
+    drawSolidPreviewGhost:   false,  // ghost-режим для preview (opacity 0.35)
+    solidOpacity:            1.0,    // 1.0 = committed solid / 0.35 = ghost preview
+    transparent:             false,
+    depthWrite:              true,
+    depthTest:               true,
+    mode:                    'solid+sketch',  // текущий debug mode
+  };
+
+  // ── Debug shortcuts ────────────────────────────────────────────────────
+  window.__dbgMode = function(m) {
+    const dsr = window.__debugSolidRender;
+    dsr.mode = m;
+    switch (m) {
+      case 'solid':
+        dsr.drawSketchFill = false; dsr.drawSolid = true;
+        break;
+      case 'sketch':
+        dsr.drawSketchFill = true;  dsr.drawSolid = false;
+        break;
+      case 'profile_fill':
+        dsr.drawSketchFill = true;  dsr.drawSolid = false;
+        break;
+      case 'solid+sketch':
+      default:
+        dsr.drawSketchFill = true;  dsr.drawSolid = true;
+        break;
+    }
+    console.log('[debugSolidRender] mode =', m, dsr);
+  };
+
   function _getProfile(profileId) {
     var ss = window.sketchState;
     if (!ss) return null;
@@ -211,7 +263,80 @@ pub const JS: &str = r##"
       result.__dt = dt;
       _state.previewMesh = result;
       window.__lastSolidResult = result;
+
+      // ── Задача 5: ghost preview vs committed solid ────────────────────────
+      var dsr = window.__debugSolidRender;
+      if (isFinal) {
+        // Committed solid — opaque, full depth, no sketch fill overlay.
+        if (dsr) {
+          dsr.solidOpacity           = 1.0;
+          dsr.transparent            = false;
+          dsr.depthWrite             = true;
+          dsr.depthTest              = true;
+          dsr.drawSolidPreviewGhost  = false;
+          dsr.drawSketchFill         = false;  // скрыть sketch-заливку под solid
+        }
+      } else {
+        // Preview ghost — semi-transparent.
+        if (dsr) {
+          dsr.solidOpacity           = 0.35;
+          dsr.transparent            = true;
+          dsr.drawSolidPreviewGhost  = true;
+          dsr.drawSketchFill         = true;   // sketch fill ещё видна в preview
+        }
+      }
+
       if (window.__uploadSolidToScene) window.__uploadSolidToScene(result);
+
+      // ── Задача 6: console diagnostics ─────────────────────────────────────
+      if (result.positions && result.positions.length) {
+        var pos = result.positions;
+        var xs = pos.filter(function(_,i){ return i%3===0; });
+        var ys = pos.filter(function(_,i){ return i%3===1; });
+        var zs = pos.filter(function(_,i){ return i%3===2; });
+        var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+        var minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
+        var minZ=Math.min.apply(null,zs), maxZ=Math.max.apply(null,zs);
+        var depthAxisMap = { XZ:'Y', XY:'Z', YZ:'X' };
+        var expectedDepthAxis = depthAxisMap[plane] || '?';
+        var axisMin = { X:minX, Y:minY, Z:minZ }[expectedDepthAxis];
+        var axisMax = { X:maxX, Y:maxY, Z:maxZ }[expectedDepthAxis];
+        var depthM = depthMm / 1000.0;
+        var isAnchored   = Math.abs(axisMin) < 1e-4 && Math.abs(axisMax - depthM) < 1e-4;
+        var isCentered   = Math.abs(axisMin + depthM*0.5) < 1e-4;
+        var isReversed   = Math.abs(axisMin + depthM) < 1e-4 && Math.abs(axisMax) < 1e-4;
+        var isDoubleDep  = Math.abs((axisMax - axisMin) - depthM*2) < 1e-4;
+        console.table({
+          plane:             plane,
+          depth_mm:          depthMm,
+          depth_m:           depthM,
+          bboxMin:           '[' + minX.toFixed(4) + ', ' + minY.toFixed(4) + ', ' + minZ.toFixed(4) + ']',
+          bboxMax:           '[' + maxX.toFixed(4) + ', ' + maxY.toFixed(4) + ', ' + maxZ.toFixed(4) + ']',
+          sizeX:             (maxX-minX).toFixed(4),
+          sizeY:             (maxY-minY).toFixed(4),
+          sizeZ:             (maxZ-minZ).toFixed(4),
+          expectedDepthAxis: expectedDepthAxis,
+          depthAxisMin:      axisMin.toFixed(4),
+          depthAxisMax:      axisMax.toFixed(4),
+          anchorStatus:      isDoubleDep  ? '❌ depth applied twice'   :
+                             isCentered   ? '❌ centered extrusion'    :
+                             isReversed   ? '⚠ reverse direction'     :
+                             isAnchored   ? '✅ base-anchored'         : '? check manually',
+          solidOpacity:      dsr ? dsr.solidOpacity           : 'n/a',
+          transparent:       dsr ? dsr.transparent            : 'n/a',
+          depthWrite:        dsr ? dsr.depthWrite             : 'n/a',
+          depthTest:         dsr ? dsr.depthTest              : 'n/a',
+          drawSketchFill:    dsr ? dsr.drawSketchFill         : 'n/a',
+          drawSolidGhost:    dsr ? dsr.drawSolidPreviewGhost  : 'n/a',
+          isFinal:           isFinal,
+          dt_ms:             dt,
+        });
+        if (isDoubleDep || isCentered) {
+          console.error('[SolidExtrude] ❌ Extrusion anchor problem! axis=' + expectedDepthAxis +
+            ' range=[' + axisMin.toFixed(4) + ', ' + axisMax.toFixed(4) + '] depth=' + depthM);
+        }
+      }
+
       if (window.__setStatusMessage)
         window.__setStatusMessage(
           (isFinal ? '✓ Solid' : 'preview') + ': ' +
