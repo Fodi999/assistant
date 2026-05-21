@@ -6,3 +6,4 @@ pub mod buffers;
 pub mod pipeline;
 pub mod render_loop;
 pub mod perf_hud;
+pub mod geometry_bridge;

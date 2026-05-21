@@ -3,6 +3,7 @@ pub mod cms;
 pub mod ingredients;
 pub mod intent_pages;
 pub mod matter;
+pub mod matter_geometry;
 pub mod matter_sketch;
 pub mod matter_sketch_commands;
 pub mod nutrition_pages;

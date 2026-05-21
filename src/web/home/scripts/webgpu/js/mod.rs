@@ -25,6 +25,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + core::init::JS.len()
         + core::state::JS.len()
         + core::buffers::JS.len()
+        + core::geometry_bridge::JS.len()
         + core::pipeline::JS.len()
         + core::render_loop::JS.len()
         + core::perf_hud::JS.len()
@@ -118,6 +119,9 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(cad_shader);
     out.push_str("\n`;\n");
     out.push_str(core::pipeline::JS);
+
+    // ── 6b. Geometry Bridge (после GPU init — __uploadSolidToScene уже есть) ─
+    out.push_str(core::geometry_bridge::JS);
 
     // ── 7. UI panels + HUD ───────────────────────────────────────────────────
     out.push_str(ui::hud::JS);
