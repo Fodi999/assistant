@@ -15,3 +15,10 @@ pub type Real = f64;
 
 /// Precision used in GPU vertex/index buffers (WebGPU).
 pub type GpuReal = f32;
+
+/// PI constant (f64).
+pub const PI: Real = std::f64::consts::PI;
+
+/// TAU = 2π (f64).
+pub const TAU: Real = std::f64::consts::TAU;
+

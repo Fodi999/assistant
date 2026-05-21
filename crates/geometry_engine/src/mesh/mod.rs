@@ -1,4 +1,7 @@
+pub mod gltf;
+pub mod gpu_mesh;
 pub mod mesh;
+pub mod mesh_part;
 pub mod normals;
 pub mod obj;
 pub mod stl;
