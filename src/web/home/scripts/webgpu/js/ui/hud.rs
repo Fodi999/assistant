@@ -9,6 +9,7 @@ pub const JS: &str = r##"
       if (!hud) {
         hud = document.createElement('div');
         hud.id = 'gpu-hud';
+        hud.className = 'cad-dev-only'; // hidden in User Mode (legacy particle HUD)
         __T.applyHudStyle(hud, { top: '72px', right: '356px', zIndex: '9999' });
         __T.makeDraggable(hud, hud);
         __T.blockCanvasEvents(hud);

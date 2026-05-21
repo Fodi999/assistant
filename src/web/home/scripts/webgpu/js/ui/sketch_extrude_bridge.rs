@@ -375,6 +375,7 @@ pub const JS: &str = r##"
 
     el = document.createElement('div');
     el.id = '__se_preview_panel';
+    el.className = 'cad-dev-only'; // hidden in User Mode (replaced by Right Inspector + scene)
     Object.assign(el.style, {
       position:     'fixed',
       right:        '24px',

@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 
 pub async fn home_page() -> impl IntoResponse {
     let css = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         layout::styles::styles(),
         layout::matter_lab_styles::matter_lab_styles(),
         layout::matter_lab_styles::matter_tools_styles(),
@@ -15,7 +15,6 @@ pub async fn home_page() -> impl IntoResponse {
         layout::matter_lab_styles::matter_panel_styles(),
         layout::matter_lab_styles::matter_action_bar_styles(),
         layout::matter_lab_styles::matter_status_styles(),
-        layout::outliner::outliner_styles(),
         layout::cad_side_panel_styles::cad_side_panel_styles(),
     );
     let html = layout::template::template(&css, &scripts::all_scripts());

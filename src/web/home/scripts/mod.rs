@@ -35,10 +35,9 @@ pub fn open_close_js() -> &'static str {
 
 pub fn all_scripts() -> String {
     format!(
-        "<script>{}{}{}{}</script>",
+        "<script>{}{}{}</script>",
         open_close_js(),
         toolbar::toolbar_js(),
         webgpu::webgpu_js(),
-        crate::web::home::layout::outliner::outliner_js(),
     )
 }

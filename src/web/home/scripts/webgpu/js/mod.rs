@@ -77,6 +77,13 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + ui::selection_mode_hud::JS.len()
         + ui::constraint_solver::JS.len()
         + ui::sketch_extrude_bridge::JS.len()
+        + ui::ui_shell::JS.len()
+        + ui::document::JS.len()
+        + ui::dev_mode::JS.len()
+        + ui::top_bar::JS.len()
+        + ui::bottom_toolbar::JS.len()
+        + ui::right_inspector::JS.len()
+        + ui::scene_tree::JS.len()
         + shader.len()
         + cad_shader.len()
         + 512,
@@ -162,6 +169,19 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(ui::selection_mode_hud::JS);
     out.push_str(ui::constraint_solver::JS);
     out.push_str(ui::sketch_extrude_bridge::JS);
+
+    // ── 7b. UI Shell v1 — professional shell layer (additive, defensive) ─────
+    //  Order: ui_shell (state facade) → document (store + extrude wrap)
+    //         → dev_mode → top_bar → bottom_toolbar → right_inspector
+    //         → scene_tree. Must load AFTER cad_side_panel so that the
+    //         Object tab DOM exists to mount #cad-obj-ctx into.
+    out.push_str(ui::ui_shell::JS);
+    out.push_str(ui::document::JS);
+    out.push_str(ui::dev_mode::JS);
+    out.push_str(ui::top_bar::JS);
+    out.push_str(ui::bottom_toolbar::JS);
+    out.push_str(ui::right_inspector::JS);
+    out.push_str(ui::scene_tree::JS);
 
     // ── 8. Render loop (last — depends on everything above) ──────────────────
     out.push_str(core::render_loop::JS);

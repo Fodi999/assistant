@@ -45,7 +45,10 @@ pub const JS: &str = r##"
   document.addEventListener('click', function(e) {
     var canvas = document.getElementById('webgpu-canvas');
     if (!canvas || e.target !== canvas) return;
-    if (!window.__lastSolidResult || !window.__lastSolidResult.faces) return;
+    // Multi-body mode: pickFace iterates CAD.renderBodies. Legacy mode
+    // still needs __lastSolidResult. Either path is OK.
+    var haveBodies = (window.CAD && window.CAD.renderBodies && window.CAD.renderBodies.length > 0);
+    if (!haveBodies && (!window.__lastSolidResult || !window.__lastSolidResult.faces)) return;
 
     var c = _ctx();
     if (!c.sel || !c.pick) return;
@@ -59,14 +62,62 @@ pub const JS: &str = r##"
         faceId:       hit.face.face_id,
         sourceFaceId: hit.face.source_face_id,
       });
+
+      // ── Sync selection to CAD.document + sketchState ──────────────
+      if (hit.bodyId) {
+        try {
+          var ss = window.sketchState;
+          if (ss) {
+            if (!(ss.selectedBodyIds instanceof Set)) ss.selectedBodyIds = new Set();
+            else ss.selectedBodyIds.clear();
+            ss.selectedBodyIds.add(hit.bodyId);
+            // Clear other selection kinds so Inspector switches to Body.
+            if (ss.selectedFaceIds && ss.selectedFaceIds.clear) ss.selectedFaceIds.clear();
+            if (ss.selectedEdgeIds && ss.selectedEdgeIds.clear) ss.selectedEdgeIds.clear();
+            if (ss.selectedPointIds && ss.selectedPointIds.clear) ss.selectedPointIds.clear();
+            ss.selectedProfileId = null;
+          }
+        } catch (_) {}
+        try {
+          if (window.CAD && window.CAD.document) {
+            window.CAD.document.setSelection('body', hit.bodyId, {
+              faceId:       hit.localFaceId,
+              globalFaceId: hit.globalFaceId,
+              featureId:    hit.featureId,
+              sourceFaceId: hit.face.source_face_id,
+              point:        hit.point,
+            });
+          }
+        } catch (_) {}
+        try {
+          if (window.CAD && window.CAD.ui) {
+            window.CAD.ui.emit('selection:changed', { type: 'body', id: hit.bodyId, faceId: hit.localFaceId });
+            window.CAD.ui.emit('document:changed',  { kind: 'select', bodyId: hit.bodyId });
+          }
+        } catch (_) {}
+      }
+
       console.log('[FaceInput] ✅ click face_id=' + hit.face.face_id +
+        (hit.bodyId ? ' body=' + hit.bodyId + ' gf=' + hit.globalFaceId : '') +
         ' src=' + hit.face.source_face_id +
         ' t='   + hit.t.toFixed(4));
       if (window.__setStatusMessage)
-        window.__setStatusMessage('Face F' + hit.face.face_id + ' selected');
+        window.__setStatusMessage(
+          (hit.bodyId ? hit.bodyId + ' · ' : '') +
+          'Face F' + hit.face.face_id + ' selected'
+        );
     } else {
       // Clicked empty area → clear selection
       c.sel.clear();
+      try {
+        var ss2 = window.sketchState;
+        if (ss2 && ss2.selectedBodyIds && ss2.selectedBodyIds.clear) ss2.selectedBodyIds.clear();
+        if (window.CAD && window.CAD.document) window.CAD.document.setSelection('none', null);
+        if (window.CAD && window.CAD.ui) {
+          window.CAD.ui.emit('selection:changed', { type: 'none' });
+          window.CAD.ui.emit('document:changed',  { kind: 'deselect' });
+        }
+      } catch (_) {}
     }
   }, false);
 
@@ -75,7 +126,8 @@ pub const JS: &str = r##"
   document.addEventListener('mousemove', function(e) {
     var canvas = document.getElementById('webgpu-canvas');
     if (!canvas || e.target !== canvas) return;
-    if (!window.__lastSolidResult || !window.__lastSolidResult.faces) return;
+    var haveBodies = (window.CAD && window.CAD.renderBodies && window.CAD.renderBodies.length > 0);
+    if (!haveBodies && (!window.__lastSolidResult || !window.__lastSolidResult.faces)) return;
 
     var c = _ctx();
     if (!c.sel || !c.pick) return;
