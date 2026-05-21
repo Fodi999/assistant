@@ -13,4 +13,11 @@ pub mod union;
 pub mod validation;
 
 pub use operation::BooleanOp;
+pub use classify::Classification;
+pub use face_face_intersection::FaceFaceIntersection;
+pub use rebuild_shell::FaceSpec;
 
+/// Run a boolean operation between two [`crate::brep::BrepModel`]s.
+pub use union::run as boolean_union;
+pub use subtract::run as boolean_subtract;
+pub use intersect::run as boolean_intersect;

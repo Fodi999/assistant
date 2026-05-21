@@ -10,6 +10,7 @@ members = [".", "crates/sketch_engine", "crates/geometry_engine"]
 # Shared sketch geometry engine (also compilable to WASM)
 sketch_engine    = { path = "crates/sketch_engine" }
 geometry_engine  = { path = "crates/geometry_engine" }
+const_format     = "0.2"
 
 # Web framework
 axum = { version = "0.7", features = ["macros", "multipart"] }
