@@ -358,6 +358,20 @@ pub const JS: &str = r##"
 
     if (window.__uploadSolidToScene) window.__uploadSolidToScene(result);
 
+    // ── Build & store face metadata (logical faces; box → 6) ─────────────
+    var CI = window.CadInteraction;
+    if (CI && CI.picking) {
+      result.faces = CI.picking.buildFaceMetadata(result);
+      console.log('[SolidExtrude] faces built: ' + result.faces.length +
+        ' → IDs [' + result.faces.map(function(f){ return f.face_id; }).join(', ') + ']');
+      if (CI.overlays && CI.overlays.debug) {
+        CI.overlays.debug.setFaces(result.faces);
+        CI.overlays.debug.show();
+      }
+      // Reset any previous selection on the now-stale mesh
+      if (CI.selection) CI.selection.clear();
+    }
+
     // ── Задача 6: console diagnostics ─────────────────────────────────────
     if (result.positions && result.positions.length) {
         var pos = result.positions;

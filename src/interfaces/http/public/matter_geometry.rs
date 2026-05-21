@@ -46,15 +46,22 @@ fn weld_vertices(
         let px = positions[i * 3];
         let py = positions[i * 3 + 1];
         let pz = positions[i * 3 + 2];
+        let fid_i = face_ids[i];
+        let nx_i  = normals[i * 3];
+        let ny_i  = normals[i * 3 + 1];
+        let nz_i  = normals[i * 3 + 2];
         let nv = new_pos.len() / 3;
         for j in 0..nv {
+            if new_fids[j] != fid_i { continue; }
             let dx = new_pos[j*3]   - px;
             let dy = new_pos[j*3+1] - py;
             let dz = new_pos[j*3+2] - pz;
-            if dx*dx + dy*dy + dz*dz <= tol2 {
-                remap.push(j as u32);
-                continue 'outer;
-            }
+            if dx*dx + dy*dy + dz*dz > tol2 { continue; }
+            // normal similarity guard — do not weld across wall directions
+            let dot = new_nrm[j*3]*nx_i + new_nrm[j*3+1]*ny_i + new_nrm[j*3+2]*nz_i;
+            if dot < 0.95 { continue; }
+            remap.push(j as u32);
+            continue 'outer;
         }
         remap.push(nv as u32);
         new_pos.push(px);  new_pos.push(py);  new_pos.push(pz);
@@ -333,9 +340,21 @@ pub async fn boolean_endpoint(
     let vc = positions.len() / 3;
     let tc = indices.len() / 3;
 
-    // ── 5. Weld to close boundary edges (1e-4 for CSG float drift) ─────────
+    // ── 5. Weld (adaptive tol = bbox_diag * 1e-4, clamp 1e-9..1e-4) ─────
+    let weld_tol: f32 = {
+        let xs = positions.iter().step_by(3);
+        let ys = positions.iter().skip(1).step_by(3);
+        let zs = positions.iter().skip(2).step_by(3);
+        let inf = f32::INFINITY;
+        let (mnx, mxx) = xs.fold((inf, -inf), |(a,b), &v| (a.min(v), b.max(v)));
+        let (mny, mxy) = ys.fold((inf, -inf), |(a,b), &v| (a.min(v), b.max(v)));
+        let (mnz, mxz) = zs.fold((inf, -inf), |(a,b), &v| (a.min(v), b.max(v)));
+        let dx = mxx - mnx; let dy = mxy - mny; let dz = mxz - mnz;
+        let diag = (dx*dx + dy*dy + dz*dz).sqrt();
+        (diag * 1e-4_f32).clamp(1e-9_f32, 1e-4_f32)
+    };
     let (positions, normals, face_ids, mut indices) =
-        weld_vertices(&positions, &normals, &face_ids, &indices, 1e-4_f32);
+        weld_vertices(&positions, &normals, &face_ids, &indices, weld_tol);
 
     // ── 6. Ensure consistent outward winding ─────────────────────────────
     let mut normals = normals;

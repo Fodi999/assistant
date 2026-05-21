@@ -13,6 +13,31 @@ pub const JS: &str = r##"
         // Ignore clicks that are the tail end of a wheel/pinch zoom gesture.
         if (window.__wheelZoomActive) return;
 
+        // ── Solid body / face pick (3D hit test before 2D sketch picking) ──
+        var CI = window.CadInteraction;
+        if (CI && CI.picking && CI.selection
+            && window.__lastSolidResult && window.__lastSolidResult.faces) {
+          var canvas = document.getElementById('webgpu-canvas');
+          if (canvas) {
+            var px  = ((ndcX + 1) * 0.5) * canvas.width;
+            var py  = ((1 - ndcY) * 0.5) * canvas.height;
+            var hit = CI.picking.pickFace(px, py);
+            if (hit) {
+              CI.selection.set({
+                selected:     true,
+                mode:         0,                          // OBJECT mode
+                faceId:       hit.face.face_id,
+                sourceFaceId: hit.face.source_face_id,
+              });
+              if (window.__setStatusMessage)
+                window.__setStatusMessage('Solid selected — face F' + hit.face.face_id);
+              return; // consumed
+            } else if (!shiftKey) {
+              CI.selection.clear();
+            }
+          }
+        }
+
         const SM   = window.SelectionMode;
         const tool = sketchState.activeTool;
 

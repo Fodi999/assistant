@@ -81,7 +81,14 @@ pub const JS: &str = r##"
         ubo[54] = sceneState.objectRoundness; ubo[55] = 0;
         ubo[56] = sketchState.showGrid ? 1.0 : 0.0;
         ubo[57] = 0; ubo[58] = 0; ubo[59] = 0;
-        ubo[60] = 0; ubo[61] = 0; ubo[62] = 0; ubo[63] = 0;
+        // ── Solid selection state → UBO ─────────────────────────────────────
+        // u9.z = isSelected (1.0 = yes), u9.w = selectionMode (0=object,1=face)
+        // u15.x = selected_face_id (source face_id from kernel), u15.y = hovered_face_id
+        ubo[38] = (window.__solidSelected   ? 1.0 : 0.0);
+        ubo[39] = (window.__solidSelMode    || 0);
+        ubo[60] = (window.__solidSelFaceId  || 0);
+        ubo[61] = (window.__solidHoverFaceId|| 0);
+        ubo[62] = 0; ubo[63] = 0;
         device.queue.writeBuffer(uniformBuf, 0, ubo);
 
         const __pfRender = performance.now();

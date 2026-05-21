@@ -9,5 +9,7 @@ pub mod rect_tool;
 pub mod circle_tool;
 pub mod hotkeys;
 pub mod extrude;
+pub mod extrude_dispatcher;
 pub mod extrude_gizmo;
 pub mod solid_extrude_gizmo;
+pub mod solid_face_meta;

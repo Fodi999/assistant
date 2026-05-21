@@ -346,6 +346,17 @@ pub const JS: &str = r##"
     // Сохраняем результат глобально
     window.__lastSolidResult = result;
 
+    // Строим метаданные граней
+    if (window.__buildFaceMetadata) {
+      result.faces = window.__buildFaceMetadata(result);
+      console.log('[sketch→solid] faces:', result.faces.length,
+        result.faces.map(function(f){ return 'F' + f.face_id; }).join(' '));
+      if (window.__solidFacePanel) {
+        window.__solidFacePanel.show();
+        window.__solidFacePanel.update(result.faces, null);
+      }
+    }
+
     // Показать превью + предложить скачать
     _showSolidPreview(result, depthMm, plane);
   }

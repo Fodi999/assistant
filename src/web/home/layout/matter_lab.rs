@@ -67,7 +67,7 @@ pub fn matter_lab_section() -> String {
             <span class="sco-key sco-row" data-kw="p точка point">P</span><span class="sco-row" data-kw="p точка point">Точка</span>
             <span class="sco-key sco-row" data-kw="l линия line">L</span><span class="sco-row" data-kw="l линия line">Линия</span>
             <span class="sco-key sco-row" data-kw="g захват grab">G</span><span class="sco-row" data-kw="g захват grab">Захват</span>
-            <span class="sco-key sco-row" data-kw="e extrude выдавить стена wall">E</span><span class="sco-row" data-kw="e extrude выдавить стена wall">Extrude (стена)</span>
+            <span class="sco-key sco-row" data-kw="e extrude выдавить профиль грань ребро context">E</span><span class="sco-row" data-kw="e extrude выдавить профиль грань ребро context">Context Extrude: профиль / грань / ребро</span>
             <span class="sco-key sco-row" data-kw="shift g копировать copy">⇧G</span><span class="sco-row" data-kw="shift g копировать copy">Копировать</span>
             <span class="sco-key sco-row" data-kw="d размер dimension">D</span><span class="sco-row" data-kw="d размер dimension">Размер</span>
             <span class="sco-key sco-row" data-kw="w разбить ребро split edge">W</span><span class="sco-row" data-kw="w разбить ребро split edge">Разбить ребро (Split Edge)</span>
@@ -202,8 +202,8 @@ pub fn matter_lab_section() -> String {
           <button class="utb-btn"        data-tool="circle" title="Окружность (C)">⬤<span class="utb-label">Окружн.</span></button>
           <button class="utb-btn"        data-tool="grab"   title="Захват (G)">✥<span class="utb-label">Захват</span></button>
           <button class="utb-btn"        data-tool="delete" title="Удалить (⌫)">⌫<span class="utb-label">Удалить</span></button>
-          <button class="utb-btn" id="btn-extrude" title="Extrude выбранные рёбра (E)"
-                  onclick="if(window.__startEdgeExtrude)window.__startEdgeExtrude();">⬆<span class="utb-label">Extrude</span></button>
+          <button class="utb-btn" id="btn-extrude" title="Context Extrude (E) — профиль / грань / ребро"
+                  onclick="window.__handleContextExtrude?.();">⬆<span class="utb-label">Extrude</span></button>
           <div class="utb-sep"></div>
           <button class="utb-btn" id="btn-ortho" data-toggle="ortho"
                   title="Ортогональность — привязка к 0° 45° 90° (O)"
@@ -224,11 +224,6 @@ pub fn matter_lab_section() -> String {
           <button class="utb-btn" id="btn-solve" title="Решить ограничения (Shift+S)"
                   onclick="if(window.__solveSketchWasm)window.__solveSketchWasm();">
             ⚙<span class="utb-label">Решить</span>
-          </button>
-          <div class="utb-sep"></div>
-          <button class="utb-btn" id="btn-solid" title="Solid Extrude гизмо (E) — тяни стрелку"
-                  onclick="if(window.__solidExtrudeState?.active){window.__cancelSolidExtrude();}else if(window.__startSolidExtrude){window.__startSolidExtrude();}else{alert('solid extrude not loaded');}">
-            🧱<span class="utb-label">Solid</span>
           </button>
         </nav>
 

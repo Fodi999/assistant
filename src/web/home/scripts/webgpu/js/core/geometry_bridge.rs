@@ -49,6 +49,17 @@ window.__geoBridge = (() => {
       return false;
     }
     window.__uploadSolidToScene(result);
+
+    // Build / rebuild face metadata after every upload
+    if (typeof window.__buildFaceMetadata === 'function') {
+      result.faces = window.__buildFaceMetadata(result);
+      window.__lastSolidResult = result;
+      if (window.__solidFacePanel) {
+        window.__solidFacePanel.show();
+        window.__solidFacePanel.update(result.faces, null);
+      }
+    }
+
     state.current = result;
     return true;
   }

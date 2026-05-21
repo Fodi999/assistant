@@ -17,6 +17,7 @@ pub mod input;
 pub mod sketch;
 pub mod tools;
 pub mod ui;
+pub mod cad;
 
 /// Assembles the complete JS source, embedding both WGSL shaders.
 pub fn assemble(shader: &str, cad_shader: &str) -> String {
@@ -51,8 +52,18 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + tools::circle_tool::JS.len()
         + tools::hotkeys::JS.len()
         + tools::extrude::JS.len()
+        + tools::extrude_dispatcher::JS.len()
         + tools::extrude_gizmo::JS.len()
         + tools::solid_extrude_gizmo::JS.len()
+        + tools::solid_face_meta::JS.len()
+        + cad::interaction::BOOTSTRAP_JS.len()
+        + cad::interaction::selection::selection_modes::JS.len()
+        + cad::interaction::selection::selection_store::JS.len()
+        + cad::interaction::picking::face_metadata::JS.len()
+        + cad::interaction::picking::raycast::JS.len()
+        + cad::interaction::picking::pick_face::JS.len()
+        + cad::interaction::highlight::highlight_state::JS.len()
+        + cad::interaction::overlays::debug_overlay::JS.len()
         + ui::matter_state::JS.len()
         + ui::hud::JS.len()
         + ui::controls::JS.len()
@@ -95,6 +106,18 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(sketch::cad_engine::JS);
     out.push_str(sketch::constraints::JS);
 
+    // ── 4b. CAD Interaction (selection / picking / highlight / overlays) ────
+    //  Must load AFTER core::state (window.cam exposed) and BEFORE tools
+    //  (select_tool & solid_extrude_gizmo consume CadInteraction.*).
+    out.push_str(cad::interaction::BOOTSTRAP_JS);
+    out.push_str(cad::interaction::selection::selection_modes::JS);
+    out.push_str(cad::interaction::selection::selection_store::JS);
+    out.push_str(cad::interaction::picking::face_metadata::JS);
+    out.push_str(cad::interaction::picking::raycast::JS);
+    out.push_str(cad::interaction::picking::pick_face::JS);
+    out.push_str(cad::interaction::highlight::highlight_state::JS);
+    out.push_str(cad::interaction::overlays::debug_overlay::JS);
+
     // ── 5. Tools ─────────────────────────────────────────────────────────────
     out.push_str(tools::select_tool::JS);
     out.push_str(tools::grab_tool::JS);
@@ -106,8 +129,10 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     out.push_str(tools::circle_tool::JS);
     out.push_str(tools::hotkeys::JS);
     out.push_str(tools::extrude::JS);
+    out.push_str(tools::extrude_dispatcher::JS);
     out.push_str(tools::extrude_gizmo::JS);
     out.push_str(tools::solid_extrude_gizmo::JS);
+    out.push_str(tools::solid_face_meta::JS);
 
     // ── 6. GPU buffers + WGSL shaders + pipeline ─────────────────────────────
     out.push_str(core::buffers::JS);

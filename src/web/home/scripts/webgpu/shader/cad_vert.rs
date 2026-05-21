@@ -2,6 +2,15 @@ pub const WGSL: &str = r##"
 // ── CAD Solid pipeline vertex shader ──
 // Positions arrive in world-space metres from the geometry kernel.
 // We project them through the scene camera without any extra object transform.
+//
+// CAD Visual Style v1:
+//   face_id=1  top cap    → slightly lighter
+//   face_id=2  bottom cap → slightly darker
+//   face_id=3  side walls → base CAD grey
+//   face_id=0  unknown    → base CAD grey
+//
+// TODO(v2): receive per-vertex material color from GPU buffer once
+//           geometry_engine MeshPart gains a Material field.
 
 @vertex fn vs_cad(
   @location(0) position: vec3f,
@@ -27,10 +36,22 @@ pub const WGSL: &str = r##"
   let cy    = select(mvy * focal / smvz,       mvy / orthoHeight,       isOrtho);
   let zNdc  = clamp(mvz / (mvz + 8.0), 0.0, 0.9999);
 
+  // ── CAD face tint by face_id (Visual Style v1) ───────────────────────────
+  // Base: calm neutral CAD grey (per requirements: ~0.72-0.80)
+  var base_col = vec3f(0.72, 0.76, 0.80);   // sides / unknown — base value
+  if face_id == 1u {
+    // top cap — +5% lighter (light from above)
+    base_col = vec3f(0.756, 0.798, 0.840);
+  } else if face_id == 2u {
+    // bottom cap — -8% darker (shadowed underside)
+    base_col = vec3f(0.662, 0.699, 0.736);
+  }
+  // face_id == 3u (sides) and 0u (unknown) keep the base value
+
   var o: Pv;
   o.pos      = vec4f(cx, cy, zNdc, 1.0);
   o.quadUV   = vec2f(0.0);
-  o.color    = vec3f(0.82, 0.84, 0.88);   // lighter CAD grey — более яркий solid
+  o.color    = base_col;
   o.depth    = mvz;
   o.phase    = 0.0;
   o.wCenter  = position;

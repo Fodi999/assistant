@@ -366,29 +366,9 @@ pub const JS: &str = r##"
         if (k === 'r') { window.__setSketchTool && window.__setSketchTool('rect');   return true; }
         if (k === 'c') { window.__setSketchTool && window.__setSketchTool('circle'); return true; }
 
-        // E → Solid Extrude (если есть профиль) или Edge Extrude (fallback)
+        // E → Context Extrude (dispatcher decides: solid / face / edge / hint)
         if (k === 'e') {
-          // Если уже активен solid extrude гизмо — Enter-commit
-          if (window.__solidExtrudeState?.active) {
-            window.__commitSolidExtrude && window.__commitSolidExtrude();
-            return true;
-          }
-          // Проверяем наличие замкнутого профиля
-          const selProf = sketchState.selectedProfileId
-            || (sketchState.profiles && sketchState.profiles.length ? sketchState.profiles[0]?.id : null);
-          if (selProf && window.__startSolidExtrude) {
-            console.log('[E key] → __startSolidExtrude, profile=', selProf);
-            window.__startSolidExtrude(selProf);
-            return true;
-          }
-          // Fallback: wall edge extrude
-          const hasExtrude = !!window.__startEdgeExtrude;
-          if (!hasExtrude) {
-            console.warn('[E key] __startEdgeExtrude не найден — extrude.rs не загружен?');
-            return true;
-          }
-          console.log('[E key] → __startEdgeExtrude (no profile)');
-          window.__startEdgeExtrude();
+          window.__handleContextExtrude?.();
           return true;
         }
 

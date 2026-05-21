@@ -48,8 +48,9 @@ impl Point2 {
 /// Options for [`extrude_polygon`].
 #[derive(Debug, Clone)]
 pub struct ExtrudeOptions {
-    /// Total depth (Z extent). The polygon is centred at z = 0, so the front
-    /// cap sits at `+depth/2` and the back cap at `-depth/2`.
+    /// Total depth (Z extent).  The polygon **base** sits at z = 0 and the
+    /// extruded top sits at z = `+depth`.  This is a CAD base-anchored
+    /// extrusion — the profile plane is the bottom face, *not* the midplane.
     pub depth: crate::math::Real,
     /// Optional chamfer width (metres). Clamped to `depth * 0.49`.
     pub bevel: crate::math::Real,
@@ -91,22 +92,22 @@ pub fn extrude_polygon(
         )));
     }
 
-    let half = options.depth * 0.5;
-    let bevel = options.bevel.clamp(0.0, half * 0.49);
+    let top  = options.depth;        // extruded end  (kernel +Z)
+    let base = 0.0_f64;              // profile plane / anchor (kernel z = 0)
+    let bevel = options.bevel.clamp(0.0, top * 0.49);
     let has_bevel = bevel > 1e-5;
 
-    // With bevel the cap sits slightly inward, so the chamfer face
-    // connects from the main contour at the outer z to the inset contour.
-    let cap_z_front = if has_bevel { half - bevel } else { half };
-    let cap_z_back = if has_bevel { -(half - bevel) } else { -half };
+    // With bevel the cap sits slightly inward from the rim.
+    let cap_z_front = if has_bevel { top  - bevel } else { top  };
+    let cap_z_back  = if has_bevel { base + bevel } else { base };
 
-    let front = build_cap(points, cap_z_front, [0.0, 0.0,  1.0], true);   // flip=true → geo-normal +Z(kernel)=+Y(world XZ)
-    let back  = build_cap(points, cap_z_back,  [0.0, 0.0, -1.0], false);  // flip=false → geo-normal -Z(kernel)=-Y(world XZ)
+    let front = build_cap(points, cap_z_front, [0.0, 0.0,  1.0], true);   // flip=true  → outward +Z (kernel) = +Y (world XZ)
+    let back  = build_cap(points, cap_z_back,  [0.0, 0.0, -1.0], false);  // flip=false → outward -Z (kernel) = -Y (world XZ)
 
     let sides = if has_bevel {
-        build_sides_beveled(points, half, bevel)
+        build_sides_beveled(points, top, base, bevel)
     } else {
-        build_sides_flat(points, half)
+        build_sides_flat(points, top, base)
     };
 
     Ok([front, back, sides])
@@ -223,7 +224,7 @@ fn build_cap(points: &[Point2], z: f64, normal: [f64; 3], flip: bool) -> MeshPar
 // Side walls — no bevel
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn build_sides_flat(points: &[Point2], half: f64) -> MeshPart {
+fn build_sides_flat(points: &[Point2], top: f64, base: f64) -> MeshPart {
     let n = points.len();
 
     // Cumulative perimeter → U coordinate.
@@ -246,14 +247,14 @@ fn build_sides_flat(points: &[Point2], half: f64) -> MeshPart {
         let u0 = edge_u[i] / total_perim;
         let u1 = edge_u[i + 1] / total_perim;
 
-        let base = vertices.len();
+        let base_idx = vertices.len();
 
-        // 4 verts: front-left, front-right, back-right, back-left.
-        // OLD (correct) ordering: front verts first so CCW-from-outside gives outward normal.
-        vertices.push([a.x, a.y,  half]); // 0  front-left
-        vertices.push([b.x, b.y,  half]); // 1  front-right
-        vertices.push([b.x, b.y, -half]); // 2  back-right
-        vertices.push([a.x, a.y, -half]); // 3  back-left
+        // 4 verts: front-left (top), front-right (top), back-right (base), back-left (base).
+        // CCW-from-outside ordering gives outward normal.
+        vertices.push([a.x, a.y, top ]);  // 0  front-left
+        vertices.push([b.x, b.y, top ]);  // 1  front-right
+        vertices.push([b.x, b.y, base]);  // 2  back-right
+        vertices.push([a.x, a.y, base]);  // 3  back-left
 
         for _ in 0..4 {
             normals.push(norm);
@@ -264,8 +265,8 @@ fn build_sides_flat(points: &[Point2], half: f64) -> MeshPart {
         uvs.push([u0, 0.0]);
 
         // CCW seen from outside.
-        faces.push([base, base + 1, base + 2]);
-        faces.push([base, base + 2, base + 3]);
+        faces.push([base_idx, base_idx + 1, base_idx + 2]);
+        faces.push([base_idx, base_idx + 2, base_idx + 3]);
     }
 
     MeshPart {
@@ -282,15 +283,15 @@ fn build_sides_flat(points: &[Point2], half: f64) -> MeshPart {
 //
 // For each edge we emit 4 vertex rings × 2 XY positions = 8 verts:
 //
-//   ring 0:  z = +half,        XY inset by `bevel` (cap edge)
-//   ring 1:  z = +half-bevel,  XY full               (bevel-top → wall join)
-//   ring 2:  z = -(half-bevel) XY full               (wall → bevel-bottom join)
-//   ring 3:  z = -half,        XY inset by `bevel`   (back cap edge)
+//   ring 0:  z = top,          XY inset by `bevel` (front cap edge)
+//   ring 1:  z = top-bevel,    XY full               (bevel-top → wall join)
+//   ring 2:  z = base+bevel,   XY full               (wall → bevel-bottom join)
+//   ring 3:  z = base,         XY inset by `bevel`   (back cap edge)
 //
 // 3 quad rows → 6 triangles per edge.
 // Normals: bevel rows at 45° blend, wall rows pure outward.
 
-fn build_sides_beveled(points: &[Point2], half: f64, bevel: f64) -> MeshPart {
+fn build_sides_beveled(points: &[Point2], top: f64, base: f64, bevel: f64) -> MeshPart {
     let n = points.len();
 
     let (edge_u, total_perim) = edge_u_coords(points);
@@ -309,7 +310,7 @@ fn build_sides_beveled(points: &[Point2], half: f64, bevel: f64) -> MeshPart {
 
         let (nx, ny) = outward_normal_2d(a, b);
         let side_n = [nx, ny, 0.0];
-        let bvl_f_n = [nx * inv_sqrt2, ny * inv_sqrt2, inv_sqrt2];
+        let bvl_f_n = [nx * inv_sqrt2, ny * inv_sqrt2,  inv_sqrt2];
         let bvl_b_n = [nx * inv_sqrt2, ny * inv_sqrt2, -inv_sqrt2];
 
         let u0 = edge_u[i] / total_perim;
@@ -321,20 +322,20 @@ fn build_sides_beveled(points: &[Point2], half: f64, bevel: f64) -> MeshPart {
         let bx_in = b.x - nx * bevel;
         let by_in = b.y - ny * bevel;
 
-        let base = vertices.len();
+        let base_idx = vertices.len();
 
-        // Ring 0 — inset at +half.
-        vertices.push([ax_in, ay_in, half]);
-        vertices.push([bx_in, by_in, half]);
-        // Ring 1 — full at +(half - bevel).
-        vertices.push([a.x, a.y, half - bevel]);
-        vertices.push([b.x, b.y, half - bevel]);
-        // Ring 2 — full at -(half - bevel).
-        vertices.push([a.x, a.y, -(half - bevel)]);
-        vertices.push([b.x, b.y, -(half - bevel)]);
-        // Ring 3 — inset at -half.
-        vertices.push([ax_in, ay_in, -half]);
-        vertices.push([bx_in, by_in, -half]);
+        // Ring 0 — inset at top (front cap edge).
+        vertices.push([ax_in, ay_in, top]);
+        vertices.push([bx_in, by_in, top]);
+        // Ring 1 — full at top-bevel.
+        vertices.push([a.x, a.y, top - bevel]);
+        vertices.push([b.x, b.y, top - bevel]);
+        // Ring 2 — full at base+bevel.
+        vertices.push([a.x, a.y, base + bevel]);
+        vertices.push([b.x, b.y, base + bevel]);
+        // Ring 3 — inset at base (back cap edge).
+        vertices.push([ax_in, ay_in, base]);
+        vertices.push([bx_in, by_in, base]);
 
         normals.push(bvl_f_n);
         normals.push(bvl_f_n);
@@ -356,14 +357,14 @@ fn build_sides_beveled(points: &[Point2], half: f64, bevel: f64) -> MeshPart {
         uvs.push([u1, 0.00]);
 
         // Row 0: bevel front  (ring0 → ring1)
-        faces.push([base, base + 1, base + 3]);
-        faces.push([base, base + 3, base + 2]);
+        faces.push([base_idx,     base_idx + 1, base_idx + 3]);
+        faces.push([base_idx,     base_idx + 3, base_idx + 2]);
         // Row 1: straight wall (ring1 → ring2)
-        faces.push([base + 2, base + 3, base + 5]);
-        faces.push([base + 2, base + 5, base + 4]);
+        faces.push([base_idx + 2, base_idx + 3, base_idx + 5]);
+        faces.push([base_idx + 2, base_idx + 5, base_idx + 4]);
         // Row 2: bevel back  (ring2 → ring3)
-        faces.push([base + 4, base + 5, base + 7]);
-        faces.push([base + 4, base + 7, base + 6]);
+        faces.push([base_idx + 4, base_idx + 5, base_idx + 7]);
+        faces.push([base_idx + 4, base_idx + 7, base_idx + 6]);
     }
 
     MeshPart {
@@ -526,6 +527,7 @@ mod tests {
 
     /// TEST 1 — old `[MeshPart;3]` and new `MeshWithMetadata` produce the
     /// same bounding-box extents for a 100 × 50 mm rectangle extruded by 18 mm.
+    /// Also verifies that the old path is NOW base-anchored (min_z == 0).
     #[test]
     fn test1_old_and_new_bbox_match() {
         let pts = rect_100x50();
@@ -545,10 +547,22 @@ mod tests {
                 k, e_old[k], e_new[k],
             );
         }
-        // And it really is 100 × 50 × 18 mm:
+        // Sizes really are 100 × 50 × 18 mm:
         assert!((e_new[0] - 0.100).abs() < eps, "X extent: {}", e_new[0]);
         assert!((e_new[1] - 0.050).abs() < eps, "Y extent: {}", e_new[1]);
         assert!((e_new[2] - 0.018).abs() < eps, "Z (depth) extent: {}", e_new[2]);
+
+        // OLD path must now be base-anchored: min_z == 0, max_z == depth.
+        let mut min_z = f64::INFINITY;
+        let mut max_z = f64::NEG_INFINITY;
+        for part in &old {
+            for v in &part.vertices {
+                if v[2] < min_z { min_z = v[2]; }
+                if v[2] > max_z { max_z = v[2]; }
+            }
+        }
+        assert!(min_z.abs() < eps,           "old path min_z should be 0, got {min_z}");
+        assert!((max_z - 0.018).abs() < eps, "old path max_z should be 0.018, got {max_z}");
     }
 
     /// TEST 2 — box topology counts (already in builder.rs, replicated here
@@ -620,5 +634,91 @@ mod tests {
         for (fid, tris) in &by_face {
             assert!(!tris.is_empty(), "face {:?} produced 0 triangles", fid);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Anchor / base-plane tests (Задача 2)
+    //
+    // The kernel extrudes along its own Z axis.  The HTTP endpoint then maps
+    // kernel Z → world depth-axis depending on the sketch plane:
+    //   XZ → kernel Z maps to world Y   (depth direction = +Y)
+    //   XY → kernel Z maps to world Z   (depth direction = +Z)
+    //   YZ → kernel Z maps to world X   (depth direction = +X)
+    //
+    // In the kernel frame the base must sit at z = 0 and the top at z = depth.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Helper: collect (min_z, max_z) over all vertices of a [MeshPart;3].
+    fn z_range(parts: &[MeshPart; 3]) -> (f64, f64) {
+        let mut mn = f64::INFINITY;
+        let mut mx = f64::NEG_INFINITY;
+        for part in parts {
+            for v in &part.vertices {
+                if v[2] < mn { mn = v[2]; }
+                if v[2] > mx { mx = v[2]; }
+            }
+        }
+        (mn, mx)
+    }
+
+    #[test]
+    fn xz_extrude_is_anchored_on_profile_plane() {
+        // Profile lies in XZ plane → kernel XY = (world_x, world_z).
+        // Kernel Z = world Y (depth axis for XZ plane).
+        // After extrude_polygon kernel z must be in [0, depth].
+        let pts = rect_100x50();
+        let depth = 0.10;
+        let opts = ExtrudeOptions { depth, bevel: 0.0 };
+        let parts = extrude_polygon(&pts, &opts).unwrap();
+        let (mn, mx) = z_range(&parts);
+        let eps = 1e-9;
+        assert!(mn.abs() < eps,          "XZ: kernel min_z should be 0.0, got {mn}  (centered extrusion detected)");
+        assert!((mx - depth).abs() < eps, "XZ: kernel max_z should be {depth}, got {mx}");
+    }
+
+    #[test]
+    fn xy_extrude_is_anchored_on_profile_plane() {
+        // Profile lies in XY plane → kernel XY = (world_x, world_y).
+        // Kernel Z = world Z (depth axis for XY plane).
+        let pts = rect_100x50();
+        let depth = 0.08;
+        let opts = ExtrudeOptions { depth, bevel: 0.0 };
+        let parts = extrude_polygon(&pts, &opts).unwrap();
+        let (mn, mx) = z_range(&parts);
+        let eps = 1e-9;
+        assert!(mn.abs() < eps,          "XY: kernel min_z should be 0.0, got {mn}  (centered extrusion detected)");
+        assert!((mx - depth).abs() < eps, "XY: kernel max_z should be {depth}, got {mx}");
+    }
+
+    #[test]
+    fn yz_extrude_is_anchored_on_profile_plane() {
+        // Profile lies in YZ plane → kernel XY = (world_y, world_z).
+        // Kernel Z = world X (depth axis for YZ plane).
+        let pts = rect_100x50();
+        let depth = 0.05;
+        let opts = ExtrudeOptions { depth, bevel: 0.0 };
+        let parts = extrude_polygon(&pts, &opts).unwrap();
+        let (mn, mx) = z_range(&parts);
+        let eps = 1e-9;
+        assert!(mn.abs() < eps,          "YZ: kernel min_z should be 0.0, got {mn}  (centered extrusion detected)");
+        assert!((mx - depth).abs() < eps, "YZ: kernel max_z should be {depth}, got {mx}");
+    }
+
+    #[test]
+    fn extrude_is_not_centered_around_profile_plane() {
+        // Explicit anti-regression: ensure min_z is NOT -depth/2.
+        let pts = rect_100x50();
+        let depth = 0.12;
+        let opts = ExtrudeOptions { depth, bevel: 0.0 };
+        let parts = extrude_polygon(&pts, &opts).unwrap();
+        let (mn, _mx) = z_range(&parts);
+        let centered_min = -depth * 0.5;
+        let eps = 1e-9;
+        assert!(
+            (mn - centered_min).abs() > eps,
+            "extrusion is still centered! min_z={mn} (= -depth/2 = {centered_min})"
+        );
+        // And confirm it really anchors at 0.
+        assert!(mn.abs() < eps, "min_z should be 0.0, got {mn}");
     }
 }

@@ -44,10 +44,10 @@ pub const JS: &str = r##"
         orthoScale: 0.45,
         fov: 45,
       };
+      window.cam = cam;  // exposed for face-picking ray builder
 
       window.setCameraPreset = function(preset) {
         switch (preset) {
-          case 'front': cam.yaw = 0.0;         cam.pitch = 0.0;                  break;
           case 'right': cam.yaw = Math.PI*0.5; cam.pitch = 0.0;                  break;
           case 'top':   cam.yaw = 0.0;         cam.pitch = -Math.PI*0.5 + 0.001; break;
           case 'iso':   cam.yaw = 0.785;       cam.pitch = -0.615;               break;
@@ -68,6 +68,9 @@ pub const JS: &str = r##"
       const floorGrid = { scale: 1.0 };
       function toggleCellSdf()  { cellSdf.on = !cellSdf.on; }
       function cycleColorMode() { cellSdf.colorMode = (cellSdf.colorMode+1)%3; }
+
+      // Expose cam on window so solid_face_meta.rs ray-picker can access it.
+      window.cam = cam;
 
       // ── Frame / Center scene (Space) ─────────────────────────────────────
       // Animates cam.target → centroid of all sketch points (or origin if empty),

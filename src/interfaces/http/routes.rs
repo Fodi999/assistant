@@ -1331,6 +1331,7 @@ pub fn create_router(
         .nest("/api", smart_from_text_router) // 🆕 POST /api/smart/from-text
         .route("/api/matter/mesh/generate", axum::routing::post(crate::interfaces::http::public::matter::generate_mesh_endpoint)) // 🆕 CAD endpoint
         .route("/api/matter/sketch/extrude", axum::routing::post(crate::interfaces::http::public::matter_sketch::extrude_sketch_endpoint)) // Sketch → Solid via geometry-kernel
+        .route("/api/matter/sketch/rounded-rect", axum::routing::post(crate::interfaces::http::public::matter_sketch::rounded_rect_endpoint)) // Rounded-rectangle extrude
         // ── geometry-engine CSG operations ───────────────────────────────────
         .route("/api/matter/geometry/boolean", axum::routing::post(crate::interfaces::http::public::matter_geometry::boolean_endpoint)) // CSG: union | subtract | intersect
         .route("/api/matter/sketch/validate",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::validate_sketch_endpoint)) // 🆕 Phase 7
