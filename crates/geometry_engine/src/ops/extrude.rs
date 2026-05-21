@@ -100,8 +100,8 @@ pub fn extrude_polygon(
     let cap_z_front = if has_bevel { half - bevel } else { half };
     let cap_z_back = if has_bevel { -(half - bevel) } else { -half };
 
-    let front = build_cap(points, cap_z_front, [0.0, 0.0, 1.0], false);
-    let back = build_cap(points, cap_z_back, [0.0, 0.0, -1.0], true);
+    let front = build_cap(points, cap_z_front, [0.0, 0.0,  1.0], true);   // flip=true → geo-normal +Z(kernel)=+Y(world XZ)
+    let back  = build_cap(points, cap_z_back,  [0.0, 0.0, -1.0], false);  // flip=false → geo-normal -Z(kernel)=-Y(world XZ)
 
     let sides = if has_bevel {
         build_sides_beveled(points, half, bevel)
@@ -249,10 +249,11 @@ fn build_sides_flat(points: &[Point2], half: f64) -> MeshPart {
         let base = vertices.len();
 
         // 4 verts: front-left, front-right, back-right, back-left.
-        vertices.push([a.x, a.y, half]); // 0
-        vertices.push([b.x, b.y, half]); // 1
-        vertices.push([b.x, b.y, -half]); // 2
-        vertices.push([a.x, a.y, -half]); // 3
+        // OLD (correct) ordering: front verts first so CCW-from-outside gives outward normal.
+        vertices.push([a.x, a.y,  half]); // 0  front-left
+        vertices.push([b.x, b.y,  half]); // 1  front-right
+        vertices.push([b.x, b.y, -half]); // 2  back-right
+        vertices.push([a.x, a.y, -half]); // 3  back-left
 
         for _ in 0..4 {
             normals.push(norm);

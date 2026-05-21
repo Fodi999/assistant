@@ -74,6 +74,42 @@ fn ray_triangle_t(
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+/// Check whether a 3D point (assumed on the face plane) is inside the polygon.
+/// Uses a projection to 2D (largest-component axis drop) + ray cast winding.
+fn point_in_polygon_3d(pt: [Real; 3], poly: &[Point3], plane_n: [Real; 3]) -> bool {
+    // Pick the axis to drop (largest abs component of normal → flattest projection)
+    let ax = plane_n[0].abs();
+    let ay = plane_n[1].abs();
+    let az = plane_n[2].abs();
+    let (u_idx, v_idx) = if ax >= ay && ax >= az {
+        (1, 2) // drop X
+    } else if ay >= ax && ay >= az {
+        (0, 2) // drop Y
+    } else {
+        (0, 1) // drop Z
+    };
+    let proj = |p: &Point3| -> (Real, Real) {
+        let arr = [p.x, p.y, p.z];
+        (arr[u_idx], arr[v_idx])
+    };
+    let (pu, pv) = (pt[u_idx], pt[v_idx]);
+
+    // Ray-cast in +U direction, count crossings
+    let n = poly.len();
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let (iu, iv) = proj(&poly[i]);
+        let (ju, jv) = proj(&poly[j]);
+        if ((iv > pv) != (jv > pv)) &&
+           (pu < (ju - iu) * (pv - iv) / (jv - iv) + iu) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
 /// Classify `query` against the solid described by `model`.
 ///
 /// The model must be a closed (watertight) manifold for a correct result.
@@ -82,13 +118,17 @@ pub fn classify_point(query: Point3, model: &BrepModel) -> Classification {
     let store = &model.store;
     let orig  = pt_arr(query);
 
-    // First check: is the point sitting on any face plane?
+    // First check: is the point sitting on a face plane AND inside the face polygon?
     for (&face_id, _) in &store.faces {
         let poly = face_polygon(store, face_id);
         if poly.len() < 3 { continue; }
         if let Some((plane_pt, plane_n)) = face_plane_with_normal(store, face_id) {
             if signed_dist(orig, plane_pt, plane_n).abs() < ON_BOUNDARY_EPS {
-                return Classification::OnBoundary;
+                // Project point onto the face plane and check if it's inside
+                // the polygon using 2D winding number.
+                if point_in_polygon_3d(orig, &poly, plane_n) {
+                    return Classification::OnBoundary;
+                }
             }
         }
     }

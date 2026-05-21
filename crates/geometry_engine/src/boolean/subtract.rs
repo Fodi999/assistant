@@ -16,7 +16,7 @@ use super::rebuild_shell::{FaceSpec, build_model_from_specs};
 use super::union::polygon_centroid;
 use crate::math::Real;
 
-const MERGE_TOL: Real = 1e-6;
+const MERGE_TOL: Real = 1e-5;
 
 /// Compute A − B (subtract B from A).
 ///
@@ -29,6 +29,8 @@ pub fn run(a: &BrepModel, b: &BrepModel) -> BrepModel {
     let mut specs: Vec<FaceSpec> = Vec::new();
 
     // ── Contributions from A: keep what is outside B ─────────────────────
+    // OnBoundary means the face of A lies on B's surface — it gets replaced
+    // by the (flipped) face from B, so we skip it here.
     for &face_id in a.store.faces.keys() {
         let poly  = face_polygon(&a.store, face_id);
         let frags = fragment_polygon_by_planes(&poly, &planes_b);
@@ -42,6 +44,8 @@ pub fn run(a: &BrepModel, b: &BrepModel) -> BrepModel {
     }
 
     // ── Contributions from B: keep what is inside A, normals flipped ─────
+    // Only strictly-inside — coplanar (OnBoundary) faces are either the
+    // open hole face (excluded) or already covered by A's outer shell.
     for &face_id in b.store.faces.keys() {
         let poly  = face_polygon(&b.store, face_id);
         let frags = fragment_polygon_by_planes(&poly, &planes_a);

@@ -15,9 +15,42 @@ use super::face_face_intersection::{face_polygon, collect_face_planes};
 use super::split_faces::fragment_polygon_by_planes;
 use super::rebuild_shell::{FaceSpec, build_model_from_specs};
 use super::union::polygon_centroid;
-use crate::math::Real;
+use super::face_face_intersection::{sub3, cross};
+use crate::math::{Real, Point3};
 
-const MERGE_TOL: Real = 1e-6;
+const MERGE_TOL: Real = 1e-5;
+
+/// Compute outward-pointing unit normal for a convex polygon (vertices as Point3).
+fn polygon_normal_p3(poly: &[Point3]) -> [Real; 3] {
+    let v0 = [poly[0].x, poly[0].y, poly[0].z];
+    let v1 = [poly[1].x, poly[1].y, poly[1].z];
+    let v2 = [poly[2].x, poly[2].y, poly[2].z];
+    let e1 = sub3(v1, v0);
+    let e2 = sub3(v2, v0);
+    let n  = cross(e1, e2);
+    let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+    if len < 1e-14 { return [0.0, 1.0, 0.0]; }
+    [n[0]/len, n[1]/len, n[2]/len]
+}
+
+/// Classify fragment centroid against `model`.
+/// If OnBoundary, nudge the test point slightly **inward** (against the face
+/// normal) so the ray-cast resolves correctly for coplanar shared faces.
+fn classify_frag(poly: &[Point3], model: &BrepModel) -> Classification {
+    let centroid = polygon_centroid(poly);
+    let cls = classify_point(centroid, model);
+    if cls != Classification::OnBoundary {
+        return cls;
+    }
+    const NUDGE: Real = 1e-5;
+    let n = polygon_normal_p3(poly);
+    let nudged = Point3::new(
+        centroid.x - n[0] * NUDGE,
+        centroid.y - n[1] * NUDGE,
+        centroid.z - n[2] * NUDGE,
+    );
+    classify_point(nudged, model)
+}
 
 /// Compute A ∩ B.
 ///
@@ -28,27 +61,28 @@ pub fn run(a: &BrepModel, b: &BrepModel) -> BrepModel {
 
     let mut specs: Vec<FaceSpec> = Vec::new();
 
-    // ── Contributions from A: keep what is inside B ───────────────────────
+    // ── Contributions from A: keep what is inside B *or on its boundary* ──
+    // (coplanar shared faces come from A only — avoids double-counting)
     for &face_id in a.store.faces.keys() {
         let poly  = face_polygon(&a.store, face_id);
         let frags = fragment_polygon_by_planes(&poly, &planes_b);
         for frag in frags {
             if frag.len() < 3 { continue; }
-            let centroid = polygon_centroid(&frag);
-            if classify_point(centroid, b) == Classification::Inside {
+            let cls = classify_frag(&frag, b);
+            if cls == Classification::Inside || cls == Classification::OnBoundary {
                 specs.push(FaceSpec::new(frag));
             }
         }
     }
 
-    // ── Contributions from B: keep what is inside A ───────────────────────
+    // ── Contributions from B: keep only strictly-inside-A parts ──────────
+    // (boundary faces already contributed by A above)
     for &face_id in b.store.faces.keys() {
         let poly  = face_polygon(&b.store, face_id);
         let frags = fragment_polygon_by_planes(&poly, &planes_a);
         for frag in frags {
             if frag.len() < 3 { continue; }
-            let centroid = polygon_centroid(&frag);
-            if classify_point(centroid, a) == Classification::Inside {
+            if classify_point(polygon_centroid(&frag), a) == Classification::Inside {
                 specs.push(FaceSpec::new(frag));
             }
         }

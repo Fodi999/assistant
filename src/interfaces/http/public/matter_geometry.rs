@@ -28,6 +28,97 @@
 use axum::{Json, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
+// ── Vertex welding (same as matter_sketch) ────────────────────────────────────
+fn weld_vertices(
+    positions: &[f32],
+    normals:   &[f32],
+    face_ids:  &[u32],
+    indices:   &[u32],
+    tol:       f32,
+) -> (Vec<f32>, Vec<f32>, Vec<u32>, Vec<u32>) {
+    let vc   = positions.len() / 3;
+    let tol2 = tol * tol;
+    let mut remap: Vec<u32>  = Vec::with_capacity(vc);
+    let mut new_pos:  Vec<f32> = Vec::new();
+    let mut new_nrm:  Vec<f32> = Vec::new();
+    let mut new_fids: Vec<u32> = Vec::new();
+    'outer: for i in 0..vc {
+        let px = positions[i * 3];
+        let py = positions[i * 3 + 1];
+        let pz = positions[i * 3 + 2];
+        let nv = new_pos.len() / 3;
+        for j in 0..nv {
+            let dx = new_pos[j*3]   - px;
+            let dy = new_pos[j*3+1] - py;
+            let dz = new_pos[j*3+2] - pz;
+            if dx*dx + dy*dy + dz*dz <= tol2 {
+                remap.push(j as u32);
+                continue 'outer;
+            }
+        }
+        remap.push(nv as u32);
+        new_pos.push(px);  new_pos.push(py);  new_pos.push(pz);
+        new_nrm.push(normals[i*3]); new_nrm.push(normals[i*3+1]); new_nrm.push(normals[i*3+2]);
+        new_fids.push(face_ids[i]);
+    }
+    let mapped: Vec<u32> = indices.iter().map(|&i| remap[i as usize]).collect();
+    let mut clean: Vec<u32> = Vec::with_capacity(mapped.len());
+    for tri in mapped.chunks(3) {
+        if tri[0] != tri[1] && tri[1] != tri[2] && tri[0] != tri[2] {
+            clean.extend_from_slice(tri);
+        }
+    }
+    (new_pos, new_nrm, new_fids, clean)
+}
+
+/// Ensure all triangle normals point outward (away from mesh centroid).
+/// For each triangle: compute face normal from geometry; if dot(normal, centroid→face) < 0 → flip.
+fn fix_winding_outward(positions: &[f32], normals: &mut Vec<f32>, indices: &mut Vec<u32>) {
+    let vc = positions.len() / 3;
+    if vc == 0 { return; }
+
+    // Mesh centroid
+    let mut cx = 0.0_f32; let mut cy = 0.0_f32; let mut cz = 0.0_f32;
+    for i in 0..vc {
+        cx += positions[i*3]; cy += positions[i*3+1]; cz += positions[i*3+2];
+    }
+    let inv = 1.0 / vc as f32;
+    cx *= inv; cy *= inv; cz *= inv;
+
+    for tri in indices.chunks_mut(3) {
+        let i0 = tri[0] as usize;
+        let i1 = tri[1] as usize;
+        let i2 = tri[2] as usize;
+
+        let ax = positions[i0*3]; let ay = positions[i0*3+1]; let az = positions[i0*3+2];
+        let bx = positions[i1*3]; let by = positions[i1*3+1]; let bz = positions[i1*3+2];
+        let dx = positions[i2*3]; let dy = positions[i2*3+1]; let dz = positions[i2*3+2];
+
+        // Face normal via cross product
+        let ex = bx-ax; let ey = by-ay; let ez = bz-az;
+        let fx = dx-ax; let fy = dy-ay; let fz = dz-az;
+        let nx = ey*fz - ez*fy;
+        let ny = ez*fx - ex*fz;
+        let nz = ex*fy - ey*fx;
+
+        // Vector from centroid to triangle centre
+        let tx = (ax+bx+dx)/3.0 - cx;
+        let ty = (ay+by+dy)/3.0 - cy;
+        let tz = (az+bz+dz)/3.0 - cz;
+
+        // If inward → flip triangle and average normals
+        if nx*tx + ny*ty + nz*tz < 0.0 {
+            tri.swap(1, 2);
+            // Flip stored vertex normals for these 3 verts
+            for &vi in &[i0, i1, i2] {
+                normals[vi*3]   = -normals[vi*3];
+                normals[vi*3+1] = -normals[vi*3+1];
+                normals[vi*3+2] = -normals[vi*3+2];
+            }
+        }
+    }
+}
+
 use geometry_engine::{
     extrude_polygon_brep, ExtrudeBrepResult, ExtrudeOptions, Point2,
     boolean::{boolean_subtract, boolean_intersect},
@@ -238,6 +329,17 @@ pub async fn boolean_endpoint(
         indices.push(tri[1] as u32);
         indices.push(tri[2] as u32);
     }
+
+    let vc = positions.len() / 3;
+    let tc = indices.len() / 3;
+
+    // ── 5. Weld to close boundary edges (1e-4 for CSG float drift) ─────────
+    let (positions, normals, face_ids, mut indices) =
+        weld_vertices(&positions, &normals, &face_ids, &indices, 1e-4_f32);
+
+    // ── 6. Ensure consistent outward winding ─────────────────────────────
+    let mut normals = normals;
+    fix_winding_outward(&positions, &mut normals, &mut indices);
 
     let vc = positions.len() / 3;
     let tc = indices.len() / 3;

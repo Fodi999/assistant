@@ -19,6 +19,59 @@ use serde::{Deserialize, Serialize};
 
 use geometry_engine::{extrude_polygon, ExtrudeOptions, Point2};
 
+// ── Vertex welding ────────────────────────────────────────────────────────────
+/// Merge vertices that are closer than `tol` (metres) and remap indices.
+/// Returns (welded_positions, welded_normals, welded_face_ids, remapped_indices).
+fn weld_vertices(
+    positions: &[f32],
+    normals:   &[f32],
+    face_ids:  &[u32],
+    indices:   &[u32],
+    tol:       f32,
+) -> (Vec<f32>, Vec<f32>, Vec<u32>, Vec<u32>) {
+    let vc = positions.len() / 3;
+    let tol2 = tol * tol;
+
+    // old_vtx → new_vtx mapping
+    let mut remap: Vec<u32> = Vec::with_capacity(vc);
+    let mut new_pos:  Vec<f32> = Vec::new();
+    let mut new_nrm:  Vec<f32> = Vec::new();
+    let mut new_fids: Vec<u32> = Vec::new();
+
+    'outer: for i in 0..vc {
+        let px = positions[i * 3];
+        let py = positions[i * 3 + 1];
+        let pz = positions[i * 3 + 2];
+        // Search existing new verts for a match
+        let nv = new_pos.len() / 3;
+        for j in 0..nv {
+            let dx = new_pos[j*3]   - px;
+            let dy = new_pos[j*3+1] - py;
+            let dz = new_pos[j*3+2] - pz;
+            if dx*dx + dy*dy + dz*dz <= tol2 {
+                remap.push(j as u32);
+                continue 'outer;
+            }
+        }
+        remap.push(nv as u32);
+        new_pos.push(px); new_pos.push(py); new_pos.push(pz);
+        new_nrm.push(normals[i*3]); new_nrm.push(normals[i*3+1]); new_nrm.push(normals[i*3+2]);
+        new_fids.push(face_ids[i]);
+    }
+
+    let new_idx: Vec<u32> = indices.iter().map(|&i| remap[i as usize]).collect();
+
+    // Remove degenerate triangles produced after welding (a==b or b==c or a==c)
+    let mut clean_idx: Vec<u32> = Vec::with_capacity(new_idx.len());
+    for tri in new_idx.chunks(3) {
+        if tri[0] != tri[1] && tri[1] != tri[2] && tri[0] != tri[2] {
+            clean_idx.extend_from_slice(tri);
+        }
+    }
+
+    (new_pos, new_nrm, new_fids, clean_idx)
+}
+
 // ── Request / Response types ───────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -160,8 +213,6 @@ pub async fn extrude_sketch_endpoint(
         let v_offset = (positions.len() / 3) as u32;
 
         for v in &part.vertices {
-            // kernel coords: v[0]=u, v[1]=v_coord, v[2]=depth_axis (all f64)
-            // Lift back to 3D world space, then cast to f32 for GPU.
             let (wx, wy, wz): (f64, f64, f64) = match plane.as_str() {
                 "XY" => (v[0], v[1], plane_offset + v[2]),
                 "YZ" => (plane_offset + v[2], v[0], v[1]),
@@ -170,7 +221,6 @@ pub async fn extrude_sketch_endpoint(
             positions.push(wx as f32);
             positions.push(wy as f32);
             positions.push(wz as f32);
-            // face_id is per-vertex (vertex buffer stride=4, one u32 per vertex)
             face_ids.push(face_id);
         }
 
@@ -189,11 +239,13 @@ pub async fn extrude_sketch_endpoint(
             indices.push(v_offset + tri[0] as u32);
             indices.push(v_offset + tri[1] as u32);
             indices.push(v_offset + tri[2] as u32);
-            // face_ids moved to per-vertex loop above
         }
     }
 
-    // ── 6. Minimal OBJ for download / debug ───────────────────────────────
+    // ── 5b. Weld shared boundary vertices → closed manifold ──────────────
+    // Tolerance: 0.01 mm — tight enough for CAD, generous enough for f32 rounding
+    let (positions, normals, face_ids, indices) =
+        weld_vertices(&positions, &normals, &face_ids, &indices, 1e-5);    // ── 6. Minimal OBJ for download / debug ───────────────────────────────
     let vc = positions.len() / 3;
     let mut obj_data = String::with_capacity(vc * 32);
     obj_data.push_str("# geometry-kernel extrude\n");
