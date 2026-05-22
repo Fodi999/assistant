@@ -18,6 +18,7 @@ pub mod selection_mode_hud;
 //    scene tree / dev mode) — additive, defensive, depends on ui_shell first.
 pub mod ui_shell;
 pub mod document;
+pub mod selection_orchestrator;
 pub mod dev_mode;
 pub mod top_bar;
 pub mod bottom_toolbar;

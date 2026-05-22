@@ -152,4 +152,9 @@ fn sdBackendShape(p: vec3f, b: vec3f, bevel: f32) -> f32 {
   out.depth = p.pos.z;
   return out;
 }
+
+// ── CAD Edge fragment shader — near-black edge lines ──────────────────────
+@fragment fn fs_cad_edge(p: EdgeVOut) -> @location(0) vec4f {
+  return vec4f(0.08, 0.09, 0.10, 1.0);
+}
 "##;

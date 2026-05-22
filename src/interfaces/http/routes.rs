@@ -36,7 +36,6 @@ use crate::interfaces::http::{
         search_ingredients_public, CatalogState, PublicNutritionState,
     },
     chef_reference_public::{convert_units, fish_season, get_ingredient},
-    city::get_city_map,
     dish::{create_dish, list_dishes, recalculate_all_costs},
     inventory::{
         add_product, delete_product, get_alerts, get_dashboard, get_health, get_loss_report,
@@ -137,9 +136,6 @@ pub fn create_router(
         inventory_service.clone(),
         menu_engineering_service.clone(),
     );
-
-    // 🆕 City Engine
-    let city_engine_service = crate::application::city_engine::CityEngineService::new(pool.clone());
 
     // 🆕 Pre-clone services for Copilot (they are consumed in their own router blocks)
     let dish_service_for_copilot = dish_service.clone();
@@ -557,18 +553,6 @@ pub fn create_router(
                 .route("/inventory/health", get(get_health))
                 .with_state(inventory_service.clone()),
         )
-        // 🆕 Visual Workspace — game-like SceneState (GET /api/scenes/inventory)
-        .merge({
-            let scene_service = crate::application::scenes::InventorySceneService::shared(
-                inventory_service.clone(),
-            );
-            Router::new()
-                .route(
-                    "/scenes/inventory",
-                    get(crate::interfaces::http::scenes::get_inventory_scene),
-                )
-                .with_state(scene_service)
-        })
         // 🆕 Cook Suggestions — smart recipe suggestions from inventory
         .merge({
             let cook_service = Arc::new(
@@ -637,72 +621,7 @@ pub fn create_router(
                 )
                 .with_state(lab_service)
         })
-        // 🆕 Laboratory v2 — Photo → 3D Model pipeline
-        // PR #2: real `register_image` (JSON + multipart) + `get_asset`.
-        // PR #3: real `generate-model` Vision flow (no OBJ yet).
-        .merge({
-            use crate::infrastructure::gemini::GeminiVision3D;
-            use crate::infrastructure::storage::LocalStorageAdapter;
-            use std::sync::Arc;
-            let storage = Arc::new(LocalStorageAdapter::new("./uploads", "/static"));
-            let vision_api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
-            if vision_api_key.is_empty() {
-                tracing::warn!(
-                    "⚠️ GEMINI_API_KEY not set — Laboratory v2 generate-model will return 500"
-                );
-            }
-            let vision = Arc::new(GeminiVision3D::new(vision_api_key));
-            let vision_for_debug = vision.clone();
-            let lab_v2_service = crate::application::laboratory_v2::LaboratoryV2Service::new(
-                pool_for_prefs.clone(),
-                storage,
-                vision,
-            );
-            Router::new()
-                .route(
-                    "/laboratory/images",
-                    post(crate::interfaces::http::laboratory_v2::register_image),
-                )
-                .route(
-                    "/laboratory/images/:image_id/generate-model",
-                    post(crate::interfaces::http::laboratory_v2::generate_model),
-                )
-                .route(
-                    "/laboratory/assets/:asset_id",
-                    get(crate::interfaces::http::laboratory_v2::get_asset),
-                )
-                .route(
-                    "/laboratory/assets/:asset_id/tune-surface",
-                    post(crate::interfaces::http::laboratory_v2::tune_surface),
-                )
-                .with_state(lab_v2_service)
-                .merge(
-                    Router::new()
-                        .route(
-                            "/laboratory/debug-vision",
-                            post(crate::interfaces::http::laboratory_v2::debug_vision),
-                        )
-                        .with_state(vision_for_debug),
-                )
-                .merge(
-                    // ── debug-glb — no auth, no DB, returns raw GLB bytes ──
-                    // GET /api/laboratory/debug-glb/:object_type?quality=high
-                    Router::new().route(
-                        "/laboratory/debug-glb/:object_type",
-                        axum::routing::get(crate::interfaces::http::laboratory_v2::debug_glb),
-                    ),
-                )
-                .merge(
-                    // ── geometry-op — Gemini CSG tool, no auth ──
-                    // POST /api/laboratory/geometry-op
-                    // Body: GeometryOpRequest JSON → returns GLB bytes
-                    Router::new().route(
-                        "/laboratory/geometry-op",
-                        axum::routing::post(crate::interfaces::http::laboratory_v2::geometry_op),
-                    ),
-                )
-        })
-        // Removed separate inventory_alert_service merge
+        // ── menu engineering ──
         .merge(
             Router::new()
                 .route("/menu-engineering/analysis", get(analyze_menu))
@@ -713,12 +632,6 @@ pub fn create_router(
             Router::new()
                 .route("/reports/summary", get(get_summary))
                 .with_state(report_service),
-        )
-        .merge(
-            // 🆕 City Engine — frontend renders whatever this returns
-            Router::new()
-                .route("/city/map", get(get_city_map))
-                .with_state(city_engine_service),
         )
         .merge(
             Router::new()
@@ -1307,9 +1220,7 @@ pub fn create_router(
                 .nest_service("/", ServeDir::new("uploads"))
                 .layer(middleware::from_fn(fix_static_mime)),
         )
-        // 🆕 Phase 10: shared sketch_engine compiled to WebAssembly.
-        // Served by `wasm-pack build` output copied into `./static/wasm/`.
-        // Request /wasm/sketch_engine/sketch_engine.js to bootstrap the module.
+        // geometry_engine WASM — /wasm/geometry_engine/geometry_engine.js
         .nest_service(
             "/wasm",
             Router::new()
@@ -1329,19 +1240,15 @@ pub fn create_router(
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete
         .nest("/api", smart_parse_router) // 🆕 POST /api/smart/parse
         .nest("/api", smart_from_text_router) // 🆕 POST /api/smart/from-text
-        .route("/api/matter/mesh/generate", axum::routing::post(crate::interfaces::http::public::matter::generate_mesh_endpoint)) // 🆕 CAD endpoint
-        .route("/api/matter/sketch/extrude", axum::routing::post(crate::interfaces::http::public::matter_sketch::extrude_sketch_endpoint)) // Sketch → Solid via geometry-kernel
-        .route("/api/matter/sketch/rounded-rect", axum::routing::post(crate::interfaces::http::public::matter_sketch::rounded_rect_endpoint)) // Rounded-rectangle extrude
-        // ── geometry-engine CSG operations ───────────────────────────────────
-        .route("/api/matter/geometry/boolean", axum::routing::post(crate::interfaces::http::public::matter_geometry::boolean_endpoint)) // CSG: union | subtract | intersect
-        .route("/api/matter/sketch/validate",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::validate_sketch_endpoint)) // 🆕 Phase 7
-        .route("/api/matter/sketch/add-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_point_endpoint)) // 🆕 Phase 7
-        .route("/api/matter/sketch/add-edge",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_edge_endpoint)) // 🆕 Phase 7
-        .route("/api/matter/sketch/move-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::move_point_endpoint)) // 🆕 Phase 17
-        .route("/api/matter/sketch/profile/analyze", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::profile_analyze_endpoint)) // 🆕 Profile analyze
-        .route("/api/matter/sketch/profile/repair",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::profile_repair_endpoint))  // 🆕 Profile repair
-        .route("/api/matter/sketch/solve-constraints", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::solve_constraints_endpoint)) // 🆕 Constraint solver
-        .nest("/api", protected_chat_routes) // 🔒 POST /api/chat + /api/chat/event (auth + billing)
+        // ── sketch API (2D commands, constraint solver) ──
+        .route("/api/matter/sketch/validate",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::validate_sketch_endpoint))
+        .route("/api/matter/sketch/add-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_point_endpoint))
+        .route("/api/matter/sketch/add-edge",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::add_edge_endpoint))
+        .route("/api/matter/sketch/move-point", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::move_point_endpoint))
+        .route("/api/matter/sketch/profile/analyze", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::profile_analyze_endpoint))
+        .route("/api/matter/sketch/profile/repair",  axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::profile_repair_endpoint))
+        .route("/api/matter/sketch/solve-constraints", axum::routing::post(crate::interfaces::http::public::matter_sketch_commands::solve_constraints_endpoint))
+        .nest("/api", protected_chat_routes)
         .nest("/api", protected_routes);
 
     // 🆕 Stripe billing — only mounted when STRIPE_SECRET_KEY is set.
@@ -1394,8 +1301,7 @@ async fn fix_static_mime(
             axum::http::HeaderValue::from_static("application/wasm"),
         );
     }
-    // Never cache `/wasm/*` — we rebuild the bundle frequently and must not
-    // serve a stale sketch_engine.js / _bg.wasm after `make wasm`.
+    // Never cache `/wasm/*` — geometry_engine.wasm rebuilds frequently.
     if path.starts_with("/wasm/") {
         res.headers_mut().insert(
             axum::http::header::CACHE_CONTROL,

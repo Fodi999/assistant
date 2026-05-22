@@ -43,7 +43,12 @@ pub mod ops;
 pub mod profile;
 pub mod selection;
 pub mod shelling;
+/// 2D parametric sketcher — constraints, solver, profile detection, sketch→solid bridge.
+/// This is the single source of truth for all 2D CAD operations.
+pub mod sketch;
 pub mod surfaces;
+/// Native CAD tool implementations: rect, circle, copy, edge_extrude, tool FSM.
+pub mod tools;
 pub mod tessellation;
 pub mod topology;
 pub mod units;

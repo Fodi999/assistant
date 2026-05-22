@@ -1,19 +1,16 @@
 // ── Matter domain — precision sketch commands ─────────────────────────────
 //
-// The implementation lives in the standalone `sketch_engine` crate so the
-// same code can be compiled to WebAssembly and run in the browser. This
-// module is now a thin re-export layer that keeps the historical import
-// paths (`crate::domain::matter::{commands, sketch, validation, profiles}`)
-// working without churn for HTTP handlers.
+// Re-exports geometry_engine::sketch — unified 2D+3D kernel.
+// Keeps historical import paths working for HTTP handlers.
 
-pub use sketch_engine::commands;
-pub use sketch_engine::profiles;
-pub use sketch_engine::types as sketch;      // was: sketch_engine::sketch
-pub use sketch_engine::validation;
-pub use sketch_engine::profiles as profile_repair; // was: sketch_engine::profile_repair
-pub use sketch_engine::solver;
+pub use geometry_engine::sketch::commands;
+pub use geometry_engine::sketch::profiles;
+pub use geometry_engine::sketch::types as sketch;
+pub use geometry_engine::sketch::validation;
+pub use geometry_engine::sketch::profiles as profile_repair;
+pub use geometry_engine::sketch::solver;
 
-pub use sketch_engine::{
+pub use geometry_engine::sketch::{
     apply_add_edge, apply_add_point, apply_move_point,
     detect_profiles, validate,
     AddEdgeRequest, AddPointRequest, MovePointRequest,

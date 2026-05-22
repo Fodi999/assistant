@@ -16,24 +16,40 @@ pub const JS: &str = r##"
         // ── Solid body / face pick (3D hit test before 2D sketch picking) ──
         var CI = window.CadInteraction;
         if (CI && CI.picking && CI.selection
-            && window.__lastSolidResult && window.__lastSolidResult.faces) {
+            && (
+              (window.CAD && window.CAD.renderBodies && window.CAD.renderBodies.length > 0)
+              || (window.__lastSolidResult && window.__lastSolidResult.faces)
+            )) {
           var canvas = document.getElementById('webgpu-canvas');
           if (canvas) {
             var px  = ((ndcX + 1) * 0.5) * canvas.width;
             var py  = ((1 - ndcY) * 0.5) * canvas.height;
             var hit = CI.picking.pickFace(px, py);
             if (hit) {
-              CI.selection.set({
-                selected:     true,
-                mode:         0,                          // OBJECT mode
-                faceId:       hit.face.face_id,
-                sourceFaceId: hit.face.source_face_id,
-              });
+              // Delegate to single orchestrator — keeps CadInteraction,
+              // sketchState, CAD.document and shader globals in sync.
+              if (window.CAD && window.CAD.selection
+                  && typeof window.CAD.selection.selectFace === 'function') {
+                window.CAD.selection.selectFace(hit);
+              } else {
+                // Fallback: legacy direct write (shouldn't normally happen).
+                CI.selection.set({
+                  selected:     true,
+                  mode:         0,
+                  faceId:       hit.face.face_id,
+                  sourceFaceId: hit.face.source_face_id,
+                });
+              }
               if (window.__setStatusMessage)
                 window.__setStatusMessage('Solid selected — face F' + hit.face.face_id);
               return; // consumed
             } else if (!shiftKey) {
-              CI.selection.clear();
+              if (window.CAD && window.CAD.selection
+                  && typeof window.CAD.selection.clear === 'function') {
+                window.CAD.selection.clear();
+              } else {
+                CI.selection.clear();
+              }
             }
           }
         }

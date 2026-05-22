@@ -73,6 +73,21 @@ pub const JS: &str = r##"
         depthStencil: { format: DEPTH_FMT, depthWriteEnabled: true, depthCompare: 'less' },
       });
 
+      // Mode 2b: CAD Edge — wireframe face-boundary overlay (line-list, no depth write)
+      const cadEdgePipeline = device.createRenderPipeline({
+        layout: pipelineLayout,
+        vertex: {
+          module: cadModule,
+          entryPoint: 'vs_cad_edge',
+          buffers: [
+            { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] }, // positions only
+          ]
+        },
+        fragment: { module: cadModule, entryPoint: 'fs_cad_edge', targets: [{ format: fmt }] },
+        primitive: { topology: 'line-list' },
+        depthStencil: { format: DEPTH_FMT, depthWriteEnabled: false, depthCompare: 'less-equal' },
+      });
+
       // ── Depth texture, recreated on resize ─────────────────────
       let depthTex = device.createTexture({
         size: [canvas.width, canvas.height, 1],

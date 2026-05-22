@@ -56,45 +56,19 @@ pub const JS: &str = r##"
     var p   = _pixelCoords(canvas, e);
     var hit = c.pick.pickFace(p.x, p.y);
     if (hit) {
-      c.sel.set({
-        selected:     true,
-        mode:         0,                          // OBJECT mode (whole-solid rim)
-        faceId:       hit.face.face_id,
-        sourceFaceId: hit.face.source_face_id,
-      });
-
-      // ── Sync selection to CAD.document + sketchState ──────────────
-      if (hit.bodyId) {
-        try {
-          var ss = window.sketchState;
-          if (ss) {
-            if (!(ss.selectedBodyIds instanceof Set)) ss.selectedBodyIds = new Set();
-            else ss.selectedBodyIds.clear();
-            ss.selectedBodyIds.add(hit.bodyId);
-            // Clear other selection kinds so Inspector switches to Body.
-            if (ss.selectedFaceIds && ss.selectedFaceIds.clear) ss.selectedFaceIds.clear();
-            if (ss.selectedEdgeIds && ss.selectedEdgeIds.clear) ss.selectedEdgeIds.clear();
-            if (ss.selectedPointIds && ss.selectedPointIds.clear) ss.selectedPointIds.clear();
-            ss.selectedProfileId = null;
-          }
-        } catch (_) {}
-        try {
-          if (window.CAD && window.CAD.document) {
-            window.CAD.document.setSelection('body', hit.bodyId, {
-              faceId:       hit.localFaceId,
-              globalFaceId: hit.globalFaceId,
-              featureId:    hit.featureId,
-              sourceFaceId: hit.face.source_face_id,
-              point:        hit.point,
-            });
-          }
-        } catch (_) {}
-        try {
-          if (window.CAD && window.CAD.ui) {
-            window.CAD.ui.emit('selection:changed', { type: 'body', id: hit.bodyId, faceId: hit.localFaceId });
-            window.CAD.ui.emit('document:changed',  { kind: 'select', bodyId: hit.bodyId });
-          }
-        } catch (_) {}
+      // Single source of truth: orchestrator updates CadInteraction.selection,
+      // sketchState, CAD.document, shader globals and emits UI events.
+      if (window.CAD && window.CAD.selection
+          && typeof window.CAD.selection.selectFace === 'function') {
+        window.CAD.selection.selectFace(hit);
+      } else {
+        // Defensive fallback (orchestrator not loaded yet).
+        c.sel.set({
+          selected:     true,
+          mode:         0,
+          faceId:       hit.face.face_id,
+          sourceFaceId: hit.face.source_face_id,
+        });
       }
 
       console.log('[FaceInput] ✅ click face_id=' + hit.face.face_id +
@@ -107,17 +81,13 @@ pub const JS: &str = r##"
           'Face F' + hit.face.face_id + ' selected'
         );
     } else {
-      // Clicked empty area → clear selection
-      c.sel.clear();
-      try {
-        var ss2 = window.sketchState;
-        if (ss2 && ss2.selectedBodyIds && ss2.selectedBodyIds.clear) ss2.selectedBodyIds.clear();
-        if (window.CAD && window.CAD.document) window.CAD.document.setSelection('none', null);
-        if (window.CAD && window.CAD.ui) {
-          window.CAD.ui.emit('selection:changed', { type: 'none' });
-          window.CAD.ui.emit('document:changed',  { kind: 'deselect' });
-        }
-      } catch (_) {}
+      // Clicked empty area → clear via orchestrator (full deselect).
+      if (window.CAD && window.CAD.selection
+          && typeof window.CAD.selection.clear === 'function') {
+        window.CAD.selection.clear();
+      } else {
+        c.sel.clear();
+      }
     }
   }, false);
 

@@ -29,6 +29,9 @@ pub const JS: &str = r##"
       let cadFaceIdBuf = device.createBuffer({ size: 100000 * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
       let cadIndexBuf = device.createBuffer({ size: 100000 * 3 * 4, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
       let cadIndexCount = 0;
+      // ── Edge/wireframe buffers (line-list index pairs, reuses cadPosBuf for positions) ──
+      let cadEdgeIdxBuf = device.createBuffer({ size: 100000 * 2 * 4, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+      let cadEdgeCount = 0;
 
       let sphereBuf;
       try {
@@ -83,11 +86,12 @@ pub const JS: &str = r##"
       window.CAD.renderer = window.CAD.renderer || {};
       window.CAD.renderer._faceMeta = {};
 
-      function _writeMergedBuffers(posArr, nrmArr, idxArr, fidArr) {
-        const pos = new Float32Array(posArr);
-        const nrm = new Float32Array(nrmArr);
-        const idx = new Uint32Array(idxArr);
-        const fid = new Uint32Array(fidArr);
+      function _writeMergedBuffers(posArr, nrmArr, idxArr, fidArr, edgeIdxArr) {
+        const pos  = new Float32Array(posArr);
+        const nrm  = new Float32Array(nrmArr);
+        const idx  = new Uint32Array(idxArr);
+        const fid  = new Uint32Array(fidArr);
+        const eidx = new Uint32Array(edgeIdxArr);
         if (pos.length / 3 > MAX_VERTS) {
           console.warn('[CAD.renderer] vertex overflow: ' + (pos.length/3) + ' > ' + MAX_VERTS);
         }
@@ -99,9 +103,13 @@ pub const JS: &str = r##"
         device.queue.writeBuffer(cadFaceIdBuf, 0, fid);
         device.queue.writeBuffer(cadIndexBuf,  0, idx);
         cadIndexCount = idx.length;
+        if (eidx.length > 0) {
+          device.queue.writeBuffer(cadEdgeIdxBuf, 0, eidx);
+        }
+        cadEdgeCount = eidx.length;
       }
 
-      function _mergeBodyInto(body, bodyIdx, vertOffsetIn, outPos, outNrm, outIdx, outFid) {
+      function _mergeBodyInto(body, bodyIdx, vertOffsetIn, outPos, outNrm, outIdx, outFid, outEdgeIdx) {
         const pos = body.positions, nrm = body.normals;
         const idx = body.indices,   fid = body.faceIds;
         const vcount = (pos.length / 3) | 0;
@@ -117,6 +125,10 @@ pub const JS: &str = r##"
           window.CAD.renderer._faceMeta[gf] = { bodyId: body.id, localFaceId: lf };
         }
         for (let i = 0; i < idx.length; i++) outIdx.push(idx[i] + vertOffsetIn);
+        // merge edge indices (already offset-adjusted pairs)
+        if (body.edgeIndices && body.edgeIndices.length > 0) {
+          for (let i = 0; i < body.edgeIndices.length; i++) outEdgeIdx.push(body.edgeIndices[i] + vertOffsetIn);
+        }
         return vcount;
       }
 
@@ -124,20 +136,21 @@ pub const JS: &str = r##"
         try {
           window.CAD.renderer._faceMeta = {};
           const bodies = (window.CAD.renderBodies || []).filter(b => b.visible !== false && b.positions && b.indices);
-          const outPos = [], outNrm = [], outIdx = [], outFid = [];
+          const outPos = [], outNrm = [], outIdx = [], outFid = [], outEdgeIdx = [];
           let vo = 0;
           bodies.forEach(function(b, i) {
-            vo += _mergeBodyInto(b, i, vo, outPos, outNrm, outIdx, outFid);
+            vo += _mergeBodyInto(b, i, vo, outPos, outNrm, outIdx, outFid, outEdgeIdx);
           });
           const pv = window.CAD._previewBody;
           if (pv && pv.positions && pv.indices) {
-            _mergeBodyInto(pv, 998, vo, outPos, outNrm, outIdx, outFid);
+            _mergeBodyInto(pv, 998, vo, outPos, outNrm, outIdx, outFid, outEdgeIdx);
           }
           if (outIdx.length === 0) {
             cadIndexCount = 0;
+            cadEdgeCount  = 0;
             return;
           }
-          _writeMergedBuffers(outPos, outNrm, outIdx, outFid);
+          _writeMergedBuffers(outPos, outNrm, outIdx, outFid, outEdgeIdx);
         } catch (e) {
           console.warn('[CAD.renderer] rebuild failed:', e);
         }
@@ -153,6 +166,7 @@ pub const JS: &str = r##"
           normals:       result.normals ? ((result.normals instanceof Float32Array) ? result.normals : new Float32Array(result.normals)) : new Float32Array(posLen),
           indices:       (result.indices instanceof Uint32Array) ? result.indices : new Uint32Array(result.indices),
           faceIds:       result.face_ids ? ((result.face_ids instanceof Uint32Array) ? result.face_ids : new Uint32Array(result.face_ids)) : new Uint32Array((posLen / 3) | 0).fill(1),
+          edgeIndices:   result.edge_indices ? ((result.edge_indices instanceof Uint32Array) ? result.edge_indices : new Uint32Array(result.edge_indices)) : new Uint32Array(0),
           faces:         result.faces || [],
           vertexCount:   result.vertex_count   || ((posLen / 3) | 0),
           triangleCount: result.triangle_count || ((result.indices.length / 3) | 0),
@@ -216,6 +230,7 @@ pub const JS: &str = r##"
         window.CAD.renderBodies = [];
         window.CAD._previewBody = null;
         cadIndexCount = 0;
+        cadEdgeCount  = 0;
       };
 
       // Debug helper: dump current scene state to console.
@@ -326,15 +341,18 @@ pub const JS: &str = r##"
             ' committed=' + window.CAD.renderBodies.length);
         } catch (e) {
           console.warn('[CAD upload] multi-body path failed, falling back to single-body:', e);
-          const pos = new Float32Array(result.positions);
-          const nrm = new Float32Array(result.normals || new Array(result.positions.length).fill(0));
-          const fid = new Uint32Array(result.face_ids || new Array(result.positions.length / 3).fill(1));
-          const idx = new Uint32Array(result.indices);
+          const pos  = new Float32Array(result.positions);
+          const nrm  = new Float32Array(result.normals || new Array(result.positions.length).fill(0));
+          const fid  = new Uint32Array(result.face_ids || new Array(result.positions.length / 3).fill(1));
+          const idx  = new Uint32Array(result.indices);
+          const eidx = result.edge_indices ? new Uint32Array(result.edge_indices) : new Uint32Array(0);
           device.queue.writeBuffer(cadPosBuf,    0, pos);
           device.queue.writeBuffer(cadNormalBuf, 0, nrm);
           device.queue.writeBuffer(cadFaceIdBuf, 0, fid);
           device.queue.writeBuffer(cadIndexBuf,  0, idx);
           cadIndexCount = idx.length;
+          if (eidx.length > 0) device.queue.writeBuffer(cadEdgeIdxBuf, 0, eidx);
+          cadEdgeCount = eidx.length;
         }
       };
 "##;

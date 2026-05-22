@@ -2984,7 +2984,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "sketch_engine",
  "sqlx",
  "subtle",
  "thiserror 1.0.69",
@@ -3462,16 +3461,6 @@ dependencies = [
  "pulldown-cmark",
  "tempfile",
  "walkdir",
-]
-
-[[package]]
-name = "sketch_engine"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "wasm-bindgen",
 ]
 
 [[package]]

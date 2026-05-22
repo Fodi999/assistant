@@ -284,49 +284,45 @@ pub const JS: &str = r##"
     if (window.__setStatusMessage)
       window.__setStatusMessage('⏳ building ' + depthMm + ' mm...');
 
-    // ── Routing: preview → WASM (zero latency), final → server ────────────
-    // boolean / export always remain on server (/api/matter/geometry/*).
+    // ── Routing: preview + final → WASM (geometry_engine, zero latency) ──
     var result = null;
     var usedWasm = false;
     var t0 = performance.now();
 
-    if (!isFinal) {
-      // Try WASM first for instant preview
-      var wasmReady = await _loadGeoWasm();
-      if (wasmReady && _geoWasmState.mod) {
-        try {
-          var body = { plane: plane, depth: depthM, bevel: 0, profile: pts };
-          var raw  = _geoWasmState.mod.extrude_json(JSON.stringify(body));
-          result   = JSON.parse(raw);
-          if (result.ok === false) throw new Error(result.error || 'wasm error');
-          usedWasm = true;
-        } catch(e) {
-          console.warn('[SolidExtrude] WASM extrude failed, falling back to server:', e.message);
-          result = null;
-        }
+    // Try WASM for both preview and final commit
+    var wasmReady = await _loadGeoWasm();
+    if (wasmReady && _geoWasmState.mod) {
+      try {
+        var body = { plane: plane, depth: depthM, bevel: 0, profile: pts };
+        var raw  = _geoWasmState.mod.extrude_json(JSON.stringify(body));
+        result   = JSON.parse(raw);
+        if (result.ok === false) throw new Error(result.error || 'wasm error');
+        usedWasm = true;
+      } catch(e) {
+        console.warn('[SolidExtrude] WASM extrude failed:', e.message);
+        result = null;
       }
     }
 
-    // Server path: final commit OR wasm fallback
-    if (!result) {
-      console.log('[SolidExtrude] POST /api/matter/sketch/extrude plane=' + plane +
-        ' depth=' + depthM + 'm pts=' + pts.length + ' isFinal=' + isFinal);
-      var body = { plane: plane, depth: depthM, profile: pts, tolerance: isFinal ? 0.003 : 0.008 };
+    // Fallback: __wasmSketchExtrude (geometry_engine sketch pipeline)
+    if (!result && typeof window.__wasmSketchExtrude === 'function') {
       try {
-        var resp = await fetch('/api/matter/sketch/extrude', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-          var err = await resp.json().catch(function(){ return {}; });
-          throw new Error(err.error || resp.statusText);
-        }
-        result = await resp.json();
+        var req = { sketch: { points: pts.map(function(p,i){ return {id:i, x:p[0]||p.x||0, y:p[1]||p.y||0}; }),
+                              edges: pts.map(function(_,i){ return {id:i, a:i, b:(i+1)%pts.length}; }) },
+                    depth_m: depthM, plane: plane };
+        result = await window.__wasmSketchExtrude(req);
+        if (result && result.ok === false) throw new Error(result.error || 'wasm sketch error');
+        usedWasm = true;
       } catch(e) {
-        console.error('[SolidExtrude] kernel error:', e);
-        if (window.__setStatusMessage) window.__setStatusMessage('✗ kernel error: ' + e.message);
-        return;
+        console.warn('[SolidExtrude] __wasmSketchExtrude failed:', e.message);
+        result = null;
       }
+    }
+
+    if (!result) {
+      console.error('[SolidExtrude] WASM not available — no server fallback');
+      if (window.__setStatusMessage) window.__setStatusMessage('✗ WASM не загружен');
+      return;
     }
 
     var dt = (performance.now() - t0).toFixed(0);

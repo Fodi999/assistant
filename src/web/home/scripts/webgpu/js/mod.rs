@@ -79,6 +79,7 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
         + ui::sketch_extrude_bridge::JS.len()
         + ui::ui_shell::JS.len()
         + ui::document::JS.len()
+        + ui::selection_orchestrator::JS.len()
         + ui::dev_mode::JS.len()
         + ui::top_bar::JS.len()
         + ui::bottom_toolbar::JS.len()
@@ -177,6 +178,10 @@ pub fn assemble(shader: &str, cad_shader: &str) -> String {
     //         Object tab DOM exists to mount #cad-obj-ctx into.
     out.push_str(ui::ui_shell::JS);
     out.push_str(ui::document::JS);
+    // Selection orchestrator — single source of truth. Must load AFTER
+    // ui_shell (CAD.ui.emit) and document (CAD.document.setSelection), and
+    // BEFORE scene_tree / right_inspector (they emit selection events).
+    out.push_str(ui::selection_orchestrator::JS);
     out.push_str(ui::dev_mode::JS);
     out.push_str(ui::top_bar::JS);
     out.push_str(ui::bottom_toolbar::JS);

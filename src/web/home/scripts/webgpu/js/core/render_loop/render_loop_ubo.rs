@@ -120,6 +120,19 @@ pub const JS: &str = r##"
           cadPass.drawIndexed(cadIndexCount);
           cadPass.end();
         }
+        // ── Edge wireframe overlay ──────────────────────────────────────────
+        if (cadEdgeCount > 0 && (window.__debugSolidRender ? window.__debugSolidRender.drawEdges !== false : true)) {
+          const edgePass = enc.beginRenderPass({
+            colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }],
+            depthStencilAttachment: { view: depthView, depthClearValue: 1.0, depthLoadOp: 'load', depthStoreOp: 'store' },
+          });
+          edgePass.setPipeline(cadEdgePipeline);
+          edgePass.setBindGroup(0, bindGroup);
+          edgePass.setVertexBuffer(0, cadPosBuf);          // reuse positions from solid pass
+          edgePass.setIndexBuffer(cadEdgeIdxBuf, 'uint32');
+          edgePass.drawIndexed(cadEdgeCount);
+          edgePass.end();
+        }
         device.queue.submit([enc.finish()]);
         if (window.__perfSample) window.__perfSample('render', performance.now() - __pfRender);
 "##;

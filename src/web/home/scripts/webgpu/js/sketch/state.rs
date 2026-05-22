@@ -1522,4 +1522,120 @@ pub const JS: &str = r##"
           },
         };
       };
+
+      // ── __applySketchDelta(delta) ─────────────────────────────────────────
+      // Applies a SketchDelta returned by geometry_engine WASM tools
+      // (wasm_tool_rect, wasm_tool_circle, wasm_tool_copy, wasm_tool_edge_extrude).
+      //
+      // delta = {
+      //   ok, error?,
+      //   new_points:      [{id, gx, gy, gz}]
+      //   new_edges:       [{id, a, b, kind}]
+      //   new_constraints: [{id, type, target_type, target_id, value}]
+      //   removed_point_ids: [string]
+      //   removed_edge_ids:  [string]
+      //   removed_constraint_ids: [string]  (may be "TYPE:edgeId" signals)
+      // }
+      window.__applySketchDelta = function(delta) {
+        if (!delta || !delta.ok) return false;
+        const ss  = sketchState;
+        const gs  = ss.gridSize || 0.01;
+        const plane = ss.workingPlane || 'XZ';
+
+        // Remove signaled constraints (format "TYPE:targetId" or plain id)
+        if (delta.removed_constraint_ids && delta.removed_constraint_ids.length) {
+          const rem = new Set(delta.removed_constraint_ids);
+          ss.constraints = (ss.constraints || []).filter(c => {
+            if (rem.has(c.id)) return false;
+            // Signal format: "EQUAL_LENGTH:edgeId" or "FIXED_LENGTH:edgeId"
+            for (const sig of rem) {
+              const [type, tgt] = sig.split(':');
+              if (type && tgt) {
+                const ct = (c.type || '').toUpperCase();
+                if (ct === type.toUpperCase() && c.targetId === tgt) return false;
+              }
+            }
+            return true;
+          });
+        }
+
+        // Remove points
+        if (delta.removed_point_ids && delta.removed_point_ids.length) {
+          const rem = new Set(delta.removed_point_ids);
+          ss.points = (ss.points || []).filter(p => !rem.has(p.id));
+        }
+
+        // Remove edges
+        if (delta.removed_edge_ids && delta.removed_edge_ids.length) {
+          const rem = new Set(delta.removed_edge_ids);
+          ss.edges = (ss.edges || []).filter(e => !rem.has(e.id));
+        }
+
+        // Add / update points (delta may contain corrected positions for existing pts)
+        const ptById = new Map((ss.points || []).map(p => [p.id, p]));
+        for (const np of (delta.new_points || [])) {
+          if (ptById.has(np.id)) {
+            // Update existing point (e.g. make_square position correction)
+            const p = ptById.get(np.id);
+            p.gx = np.gx; p.gy = np.gy; p.gz = np.gz;
+            switch (plane) {
+              case 'XY': p.x = np.gx * gs; p.y = np.gy * gs; p.z = 0; break;
+              case 'YZ': p.x = 0; p.y = np.gy * gs; p.z = np.gz * gs; break;
+              default:   p.x = np.gx * gs; p.y = 0; p.z = np.gz * gs; break;
+            }
+          } else {
+            // Check for grid deduplicate
+            const existing = window.__findPointAtGrid
+              ? window.__findPointAtGrid(np.gx, np.gy, np.gz)
+              : null;
+            if (existing) {
+              // Remap this id → existing id for edge wiring below
+              delta._idRemap = delta._idRemap || {};
+              delta._idRemap[np.id] = existing.id;
+            } else {
+              let x, y, z;
+              switch (plane) {
+                case 'XY': x = np.gx * gs; y = np.gy * gs; z = 0; break;
+                case 'YZ': x = 0; y = np.gy * gs; z = np.gz * gs; break;
+                default:   x = np.gx * gs; y = 0; z = np.gz * gs; break;
+              }
+              const pt = { id: np.id, gx: np.gx, gy: np.gy, gz: np.gz, x, y, z, fixed: false };
+              ss.points.push(pt);
+              ptById.set(np.id, pt);
+            }
+          }
+        }
+
+        // Resolve id remapping helper
+        const remap = (id) => (delta._idRemap && delta._idRemap[id]) ? delta._idRemap[id] : id;
+
+        // Add edges (deduplicate)
+        for (const ne of (delta.new_edges || [])) {
+          const a = remap(ne.a);
+          const b = remap(ne.b);
+          if (!a || !b || a === b) continue;
+          const exists = (ss.edges || []).some(
+            e => (e.a === a && e.b === b) || (e.a === b && e.b === a)
+          );
+          if (!exists) {
+            ss.edges = ss.edges || [];
+            ss.edges.push({ id: ne.id, a, b, kind: ne.kind || 'normal' });
+          }
+        }
+
+        // Add constraints
+        for (const nc of (delta.new_constraints || [])) {
+          ss.constraints = ss.constraints || [];
+          const tgt = remap(nc.target_id);
+          ss.constraints.push({
+            id: nc.id,
+            type: nc.type || nc.kind,
+            targetType: nc.target_type,
+            targetId: tgt,
+            value: nc.value != null ? nc.value : null,
+          });
+        }
+
+        return true;
+      };
 "##;

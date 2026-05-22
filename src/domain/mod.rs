@@ -3,20 +3,17 @@ pub mod ai_ports; // 🆕 AI abstraction traits (AiClient, AiQuality)
 pub mod assistant;
 pub mod auth;
 pub mod catalog;
-pub mod city; // 🆕 City domain — CityMap wire types for Food Empire city renderer
 pub mod classification_rules; // 🆕 Added classification rules
 pub mod dish;
 pub mod engines; // 🆕 Culinary Intelligence Platform — 5 engine traits + registry
-pub mod geometry; // 🆕 Precise B-Rep geometry domain (Parasolid-style, f64)
 pub mod inventory;
-pub mod matter; // 🆕 Precision sketch commands (point/edge creation, validation, profiles)
+pub mod matter; // 🆕 Precision sketch — re-exports geometry_engine::sketch
 pub mod menu_engineering;
 pub mod processing_state; // 🆕 Product states (raw, boiled, fried, etc.)
 pub mod recipe;
 pub mod recipe_ai_insights; // AI-generated insights
 pub mod recipe_v2; // V2 with translation support
 pub mod report;
-pub mod scene; // 🆕 Game-like SceneState contract (mirrors blog/components/visual/sceneTypes.ts)
 pub mod tenant;
 pub mod tenant_ingredient;
 pub mod tools; // 🆕 Chef tools domain (unit converter, yield, scale)

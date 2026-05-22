@@ -1,13 +1,10 @@
 // ── Sketch → Solid Bridge ──────────────────────────────────────────────────
 //
-//  Соединяет две части:
-//    sketch_engine (WASM, браузер) — 2D constraint solver
-//    geometry-kernel (Rust, сервер) — собственный движок экструзии
-//
-//  Пайплайн:
-//    1. sketchState.profiles  → закрытые 2D профили (из sketch_engine)
-//    2. POST /api/matter/sketch/extrude  → kernel: extrude_polygon → меш
-//    3. Результат: WebGL мини-превью + OBJ-скачать + статус-значок
+//  Пайплайн (всё в браузере, без сервера):
+//    1. sketchState.profiles  → выбрать закрытый профиль
+//    2. window.__wasmSketchExtrude({ sketch, depth_m, plane })
+//       → geometry_engine WASM: solve constraints → detect profiles → extrude
+//    3. Результат: WebGL мини-превью + загрузить в CAD сцену
 //
 //  Публичные функции:
 //    window.__extrudeToSolid(profileId?, depthMm?)
@@ -303,28 +300,17 @@ pub const JS: &str = r##"
     _hideModal();
     if (window.__setStatusMessage) window.__setStatusMessage('⏳ строю solid…');
 
-    const body = { plane, depth: depthM, profile: pts, tolerance: 0.005 };
-    console.log('[sketch→solid] POST /api/matter/sketch/extrude', body);
+    const body = { sketch: window.__sketchToJSON(), depth_m: depthM, plane, profile_id: _activeProfile?.id || null };
+    console.log('[sketch→solid] WASM sketch_extrude_json', body);
 
     let result;
     try {
-      const t0   = performance.now();
-      const resp = await fetch('/api/matter/sketch/extrude', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const dt = (performance.now() - t0).toFixed(0);
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }));
-        throw new Error(err.error || resp.statusText);
-      }
-      result = await resp.json();
-      result.__dt = dt;
+      if (!(await window.__ensureSketchWasm())) throw new Error('geometry_engine не загружен');
+      result = window.__wasmSketchExtrude(body);
+      if (!result || !result.ok) throw new Error(result?.error || 'extrude вернул ok=false');
     } catch (e) {
       console.error('[sketch→solid] error:', e);
-      if (window.__setStatusMessage)
-        window.__setStatusMessage('✗ kernel: ' + e.message);
+      if (window.__setStatusMessage) window.__setStatusMessage('✗ extrude: ' + e.message);
       return;
     }
 

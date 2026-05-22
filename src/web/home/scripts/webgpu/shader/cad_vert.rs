@@ -62,4 +62,34 @@ pub const WGSL: &str = r##"
   o.meshN    = normalize(normal);
   return o;
 }
+
+// ── CAD Edge / Wireframe vertex shader ──────────────────────────────────────
+// Position-only; renders face boundary edges as line-list.
+// Applies a tiny negative z-bias so lines appear in front of solid faces.
+struct EdgeVOut { @builtin(position) pos: vec4f }
+
+@vertex fn vs_cad_edge(@location(0) position: vec3f) -> EdgeVOut {
+  let ro          = u.u1.xyz;
+  let right       = u.u2.xyz;
+  let upv         = u.u3.xyz;
+  let fwd         = u.u4.xyz;
+  let isOrtho     = u.u9.y > 0.5;
+  let orthoHeight = distance(ro, u.u8.xyz) * 0.45;
+  let asp         = u.u0.y / u.u0.z;
+
+  let relV  = position - ro;
+  let mvx   = dot(relV, right);
+  let mvy   = dot(relV, upv);
+  let mvz   = dot(relV, fwd);
+  let smvz  = max(mvz, 0.001);
+  let focal = 2.414;
+  let cx    = select(mvx * focal / smvz / asp, mvx / orthoHeight / asp, isOrtho);
+  let cy    = select(mvy * focal / smvz,       mvy / orthoHeight,       isOrtho);
+  // slight z-bias toward camera so edges sit on top of solid faces
+  let zNdc  = clamp(mvz / (mvz + 8.0), 0.0, 0.9999) - 0.0003;
+
+  var o: EdgeVOut;
+  o.pos = vec4f(cx, cy, max(zNdc, 0.0), 1.0);
+  return o;
+}
 "##;

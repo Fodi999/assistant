@@ -13,15 +13,7 @@ setup: ## Install dependencies and setup project
 	cp -n .env.example .env || true
 	@echo "Setup complete! Edit .env file with your database credentials."
 
-wasm: ## Build sketch_engine → WASM (2D solver, constraint engine)
-	@echo "Building sketch_engine → WASM …"
-	wasm-pack build crates/sketch_engine --target web --features wasm
-	@mkdir -p static/wasm
-	@rm -rf static/wasm/sketch_engine
-	@cp -r crates/sketch_engine/pkg static/wasm/sketch_engine
-	@echo "✓ static/wasm/sketch_engine/sketch_engine.js"
-
-wasm-geometry: ## Build geometry_engine → WASM (extrude/preview, client-side)
+wasm: ## Build geometry_engine → WASM (unified 2D+3D engine)
 	@echo "Building geometry_engine → WASM …"
 	wasm-pack build crates/geometry_engine --target web --features wasm
 	@mkdir -p static/wasm
@@ -29,8 +21,10 @@ wasm-geometry: ## Build geometry_engine → WASM (extrude/preview, client-side)
 	@cp -r crates/geometry_engine/pkg static/wasm/geometry_engine
 	@echo "✓ static/wasm/geometry_engine/geometry_engine.js"
 
-wasm-all: wasm wasm-geometry ## Build both WASM crates (sketch_engine + geometry_engine)
-	@echo "✓ Both WASM crates built"
+wasm-geometry: wasm ## alias
+
+wasm-all: wasm ## Build geometry_engine WASM
+	@echo "✓ geometry_engine WASM built"
 
 db-create: ## Create database
 	createdb restaurant_db || echo "Database may already exist"

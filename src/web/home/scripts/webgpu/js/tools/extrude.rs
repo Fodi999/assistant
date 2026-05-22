@@ -263,142 +263,89 @@ pub const JS: &str = r##"
         if (window.__updateSketchInspector) window.__updateSketchInspector();
       };
 
-      // ── Commit extrude ───────────────────────────────────────
+      // ── Commit extrude — delegates geometry to WASM ──────────
       window.__commitEdgeExtrude = async function() {
         const ex = sketchState.extrude;
         if (!ex.active) return;
 
-        // Always read from the actual <input> element as the source of truth
         const inp = document.getElementById('__extrude-modal-input');
         if (inp && inp.value) ex.heightInput = inp.value;
 
         const heightMm = parseFloat(ex.heightInput);
-        console.log('[Extrude.commit] heightInput=', ex.heightInput, 'heightMm=', heightMm, 'edgeIds=', ex.edgeIds);
         if (!isFinite(heightMm) || heightMm === 0) {
           window.__setStatusMessage('Extrude: введите высоту в мм, например 2500');
           if (inp) inp.focus();
           return;
         }
 
-        const heightM = heightMm / 1000.0;  // mm → metres
+        const wm = window.__wasmModule;
+        if (!wm || typeof wm.wasm_tool_edge_extrude !== 'function') {
+          window.__setStatusMessage('Extrude: WASM not loaded');
+          return;
+        }
+
+        const heightM = heightMm / 1000.0;
         const plane   = sketchState.workingPlane || 'XZ';
-        const dir     = window.__getExtrudeDir(plane);
         const pById   = new Map(sketchState.points.map(p => [p.id, p]));
-        const gs      = sketchState.gridSize || 0.001;
 
         const edges = ex.edgeIds
           .map(id => sketchState.edges.find(e => e.id === id))
           .filter(Boolean);
 
-        if (!edges.length) {
-          window.__cancelEdgeExtrude();
-          return;
-        }
+        if (!edges.length) { window.__cancelEdgeExtrude(); return; }
 
         window.__pushHistory();
 
-        // Cache: bottom point id → top point id (shared corners)
-        const topPointMap = new Map();
+        const wasmEdges  = edges.map(e => ({ id: e.id, a: e.a, b: e.b }));
+        const ptIdSet    = new Set(edges.flatMap(e => [e.a, e.b]));
+        const wasmPoints = [...ptIdSet].map(id => {
+          const p = pById.get(id) || {};
+          return { id, x: p.x || 0, y: p.y || 0, z: p.z || 0,
+                   gx: p.gx || 0, gy: p.gy || 0, gz: p.gz || 0 };
+        });
 
-        async function getOrCreateTopPoint(bottomId) {
-          if (topPointMap.has(bottomId)) return topPointMap.get(bottomId);
-          const bp = pById.get(bottomId);
-          if (!bp) return null;
-          const tx = bp.x + dir.x * heightM;
-          const ty = bp.y + dir.y * heightM;
-          const tz = bp.z + dir.z * heightM;
-          // Convert world → grid coords
-          const tgx = Math.round(tx / gs);
-          const tgy = Math.round(ty / gs);
-          const tgz = Math.round(tz / gs);
-          // Check if top point already exists
-          let existing = sketchState.points.find(
-            p => p.gx === tgx && p.gy === tgy && p.gz === tgz
-          );
-          let topId;
-          if (existing) {
-            topId = existing.id;
-          } else {
-            topId = await window.__createPointViaEngine(tgx, tgy, tgz);
-          }
-          topPointMap.set(bottomId, topId);
-          return topId;
+        const raw = wm.wasm_tool_edge_extrude(JSON.stringify({
+          edges: wasmEdges, points: wasmPoints,
+          height_m: heightM, plane,
+          grid_size: sketchState.gridSize || 0.01,
+          id_offset: Date.now() % 1000000000,
+        }));
+        const result = JSON.parse(raw);
+
+        if (!result.ok) {
+          window.__setStatusMessage('Extrude: ' + (result.error || 'error'));
+          return;
         }
 
-        const createdWalls = [];
-
-        for (const edge of edges) {
-          const bA = pById.get(edge.a);
-          const bB = pById.get(edge.b);
-          if (!bA || !bB) continue;
-
-          const topAId = await getOrCreateTopPoint(edge.a);
-          const topBId = await getOrCreateTopPoint(edge.b);
-          if (!topAId || !topBId) continue;
-
-          // Top edge A–B
-          const existTopEdge = sketchState.edges.find(
-            e => (e.a === topAId && e.b === topBId) || (e.a === topBId && e.b === topAId)
-          );
-          if (!existTopEdge) {
-            await window.__createEdgeViaEngine(topAId, topBId, 'normal');
-          }
-
-          // Vertical edge A
-          const existVertA = sketchState.edges.find(
-            e => (e.a === edge.a && e.b === topAId) || (e.a === topAId && e.b === edge.a)
-          );
-          if (!existVertA) {
-            await window.__createEdgeViaEngine(edge.a, topAId, 'normal');
-          }
-
-          // Vertical edge B
-          const existVertB = sketchState.edges.find(
-            e => (e.a === edge.b && e.b === topBId) || (e.a === topBId && e.b === edge.b)
-          );
-          if (!existVertB) {
-            await window.__createEdgeViaEngine(edge.b, topBId, 'normal');
-          }
-
-          // Refresh pById after point creation
-          const pByIdFresh = new Map(sketchState.points.map(p => [p.id, p]));
-          const tA = pByIdFresh.get(topAId);
-          const tB = pByIdFresh.get(topBId);
-          if (!tA || !tB) continue;
-
-          // Wall surface record
-          const wallId = 'wall_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-          createdWalls.push({
-            id:           wallId,
-            sourceEdgeId: edge.id,
-            bottomA:      { x: bA.x, y: bA.y, z: bA.z },
-            bottomB:      { x: bB.x, y: bB.y, z: bB.z },
-            topA:         { x: tA.x, y: tA.y, z: tA.z },
-            topB:         { x: tB.x, y: tB.y, z: tB.z },
-            height:       heightM,
-            plane:        plane,
-            topAId:       topAId,
-            topBId:       topBId,
-          });
-        }
+        window.__applySketchDelta(result.delta);
 
         // Append wall surfaces
-        sketchState.wallSurfaces.push(...createdWalls);
+        if (result.wall_surfaces && result.wall_surfaces.length) {
+          sketchState.wallSurfaces = sketchState.wallSurfaces || [];
+          for (const ws of result.wall_surfaces) {
+            sketchState.wallSurfaces.push({
+              id:           ws.id,
+              sourceEdgeId: ws.source_edge_id,
+              bottomA:      { x: ws.bottom_a[0], y: ws.bottom_a[1], z: ws.bottom_a[2] },
+              bottomB:      { x: ws.bottom_b[0], y: ws.bottom_b[1], z: ws.bottom_b[2] },
+              topA:         { x: ws.top_a[0],    y: ws.top_a[1],    z: ws.top_a[2]    },
+              topB:         { x: ws.top_b[0],    y: ws.top_b[1],    z: ws.top_b[2]    },
+              height:       ws.height, plane: ws.plane,
+              topAId:       ws.top_a_id, topBId: ws.top_b_id,
+            });
+          }
+        }
 
-        // Reset extrude state
         ex.active      = false;
         ex.heightInput = '';
         ex.edgeIds     = [];
-
         window.__extrudeModalHide();
         if (window.__notifySketchChanged)   window.__notifySketchChanged();
         if (window.__updateSketchInspector) window.__updateSketchInspector();
-
-        const heightDisplay = Math.abs(heightMm).toFixed(0);
         window.__setStatusMessage(
-          '✓ Extrude ' + heightDisplay + ' мм · ' + createdWalls.length + ' стен создано'
+          '✓ Extrude ' + Math.abs(heightMm).toFixed(0) + ' мм · ' +
+          (result.wall_surfaces || []).length + ' стен создано'
         );
-        console.log('[Extrude] committed', createdWalls.length, 'walls, h=', heightM, 'm');
       };
 
       // ── Extrude key handler — fallback when focus is NOT in the modal input ─

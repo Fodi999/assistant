@@ -4,11 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [".", "crates/sketch_engine", "crates/geometry_engine"]
+members = [".", "crates/geometry_engine"]
 
 [dependencies]
-# Shared sketch geometry engine (also compilable to WASM)
-sketch_engine    = { path = "crates/sketch_engine" }
+# Unified 2D+3D geometry engine (also compilable to WASM)
 geometry_engine  = { path = "crates/geometry_engine" }
 const_format     = "0.2"
 

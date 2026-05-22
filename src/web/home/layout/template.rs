@@ -9,7 +9,7 @@ pub fn template(styles: &str, scripts: &str) -> String {
   <title>ChefOS Interactive Engine</title>
   <meta name="description" content="Интерактивная операционная система для шеф-повара: рецепты, склад, ингредиенты, себестоимость и лаборатория в одном игровом интерфейсе." />
   <!-- Preload WASM module so the browser fetches it in parallel with other resources -->
-  <link rel="modulepreload" href="/wasm/sketch_engine/sketch_engine.js" />
+  <link rel="modulepreload" href="/wasm/geometry_engine/geometry_engine.js" />
   <style>"##;
 
     let mid = r##"</style>

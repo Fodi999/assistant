@@ -27,7 +27,22 @@ pub const JS: &str = r##"
   function _mirror(snap) {
     window.__solidSelected    = !!snap.selected;
     window.__solidSelMode     = snap.mode             || 0;
-    window.__solidSelFaceId   = snap.sourceFaceId     || 0;
+
+    // ── Selected face id → UBO ────────────────────────────────────────────
+    // In multi-body mode the per-vertex `cellMask` attribute holds
+    // globalFaceId (= bodySlot*1000 + localFaceId). The shader compares
+    // `cellMask == selected_face_id`, so we MUST feed globalFaceId here.
+    //
+    // The selection orchestrator (window.CAD.selection) is the canonical
+    // source — it already wrote __solidSelGlobalFaceId. Prefer that.
+    // Fallback to snap.sourceFaceId (legacy single-body path).
+    var gf = (window.CAD && window.CAD.selection
+              && window.CAD.selection.current
+              && window.CAD.selection.current.globalFaceId) | 0;
+    if (!gf) gf = (window.__solidSelGlobalFaceId | 0) || (snap.sourceFaceId | 0);
+    window.__solidSelGlobalFaceId = gf;
+    window.__solidSelFaceId       = gf;
+
     window.__solidHoverFaceId = snap.hoverSourceFaceId || 0;
   }
 
