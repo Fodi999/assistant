@@ -4,11 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [".", "crates/geometry_engine"]
+members = ["."]
 
 [dependencies]
-# Unified 2D+3D geometry engine (also compilable to WASM)
-geometry_engine  = { path = "crates/geometry_engine" }
 const_format     = "0.2"
 
 # Web framework

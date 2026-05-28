@@ -2,8 +2,6 @@ pub mod chat;
 pub mod cms;
 pub mod ingredients;
 pub mod intent_pages;
-pub mod matter_sketch;
-pub mod matter_sketch_commands;
 pub mod nutrition_pages;
 pub mod seo_content;
 pub mod tools;

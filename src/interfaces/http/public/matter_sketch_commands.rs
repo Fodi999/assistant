@@ -1,81 +1,43 @@
-//! Precision sketch command endpoints.
-//!
-//!   POST /api/matter/sketch/validate
-//!   POST /api/matter/sketch/add-point
-//!   POST /api/matter/sketch/add-edge
-//!   POST /api/matter/sketch/move-point
-//!
-//! All endpoints accept a SketchGraph + parameters and return a
-//! `SketchCommandResult` (or `ValidationResult` for /validate). Pure
-//! geometry — no DB / no auth required at this phase.
+//! Precision sketch command endpoints — stubbed (geometry_engine extracted).
 
 use axum::{Json, http::StatusCode};
-use serde::Deserialize;
 
 use crate::domain::matter::{
     apply_add_edge, apply_add_point, apply_move_point,
-    commands::{AddEdgeRequest, AddPointRequest, MovePointRequest, SketchCommandResult},
-    sketch::SketchGraph,
-    validation::{validate, ValidationResult},
+    AddEdgeRequest, AddPointRequest, MovePointRequest, SketchCommandResult,
+    SketchGraph, validate, ValidationResult,
     analyze_profile, repair_profile,
     ProfileAnalyzeRequest, ProfileAnalyzeResponse,
     ProfileRepairRequest, ProfileRepairResponse,
-    solve_constraints, apply_constraint_once,
-    SolveConstraintsRequest, SolveResult,
+    solve_constraints, SolveConstraintsRequest, SolveResult,
 };
 
-#[derive(Deserialize)]
-pub struct ValidateRequest {
-    pub sketch: SketchGraph,
+type Resp<T> = Result<Json<T>, (StatusCode, Json<serde_json::Value>)>;
+
+pub async fn validate_sketch_endpoint(Json(_req): Json<SketchGraph>) -> Resp<ValidationResult> {
+    Ok(Json(validate(&Default::default())))
 }
 
-pub async fn validate_sketch_endpoint(
-    Json(req): Json<ValidateRequest>,
-) -> Result<Json<ValidationResult>, (StatusCode, Json<serde_json::Value>)> {
-    Ok(Json(validate(&req.sketch)))
+pub async fn add_point_endpoint(Json(req): Json<AddPointRequest>) -> Resp<SketchCommandResult> {
+    Ok(Json(apply_add_point(Default::default(), req)))
 }
 
-pub async fn add_point_endpoint(
-    Json(req): Json<AddPointRequest>,
-) -> Result<Json<SketchCommandResult>, (StatusCode, Json<serde_json::Value>)> {
-    Ok(Json(apply_add_point(req)))
+pub async fn add_edge_endpoint(Json(req): Json<AddEdgeRequest>) -> Resp<SketchCommandResult> {
+    Ok(Json(apply_add_edge(Default::default(), req)))
 }
 
-pub async fn add_edge_endpoint(
-    Json(req): Json<AddEdgeRequest>,
-) -> Result<Json<SketchCommandResult>, (StatusCode, Json<serde_json::Value>)> {
-    Ok(Json(apply_add_edge(req)))
+pub async fn move_point_endpoint(Json(req): Json<MovePointRequest>) -> Resp<SketchCommandResult> {
+    Ok(Json(apply_move_point(Default::default(), req)))
 }
 
-pub async fn move_point_endpoint(
-    Json(req): Json<MovePointRequest>,
-) -> Result<Json<SketchCommandResult>, (StatusCode, Json<serde_json::Value>)> {
-    Ok(Json(apply_move_point(req)))
-}
-
-pub async fn profile_analyze_endpoint(
-    Json(req): Json<ProfileAnalyzeRequest>,
-) -> Result<Json<ProfileAnalyzeResponse>, (StatusCode, Json<serde_json::Value>)> {
+pub async fn profile_analyze_endpoint(Json(req): Json<ProfileAnalyzeRequest>) -> Resp<ProfileAnalyzeResponse> {
     Ok(Json(analyze_profile(req)))
 }
 
-pub async fn profile_repair_endpoint(
-    Json(req): Json<ProfileRepairRequest>,
-) -> Result<Json<ProfileRepairResponse>, (StatusCode, Json<serde_json::Value>)> {
+pub async fn profile_repair_endpoint(Json(req): Json<ProfileRepairRequest>) -> Resp<ProfileRepairResponse> {
     Ok(Json(repair_profile(req)))
 }
 
-/// POST /api/matter/sketch/solve-constraints
-/// Applies HORIZONTAL / VERTICAL / EQUAL_LENGTH constraints to the sketch.
-/// If `constraint` field is provided, applies only that one (preview mode).
-/// Otherwise applies all constraints in sketch.constraints.
-pub async fn solve_constraints_endpoint(
-    Json(req): Json<SolveConstraintsRequest>,
-) -> Result<Json<SolveResult>, (StatusCode, Json<serde_json::Value>)> {
-    let result = if let Some(ref c) = req.constraint {
-        apply_constraint_once(req.sketch, c)
-    } else {
-        solve_constraints(req.sketch)
-    };
-    Ok(Json(result))
+pub async fn solve_constraints_endpoint(Json(req): Json<SolveConstraintsRequest>) -> Resp<SolveResult> {
+    Ok(Json(solve_constraints(req)))
 }
