@@ -1,0 +1,55 @@
+/* ═══════════════════════════════════════════════
+   КОМПОНЕНТ: STATS / COUNTERS
+═══════════════════════════════════════════════ */
+
+.stats-section {
+  padding: 3.5rem 1.5rem;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 3.5rem -1.5rem;
+}
+
+.stats {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.stat {
+  text-align: center;
+  padding: 1.25rem 2.75rem;
+  border-right: 1px solid var(--border);
+  flex: 1;
+  min-width: 120px;
+}
+.stat:last-child {
+  border-right: none;
+}
+
+/* Цифра (анимируется через JS) */
+.stat-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.8rem;
+  color: var(--accent);
+  display: block;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-top: 0.4rem;
+  display: block;
+}
+
+@media (max-width: 560px) {
+  .stats            { flex-direction: column; }
+  .stat             { border-right: none; border-bottom: 1px solid var(--border); padding: 1.1rem 1rem; }
+  .stat:last-child  { border-bottom: none; }
+}

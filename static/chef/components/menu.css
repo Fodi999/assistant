@@ -1,0 +1,88 @@
+/* ═══════════════════════════════════════════════
+   КОМПОНЕНТ: MENU GRID & CARDS
+═══════════════════════════════════════════════ */
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+  gap: 1.1rem;
+}
+
+.menu-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  position: relative;
+  overflow: hidden;
+  animation: fadeUp 0.3s ease both;
+  transition:
+    border-color var(--t-base),
+    transform var(--t-base),
+    box-shadow var(--t-base);
+}
+
+/* Золотая полоска снизу при hover */
+.menu-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--t-slow);
+}
+
+.menu-card:hover {
+  border-color: rgba(201, 169, 110, 0.3);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+.menu-card:hover::after {
+  transform: scaleX(1);
+}
+
+/* Скрытая карточка (JS-фильтрация) */
+.menu-card.hidden {
+  display: none;
+}
+
+/* Иконка */
+.menu-card-icon {
+  width: 38px;
+  height: 38px;
+  background: var(--accent-dim);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-bottom: 0.3rem;
+}
+
+.menu-card h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.menu-card p {
+  font-size: 0.83rem;
+  color: var(--muted);
+  flex: 1;
+  line-height: 1.6;
+}
+
+/* Цена */
+.price {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 0.3rem;
+}

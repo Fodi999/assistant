@@ -1,0 +1,52 @@
+/* ═══════════════════════════════════════════════
+   TYPOGRAPHY
+═══════════════════════════════════════════════ */
+
+/* Заголовочный шрифт (serif) */
+.font-display {
+  font-family: 'Playfair Display', serif;
+}
+
+/* Общие заголовки */
+h1, h2, h3, h4 {
+  line-height: 1.2;
+  color: var(--text);
+}
+
+/* Section eyebrow — маленькая метка над заголовком */
+.section-eyebrow {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+/* Section title блок */
+.section-title {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.section-title h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  color: var(--text);
+  margin-bottom: 0.4rem;
+}
+
+/* Золотая линия под заголовком */
+.accent-line {
+  width: 48px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  margin: 0.65rem auto 0;
+  border-radius: 2px;
+}
+
+/* Muted текст */
+.text-muted { color: var(--muted); }
+.text-accent { color: var(--accent); }
+.text-light  { color: var(--text2); }

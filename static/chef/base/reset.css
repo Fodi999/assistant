@@ -1,0 +1,40 @@
+/* ═══════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img, video {
+  max-width: 100%;
+  display: block;
+}
+
+::selection {
+  background: var(--accent);
+  color: #0a0a0a;
+}
+
+/* Кастомный скроллбар */
+::-webkit-scrollbar               { width: 6px; }
+::-webkit-scrollbar-track         { background: var(--bg); }
+::-webkit-scrollbar-thumb         { background: var(--border2); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover   { background: var(--accent); }
