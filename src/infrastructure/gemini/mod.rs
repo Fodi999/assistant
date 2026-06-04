@@ -1,2 +1,1 @@
 //! Gemini-related infrastructure adapters.
-

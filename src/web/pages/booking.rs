@@ -1,5 +1,5 @@
 use crate::web::{language, pages::i18n};
 
 pub fn render(lang: language::Lang) -> String {
-    i18n::pack(lang).home_html.to_string()
+    i18n::pack(lang).booking_html.to_string()
 }

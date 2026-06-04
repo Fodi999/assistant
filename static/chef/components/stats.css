@@ -1,55 +1,40 @@
 /* ═══════════════════════════════════════════════
-   КОМПОНЕНТ: STATS / COUNTERS
+   STATS — Soft inset strip
 ═══════════════════════════════════════════════ */
+.stats-section { padding: 4rem 0; }
 
-.stats-section {
-  padding: 3.5rem 1.5rem;
-  background: var(--bg2);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  margin: 3.5rem -1.5rem;
+.stats-strip {
+  background: rgba(247, 251, 255, 0.72);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-inset);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  overflow: hidden;
 }
 
-.stats {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  max-width: 700px;
-  margin: 0 auto;
-}
-
-.stat {
+.stat-item {
+  padding: 2.25rem 1.5rem;
   text-align: center;
-  padding: 1.25rem 2.75rem;
-  border-right: 1px solid var(--border);
-  flex: 1;
-  min-width: 120px;
+  border-right: 1px solid rgba(163,177,198,0.15);
+  transition: background var(--t-base);
 }
-.stat:last-child {
-  border-right: none;
-}
+.stat-item:last-child { border-right: none; }
+.stat-item:hover { background: rgba(255,122,26,0.04); }
 
-/* Цифра (анимируется через JS) */
-.stat-num {
-  font-family: 'Playfair Display', serif;
-  font-size: 2.8rem;
+.stat-value {
+  display: block;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  font-weight: 800;
   color: var(--accent);
-  display: block;
+  letter-spacing: -0.04em;
   line-height: 1;
-  font-weight: 700;
+  margin-bottom: 0.5rem;
 }
-
 .stat-label {
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.09em;
-  margin-top: 0.4rem;
-  display: block;
-}
-
-@media (max-width: 560px) {
-  .stats            { flex-direction: column; }
-  .stat             { border-right: none; border-bottom: 1px solid var(--border); padding: 1.1rem 1rem; }
-  .stat:last-child  { border-bottom: none; }
 }

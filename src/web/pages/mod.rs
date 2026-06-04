@@ -1,4 +1,9 @@
+pub mod about;
+pub mod booking;
+pub mod cookie;
+pub mod delivery;
 pub mod home;
+pub mod i18n;
+pub mod legal;
 pub mod menu;
 pub mod recipes;
-pub mod about;

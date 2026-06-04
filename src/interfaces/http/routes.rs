@@ -1220,9 +1220,14 @@ pub fn create_router(
         // ── Chef-site pages ──
         .route("/",               get(web::home))
         .route("/menu",           get(web::menu))
+        .route("/delivery",       get(web::delivery))
+        .route("/booking",        get(web::booking))
         .route("/recipes",        get(web::recipes_list))
         .route("/recipes/:id",    get(web::recipe_detail))
         .route("/about",          get(web::about))
+        .route("/cookie",         get(web::cookie))
+        .route("/privacy",        get(web::privacy))
+        .route("/terms",          get(web::terms))
         // ── style.css ──
         .merge(health_route)
         .merge(chef_reference_routes)

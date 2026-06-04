@@ -1,44 +1,74 @@
 /* ═══════════════════════════════════════════════
-   DESIGN TOKENS — единый источник правды
-   Меняй здесь → меняется весь сайт
+   TOKENS — Saturated Glassmorphism
 ═══════════════════════════════════════════════ */
 :root {
-  /* Фоны (от темнее к светлее) */
-  --bg:          #0a0a0a;
-  --bg2:         #111111;
-  --bg3:         #1a1a1a;
-  --bg4:         #222222;
+  /* Colours */
+  --bg:           #07105a;
+  --surface:      rgba(255, 255, 255, 0.13);
+  --surface-soft: rgba(255, 255, 255, 0.08);
+  --text:         #f7fbff;
+  --text2:        #d7e4ff;
+  --muted:        #98acd8;
+  --accent:       #f1ff3f;
+  --accent2:      #69e8ff;
+  --accent3:      #ff6f3d;
+  --accent-glow:  rgba(105, 232, 255, 0.36);
+  --accent-dim:   rgba(241, 255, 63, 0.14);
+  --border:       rgba(255, 255, 255, 0.24);
+  --border-soft:  rgba(255, 255, 255, 0.12);
+  --white:        #ffffff;
 
-  /* Границы */
-  --border:      #2c2c2c;
-  --border2:     #3a3a3a;
+  /* Geometric background pieces */
+  --shape-red:    rgba(218, 55, 72, 0.78);
+  --shape-violet: rgba(184, 35, 184, 0.72);
+  --shape-blue:   rgba(35, 57, 198, 0.88);
+  --shape-cyan:   rgba(111, 213, 235, 0.78);
+  --shape-orange: rgba(245, 139, 43, 0.82);
 
-  /* Акцентный золотой */
-  --accent:      #c9a96e;
-  --accent2:     #e8c99a;
-  --accent-dim:  rgba(201, 169, 110, 0.12);
-  --accent-glow: rgba(201, 169, 110, 0.25);
+  /* Glass surfaces */
+  --glass:        rgba(255, 255, 255, 0.13);
+  --glass-strong: rgba(255, 255, 255, 0.18);
+  --glass-border: rgba(255, 255, 255, 0.34);
+  --blur:         28px;
 
-  /* Текст */
-  --text:        #ede8df;
-  --text2:       #b8b0a4;
-  --muted:       #6e6a64;
+  /* Radii */
+  --radius-sm:   14px;
+  --radius-md:   22px;
+  --radius-lg:   34px;
+  --radius-xl:   46px;
+  --radius-pill: 999px;
 
-  /* Скругления */
-  --radius:      14px;
-  --radius-sm:   8px;
-  --radius-xs:   6px;
+  /* Glass shadows */
+  --shadow-soft:
+    0 28px 70px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 
-  /* Высота навбара */
-  --nav-h:       68px;
+  --shadow-small:
+    0 14px 35px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 
-  /* Тени */
-  --shadow:      0 8px 32px rgba(0, 0, 0, 0.55);
-  --shadow-sm:   0 2px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg:   0 16px 48px rgba(0, 0, 0, 0.6);
+  --shadow-inset:
+    inset 0 1px 18px rgba(255, 255, 255, 0.12),
+    inset 0 -22px 46px rgba(16, 28, 130, 0.28);
+
+  --shadow-inset-sm:
+    inset 0 1px 12px rgba(255, 255, 255, 0.12),
+    inset 0 -12px 24px rgba(16, 28, 130, 0.20);
+
+  --shadow-accent:
+    0 16px 40px rgba(241, 255, 63, 0.22),
+    0 0 34px rgba(105, 232, 255, 0.18);
+
+  --shadow-accent-hover:
+    0 20px 52px rgba(241, 255, 63, 0.32),
+    0 0 42px rgba(105, 232, 255, 0.25);
+
+  --shadow-hover:
+    0 34px 90px rgba(0, 0, 0, 0.50),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 
   /* Transitions */
-  --t-fast:      0.15s ease;
-  --t-base:      0.2s ease;
-  --t-slow:      0.3s ease;
+  --t-fast: 180ms ease;
+  --t-base: 260ms ease;
+  --t-slow: 420ms cubic-bezier(.2,.8,.2,1);
 }

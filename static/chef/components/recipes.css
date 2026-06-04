@@ -1,162 +1,62 @@
 /* ═══════════════════════════════════════════════
-   КОМПОНЕНТ: RECIPES (список и детальная страница)
+   RECIPES — Soft neumorphic cards
 ═══════════════════════════════════════════════ */
+.recipes-section { padding: 5rem 0; }
 
-/* ── Сетка карточек ── */
 .recipes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: 1.1rem;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-top: 3rem;
 }
 
 .recipe-card {
-  background: var(--bg2);
+  background: rgba(247, 251, 255, 0.88);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.75rem;
-  text-decoration: none;
-  color: inherit;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  position: relative;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
-  animation: fadeUp 0.3s ease both;
-  transition:
-    border-color var(--t-base),
-    transform var(--t-base),
-    box-shadow var(--t-base);
+  transition: box-shadow var(--t-base), transform var(--t-base);
 }
+.recipe-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-6px); }
 
-/* Золотая линия сверху при hover */
-.recipe-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  opacity: 0;
-  transition: opacity var(--t-slow);
-}
+.recipe-card-image { aspect-ratio: 4/3; overflow: hidden; background: var(--surface-soft); }
+.recipe-card-image img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
+.recipe-card:hover .recipe-card-image img { transform: scale(1.06); }
 
-.recipe-card:hover {
-  border-color: rgba(201, 169, 110, 0.35);
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-lg);
-}
-.recipe-card:hover::before { opacity: 1; }
-
-.recipe-card-icon {
-  width: 48px;
-  height: 48px;
-  background: var(--accent-dim);
-  border: 1px solid rgba(201, 169, 110, 0.2);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  color: var(--accent);
-  margin-bottom: 0.25rem;
-}
-
-.recipe-card h3 {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.1rem;
-  color: var(--text);
-}
-
-.recipe-meta {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-top: 0.2rem;
-}
-.recipe-meta span {
-  font-size: 0.8rem;
-  color: var(--muted);
-  display: flex;
+.recipe-card-body { padding: 1.5rem; }
+.recipe-card-meta { display: flex; gap: 1rem; margin-bottom: 0.85rem; }
+.recipe-meta-item {
+  display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-}
-.recipe-meta i { font-size: 0.85rem; }
-
-/* ── Детальная страница рецепта ── */
-.recipe-detail {
-  display: grid;
-  grid-template-columns: 1fr 1.6fr;
-  gap: 2rem;
-  margin-top: 2rem;
-}
-@media (max-width: 680px) {
-  .recipe-detail { grid-template-columns: 1fr; }
-}
-
-.recipe-detail-section {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.75rem;
-}
-
-.recipe-detail-section h2 {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.2rem;
-  color: var(--accent);
-  margin-bottom: 1.1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-
-/* Ингредиенты */
-.ingredients ul {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.ingredients li {
-  padding: 0.6rem 0.85rem;
-  background: var(--bg3);
-  border-radius: var(--radius-sm);
-  font-size: 0.88rem;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  border: 1px solid transparent;
-  transition: border-color var(--t-base);
-}
-.ingredients li:hover { border-color: var(--border); }
-.ingredients li i    { color: var(--accent); font-size: 0.85rem; flex-shrink: 0; }
-
-/* Шаги приготовления */
-.steps ol {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-.steps li {
-  display: flex;
-  gap: 0.85rem;
-  align-items: flex-start;
-  font-size: 0.9rem;
-  line-height: 1.65;
-}
-.step-num {
-  min-width: 28px;
-  height: 28px;
-  background: var(--accent);
-  color: #0a0a0a;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
   font-size: 0.78rem;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+.recipe-meta-item i { color: var(--accent); font-size: 0.85rem; }
+
+.recipe-card-title { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; line-height: 1.3; }
+.recipe-card-desc  { font-size: 0.85rem; color: var(--muted); line-height: 1.7; margin-bottom: 1.1rem; }
+
+.recipe-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(163,177,198,0.15);
+}
+.recipe-difficulty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid rgba(255,122,26,0.15);
+  padding: 0.22rem 0.7rem;
+  border-radius: var(--radius-pill);
 }

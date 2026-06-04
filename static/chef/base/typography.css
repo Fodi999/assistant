@@ -1,52 +1,59 @@
 /* ═══════════════════════════════════════════════
-   TYPOGRAPHY
+   TYPOGRAPHY — Modern Cyrillic + Latin
 ═══════════════════════════════════════════════ */
-
-/* Заголовочный шрифт (serif) */
-.font-display {
-  font-family: 'Playfair Display', serif;
-}
-
-/* Общие заголовки */
 h1, h2, h3, h4 {
-  line-height: 1.2;
-  color: var(--text);
+  font-family: "Onest", "Manrope", system-ui, sans-serif;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
-/* Section eyebrow — маленькая метка над заголовком */
+h1 { font-size: clamp(2.4rem, 5.5vw, 4rem);   font-weight: 800; }
+h2 { font-size: clamp(1.8rem, 3.5vw, 2.75rem); font-weight: 750; }
+h3 { font-size: clamp(1.2rem, 2vw, 1.5rem);    font-weight: 750; }
+h4 { font-size: 1.1rem; font-weight: 750; }
+p  { color: var(--text2); line-height: 1.75; }
+
+:lang(ru) h1,
+:lang(ru) h2,
+:lang(ru) h3,
+:lang(ru) h4 {
+  font-family: "Onest", "Manrope", system-ui, sans-serif;
+  font-weight: 700;
+}
+
+/* Accent highlight within headings */
+.text-accent { color: var(--accent); }
+
+/* Animated gradient text (modern 2026) */
+.text-gradient,
+.hero h1 .orange {
+  background: linear-gradient(100deg, var(--accent) 0%, #ff5e7a 45%, var(--accent2) 100%);
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: gradientShift 6s ease-in-out infinite;
+}
+
+/* Section eyebrow pill */
 .section-eyebrow {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.13em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent);
-  margin-bottom: 0.5rem;
+  background: var(--accent-dim);
+  border: 1px solid rgba(255,122,26,0.18);
+  padding: 0.3rem 0.9rem;
+  border-radius: var(--radius-pill);
+  margin-bottom: 1rem;
 }
 
-/* Section title блок */
-.section-title {
-  text-align: center;
-  margin-bottom: 2.5rem;
-}
-
-.section-title h2 {
-  font-family: 'Playfair Display', serif;
-  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
-  color: var(--text);
-  margin-bottom: 0.4rem;
-}
-
-/* Золотая линия под заголовком */
-.accent-line {
-  width: 48px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  margin: 0.65rem auto 0;
-  border-radius: 2px;
-}
-
-/* Muted текст */
-.text-muted { color: var(--muted); }
-.text-accent { color: var(--accent); }
-.text-light  { color: var(--text2); }
+/* Section title block */
+.section-header { margin-bottom: 3rem; }
+.section-title  { color: var(--text); margin-bottom: 0.75rem; }
+.section-desc   { color: var(--muted); font-size: 1rem; max-width: 520px; line-height: 1.8; }

@@ -1,15 +1,12 @@
 //! Precision sketch command endpoints — stubbed (geometry_engine extracted).
 
-use axum::{Json, http::StatusCode};
+use axum::{http::StatusCode, Json};
 
 use crate::domain::matter::{
-    apply_add_edge, apply_add_point, apply_move_point,
-    AddEdgeRequest, AddPointRequest, MovePointRequest, SketchCommandResult,
-    SketchGraph, validate, ValidationResult,
-    analyze_profile, repair_profile,
-    ProfileAnalyzeRequest, ProfileAnalyzeResponse,
-    ProfileRepairRequest, ProfileRepairResponse,
-    solve_constraints, SolveConstraintsRequest, SolveResult,
+    analyze_profile, apply_add_edge, apply_add_point, apply_move_point, repair_profile,
+    solve_constraints, validate, AddEdgeRequest, AddPointRequest, MovePointRequest,
+    ProfileAnalyzeRequest, ProfileAnalyzeResponse, ProfileRepairRequest, ProfileRepairResponse,
+    SketchCommandResult, SketchGraph, SolveConstraintsRequest, SolveResult, ValidationResult,
 };
 
 type Resp<T> = Result<Json<T>, (StatusCode, Json<serde_json::Value>)>;
@@ -30,14 +27,20 @@ pub async fn move_point_endpoint(Json(req): Json<MovePointRequest>) -> Resp<Sket
     Ok(Json(apply_move_point(Default::default(), req)))
 }
 
-pub async fn profile_analyze_endpoint(Json(req): Json<ProfileAnalyzeRequest>) -> Resp<ProfileAnalyzeResponse> {
+pub async fn profile_analyze_endpoint(
+    Json(req): Json<ProfileAnalyzeRequest>,
+) -> Resp<ProfileAnalyzeResponse> {
     Ok(Json(analyze_profile(req)))
 }
 
-pub async fn profile_repair_endpoint(Json(req): Json<ProfileRepairRequest>) -> Resp<ProfileRepairResponse> {
+pub async fn profile_repair_endpoint(
+    Json(req): Json<ProfileRepairRequest>,
+) -> Resp<ProfileRepairResponse> {
     Ok(Json(repair_profile(req)))
 }
 
-pub async fn solve_constraints_endpoint(Json(req): Json<SolveConstraintsRequest>) -> Resp<SolveResult> {
+pub async fn solve_constraints_endpoint(
+    Json(req): Json<SolveConstraintsRequest>,
+) -> Resp<SolveResult> {
     Ok(Json(solve_constraints(req)))
 }

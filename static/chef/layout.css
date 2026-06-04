@@ -1,56 +1,27 @@
 /* ═══════════════════════════════════════════════
-   LAYOUT — сетка страницы, page-header
+   LAYOUT — Container + page structure
 ═══════════════════════════════════════════════ */
-
-/* Центральная колонка контента */
-.main-content {
-  max-width: 1120px;
+.container {
+  width: 100%;
+  max-width: 1140px;
   margin: 0 auto;
-  padding: 0 1.5rem 6rem;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
 }
+.container-narrow {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
+}
+.main-content {
+  min-height: calc(100vh - 88px - 320px);
+}
+.page-header { padding: 9rem 0 3.5rem; }
+.page-header h1 { color: var(--text); margin-bottom: 1rem; }
+.page-header-sub { font-size: 1rem; color: var(--muted); max-width: 520px; line-height: 1.8; }
+.section-sep { height: 1px; background: linear-gradient(90deg, transparent, rgba(163,177,198,0.25), transparent); margin: 4rem 0; }
 
-/* Шапка внутренних страниц (Меню / Рецепты / О шефе) */
-.page-header {
-  text-align: center;
-  padding: 4.5rem 1rem 3rem;
-  position: relative;
-}
-
-/* Золотая разделительная линия под заголовком */
-.page-header::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 50%;
-  transform: translateX(-50%);
-  width: 60px; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-}
-
-.page-header h1 {
-  font-family: 'Playfair Display', serif;
-  font-size: clamp(1.9rem, 4.5vw, 3rem);
-  color: var(--text);
-  margin-bottom: 0.5rem;
-  letter-spacing: -0.01em;
-}
-
-.page-header p {
-  color: var(--text2);
-  font-size: 1rem;
-  margin-top: 0.6rem;
-}
-
-/* Горизонтальные разделители */
-.divider {
-  border: none;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border), transparent);
-  margin: 3rem 0;
-}
-
-.gold-divider {
-  border: none;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(201, 169, 110, 0.3), transparent);
-  margin: 3rem 0;
-}
+.content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: start; }
+@media (max-width: 860px) { .content-grid { grid-template-columns: 1fr; } }
+.content-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; }
+@media (max-width: 900px) { .content-grid-3 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .content-grid-3 { grid-template-columns: 1fr; } }

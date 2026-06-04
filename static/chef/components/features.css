@@ -1,74 +1,108 @@
 /* ═══════════════════════════════════════════════
-   КОМПОНЕНТ: FEATURES GRID
+   FEATURES — Soft Neumorphic strip + cards
 ═══════════════════════════════════════════════ */
+.features-section { padding: 5rem 0; }
 
-.features-section {
-  padding: 4rem 0 2rem;
-}
-
-.features {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 1rem;
-}
-
-.feature {
-  background: var(--bg2);
+/* Feature strip — horizontal soft panel */
+.features-strip {
+  background: rgba(247, 251, 255, 0.82);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2rem 1.75rem;
-  position: relative;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 2.5rem 2rem;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
   overflow: hidden;
-  transition:
-    border-color var(--t-slow),
-    transform var(--t-slow),
-    box-shadow var(--t-slow);
 }
+@media (max-width: 900px) { .features-strip { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .features-strip { grid-template-columns: 1fr; } }
 
-/* Золотая линия сверху — появляется при hover */
-.feature::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  opacity: 0;
-  transition: opacity var(--t-slow);
+.feature-item {
+  padding: 1.75rem 1.5rem;
+  position: relative;
+  transition: transform var(--t-base);
+  cursor: default;
+  border-right: 1px solid rgba(163,177,198,0.15);
 }
+.feature-item:last-child { border-right: none; }
+@media (max-width: 900px) {
+  .feature-item:nth-child(2) { border-right: none; }
+  .feature-item { border-bottom: 1px solid rgba(163,177,198,0.15); }
+  .feature-item:nth-last-child(-n+2) { border-bottom: none; }
+}
+.feature-item:hover { transform: translateY(-4px); }
 
-.feature:hover {
-  border-color: rgba(201, 169, 110, 0.35);
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-}
-.feature:hover::before {
-  opacity: 1;
-}
-
-/* Иконка в квадратном контейнере */
-.feature-icon {
-  width: 44px;
-  height: 44px;
-  background: var(--accent-dim);
-  border: 1px solid rgba(201, 169, 110, 0.2);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.feature-icon-wrap {
+  width: 48px; height: 48px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-small);
+  display: grid;
+  place-items: center;
   font-size: 1.3rem;
-  color: var(--accent);
-  margin-bottom: 1.1rem;
+  margin-bottom: 1rem;
+  transition: box-shadow var(--t-base), transform var(--t-base);
+}
+.feature-item:hover .feature-icon-wrap {
+  box-shadow: var(--shadow-soft);
+  transform: scale(1.08);
 }
 
-.feature h3 {
-  font-family: 'Playfair Display', serif;
-  font-size: 1rem;
-  margin-bottom: 0.4rem;
+.feature-item h3 {
+  font-size: 0.98rem;
+  font-weight: 700;
   color: var(--text);
+  margin-bottom: 0.45rem;
+}
+.feature-item p {
+  font-size: 0.84rem;
+  color: var(--muted);
+  line-height: 1.65;
+  margin-bottom: 1rem;
+}
+.feature-arrow {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: gap var(--t-fast);
+  text-decoration: none;
+}
+.feature-item:hover .feature-arrow { gap: 0.55rem; }
+
+/* Grid version for section */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin-top: 3rem;
 }
 
-.feature p {
-  font-size: 0.85rem;
-  color: var(--muted);
-  line-height: 1.6;
+.feature-card {
+  background: rgba(247, 251, 255, 0.82);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 2rem 1.75rem;
+  transition: box-shadow var(--t-base), transform var(--t-base);
 }
+.feature-card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-6px);
+}
+
+.feature-icon {
+  width: 52px; height: 52px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-small);
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  margin-bottom: 1.25rem;
+}
+.feature-card h3 { font-size: 1rem; color: var(--text); margin-bottom: 0.5rem; }
+.feature-card p  { font-size: 0.88rem; color: var(--muted); line-height: 1.7; }
