@@ -6,4 +6,5 @@ pub mod matter_sketch;
 pub mod matter_sketch_commands;
 pub mod nutrition_pages;
 pub mod seo_content;
+pub mod sitemap;
 pub mod tools;

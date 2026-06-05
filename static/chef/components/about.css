@@ -127,6 +127,37 @@
 .expertise-item h4 { font-size: 0.95rem; color: var(--text); font-weight: 700; margin-bottom: 0.4rem; }
 .expertise-item p { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
 
+.ingredient-catalog-cta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: center;
+  margin: -1rem 0 3.5rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(255,255,255,0.28);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06) 58%, rgba(105,232,255,0.10));
+  box-shadow: var(--shadow-small);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+}
+
+.ingredient-catalog-cta .section-title {
+  font-size: clamp(1.45rem, 2.4vw, 2rem);
+  margin-bottom: 0.55rem;
+}
+
+.ingredient-catalog-cta .section-desc {
+  max-width: 620px;
+}
+
+@media (max-width: 680px) {
+  .ingredient-catalog-cta {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Timeline */
 .timeline { position: relative; }
 .timeline::before {

@@ -79,6 +79,30 @@ pub async fn about(headers: HeaderMap, Query(q): Query<LangQuery>) -> Html<Strin
     Html(shell(lang, titles.about, &pages::about::render(lang)))
 }
 
+pub async fn ingredients(headers: HeaderMap, Query(q): Query<LangQuery>) -> Html<String> {
+    let lang = resolve_lang(&headers, q.lang.as_deref());
+    let titles = lang.pack().titles;
+    Html(shell(
+        lang,
+        titles.ingredients,
+        &pages::ingredients::render(lang),
+    ))
+}
+
+pub async fn ingredient_detail(
+    axum::extract::Path(slug): axum::extract::Path<String>,
+    headers: HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Html<String> {
+    let lang = resolve_lang(&headers, q.lang.as_deref());
+    let titles = lang.pack().titles;
+    Html(shell(
+        lang,
+        titles.ingredients,
+        &pages::ingredient_detail::render(lang, &slug),
+    ))
+}
+
 pub async fn cookie(headers: HeaderMap, Query(q): Query<LangQuery>) -> Html<String> {
     let lang = resolve_lang(&headers, q.lang.as_deref());
     let titles = lang.pack().titles;

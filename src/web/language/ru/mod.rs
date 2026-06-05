@@ -12,6 +12,7 @@ pub const SHELL: ShellText = ShellText {
     nav_booking: "Бронирование",
     nav_about: "О шефе",
     nav_table: "Столик",
+    nav_cart: "Корзина",
     nav_order: "Заказать",
     nav_language: "Язык",
     aria_menu: "Меню",
@@ -49,6 +50,7 @@ pub const TITLES: PageTitles = PageTitles {
     booking: "Бронирование",
     recipe_detail: "Запись шефа",
     about: "О шефе",
+    ingredients: "Каталог ингредиентов",
     cookie: "Политика cookie",
     privacy: "Политика конфиденциальности",
     terms: "Правила",
@@ -57,4 +59,5 @@ pub const TITLES: PageTitles = PageTitles {
 
 pub const JS: JsText = JsText {
     order_added: "Добавлено",
+    cart_remove: "Удалить",
 };

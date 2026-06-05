@@ -86,6 +86,7 @@ pub struct ShellText {
     pub nav_booking: &'static str,
     pub nav_about: &'static str,
     pub nav_table: &'static str,
+    pub nav_cart: &'static str,
     pub nav_order: &'static str,
     pub nav_language: &'static str,
     pub aria_menu: &'static str,
@@ -123,6 +124,7 @@ pub struct PageTitles {
     pub booking: &'static str,
     pub recipe_detail: &'static str,
     pub about: &'static str,
+    pub ingredients: &'static str,
     pub cookie: &'static str,
     pub privacy: &'static str,
     pub terms: &'static str,
@@ -131,4 +133,5 @@ pub struct PageTitles {
 
 pub struct JsText {
     pub order_added: &'static str,
+    pub cart_remove: &'static str,
 }

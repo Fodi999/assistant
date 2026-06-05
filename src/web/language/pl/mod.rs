@@ -12,6 +12,7 @@ pub const SHELL: ShellText = ShellText {
     nav_booking: "Rezerwacja",
     nav_about: "O szefie",
     nav_table: "Stolik",
+    nav_cart: "Koszyk",
     nav_order: "Zamów",
     nav_language: "Język",
     aria_menu: "Menu",
@@ -49,6 +50,7 @@ pub const TITLES: PageTitles = PageTitles {
     booking: "Rezerwacja",
     recipe_detail: "Wpis szefa",
     about: "O szefie",
+    ingredients: "Katalog składników",
     cookie: "Polityka cookie",
     privacy: "Polityka prywatności",
     terms: "Regulamin",
@@ -57,4 +59,5 @@ pub const TITLES: PageTitles = PageTitles {
 
 pub const JS: JsText = JsText {
     order_added: "Dodano",
+    cart_remove: "Usuń",
 };

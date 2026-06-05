@@ -108,6 +108,11 @@ pub fn shell(lang: language::Lang, title: &str, body: &str) -> String {
         {language_options}
       </div>
       <a href="/booking" class="btn btn-ghost btn-sm">{nav_table}</a>
+      <a href="/menu#cart" class="nav-cart btn btn-ghost btn-sm" aria-label="{nav_cart}">
+        <i class="bi bi-cart3"></i>
+        <span>{nav_cart}</span>
+        <span class="nav-cart-count" data-cart-count>0</span>
+      </a>
       <a href="/menu"    class="btn btn-primary btn-sm">{nav_order}</a>
     </div>
     <button class="nav-toggle" id="navToggle" aria-label="{aria_menu}">
@@ -195,7 +200,8 @@ pub fn shell(lang: language::Lang, title: &str, body: &str) -> String {
 window.CHEF_I18N = {{
   lang: "{current_lang}",
   langCookie: "{lang_cookie}",
-  orderAdded: "{order_added}"
+  orderAdded: "{order_added}",
+  cartRemove: "{cart_remove}"
 }};
 </script>
 <script>{JS}</script>
@@ -216,6 +222,7 @@ window.CHEF_I18N = {{
         nav_booking = t.nav_booking,
         nav_about = t.nav_about,
         nav_table = t.nav_table,
+        nav_cart = t.nav_cart,
         nav_order = t.nav_order,
         nav_language = t.nav_language,
         aria_menu = t.aria_menu,
@@ -244,6 +251,7 @@ window.CHEF_I18N = {{
         footer_manage_cookie = t.footer_manage_cookie,
         footer_copy = t.footer_copy,
         language_options = language_options,
-        order_added = pack.js.order_added
+        order_added = pack.js.order_added,
+        cart_remove = pack.js.cart_remove
     )
 }

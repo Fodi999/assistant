@@ -361,6 +361,15 @@ pub const ABOUT_HTML: &str = r#"
           </div>
         </div>
       </div>
+
+      <section class="ingredient-catalog-cta reveal">
+        <div>
+          <span class="section-eyebrow"><i class="bi bi-journal-richtext"></i> Katalog składników</span>
+          <h2 class="section-title">Produkty z wartością odżywczą i zdjęciami</h2>
+          <p class="section-desc">Baza składników używanych w kuchni: zdjęcia, makro, energia, sezonowość i krótkie notatki technologiczne do pracy z produktem.</p>
+        </div>
+        <a href="/ingredient-catalog" class="btn btn-primary btn-lg"><i class="bi bi-arrow-right-circle"></i> Otwórz katalog</a>
+      </section>
     </div>
 
     <aside class="about-side reveal">
@@ -538,6 +547,13 @@ pub const MENU_SUBTITLE: &str =
     "Autorska kuchnia z sezonowych produktów, dostępna w dostawie i odbiorze osobistym";
 pub const MENU_ALL: &str = "Całe menu";
 pub const MENU_ORDER: &str = "Do zamówienia";
+pub const MENU_CART_TITLE: &str = "Koszyk";
+pub const MENU_CART_EMPTY: &str = "Koszyk jest pusty. Dodaj dania z menu, a pokażą się tutaj od razu.";
+pub const MENU_CART_SUBTOTAL: &str = "Suma";
+pub const MENU_CART_TOTAL: &str = "Razem";
+pub const MENU_CART_CLEAR: &str = "Wyczyść";
+pub const MENU_CART_CHECKOUT: &str = "Przejdź do finalizacji";
+pub const MENU_CART_HINT: &str = "Koszyk zapisuje się lokalnie w przeglądarce.";
 
 pub const MENU_CATEGORIES: &[MenuCategory] = &[
     MenuCategory {

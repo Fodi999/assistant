@@ -3,7 +3,7 @@
 ═══════════════════════════════════════════════ */
 .container {
   width: 100%;
-  max-width: 1140px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 0 clamp(1rem, 4vw, 2.5rem);
 }

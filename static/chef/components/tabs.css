@@ -10,9 +10,17 @@
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-inset);
   width: fit-content;
+  max-width: 100%;
   margin-bottom: 2.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+
+.tabs-nav::-webkit-scrollbar { display: none; }
+
 .tab-btn {
+  flex: 0 0 auto;
   padding: 0.55rem 1.3rem;
   border-radius: var(--radius-pill);
   border: none;

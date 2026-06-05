@@ -27,13 +27,7 @@ p  { color: var(--text2); line-height: 1.75; }
 /* Animated gradient text (modern 2026) */
 .text-gradient,
 .hero h1 .orange {
-  background: linear-gradient(100deg, var(--accent) 0%, #ff5e7a 45%, var(--accent2) 100%);
-  background-size: 220% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  animation: gradientShift 6s ease-in-out infinite;
+  color: var(--accent);
 }
 
 /* Section eyebrow pill */

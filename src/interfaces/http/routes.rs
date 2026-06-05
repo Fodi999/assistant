@@ -57,6 +57,7 @@ use crate::interfaces::http::{
         },
         nutrition_pages::{get_all_slugs, get_diet_page, get_nutrition_page, get_ranking_page},
         seo_content::get_seo_content,
+        sitemap as public_sitemap,
         tools::{
             best_in_season, best_right_now, compare_foods, convert_units as tools_convert,
             fish_season as tools_fish_season, fish_season_table, food_cost_calc, get_shared_recipe,
@@ -922,6 +923,11 @@ pub fn create_router(
         .route("/products-slugs", get(get_all_slugs))
         .with_state(public_nutrition_svc);
 
+    let sitemap_router = Router::new()
+        .route("/sitemap.xml", get(public_sitemap::sitemap_xml))
+        .route("/robots.txt", get(public_sitemap::robots_txt))
+        .with_state(pool_for_public.clone());
+
     // ── Public AI SEO Content route ───────────────────────────────────────────
     let seo_content_svc = Arc::new(PublicSeoContentService::new(
         llm_adapter,
@@ -1144,6 +1150,7 @@ pub fn create_router(
         .with_state(cms_service);
 
     let public_router = Router::new()
+        .merge(sitemap_router)
         .merge(public_ingredients_router)
         .merge(public_tools_router)
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
@@ -1225,6 +1232,8 @@ pub fn create_router(
         .route("/recipes",        get(web::recipes_list))
         .route("/recipes/:id",    get(web::recipe_detail))
         .route("/about",          get(web::about))
+        .route("/ingredient-catalog", get(web::ingredients))
+        .route("/ingredient-catalog/:slug", get(web::ingredient_detail))
         .route("/cookie",         get(web::cookie))
         .route("/privacy",        get(web::privacy))
         .route("/terms",          get(web::terms))
