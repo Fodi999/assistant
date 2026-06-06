@@ -1,6 +1,6 @@
 use crate::web::language;
 
-pub fn render(lang: language::Lang, slug: &str) -> String {
+pub fn render(lang: language::Lang, slug: &str, state: Option<&str>) -> String {
     let (
         eyebrow,
         title,
@@ -120,7 +120,7 @@ pub fn render(lang: language::Lang, slug: &str) -> String {
     };
 
     format!(
-        r#"<div class="container ingredient-detail-page" data-ingredient-detail-page data-slug="{slug}" data-loading="{loading}" data-error="{error}" data-empty="{no_data}">
+        r#"<div class="container ingredient-detail-page" data-ingredient-detail-page data-slug="{slug}" data-state="{state}" data-loading="{loading}" data-error="{error}" data-empty="{no_data}">
   <section class="page-header ingredient-detail-hero">
     <span class="section-eyebrow"><i class="bi bi-journal-medical"></i> {eyebrow}</span>
     <h1 data-ingredient-title>{title}</h1>
@@ -220,5 +220,6 @@ pub fn render(lang: language::Lang, slug: &str) -> String {
   </template>
 </div>"#,
         slug = slug,
+        state = state.unwrap_or(""),
     )
 }

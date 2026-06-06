@@ -1,7 +1,7 @@
 use axum::{
+    extract::State,
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    extract::State,
 };
 use sqlx::PgPool;
 use std::fmt::Write as _;
@@ -13,8 +13,9 @@ struct IngredientSitemapRow {
 }
 
 #[derive(sqlx::FromRow)]
-struct ArticleSitemapRow {
+struct IngredientStateSitemapRow {
     slug: String,
+    state: String,
     updated_at: sqlx::types::time::OffsetDateTime,
 }
 
@@ -88,7 +89,7 @@ fn xml_response(base: &str, entries: &[SitemapEntry]) -> Response {
 
 fn robots_response(base: &str) -> Response {
     let body = format!(
-        "User-agent: *\nAllow: /\nSitemap: {}/sitemap.xml\n",
+        "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /public/\nDisallow: /static/\nDisallow: /wasm/\nSitemap: {}/sitemap.xml\n",
         base.trim_end_matches('/')
     );
 
@@ -133,7 +134,15 @@ async fn load_entries(pool: &PgPool) -> Result<Vec<SitemapEntry>, StatusCode> {
             lastmod: None,
         },
         SitemapEntry {
-            path: "/articles".to_string(),
+            path: "/recipes/borsch".to_string(),
+            lastmod: None,
+        },
+        SitemapEntry {
+            path: "/recipes/tiramisu".to_string(),
+            lastmod: None,
+        },
+        SitemapEntry {
+            path: "/recipes/risotto".to_string(),
             lastmod: None,
         },
         SitemapEntry {
@@ -170,20 +179,24 @@ async fn load_entries(pool: &PgPool) -> Result<Vec<SitemapEntry>, StatusCode> {
         lastmod: Some(row.updated_at.to_string()),
     }));
 
-    let article_rows: Vec<ArticleSitemapRow> = sqlx::query_as(
+    let state_rows: Vec<IngredientStateSitemapRow> = sqlx::query_as(
         r#"
-        SELECT slug, updated_at
-        FROM knowledge_articles
-        WHERE published = true
-        ORDER BY updated_at DESC
+        SELECT ci.slug, states.state::text AS state, ci.updated_at
+        FROM ingredient_states states
+        JOIN catalog_ingredients ci ON ci.id = states.ingredient_id
+        WHERE ci.is_active = true
+          AND COALESCE(ci.is_published, false) = true
+          AND ci.slug IS NOT NULL
+          AND ci.slug != ''
+        ORDER BY ci.slug, states.state
         "#,
     )
     .fetch_all(pool)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    entries.extend(article_rows.into_iter().map(|row| SitemapEntry {
-        path: format!("/articles/{}", row.slug),
+    entries.extend(state_rows.into_iter().map(|row| SitemapEntry {
+        path: format!("/ingredient-catalog/{}/{}", row.slug, row.state),
         lastmod: Some(row.updated_at.to_string()),
     }));
 

@@ -78,9 +78,9 @@ pub fn render(lang: language::Lang, cat: Option<&str>) -> String {
             text.menu_order
         ));
     }
-        out.push_str("</section>");
-        out.push_str("</section>");
-        out.push_str(&format!(
+    out.push_str("</section>");
+    out.push_str("</section>");
+    out.push_str(&format!(
                 r#"<aside class="cart-panel reveal" id="cart" data-cart-panel>
     <div class="cart-panel-top">
         <div>
@@ -121,6 +121,6 @@ pub fn render(lang: language::Lang, cat: Option<&str>) -> String {
                 text.menu_cart_checkout,
                 text.menu_cart_hint,
         ));
-        out.push_str("</div>");
+    out.push_str("</div>");
     out
 }

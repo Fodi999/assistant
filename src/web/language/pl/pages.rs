@@ -548,7 +548,8 @@ pub const MENU_SUBTITLE: &str =
 pub const MENU_ALL: &str = "Całe menu";
 pub const MENU_ORDER: &str = "Do zamówienia";
 pub const MENU_CART_TITLE: &str = "Koszyk";
-pub const MENU_CART_EMPTY: &str = "Koszyk jest pusty. Dodaj dania z menu, a pokażą się tutaj od razu.";
+pub const MENU_CART_EMPTY: &str =
+    "Koszyk jest pusty. Dodaj dania z menu, a pokażą się tutaj od razu.";
 pub const MENU_CART_SUBTOTAL: &str = "Suma";
 pub const MENU_CART_TOTAL: &str = "Razem";
 pub const MENU_CART_CLEAR: &str = "Wyczyść";

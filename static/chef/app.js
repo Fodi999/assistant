@@ -468,6 +468,7 @@ function formatCalculatorValue(value, suffix = '') {
 
 if (ingredientDetailPage) {
   const slug = ingredientDetailPage.dataset.slug || '';
+  const requestedState = ingredientDetailPage.dataset.state || '';
   const loading = ingredientDetailPage.dataset.loading || '';
   const error = ingredientDetailPage.dataset.error || '';
   const empty = ingredientDetailPage.dataset.empty || '';
@@ -531,7 +532,10 @@ if (ingredientDetailPage) {
     const name = detailName(basic);
     const description = ingredient?.description || basic.description_en || '';
     const states = Array.isArray(statesPayload?.states) ? statesPayload.states : [];
-    const rawState = states.find(state => state.state === 'raw') || states[0] || null;
+    const activeState = states.find(state => state.state === requestedState)
+      || states.find(state => state.state === 'raw')
+      || states[0]
+      || null;
 
     const titleEl = ingredientDetailPage.querySelector('[data-ingredient-title]');
     const subtitleEl = ingredientDetailPage.querySelector('[data-ingredient-subtitle]');
@@ -600,24 +604,15 @@ if (ingredientDetailPage) {
 
     if (statesEl) {
       statesEl.innerHTML = states.length
-        ? states.map((state, index) => `<button class="ingredient-chip${rawState === state ? ' active' : ''}" type="button" data-state-index="${index}">${escapeHtml(String(state.state || 'raw'))}</button>`).join('')
+        ? states.map((state, index) => `<a class="ingredient-chip${activeState === state ? ' active' : ''}" href="/ingredient-catalog/${encodeURIComponent(slug)}/${encodeURIComponent(state.state || 'raw')}" data-state-index="${index}">${escapeHtml(String(state.state || 'raw'))}</a>`).join('')
         : '<span class="text-muted">—</span>';
-      statesEl.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-state-index]');
-        if (!button) return;
-        const index = Number(button.dataset.stateIndex);
-        const state = states[index];
-        statesEl.querySelectorAll('.ingredient-chip').forEach(chip => chip.classList.remove('active'));
-        button.classList.add('active');
-        renderStateCard(state);
-      });
     }
 
-    renderStateCard(rawState);
+    renderStateCard(activeState);
 
     const macrosEl = content.querySelector('[data-detail-macros]');
     if (macrosEl) {
-      const source = rawState || nutrition?.macros || ingredient?.nutrition || {};
+      const source = activeState || nutrition?.macros || ingredient?.nutrition || {};
       macrosEl.innerHTML = detailGrid([
         { label: t.calories, value: source.calories_per_100g || source.calories_kcal },
         { label: t.protein, value: source.protein_per_100g || source.protein_g },

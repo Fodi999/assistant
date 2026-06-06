@@ -54,7 +54,8 @@ pub const MENU_SUBTITLE: &str =
 pub const MENU_ALL: &str = "Всё меню";
 pub const MENU_ORDER: &str = "В заказ";
 pub const MENU_CART_TITLE: &str = "Корзина";
-pub const MENU_CART_EMPTY: &str = "Корзина пуста. Добавьте блюда из меню, и они сразу появятся здесь.";
+pub const MENU_CART_EMPTY: &str =
+    "Корзина пуста. Добавьте блюда из меню, и они сразу появятся здесь.";
 pub const MENU_CART_SUBTOTAL: &str = "Сумма";
 pub const MENU_CART_TOTAL: &str = "Итого";
 pub const MENU_CART_CLEAR: &str = "Очистить";

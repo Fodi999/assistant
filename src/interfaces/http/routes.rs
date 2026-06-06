@@ -1150,7 +1150,6 @@ pub fn create_router(
         .with_state(cms_service);
 
     let public_router = Router::new()
-        .merge(sitemap_router)
         .merge(public_ingredients_router)
         .merge(public_tools_router)
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
@@ -1234,9 +1233,11 @@ pub fn create_router(
         .route("/about",          get(web::about))
         .route("/ingredient-catalog", get(web::ingredients))
         .route("/ingredient-catalog/:slug", get(web::ingredient_detail))
+        .route("/ingredient-catalog/:slug/:state", get(web::ingredient_state_detail))
         .route("/cookie",         get(web::cookie))
         .route("/privacy",        get(web::privacy))
         .route("/terms",          get(web::terms))
+        .merge(sitemap_router)
         // ── style.css ──
         .merge(health_route)
         .merge(chef_reference_routes)

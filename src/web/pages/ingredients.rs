@@ -1,7 +1,7 @@
 use crate::web::language;
 
 pub fn render(lang: language::Lang) -> String {
-  let (eyebrow, title, subtitle, note, loading, empty, error, count_label, back, search, all) =
+    let (eyebrow, title, subtitle, note, loading, empty, error, count_label, back, search, all) =
         match lang {
             language::Lang::Pl => (
                 "Katalog składników",

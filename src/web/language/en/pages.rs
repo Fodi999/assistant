@@ -101,7 +101,8 @@ pub const MENU_SUBTITLE: &str =
 pub const MENU_ALL: &str = "Full menu";
 pub const MENU_ORDER: &str = "Add to order";
 pub const MENU_CART_TITLE: &str = "Cart";
-pub const MENU_CART_EMPTY: &str = "Your cart is empty. Add dishes from the menu and they will appear here instantly.";
+pub const MENU_CART_EMPTY: &str =
+    "Your cart is empty. Add dishes from the menu and they will appear here instantly.";
 pub const MENU_CART_SUBTOTAL: &str = "Subtotal";
 pub const MENU_CART_TOTAL: &str = "Total";
 pub const MENU_CART_CLEAR: &str = "Clear";

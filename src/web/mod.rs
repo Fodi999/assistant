@@ -25,6 +25,7 @@ const CSS_ABOUT: &str = include_str!("../../static/chef/components/about.css");
 const CSS_MISC: &str = include_str!("../../static/chef/components/misc.css");
 
 const JS: &str = include_str!("../../static/chef/app.js");
+const SITE_URL: &str = "https://dima-fomin.pl";
 
 /// Bundle CSS files in the required order.
 fn bundle_css() -> String {
@@ -49,10 +50,47 @@ fn bundle_css() -> String {
     .join("\n")
 }
 
-pub fn shell(lang: language::Lang, title: &str, body: &str) -> String {
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+pub struct Seo<'a> {
+    pub title: &'a str,
+    pub description: &'a str,
+    pub path: &'a str,
+    pub index: bool,
+}
+
+pub fn shell(lang: language::Lang, seo: Seo<'_>, body: &str) -> String {
     let css = bundle_css();
     let pack = lang.pack();
     let t = pack.shell;
+    let title = escape_html(seo.title);
+    let description = escape_html(seo.description);
+    let path = if seo.path.starts_with('/') {
+        seo.path.to_string()
+    } else {
+        format!("/{}", seo.path)
+    };
+    let canonical = if pack.code == "pl" {
+        escape_html(&format!("{SITE_URL}{path}"))
+    } else {
+        escape_html(&format!("{SITE_URL}{path}?lang={}", pack.code))
+    };
+    let alternate_pl = escape_html(&format!("{SITE_URL}{path}"));
+    let alternate_ru = escape_html(&format!("{SITE_URL}{path}?lang=ru"));
+    let alternate_en = escape_html(&format!("{SITE_URL}{path}?lang=en"));
+    let alternate_default = escape_html(&format!("{SITE_URL}{path}"));
+    let robots = if seo.index {
+        "index, follow, max-image-preview:large"
+    } else {
+        "noindex, follow"
+    };
     let language_options: String = language::LANG_OPTIONS
         .iter()
         .map(|(code, label)| {
@@ -69,9 +107,25 @@ pub fn shell(lang: language::Lang, title: &str, body: &str) -> String {
         r##"<!DOCTYPE html>
 <html lang="{html_lang}">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>{title} &middot; Dima Fomin Chef</title>
+	  <meta charset="UTF-8"/>
+	  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+	  <title>{title} &middot; Dima Fomin Chef</title>
+	  <meta name="description" content="{description}"/>
+	  <meta name="robots" content="{robots}"/>
+	  <link rel="canonical" href="{canonical}"/>
+	  <link rel="alternate" hreflang="pl" href="{alternate_pl}"/>
+	  <link rel="alternate" hreflang="ru" href="{alternate_ru}"/>
+	  <link rel="alternate" hreflang="en" href="{alternate_en}"/>
+	  <link rel="alternate" hreflang="x-default" href="{alternate_default}"/>
+	  <meta property="og:type" content="website"/>
+	  <meta property="og:site_name" content="Dima Fomin Chef"/>
+	  <meta property="og:title" content="{title} · Dima Fomin Chef"/>
+	  <meta property="og:description" content="{description}"/>
+	  <meta property="og:url" content="{canonical}"/>
+	  <meta property="og:locale" content="{html_lang}"/>
+	  <meta name="twitter:card" content="summary"/>
+	  <meta name="twitter:title" content="{title} · Dima Fomin Chef"/>
+	  <meta name="twitter:description" content="{description}"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Onest:wght@400;500;600;700;800&display=swap"/>
@@ -208,6 +262,13 @@ window.CHEF_I18N = {{
 </body>
 </html>"##,
         title = title,
+        description = description,
+        robots = robots,
+        canonical = canonical,
+        alternate_pl = alternate_pl,
+        alternate_ru = alternate_ru,
+        alternate_en = alternate_en,
+        alternate_default = alternate_default,
         body = body,
         css = css,
         JS = JS,
