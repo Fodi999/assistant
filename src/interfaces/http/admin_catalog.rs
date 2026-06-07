@@ -18,6 +18,26 @@ pub struct ImageUrlResponse {
     pub image_url: String,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct GenerateDraftImageRequest {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// POST /api/admin/catalog/ai/generate-product-image
+pub async fn ai_generate_product_image(
+    _claims: AdminClaims,
+    State(service): State<AdminCatalogService>,
+    Json(req): Json<GenerateDraftImageRequest>,
+) -> Result<Json<ImageUrlResponse>, AppError> {
+    let image_url = service
+        .generate_product_draft_image(&req.name, req.description.as_deref(), req.force)
+        .await?;
+    Ok(Json(ImageUrlResponse { image_url }))
+}
+
 /// List all products
 pub async fn list_products(
     _claims: AdminClaims,

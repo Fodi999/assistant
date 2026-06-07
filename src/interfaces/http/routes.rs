@@ -237,6 +237,10 @@ pub fn create_router(
             "/ai/create-product-draft",
             post(admin_catalog::ai_create_product_draft),
         )
+        .route(
+            "/ai/generate-product-image",
+            post(admin_catalog::ai_generate_product_image),
+        )
         // AI Suggest Products — AI suggests 5 products to add
         .route(
             "/ai/suggest-products",

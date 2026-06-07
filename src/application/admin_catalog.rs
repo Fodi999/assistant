@@ -4,6 +4,7 @@ use crate::infrastructure::persistence::{
 use crate::infrastructure::R2Client;
 use crate::infrastructure::{DictionaryService, LlmAdapter};
 use crate::shared::{AppError, AppResult, UnitType};
+use base64::Engine;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -17,7 +18,9 @@ pub struct AdminCatalogService {
     pub(crate) r2_client: R2Client,
     pub(crate) dictionary: DictionaryService,
     pub(crate) llm_adapter: Arc<LlmAdapter>,
+    #[allow(dead_code)]
     pub(crate) category_repo: CatalogCategoryRepository,
+    #[allow(dead_code)]
     pub(crate) ingredient_repo: CatalogIngredientRepository,
     pub(crate) ai_cache: AiCacheRepository,
 }
@@ -47,10 +50,31 @@ pub struct CreateProductRequest {
     pub unit: Option<UnitType>,
 
     pub description: Option<String>,
+    pub image_url: Option<String>,
 
     /// Product type from AI draft (e.g. "seafood", "meat", "dairy")
     /// Used by enforce_category() to validate category ↔ product_type consistency
     pub product_type: Option<String>,
+
+    // Rich fields from a reviewed AI draft. The backend still validates the
+    // product identity/category before persisting these optional enrichments.
+    pub description_en: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_uk: Option<String>,
+    pub calories_per_100g: Option<f64>,
+    pub protein_per_100g: Option<f64>,
+    pub fat_per_100g: Option<f64>,
+    pub carbs_per_100g: Option<f64>,
+    pub fiber_per_100g: Option<f64>,
+    pub sugar_per_100g: Option<f64>,
+    pub density_g_per_ml: Option<f64>,
+    pub typical_portion_g: Option<f64>,
+    pub shelf_life_days: Option<i32>,
+    pub seasons: Option<Vec<String>>,
+    pub seo_title: Option<String>,
+    pub seo_description: Option<String>,
+    pub seo_h1: Option<String>,
 
     /// Если true, бекенд автоматически переведёт на все языки и классифицирует
     /// Использует dictionary cache, затем Groq если нужно
@@ -552,14 +576,25 @@ impl AdminCatalogService {
         // 💾 ШАГ 5: СОХРАНЕНИЕ В БД
         // ==========================================
         let id = Uuid::new_v4();
+        let calories_per_100g = req.calories_per_100g.map(|value| value.round() as i32);
 
         let product = sqlx::query_as::<_, ProductResponse>(
             r#"
             INSERT INTO catalog_ingredients (
                 id, name_en, name_pl, name_uk, name_ru,
-                category_id, default_unit, description, product_type
+                category_id, default_unit, description, product_type, image_url,
+                description_en, description_pl, description_ru, description_uk,
+                calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g,
+                fiber_per_100g, sugar_per_100g, density_g_per_ml,
+                typical_portion_g, shelf_life_days, seasons,
+                seo_title, seo_description, seo_h1
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                $10, $11, $12, $13, $14, $15, $16, $17,
+                $18, $19, $20, $21, $22, $23, $24::text[]::season_type[],
+                $25, $26, $27
+            )
             RETURNING
                 id, slug, name_en, name_pl, name_uk, name_ru,
                 category_id, default_unit as unit, description, image_url,
@@ -587,6 +622,24 @@ impl AdminCatalogService {
         .bind(&final_unit)
         .bind(&req.description)
         .bind(&final_product_type)
+        .bind(&req.image_url)
+        .bind(&req.description_en)
+        .bind(&req.description_pl)
+        .bind(&req.description_ru)
+        .bind(&req.description_uk)
+        .bind(calories_per_100g)
+        .bind(req.protein_per_100g)
+        .bind(req.fat_per_100g)
+        .bind(req.carbs_per_100g)
+        .bind(req.fiber_per_100g)
+        .bind(req.sugar_per_100g)
+        .bind(req.density_g_per_ml)
+        .bind(req.typical_portion_g)
+        .bind(req.shelf_life_days)
+        .bind(&req.seasons)
+        .bind(&req.seo_title)
+        .bind(&req.seo_description)
+        .bind(&req.seo_h1)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -649,6 +702,48 @@ impl AdminCatalogService {
         // DB = single source of truth. No dual-write.
 
         Ok(product)
+    }
+
+    /// Generate a product draft image with Gemini Image and persist it to R2.
+    /// The returned URL can be reviewed and then saved with CreateProductRequest.
+    pub async fn generate_product_draft_image(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        force: bool,
+    ) -> AppResult<String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(AppError::validation("Product name cannot be empty"));
+        }
+
+        let mut cache_slug = format!(
+            "admin-product-{}",
+            deunicode::deunicode(name)
+                .to_lowercase()
+                .chars()
+                .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+                .collect::<String>()
+        );
+        if force {
+            cache_slug.push_str(&format!("-{}", Uuid::new_v4()));
+        }
+        let ingredients = description
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| vec![value.trim().to_string()])
+            .unwrap_or_default();
+        let base64 = self
+            .llm_adapter
+            .generate_dish_image(&cache_slug, name, &ingredients)
+            .await?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(base64)
+            .map_err(|e| AppError::internal(format!("Failed to decode Gemini image: {}", e)))?;
+        let key = format!("assets/catalog/generated/{}.png", Uuid::new_v4());
+
+        self.r2_client
+            .upload_image(&key, Bytes::from(bytes), "image/png")
+            .await
     }
 
     /// Get product by ID
@@ -913,7 +1008,7 @@ impl AdminCatalogService {
             .map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default())
             .or(product.typical_portion_g);
         let subst_group = req.substitution_group.or(product.substitution_group);
-        let old_product_type = product.product_type.clone();
+        let _old_product_type = product.product_type.clone();
         let prod_type = {
             let raw = req.product_type.unwrap_or(product.product_type);
             // 🔒 enforce_category on update: reject "other", normalize product_type
