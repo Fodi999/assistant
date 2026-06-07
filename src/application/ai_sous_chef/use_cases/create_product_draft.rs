@@ -143,6 +143,10 @@ pub struct ProductDraft {
     pub nutrition: DraftNutrition,
     pub seo: DraftSeo,
     pub seasons: DraftField<Vec<String>>,
+    /// Rich nutrition/culinary profile. Keys match the existing admin nutrition
+    /// update endpoints so the reviewed draft can be persisted without remapping.
+    #[serde(default)]
+    pub extended: serde_json::Value,
     pub confidence: f64,
     pub needs_review: bool,
     pub quality_warnings: Vec<QualityWarning>,
@@ -196,7 +200,7 @@ impl AdminCatalogService {
         }
 
         // ── Cache check ──
-        let cache_key = format!("uc:draft:v2:{}", hash_input(&input));
+        let cache_key = format!("uc:draft:v3:{}", hash_input(&input));
         if let Ok(Some(cached_json)) = self.ai_cache.get(&cache_key).await {
             tracing::info!("📦 Draft cache hit for: {}", &input[..input.len().min(50)]);
             if let Ok(mut draft) = serde_json::from_value::<ProductDraft>(cached_json) {
@@ -222,7 +226,7 @@ impl AdminCatalogService {
         let prompt = build_slim_prompt(&resolved.name_en, &resolved.product_type);
         let raw = self
             .llm_adapter
-            .generate_with_quality(&prompt, 5000, AiQuality::Balanced)
+            .generate_with_quality(&prompt, 12000, AiQuality::Balanced)
             .await?;
         tracing::debug!(
             "🤖 Raw AI draft response ({} chars): {}",
@@ -517,11 +521,30 @@ Return ONLY valid JSON:
     "seo_title": "<50-60 chars SEO title>",
     "seo_description": "<120-160 chars meta description>",
     "seo_h1": "<H1 heading>"
+  }},
+  "seasons": ["Spring|Summer|Autumn|Winter|AllYear"],
+  "extended": {{
+    "macros": {{"calories_kcal":0,"protein_g":0,"fat_g":0,"carbs_g":0,"fiber_g":0,"sugar_g":0,"starch_g":0,"water_g":0,"alcohol_g":0}},
+    "vitamins": {{"vitamin_a":0,"vitamin_c":0,"vitamin_d":0,"vitamin_e":0,"vitamin_k":0,"vitamin_b1":0,"vitamin_b2":0,"vitamin_b3":0,"vitamin_b5":0,"vitamin_b6":0,"vitamin_b7":0,"vitamin_b9":0,"vitamin_b12":0}},
+    "minerals": {{"calcium":0,"iron":0,"magnesium":0,"phosphorus":0,"potassium":0,"sodium":0,"zinc":0,"copper":0,"manganese":0,"selenium":0}},
+    "fatty_acids": {{"saturated_fat":0,"monounsaturated_fat":0,"polyunsaturated_fat":0,"omega3":0,"omega6":0,"epa":0,"dha":0}},
+    "diet_flags": {{"vegan":false,"vegetarian":false,"keto":false,"paleo":false,"gluten_free":false,"mediterranean":false,"low_carb":false}},
+    "allergens": {{"milk":false,"fish":false,"shellfish":false,"nuts":false,"soy":false,"gluten":false,"eggs":false,"peanuts":false,"sesame":false,"celery":false,"mustard":false,"sulfites":false,"lupin":false,"molluscs":false}},
+    "food_properties": {{"glycemic_index":null,"glycemic_load":null,"ph":null,"smoke_point":null,"water_activity":null}},
+    "culinary": {{"sweetness":0,"acidity":0,"bitterness":0,"umami":0,"aroma":0,"texture":"<English texture description>"}},
+    "health_profile": {{"bioactive_compounds_en":[],"bioactive_compounds_ru":[],"bioactive_compounds_pl":[],"bioactive_compounds_uk":[],"health_effects_en":[],"health_effects_ru":[],"health_effects_pl":[],"health_effects_uk":[],"contraindications_en":[],"contraindications_ru":[],"contraindications_pl":[],"contraindications_uk":[],"food_role":"<role>","orac_score":null,"absorption_notes_en":"","absorption_notes_ru":"","absorption_notes_pl":"","absorption_notes_uk":""}},
+    "sugar_profile": {{"glucose":0,"fructose":0,"sucrose":0,"lactose":0,"maltose":0,"total_sugars":0,"added_sugars":0,"sweetness_perception":0,"sugar_alcohols":0}},
+    "processing_effects": {{"vitamin_retention_pct":null,"protein_denature_temp":null,"mineral_leaching_risk":"low|medium|high","best_cooking_method_en":"","best_cooking_method_ru":"","best_cooking_method_pl":"","best_cooking_method_uk":"","maillard_temp":null,"processing_notes_en":"","processing_notes_ru":"","processing_notes_pl":"","processing_notes_uk":""}},
+    "culinary_behavior": {{"behaviors":[{{"key":"softens_quickly","type":"texture","effect":"softening","trigger":"heat","intensity":0.8,"temp_threshold":70,"targets":[],"polarity":"+","domain":"physics","pairing_score":null}}]}}
   }}
 }}
 
 Rules:
 - All nutrition per 100g RAW product (USDA FoodData Central reference)
+- Vitamin A/D/K/B7/B9/B12 and selenium use µg per 100g; other vitamins and minerals use mg
+- Use null when a numeric value cannot be estimated reliably
+- Provide all four language variants in health_profile and processing_effects
+- culinary_behavior must contain 3-8 useful, factual behaviors; targets must be ingredient slugs
 - For fish/meat/dairy/eggs: fiber = 0, carbs near 0
 - Descriptions must be natural (not machine-translated)
 - Return ONLY JSON, no extra text"#,
@@ -739,6 +762,10 @@ fn map_to_draft(
             }),
             conf,
         ),
+        extended: ai
+            .get("extended")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
         confidence,
         needs_review,
         quality_warnings,
