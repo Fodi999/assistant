@@ -1035,18 +1035,13 @@ Content rules:
                 .map(String::as_str)
                 .unwrap_or(defaults[index])
         };
-        let (a, b, c, d) = tokio::try_join!(
-            self.llm_adapter
-                .generate_blog_article_image(title, prompt_at(0), 0),
-            self.llm_adapter
-                .generate_blog_article_image(title, prompt_at(1), 1),
-            self.llm_adapter
-                .generate_blog_article_image(title, prompt_at(2), 2),
-            self.llm_adapter
-                .generate_blog_article_image(title, prompt_at(3), 3),
-        )?;
         let mut images = Vec::with_capacity(4);
-        for base64 in [a, b, c, d] {
+        // Process one image at a time to avoid memory spikes on small cloud instances.
+        for index in 0..4 {
+            let base64 = self
+                .llm_adapter
+                .generate_blog_article_image(title, prompt_at(index), index)
+                .await?;
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(base64)
                 .map_err(|e| {
