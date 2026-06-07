@@ -1107,7 +1107,7 @@ pub fn create_router(
         )
         .route(
             "/articles/ai/images",
-            post(admin_cms::generate_ai_article_images),
+            post(admin_cms::generate_ai_article_image),
         )
         .route(
             "/articles",
@@ -1384,7 +1384,13 @@ async fn fix_static_mime(
 
 fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
     // Always-allowed production origins (never depend on env alone)
-    const REQUIRED_ORIGINS: &[&str] = &["https://dima-fomin.pl", "https://www.dima-fomin.pl"];
+    const REQUIRED_ORIGINS: &[&str] = &[
+        "https://dima-fomin.pl",
+        "https://www.dima-fomin.pl",
+        "http://localhost:3001",
+        "tauri://localhost",
+        "http://tauri.localhost",
+    ];
 
     // Filter out wildcards — never allow permissive CORS
     let mut safe_origins: Vec<String> = allowed_origins.into_iter().filter(|o| o != "*").collect();
@@ -1404,6 +1410,8 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
         let default_origins: Vec<axum::http::HeaderValue> = [
             "http://localhost:3000",
             "http://localhost:3001",
+            "tauri://localhost",
+            "http://tauri.localhost",
             "https://dima-fomin.pl",
             "https://www.dima-fomin.pl",
         ]

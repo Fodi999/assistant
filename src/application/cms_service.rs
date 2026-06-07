@@ -451,13 +451,14 @@ pub struct AiArticleDraft {
 #[derive(Debug, Deserialize)]
 pub struct GenerateAiArticleImagesRequest {
     pub title: String,
+    pub prompt: Option<String>,
     #[serde(default)]
-    pub image_prompts: Vec<String>,
+    pub index: usize,
 }
 
 #[derive(Debug, Serialize)]
-pub struct AiArticleImagesResponse {
-    pub images: Vec<String>,
+pub struct AiArticleImageResponse {
+    pub image_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1014,11 +1015,12 @@ Content rules:
             .map_err(|e| AppError::internal(format!("Invalid AI article draft: {}", e)))
     }
 
-    pub async fn generate_ai_article_images(
+    pub async fn generate_ai_article_image(
         &self,
         title: &str,
-        prompts: &[String],
-    ) -> AppResult<AiArticleImagesResponse> {
+        prompt: Option<&str>,
+        index: usize,
+    ) -> AppResult<AiArticleImageResponse> {
         let title = title.trim();
         if title.is_empty() {
             return Err(AppError::validation("Article title cannot be empty"));
@@ -1029,32 +1031,23 @@ Content rules:
             "close-up ingredient or technique detail",
             "finished culinary result",
         ];
-        let prompt_at = |index: usize| {
-            prompts
-                .get(index)
-                .map(String::as_str)
-                .unwrap_or(defaults[index])
-        };
-        let mut images = Vec::with_capacity(4);
-        // Process one image at a time to avoid memory spikes on small cloud instances.
-        for index in 0..4 {
-            let base64 = self
-                .llm_adapter
-                .generate_blog_article_image(title, prompt_at(index), index)
-                .await?;
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(base64)
-                .map_err(|e| {
-                    AppError::internal(format!("Failed to decode article image: {}", e))
-                })?;
-            let key = format!("assets/cms/articles/generated/{}.png", Uuid::new_v4());
-            images.push(
-                self.r2_client
-                    .upload_image(&key, Bytes::from(bytes), "image/png")
-                    .await?,
-            );
-        }
-        Ok(AiArticleImagesResponse { images })
+        let index = index.min(3);
+        let prompt = prompt
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(defaults[index]);
+        let base64 = self
+            .llm_adapter
+            .generate_blog_article_image(title, prompt, index)
+            .await?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(base64)
+            .map_err(|e| AppError::internal(format!("Failed to decode article image: {}", e)))?;
+        let key = format!("assets/cms/articles/generated/{}.png", Uuid::new_v4());
+        let image_url = self
+            .r2_client
+            .upload_image(&key, Bytes::from(bytes), "image/png")
+            .await?;
+        Ok(AiArticleImageResponse { image_url })
     }
 
     /// Admin: list all articles (including drafts)

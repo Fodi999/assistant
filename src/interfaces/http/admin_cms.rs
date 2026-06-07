@@ -188,15 +188,15 @@ pub async fn create_ai_article_draft(
     Ok(Json(serde_json::to_value(draft).unwrap()))
 }
 
-pub async fn generate_ai_article_images(
+pub async fn generate_ai_article_image(
     _claims: AdminClaims,
     State(svc): State<CmsService>,
     Json(req): Json<GenerateAiArticleImagesRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let images = svc
-        .generate_ai_article_images(&req.title, &req.image_prompts)
+    let image = svc
+        .generate_ai_article_image(&req.title, req.prompt.as_deref(), req.index)
         .await?;
-    Ok(Json(serde_json::to_value(images).unwrap()))
+    Ok(Json(serde_json::to_value(image).unwrap()))
 }
 
 pub async fn list_articles(
