@@ -331,6 +331,44 @@ Return one consistent square catalog image. The ingredient must be immediately r
             .await
     }
 
+    /// Generate one editorial image variant for a CMS article.
+    pub async fn generate_blog_article_image(
+        &self,
+        article_title: &str,
+        scene: &str,
+        variant: usize,
+    ) -> Result<String, AppError> {
+        let role = match variant {
+            0 => "wide editorial hero cover",
+            1 => "professional step-by-step process scene",
+            2 => "tight macro detail",
+            _ => "finished result in an elegant editorial composition",
+        };
+        let prompt = format!(
+            r#"Create a premium culinary magazine photograph for the article "{article_title}".
+Image role: {role}.
+Scene direction: {scene}.
+
+STYLE STANDARD:
+- photorealistic professional editorial food photography
+- clean modern 2026 culinary magazine aesthetic
+- soft natural daylight, realistic color, controlled highlights
+- intentional composition with clear subject and generous visual breathing room
+- landscape 16:9 composition, suitable for a blog article
+- visually consistent with a four-image editorial story
+
+STRICTLY EXCLUDE:
+- any text, letters, captions, logos, watermarks or UI
+- distorted food, duplicate tools, impossible hands, clutter, stock-photo look
+- unrelated ingredients or decorative elements that do not support the topic"#,
+            article_title = article_title,
+            role = role,
+            scene = scene,
+        );
+        self.generate_image_from_prompt(&prompt, article_title, "blog article")
+            .await
+    }
+
     async fn generate_image_from_prompt(
         &self,
         prompt: &str,

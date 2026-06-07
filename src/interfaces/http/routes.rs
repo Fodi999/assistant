@@ -428,7 +428,7 @@ pub fn create_router(
     let pool_for_cms = pool.clone();
     let pool_for_prefs = pool.clone(); // User preferences
     let pool_for_billing = pool.clone(); // 🆕 Stripe billing
-    let cms_service = CmsService::new(pool_for_cms, r2_client.clone());
+    let cms_service = CmsService::new(pool_for_cms, r2_client.clone(), Arc::clone(&llm_adapter));
 
     // 🆕 Stripe service — optional. If env vars are missing the billing
     // endpoints simply aren't mounted, the rest of the API stays online.
@@ -1102,6 +1102,14 @@ pub fn create_router(
         )
         // Knowledge Articles
         .route(
+            "/articles/ai/draft",
+            post(admin_cms::create_ai_article_draft),
+        )
+        .route(
+            "/articles/ai/images",
+            post(admin_cms::generate_ai_article_images),
+        )
+        .route(
             "/articles",
             get(admin_cms::list_articles).post(admin_cms::create_article),
         )
@@ -1217,9 +1225,14 @@ pub fn create_router(
     #[allow(dead_code)]
     async fn editor_handler() -> Response {
         Response::builder()
-            .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
+            .header(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            )
             .header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
-            .body(axum::body::Body::from("<h1>CAD Editor</h1><p>geometry_engine is a separate service.</p>"))
+            .body(axum::body::Body::from(
+                "<h1>CAD Editor</h1><p>geometry_engine is a separate service.</p>",
+            ))
             .unwrap()
     }
 
@@ -1229,21 +1242,24 @@ pub fn create_router(
     // Combine all routes
     let mut router = Router::new()
         // ── Chef-site pages ──
-        .route("/",               get(web::home))
-        .route("/menu",           get(web::menu))
-        .route("/delivery",       get(web::delivery))
-        .route("/booking",        get(web::booking))
-        .route("/recipes",        get(web::recipes_list))
-        .route("/recipes/:id",    get(web::recipe_detail))
-        .route("/about",          get(web::about))
-        .route("/blog",           get(web::blog_list))
-        .route("/blog/:slug",     get(web::blog_detail))
+        .route("/", get(web::home))
+        .route("/menu", get(web::menu))
+        .route("/delivery", get(web::delivery))
+        .route("/booking", get(web::booking))
+        .route("/recipes", get(web::recipes_list))
+        .route("/recipes/:id", get(web::recipe_detail))
+        .route("/about", get(web::about))
+        .route("/blog", get(web::blog_list))
+        .route("/blog/:slug", get(web::blog_detail))
         .route("/ingredient-catalog", get(web::ingredients))
         .route("/ingredient-catalog/:slug", get(web::ingredient_detail))
-        .route("/ingredient-catalog/:slug/:state", get(web::ingredient_state_detail))
-        .route("/cookie",         get(web::cookie))
-        .route("/privacy",        get(web::privacy))
-        .route("/terms",          get(web::terms))
+        .route(
+            "/ingredient-catalog/:slug/:state",
+            get(web::ingredient_state_detail),
+        )
+        .route("/cookie", get(web::cookie))
+        .route("/privacy", get(web::privacy))
+        .route("/terms", get(web::terms))
         .merge(sitemap_router)
         // ── style.css ──
         .merge(health_route)
@@ -1252,18 +1268,27 @@ pub fn create_router(
         // Files written by `LocalStorageAdapter("./uploads", "/static")`
         // are served back at `/static/<key>`.
         // ── style.css chef-сайта ──
-        .route("/style.css", get(|| async {
-            (
-                [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
-                include_str!("../../../static/chef/style.css"),
-            )
-        }))
-        .route("/app.js", get(|| async {
-            (
-                [(axum::http::header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
-                include_str!("../../../static/chef/app.js"),
-            )
-        }))
+        .route(
+            "/style.css",
+            get(|| async {
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
+                    include_str!("../../../static/chef/style.css"),
+                )
+            }),
+        )
+        .route(
+            "/app.js",
+            get(|| async {
+                (
+                    [(
+                        axum::http::header::CONTENT_TYPE,
+                        "application/javascript; charset=utf-8",
+                    )],
+                    include_str!("../../../static/chef/app.js"),
+                )
+            }),
+        )
         // The `fix_static_mime` middleware patches Content-Type for .obj / .mtl
         // because mime_guess doesn't know those extensions.
         .nest_service(

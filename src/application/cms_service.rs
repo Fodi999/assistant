@@ -1,6 +1,9 @@
 use crate::shared::{AppError, AppResult};
+use base64::Engine;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::sync::Arc;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -16,6 +19,21 @@ pub fn slugify(text: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
+}
+
+fn extract_json_object(raw: &str) -> AppResult<serde_json::Value> {
+    let trimmed = raw.trim();
+    if let Ok(value) = serde_json::from_str(trimmed) {
+        return Ok(value);
+    }
+    let start = trimmed
+        .find('{')
+        .ok_or_else(|| AppError::internal("AI response does not contain JSON"))?;
+    let end = trimmed
+        .rfind('}')
+        .ok_or_else(|| AppError::internal("AI response contains incomplete JSON"))?;
+    serde_json::from_str(&trimmed[start..=end])
+        .map_err(|e| AppError::internal(format!("Failed to parse AI article JSON: {}", e)))
 }
 
 // ── Shared structs ────────────────────────────────────────────────────────────
@@ -409,6 +427,40 @@ pub struct CreateArticleRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CreateAiArticleDraftRequest {
+    pub topic: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AiArticleDraft {
+    pub slug: String,
+    pub category: String,
+    pub title_en: String,
+    pub title_pl: String,
+    pub title_ru: String,
+    pub title_uk: String,
+    pub content_en: String,
+    pub content_pl: String,
+    pub content_ru: String,
+    pub content_uk: String,
+    pub seo_title: String,
+    pub seo_description: String,
+    pub image_prompts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GenerateAiArticleImagesRequest {
+    pub title: String,
+    #[serde(default)]
+    pub image_prompts: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AiArticleImagesResponse {
+    pub images: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateArticleRequest {
     pub slug: Option<String>,
     pub category: Option<String>,
@@ -517,11 +569,20 @@ impl From<ArticleCategoryRow> for ArticleCategoryPublic {
 pub struct CmsService {
     pool: PgPool,
     r2_client: crate::infrastructure::R2Client,
+    llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>,
 }
 
 impl CmsService {
-    pub fn new(pool: PgPool, r2_client: crate::infrastructure::R2Client) -> Self {
-        Self { pool, r2_client }
+    pub fn new(
+        pool: PgPool,
+        r2_client: crate::infrastructure::R2Client,
+        llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>,
+    ) -> Self {
+        Self {
+            pool,
+            r2_client,
+            llm_adapter,
+        }
     }
 
     // ── ABOUT PAGE ────────────────────────────────────────────────────────────
@@ -913,6 +974,93 @@ impl CmsService {
     }
 
     // ── KNOWLEDGE ARTICLES ────────────────────────────────────────────────────
+
+    pub async fn create_ai_article_draft(&self, topic: &str) -> AppResult<AiArticleDraft> {
+        let topic = topic.trim();
+        if topic.is_empty() {
+            return Err(AppError::validation("Article topic cannot be empty"));
+        }
+        let prompt = format!(
+            r#"You are a senior chef, food technologist and professional culinary editor.
+Create a practical expert article about: "{topic}".
+
+Return ONLY valid JSON with this exact shape:
+{{
+  "slug": "english-url-slug",
+  "category": "Ingredient|Technique|Recipe development|Restaurant management",
+  "title_en": "...", "title_ru": "...", "title_pl": "...", "title_uk": "...",
+  "content_en": "...", "content_ru": "...", "content_pl": "...", "content_uk": "...",
+  "seo_title": "...", "seo_description": "...",
+  "image_prompts": ["cover scene", "process scene", "detail scene", "final scene"]
+}}
+
+Content rules:
+- Each language is a complete natural article, not a summary and not machine-sounding
+- 900-1400 words per language, Markdown format
+- Start with a useful introduction, then 4-6 sections with ## headings, practical checklist and conclusion
+- Give factual, actionable culinary guidance; never invent scientific claims
+- Do not include the article title as the first Markdown heading
+- SEO description is 120-160 characters in English
+- image_prompts are concise English photography directions matching the article, no text or logos
+- Return exactly four image prompts and ONLY JSON"#,
+            topic = topic,
+        );
+        let raw = self
+            .llm_adapter
+            .groq_raw_request_with_model(&prompt, 24000, "gemini-3.1-pro-preview")
+            .await?;
+        let json = extract_json_object(&raw)?;
+        serde_json::from_value(json)
+            .map_err(|e| AppError::internal(format!("Invalid AI article draft: {}", e)))
+    }
+
+    pub async fn generate_ai_article_images(
+        &self,
+        title: &str,
+        prompts: &[String],
+    ) -> AppResult<AiArticleImagesResponse> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(AppError::validation("Article title cannot be empty"));
+        }
+        let defaults = [
+            "editorial hero cover",
+            "professional preparation process",
+            "close-up ingredient or technique detail",
+            "finished culinary result",
+        ];
+        let prompt_at = |index: usize| {
+            prompts
+                .get(index)
+                .map(String::as_str)
+                .unwrap_or(defaults[index])
+        };
+        let (a, b, c, d) = tokio::try_join!(
+            self.llm_adapter
+                .generate_blog_article_image(title, prompt_at(0), 0),
+            self.llm_adapter
+                .generate_blog_article_image(title, prompt_at(1), 1),
+            self.llm_adapter
+                .generate_blog_article_image(title, prompt_at(2), 2),
+            self.llm_adapter
+                .generate_blog_article_image(title, prompt_at(3), 3),
+        )?;
+        let mut images = Vec::with_capacity(4);
+        for base64 in [a, b, c, d] {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(base64)
+                .map_err(|e| {
+                    AppError::internal(format!("Failed to decode article image: {}", e))
+                })?;
+            let key = format!("assets/cms/articles/generated/{}.png", Uuid::new_v4());
+            images.push(
+                self.r2_client
+                    .upload_image(&key, Bytes::from(bytes), "image/png")
+                    .await?,
+            );
+        }
+        Ok(AiArticleImagesResponse { images })
+    }
 
     /// Admin: list all articles (including drafts)
     pub async fn list_articles_admin(&self, category: Option<&str>) -> AppResult<Vec<ArticleRow>> {

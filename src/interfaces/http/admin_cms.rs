@@ -1,7 +1,8 @@
 use crate::application::cms_service::{
-    CmsService, CreateArticleRequest, CreateExperienceRequest, CreateExpertiseRequest,
-    CreateGalleryRequest, UpdateAboutRequest, UpdateArticleRequest, UpdateExperienceRequest,
-    UpdateExpertiseRequest, UpdateGalleryRequest,
+    CmsService, CreateAiArticleDraftRequest, CreateArticleRequest, CreateExperienceRequest,
+    CreateExpertiseRequest, CreateGalleryRequest, GenerateAiArticleImagesRequest,
+    UpdateAboutRequest, UpdateArticleRequest, UpdateExperienceRequest, UpdateExpertiseRequest,
+    UpdateGalleryRequest,
 };
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
@@ -177,6 +178,26 @@ pub async fn delete_gallery(
 }
 
 // ── KNOWLEDGE ARTICLES ────────────────────────────────────────────────────────
+
+pub async fn create_ai_article_draft(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+    Json(req): Json<CreateAiArticleDraftRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let draft = svc.create_ai_article_draft(&req.topic).await?;
+    Ok(Json(serde_json::to_value(draft).unwrap()))
+}
+
+pub async fn generate_ai_article_images(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+    Json(req): Json<GenerateAiArticleImagesRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let images = svc
+        .generate_ai_article_images(&req.title, &req.image_prompts)
+        .await?;
+    Ok(Json(serde_json::to_value(images).unwrap()))
+}
 
 pub async fn list_articles(
     _claims: AdminClaims,

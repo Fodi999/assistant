@@ -285,6 +285,28 @@ impl LlmAdapter {
         Ok(base64)
     }
 
+    pub async fn generate_blog_article_image(
+        &self,
+        article_title: &str,
+        scene: &str,
+        variant: usize,
+    ) -> Result<String, AppError> {
+        let start = Instant::now();
+        let base64 = timeout(
+            Duration::from_secs(65),
+            self.gemini_service
+                .generate_blog_article_image(article_title, scene, variant),
+        )
+        .await
+        .map_err(|_| AppError::internal("LLM Timeout: article image generation took too long"))??;
+        self.log_usage(
+            "generate_blog_article_image",
+            start.elapsed().as_millis() as i32,
+        )
+        .await;
+        Ok(base64)
+    }
+
     /// Raw AI request — no cache, no rule engine.
     /// Used for one-off admin operations like AI autofill.
     pub async fn groq_raw_request(
