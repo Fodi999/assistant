@@ -506,6 +506,15 @@ if (ingredientDetailPage) {
       gi: 'Indeks glikemiczny', gl: 'Ładunek glikemiczny', ph: 'pH', aw: 'Aktywność wody', smoke: 'Punkt dymienia',
       processingMethod: 'Najlepsza metoda obróbki',
       vegan: 'Wegańskie', vegetarian: 'Wegetariańskie', keto: 'Keto', paleo: 'Paleo', gluten_free: 'Bez glutenu', mediterranean: 'Śródziemnomorskie', low_carb: 'Low carb'
+    },
+    uk: {
+      calories: 'Калорії', protein: 'Білки', fat: 'Жири', carbs: 'Вуглеводи', fiber: 'Клітковина', water: 'Вода',
+      shelf: 'Термін зберігання', temp: 'Температура', texture: 'Текстура', notes: 'Нотатки', score: 'Якість даних',
+      density: 'Щільність', cup: '1 склянка', tbsp: '1 ст. ложка', tsp: '1 ч. ложка',
+      sweetness: 'Солодкість', acidity: 'Кислотність', bitterness: 'Гіркота', umami: 'Умамі', aroma: 'Аромат',
+      gi: 'Глікемічний індекс', gl: 'Глікемічне навантаження', ph: 'pH', aw: 'Активність води', smoke: 'Точка димлення',
+      processingMethod: 'Найкращий метод приготування',
+      vegan: 'Веганський', vegetarian: 'Вегетаріанський', keto: 'Кето', paleo: 'Палео', gluten_free: 'Без глютену', mediterranean: 'Середземноморський', low_carb: 'Низьковуглеводний'
     }
   };
 
@@ -748,9 +757,10 @@ if (ingredientDetailPage) {
       measuresEl.innerHTML = detailGrid([
         { label: t.cup, value: m.grams_per_cup },
         { label: t.tbsp, value: m.grams_per_tbsp },
-        { label: t.tsp, value: m.grams_per_tsp },
+        { label: t.tsp, value: m.grams_per_tsp }
+      ], ' g') + detailGrid([
         { label: t.density, value: ingredient?.density_g_per_ml }
-      ], ' g');
+      ], ' g/ml');
     }
 
     const nutritionCalcRoot = content.querySelector('[data-nutrition-calculator]');
@@ -763,6 +773,12 @@ if (ingredientDetailPage) {
       const resultEl = nutritionCalcRoot.querySelector('[data-nutrition-result]');
       const amount = amountInput?.value || '100';
       const unit = unitSelect?.value || 'g';
+      const numericAmount = Number(amount);
+
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        if (resultEl) resultEl.innerHTML = `<p class="ingredient-empty">${I18N.lang === 'ru' ? 'Введите количество больше нуля.' : I18N.lang === 'en' ? 'Enter an amount greater than zero.' : I18N.lang === 'uk' ? 'Введіть кількість більше нуля.' : 'Wpisz ilość większą od zera.'}</p>`;
+        return;
+      }
 
       if (resultEl) {
         resultEl.textContent = loading;
@@ -799,23 +815,36 @@ if (ingredientDetailPage) {
       if (!measureCalcRoot) return;
       const amountInput = measureCalcRoot.querySelector('[data-measure-amount]');
       const unitSelect = measureCalcRoot.querySelector('[data-measure-unit]');
+      const toUnitSelect = measureCalcRoot.querySelector('[data-measure-to-unit]');
       const resultEl = measureCalcRoot.querySelector('[data-measure-result]');
       const amount = amountInput?.value || '1';
       const unit = unitSelect?.value || 'cup';
+      const toUnit = toUnitSelect?.value || 'g';
+      const numericAmount = Number(amount);
+
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        if (resultEl) resultEl.innerHTML = `<p class="ingredient-empty">${I18N.lang === 'ru' ? 'Введите количество больше нуля.' : I18N.lang === 'en' ? 'Enter an amount greater than zero.' : I18N.lang === 'uk' ? 'Введіть кількість більше нуля.' : 'Wpisz ilość większą od zera.'}</p>`;
+        return;
+      }
+
+      if (unit === toUnit) {
+        if (resultEl) resultEl.innerHTML = `<div class="ingredient-calculator-result-grid"><div><strong>${formatCalculatorValue(numericAmount)}</strong><span>${escapeHtml(toUnit)}</span></div></div>`;
+        return;
+      }
 
       if (resultEl) {
         resultEl.textContent = loading;
       }
 
       try {
-        const response = await fetch(`/public/tools/measure-conversion?ingredient=${encodeURIComponent(slug)}&from=${encodeURIComponent(unit)}&to=g&lang=${encodeURIComponent(detailLang())}&value=${encodeURIComponent(amount)}`);
+        const response = await fetch(`/public/tools/ingredient-convert?ingredient=${encodeURIComponent(slug)}&from=${encodeURIComponent(unit)}&to=${encodeURIComponent(toUnit)}&lang=${encodeURIComponent(detailLang())}&value=${encodeURIComponent(amount)}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
 
         if (resultEl) {
           resultEl.innerHTML = `
             <div class="ingredient-calculator-result-grid">
-              <div><strong>${formatCalculatorValue(data.result, ' g')}</strong><span>${I18N.lang === 'ru' ? 'в граммах' : I18N.lang === 'en' ? 'in grams' : 'w gramach'}</span></div>
+              <div><strong>${formatCalculatorValue(data.result, ` ${data.to_label_short || data.unit || toUnit}`)}</strong><span>${escapeHtml(data.to_label || toUnit)}</span></div>
               <div><strong>${escapeHtml(data.ingredient_name || name)}</strong><span>${escapeHtml(data.from_label || unit)}</span></div>
             </div>
             <p class="ingredient-note">${escapeHtml(data.answer || '')}</p>
@@ -832,6 +861,9 @@ if (ingredientDetailPage) {
       nutritionCalcRoot.querySelector('[data-nutrition-run]')?.addEventListener('click', runNutritionCalculator);
       nutritionCalcRoot.querySelector('[data-nutrition-amount]')?.addEventListener('change', runNutritionCalculator);
       nutritionCalcRoot.querySelector('[data-nutrition-unit]')?.addEventListener('change', runNutritionCalculator);
+      nutritionCalcRoot.querySelectorAll('input').forEach(input => input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') runNutritionCalculator();
+      }));
       runNutritionCalculator();
     }
 
@@ -839,23 +871,31 @@ if (ingredientDetailPage) {
       measureCalcRoot.querySelector('[data-measure-run]')?.addEventListener('click', runMeasureCalculator);
       measureCalcRoot.querySelector('[data-measure-amount]')?.addEventListener('change', runMeasureCalculator);
       measureCalcRoot.querySelector('[data-measure-unit]')?.addEventListener('change', runMeasureCalculator);
+      measureCalcRoot.querySelector('[data-measure-to-unit]')?.addEventListener('change', runMeasureCalculator);
+      measureCalcRoot.querySelectorAll('input').forEach(input => input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') runMeasureCalculator();
+      }));
       runMeasureCalculator();
     }
 
     const pairingsEl = content.querySelector('[data-detail-pairings]');
     if (pairingsEl) {
-      const pairings = Array.isArray(nutrition?.pairings) ? nutrition.pairings : [];
-      pairingsEl.innerHTML = pairings.length
-        ? pairings.map(pairing => {
-            const pairName = detailName(pairing);
-            const pairHref = `/ingredient-catalog/${encodeURIComponent(pairing.slug || '')}`;
-            return `
-              <a href="${pairHref}" class="ingredient-pairing-card">
-                <strong>${escapeHtml(pairName)}</strong>
-                <span>${escapeHtml(detailValue(pairing.pair_score))}/10</span>
-              </a>
-            `;
-          }).join('')
+          const pairings = Array.isArray(nutrition?.pairings) ? nutrition.pairings : [];
+          pairingsEl.innerHTML = pairings.length
+            ? pairings.map(pairing => {
+                const pairName = detailName(pairing);
+                const pairHref = `/ingredient-catalog/${encodeURIComponent(pairing.slug || '')}`;
+                const pairImage = pairing.image_url
+                  ? `<img src="${escapeHtml(pairing.image_url)}" alt="" loading="lazy">`
+                  : `<span aria-hidden="true">${escapeHtml(pairName.charAt(0))}</span>`;
+                return `
+                  <a href="${pairHref}" class="ingredient-pairing-card">
+                    <span class="ingredient-pairing-photo">${pairImage}</span>
+                    <strong>${escapeHtml(pairName)}</strong>
+                    <span class="ingredient-pairing-score">${escapeHtml(detailValue(pairing.pair_score))}/10</span>
+                  </a>
+                `;
+              }).join('')
         : '<p class="text-muted">—</p>';
     }
   }).catch(() => {

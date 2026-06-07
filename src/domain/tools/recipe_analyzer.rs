@@ -213,7 +213,6 @@ fn add_nutrition(a: &NutritionBreakdown, b: &NutritionBreakdown) -> NutritionBre
 
 fn compute_cost(ingredients: &[RecipeIngredientInput], portions: u32) -> Option<CostBreakdown> {
     let mut total_cost = 0.0;
-    let mut all_have_cost = true;
     let mut items = Vec::new();
 
     for ing in ingredients {
@@ -225,8 +224,6 @@ fn compute_cost(ingredients: &[RecipeIngredientInput], portions: u32) -> Option<
                 grams: ing.grams,
                 cost,
             });
-        } else {
-            all_have_cost = false;
         }
     }
 

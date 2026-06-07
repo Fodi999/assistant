@@ -728,13 +728,9 @@ impl AdminCatalogService {
         if force {
             cache_slug.push_str(&format!("-{}", Uuid::new_v4()));
         }
-        let ingredients = description
-            .filter(|value| !value.trim().is_empty())
-            .map(|value| vec![value.trim().to_string()])
-            .unwrap_or_default();
         let base64 = self
             .llm_adapter
-            .generate_dish_image(&cache_slug, name, &ingredients)
+            .generate_catalog_product_image(&cache_slug, name, description)
             .await?;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(base64)

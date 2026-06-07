@@ -18,7 +18,7 @@ use crate::application::usage_service::UsageService;
 use crate::infrastructure::gemini_service::GeminiService;
 use crate::shared::{AppError, AppResult};
 
-use super::actions::{ActionPlan, ConfirmResult, CopilotResponse, RiskLevel};
+use super::actions::{ActionPlan, ConfirmResult, CopilotResponse};
 use super::audit::CopilotAuditService;
 use super::billing::{check_and_deduct, AiFeature};
 use super::context::CopilotContext;

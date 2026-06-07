@@ -923,7 +923,7 @@ pub fn already_seen_reason(
 }
 
 /// Chef tip for "already seen" — different tip from the first time.
-pub fn chef_tip_alternative(p: &IngredientData, lang: ChatLang, goal: HealthGoal) -> String {
+pub fn chef_tip_alternative(p: &IngredientData, lang: ChatLang, _goal: HealthGoal) -> String {
     let slug = p.slug.to_lowercase();
     let cal = p.calories_per_100g as i32;
     let pro = p.protein_per_100g;

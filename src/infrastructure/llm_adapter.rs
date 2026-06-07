@@ -245,6 +245,46 @@ impl LlmAdapter {
         Ok(base64)
     }
 
+    /// Generate a uniform white-background product packshot for the catalog.
+    pub async fn generate_catalog_product_image(
+        &self,
+        cache_slug: &str,
+        product_name: &str,
+        description: Option<&str>,
+    ) -> Result<String, AppError> {
+        let cache_key = format!("catalog_product_image_v2:{}", cache_slug);
+        if let Some(cached_val) = self.cache_repo.get(&cache_key).await? {
+            if let Some(b64) = cached_val.as_str() {
+                return Ok(b64.to_string());
+            }
+        }
+
+        let start = Instant::now();
+        let base64 = timeout(
+            Duration::from_secs(65),
+            self.gemini_service
+                .generate_catalog_product_image(product_name, description),
+        )
+        .await
+        .map_err(|_| AppError::internal("LLM Timeout: catalog image generation took too long"))??;
+
+        self.log_usage(
+            "generate_catalog_product_image",
+            start.elapsed().as_millis() as i32,
+        )
+        .await;
+        self.cache_repo
+            .set(
+                &cache_key,
+                serde_json::Value::String(base64.clone()),
+                "gemini",
+                "gemini-2.5-flash-image",
+                90,
+            )
+            .await?;
+        Ok(base64)
+    }
+
     /// Raw AI request — no cache, no rule engine.
     /// Used for one-off admin operations like AI autofill.
     pub async fn groq_raw_request(

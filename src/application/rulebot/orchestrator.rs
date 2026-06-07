@@ -7,7 +7,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::domain::engines::registry;
@@ -38,6 +37,7 @@ pub enum RunToolResponse {
 // ── Orchestrator ─────────────────────────────────────────────────────────────
 
 pub struct RuleBot {
+    #[allow(dead_code)]
     pool: PgPool,
 }
 

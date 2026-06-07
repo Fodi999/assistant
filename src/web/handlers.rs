@@ -81,6 +81,15 @@ fn description(lang: language::Lang, page: &str) -> &'static str {
         (language::Lang::En, "about") => {
             "Meet chef Dima Fomin, his experience and approach to ingredients."
         }
+        (language::Lang::Pl, "blog") => {
+            "Praktyczne artykuły szefa Dimy Fomina o produktach, technice i recepturach."
+        }
+        (language::Lang::Ru, "blog") => {
+            "Практические статьи шефа Димы Фомина о продуктах, технике и рецептах."
+        }
+        (language::Lang::En, "blog") => {
+            "Practical articles from chef Dima Fomin about ingredients, technique and recipes."
+        }
         (language::Lang::Pl, "ingredients") => {
             "Katalog składników ze zdjęciami, wartościami odżywczymi i zastosowaniem kulinarnym."
         }
@@ -230,6 +239,32 @@ pub async fn about(headers: HeaderMap, Query(q): Query<LangQuery>) -> Html<Strin
         seo(lang, titles.about, "about", "/about"),
         &pages::about::render(lang),
     ))
+}
+
+pub async fn blog_list(headers: HeaderMap, Query(q): Query<LangQuery>) -> Html<String> {
+    let lang = resolve_lang(&headers, q.lang.as_deref());
+    let title = match lang {
+        language::Lang::Pl => "Blog szefa",
+        language::Lang::Ru => "Блог шефа",
+        language::Lang::En => "Chef journal",
+    };
+    Html(shell(
+        lang,
+        seo(lang, title, "blog", "/blog"),
+        &pages::blog::list(lang),
+    ))
+}
+
+pub async fn blog_detail(
+    axum::extract::Path(slug): axum::extract::Path<String>,
+    headers: HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Html<String> {
+    let lang = resolve_lang(&headers, q.lang.as_deref());
+    let title = pages::blog::title(lang, &slug).unwrap_or("Blog");
+    let path = format!("/blog/{slug}");
+    let body = pages::blog::detail(lang, &slug).unwrap_or_else(|| pages::blog::list(lang));
+    Html(shell(lang, seo(lang, title, "blog", &path), &body))
 }
 
 pub async fn ingredients(headers: HeaderMap, Query(q): Query<LangQuery>) -> Html<String> {

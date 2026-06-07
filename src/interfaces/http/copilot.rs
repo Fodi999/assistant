@@ -4,7 +4,6 @@
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -14,7 +13,6 @@ use uuid::Uuid;
 
 use crate::application::copilot::{
     context::{CopilotContext, CopilotPermission, CopilotScreen},
-    engine::CancelResult,
     CopilotEngine, CopilotResponse,
 };
 use crate::interfaces::http::middleware::AuthUser;

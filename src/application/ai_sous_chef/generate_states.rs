@@ -12,6 +12,7 @@ use uuid::Uuid;
 /// Row from catalog_ingredients with base nutrition
 #[derive(Debug, sqlx::FromRow)]
 struct IngredientBaseRow {
+    #[allow(dead_code)]
     id: Uuid,
     name_en: String,
     product_type: String,

@@ -1,5 +1,5 @@
 use crate::shared::AppError;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Duration;
 
 // ── Re-export types from groq_service for backward compatibility ─────────────
@@ -291,6 +291,52 @@ Pick the best match. Do not invent values."#,
             dish_name, ingredients_hint
         );
 
+        self.generate_image_from_prompt(&prompt, dish_name, "dish")
+            .await
+    }
+
+    /// Generate a consistent isolated product photo for catalog cards.
+    pub async fn generate_catalog_product_image(
+        &self,
+        product_name: &str,
+        description: Option<&str>,
+    ) -> Result<String, AppError> {
+        let description_hint = description
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| format!("\nProduct identification context: {}.", value.trim()))
+            .unwrap_or_default();
+        let prompt = format!(
+            r#"Create a premium ecommerce catalog photograph of the single food ingredient: "{product_name}".{description_hint}
+
+CATALOG COMPOSITION STANDARD:
+- pure seamless white background (#FFFFFF), including all corners
+- one centered hero arrangement of only this ingredient, fully visible
+- camera at a consistent slightly elevated three-quarter angle, about 25 degrees
+- product occupies approximately 65% of the square frame with generous even white margins
+- realistic natural proportions and color, crisp texture, soft diffused studio light
+- subtle soft contact shadow directly beneath the product, no horizon line
+- photorealistic commercial packshot, high detail, clean color calibration
+
+STRICTLY EXCLUDE:
+- plates, bowls, boards, packaging, labels, utensils, hands, people, table surfaces
+- decorative props, unrelated ingredients, herbs, sauces, text, logos, watermarks
+- dramatic shadows, colored backgrounds, gradients, cropped product, floating objects
+
+Return one consistent square catalog image. The ingredient must be immediately recognizable."#,
+            product_name = product_name,
+            description_hint = description_hint,
+        );
+
+        self.generate_image_from_prompt(&prompt, product_name, "catalog product")
+            .await
+    }
+
+    async fn generate_image_from_prompt(
+        &self,
+        prompt: &str,
+        subject_name: &str,
+        image_kind: &str,
+    ) -> Result<String, AppError> {
         let body = serde_json::json!({
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
@@ -301,7 +347,7 @@ Pick the best match. Do not invent values."#,
             self.api_key
         );
 
-        tracing::info!("🎨 Generating dish image for: {}", dish_name);
+        tracing::info!("🎨 Generating {} image for: {}", image_kind, subject_name);
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(60),
@@ -376,7 +422,7 @@ Pick the best match. Do not invent values."#,
             let total_cost_pln = total_cost_usd * 4.05; // approx USD→PLN
             tracing::info!(
                 "🪙 Dish image tokens for '{}': prompt={} output={} total={} | cache_hit=false | estimated cost: ${:.4} / {:.2} PLN",
-                dish_name, prompt_tokens, output_tokens, total_tokens,
+                subject_name, prompt_tokens, output_tokens, total_tokens,
                 total_cost_usd, total_cost_pln
             );
         } else {
@@ -385,13 +431,14 @@ Pick the best match. Do not invent values."#,
             let cost_pln = cost_usd * 4.05;
             tracing::info!(
                 "🪙 Dish image '{}': cache_hit=false | estimated cost: ${:.4} / {:.2} PLN (no usageMetadata)",
-                dish_name, cost_usd, cost_pln
+                subject_name, cost_usd, cost_pln
             );
         }
 
         tracing::info!(
-            "✅ Dish image generated for '{}' ({} base64 chars)",
-            dish_name,
+            "✅ {} image generated for '{}' ({} base64 chars)",
+            image_kind,
+            subject_name,
             base64.len()
         );
         Ok(base64)
@@ -475,6 +522,12 @@ Pick the best match. Do not invent values."#,
         &self,
         request_body: &serde_json::Value,
     ) -> Result<String, AppError> {
+        if self.api_key.trim().is_empty() {
+            return Err(AppError::validation(
+                "Gemini is not configured on the backend. Set GEMINI_API_KEY.",
+            ));
+        }
+
         tracing::debug!(
             "📤 Sending Gemini request: model={}",
             request_body

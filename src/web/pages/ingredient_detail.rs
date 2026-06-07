@@ -165,10 +165,10 @@ pub fn render(lang: language::Lang, slug: &str, state: Option<&str>) -> String {
       <article class="ingredient-detail-section"><h3>{measures_title}</h3><div data-detail-measures></div></article>
     </section>
 
-    <section class="ingredient-detail-section">
+    <section class="ingredient-detail-section ingredient-calculators-section">
       <h3>{calculators_title}</h3>
       <div class="ingredient-calculator-grid">
-        <article class="ingredient-calculator-card">
+        <article class="ingredient-calculator-card" data-nutrition-calculator>
           <h4>{nutrition_calc_title}</h4>
           <div class="ingredient-calculator-form">
             <label>
@@ -178,12 +178,12 @@ pub fn render(lang: language::Lang, slug: &str, state: Option<&str>) -> String {
             <label>
               <span>{unit_label}</span>
               <select data-nutrition-unit>
-                <option value="g">g</option>
-                <option value="kg">kg</option>
-                <option value="ml">ml</option>
-                <option value="cup">cup</option>
-                <option value="tbsp">tbsp</option>
-                <option value="tsp">tsp</option>
+                <option value="g">г — граммы</option>
+                <option value="kg">кг — килограммы</option>
+                <option value="ml">мл — миллилитры</option>
+                <option value="cup">стакан</option>
+                <option value="tbsp">столовая ложка</option>
+                <option value="tsp">чайная ложка</option>
               </select>
             </label>
             <button type="button" class="btn btn-primary btn-sm" data-nutrition-run>{convert_label}</button>
@@ -191,19 +191,33 @@ pub fn render(lang: language::Lang, slug: &str, state: Option<&str>) -> String {
           <div class="ingredient-calculator-result" data-nutrition-result>{result_label}</div>
         </article>
 
-        <article class="ingredient-calculator-card">
+        <article class="ingredient-calculator-card" data-measure-calculator>
           <h4>{measure_calc_title}</h4>
-          <div class="ingredient-calculator-form">
+          <div class="ingredient-calculator-form ingredient-measure-form">
             <label>
               <span>{amount_label}</span>
               <input type="number" step="0.1" min="0" value="1" data-measure-amount>
             </label>
             <label>
-              <span>{unit_label}</span>
+              <span>Из единицы</span>
               <select data-measure-unit>
-                <option value="cup">cup</option>
-                <option value="tbsp">tbsp</option>
-                <option value="tsp">tsp</option>
+                <option value="cup">стакан</option>
+                <option value="tbsp">столовая ложка</option>
+                <option value="tsp">чайная ложка</option>
+                <option value="ml">миллилитры</option>
+                <option value="g">граммы</option>
+                <option value="kg">килограммы</option>
+              </select>
+            </label>
+            <label>
+              <span>В единицу</span>
+              <select data-measure-to-unit>
+                <option value="g">граммы</option>
+                <option value="kg">килограммы</option>
+                <option value="ml">миллилитры</option>
+                <option value="cup">стаканы</option>
+                <option value="tbsp">столовые ложки</option>
+                <option value="tsp">чайные ложки</option>
               </select>
             </label>
             <button type="button" class="btn btn-primary btn-sm" data-measure-run>{convert_label}</button>

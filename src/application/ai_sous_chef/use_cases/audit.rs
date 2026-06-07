@@ -22,6 +22,7 @@ struct AuditRow {
     id: Uuid,
     slug: Option<String>,
     name_en: Option<String>,
+    #[allow(dead_code)]
     name_ru: Option<String>,
     product_type: Option<String>,
     image_url: Option<String>,

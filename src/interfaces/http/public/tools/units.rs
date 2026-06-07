@@ -210,6 +210,7 @@ pub async fn ingredient_scale(
 // ── ingredient-convert ────────────────────────────────────────────────────────
 
 /// DB row for density + nutrition lookup
+#[allow(dead_code)]
 #[derive(sqlx::FromRow)]
 struct IngredientConvertRow {
     slug: Option<String>,

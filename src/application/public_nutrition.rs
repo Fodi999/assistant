@@ -286,140 +286,128 @@ impl PublicNutritionService {
             basic.ok_or_else(|| AppError::NotFound(format!("product '{slug}' not found")))?;
         let product_id = basic.id;
 
-        // 2. Macros
-        let macros: Option<MacrosPublicRow> = sqlx::query_as(
-            r#"SELECT calories_kcal, protein_g, fat_g, carbs_g, fiber_g, sugar_g, water_g
-               FROM nutrition_macros WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        // The remaining sections are independent. Loading them concurrently avoids
+        // accumulating database/network latency for every optional profile.
+        let (
+            macros,
+            vitamins,
+            minerals,
+            diet_flags,
+            culinary,
+            food_properties,
+            availability_months,
+            pairings,
+            health_profile,
+            sugar_profile,
+            processing_effects,
+            culinary_behavior,
+        ) = tokio::join!(
+            sqlx::query_as::<_, MacrosPublicRow>(
+                r#"SELECT calories_kcal, protein_g, fat_g, carbs_g, fiber_g, sugar_g, water_g
+                   FROM nutrition_macros WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, VitaminsPublicRow>(
+                r#"SELECT vitamin_a, vitamin_c, vitamin_d, vitamin_e, vitamin_k,
+                          vitamin_b1, vitamin_b2, vitamin_b3, vitamin_b6, vitamin_b9, vitamin_b12
+                   FROM nutrition_vitamins WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, MineralsPublicRow>(
+                r#"SELECT calcium, iron, magnesium, phosphorus, potassium, sodium, zinc
+                   FROM nutrition_minerals WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, DietFlagsPublicRow>(
+                r#"SELECT vegan, vegetarian, keto, paleo, gluten_free, mediterranean, low_carb
+                   FROM diet_flags WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, CulinaryPublicRow>(
+                r#"SELECT sweetness, acidity, bitterness, umami, aroma, texture
+                   FROM food_culinary_properties WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, FoodPropertiesPublicRow>(
+                r#"SELECT glycemic_index, glycemic_load, ph, smoke_point, water_activity
+                   FROM food_properties WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_scalar::<_, Option<Vec<bool>>>(
+                r#"SELECT availability_months FROM products WHERE id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, PairingPublicRow>(
+                r#"SELECT b.slug, b.name_en, b.name_ru, b.name_pl, b.name_uk,
+                          COALESCE(b.image_url, ci.image_url) AS image_url,
+                          fp.pair_score, fp.flavor_score, fp.nutrition_score, fp.culinary_score
+                   FROM food_pairing fp
+                   JOIN products b ON b.id = fp.ingredient_b
+                   LEFT JOIN catalog_ingredients ci ON ci.id = b.id
+                   WHERE fp.ingredient_a = $1
+                   ORDER BY fp.pair_score DESC NULLS LAST
+                   LIMIT 10"#,
+            )
+            .bind(product_id)
+            .fetch_all(&self.pool),
+            sqlx::query_as::<_, HealthProfilePublicRow>(
+                r#"SELECT bioactive_compounds_en, bioactive_compounds_ru,
+                          bioactive_compounds_pl, bioactive_compounds_uk,
+                          health_effects_en, health_effects_ru,
+                          health_effects_pl, health_effects_uk,
+                          contraindications_en, contraindications_ru,
+                          contraindications_pl, contraindications_uk,
+                          food_role, orac_score,
+                          absorption_notes_en, absorption_notes_ru,
+                          absorption_notes_pl, absorption_notes_uk
+                   FROM product_health_profile WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, SugarProfilePublicRow>(
+                r#"SELECT glucose, fructose, sucrose, lactose, maltose,
+                          total_sugars, added_sugars, sweetness_perception, sugar_alcohols
+                   FROM nutrition_sugar_profile WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, ProcessingEffectsPublicRow>(
+                r#"SELECT vitamin_retention_pct, protein_denature_temp, mineral_leaching_risk,
+                          best_cooking_method_en, best_cooking_method_ru,
+                          best_cooking_method_pl, best_cooking_method_uk,
+                          maillard_temp,
+                          processing_notes_en, processing_notes_ru,
+                          processing_notes_pl, processing_notes_uk
+                   FROM product_processing_effects WHERE product_id = $1"#,
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+            sqlx::query_as::<_, CulinaryBehaviorPublicRow>(
+                "SELECT behaviors FROM product_culinary_behavior WHERE product_id = $1",
+            )
+            .bind(product_id)
+            .fetch_optional(&self.pool),
+        );
 
-        // 3. Vitamins
-        let vitamins: Option<VitaminsPublicRow> = sqlx::query_as(
-            r#"SELECT vitamin_a, vitamin_c, vitamin_d, vitamin_e, vitamin_k,
-                      vitamin_b1, vitamin_b2, vitamin_b3, vitamin_b6, vitamin_b9, vitamin_b12
-               FROM nutrition_vitamins WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        // 4. Minerals
-        let minerals: Option<MineralsPublicRow> = sqlx::query_as(
-            r#"SELECT calcium, iron, magnesium, phosphorus, potassium, sodium, zinc
-               FROM nutrition_minerals WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        // 5. Diet flags
-        let diet_flags: Option<DietFlagsPublicRow> = sqlx::query_as(
-            r#"SELECT vegan, vegetarian, keto, paleo, gluten_free, mediterranean, low_carb
-               FROM diet_flags WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        // 6. Culinary profile
-        let culinary: Option<CulinaryPublicRow> = sqlx::query_as(
-            r#"SELECT sweetness, acidity, bitterness, umami, aroma, texture
-               FROM food_culinary_properties WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
-
-        // 7. Food properties
-        let food_properties: Option<FoodPropertiesPublicRow> = sqlx::query_as(
-            r#"SELECT glycemic_index, glycemic_load, ph, smoke_point, water_activity
-               FROM food_properties WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
-
-        // 8. Availability months
-        let availability_months: Option<Vec<bool>> =
-            sqlx::query_scalar(r#"SELECT availability_months FROM products WHERE id = $1"#)
-                .bind(product_id)
-                .fetch_optional(&self.pool)
-                .await
-                .unwrap_or(None)
-                .flatten();
-
-        // 9. Top-10 pairings (best pair_score)
-        let pairings: Vec<PairingPublicRow> = sqlx::query_as(
-            r#"SELECT b.slug, b.name_en, b.name_ru, b.name_pl, b.name_uk,
-                      COALESCE(b.image_url, ci.image_url) AS image_url,
-                      fp.pair_score, fp.flavor_score, fp.nutrition_score, fp.culinary_score
-               FROM food_pairing fp
-               JOIN products b ON b.id = fp.ingredient_b
-               LEFT JOIN catalog_ingredients ci ON ci.id = b.id
-               WHERE fp.ingredient_a = $1
-               ORDER BY fp.pair_score DESC NULLS LAST
-               LIMIT 10"#,
-        )
-        .bind(product_id)
-        .fetch_all(&self.pool)
-        .await
-        .unwrap_or_default();
-
-        // 10. Health profile
-        let health_profile: Option<HealthProfilePublicRow> = sqlx::query_as(
-            r#"SELECT bioactive_compounds_en, bioactive_compounds_ru,
-                      bioactive_compounds_pl, bioactive_compounds_uk,
-                      health_effects_en, health_effects_ru,
-                      health_effects_pl, health_effects_uk,
-                      contraindications_en, contraindications_ru,
-                      contraindications_pl, contraindications_uk,
-                      food_role, orac_score,
-                      absorption_notes_en, absorption_notes_ru,
-                      absorption_notes_pl, absorption_notes_uk
-               FROM product_health_profile WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
-
-        // 11. Sugar profile
-        let sugar_profile: Option<SugarProfilePublicRow> = sqlx::query_as(
-            r#"SELECT glucose, fructose, sucrose, lactose, maltose,
-                      total_sugars, added_sugars, sweetness_perception, sugar_alcohols
-               FROM nutrition_sugar_profile WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
-
-        // 12. Processing effects
-        let processing_effects: Option<ProcessingEffectsPublicRow> = sqlx::query_as(
-            r#"SELECT vitamin_retention_pct, protein_denature_temp, mineral_leaching_risk,
-                      best_cooking_method_en, best_cooking_method_ru,
-                      best_cooking_method_pl, best_cooking_method_uk,
-                      maillard_temp,
-                      processing_notes_en, processing_notes_ru,
-                      processing_notes_pl, processing_notes_uk
-               FROM product_processing_effects WHERE product_id = $1"#,
-        )
-        .bind(product_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
-
-        // 13. Culinary behavior
-        let culinary_behavior: Option<CulinaryBehaviorPublicRow> =
-            sqlx::query_as("SELECT behaviors FROM product_culinary_behavior WHERE product_id = $1")
-                .bind(product_id)
-                .fetch_optional(&self.pool)
-                .await
-                .unwrap_or(None);
+        let macros = macros?;
+        let vitamins = vitamins?;
+        let minerals = minerals?;
+        let diet_flags = diet_flags?;
+        let culinary = culinary.unwrap_or(None);
+        let food_properties = food_properties.unwrap_or(None);
+        let availability_months = availability_months.unwrap_or(None).flatten();
+        let pairings = pairings.unwrap_or_default();
+        let health_profile = health_profile.unwrap_or(None);
+        let sugar_profile = sugar_profile.unwrap_or(None);
+        let processing_effects = processing_effects.unwrap_or(None);
+        let culinary_behavior = culinary_behavior.unwrap_or(None);
 
         Ok(NutritionPageResponse {
             lang: "en".to_string(),
@@ -544,7 +532,7 @@ impl PublicNutritionService {
         limit: i64,
     ) -> AppResult<RankingPageResponse> {
         // Map metric → (table, column, label, unit, default_order)
-        let (table, col, label, unit, default_order) = match metric {
+        let (table, col, label, unit, _default_order) = match metric {
             "calories" => (
                 "nutrition_macros",
                 "calories_kcal",

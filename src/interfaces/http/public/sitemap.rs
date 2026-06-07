@@ -130,6 +130,22 @@ async fn load_entries(pool: &PgPool) -> Result<Vec<SitemapEntry>, StatusCode> {
             lastmod: None,
         },
         SitemapEntry {
+            path: "/blog".to_string(),
+            lastmod: None,
+        },
+        SitemapEntry {
+            path: "/blog/how-to-choose-fresh-fish".to_string(),
+            lastmod: Some("2026-06-07".to_string()),
+        },
+        SitemapEntry {
+            path: "/blog/consistent-sushi-rice".to_string(),
+            lastmod: Some("2026-05-31".to_string()),
+        },
+        SitemapEntry {
+            path: "/blog/balancing-a-new-recipe".to_string(),
+            lastmod: Some("2026-05-24".to_string()),
+        },
+        SitemapEntry {
             path: "/ingredient-catalog".to_string(),
             lastmod: None,
         },

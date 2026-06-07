@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::usage_service::UsageService;
 use crate::domain::usage::{ActionSource, ActionType};
-use crate::shared::{AppError, AppResult, UserId};
+use crate::shared::{AppResult, UserId};
 
 /// Все AI-фичи с их стоимостью.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

@@ -803,7 +803,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
 
     // ── v3 Step 1+11c: Goal-aware suggestions ────────────────────────────────
     // Run SuggestionEngine, then re-rank by goal
-    let diag_issues = raw_diag
+    let _diag_issues = raw_diag
         .as_ref()
         .map(|d| d.issues.as_slice())
         .unwrap_or(&[]);
@@ -856,7 +856,7 @@ pub async fn execute(pool: &PgPool, ctx: &CulinaryContext) -> AppResult<SmartRes
         }
         v
     };
-    let dish_type = dish_context::classify_dish(
+    let _dish_type = dish_context::classify_dish(
         &rule_ingredients_for_dish,
         sugar_ratio,
         balance.vector.sweetness,

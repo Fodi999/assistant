@@ -659,6 +659,7 @@ impl ChatEngine {
     }
 
     /// Kept as single-product convenience wrapper (used by meal idea + follow-up).
+    #[allow(dead_code)]
     async fn select_healthy_product(
         &self,
         goal: HealthGoal,
@@ -673,6 +674,7 @@ impl ChatEngine {
             .next()
     }
 
+    #[allow(dead_code)]
     fn handle_conversion(&self, input: &str, lang: ChatLang) -> ChatResponse {
         if let Some((value, from, to)) = extract_conversion(input) {
             let result_raw = uc::convert_units(value, &from, &to);

@@ -23,7 +23,7 @@ use crate::shared::Language;
 use crate::shared::PaginationParams;
 use crate::shared::{AppError, AppResult, TenantId, UserId};
 
-use super::actions::{ActionChange, ActionPlan, ActionPlanType, RiskLevel};
+use super::actions::{ActionChange, ActionPlan, ActionPlanType};
 use super::context::CopilotContext;
 use super::planner::ToolCall;
 use super::tools::CopilotTool;

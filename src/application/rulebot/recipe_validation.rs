@@ -9,7 +9,7 @@
 //! Returns `ValidationReport` with warnings (non-fatal) and errors (should block).
 
 use super::intent_router::ChatLang;
-use super::recipe_engine::{CookingStep, ResolvedIngredient, TechCard};
+use super::recipe_engine::{ResolvedIngredient, TechCard};
 use super::user_constraints::UserConstraints;
 
 /// Severity of a validation issue.
@@ -305,6 +305,7 @@ fn slug_lower(ing: &ResolvedIngredient) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::rulebot::recipe_engine::CookingStep;
 
     fn make_techcard(ingredients: Vec<(&str, &str, &str)>, kcal: u32) -> TechCard {
         use crate::infrastructure::ingredient_cache::IngredientData;

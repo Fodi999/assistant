@@ -17,7 +17,7 @@ use super::goal_engine::{GoalProfile, GoalStrategy};
 use super::intent_router::ChatLang;
 use super::nutrition_math::round1;
 use super::recipe_engine::{CookingStep, DishType, ResolvedIngredient, TechCard};
-use super::recipe_validation::{Severity, ValidationReport};
+use super::recipe_validation::ValidationReport;
 use serde::Serialize;
 
 // ── Fix Report ───────────────────────────────────────────────────────────────

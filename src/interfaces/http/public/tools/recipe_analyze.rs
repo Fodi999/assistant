@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::domain::tools::dish_context;
-use crate::domain::tools::flavor_graph::{self, FlavorIngredient, FlavorVector};
-use crate::domain::tools::nutrition::{self as nut, NutritionBreakdown};
+use crate::domain::tools::flavor_graph::{self, FlavorVector};
+use crate::domain::tools::nutrition::NutritionBreakdown;
 use crate::domain::tools::recipe_analyzer::{self, DietFlags, RecipeIngredientInput};
 use crate::domain::tools::rule_engine;
 use crate::domain::tools::suggestion_engine::{self, Candidate};
@@ -458,7 +458,7 @@ pub async fn recipe_analyze(
 
     let sugar_cal = analysis.total_nutrition.sugar_g * 4.0;
     let total_cal = analysis.total_nutrition.calories.max(1.0);
-    let dish_type = dish_context::classify_dish(
+    let _dish_type = dish_context::classify_dish(
         &rule_ingredients,
         sugar_cal / total_cal * 100.0,
         analysis.flavor.vector.sweetness,

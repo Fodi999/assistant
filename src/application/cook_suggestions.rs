@@ -13,7 +13,7 @@
 //!   7. Add insights: uses_expiring, high_protein, budget_friendly
 //!   8. Sort by priority: expiring first, then missing ASC, protein DESC
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
 
 use crate::application::inventory::{InventoryService, InventoryView};
@@ -23,7 +23,7 @@ use crate::infrastructure::llm_adapter::LlmAdapter;
 use crate::infrastructure::IngredientCache;
 use crate::shared::{AppResult, Language, TenantId, UserId};
 
-use super::rulebot::dish_schema::{ask_gemini_dish_schema, parse_dish_schema, DishSchema};
+use super::rulebot::dish_schema::DishSchema;
 use super::rulebot::goal_modifier::HealthModifier;
 use super::rulebot::intent_router::ChatLang;
 use super::rulebot::recipe_engine;
@@ -472,6 +472,7 @@ impl CookSuggestionService {
 
     // ── Gemini: generate dish names from inventory ───────────────────────────
 
+    #[allow(dead_code)]
     async fn generate_dish_candidates(
         &self,
         ctx: &InventoryContext,
@@ -715,6 +716,7 @@ Only suggest dishes where at least 60% of ingredients are available in stock."#,
 
     // ── Resolve dish + classify ──────────────────────────────────────────────
 
+    #[allow(dead_code)]
     async fn resolve_and_classify(
         &self,
         schema: &DishSchema,
@@ -1313,6 +1315,7 @@ impl IngredientInfo {
 }
 
 impl InventoryContext {
+    #[allow(dead_code)]
     fn from_views(views: &[InventoryView]) -> Self {
         Self::build(views, &[])
     }
@@ -1433,6 +1436,7 @@ impl InventoryContext {
         })
     }
 
+    #[allow(dead_code)]
     fn price_cents_per_unit(&self, slug: &str) -> Option<i64> {
         let normalized = slug.to_lowercase().replace('-', " ");
         self.lookup.iter().find_map(|(k, info)| {
@@ -1905,7 +1909,7 @@ fn build_inventory_insight(ctx: &InventoryContext) -> InventoryInsight {
 
 // ── Unlock Suggestions Builder ───────────────────────────────────────────────
 
-fn build_unlock_suggestions(all: &[&SuggestedDish], almost: &[SuggestedDish]) -> UnlockSuggestions {
+fn build_unlock_suggestions(_all: &[&SuggestedDish], almost: &[SuggestedDish]) -> UnlockSuggestions {
     use std::collections::HashMap;
 
     // Count how often each ingredient is missing across "almost" dishes

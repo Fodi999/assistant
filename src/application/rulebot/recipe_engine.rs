@@ -348,10 +348,10 @@ pub async fn resolve_dish(
 
     // ── 2c. Adaptation Engine: smart rebalancing per goal profile ─────────
     let goal_profile = goal_engine::profile_for(modifier);
-    let removed_types: Vec<String> = constraint_report
+    let _removed_types: Vec<String> = constraint_report
         .removed
         .iter()
-        .filter_map(|(slug, _)| {
+        .filter_map(|(_slug, _)| {
             // Try to infer product_type from removed slug
             // (the actual product was already removed, so we check the reason)
             None::<String> // We pass dietary mode types instead

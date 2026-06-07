@@ -127,7 +127,7 @@ pub fn create_router(
     let cors = build_strict_cors(allowed_origins);
 
     // ── Rate Limiter for auth endpoints ──
-    let auth_rate_limiter = build_rate_limiter(rate_limit_per_second);
+    let _auth_rate_limiter = build_rate_limiter(rate_limit_per_second);
 
     // Build ReportService (needs clones before services are consumed by routers)
     let report_service = ReportService::new(
@@ -1214,6 +1214,7 @@ pub fn create_router(
     };
 
     // ── CAD editor page (geometry_engine extracted — stub) ───────────────────
+    #[allow(dead_code)]
     async fn editor_handler() -> Response {
         Response::builder()
             .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
@@ -1235,6 +1236,8 @@ pub fn create_router(
         .route("/recipes",        get(web::recipes_list))
         .route("/recipes/:id",    get(web::recipe_detail))
         .route("/about",          get(web::about))
+        .route("/blog",           get(web::blog_list))
+        .route("/blog/:slug",     get(web::blog_detail))
         .route("/ingredient-catalog", get(web::ingredients))
         .route("/ingredient-catalog/:slug", get(web::ingredient_detail))
         .route("/ingredient-catalog/:slug/:state", get(web::ingredient_state_detail))
@@ -1439,6 +1442,7 @@ fn build_rate_limiter(per_second: u32) -> Arc<IpRateLimiter> {
     Arc::new(limiter)
 }
 
+#[allow(dead_code)]
 async fn rate_limit_middleware(req: Request, next: Next, limiter: Arc<IpRateLimiter>) -> Response {
     // Extract client IP from connection info or forwarded headers
     let ip = extract_client_ip(&req);
@@ -1463,6 +1467,7 @@ async fn rate_limit_middleware(req: Request, next: Next, limiter: Arc<IpRateLimi
     }
 }
 
+#[allow(dead_code)]
 fn extract_client_ip(req: &Request) -> String {
     // Try X-Forwarded-For header first (common behind reverse proxies like Koyeb)
     if let Some(forwarded) = req.headers().get("x-forwarded-for") {
