@@ -983,7 +983,7 @@ impl CmsService {
         }
         let prompt = format!(
             r#"You are a senior chef, food technologist and professional culinary editor.
-Create a practical expert article about: "{topic}".
+Create a concise practical expert article draft about: "{topic}".
 
 Return ONLY valid JSON with this exact shape:
 {{
@@ -997,8 +997,8 @@ Return ONLY valid JSON with this exact shape:
 
 Content rules:
 - Each language is a complete natural article, not a summary and not machine-sounding
-- 900-1400 words per language, Markdown format
-- Start with a useful introduction, then 4-6 sections with ## headings, practical checklist and conclusion
+- 450-650 words per language, Markdown format
+- Start with a useful introduction, then 3-5 sections with ## headings, practical checklist and conclusion
 - Give factual, actionable culinary guidance; never invent scientific claims
 - Do not include the article title as the first Markdown heading
 - SEO description is 120-160 characters in English
@@ -1008,7 +1008,7 @@ Content rules:
         );
         let raw = self
             .llm_adapter
-            .groq_raw_request_with_model(&prompt, 24000, "gemini-3.1-pro-preview")
+            .groq_raw_request_with_model(&prompt, 12000, "gemini-3-flash-preview")
             .await?;
         let json = extract_json_object(&raw)?;
         serde_json::from_value(json)
