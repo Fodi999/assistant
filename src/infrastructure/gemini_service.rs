@@ -353,6 +353,7 @@ Return one consistent square catalog image. The ingredient must be immediately r
         variant: usize,
         enhanced: bool,
         reference_urls: &[String],
+        scene_preset: &str,
     ) -> Result<String, AppError> {
         let role = match variant {
             0 => "wide editorial hero cover",
@@ -361,10 +362,20 @@ Return one consistent square catalog image. The ingredient must be immediately r
             3 => "finished result in an elegant editorial composition",
             _ => "chronological recipe or technique step in a visual editorial series",
         };
+        let scene_style = match scene_preset {
+            "product-white" => "Ecommerce product packshot: isolate the subject on a pure seamless white #FFFFFF background, centered, fully visible, soft contact shadow, no props or table.",
+            "recipe-table" => "Finished recipe on a tasteful natural table setting, warm restaurant-quality daylight, restrained relevant tableware, appetizing and realistic.",
+            "home-interior" => "Lifestyle scene in a refined modern home kitchen or dining interior, natural window light, believable domestic atmosphere, subject remains dominant.",
+            "cooking-process" => "Instructional cooking-process photograph showing one clear chronological action, clean workstation, hands only when needed, technique easy to understand.",
+            "restaurant-plating" => "Premium restaurant plating on elegant tableware, controlled fine-dining light, precise composition, minimal sophisticated background.",
+            "object-interior" => "Editorial object photograph in a modern home interior, realistic scale and materials, soft daylight, curated but uncluttered surroundings.",
+            _ => "Premium culinary editorial scene with a clear subject, modern composition and realistic context.",
+        };
         let prompt = format!(
             r#"Create a premium culinary magazine photograph for the article "{article_title}".
 Image role: {role}.
 Scene direction: {scene}.
+Scene preset: {scene_style}
 
 STYLE STANDARD:
 - photorealistic professional editorial food photography
@@ -381,6 +392,7 @@ STRICTLY EXCLUDE:
             article_title = article_title,
             role = role,
             scene = scene,
+            scene_style = scene_style,
         );
         let model = if enhanced {
             &self.recipe_hero_image_model
