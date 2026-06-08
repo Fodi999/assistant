@@ -1399,6 +1399,26 @@ STORE PRODUCT RULES:
             })
     }
 
+    pub async fn list_public_shop_products(&self) -> AppResult<Vec<ShopProductRow>> {
+        sqlx::query_as(
+            "SELECT * FROM shop_products WHERE status = 'active' ORDER BY updated_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("list_public_shop_products: {e}");
+            AppError::internal("Failed to list shop products")
+        })
+    }
+
+    pub async fn get_public_shop_product(&self, slug: &str) -> AppResult<ShopProductRow> {
+        sqlx::query_as("SELECT * FROM shop_products WHERE slug = $1 AND status = 'active'")
+            .bind(slug)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::not_found("Shop product not found"))
+    }
+
     pub async fn create_shop_product(
         &self,
         req: CreateShopProductRequest,

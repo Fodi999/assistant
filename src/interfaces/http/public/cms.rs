@@ -74,6 +74,23 @@ pub async fn get_article(
     Ok(Json(serde_json::to_value(row).unwrap()))
 }
 
+// ── ONLINE SHOP ───────────────────────────────────────────────────────────────
+
+pub async fn list_shop_products(
+    State(svc): State<CmsService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = svc.list_public_shop_products().await?;
+    Ok(Json(serde_json::to_value(rows).unwrap()))
+}
+
+pub async fn get_shop_product(
+    Path(slug): Path<String>,
+    State(svc): State<CmsService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let row = svc.get_public_shop_product(&slug).await?;
+    Ok(Json(serde_json::to_value(row).unwrap()))
+}
+
 // ── SITEMAP ───────────────────────────────────────────────────────────────────
 
 pub async fn articles_sitemap(

@@ -1168,6 +1168,8 @@ pub fn create_router(
         .route("/articles", get(public_cms::list_articles))
         .route("/articles/:slug", get(public_cms::get_article))
         .route("/articles-sitemap", get(public_cms::articles_sitemap))
+        .route("/shop-products", get(public_cms::list_shop_products))
+        .route("/shop-products/:slug", get(public_cms::get_shop_product))
         .route(
             "/article-categories",
             get(public_cms::list_article_categories),
