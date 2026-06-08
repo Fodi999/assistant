@@ -356,15 +356,23 @@ Return one consistent square catalog image. The ingredient must be immediately r
         scene_preset: &str,
         scale_direction: &str,
     ) -> Result<String, AppError> {
-        let role = match variant {
-            0 => "wide editorial hero cover",
-            1 => "professional step-by-step process scene",
-            2 => "tight macro detail",
-            3 => "finished result in an elegant editorial composition",
-            _ => "chronological recipe or technique step in a visual editorial series",
+        let preserve_reference_product =
+            !reference_urls.is_empty() && scene_preset != "cooking-process";
+        let role = match (preserve_reference_product, variant) {
+            (true, 0) => "primary delivery-product hero image showing the complete referenced product",
+            (true, 1) => "alternate clean background treatment showing the same complete referenced product",
+            (true, 2) => "safe closer crop of the same referenced product without changing its perspective or arrangement",
+            (true, 3) => "alternate delivery catalog background showing the same complete referenced product",
+            (true, _) => "another clean background treatment of the same complete referenced product",
+            (false, 0) => "wide editorial hero cover",
+            (false, 1) => "professional step-by-step process scene",
+            (false, 2) => "tight macro detail",
+            (false, 3) => "finished result in an elegant editorial composition",
+            (false, _) => "chronological recipe or technique step in a visual editorial series",
         };
         let scene_style = match scene_preset {
             "product-white" => "Ecommerce product packshot: isolate the subject on a pure seamless white #FFFFFF background, centered, fully visible, soft contact shadow, no props or table.",
+            "delivery-product" => "Food-delivery catalog hero: the complete product is the sole subject, placed on a clean neutral delivery-ready surface or inside minimal unbranded delivery packaging. No people, hands, preparation, extra dishes or decorative food.",
             "recipe-table" => "Finished recipe on a tasteful natural table setting, warm restaurant-quality daylight, restrained relevant tableware, appetizing and realistic.",
             "home-interior" => "Lifestyle scene in a refined modern home kitchen or dining interior, natural window light, believable domestic atmosphere, subject remains dominant.",
             "cooking-process" => "Instructional cooking-process photograph showing one clear chronological action, clean workstation, hands only when needed, technique easy to understand.",
@@ -372,12 +380,32 @@ Return one consistent square catalog image. The ingredient must be immediately r
             "object-interior" => "Editorial object photograph in a modern home interior, realistic scale and materials, soft daylight, curated but uncluttered surroundings.",
             _ => "Premium culinary editorial scene with a clear subject, modern composition and realistic context.",
         };
+        let reference_contract = if preserve_reference_product {
+            r#"REFERENCE PRODUCT CONTRACT — HIGHEST PRIORITY:
+- Treat the uploaded reference image as the exact product being photographed, not as inspiration and not as a general topic.
+- Preserve the exact food assortment, item count, portions, colors, toppings, arrangement, silhouette and relative positions from the reference.
+- Visually cut out/copy the referenced product and place that same product into the requested background and lighting.
+- The complete product must remain fully visible, unobstructed and dominant, occupying approximately 65–80% of the frame.
+- Keep the original product viewpoint and perspective. Change only safe crop, background, surface, lighting and subtle contact shadow.
+- Do not invent hidden or unseen sides of the product.
+- Do not redesign, cook, plate, rearrange, replace, add or remove any part of the referenced product.
+- Do not infer a preparation process from the article title or scene direction.
+- No humans, chefs, faces, bodies, hands, arms or human interaction.
+- No additional food, ingredients, dishes, utensils, bowls, cups, plants, packaging or props unless explicitly requested as a scale reference.
+- If article instructions conflict with this contract, preserve the referenced product and ignore the conflicting instruction."#
+        } else {
+            r#"REFERENCE GUIDANCE:
+- Use uploaded references to preserve recognizable subject details and visual identity.
+- Humans or hands are allowed only when the selected cooking-process scene explicitly requires them."#
+        };
         let prompt = format!(
             r#"Create a premium culinary magazine photograph for the article "{article_title}".
 Image role: {role}.
 Scene direction: {scene}.
 Scene preset: {scene_style}
 Scale and realism constraints: {scale_direction}
+
+{reference_contract}
 
 STYLE STANDARD:
 - photorealistic professional editorial food photography
@@ -394,12 +422,14 @@ STRICTLY EXCLUDE:
 - any text, letters, captions, logos, watermarks or UI
 - rulers, dimension arrows, measurement labels or technical annotations
 - distorted food, duplicate tools, impossible hands, clutter, stock-photo look
-- unrelated ingredients or decorative elements that do not support the topic"#,
+- unrelated ingredients or decorative elements that do not support the topic
+- when the reference product contract is active: people, hands, chefs, preparation actions, added food, changed assortment, changed quantity or obstructed product"#,
             article_title = article_title,
             role = role,
             scene = scene,
             scene_style = scene_style,
             scale_direction = scale_direction,
+            reference_contract = reference_contract,
         );
         let model = if enhanced {
             &self.recipe_hero_image_model
