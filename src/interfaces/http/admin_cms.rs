@@ -204,6 +204,13 @@ pub async fn generate_ai_article_image(
             &req.reference_urls,
             req.model_preset.as_deref(),
             req.scene_preset.as_deref(),
+            req.width_cm,
+            req.height_cm,
+            req.depth_cm,
+            req.weight_kg,
+            &req.photo_scenarios,
+            req.scale_reference.as_deref(),
+            req.custom_scale_reference.as_deref(),
         )
         .await?;
     Ok(Json(serde_json::to_value(image).unwrap()))

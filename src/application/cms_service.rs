@@ -462,6 +462,14 @@ pub struct GenerateAiArticleImagesRequest {
     pub reference_urls: Vec<String>,
     pub model_preset: Option<String>,
     pub scene_preset: Option<String>,
+    pub width_cm: Option<f32>,
+    pub height_cm: Option<f32>,
+    pub depth_cm: Option<f32>,
+    pub weight_kg: Option<f32>,
+    #[serde(default)]
+    pub photo_scenarios: Vec<String>,
+    pub scale_reference: Option<String>,
+    pub custom_scale_reference: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1042,6 +1050,13 @@ Content rules:
         reference_urls: &[String],
         model_preset: Option<&str>,
         scene_preset: Option<&str>,
+        width_cm: Option<f32>,
+        height_cm: Option<f32>,
+        depth_cm: Option<f32>,
+        weight_kg: Option<f32>,
+        photo_scenarios: &[String],
+        scale_reference: Option<&str>,
+        custom_scale_reference: Option<&str>,
     ) -> AppResult<AiArticleImageResponse> {
         let title = title.trim();
         if title.is_empty() {
@@ -1066,6 +1081,40 @@ Content rules:
         let prompt = prompt
             .filter(|value| !value.trim().is_empty())
             .unwrap_or(&default_prompt);
+        let dimensions = [
+            width_cm.map(|value| format!("width {:.1} cm", value)),
+            height_cm.map(|value| format!("height {:.1} cm", value)),
+            depth_cm.map(|value| format!("depth {:.1} cm", value)),
+            weight_kg.map(|value| format!("weight {:.2} kg", value)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(", ");
+        let scale_reference = match scale_reference {
+            Some("custom") => custom_scale_reference.unwrap_or("").trim(),
+            Some(value) => value.trim(),
+            None => "",
+        };
+        let scenarios = if photo_scenarios.is_empty() {
+            "use the selected scene preset".to_string()
+        } else {
+            photo_scenarios.join(", ")
+        };
+        let scale_direction = format!(
+            "Physical dimensions: {}. Requested photo scenarios: {}. Scale reference: {}.",
+            if dimensions.is_empty() {
+                "not specified"
+            } else {
+                &dimensions
+            },
+            scenarios,
+            if scale_reference.is_empty() {
+                "none"
+            } else {
+                scale_reference
+            },
+        );
         let base64 = self
             .llm_adapter
             .generate_blog_article_image(
@@ -1075,6 +1124,7 @@ Content rules:
                 enhanced || model_preset == Some("pro"),
                 reference_urls,
                 scene_preset.unwrap_or("editorial"),
+                &scale_direction,
             )
             .await?;
         let bytes = base64::engine::general_purpose::STANDARD

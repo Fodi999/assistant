@@ -354,6 +354,7 @@ Return one consistent square catalog image. The ingredient must be immediately r
         enhanced: bool,
         reference_urls: &[String],
         scene_preset: &str,
+        scale_direction: &str,
     ) -> Result<String, AppError> {
         let role = match variant {
             0 => "wide editorial hero cover",
@@ -376,6 +377,7 @@ Return one consistent square catalog image. The ingredient must be immediately r
 Image role: {role}.
 Scene direction: {scene}.
 Scene preset: {scene_style}
+Scale and realism constraints: {scale_direction}
 
 STYLE STANDARD:
 - photorealistic professional editorial food photography
@@ -384,15 +386,20 @@ STYLE STANDARD:
 - intentional composition with clear subject and generous visual breathing room
 - landscape 16:9 composition, suitable for a blog article
 - visually consistent with a four-image editorial story
+- preserve believable real-world proportions and perspective
+- when a scale reference is requested, include it naturally and keep its standard size recognizable
+- use the supplied physical dimensions as strict visual constraints; do not make the subject oversized or miniature
 
 STRICTLY EXCLUDE:
 - any text, letters, captions, logos, watermarks or UI
+- rulers, dimension arrows, measurement labels or technical annotations
 - distorted food, duplicate tools, impossible hands, clutter, stock-photo look
 - unrelated ingredients or decorative elements that do not support the topic"#,
             article_title = article_title,
             role = role,
             scene = scene,
             scene_style = scene_style,
+            scale_direction = scale_direction,
         );
         let model = if enhanced {
             &self.recipe_hero_image_model
