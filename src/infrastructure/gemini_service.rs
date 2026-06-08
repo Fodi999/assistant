@@ -1,4 +1,5 @@
 use crate::shared::AppError;
+use base64::Engine;
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -351,6 +352,7 @@ Return one consistent square catalog image. The ingredient must be immediately r
         scene: &str,
         variant: usize,
         enhanced: bool,
+        reference_urls: &[String],
     ) -> Result<String, AppError> {
         let role = match variant {
             0 => "wide editorial hero cover",
@@ -385,8 +387,14 @@ STRICTLY EXCLUDE:
         } else {
             &self.recipe_image_model
         };
-        self.generate_image_from_prompt(&prompt, article_title, "blog article", model)
-            .await
+        self.generate_image_from_prompt_with_references(
+            &prompt,
+            article_title,
+            "blog article",
+            model,
+            reference_urls,
+        )
+        .await
     }
 
     async fn generate_image_from_prompt(
@@ -396,8 +404,63 @@ STRICTLY EXCLUDE:
         image_kind: &str,
         model: &str,
     ) -> Result<String, AppError> {
+        self.generate_image_from_prompt_with_references(
+            prompt,
+            subject_name,
+            image_kind,
+            model,
+            &[],
+        )
+        .await
+    }
+
+    async fn generate_image_from_prompt_with_references(
+        &self,
+        prompt: &str,
+        subject_name: &str,
+        image_kind: &str,
+        model: &str,
+        reference_urls: &[String],
+    ) -> Result<String, AppError> {
+        let mut parts = vec![serde_json::json!({"text": prompt})];
+        for reference_url in reference_urls.iter().take(2) {
+            let response = self
+                .http_client
+                .get(reference_url)
+                .send()
+                .await
+                .map_err(|e| {
+                    AppError::internal(format!("Failed to load reference image: {}", e))
+                })?;
+            if !response.status().is_success() {
+                return Err(AppError::validation(
+                    "Reference image is not publicly accessible",
+                ));
+            }
+            let mime_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| value.starts_with("image/"))
+                .unwrap_or("image/jpeg")
+                .to_string();
+            let bytes = response.bytes().await.map_err(|e| {
+                AppError::internal(format!("Failed to read reference image: {}", e))
+            })?;
+            if bytes.len() > 10 * 1024 * 1024 {
+                return Err(AppError::validation(
+                    "Reference image must be smaller than 10 MB",
+                ));
+            }
+            parts.push(serde_json::json!({
+                "inlineData": {
+                    "mimeType": mime_type,
+                    "data": base64::engine::general_purpose::STANDARD.encode(bytes)
+                }
+            }));
+        }
         let body = serde_json::json!({
-            "contents": [{"parts": [{"text": prompt}]}],
+            "contents": [{"parts": parts}],
             "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
         });
 

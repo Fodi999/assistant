@@ -291,6 +291,7 @@ impl LlmAdapter {
         scene: &str,
         variant: usize,
         enhanced: bool,
+        reference_urls: &[String],
     ) -> Result<String, AppError> {
         let start = Instant::now();
         let base64 = timeout(
@@ -300,6 +301,7 @@ impl LlmAdapter {
                 scene,
                 variant,
                 enhanced,
+                reference_urls,
             ),
         )
         .await

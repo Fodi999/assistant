@@ -76,6 +76,10 @@ impl R2Client {
         format!("{}/{}", self.public_url_base, key)
     }
 
+    pub fn is_public_url(&self, url: &str) -> bool {
+        url.starts_with(&format!("{}/", self.public_url_base.trim_end_matches('/')))
+    }
+
     /// Upload image to R2
     /// Returns public URL
     pub async fn upload_image(

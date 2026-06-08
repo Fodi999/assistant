@@ -196,7 +196,13 @@ pub async fn generate_ai_article_image(
     Json(req): Json<GenerateAiArticleImagesRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let image = svc
-        .generate_ai_article_image(&req.title, req.prompt.as_deref(), req.index, req.enhanced)
+        .generate_ai_article_image(
+            &req.title,
+            req.prompt.as_deref(),
+            req.index,
+            req.enhanced,
+            &req.reference_urls,
+        )
         .await?;
     Ok(Json(serde_json::to_value(image).unwrap()))
 }

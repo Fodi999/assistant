@@ -458,6 +458,8 @@ pub struct GenerateAiArticleImagesRequest {
     pub index: usize,
     #[serde(default)]
     pub enhanced: bool,
+    #[serde(default)]
+    pub reference_urls: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1035,10 +1037,20 @@ Content rules:
         prompt: Option<&str>,
         index: usize,
         enhanced: bool,
+        reference_urls: &[String],
     ) -> AppResult<AiArticleImageResponse> {
         let title = title.trim();
         if title.is_empty() {
             return Err(AppError::validation("Article title cannot be empty"));
+        }
+        if reference_urls.len() > 2
+            || reference_urls
+                .iter()
+                .any(|url| !self.r2_client.is_public_url(url))
+        {
+            return Err(AppError::validation(
+                "Reference images must be uploaded to the configured R2 storage",
+            ));
         }
         let default_prompt = match index {
             0 => "editorial hero cover".to_string(),
@@ -1052,7 +1064,7 @@ Content rules:
             .unwrap_or(&default_prompt);
         let base64 = self
             .llm_adapter
-            .generate_blog_article_image(title, prompt, index, enhanced)
+            .generate_blog_article_image(title, prompt, index, enhanced, reference_urls)
             .await?;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(base64)
