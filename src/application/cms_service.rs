@@ -477,6 +477,115 @@ pub struct AiArticleImageResponse {
     pub image_url: String,
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ONLINE SHOP PRODUCTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ShopProductRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub sku: Option<String>,
+    pub category: String,
+    pub name_en: String,
+    pub name_ru: String,
+    pub name_pl: String,
+    pub name_uk: String,
+    pub short_description_en: String,
+    pub short_description_ru: String,
+    pub short_description_pl: String,
+    pub short_description_uk: String,
+    pub description_en: String,
+    pub description_ru: String,
+    pub description_pl: String,
+    pub description_uk: String,
+    pub seo_title_en: String,
+    pub seo_title_ru: String,
+    pub seo_title_pl: String,
+    pub seo_title_uk: String,
+    pub seo_description_en: String,
+    pub seo_description_ru: String,
+    pub seo_description_pl: String,
+    pub seo_description_uk: String,
+    pub selling_points: Vec<String>,
+    pub image_urls: Vec<String>,
+    pub price_cents: Option<i64>,
+    pub currency: String,
+    pub stock_quantity: i32,
+    pub status: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AiShopProductDraft {
+    pub slug: String,
+    pub category: String,
+    pub name_en: String,
+    pub name_ru: String,
+    pub name_pl: String,
+    pub name_uk: String,
+    pub short_description_en: String,
+    pub short_description_ru: String,
+    pub short_description_pl: String,
+    pub short_description_uk: String,
+    pub description_en: String,
+    pub description_ru: String,
+    pub description_pl: String,
+    pub description_uk: String,
+    pub seo_title_en: String,
+    pub seo_title_ru: String,
+    pub seo_title_pl: String,
+    pub seo_title_uk: String,
+    pub seo_description_en: String,
+    pub seo_description_ru: String,
+    pub seo_description_pl: String,
+    pub seo_description_uk: String,
+    pub selling_points: Vec<String>,
+    pub image_prompts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAiShopProductDraftRequest {
+    pub product: String,
+    pub image_count: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateShopProductRequest {
+    pub slug: Option<String>,
+    pub sku: Option<String>,
+    pub category: Option<String>,
+    pub name_en: String,
+    pub name_ru: Option<String>,
+    pub name_pl: Option<String>,
+    pub name_uk: Option<String>,
+    pub short_description_en: Option<String>,
+    pub short_description_ru: Option<String>,
+    pub short_description_pl: Option<String>,
+    pub short_description_uk: Option<String>,
+    pub description_en: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_pl: Option<String>,
+    pub description_uk: Option<String>,
+    pub seo_title_en: Option<String>,
+    pub seo_title_ru: Option<String>,
+    pub seo_title_pl: Option<String>,
+    pub seo_title_uk: Option<String>,
+    pub seo_description_en: Option<String>,
+    pub seo_description_ru: Option<String>,
+    pub seo_description_pl: Option<String>,
+    pub seo_description_uk: Option<String>,
+    #[serde(default)]
+    pub selling_points: Vec<String>,
+    #[serde(default)]
+    pub image_urls: Vec<String>,
+    pub price_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub stock_quantity: Option<i32>,
+    pub status: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateArticleRequest {
     pub slug: Option<String>,
@@ -1041,6 +1150,58 @@ Content rules:
             .map_err(|e| AppError::internal(format!("Invalid AI article draft: {}", e)))
     }
 
+    pub async fn create_ai_shop_product_draft(
+        &self,
+        product: &str,
+        image_count: Option<usize>,
+    ) -> AppResult<AiShopProductDraft> {
+        let product = product.trim();
+        if product.is_empty() {
+            return Err(AppError::validation(
+                "Shop product description cannot be empty",
+            ));
+        }
+        let image_count = image_count.unwrap_or(4).clamp(1, 8);
+        let prompt = format!(
+            r#"You are a senior ecommerce copywriter and product catalog manager.
+Create an online-store product card for this exact sellable item: "{product}".
+
+Return ONLY valid JSON with this exact shape:
+{{
+  "slug": "english-url-slug",
+  "category": "delivery-food|kitchen-tools|tableware|ingredients|beverages|other",
+  "name_en": "...", "name_ru": "...", "name_pl": "...", "name_uk": "...",
+  "short_description_en": "...", "short_description_ru": "...", "short_description_pl": "...", "short_description_uk": "...",
+  "description_en": "...", "description_ru": "...", "description_pl": "...", "description_uk": "...",
+  "seo_title_en": "...", "seo_title_ru": "...", "seo_title_pl": "...", "seo_title_uk": "...",
+  "seo_description_en": "...", "seo_description_ru": "...", "seo_description_pl": "...", "seo_description_uk": "...",
+  "selling_points": ["...", "...", "..."],
+  "image_prompts": ["one prompt for every requested image"]
+}}
+
+STORE PRODUCT RULES:
+- Describe only the exact sellable product; do not turn it into an article, recipe or ingredient encyclopedia
+- Never invent price, SKU, stock, discounts, certifications, dimensions, materials or package contents not present in the input
+- Names and descriptions must be natural localized ecommerce copy in all four languages
+- Short descriptions: 90-180 characters; full descriptions: 500-900 characters
+- SEO titles: maximum 60 characters; SEO descriptions: 120-160 characters
+- Selling points must be short factual benefits in English
+- Image prompts must show the exact same product as a commercial catalog series: hero, package/context, useful detail, alternate clean composition
+- No people, hands, preparation process, added products, text, logos or watermarks
+- Return exactly {image_count} image prompts
+- Return ONLY JSON"#,
+            product = product,
+            image_count = image_count,
+        );
+        let raw = self
+            .llm_adapter
+            .groq_raw_request_with_model(&prompt, 10000, "gemini-3.5-flash")
+            .await?;
+        let json = extract_json_object(&raw)?;
+        serde_json::from_value(json)
+            .map_err(|e| AppError::internal(format!("Invalid AI shop product draft: {}", e)))
+    }
+
     pub async fn generate_ai_article_image(
         &self,
         title: &str,
@@ -1225,6 +1386,78 @@ Content rules:
             } else {
                 AppError::internal("Failed to create article")
             }
+        })
+    }
+
+    pub async fn list_shop_products(&self) -> AppResult<Vec<ShopProductRow>> {
+        sqlx::query_as("SELECT * FROM shop_products ORDER BY updated_at DESC")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("list_shop_products: {e}");
+                AppError::internal("Failed to list shop products")
+            })
+    }
+
+    pub async fn create_shop_product(
+        &self,
+        req: CreateShopProductRequest,
+    ) -> AppResult<ShopProductRow> {
+        let slug = req
+            .slug
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| slugify(&req.name_en));
+        let status = req.status.unwrap_or_else(|| "draft".to_string());
+        if !matches!(status.as_str(), "draft" | "active" | "archived") {
+            return Err(AppError::validation("Invalid shop product status"));
+        }
+        sqlx::query_as(
+            r#"INSERT INTO shop_products (
+                slug, sku, category, name_en, name_ru, name_pl, name_uk,
+                short_description_en, short_description_ru, short_description_pl, short_description_uk,
+                description_en, description_ru, description_pl, description_uk,
+                seo_title_en, seo_title_ru, seo_title_pl, seo_title_uk,
+                seo_description_en, seo_description_ru, seo_description_pl, seo_description_uk,
+                selling_points, image_urls, price_cents, currency, stock_quantity, status
+            ) VALUES (
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+                $20,$21,$22,$23,$24,$25,$26,$27,$28,$29
+            ) RETURNING *"#,
+        )
+        .bind(slug)
+        .bind(req.sku.filter(|value| !value.trim().is_empty()))
+        .bind(req.category.unwrap_or_else(|| "other".to_string()))
+        .bind(req.name_en)
+        .bind(req.name_ru.unwrap_or_default())
+        .bind(req.name_pl.unwrap_or_default())
+        .bind(req.name_uk.unwrap_or_default())
+        .bind(req.short_description_en.unwrap_or_default())
+        .bind(req.short_description_ru.unwrap_or_default())
+        .bind(req.short_description_pl.unwrap_or_default())
+        .bind(req.short_description_uk.unwrap_or_default())
+        .bind(req.description_en.unwrap_or_default())
+        .bind(req.description_ru.unwrap_or_default())
+        .bind(req.description_pl.unwrap_or_default())
+        .bind(req.description_uk.unwrap_or_default())
+        .bind(req.seo_title_en.unwrap_or_default())
+        .bind(req.seo_title_ru.unwrap_or_default())
+        .bind(req.seo_title_pl.unwrap_or_default())
+        .bind(req.seo_title_uk.unwrap_or_default())
+        .bind(req.seo_description_en.unwrap_or_default())
+        .bind(req.seo_description_ru.unwrap_or_default())
+        .bind(req.seo_description_pl.unwrap_or_default())
+        .bind(req.seo_description_uk.unwrap_or_default())
+        .bind(req.selling_points)
+        .bind(req.image_urls)
+        .bind(req.price_cents)
+        .bind(req.currency.unwrap_or_else(|| "PLN".to_string()))
+        .bind(req.stock_quantity.unwrap_or(0).max(0))
+        .bind(status)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("create_shop_product: {e}");
+            AppError::internal("Failed to create shop product")
         })
     }
 

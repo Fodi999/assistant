@@ -1,0 +1,37 @@
+CREATE TABLE IF NOT EXISTS shop_products (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug                TEXT UNIQUE NOT NULL,
+    sku                 TEXT UNIQUE,
+    category            TEXT NOT NULL DEFAULT 'other',
+    name_en             TEXT NOT NULL DEFAULT '',
+    name_ru             TEXT NOT NULL DEFAULT '',
+    name_pl             TEXT NOT NULL DEFAULT '',
+    name_uk             TEXT NOT NULL DEFAULT '',
+    short_description_en TEXT NOT NULL DEFAULT '',
+    short_description_ru TEXT NOT NULL DEFAULT '',
+    short_description_pl TEXT NOT NULL DEFAULT '',
+    short_description_uk TEXT NOT NULL DEFAULT '',
+    description_en      TEXT NOT NULL DEFAULT '',
+    description_ru      TEXT NOT NULL DEFAULT '',
+    description_pl      TEXT NOT NULL DEFAULT '',
+    description_uk      TEXT NOT NULL DEFAULT '',
+    seo_title_en        TEXT NOT NULL DEFAULT '',
+    seo_title_ru        TEXT NOT NULL DEFAULT '',
+    seo_title_pl        TEXT NOT NULL DEFAULT '',
+    seo_title_uk        TEXT NOT NULL DEFAULT '',
+    seo_description_en  TEXT NOT NULL DEFAULT '',
+    seo_description_ru  TEXT NOT NULL DEFAULT '',
+    seo_description_pl  TEXT NOT NULL DEFAULT '',
+    seo_description_uk  TEXT NOT NULL DEFAULT '',
+    selling_points      TEXT[] NOT NULL DEFAULT '{}',
+    image_urls          TEXT[] NOT NULL DEFAULT '{}',
+    price_cents         BIGINT,
+    currency            TEXT NOT NULL DEFAULT 'PLN',
+    stock_quantity      INTEGER NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
+    status              TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_shop_products_status ON shop_products(status);
+CREATE INDEX IF NOT EXISTS idx_shop_products_category ON shop_products(category);

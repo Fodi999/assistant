@@ -1,8 +1,8 @@
 use crate::application::cms_service::{
-    CmsService, CreateAiArticleDraftRequest, CreateArticleRequest, CreateExperienceRequest,
-    CreateExpertiseRequest, CreateGalleryRequest, GenerateAiArticleImagesRequest,
-    UpdateAboutRequest, UpdateArticleRequest, UpdateExperienceRequest, UpdateExpertiseRequest,
-    UpdateGalleryRequest,
+    CmsService, CreateAiArticleDraftRequest, CreateAiShopProductDraftRequest, CreateArticleRequest,
+    CreateExperienceRequest, CreateExpertiseRequest, CreateGalleryRequest,
+    CreateShopProductRequest, GenerateAiArticleImagesRequest, UpdateAboutRequest,
+    UpdateArticleRequest, UpdateExperienceRequest, UpdateExpertiseRequest, UpdateGalleryRequest,
 };
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
@@ -214,6 +214,37 @@ pub async fn generate_ai_article_image(
         )
         .await?;
     Ok(Json(serde_json::to_value(image).unwrap()))
+}
+
+pub async fn create_ai_shop_product_draft(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+    Json(req): Json<CreateAiShopProductDraftRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let draft = svc
+        .create_ai_shop_product_draft(&req.product, req.image_count)
+        .await?;
+    Ok(Json(serde_json::to_value(draft).unwrap()))
+}
+
+pub async fn list_shop_products(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = svc.list_shop_products().await?;
+    Ok(Json(serde_json::to_value(rows).unwrap()))
+}
+
+pub async fn create_shop_product(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+    Json(req): Json<CreateShopProductRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let row = svc.create_shop_product(req).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(row).unwrap()),
+    ))
 }
 
 pub async fn list_articles(

@@ -356,9 +356,9 @@ Return one consistent square catalog image. The ingredient must be immediately r
         scene_preset: &str,
         scale_direction: &str,
     ) -> Result<String, AppError> {
-        let preserve_reference_product =
-            !reference_urls.is_empty() && scene_preset != "cooking-process";
-        let role = match (preserve_reference_product, variant) {
+        let commerce_product_mode = scene_preset == "delivery-product"
+            || (!reference_urls.is_empty() && scene_preset != "cooking-process");
+        let role = match (commerce_product_mode, variant) {
             (true, 0) => "primary delivery-product hero image showing the complete referenced product",
             (true, 1) => "alternate clean background treatment showing the same complete referenced product",
             (true, 2) => "safe closer crop of the same referenced product without changing its perspective or arrangement",
@@ -380,7 +380,7 @@ Return one consistent square catalog image. The ingredient must be immediately r
             "object-interior" => "Editorial object photograph in a modern home interior, realistic scale and materials, soft daylight, curated but uncluttered surroundings.",
             _ => "Premium culinary editorial scene with a clear subject, modern composition and realistic context.",
         };
-        let reference_contract = if preserve_reference_product {
+        let reference_contract = if commerce_product_mode && !reference_urls.is_empty() {
             r#"REFERENCE PRODUCT CONTRACT — HIGHEST PRIORITY:
 - Treat the uploaded reference image as the exact product being photographed, not as inspiration and not as a general topic.
 - Preserve the exact food assortment, item count, portions, colors, toppings, arrangement, silhouette and relative positions from the reference.
@@ -393,6 +393,14 @@ Return one consistent square catalog image. The ingredient must be immediately r
 - No humans, chefs, faces, bodies, hands, arms or human interaction.
 - No additional food, ingredients, dishes, utensils, bowls, cups, plants, packaging or props unless explicitly requested as a scale reference.
 - If article instructions conflict with this contract, preserve the referenced product and ignore the conflicting instruction."#
+        } else if commerce_product_mode {
+            r#"COMMERCIAL PRODUCT CONTRACT — HIGHEST PRIORITY:
+- Show one exact sellable product described in the request as the sole dominant subject.
+- The complete product must remain fully visible and unobstructed, occupying approximately 65–80% of the frame.
+- Create a clean ecommerce or food-delivery catalog image, not an editorial story or preparation process.
+- No humans, chefs, faces, bodies, hands, arms or human interaction.
+- No additional food, ingredients, dishes, utensils, bowls, cups, plants or decorative props.
+- Do not invent package contents, accessories, variants or additional products."#
         } else {
             r#"REFERENCE GUIDANCE:
 - Use uploaded references to preserve recognizable subject details and visual identity.
