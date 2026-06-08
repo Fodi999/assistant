@@ -7,7 +7,7 @@ use crate::application::cms_service::{
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -257,6 +257,28 @@ pub async fn delete_article(
 }
 
 // ── IMAGE UPLOAD ──────────────────────────────────────────────────────────────
+
+pub async fn upload_article_reference(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::validation(format!("Invalid multipart data: {}", e)))?
+        .ok_or_else(|| AppError::validation("No reference image provided"))?;
+    let content_type = field
+        .content_type()
+        .map(str::to_string)
+        .ok_or_else(|| AppError::validation("Reference content type is missing"))?;
+    let bytes = field
+        .bytes()
+        .await
+        .map_err(|e| AppError::validation(format!("Failed to read reference image: {}", e)))?;
+    let url = svc.upload_article_reference(bytes, &content_type).await?;
+    Ok(Json(serde_json::json!({ "url": url })))
+}
 
 #[derive(Deserialize)]
 pub struct UploadQuery {

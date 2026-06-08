@@ -1119,6 +1119,10 @@ pub fn create_router(
             axum::routing::put(admin_cms::update_article).delete(admin_cms::delete_article),
         )
         // Image upload
+        .route(
+            "/articles/ai/reference-upload",
+            post(admin_cms::upload_article_reference),
+        )
         .route("/upload-url", get(admin_cms::get_upload_url))
         // Categories
         .route(

@@ -1429,6 +1429,32 @@ Content rules:
         })
     }
 
+    pub async fn upload_article_reference(
+        &self,
+        file_data: Bytes,
+        content_type: &str,
+    ) -> AppResult<String> {
+        let extension = match content_type {
+            "image/jpeg" | "image/jpg" => "jpg",
+            "image/png" => "png",
+            "image/webp" => "webp",
+            _ => {
+                return Err(AppError::validation(
+                    "Allowed reference types: jpg, png, webp",
+                ))
+            }
+        };
+        if file_data.len() > 10 * 1024 * 1024 {
+            return Err(AppError::validation(
+                "Reference image must be smaller than 10 MB",
+            ));
+        }
+        let key = format!("cms/article-references/{}.{}", Uuid::new_v4(), extension);
+        self.r2_client
+            .upload_image(&key, file_data, content_type)
+            .await
+    }
+
     // ── GALLERY (updated with alt fields) ─────────────────────────────────────
 
     pub async fn create_gallery_v2(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {
