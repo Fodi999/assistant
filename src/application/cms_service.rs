@@ -587,6 +587,11 @@ pub struct CreateShopProductRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateShopProductStatusRequest {
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateArticleRequest {
     pub slug: Option<String>,
     pub category: Option<String>,
@@ -1417,6 +1422,35 @@ STORE PRODUCT RULES:
             .fetch_optional(&self.pool)
             .await?
             .ok_or_else(|| AppError::not_found("Shop product not found"))
+    }
+
+    pub async fn update_shop_product_status(
+        &self,
+        id: Uuid,
+        status: &str,
+    ) -> AppResult<ShopProductRow> {
+        if !matches!(status, "draft" | "active" | "archived") {
+            return Err(AppError::validation("Invalid shop product status"));
+        }
+        sqlx::query_as(
+            "UPDATE shop_products SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
+        )
+        .bind(status)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Shop product not found"))
+    }
+
+    pub async fn delete_shop_product(&self, id: Uuid) -> AppResult<()> {
+        let result = sqlx::query("DELETE FROM shop_products WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::not_found("Shop product not found"));
+        }
+        Ok(())
     }
 
     pub async fn create_shop_product(

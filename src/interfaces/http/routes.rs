@@ -1127,6 +1127,14 @@ pub fn create_router(
             "/shop-products",
             get(admin_cms::list_shop_products).post(admin_cms::create_shop_product),
         )
+        .route(
+            "/shop-products/:id/status",
+            axum::routing::put(admin_cms::update_shop_product_status),
+        )
+        .route(
+            "/shop-products/:id",
+            axum::routing::delete(admin_cms::delete_shop_product),
+        )
         // Image upload
         .route(
             "/articles/ai/reference-upload",

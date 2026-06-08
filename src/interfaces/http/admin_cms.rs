@@ -3,6 +3,7 @@ use crate::application::cms_service::{
     CreateExperienceRequest, CreateExpertiseRequest, CreateGalleryRequest,
     CreateShopProductRequest, GenerateAiArticleImagesRequest, UpdateAboutRequest,
     UpdateArticleRequest, UpdateExperienceRequest, UpdateExpertiseRequest, UpdateGalleryRequest,
+    UpdateShopProductStatusRequest,
 };
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
@@ -245,6 +246,25 @@ pub async fn create_shop_product(
         StatusCode::CREATED,
         Json(serde_json::to_value(row).unwrap()),
     ))
+}
+
+pub async fn update_shop_product_status(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(svc): State<CmsService>,
+    Json(req): Json<UpdateShopProductStatusRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let row = svc.update_shop_product_status(id, &req.status).await?;
+    Ok(Json(serde_json::to_value(row).unwrap()))
+}
+
+pub async fn delete_shop_product(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    State(svc): State<CmsService>,
+) -> Result<StatusCode, AppError> {
+    svc.delete_shop_product(id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn list_articles(
