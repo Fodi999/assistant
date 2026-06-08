@@ -291,7 +291,7 @@ Pick the best match. Do not invent values."#,
             dish_name, ingredients_hint
         );
 
-        self.generate_image_from_prompt(&prompt, dish_name, "dish")
+        self.generate_image_from_prompt(&prompt, dish_name, "dish", "gemini-2.5-flash-image")
             .await
     }
 
@@ -327,8 +327,13 @@ Return one consistent square catalog image. The ingredient must be immediately r
             description_hint = description_hint,
         );
 
-        self.generate_image_from_prompt(&prompt, product_name, "catalog product")
-            .await
+        self.generate_image_from_prompt(
+            &prompt,
+            product_name,
+            "catalog product",
+            "gemini-2.5-flash-image",
+        )
+        .await
     }
 
     /// Generate one editorial image variant for a CMS article.
@@ -337,6 +342,7 @@ Return one consistent square catalog image. The ingredient must be immediately r
         article_title: &str,
         scene: &str,
         variant: usize,
+        enhanced: bool,
     ) -> Result<String, AppError> {
         let role = match variant {
             0 => "wide editorial hero cover",
@@ -366,7 +372,12 @@ STRICTLY EXCLUDE:
             role = role,
             scene = scene,
         );
-        self.generate_image_from_prompt(&prompt, article_title, "blog article")
+        let model = if enhanced {
+            "gemini-3-pro-image-preview"
+        } else {
+            "gemini-2.5-flash-image"
+        };
+        self.generate_image_from_prompt(&prompt, article_title, "blog article", model)
             .await
     }
 
@@ -375,6 +386,7 @@ STRICTLY EXCLUDE:
         prompt: &str,
         subject_name: &str,
         image_kind: &str,
+        model: &str,
     ) -> Result<String, AppError> {
         let body = serde_json::json!({
             "contents": [{"parts": [{"text": prompt}]}],
@@ -382,14 +394,19 @@ STRICTLY EXCLUDE:
         });
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key={}",
-            self.api_key
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            model, self.api_key
         );
 
-        tracing::info!("🎨 Generating {} image for: {}", image_kind, subject_name);
+        tracing::info!(
+            "🎨 Generating {} image for: {} (model={})",
+            image_kind,
+            subject_name,
+            model
+        );
 
         let result = tokio::time::timeout(
-            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(if model.contains("pro") { 120 } else { 60 }),
             self.http_client
                 .post(&url)
                 .header("Content-Type", "application/json")

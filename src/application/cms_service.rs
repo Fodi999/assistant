@@ -456,6 +456,8 @@ pub struct GenerateAiArticleImagesRequest {
     pub prompt: Option<String>,
     #[serde(default)]
     pub index: usize,
+    #[serde(default)]
+    pub enhanced: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1032,6 +1034,7 @@ Content rules:
         title: &str,
         prompt: Option<&str>,
         index: usize,
+        enhanced: bool,
     ) -> AppResult<AiArticleImageResponse> {
         let title = title.trim();
         if title.is_empty() {
@@ -1049,7 +1052,7 @@ Content rules:
             .unwrap_or(&default_prompt);
         let base64 = self
             .llm_adapter
-            .generate_blog_article_image(title, prompt, index)
+            .generate_blog_article_image(title, prompt, index, enhanced)
             .await?;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(base64)

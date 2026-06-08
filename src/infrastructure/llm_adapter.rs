@@ -290,17 +290,26 @@ impl LlmAdapter {
         article_title: &str,
         scene: &str,
         variant: usize,
+        enhanced: bool,
     ) -> Result<String, AppError> {
         let start = Instant::now();
         let base64 = timeout(
-            Duration::from_secs(65),
-            self.gemini_service
-                .generate_blog_article_image(article_title, scene, variant),
+            Duration::from_secs(if enhanced { 125 } else { 65 }),
+            self.gemini_service.generate_blog_article_image(
+                article_title,
+                scene,
+                variant,
+                enhanced,
+            ),
         )
         .await
         .map_err(|_| AppError::internal("LLM Timeout: article image generation took too long"))??;
         self.log_usage(
-            "generate_blog_article_image",
+            if enhanced {
+                "generate_blog_article_image_pro"
+            } else {
+                "generate_blog_article_image"
+            },
             start.elapsed().as_millis() as i32,
         )
         .await;
