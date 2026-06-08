@@ -21,6 +21,10 @@ pub struct GeminiService {
     fast_model: String,
     /// Smart model for complex generation (SEO, autofill, analysis)
     smart_model: String,
+    /// High-volume recipe and CMS image model.
+    recipe_image_model: String,
+    /// Premium hero/cover image model.
+    recipe_hero_image_model: String,
 }
 
 impl GeminiService {
@@ -35,6 +39,10 @@ impl GeminiService {
             http_client,
             fast_model: "gemini-3-flash-preview".to_string(),
             smart_model: "gemini-3.1-pro-preview".to_string(),
+            recipe_image_model: std::env::var("GEMINI_RECIPE_IMAGE_MODEL")
+                .unwrap_or_else(|_| "gemini-3.1-flash-image".to_string()),
+            recipe_hero_image_model: std::env::var("GEMINI_RECIPE_HERO_IMAGE_MODEL")
+                .unwrap_or_else(|_| "gemini-3-pro-image".to_string()),
         }
     }
 
@@ -291,7 +299,7 @@ Pick the best match. Do not invent values."#,
             dish_name, ingredients_hint
         );
 
-        self.generate_image_from_prompt(&prompt, dish_name, "dish", "gemini-2.5-flash-image")
+        self.generate_image_from_prompt(&prompt, dish_name, "dish", &self.recipe_image_model)
             .await
     }
 
@@ -331,7 +339,7 @@ Return one consistent square catalog image. The ingredient must be immediately r
             &prompt,
             product_name,
             "catalog product",
-            "gemini-2.5-flash-image",
+            &self.recipe_image_model,
         )
         .await
     }
@@ -373,9 +381,9 @@ STRICTLY EXCLUDE:
             scene = scene,
         );
         let model = if enhanced {
-            "gemini-3-pro-image-preview"
+            &self.recipe_hero_image_model
         } else {
-            "gemini-2.5-flash-image"
+            &self.recipe_image_model
         };
         self.generate_image_from_prompt(&prompt, article_title, "blog article", model)
             .await
