@@ -1022,7 +1022,7 @@ Content rules:
         );
         let raw = self
             .llm_adapter
-            .groq_raw_request_with_model(&prompt, 12000, "gemini-3-flash-preview")
+            .groq_raw_request_with_model(&prompt, 12000, "gemini-3.5-flash")
             .await?;
         let json = extract_json_object(&raw)?;
         serde_json::from_value(json)
