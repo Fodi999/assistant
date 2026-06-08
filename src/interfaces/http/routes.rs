@@ -1121,7 +1121,8 @@ pub fn create_router(
         // Image upload
         .route(
             "/articles/ai/reference-upload",
-            post(admin_cms::upload_article_reference),
+            post(admin_cms::upload_article_reference)
+                .layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
         )
         .route("/upload-url", get(admin_cms::get_upload_url))
         // Categories

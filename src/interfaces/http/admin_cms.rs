@@ -284,7 +284,12 @@ pub async fn upload_article_reference(
     let bytes = field
         .bytes()
         .await
-        .map_err(|e| AppError::validation(format!("Failed to read reference image: {}", e)))?;
+        .map_err(|e| {
+            tracing::warn!("Failed to read CMS reference image multipart field: {e}");
+            AppError::validation(
+                "Failed to read reference image. Make sure the file is a valid image smaller than 10 MB",
+            )
+        })?;
     let url = svc.upload_article_reference(bytes, &content_type).await?;
     Ok(Json(serde_json::json!({ "url": url })))
 }
