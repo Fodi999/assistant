@@ -342,7 +342,8 @@ Return one consistent square catalog image. The ingredient must be immediately r
             0 => "wide editorial hero cover",
             1 => "professional step-by-step process scene",
             2 => "tight macro detail",
-            _ => "finished result in an elegant editorial composition",
+            3 => "finished result in an elegant editorial composition",
+            _ => "chronological recipe or technique step in a visual editorial series",
         };
         let prompt = format!(
             r#"Create a premium culinary magazine photograph for the article "{article_title}".

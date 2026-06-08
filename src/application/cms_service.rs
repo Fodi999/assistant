@@ -429,6 +429,8 @@ pub struct CreateArticleRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateAiArticleDraftRequest {
     pub topic: String,
+    pub target_chars: Option<usize>,
+    pub image_count: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -976,11 +978,18 @@ impl CmsService {
 
     // ── KNOWLEDGE ARTICLES ────────────────────────────────────────────────────
 
-    pub async fn create_ai_article_draft(&self, topic: &str) -> AppResult<AiArticleDraft> {
+    pub async fn create_ai_article_draft(
+        &self,
+        topic: &str,
+        target_chars: Option<usize>,
+        image_count: Option<usize>,
+    ) -> AppResult<AiArticleDraft> {
         let topic = topic.trim();
         if topic.is_empty() {
             return Err(AppError::validation("Article topic cannot be empty"));
         }
+        let target_chars = target_chars.unwrap_or(3500).clamp(1500, 12000);
+        let image_count = image_count.unwrap_or(4).clamp(1, 12);
         let prompt = format!(
             r#"You are a senior chef, food technologist and professional culinary editor.
 Create a concise practical expert article draft about: "{topic}".
@@ -992,19 +1001,22 @@ Return ONLY valid JSON with this exact shape:
   "title_en": "...", "title_ru": "...", "title_pl": "...", "title_uk": "...",
   "content_en": "...", "content_ru": "...", "content_pl": "...", "content_uk": "...",
   "seo_title": "...", "seo_description": "...",
-  "image_prompts": ["cover scene", "process scene", "detail scene", "final scene"]
+  "image_prompts": ["one prompt for every requested image"]
 }}
 
 Content rules:
 - Each language is a complete natural article, not a summary and not machine-sounding
-- 450-650 words per language, Markdown format
+- Target approximately {target_chars} characters per language, Markdown format (within ±10%)
 - Start with a useful introduction, then 3-5 sections with ## headings, practical checklist and conclusion
 - Give factual, actionable culinary guidance; never invent scientific claims
 - Do not include the article title as the first Markdown heading
 - SEO description is 120-160 characters in English
 - image_prompts are concise English photography directions matching the article, no text or logos
-- Return exactly four image prompts and ONLY JSON"#,
+- Return exactly {image_count} image prompts; for recipes they must follow the process chronologically
+- Return ONLY JSON"#,
             topic = topic,
+            target_chars = target_chars,
+            image_count = image_count,
         );
         let raw = self
             .llm_adapter
@@ -1025,16 +1037,16 @@ Content rules:
         if title.is_empty() {
             return Err(AppError::validation("Article title cannot be empty"));
         }
-        let defaults = [
-            "editorial hero cover",
-            "professional preparation process",
-            "close-up ingredient or technique detail",
-            "finished culinary result",
-        ];
-        let index = index.min(3);
+        let default_prompt = match index {
+            0 => "editorial hero cover".to_string(),
+            1 => "professional preparation process, first important step".to_string(),
+            2 => "close-up ingredient or technique detail".to_string(),
+            3 => "finished culinary result".to_string(),
+            _ => format!("professional chronological preparation step {}", index),
+        };
         let prompt = prompt
             .filter(|value| !value.trim().is_empty())
-            .unwrap_or(defaults[index]);
+            .unwrap_or(&default_prompt);
         let base64 = self
             .llm_adapter
             .generate_blog_article_image(title, prompt, index)

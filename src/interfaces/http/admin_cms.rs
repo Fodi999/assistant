@@ -184,7 +184,9 @@ pub async fn create_ai_article_draft(
     State(svc): State<CmsService>,
     Json(req): Json<CreateAiArticleDraftRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let draft = svc.create_ai_article_draft(&req.topic).await?;
+    let draft = svc
+        .create_ai_article_draft(&req.topic, req.target_chars, req.image_count)
+        .await?;
     Ok(Json(serde_json::to_value(draft).unwrap()))
 }
 
