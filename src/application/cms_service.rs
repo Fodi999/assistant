@@ -344,9 +344,13 @@ pub struct ArticleRow {
     pub content_ru: String,
     pub content_uk: String,
     pub image_url: Option<String>,
+    pub author_name: String,
+    pub author_avatar_url: Option<String>,
+    pub author_avatar_position: String,
     pub seo_title: String,
     pub seo_description: String,
     pub published: bool,
+    pub published_at: Option<OffsetDateTime>,
     pub order_index: i32,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
@@ -367,9 +371,13 @@ pub struct ArticlePublicItem {
     pub content_ru: String,
     pub content_uk: String,
     pub image_url: Option<String>,
+    pub author_name: String,
+    pub author_avatar_url: Option<String>,
+    pub author_avatar_position: String,
     pub seo_title: String,
     pub seo_description: String,
     pub published: bool,
+    pub published_at: Option<String>,
     pub order_index: i32,
     pub created_at: String,
     pub updated_at: String,
@@ -390,9 +398,17 @@ impl From<ArticleRow> for ArticlePublicItem {
             content_ru: r.content_ru,
             content_uk: r.content_uk,
             image_url: r.image_url,
+            author_name: r.author_name,
+            author_avatar_url: r.author_avatar_url,
+            author_avatar_position: r.author_avatar_position,
             seo_title: r.seo_title,
             seo_description: r.seo_description,
             published: r.published,
+            published_at: r.published_at.and_then(|value| {
+                value
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .ok()
+            }),
             order_index: r.order_index,
             created_at: r
                 .created_at
@@ -419,6 +435,9 @@ pub struct CreateArticleRequest {
     pub content_ru: Option<String>,
     pub content_uk: Option<String>,
     pub image_url: Option<String>,
+    pub author_name: Option<String>,
+    pub author_avatar_url: Option<String>,
+    pub author_avatar_position: Option<String>,
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
     #[serde(default)]
@@ -604,6 +623,9 @@ pub struct UpdateArticleRequest {
     pub content_ru: Option<String>,
     pub content_uk: Option<String>,
     pub image_url: Option<String>,
+    pub author_name: Option<String>,
+    pub author_avatar_url: Option<String>,
+    pub author_avatar_position: Option<String>,
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
     pub published: Option<bool>,
@@ -1363,8 +1385,9 @@ STORE PRODUCT RULES:
             r#"INSERT INTO knowledge_articles
                (slug, category, title_en, title_pl, title_ru, title_uk,
                 content_en, content_pl, content_ru, content_uk,
-                image_url, seo_title, seo_description, published, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                image_url, author_name, author_avatar_url, author_avatar_position, seo_title, seo_description,
+                published, published_at, order_index)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, CASE WHEN $17 THEN NOW() ELSE NULL END, $18)
                RETURNING *"#,
         )
         .bind(&slug)
@@ -1378,6 +1401,12 @@ STORE PRODUCT RULES:
         .bind(req.content_ru.unwrap_or_default())
         .bind(req.content_uk.unwrap_or_default())
         .bind(&req.image_url)
+        .bind(req.author_name.unwrap_or_else(|| "Szef Kuchni".to_string()))
+        .bind(req.author_avatar_url)
+        .bind(
+            req.author_avatar_position
+                .unwrap_or_else(|| "center".to_string()),
+        )
         .bind(req.seo_title.unwrap_or_else(|| req.title_en.clone()))
         .bind(req.seo_description.unwrap_or_default())
         .bind(req.published)
@@ -1526,9 +1555,16 @@ STORE PRODUCT RULES:
             r#"UPDATE knowledge_articles SET
                slug=$1, category=$2, title_en=$3, title_pl=$4, title_ru=$5, title_uk=$6,
                content_en=$7, content_pl=$8, content_ru=$9, content_uk=$10,
-               image_url=$11, seo_title=$12, seo_description=$13,
-               published=$14, order_index=$15, updated_at=NOW()
-               WHERE id=$16 RETURNING *"#,
+               image_url=$11, author_name=$12, author_avatar_url=$13, author_avatar_position=$14,
+               seo_title=$15, seo_description=$16,
+               published=$17,
+               published_at=CASE
+                 WHEN $17 = true AND published_at IS NULL THEN NOW()
+                 WHEN $17 = false THEN NULL
+                 ELSE published_at
+               END,
+               order_index=$18, updated_at=NOW()
+               WHERE id=$19 RETURNING *"#,
         )
         .bind(req.slug.unwrap_or(cur.slug))
         .bind(req.category.unwrap_or(cur.category))
@@ -1541,6 +1577,12 @@ STORE PRODUCT RULES:
         .bind(req.content_ru.unwrap_or(cur.content_ru))
         .bind(req.content_uk.unwrap_or(cur.content_uk))
         .bind(req.image_url.or(cur.image_url))
+        .bind(req.author_name.unwrap_or(cur.author_name))
+        .bind(req.author_avatar_url.or(cur.author_avatar_url))
+        .bind(
+            req.author_avatar_position
+                .unwrap_or(cur.author_avatar_position),
+        )
         .bind(req.seo_title.unwrap_or(cur.seo_title))
         .bind(req.seo_description.unwrap_or(cur.seo_description))
         .bind(req.published.unwrap_or(cur.published))
@@ -1789,7 +1831,7 @@ STORE PRODUCT RULES:
             _ => {
                 return Err(AppError::validation(
                     "Allowed reference types: jpg, png, webp",
-                ))
+                ));
             }
         };
         if file_data.len() > 10 * 1024 * 1024 {
