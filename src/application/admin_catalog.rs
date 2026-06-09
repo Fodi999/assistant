@@ -90,6 +90,37 @@ fn default_empty_string() -> String {
     String::new()
 }
 
+fn validate_short_product_name(label: &str, value: &str) -> AppResult<()> {
+    let text = value.trim();
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    let word_count = text.split_whitespace().count();
+    let looks_like_sentence = text.contains('\n')
+        || word_count > 8
+        || text.chars().count() > 70
+        || text.contains(". ")
+        || text.contains("! ")
+        || text.contains("? ");
+
+    if looks_like_sentence {
+        return Err(AppError::validation(&format!(
+            "{} looks like a description or SEO text. Product names must be short labels.",
+            label
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_optional_short_product_name(label: &str, value: &Option<String>) -> AppResult<()> {
+    if let Some(text) = value {
+        validate_short_product_name(label, text)?;
+    }
+    Ok(())
+}
+
 // ── 🔒 enforce_category: product_type ↔ category hard rules ─────────
 //
 // AI cannot be trusted with categories. Backend is the source of truth.
@@ -361,6 +392,10 @@ impl AdminCatalogService {
         if name_input.is_empty() {
             return Err(AppError::validation("name_input cannot be empty"));
         }
+        validate_short_product_name("name_en", &req.name_en)?;
+        validate_short_product_name("name_pl", &req.name_pl)?;
+        validate_short_product_name("name_uk", &req.name_uk)?;
+        validate_short_product_name("name_ru", &req.name_ru)?;
 
         // ==========================================
         // � ШАГ 1: UNIFIED AI PROCESSING (instead of 3 separate calls!)
@@ -805,6 +840,11 @@ impl AdminCatalogService {
         id: Uuid,
         req: UpdateProductRequest,
     ) -> AppResult<ProductResponse> {
+        validate_optional_short_product_name("name_en", &req.name_en)?;
+        validate_optional_short_product_name("name_pl", &req.name_pl)?;
+        validate_optional_short_product_name("name_uk", &req.name_uk)?;
+        validate_optional_short_product_name("name_ru", &req.name_ru)?;
+
         let mut tx = self.pool.begin().await?;
 
         // 1. Get existing product
