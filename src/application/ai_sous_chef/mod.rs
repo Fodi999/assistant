@@ -168,6 +168,7 @@ pub struct UpdateStateRequest {
     pub name_suffix_pl: Option<String>,
     pub name_suffix_ru: Option<String>,
     pub name_suffix_uk: Option<String>,
+    pub image_url: Option<String>,
 }
 
 impl AiSousChefService {
@@ -226,6 +227,7 @@ impl AiSousChefService {
                 name_suffix_pl      = COALESCE($22, name_suffix_pl),
                 name_suffix_ru      = COALESCE($23, name_suffix_ru),
                 name_suffix_uk      = COALESCE($24, name_suffix_uk),
+                image_url           = COALESCE($25, image_url),
                 generated_by        = 'admin_edit',
                 updated_at          = now()
             WHERE id = $1"#,
@@ -254,6 +256,7 @@ impl AiSousChefService {
         .bind(&req.name_suffix_pl)
         .bind(&req.name_suffix_ru)
         .bind(&req.name_suffix_uk)
+        .bind(&req.image_url)
         .execute(&self.pool)
         .await?;
 
@@ -268,6 +271,7 @@ impl AiSousChefService {
                 glycemic_index, cooking_method::text as cooking_method,
                 name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
                 notes_en, notes_pl, notes_ru, notes_uk,
+                image_url,
                 notes, generated_by, data_score::float8,
                 to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
                 to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -1021,6 +1025,7 @@ impl AiSousChefService {
                 glycemic_index, cooking_method::text as cooking_method,
                 name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
                 notes_en, notes_pl, notes_ru, notes_uk,
+                image_url,
                 notes, generated_by, data_score::float8,
                 to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
                 to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -1077,6 +1082,7 @@ pub struct IngredientStateRow {
     pub notes_pl: Option<String>,
     pub notes_ru: Option<String>,
     pub notes_uk: Option<String>,
+    pub image_url: Option<String>,
     pub notes: Option<String>,
     pub generated_by: Option<String>,
     pub data_score: Option<f64>,
