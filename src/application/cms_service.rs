@@ -349,6 +349,14 @@ pub struct ArticleRow {
     pub author_avatar_position: String,
     pub seo_title: String,
     pub seo_description: String,
+    pub seo_title_en: String,
+    pub seo_title_ru: String,
+    pub seo_title_pl: String,
+    pub seo_title_uk: String,
+    pub seo_description_en: String,
+    pub seo_description_ru: String,
+    pub seo_description_pl: String,
+    pub seo_description_uk: String,
     pub published: bool,
     pub published_at: Option<OffsetDateTime>,
     pub order_index: i32,
@@ -376,6 +384,14 @@ pub struct ArticlePublicItem {
     pub author_avatar_position: String,
     pub seo_title: String,
     pub seo_description: String,
+    pub seo_title_en: String,
+    pub seo_title_ru: String,
+    pub seo_title_pl: String,
+    pub seo_title_uk: String,
+    pub seo_description_en: String,
+    pub seo_description_ru: String,
+    pub seo_description_pl: String,
+    pub seo_description_uk: String,
     pub published: bool,
     pub published_at: Option<String>,
     pub order_index: i32,
@@ -403,6 +419,14 @@ impl From<ArticleRow> for ArticlePublicItem {
             author_avatar_position: r.author_avatar_position,
             seo_title: r.seo_title,
             seo_description: r.seo_description,
+            seo_title_en: r.seo_title_en,
+            seo_title_ru: r.seo_title_ru,
+            seo_title_pl: r.seo_title_pl,
+            seo_title_uk: r.seo_title_uk,
+            seo_description_en: r.seo_description_en,
+            seo_description_ru: r.seo_description_ru,
+            seo_description_pl: r.seo_description_pl,
+            seo_description_uk: r.seo_description_uk,
             published: r.published,
             published_at: r.published_at.and_then(|value| {
                 value
@@ -440,6 +464,14 @@ pub struct CreateArticleRequest {
     pub author_avatar_position: Option<String>,
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
+    pub seo_title_en: Option<String>,
+    pub seo_title_ru: Option<String>,
+    pub seo_title_pl: Option<String>,
+    pub seo_title_uk: Option<String>,
+    pub seo_description_en: Option<String>,
+    pub seo_description_ru: Option<String>,
+    pub seo_description_pl: Option<String>,
+    pub seo_description_uk: Option<String>,
     #[serde(default)]
     pub published: bool,
     pub order_index: Option<i32>,
@@ -466,6 +498,14 @@ pub struct AiArticleDraft {
     pub content_uk: String,
     pub seo_title: String,
     pub seo_description: String,
+    pub seo_title_en: String,
+    pub seo_title_ru: String,
+    pub seo_title_pl: String,
+    pub seo_title_uk: String,
+    pub seo_description_en: String,
+    pub seo_description_ru: String,
+    pub seo_description_pl: String,
+    pub seo_description_uk: String,
     pub image_prompts: Vec<String>,
 }
 
@@ -628,6 +668,14 @@ pub struct UpdateArticleRequest {
     pub author_avatar_position: Option<String>,
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
+    pub seo_title_en: Option<String>,
+    pub seo_title_ru: Option<String>,
+    pub seo_title_pl: Option<String>,
+    pub seo_title_uk: Option<String>,
+    pub seo_description_en: Option<String>,
+    pub seo_description_ru: Option<String>,
+    pub seo_description_pl: Option<String>,
+    pub seo_description_uk: Option<String>,
     pub published: Option<bool>,
     pub order_index: Option<i32>,
 }
@@ -1151,6 +1199,8 @@ Return ONLY valid JSON with this exact shape:
   "title_en": "...", "title_ru": "...", "title_pl": "...", "title_uk": "...",
   "content_en": "...", "content_ru": "...", "content_pl": "...", "content_uk": "...",
   "seo_title": "...", "seo_description": "...",
+  "seo_title_en": "...", "seo_title_ru": "...", "seo_title_pl": "...", "seo_title_uk": "...",
+  "seo_description_en": "...", "seo_description_ru": "...", "seo_description_pl": "...", "seo_description_uk": "...",
   "image_prompts": ["one prompt for every requested image"]
 }}
 
@@ -1160,7 +1210,8 @@ Content rules:
 - Start with a useful introduction, then 3-5 sections with ## headings, practical checklist and conclusion
 - Give factual, actionable culinary guidance; never invent scientific claims
 - Do not include the article title as the first Markdown heading
-- SEO description is 120-160 characters in English
+- SEO titles are unique, localized and under 60 characters
+- SEO descriptions are unique, localized and 120-160 characters
 - image_prompts are concise English photography directions matching the article, no text or logos
 - Return exactly {image_count} image prompts; for recipes they must follow the process chronologically
 - Return ONLY JSON"#,
@@ -1386,16 +1437,18 @@ STORE PRODUCT RULES:
                (slug, category, title_en, title_pl, title_ru, title_uk,
                 content_en, content_pl, content_ru, content_uk,
                 image_url, author_name, author_avatar_url, author_avatar_position, seo_title, seo_description,
+                seo_title_en, seo_title_ru, seo_title_pl, seo_title_uk,
+                seo_description_en, seo_description_ru, seo_description_pl, seo_description_uk,
                 published, published_at, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, CASE WHEN $17 THEN NOW() ELSE NULL END, $18)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25, CASE WHEN $25 THEN NOW() ELSE NULL END, $26)
                RETURNING *"#,
         )
         .bind(&slug)
         .bind(req.category.unwrap_or_default())
         .bind(&req.title_en)
-        .bind(req.title_pl.unwrap_or_default())
-        .bind(req.title_ru.unwrap_or_default())
-        .bind(req.title_uk.unwrap_or_default())
+        .bind(req.title_pl.clone().unwrap_or_default())
+        .bind(req.title_ru.clone().unwrap_or_default())
+        .bind(req.title_uk.clone().unwrap_or_default())
         .bind(req.content_en.unwrap_or_default())
         .bind(req.content_pl.unwrap_or_default())
         .bind(req.content_ru.unwrap_or_default())
@@ -1407,8 +1460,44 @@ STORE PRODUCT RULES:
             req.author_avatar_position
                 .unwrap_or_else(|| "center".to_string()),
         )
-        .bind(req.seo_title.unwrap_or_else(|| req.title_en.clone()))
-        .bind(req.seo_description.unwrap_or_default())
+        .bind(
+            req.seo_title
+                .clone()
+                .or_else(|| req.seo_title_en.clone())
+                .unwrap_or_else(|| req.title_en.clone()),
+        )
+        .bind(
+            req.seo_description
+                .clone()
+                .or_else(|| req.seo_description_en.clone())
+                .unwrap_or_default(),
+        )
+        .bind(req.seo_title_en.unwrap_or_else(|| req.title_en.clone()))
+        .bind(req.seo_title_ru.unwrap_or_else(|| {
+            if let Some(title) = &req.title_ru {
+                title.clone()
+            } else {
+                req.title_en.clone()
+            }
+        }))
+        .bind(req.seo_title_pl.unwrap_or_else(|| {
+            if let Some(title) = &req.title_pl {
+                title.clone()
+            } else {
+                req.title_en.clone()
+            }
+        }))
+        .bind(req.seo_title_uk.unwrap_or_else(|| {
+            if let Some(title) = &req.title_uk {
+                title.clone()
+            } else {
+                req.title_en.clone()
+            }
+        }))
+        .bind(req.seo_description_en.unwrap_or_default())
+        .bind(req.seo_description_ru.unwrap_or_default())
+        .bind(req.seo_description_pl.unwrap_or_default())
+        .bind(req.seo_description_uk.unwrap_or_default())
         .bind(req.published)
         .bind(req.order_index.unwrap_or(0))
         .fetch_one(&self.pool)
@@ -1557,14 +1646,16 @@ STORE PRODUCT RULES:
                content_en=$7, content_pl=$8, content_ru=$9, content_uk=$10,
                image_url=$11, author_name=$12, author_avatar_url=$13, author_avatar_position=$14,
                seo_title=$15, seo_description=$16,
-               published=$17,
+               seo_title_en=$17, seo_title_ru=$18, seo_title_pl=$19, seo_title_uk=$20,
+               seo_description_en=$21, seo_description_ru=$22, seo_description_pl=$23, seo_description_uk=$24,
+               published=$25,
                published_at=CASE
-                 WHEN $17 = true AND published_at IS NULL THEN NOW()
-                 WHEN $17 = false THEN NULL
+                 WHEN $25 = true AND published_at IS NULL THEN NOW()
+                 WHEN $25 = false THEN NULL
                  ELSE published_at
                END,
-               order_index=$18, updated_at=NOW()
-               WHERE id=$19 RETURNING *"#,
+               order_index=$26, updated_at=NOW()
+               WHERE id=$27 RETURNING *"#,
         )
         .bind(req.slug.unwrap_or(cur.slug))
         .bind(req.category.unwrap_or(cur.category))
@@ -1585,6 +1676,14 @@ STORE PRODUCT RULES:
         )
         .bind(req.seo_title.unwrap_or(cur.seo_title))
         .bind(req.seo_description.unwrap_or(cur.seo_description))
+        .bind(req.seo_title_en.unwrap_or(cur.seo_title_en))
+        .bind(req.seo_title_ru.unwrap_or(cur.seo_title_ru))
+        .bind(req.seo_title_pl.unwrap_or(cur.seo_title_pl))
+        .bind(req.seo_title_uk.unwrap_or(cur.seo_title_uk))
+        .bind(req.seo_description_en.unwrap_or(cur.seo_description_en))
+        .bind(req.seo_description_ru.unwrap_or(cur.seo_description_ru))
+        .bind(req.seo_description_pl.unwrap_or(cur.seo_description_pl))
+        .bind(req.seo_description_uk.unwrap_or(cur.seo_description_uk))
         .bind(req.published.unwrap_or(cur.published))
         .bind(req.order_index.unwrap_or(cur.order_index))
         .bind(id)
