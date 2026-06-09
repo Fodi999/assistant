@@ -478,6 +478,7 @@ pub struct PublicStateRow {
     pub notes_pl: Option<String>,
     pub notes_ru: Option<String>,
     pub notes_uk: Option<String>,
+    pub image_url: Option<String>,
     pub data_score: Option<f64>,
 }
 
@@ -534,6 +535,7 @@ pub async fn get_ingredient_states(
             glycemic_index, cooking_method::text as cooking_method,
             name_suffix_en, name_suffix_pl, name_suffix_ru, name_suffix_uk,
             notes_en, notes_pl, notes_ru, notes_uk,
+            image_url,
             data_score::float8
         FROM ingredient_states
         WHERE ingredient_id = $1
