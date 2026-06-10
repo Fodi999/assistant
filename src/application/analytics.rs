@@ -80,6 +80,28 @@ pub struct AnalyticsDailyRow {
     pub total_revenue: f64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AnalyticsRealtime {
+    pub configured: bool,
+    pub property_id: Option<String>,
+    pub active_users: f64,
+    pub pages: Vec<AnalyticsRealtimePage>,
+    pub events: Vec<AnalyticsRealtimeEvent>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnalyticsRealtimePage {
+    pub path: String,
+    pub active_users: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnalyticsRealtimeEvent {
+    pub event_name: String,
+    pub active_users: f64,
+    pub event_count: f64,
+}
+
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: Option<String>,
@@ -301,6 +323,67 @@ impl AnalyticsService {
         })
     }
 
+    pub async fn realtime(&self) -> AppResult<AnalyticsRealtime> {
+        let property_id = self.required_property_id()?;
+        let access_token = self.access_token().await?;
+
+        let active = self
+            .run_realtime_report(
+                &property_id,
+                &access_token,
+                json!({
+                    "metrics": [{ "name": "activeUsers" }]
+                }),
+            )
+            .await?;
+
+        let pages = self
+            .run_realtime_report(
+                &property_id,
+                &access_token,
+                json!({
+                    "dimensions": [{ "name": "unifiedPagePathScreen" }],
+                    "metrics": [{ "name": "activeUsers" }],
+                    "orderBys": [{ "metric": { "metricName": "activeUsers" }, "desc": true }],
+                    "limit": 10
+                }),
+            )
+            .await?;
+
+        let events = self
+            .run_realtime_report(
+                &property_id,
+                &access_token,
+                json!({
+                    "dimensions": [{ "name": "eventName" }],
+                    "metrics": [
+                        { "name": "activeUsers" },
+                        { "name": "eventCount" }
+                    ],
+                    "orderBys": [{ "metric": { "metricName": "eventCount" }, "desc": true }],
+                    "limit": 20
+                }),
+            )
+            .await?;
+
+        let metrics = active
+            .get("rows")
+            .and_then(|value| value.as_array())
+            .and_then(|rows| rows.first())
+            .and_then(|row| row.get("metricValues"))
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(AnalyticsRealtime {
+            configured: true,
+            property_id: Some(property_id),
+            active_users: metric_value(&metrics, 0),
+            pages: parse_realtime_pages(&pages),
+            events: parse_realtime_events(&events),
+        })
+    }
+
     async fn access_token(&self) -> AppResult<String> {
         let client_id = self.required_client_id()?;
         let client_secret = self.required_client_secret()?;
@@ -371,6 +454,40 @@ impl AnalyticsService {
 
         if !status.is_success() {
             return Err(AppError::validation(format!("GA4 Data API error: {value}")));
+        }
+
+        Ok(value)
+    }
+
+    async fn run_realtime_report(
+        &self,
+        property_id: &str,
+        access_token: &str,
+        body: serde_json::Value,
+    ) -> AppResult<serde_json::Value> {
+        let url = format!(
+            "https://analyticsdata.googleapis.com/v1beta/properties/{}:runRealtimeReport",
+            property_id.trim_start_matches("properties/")
+        );
+
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(access_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::internal(format!("GA4 Realtime API request failed: {e}")))?;
+
+        let status = response.status();
+        let value: serde_json::Value = response.json().await.map_err(|e| {
+            AppError::internal(format!("GA4 Realtime API response parse failed: {e}"))
+        })?;
+
+        if !status.is_success() {
+            return Err(AppError::validation(format!(
+                "GA4 Realtime API error: {value}"
+            )));
         }
 
         Ok(value)
@@ -508,6 +625,63 @@ fn parse_daily_rows(report: &serde_json::Value) -> Vec<AnalyticsDailyRow> {
                         page_views: metric_value(&metrics, 2),
                         conversions: metric_value(&metrics, 3),
                         total_revenue: metric_value(&metrics, 4),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_realtime_pages(report: &serde_json::Value) -> Vec<AnalyticsRealtimePage> {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let dimensions = row
+                        .get("dimensionValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let metrics = row
+                        .get("metricValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    AnalyticsRealtimePage {
+                        path: dimension_value(&dimensions, 0),
+                        active_users: metric_value(&metrics, 0),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_realtime_events(report: &serde_json::Value) -> Vec<AnalyticsRealtimeEvent> {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let dimensions = row
+                        .get("dimensionValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let metrics = row
+                        .get("metricValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    AnalyticsRealtimeEvent {
+                        event_name: dimension_value(&dimensions, 0),
+                        active_users: metric_value(&metrics, 0),
+                        event_count: metric_value(&metrics, 1),
                     }
                 })
                 .collect()

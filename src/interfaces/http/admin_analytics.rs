@@ -54,3 +54,10 @@ pub async fn overview(
     let days = query.days.unwrap_or(30);
     Ok(Json(service.overview(days).await?))
 }
+
+/// GET /api/admin/analytics/realtime
+pub async fn realtime(
+    State(service): State<AnalyticsService>,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(Json(service.realtime().await?))
+}

@@ -386,6 +386,7 @@ pub fn create_router(
     // Admin analytics routes (protected with admin JWT)
     let admin_analytics_routes = Router::new()
         .route("/overview", get(admin_analytics::overview))
+        .route("/realtime", get(admin_analytics::realtime))
         .route("/oauth/url", get(admin_analytics::oauth_url))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
