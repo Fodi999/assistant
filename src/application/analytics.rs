@@ -343,12 +343,13 @@ impl AnalyticsService {
                 &access_token,
                 json!({
                     "dimensions": [{ "name": "unifiedScreenName" }],
-                    "metrics": [{ "name": "activeUsers" }],
-                    "orderBys": [{ "metric": { "metricName": "activeUsers" }, "desc": true }],
+                    "metrics": [{ "name": "screenPageViews" }],
+                    "orderBys": [{ "metric": { "metricName": "screenPageViews" }, "desc": true }],
                     "limit": 10
                 }),
             )
-            .await?;
+            .await
+            .unwrap_or_else(|_| json!({ "rows": [] }));
 
         let events = self
             .run_realtime_report(
@@ -361,7 +362,8 @@ impl AnalyticsService {
                     "limit": 20
                 }),
             )
-            .await?;
+            .await
+            .unwrap_or_else(|_| json!({ "rows": [] }));
 
         let metrics = active
             .get("rows")
