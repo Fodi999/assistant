@@ -49,6 +49,12 @@ pub struct AnalyticsOverview {
     pub events: Vec<AnalyticsEventRow>,
     pub daily: Vec<AnalyticsDailyRow>,
     pub top_pages: Vec<AnalyticsPageRow>,
+    pub countries: Vec<AnalyticsDimensionRow>,
+    pub cities: Vec<AnalyticsDimensionRow>,
+    pub regions: Vec<AnalyticsDimensionRow>,
+    pub languages: Vec<AnalyticsDimensionRow>,
+    pub devices: Vec<AnalyticsDimensionRow>,
+    pub traffic_sources: Vec<AnalyticsDimensionRow>,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,6 +84,15 @@ pub struct AnalyticsDailyRow {
     pub page_views: f64,
     pub conversions: f64,
     pub total_revenue: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnalyticsDimensionRow {
+    pub name: String,
+    pub active_users: f64,
+    pub sessions: f64,
+    pub page_views: f64,
+    pub conversions: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -297,6 +312,31 @@ impl AnalyticsService {
             )
             .await?;
 
+        let countries = self
+            .run_dimension_report(&property_id, &access_token, days, "country", 10)
+            .await?;
+        let cities = self
+            .run_dimension_report(&property_id, &access_token, days, "city", 10)
+            .await?;
+        let regions = self
+            .run_dimension_report(&property_id, &access_token, days, "region", 10)
+            .await?;
+        let languages = self
+            .run_dimension_report(&property_id, &access_token, days, "language", 10)
+            .await?;
+        let devices = self
+            .run_dimension_report(&property_id, &access_token, days, "deviceCategory", 10)
+            .await?;
+        let traffic_sources = self
+            .run_dimension_report(
+                &property_id,
+                &access_token,
+                days,
+                "sessionDefaultChannelGroup",
+                10,
+            )
+            .await?;
+
         let metrics = summary
             .get("rows")
             .and_then(|v| v.as_array())
@@ -320,6 +360,12 @@ impl AnalyticsService {
             events: parse_event_rows(&events),
             daily: parse_daily_rows(&daily),
             top_pages: parse_page_rows(&pages),
+            countries: parse_dimension_rows(&countries),
+            cities: parse_dimension_rows(&cities),
+            regions: parse_dimension_rows(&regions),
+            languages: parse_dimension_rows(&languages),
+            devices: parse_dimension_rows(&devices),
+            traffic_sources: parse_dimension_rows(&traffic_sources),
         })
     }
 
@@ -456,6 +502,33 @@ impl AnalyticsService {
         }
 
         Ok(value)
+    }
+
+    async fn run_dimension_report(
+        &self,
+        property_id: &str,
+        access_token: &str,
+        days: u16,
+        dimension: &str,
+        limit: u16,
+    ) -> AppResult<serde_json::Value> {
+        self.run_report(
+            property_id,
+            access_token,
+            json!({
+                "dateRanges": [{ "startDate": format!("{days}daysAgo"), "endDate": "today" }],
+                "dimensions": [{ "name": dimension }],
+                "metrics": [
+                    { "name": "activeUsers" },
+                    { "name": "sessions" },
+                    { "name": "screenPageViews" },
+                    { "name": "conversions" }
+                ],
+                "orderBys": [{ "metric": { "metricName": "activeUsers" }, "desc": true }],
+                "limit": limit
+            }),
+        )
+        .await
     }
 
     async fn run_realtime_report(
@@ -631,6 +704,37 @@ fn parse_daily_rows(report: &serde_json::Value) -> Vec<AnalyticsDailyRow> {
         .unwrap_or_default()
 }
 
+fn parse_dimension_rows(report: &serde_json::Value) -> Vec<AnalyticsDimensionRow> {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let dimensions = row
+                        .get("dimensionValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let metrics = row
+                        .get("metricValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    AnalyticsDimensionRow {
+                        name: normalize_dimension_name(&dimension_value(&dimensions, 0)),
+                        active_users: metric_value(&metrics, 0),
+                        sessions: metric_value(&metrics, 1),
+                        page_views: metric_value(&metrics, 2),
+                        conversions: metric_value(&metrics, 3),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn parse_realtime_pages(report: &serde_json::Value) -> Vec<AnalyticsRealtimePage> {
     report
         .get("rows")
@@ -686,6 +790,15 @@ fn parse_realtime_events(report: &serde_json::Value) -> Vec<AnalyticsRealtimeEve
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn normalize_dimension_name(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "(not set)" {
+        "Не определено".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn dimension_value(values: &[serde_json::Value], index: usize) -> String {
