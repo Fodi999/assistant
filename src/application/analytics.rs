@@ -42,8 +42,12 @@ pub struct AnalyticsOverview {
     pub active_users: f64,
     pub sessions: f64,
     pub page_views: f64,
+    pub conversions: f64,
+    pub total_revenue: f64,
     pub engagement_rate: f64,
     pub average_session_duration: f64,
+    pub events: Vec<AnalyticsEventRow>,
+    pub daily: Vec<AnalyticsDailyRow>,
     pub top_pages: Vec<AnalyticsPageRow>,
 }
 
@@ -53,6 +57,27 @@ pub struct AnalyticsPageRow {
     pub title: String,
     pub views: f64,
     pub active_users: f64,
+    pub engagement_rate: f64,
+    pub conversions: f64,
+    pub total_revenue: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnalyticsEventRow {
+    pub event_name: String,
+    pub count: f64,
+    pub users: f64,
+    pub total_revenue: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnalyticsDailyRow {
+    pub date: String,
+    pub active_users: f64,
+    pub sessions: f64,
+    pub page_views: f64,
+    pub conversions: f64,
+    pub total_revenue: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -180,6 +205,8 @@ impl AnalyticsService {
                         { "name": "activeUsers" },
                         { "name": "sessions" },
                         { "name": "screenPageViews" },
+                        { "name": "conversions" },
+                        { "name": "totalRevenue" },
                         { "name": "engagementRate" },
                         { "name": "averageSessionDuration" }
                     ]
@@ -199,10 +226,51 @@ impl AnalyticsService {
                     ],
                     "metrics": [
                         { "name": "screenPageViews" },
-                        { "name": "activeUsers" }
+                        { "name": "activeUsers" },
+                        { "name": "engagementRate" },
+                        { "name": "conversions" },
+                        { "name": "totalRevenue" }
                     ],
                     "orderBys": [{ "metric": { "metricName": "screenPageViews" }, "desc": true }],
                     "limit": 10
+                }),
+            )
+            .await?;
+
+        let events = self
+            .run_report(
+                &property_id,
+                &access_token,
+                json!({
+                    "dateRanges": [{ "startDate": format!("{days}daysAgo"), "endDate": "today" }],
+                    "dimensions": [{ "name": "eventName" }],
+                    "metrics": [
+                        { "name": "eventCount" },
+                        { "name": "totalUsers" },
+                        { "name": "totalRevenue" }
+                    ],
+                    "orderBys": [{ "metric": { "metricName": "eventCount" }, "desc": true }],
+                    "limit": 25
+                }),
+            )
+            .await?;
+
+        let daily = self
+            .run_report(
+                &property_id,
+                &access_token,
+                json!({
+                    "dateRanges": [{ "startDate": format!("{days}daysAgo"), "endDate": "today" }],
+                    "dimensions": [{ "name": "date" }],
+                    "metrics": [
+                        { "name": "activeUsers" },
+                        { "name": "sessions" },
+                        { "name": "screenPageViews" },
+                        { "name": "conversions" },
+                        { "name": "totalRevenue" }
+                    ],
+                    "orderBys": [{ "dimension": { "dimensionName": "date" } }],
+                    "limit": 400
                 }),
             )
             .await?;
@@ -223,8 +291,12 @@ impl AnalyticsService {
             active_users: metric_value(&metrics, 0),
             sessions: metric_value(&metrics, 1),
             page_views: metric_value(&metrics, 2),
-            engagement_rate: metric_value(&metrics, 3),
-            average_session_duration: metric_value(&metrics, 4),
+            conversions: metric_value(&metrics, 3),
+            total_revenue: metric_value(&metrics, 4),
+            engagement_rate: metric_value(&metrics, 5),
+            average_session_duration: metric_value(&metrics, 6),
+            events: parse_event_rows(&events),
+            daily: parse_daily_rows(&daily),
             top_pages: parse_page_rows(&pages),
         })
     }
@@ -371,6 +443,71 @@ fn parse_page_rows(report: &serde_json::Value) -> Vec<AnalyticsPageRow> {
                         title: dimension_value(&dimensions, 1),
                         views: metric_value(&metrics, 0),
                         active_users: metric_value(&metrics, 1),
+                        engagement_rate: metric_value(&metrics, 2),
+                        conversions: metric_value(&metrics, 3),
+                        total_revenue: metric_value(&metrics, 4),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_event_rows(report: &serde_json::Value) -> Vec<AnalyticsEventRow> {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let dimensions = row
+                        .get("dimensionValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let metrics = row
+                        .get("metricValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    AnalyticsEventRow {
+                        event_name: dimension_value(&dimensions, 0),
+                        count: metric_value(&metrics, 0),
+                        users: metric_value(&metrics, 1),
+                        total_revenue: metric_value(&metrics, 2),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_daily_rows(report: &serde_json::Value) -> Vec<AnalyticsDailyRow> {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let dimensions = row
+                        .get("dimensionValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let metrics = row
+                        .get("metricValues")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    AnalyticsDailyRow {
+                        date: dimension_value(&dimensions, 0),
+                        active_users: metric_value(&metrics, 0),
+                        sessions: metric_value(&metrics, 1),
+                        page_views: metric_value(&metrics, 2),
+                        conversions: metric_value(&metrics, 3),
+                        total_revenue: metric_value(&metrics, 4),
                     }
                 })
                 .collect()
