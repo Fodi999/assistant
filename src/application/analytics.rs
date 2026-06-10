@@ -342,7 +342,7 @@ impl AnalyticsService {
                 &property_id,
                 &access_token,
                 json!({
-                    "dimensions": [{ "name": "unifiedPagePathScreen" }],
+                    "dimensions": [{ "name": "unifiedScreenName" }],
                     "metrics": [{ "name": "activeUsers" }],
                     "orderBys": [{ "metric": { "metricName": "activeUsers" }, "desc": true }],
                     "limit": 10
