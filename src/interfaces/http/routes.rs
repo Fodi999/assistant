@@ -9,6 +9,7 @@ use crate::application::{
     AdminAuthService,
     AdminCatalogService,
     AdminNutritionService,
+    AnalyticsService,
     AssistantService,
     AuthService,
     CatalogService,
@@ -22,6 +23,7 @@ use crate::application::{
 };
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
+    admin_analytics,
     admin_auth,
     admin_catalog,
     admin_cms,
@@ -116,6 +118,7 @@ pub fn create_router(
     admin_auth_service: AdminAuthService, // 🆕 Super Admin auth service
     admin_catalog_service: AdminCatalogService, // 🆕 Admin Catalog service
     admin_nutrition_service: AdminNutritionService, // 🆕 Nutrition editor
+    analytics_service: AnalyticsService,  // 🆕 Google Analytics Data API
     r2_client: crate::infrastructure::R2Client, // 🆕 for CMS image upload
     llm_adapter: Arc<crate::infrastructure::llm_adapter::LlmAdapter>, // 🆕 for public AI SEO content
     ingredient_cache: Arc<crate::infrastructure::IngredientCache>,    // 🆕 for ChefOS Chat
@@ -379,6 +382,31 @@ pub fn create_router(
             require_super_admin,
         ))
         .with_state(pool.clone());
+
+    // Admin analytics routes (protected with admin JWT)
+    let admin_analytics_routes = Router::new()
+        .route("/overview", get(admin_analytics::overview))
+        .route("/oauth/url", get(admin_analytics::oauth_url))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
+        .with_state(analytics_service.clone());
+
+    // Google redirects here without Authorization header; state protects the exchange.
+    let admin_analytics_oauth_callback_route = Router::new()
+        .route("/oauth/callback", get(admin_analytics::oauth_callback))
+        .with_state(analytics_service.clone());
 
     // Admin states routes — AI Sous Chef (ingredient processing states)
     let ai_sous_chef_service = AiSousChefService::new(pool.clone());
@@ -1336,6 +1364,8 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
+        .nest("/api/admin/analytics", admin_analytics_routes)
+        .nest("/api/admin/analytics", admin_analytics_oauth_callback_route)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete

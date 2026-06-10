@@ -2,6 +2,7 @@ pub mod admin_auth;
 pub mod admin_catalog;
 pub mod admin_nutrition;
 pub mod ai_sous_chef; // AI Sous Chef — deterministic state generation
+pub mod analytics;
 pub mod assistant_service;
 pub mod auth;
 pub mod catalog;
@@ -36,6 +37,7 @@ pub mod user; // 🆕 Copilot — главный LLM Brain над всеми б�
 pub use admin_auth::*;
 pub use admin_catalog::*;
 pub use admin_nutrition::*;
+pub use analytics::*;
 pub use assistant_service::*;
 pub use auth::*;
 pub use catalog::*;

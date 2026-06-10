@@ -1,7 +1,7 @@
 use restaurant_backend::application::{
-    AdminAuthService, AdminCatalogService, AdminNutritionService, AssistantService, AuthService,
-    CatalogService, DishService, InventoryService, MenuEngineeringService, RecipeService,
-    TenantIngredientService, UserService,
+    AdminAuthService, AdminCatalogService, AdminNutritionService, AnalyticsService,
+    AssistantService, AuthService, CatalogService, DishService, InventoryService,
+    MenuEngineeringService, RecipeService, TenantIngredientService, UserService,
 };
 use restaurant_backend::infrastructure::{
     Config, JwtService, LlmAdapter, PasswordHasher, R2Client, Repositories,
@@ -190,6 +190,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create AdminNutritionService
     let admin_nutrition_service = AdminNutritionService::new(repositories.pool.clone());
 
+    // Create AnalyticsService (Google OAuth + GA4 Data API)
+    let analytics_service = AnalyticsService::from_env();
+
     // Create TenantIngredientService
     let tenant_ingredient_service =
         TenantIngredientService::new(Arc::new(repositories.tenant_ingredient.clone()));
@@ -260,6 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_auth_service,
         admin_catalog_service,
         admin_nutrition_service,
+        analytics_service,
         r2_client,
         llm_adapter,
         ingredient_cache,

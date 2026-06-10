@@ -1,3 +1,4 @@
+pub mod admin_analytics;
 pub mod admin_auth;
 pub mod admin_catalog;
 pub mod admin_cms;
