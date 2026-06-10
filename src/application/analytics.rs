@@ -356,10 +356,7 @@ impl AnalyticsService {
                 &access_token,
                 json!({
                     "dimensions": [{ "name": "eventName" }],
-                    "metrics": [
-                        { "name": "activeUsers" },
-                        { "name": "eventCount" }
-                    ],
+                    "metrics": [{ "name": "eventCount" }],
                     "orderBys": [{ "metric": { "metricName": "eventCount" }, "desc": true }],
                     "limit": 20
                 }),
@@ -680,8 +677,8 @@ fn parse_realtime_events(report: &serde_json::Value) -> Vec<AnalyticsRealtimeEve
 
                     AnalyticsRealtimeEvent {
                         event_name: dimension_value(&dimensions, 0),
-                        active_users: metric_value(&metrics, 0),
-                        event_count: metric_value(&metrics, 1),
+                        active_users: 0.0,
+                        event_count: metric_value(&metrics, 0),
                     }
                 })
                 .collect()
