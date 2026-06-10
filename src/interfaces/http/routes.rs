@@ -408,6 +408,11 @@ pub fn create_router(
         .route("/oauth/callback", get(admin_analytics::oauth_callback))
         .with_state(analytics_service.clone());
 
+    let google_auth_routes = Router::new()
+        .route("/auth/google", get(admin_analytics::google_login))
+        .route("/auth/google/callback", get(admin_analytics::oauth_callback))
+        .with_state(analytics_service.clone());
+
     // Admin states routes — AI Sous Chef (ingredient processing states)
     let ai_sous_chef_service = AiSousChefService::new(pool.clone());
     let admin_states_middleware = {
@@ -1315,6 +1320,7 @@ pub fn create_router(
         .merge(sitemap_router)
         // ── style.css ──
         .merge(health_route)
+        .merge(google_auth_routes)
         .merge(chef_reference_routes)
         // 🆕 Static file serving for Laboratory v2 uploads (no auth).
         // Files written by `LocalStorageAdapter("./uploads", "/static")`

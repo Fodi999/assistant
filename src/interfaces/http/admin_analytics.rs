@@ -2,7 +2,7 @@ use crate::application::analytics::AnalyticsService;
 use crate::shared::AppError;
 use axum::{
     extract::{Query, State},
-    response::IntoResponse,
+    response::{IntoResponse, Redirect},
     Json,
 };
 use serde::Deserialize;
@@ -16,6 +16,14 @@ pub struct OAuthCallbackQuery {
 #[derive(Debug, Deserialize)]
 pub struct OverviewQuery {
     pub days: Option<u16>,
+}
+
+/// GET /auth/google
+pub async fn google_login(
+    State(service): State<AnalyticsService>,
+) -> Result<impl IntoResponse, AppError> {
+    let oauth = service.oauth_url()?;
+    Ok(Redirect::temporary(&oauth.url))
 }
 
 /// GET /api/admin/analytics/oauth/url

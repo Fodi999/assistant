@@ -70,10 +70,17 @@ impl AnalyticsService {
     pub fn from_env() -> Self {
         Self {
             client: Client::new(),
-            client_id: non_empty_env("GOOGLE_OAUTH_CLIENT_ID"),
-            client_secret: non_empty_env("GOOGLE_OAUTH_CLIENT_SECRET"),
-            redirect_uri: non_empty_env("GOOGLE_OAUTH_REDIRECT_URI"),
-            oauth_state: non_empty_env("GA4_OAUTH_STATE"),
+            client_id: first_non_empty_env(&["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLIENT_ID"]),
+            client_secret: first_non_empty_env(&[
+                "GOOGLE_OAUTH_CLIENT_SECRET",
+                "GOOGLE_CLIENT_SECRET",
+            ]),
+            redirect_uri: first_non_empty_env(&[
+                "GOOGLE_OAUTH_REDIRECT_URI",
+                "GOOGLE_REDIRECT_URI",
+            ]),
+            oauth_state: non_empty_env("GA4_OAUTH_STATE")
+                .or_else(|| Some("ga4-admin-oauth".to_string())),
             property_id: non_empty_env("GA4_PROPERTY_ID"),
             refresh_token: non_empty_env("GA4_REFRESH_TOKEN"),
         }
@@ -326,6 +333,10 @@ fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key)
         .ok()
         .filter(|value| !value.trim().is_empty())
+}
+
+fn first_non_empty_env(keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| non_empty_env(key))
 }
 
 fn metric_value(values: &[serde_json::Value], index: usize) -> f64 {
