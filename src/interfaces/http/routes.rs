@@ -29,6 +29,7 @@ use crate::interfaces::http::{
     admin_cms,
     admin_intent_pages,
     admin_nutrition,
+    admin_search_console,
     admin_states,
     admin_users,
     assistant::{get_state, send_command},
@@ -412,6 +413,29 @@ pub fn create_router(
     let google_auth_routes = Router::new()
         .route("/auth/google", get(admin_analytics::google_login))
         .route("/auth/google/callback", get(admin_analytics::oauth_callback))
+        .with_state(analytics_service.clone());
+
+    // Admin Search Console routes (protected with admin JWT)
+    let admin_search_console_routes = Router::new()
+        .route("/sites", get(admin_search_console::sites))
+        .route("/overview", get(admin_search_console::overview))
+        .route("/queries", get(admin_search_console::queries))
+        .route("/pages", get(admin_search_console::pages))
+        .route("/daily", get(admin_search_console::daily))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
         .with_state(analytics_service.clone());
 
     // Admin states routes — AI Sous Chef (ingredient processing states)
@@ -1373,6 +1397,7 @@ pub fn create_router(
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
         .nest("/api/admin/analytics", admin_analytics_routes)
         .nest("/api/admin/analytics", admin_analytics_oauth_callback_route)
+        .nest("/api/admin/search-console", admin_search_console_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete

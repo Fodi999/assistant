@@ -1,11 +1,12 @@
 use crate::shared::{AppError, AppResult};
+use chrono::{Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
-const GA4_SCOPE: &str = "https://www.googleapis.com/auth/analytics.readonly";
+const GOOGLE_SCOPES: &str = "https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly";
 
 #[derive(Clone)]
 pub struct AnalyticsService {
@@ -16,6 +17,7 @@ pub struct AnalyticsService {
     oauth_state: Option<String>,
     property_id: Option<String>,
     refresh_token: Option<String>,
+    search_console_site_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +119,41 @@ pub struct AnalyticsRealtimeEvent {
     pub event_count: f64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SearchConsoleSite {
+    pub site_url: String,
+    pub permission_level: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchConsoleOverview {
+    pub configured: bool,
+    pub site_url: String,
+    pub date_range: String,
+    pub clicks: f64,
+    pub impressions: f64,
+    pub ctr: f64,
+    pub position: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchConsoleRow {
+    pub key: String,
+    pub clicks: f64,
+    pub impressions: f64,
+    pub ctr: f64,
+    pub position: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchConsoleDailyRow {
+    pub date: String,
+    pub clicks: f64,
+    pub impressions: f64,
+    pub ctr: f64,
+    pub position: f64,
+}
+
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: Option<String>,
@@ -144,7 +181,12 @@ impl AnalyticsService {
             oauth_state: non_empty_env("GA4_OAUTH_STATE")
                 .or_else(|| Some("ga4-admin-oauth".to_string())),
             property_id: non_empty_env("GA4_PROPERTY_ID"),
-            refresh_token: non_empty_env("GA4_REFRESH_TOKEN"),
+            refresh_token: first_non_empty_env(&["GOOGLE_REFRESH_TOKEN", "GA4_REFRESH_TOKEN"]),
+            search_console_site_url: first_non_empty_env(&[
+                "SEARCH_CONSOLE_SITE_URL",
+                "GSC_SITE_URL",
+                "GOOGLE_SEARCH_CONSOLE_SITE_URL",
+            ]),
         }
     }
 
@@ -161,14 +203,14 @@ impl AnalyticsService {
             GOOGLE_AUTH_URL,
             percent_encode(&client_id),
             percent_encode(&redirect_uri),
-            percent_encode(GA4_SCOPE),
+            percent_encode(GOOGLE_SCOPES),
             percent_encode(&state),
         );
 
         Ok(AnalyticsOAuthUrl {
             url,
             redirect_uri,
-            scope: GA4_SCOPE.to_string(),
+            scope: GOOGLE_SCOPES.to_string(),
         })
     }
 
@@ -429,13 +471,143 @@ impl AnalyticsService {
         })
     }
 
+    pub async fn search_console_sites(&self) -> AppResult<Vec<SearchConsoleSite>> {
+        let access_token = self.access_token().await?;
+        let response = self
+            .client
+            .get("https://www.googleapis.com/webmasters/v3/sites")
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|e| AppError::internal(format!("Search Console sites request failed: {e}")))?;
+
+        let status = response.status();
+        let value: serde_json::Value = response.json().await.map_err(|e| {
+            AppError::internal(format!("Search Console sites response parse failed: {e}"))
+        })?;
+
+        if !status.is_success() {
+            return Err(AppError::validation(format!(
+                "Search Console API error: {value}"
+            )));
+        }
+
+        Ok(value
+            .get("siteEntry")
+            .and_then(|value| value.as_array())
+            .map(|sites| {
+                sites
+                    .iter()
+                    .map(|site| SearchConsoleSite {
+                        site_url: site
+                            .get("siteUrl")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        permission_level: site
+                            .get("permissionLevel")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    pub async fn search_console_overview(
+        &self,
+        site_url: Option<String>,
+        days: u16,
+    ) -> AppResult<SearchConsoleOverview> {
+        let site_url = self.required_search_console_site_url(site_url)?;
+        let days = days.clamp(1, 365);
+        let report = self
+            .run_search_console_query(&site_url, days, json!({ "rowLimit": 1 }))
+            .await?;
+        let metrics = search_console_first_metrics(&report);
+
+        Ok(SearchConsoleOverview {
+            configured: true,
+            site_url,
+            date_range: format!("last_{days}_days"),
+            clicks: metrics.0,
+            impressions: metrics.1,
+            ctr: metrics.2,
+            position: metrics.3,
+        })
+    }
+
+    pub async fn search_console_queries(
+        &self,
+        site_url: Option<String>,
+        days: u16,
+        limit: u16,
+    ) -> AppResult<Vec<SearchConsoleRow>> {
+        self.search_console_dimension(site_url, days, limit, "query")
+            .await
+    }
+
+    pub async fn search_console_pages(
+        &self,
+        site_url: Option<String>,
+        days: u16,
+        limit: u16,
+    ) -> AppResult<Vec<SearchConsoleRow>> {
+        self.search_console_dimension(site_url, days, limit, "page")
+            .await
+    }
+
+    pub async fn search_console_daily(
+        &self,
+        site_url: Option<String>,
+        days: u16,
+        limit: u16,
+    ) -> AppResult<Vec<SearchConsoleDailyRow>> {
+        let site_url = self.required_search_console_site_url(site_url)?;
+        let report = self
+            .run_search_console_query(
+                &site_url,
+                days.clamp(1, 365),
+                json!({
+                    "dimensions": ["date"],
+                    "rowLimit": limit.clamp(1, 500)
+                }),
+            )
+            .await?;
+
+        Ok(parse_search_console_daily_rows(&report))
+    }
+
+    async fn search_console_dimension(
+        &self,
+        site_url: Option<String>,
+        days: u16,
+        limit: u16,
+        dimension: &str,
+    ) -> AppResult<Vec<SearchConsoleRow>> {
+        let site_url = self.required_search_console_site_url(site_url)?;
+        let report = self
+            .run_search_console_query(
+                &site_url,
+                days.clamp(1, 365),
+                json!({
+                    "dimensions": [dimension],
+                    "rowLimit": limit.clamp(1, 250)
+                }),
+            )
+            .await?;
+
+        Ok(parse_search_console_rows(&report))
+    }
+
     async fn access_token(&self) -> AppResult<String> {
         let client_id = self.required_client_id()?;
         let client_secret = self.required_client_secret()?;
         let refresh_token = self
             .refresh_token
             .as_deref()
-            .ok_or_else(|| AppError::validation("GA4_REFRESH_TOKEN is not configured"))?;
+            .ok_or_else(|| AppError::validation("GOOGLE_REFRESH_TOKEN is not configured"))?;
 
         let response = self
             .client
@@ -499,6 +671,50 @@ impl AnalyticsService {
 
         if !status.is_success() {
             return Err(AppError::validation(format!("GA4 Data API error: {value}")));
+        }
+
+        Ok(value)
+    }
+
+    async fn run_search_console_query(
+        &self,
+        site_url: &str,
+        days: u16,
+        body: serde_json::Value,
+    ) -> AppResult<serde_json::Value> {
+        let access_token = self.access_token().await?;
+        let mut request_body = body;
+        let start_date = days_ago_date(days);
+        let end_date = today_date();
+
+        if let Some(object) = request_body.as_object_mut() {
+            object.insert("startDate".to_string(), json!(start_date));
+            object.insert("endDate".to_string(), json!(end_date));
+        }
+
+        let url = format!(
+            "https://www.googleapis.com/webmasters/v3/sites/{}/searchAnalytics/query",
+            percent_encode(site_url)
+        );
+
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(access_token)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| AppError::internal(format!("Search Console query request failed: {e}")))?;
+
+        let status = response.status();
+        let value: serde_json::Value = response.json().await.map_err(|e| {
+            AppError::internal(format!("Search Console query response parse failed: {e}"))
+        })?;
+
+        if !status.is_success() {
+            return Err(AppError::validation(format!(
+                "Search Console API error: {value}"
+            )));
         }
 
         Ok(value)
@@ -588,6 +804,17 @@ impl AnalyticsService {
             .clone()
             .ok_or_else(|| AppError::validation("GA4_PROPERTY_ID is not configured"))
     }
+
+    fn required_search_console_site_url(&self, site_url: Option<String>) -> AppResult<String> {
+        site_url
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| self.search_console_site_url.clone())
+            .ok_or_else(|| {
+                AppError::validation(
+                    "SEARCH_CONSOLE_SITE_URL is not configured; call /api/admin/search-console/sites first",
+                )
+            })
+    }
 }
 
 fn non_empty_env(key: &str) -> Option<String> {
@@ -607,6 +834,84 @@ fn metric_value(values: &[serde_json::Value], index: usize) -> f64 {
         .and_then(|value| value.as_str())
         .and_then(|value| value.parse::<f64>().ok())
         .unwrap_or(0.0)
+}
+
+fn json_number(value: &serde_json::Value, key: &str) -> f64 {
+    value
+        .get(key)
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0)
+}
+
+fn search_console_first_metrics(report: &serde_json::Value) -> (f64, f64, f64, f64) {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .and_then(|rows| rows.first())
+        .map(|row| {
+            (
+                json_number(row, "clicks"),
+                json_number(row, "impressions"),
+                json_number(row, "ctr"),
+                json_number(row, "position"),
+            )
+        })
+        .unwrap_or((0.0, 0.0, 0.0, 0.0))
+}
+
+fn parse_search_console_rows(report: &serde_json::Value) -> Vec<SearchConsoleRow> {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| SearchConsoleRow {
+                    key: search_console_key(row),
+                    clicks: json_number(row, "clicks"),
+                    impressions: json_number(row, "impressions"),
+                    ctr: json_number(row, "ctr"),
+                    position: json_number(row, "position"),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_search_console_daily_rows(report: &serde_json::Value) -> Vec<SearchConsoleDailyRow> {
+    report
+        .get("rows")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| SearchConsoleDailyRow {
+                    date: search_console_key(row),
+                    clicks: json_number(row, "clicks"),
+                    impressions: json_number(row, "impressions"),
+                    ctr: json_number(row, "ctr"),
+                    position: json_number(row, "position"),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn search_console_key(row: &serde_json::Value) -> String {
+    row.get("keys")
+        .and_then(|value| value.as_array())
+        .and_then(|keys| keys.first())
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn today_date() -> String {
+    Utc::now().date_naive().format("%Y-%m-%d").to_string()
+}
+
+fn days_ago_date(days: u16) -> String {
+    (Utc::now().date_naive() - Duration::days(days as i64))
+        .format("%Y-%m-%d")
+        .to_string()
 }
 
 fn parse_page_rows(report: &serde_json::Value) -> Vec<AnalyticsPageRow> {
