@@ -1,4 +1,4 @@
-.PHONY: help setup db-create db-migrate db-drop test run clean lint format check wasm wasm-geometry wasm-all
+.PHONY: help setup db-create db-migrate db-drop test run clean lint format check
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -12,19 +12,6 @@ setup: ## Install dependencies and setup project
 	@echo "Copying .env.example to .env..."
 	cp -n .env.example .env || true
 	@echo "Setup complete! Edit .env file with your database credentials."
-
-wasm: ## Build geometry_engine → WASM (unified 2D+3D engine)
-	@echo "Building geometry_engine → WASM …"
-	wasm-pack build crates/geometry_engine --target web --features wasm
-	@mkdir -p static/wasm
-	@rm -rf static/wasm/geometry_engine
-	@cp -r crates/geometry_engine/pkg static/wasm/geometry_engine
-	@echo "✓ static/wasm/geometry_engine/geometry_engine.js"
-
-wasm-geometry: wasm ## alias
-
-wasm-all: wasm ## Build geometry_engine WASM
-	@echo "✓ geometry_engine WASM built"
 
 db-create: ## Create database
 	createdb restaurant_db || echo "Database may already exist"

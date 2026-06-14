@@ -89,7 +89,7 @@ fn xml_response(base: &str, entries: &[SitemapEntry]) -> Response {
 
 fn robots_response(base: &str) -> Response {
     let body = format!(
-        "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /public/\nDisallow: /static/\nDisallow: /wasm/\nSitemap: {}/sitemap.xml\n",
+        "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /public/\nDisallow: /static/\nSitemap: {}/sitemap.xml\n",
         base.trim_end_matches('/')
     );
 

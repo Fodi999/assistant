@@ -86,7 +86,7 @@ use crate::interfaces::http::{
 };
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, FromRequestParts, Request},
-    http::{header, HeaderValue, Method, StatusCode},
+    http::{header, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -426,7 +426,10 @@ pub fn create_router(
 
     let google_auth_routes = Router::new()
         .route("/auth/google", get(admin_analytics::google_login))
-        .route("/auth/google/callback", get(admin_analytics::oauth_callback))
+        .route(
+            "/auth/google/callback",
+            get(admin_analytics::oauth_callback),
+        )
         .with_state(analytics_service.clone());
 
     // Admin Search Console routes (protected with admin JWT)
@@ -1322,88 +1325,21 @@ pub fn create_router(
         (None, None, None)
     };
 
-    // ── CAD editor page (geometry_engine extracted — stub) ───────────────────
-    #[allow(dead_code)]
-    async fn editor_handler() -> Response {
-        Response::builder()
-            .header(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("text/html; charset=utf-8"),
-            )
-            .header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
-            .body(axum::body::Body::from(
-                "<h1>CAD Editor</h1><p>geometry_engine is a separate service.</p>",
-            ))
-            .unwrap()
-    }
-
-    // ── Chef-site frontend (Leptos SSR) ──────────────────────────────────────
-    use crate::web::handlers as web;
-
     // Combine all routes
     let mut router = Router::new()
-        // ── Chef-site pages ──
-        .route("/", get(web::home))
-        .route("/menu", get(web::menu))
-        .route("/delivery", get(web::delivery))
-        .route("/booking", get(web::booking))
-        .route("/recipes", get(web::recipes_list))
-        .route("/recipes/:id", get(web::recipe_detail))
-        .route("/about", get(web::about))
-        .route("/blog", get(web::blog_list))
-        .route("/blog/:slug", get(web::blog_detail))
-        .route("/ingredient-catalog", get(web::ingredients))
-        .route("/ingredient-catalog/:slug", get(web::ingredient_detail))
-        .route(
-            "/ingredient-catalog/:slug/:state",
-            get(web::ingredient_state_detail),
-        )
-        .route("/cookie", get(web::cookie))
-        .route("/privacy", get(web::privacy))
-        .route("/terms", get(web::terms))
         .merge(sitemap_router)
-        // ── style.css ──
         .merge(health_route)
         .merge(google_auth_routes)
         .merge(chef_reference_routes)
         // 🆕 Static file serving for Laboratory v2 uploads (no auth).
         // Files written by `LocalStorageAdapter("./uploads", "/static")`
         // are served back at `/static/<key>`.
-        // ── style.css chef-сайта ──
-        .route(
-            "/style.css",
-            get(|| async {
-                (
-                    [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
-                    include_str!("../../../static/chef/style.css"),
-                )
-            }),
-        )
-        .route(
-            "/app.js",
-            get(|| async {
-                (
-                    [(
-                        axum::http::header::CONTENT_TYPE,
-                        "application/javascript; charset=utf-8",
-                    )],
-                    include_str!("../../../static/chef/app.js"),
-                )
-            }),
-        )
         // The `fix_static_mime` middleware patches Content-Type for .obj / .mtl
         // because mime_guess doesn't know those extensions.
         .nest_service(
             "/static",
             Router::new()
                 .nest_service("/", ServeDir::new("uploads"))
-                .layer(middleware::from_fn(fix_static_mime)),
-        )
-        // geometry_engine WASM — /wasm/geometry_engine/geometry_engine.js
-        .nest_service(
-            "/wasm",
-            Router::new()
-                .nest_service("/", ServeDir::new("static/wasm"))
                 .layer(middleware::from_fn(fix_static_mime)),
         )
         .nest("/public", public_router)
@@ -1468,19 +1404,6 @@ async fn fix_static_mime(
         res.headers_mut().insert(
             axum::http::header::CONTENT_TYPE,
             axum::http::HeaderValue::from_static("text/plain; charset=utf-8"),
-        );
-    } else if path.ends_with(".wasm") {
-        // Required by browsers for streaming compilation (WebAssembly.instantiateStreaming).
-        res.headers_mut().insert(
-            axum::http::header::CONTENT_TYPE,
-            axum::http::HeaderValue::from_static("application/wasm"),
-        );
-    }
-    // Never cache `/wasm/*` — geometry_engine.wasm rebuilds frequently.
-    if path.starts_with("/wasm/") {
-        res.headers_mut().insert(
-            axum::http::header::CACHE_CONTROL,
-            axum::http::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
         );
     }
     res

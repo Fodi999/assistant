@@ -13,7 +13,6 @@ COPY Cargo.toml Cargo.lock ./
 
 # Copy source code and migrations
 COPY src ./src
-COPY static ./static
 COPY migrations ./migrations
 
 # Deterministic build with locked dependencies
@@ -32,7 +31,6 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=builder /app/target/release/restaurant-backend /app/restaurant-backend
 COPY --from=builder /app/migrations /app/migrations
-COPY --from=builder /app/static /app/static
 
 EXPOSE 8000
 
