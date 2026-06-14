@@ -7,6 +7,7 @@ pub mod admin_nutrition;
 pub mod admin_search_console;
 pub mod admin_states; // Ingredient processing states (AI Sous Chef)
 pub mod admin_users;
+pub mod almabuild;
 pub mod assistant;
 pub mod auth;
 pub mod billing; // 🆕 Stripe Checkout + Webhook

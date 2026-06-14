@@ -32,6 +32,7 @@ use crate::interfaces::http::{
     admin_search_console,
     admin_states,
     admin_users,
+    almabuild,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{
@@ -378,6 +379,17 @@ pub fn create_router(
         .route("/users", get(admin_users::list_users))
         .route("/users/:id", delete(admin_users::delete_user))
         .route("/stats", get(admin_users::get_stats))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .with_state(pool.clone());
+
+    let admin_almabuild_routes = Router::new()
+        .route(
+            "/content",
+            get(almabuild::admin_get_content).put(almabuild::admin_put_content),
+        )
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1222,6 +1234,10 @@ pub fn create_router(
         .with_state(cms_service.clone());
 
     // ── Public CMS routes (no auth) ───────────────────────────────────────────
+    let public_almabuild_router = Router::new()
+        .route("/almabuild/content", get(almabuild::public_content))
+        .with_state(pool_for_public.clone());
+
     let public_cms_router = Router::new()
         .route("/about", get(public_cms::get_about))
         .route("/expertise", get(public_cms::list_expertise))
@@ -1249,6 +1265,7 @@ pub fn create_router(
         .merge(platform_router) // 🆕 RuleBot: /tools/run + /tools/catalog
         .merge(public_catalog_router) // 🆕 ChefOS: GET /catalog/categories | /catalog/ingredients (no auth, ?lang=xx)
         .merge(public_catalog_detail_router) // 🆕 ChefOS: GET /catalog/ingredients/:slug (full nutrition detail)
+        .merge(public_almabuild_router)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
@@ -1394,6 +1411,7 @@ pub fn create_router(
         .nest("/api/admin/catalog/states", admin_states_routes)
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
+        .nest("/api/admin/almabuild", admin_almabuild_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
         .nest("/api/admin/analytics", admin_analytics_routes)
         .nest("/api/admin/analytics", admin_analytics_oauth_callback_route)
