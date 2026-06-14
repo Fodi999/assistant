@@ -90,7 +90,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use governor::{clock::DefaultClock, state::keyed::DashMapStateStore, Quota, RateLimiter};
 use sqlx::PgPool;
@@ -390,6 +390,8 @@ pub fn create_router(
             "/content",
             get(almabuild::admin_get_content).put(almabuild::admin_put_content),
         )
+        .route("/ai/edit", post(almabuild::admin_ai_edit))
+        .layer(Extension(Arc::clone(&llm_adapter)))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,

@@ -1,7 +1,10 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
+use std::sync::Arc;
+
+use crate::{infrastructure::llm_adapter::LlmAdapter, shared::AppError};
 
 const SITE_KEY: &str = "almabuild";
 
@@ -132,4 +135,118 @@ pub async fn admin_put_content(
     })?;
 
     Ok(Json(content))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiEditRequest {
+    pub kind: String,
+    pub instruction: String,
+    pub value: Value,
+}
+
+fn strip_json_fence(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    let fence_json = "`".repeat(3) + "json";
+    let fence = "`".repeat(3);
+    if let Some(rest) = trimmed.strip_prefix(&fence_json) {
+        return rest.trim().trim_end_matches(&fence).trim();
+    }
+    if let Some(rest) = trimmed.strip_prefix(&fence) {
+        return rest.trim().trim_end_matches(&fence).trim();
+    }
+    trimmed
+}
+
+fn almabuild_schema(kind: &str) -> &'static str {
+    match kind {
+        "material" => {
+            r#"{"index":"[0:1]","slug":"slug","title":"Название","text":"Описание","bullets":["Пункт"],"photo":"material-class"}"#
+        }
+        "product" => {
+            r#"{"categorySlug":"slug","category":"Категория","title":"Название","spec":"Характеристики","photo":"photo-class"}"#
+        }
+        "kit" => r#"{"title":"Название","text":"Описание","items":["Позиция"]}"#,
+        "project" => r#"{"title":"Название","meta":"Тип · площадь · срок","photo":"photo-class"}"#,
+        _ => r#"{}"#,
+    }
+}
+
+fn validate_ai_value(kind: &str, value: Value) -> Result<Value, AppError> {
+    match kind {
+        "material" => {
+            let parsed: MaterialCategory = serde_json::from_value(value).map_err(|e| {
+                AppError::validation(format!("Gemini вернул неверную карточку материала: {e}"))
+            })?;
+            serde_json::to_value(parsed)
+                .map_err(|e| AppError::internal(format!("serialize material: {e}")))
+        }
+        "product" => {
+            let parsed: Product = serde_json::from_value(value).map_err(|e| {
+                AppError::validation(format!("Gemini вернул неверную карточку товара: {e}"))
+            })?;
+            serde_json::to_value(parsed)
+                .map_err(|e| AppError::internal(format!("serialize product: {e}")))
+        }
+        "kit" => {
+            let parsed: Kit = serde_json::from_value(value).map_err(|e| {
+                AppError::validation(format!("Gemini вернул неверный комплект: {e}"))
+            })?;
+            serde_json::to_value(parsed)
+                .map_err(|e| AppError::internal(format!("serialize kit: {e}")))
+        }
+        "project" => {
+            let parsed: Project = serde_json::from_value(value)
+                .map_err(|e| AppError::validation(format!("Gemini вернул неверный проект: {e}")))?;
+            serde_json::to_value(parsed)
+                .map_err(|e| AppError::internal(format!("serialize project: {e}")))
+        }
+        _ => Err(AppError::validation(
+            "Неизвестный тип карточки для AI редактирования",
+        )),
+    }
+}
+
+pub async fn admin_ai_edit(
+    Extension(llm): Extension<Arc<LlmAdapter>>,
+    Json(req): Json<AiEditRequest>,
+) -> Result<Json<Value>, AppError> {
+    let schema = almabuild_schema(&req.kind);
+    if schema == "{}" {
+        return Err(AppError::validation(
+            "Неизвестный тип карточки для AI редактирования",
+        ));
+    }
+
+    let prompt = format!(
+        r#"Ты редактируешь контент строительного сайта KAZAXBUD / ALMABUILD.
+Верни ТОЛЬКО JSON без markdown и пояснений.
+Тип карточки: {kind}
+Схема результата: {schema}
+
+Задача администратора:
+{instruction}
+
+Текущая карточка JSON:
+{value}
+
+Правила:
+- Пиши профессионально на русском, если исходный текст русский.
+- Не меняй смысл, если администратор не попросил.
+- Сохрани все поля схемы.
+- slug/categorySlug/photo оставляй стабильными, если администратор явно не просит изменить.
+- bullets/items должны быть массивом коротких пунктов.
+"#,
+        kind = req.kind,
+        schema = schema,
+        instruction = req.instruction,
+        value = req.value
+    );
+
+    let raw = llm
+        .groq_raw_request_with_model(&prompt, 4000, "gemini-3.1-pro-preview")
+        .await?;
+    let value: Value = serde_json::from_str(strip_json_fence(&raw))
+        .map_err(|e| AppError::internal(format!("Gemini вернул не JSON: {e}")))?;
+    Ok(Json(validate_ai_value(&req.kind, value)?))
 }
