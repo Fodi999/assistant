@@ -3,7 +3,7 @@ import * as echarts from 'echarts';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import type { AppPage, ManagedSite } from '../components/Sidebar';
 import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
-import { aiCreateProductDraft, aiGenerateProductImage, updateAdminProduct, type CreateAdminProductRequest } from '../api/catalog';
+import { aiCreateProductDraft, aiGenerateProductImage, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
 import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
 import { aiCreateArticleDraft, updateArticle } from '../api/cms';
 import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../types/admin';
@@ -358,34 +358,21 @@ function categoryDisplayName(category?: AdminCategory) {
 
 
 type CatalogEditDraft = Partial<CreateAdminProductRequest>;
+type CatalogEditTab = 'basic' | 'content' | 'nutrition' | 'vitamins' | 'minerals' | 'culinary' | 'health' | 'states';
+
+const CATALOG_VITAMINS = [['vitamin_a', 'A'], ['vitamin_c', 'C'], ['vitamin_d', 'D'], ['vitamin_e', 'E'], ['vitamin_k', 'K'], ['vitamin_b1', 'B1'], ['vitamin_b2', 'B2'], ['vitamin_b3', 'B3'], ['vitamin_b5', 'B5'], ['vitamin_b6', 'B6'], ['vitamin_b7', 'B7'], ['vitamin_b9', 'B9'], ['vitamin_b12', 'B12']] as const;
+const CATALOG_MINERALS = [['calcium', 'Calcium'], ['iron', 'Iron'], ['magnesium', 'Magnesium'], ['phosphorus', 'Phosphorus'], ['potassium', 'Potassium'], ['sodium', 'Sodium'], ['zinc', 'Zinc'], ['copper', 'Copper'], ['manganese', 'Manganese'], ['selenium', 'Selenium']] as const;
+const CATALOG_DIETS = [['vegan', 'Vegan'], ['vegetarian', 'Vegetarian'], ['keto', 'Keto'], ['paleo', 'Paleo'], ['gluten_free', 'Gluten free'], ['mediterranean', 'Mediterranean'], ['low_carb', 'Low carb']] as const;
 
 function productToCatalogEditDraft(product: AdminProduct): CatalogEditDraft {
   return {
-    name_en: product.name_en || '',
-    name_ru: product.name_ru || '',
-    name_pl: product.name_pl || '',
-    name_uk: product.name_uk || '',
-    unit: product.unit as CreateAdminProductRequest['unit'],
-    product_type: product.product_type || '',
-    description: product.description || product.description_en || '',
-    description_en: product.description_en || product.description || '',
-    description_ru: product.description_ru || '',
-    description_pl: product.description_pl || '',
-    description_uk: product.description_uk || '',
+    name_en: product.name_en || '', name_ru: product.name_ru || '', name_pl: product.name_pl || '', name_uk: product.name_uk || '',
+    unit: product.unit as CreateAdminProductRequest['unit'], product_type: product.product_type || '',
+    description: product.description || product.description_en || '', description_en: product.description_en || product.description || '', description_ru: product.description_ru || '', description_pl: product.description_pl || '', description_uk: product.description_uk || '',
     image_url: product.image_url || undefined,
-    calories_per_100g: product.calories_per_100g ?? undefined,
-    protein_per_100g: product.protein_per_100g ?? undefined,
-    fat_per_100g: product.fat_per_100g ?? undefined,
-    carbs_per_100g: product.carbs_per_100g ?? undefined,
-    fiber_per_100g: product.fiber_per_100g ?? undefined,
-    sugar_per_100g: product.sugar_per_100g ?? undefined,
-    density_g_per_ml: product.density_g_per_ml ?? undefined,
-    typical_portion_g: product.typical_portion_g ?? undefined,
-    shelf_life_days: product.shelf_life_days ?? undefined,
-    seasons: product.seasons || [],
-    seo_title: product.seo_title || '',
-    seo_description: product.seo_description || '',
-    seo_h1: product.seo_h1 || ''
+    calories_per_100g: product.calories_per_100g ?? undefined, protein_per_100g: product.protein_per_100g ?? undefined, fat_per_100g: product.fat_per_100g ?? undefined, carbs_per_100g: product.carbs_per_100g ?? undefined, fiber_per_100g: product.fiber_per_100g ?? undefined, sugar_per_100g: product.sugar_per_100g ?? undefined,
+    density_g_per_ml: product.density_g_per_ml ?? undefined, typical_portion_g: product.typical_portion_g ?? undefined, shelf_life_days: product.shelf_life_days ?? undefined,
+    seasons: product.seasons || [], seo_title: product.seo_title || '', seo_description: product.seo_description || '', seo_h1: product.seo_h1 || ''
   };
 }
 
@@ -393,142 +380,146 @@ function draftFromGeminiResponse(current: CatalogEditDraft, response: Awaited<Re
   const draft = response.draft;
   return {
     ...current,
-    name_en: draft.names.en.value || current.name_en,
-    name_ru: draft.names.ru.value || current.name_ru,
-    name_pl: draft.names.pl.value || current.name_pl,
-    name_uk: draft.names.uk.value || current.name_uk,
-    unit: draft.unit.value as CreateAdminProductRequest['unit'] || current.unit,
-    product_type: draft.product_type.value || current.product_type,
-    description: draft.description_en.value || current.description,
-    description_en: draft.description_en.value || current.description_en,
-    description_ru: draft.description_ru.value || current.description_ru,
-    description_pl: draft.description_pl.value || current.description_pl,
-    description_uk: draft.description_uk.value || current.description_uk,
-    calories_per_100g: draft.nutrition.calories_per_100g.value ?? current.calories_per_100g,
-    protein_per_100g: draft.nutrition.protein_per_100g.value ?? current.protein_per_100g,
-    fat_per_100g: draft.nutrition.fat_per_100g.value ?? current.fat_per_100g,
-    carbs_per_100g: draft.nutrition.carbs_per_100g.value ?? current.carbs_per_100g,
-    fiber_per_100g: draft.nutrition.fiber_per_100g.value ?? current.fiber_per_100g,
-    sugar_per_100g: draft.nutrition.sugar_per_100g.value ?? current.sugar_per_100g,
-    density_g_per_ml: draft.nutrition.density_g_per_ml.value ?? current.density_g_per_ml,
-    typical_portion_g: draft.nutrition.typical_portion_g.value ?? current.typical_portion_g,
-    shelf_life_days: draft.nutrition.shelf_life_days.value ?? current.shelf_life_days,
-    seasons: draft.seasons.value || current.seasons,
-    seo_title: draft.seo.seo_title.value || current.seo_title,
-    seo_description: draft.seo.seo_description.value || current.seo_description,
-    seo_h1: draft.seo.seo_h1.value || current.seo_h1
+    name_en: draft.names.en.value || current.name_en, name_ru: draft.names.ru.value || current.name_ru, name_pl: draft.names.pl.value || current.name_pl, name_uk: draft.names.uk.value || current.name_uk,
+    unit: draft.unit.value as CreateAdminProductRequest['unit'] || current.unit, product_type: draft.product_type.value || current.product_type,
+    description: draft.description_en.value || current.description, description_en: draft.description_en.value || current.description_en, description_ru: draft.description_ru.value || current.description_ru, description_pl: draft.description_pl.value || current.description_pl, description_uk: draft.description_uk.value || current.description_uk,
+    calories_per_100g: draft.nutrition.calories_per_100g.value ?? current.calories_per_100g, protein_per_100g: draft.nutrition.protein_per_100g.value ?? current.protein_per_100g, fat_per_100g: draft.nutrition.fat_per_100g.value ?? current.fat_per_100g, carbs_per_100g: draft.nutrition.carbs_per_100g.value ?? current.carbs_per_100g,
+    fiber_per_100g: draft.nutrition.fiber_per_100g.value ?? current.fiber_per_100g, sugar_per_100g: draft.nutrition.sugar_per_100g.value ?? current.sugar_per_100g, density_g_per_ml: draft.nutrition.density_g_per_ml.value ?? current.density_g_per_ml, typical_portion_g: draft.nutrition.typical_portion_g.value ?? current.typical_portion_g, shelf_life_days: draft.nutrition.shelf_life_days.value ?? current.shelf_life_days,
+    seasons: draft.seasons.value || current.seasons, seo_title: draft.seo.seo_title.value || current.seo_title, seo_description: draft.seo.seo_description.value || current.seo_description, seo_h1: draft.seo.seo_h1.value || current.seo_h1
   };
+}
+
+function profileFromDetail(detail: Awaited<ReturnType<typeof getAdminNutritionProduct>>): AiExtendedProductProfile {
+  return {
+    macros: detail.macros || {}, vitamins: detail.vitamins || {}, minerals: detail.minerals || {}, fatty_acids: detail.fatty_acids || {}, diet_flags: detail.diet_flags || {}, allergens: detail.allergens || {}, food_properties: detail.food_properties || {}, culinary: detail.culinary || {}, health_profile: detail.health_profile || {}, sugar_profile: detail.sugar_profile || {}, processing_effects: detail.processing_effects || {}, culinary_behavior: detail.culinary_behavior || {}
+  };
+}
+
+function applyDetailToDraft(current: CatalogEditDraft, detail: Awaited<ReturnType<typeof getAdminNutritionProduct>>): CatalogEditDraft {
+  return {
+    ...current,
+    name_en: detail.name_en || current.name_en, name_ru: detail.name_ru || current.name_ru, name_pl: detail.name_pl || current.name_pl, name_uk: detail.name_uk || current.name_uk,
+    product_type: detail.product_type || current.product_type, unit: detail.unit as CreateAdminProductRequest['unit'] || current.unit, image_url: detail.image_url || current.image_url,
+    description_en: detail.description_en || current.description_en, description_ru: detail.description_ru || current.description_ru, description_pl: detail.description_pl || current.description_pl, description_uk: detail.description_uk || current.description_uk,
+    density_g_per_ml: detail.density_g_per_ml ?? current.density_g_per_ml, typical_portion_g: detail.typical_portion_g ?? current.typical_portion_g, shelf_life_days: detail.shelf_life_days ?? current.shelf_life_days,
+    calories_per_100g: Number(detail.macros?.calories_kcal ?? current.calories_per_100g ?? '') || current.calories_per_100g,
+    protein_per_100g: Number(detail.macros?.protein_g ?? current.protein_per_100g ?? '') || current.protein_per_100g,
+    fat_per_100g: Number(detail.macros?.fat_g ?? current.fat_per_100g ?? '') || current.fat_per_100g,
+    carbs_per_100g: Number(detail.macros?.carbs_g ?? current.carbs_per_100g ?? '') || current.carbs_per_100g,
+    fiber_per_100g: Number(detail.macros?.fiber_g ?? current.fiber_per_100g ?? '') || current.fiber_per_100g,
+    sugar_per_100g: Number(detail.macros?.sugar_g ?? current.sugar_per_100g ?? '') || current.sugar_per_100g
+  };
+}
+
+function csvToArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function arrayToCsv(value: unknown): string {
+  return Array.isArray(value) ? value.join(', ') : String(value || '');
 }
 
 function CatalogProductEditor({ product, category, onClose, onSaved }: { product: AdminProduct; category?: AdminCategory; onClose: () => void; onSaved: () => Promise<void> | void }) {
   const [draft, setDraft] = useState<CatalogEditDraft>(() => productToCatalogEditDraft(product));
-  const [instruction, setInstruction] = useState('Улучши карточку продукта: короткие названия, SEO title/description, 4 языка, nutrition без фантазий, стиль полезный для food каталога.');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [profile, setProfile] = useState<AiExtendedProductProfile>({});
+  const [states, setStates] = useState<IngredientState[]>([]);
+  const [tab, setTab] = useState<CatalogEditTab>('basic');
+  const [instruction, setInstruction] = useState('Заполни полную карточку продукта как на публичной странице: 4 языка, SEO, nutrition, витамины, минералы, кулинарный профиль, диеты и health profile. Не выдумывай медицинские гарантии.');
+  const [busy, setBusy] = useState<string | null>('load');
+  const [message, setMessage] = useState<string | null>('Загружаем полную карточку из backend...');
 
-  function setText(field: keyof CatalogEditDraft, value: string) {
-    setDraft((current) => ({ ...current, [field]: value }));
-  }
+  useEffect(() => {
+    let mounted = true;
+    async function loadFullProduct() {
+      setBusy('load');
+      try {
+        const [detail, nextStates] = await Promise.all([getAdminNutritionProduct(product.id), listProductStates(product.id).catch(() => [])]);
+        if (!mounted) return;
+        setDraft((current) => applyDetailToDraft(current, detail));
+        setProfile(profileFromDetail(detail));
+        setStates(nextStates);
+        setMessage('Полная карточка загружена из backend.');
+      } catch (err) {
+        if (mounted) setMessage(err instanceof Error ? err.message : 'Не удалось загрузить полную карточку');
+      } finally {
+        if (mounted) setBusy(null);
+      }
+    }
+    void loadFullProduct();
+    return () => { mounted = false; };
+  }, [product.id]);
 
-  function setNumber(field: keyof CatalogEditDraft, value: string) {
-    setDraft((current) => ({ ...current, [field]: value === '' ? undefined : Number(value) }));
-  }
+  function setText(field: keyof CatalogEditDraft, value: string) { setDraft((current) => ({ ...current, [field]: value })); }
+  function setNumber(field: keyof CatalogEditDraft, value: string) { setDraft((current) => ({ ...current, [field]: value === '' ? undefined : Number(value) })); }
+  function profileValue(section: keyof AiExtendedProductProfile, field: string): unknown { return profile[section]?.[field]; }
+  function setProfileValue(section: keyof AiExtendedProductProfile, field: string, value: string | number | boolean | null | string[]) { setProfile((current) => ({ ...current, [section]: { ...(current[section] || {}), [field]: value } })); }
+  function setProfileNumber(section: keyof AiExtendedProductProfile, field: string, value: string) { setProfileValue(section, field, value === '' ? null : Number(value)); }
 
   async function runGeminiEdit() {
     setBusy('gemini'); setMessage(null);
     try {
-      const prompt = [
-        instruction,
-        'Текущий продукт JSON:',
-        JSON.stringify({ slug: product.slug, category: categoryDisplayName(category), ...draft }, null, 2),
-        'Верни улучшенный продукт через существующий формат AI draft.'
-      ].join('\n\n');
-      const response = await aiCreateProductDraft(prompt);
+      const response = await aiCreateProductDraft([instruction, 'Текущий продукт:', JSON.stringify({ slug: product.slug, category: categoryDisplayName(category), draft, profile }, null, 2)].join('\n\n'));
       setDraft((current) => draftFromGeminiResponse(current, response));
-      setMessage(`Gemini обновил черновик. Уверенность ${Math.round(response.draft.confidence * 100)}%. Проверь и нажми Сохранить.`);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Gemini не смог обновить продукт');
-    } finally {
-      setBusy(null);
-    }
+      setProfile((current) => ({ ...current, ...response.draft.extended }));
+      setMessage(`Gemini обновил черновик. Уверенность ${Math.round(response.draft.confidence * 100)}%. Проверь вкладки и сохрани.`);
+    } catch (err) { setMessage(err instanceof Error ? err.message : 'Gemini не смог обновить продукт'); }
+    finally { setBusy(null); }
   }
 
   async function generateImage() {
     setBusy('image'); setMessage(null);
     try {
-      const name = String(draft.name_ru || draft.name_en || productDisplayName(product));
-      const description = String(draft.description_ru || draft.description_en || draft.seo_description || '');
-      const image = await aiGenerateProductImage(name, description, true);
+      const image = await aiGenerateProductImage(String(draft.name_ru || draft.name_en || productDisplayName(product)), String(draft.description_ru || draft.description_en || draft.seo_description || ''), true);
       setDraft((current) => ({ ...current, image_url: image.image_url }));
       setMessage('Фото создано. Нажми Сохранить, чтобы привязать его к продукту.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Не удалось сгенерировать фото');
-    } finally {
-      setBusy(null);
-    }
+    } catch (err) { setMessage(err instanceof Error ? err.message : 'Не удалось сгенерировать фото'); }
+    finally { setBusy(null); }
+  }
+
+  async function regenerateStates() {
+    setBusy('states'); setMessage(null);
+    try {
+      await generateProductStates(product.id);
+      setStates(await listProductStates(product.id));
+      setMessage('Состояния обработки обновлены.');
+    } catch (err) { setMessage(err instanceof Error ? err.message : 'Не удалось создать состояния'); }
+    finally { setBusy(null); }
   }
 
   async function save() {
     setBusy('save'); setMessage(null);
     try {
       await updateAdminProduct(product.id, draft);
+      await saveExtendedProductProfile(product.id, profile);
       await Promise.resolve(onSaved());
-      setMessage('Продукт сохранён в backend.');
+      setMessage('Продукт и nutrition-профиль сохранены в backend.');
       onClose();
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Не удалось сохранить продукт');
-    } finally {
-      setBusy(null);
-    }
+    } catch (err) { setMessage(err instanceof Error ? err.message : 'Не удалось сохранить продукт'); }
+    finally { setBusy(null); }
   }
 
-  return <div className="catalog-edit-overlay" role="presentation" onMouseDown={onClose}>
-    <section className="catalog-edit-modal" role="dialog" aria-label="Редактирование продукта" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="catalog-edit-head">
-        <div>
-          <p className="eyebrow">Gemini product editor</p>
-          <h3>{productDisplayName(product)}</h3>
-          <span>{categoryDisplayName(category)} · {product.slug || product.id}</span>
-        </div>
-        <button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button>
-      </div>
+  const tabs: Array<[CatalogEditTab, string]> = [['basic', 'Основное'], ['content', '4 языка'], ['nutrition', 'Макросы'], ['vitamins', 'Витамины'], ['minerals', 'Минералы'], ['culinary', 'Кулинария'], ['health', 'Health'], ['states', 'Состояния']];
 
-      <div className="catalog-edit-body">
-        <aside className="catalog-edit-photo">
-          {draft.image_url ? <img src={draft.image_url} alt={productDisplayName(product)} /> : <span><AppIcon name="package" size={28} /></span>}
-          <button className="btn btn-quiet" type="button" onClick={() => void generateImage()} disabled={Boolean(busy)}>{busy === 'image' ? 'Gemini рисует...' : 'Сгенерировать фото'}</button>
-        </aside>
-
+  return <div className="catalog-edit-overlay compact" role="presentation" onMouseDown={onClose}>
+    <section className="catalog-edit-modal compact" role="dialog" aria-label="Редактирование продукта" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="catalog-edit-head"><div><p className="eyebrow">Gemini product editor</p><h3>{productDisplayName(product)}</h3><span>{categoryDisplayName(category)} · {product.slug || product.id}</span></div><button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button></div>
+      <nav className="catalog-edit-tabs">{tabs.map(([id, label]) => <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
+      <div className="catalog-edit-body compact">
+        <aside className="catalog-edit-photo compact">{draft.image_url ? <img src={draft.image_url} alt={productDisplayName(product)} /> : <span><AppIcon name="package" size={28} /></span>}<button className="btn btn-quiet" type="button" onClick={() => void generateImage()} disabled={Boolean(busy)}>{busy === 'image' ? 'Gemini рисует...' : 'Фото'}</button></aside>
         <div className="catalog-edit-form">
           <GeminiBar instruction={instruction} busy={busy === 'gemini'} onChange={setInstruction} onRun={() => void runGeminiEdit()} />
-          <div className="editor-grid">
-            <EditorField label="Название RU" value={String(draft.name_ru || '')} onChange={(value) => setText('name_ru', value)} />
-            <EditorField label="Название EN" value={String(draft.name_en || '')} onChange={(value) => setText('name_en', value)} />
-            <EditorField label="Название PL" value={String(draft.name_pl || '')} onChange={(value) => setText('name_pl', value)} />
-            <EditorField label="Название UK" value={String(draft.name_uk || '')} onChange={(value) => setText('name_uk', value)} />
-            <EditorField label="Тип продукта" value={String(draft.product_type || '')} onChange={(value) => setText('product_type', value)} />
-            <EditorField label="Единица" value={String(draft.unit || '')} onChange={(value) => setText('unit', value)} />
-            <EditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} />
-            <EditorField label="SEO H1" value={String(draft.seo_h1 || '')} onChange={(value) => setText('seo_h1', value)} />
-            <EditorField label="Описание RU" value={String(draft.description_ru || '')} onChange={(value) => setText('description_ru', value)} multiline />
-            <EditorField label="Описание EN" value={String(draft.description_en || '')} onChange={(value) => setText('description_en', value)} multiline />
-            <EditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline />
-            <EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline />
-          </div>
-
-          <div className="catalog-nutrition-grid">
-            {([
-              ['calories_per_100g', 'kcal'], ['protein_per_100g', 'Белки'], ['fat_per_100g', 'Жиры'], ['carbs_per_100g', 'Углеводы'], ['fiber_per_100g', 'Клетчатка'], ['sugar_per_100g', 'Сахар']
-            ] as Array<[keyof CatalogEditDraft, string]>).map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={draft[field] as number ?? ''} onChange={(event) => setNumber(field, event.target.value)} /></label>)}
-          </div>
+          {tab === 'basic' ? <div className="editor-grid"><EditorField label="Название RU" value={String(draft.name_ru || '')} onChange={(value) => setText('name_ru', value)} /><EditorField label="Название EN" value={String(draft.name_en || '')} onChange={(value) => setText('name_en', value)} /><EditorField label="Название PL" value={String(draft.name_pl || '')} onChange={(value) => setText('name_pl', value)} /><EditorField label="Название UK" value={String(draft.name_uk || '')} onChange={(value) => setText('name_uk', value)} /><EditorField label="Тип продукта" value={String(draft.product_type || '')} onChange={(value) => setText('product_type', value)} /><EditorField label="Единица" value={String(draft.unit || '')} onChange={(value) => setText('unit', value)} /><EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline /></div> : null}
+          {tab === 'content' ? <div className="editor-grid"><EditorField label="Описание RU" value={String(draft.description_ru || '')} onChange={(value) => setText('description_ru', value)} multiline /><EditorField label="Описание EN" value={String(draft.description_en || '')} onChange={(value) => setText('description_en', value)} multiline /><EditorField label="Описание PL" value={String(draft.description_pl || '')} onChange={(value) => setText('description_pl', value)} multiline /><EditorField label="Описание UK" value={String(draft.description_uk || '')} onChange={(value) => setText('description_uk', value)} multiline /><EditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label="SEO H1" value={String(draft.seo_h1 || '')} onChange={(value) => setText('seo_h1', value)} /><EditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /></div> : null}
+          {tab === 'nutrition' ? <div className="catalog-nutrition-grid">{([['calories_per_100g', 'Kalorie/kcal'], ['protein_per_100g', 'Białko'], ['fat_per_100g', 'Tłuszcz'], ['carbs_per_100g', 'Węglowodany'], ['fiber_per_100g', 'Błonnik'], ['sugar_per_100g', 'Cukier'], ['density_g_per_ml', 'Gęstość'], ['typical_portion_g', 'Porcja'], ['shelf_life_days', 'Trwałość'], ['starch_g', 'Starch'], ['water_g', 'Water'], ['alcohol_g', 'Alcohol']] as Array<[string, string]>).map(([field, label]) => field in draft ? <label key={field}><span>{label}</span><input type="number" step="any" value={draft[field as keyof CatalogEditDraft] as number ?? ''} onChange={(event) => setNumber(field as keyof CatalogEditDraft, event.target.value)} /></label> : <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('macros', field) as number ?? ''} onChange={(event) => setProfileNumber('macros', field, event.target.value)} /></label>)}</div> : null}
+          {tab === 'vitamins' ? <div className="catalog-nutrition-grid">{CATALOG_VITAMINS.map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('vitamins', field) as number ?? ''} onChange={(event) => setProfileNumber('vitamins', field, event.target.value)} /></label>)}</div> : null}
+          {tab === 'minerals' ? <div className="catalog-nutrition-grid">{CATALOG_MINERALS.map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('minerals', field) as number ?? ''} onChange={(event) => setProfileNumber('minerals', field, event.target.value)} /></label>)}</div> : null}
+          {tab === 'culinary' ? <div className="editor-grid"><div className="catalog-nutrition-grid span-2">{(['sweetness', 'acidity', 'bitterness', 'umami', 'aroma'] as const).map((field) => <label key={field}><span>{field}</span><input type="number" step="any" value={profileValue('culinary', field) as number ?? ''} onChange={(event) => setProfileNumber('culinary', field, event.target.value)} /></label>)}{(['glycemic_index', 'glycemic_load', 'ph', 'smoke_point', 'water_activity'] as const).map((field) => <label key={field}><span>{field}</span><input type="number" step="any" value={profileValue('food_properties', field) as number ?? ''} onChange={(event) => setProfileNumber('food_properties', field, event.target.value)} /></label>)}</div><EditorField label="Texture" value={String(profileValue('culinary', 'texture') || '')} onChange={(value) => setProfileValue('culinary', 'texture', value)} multiline /><EditorField label="Processing notes PL" value={String(profileValue('processing_effects', 'processing_notes_pl') || '')} onChange={(value) => setProfileValue('processing_effects', 'processing_notes_pl', value)} multiline /></div> : null}
+          {tab === 'health' ? <div className="editor-grid"><div className="toggle-grid span-2">{CATALOG_DIETS.map(([field, label]) => <label className="editor-check" key={field}><input type="checkbox" checked={Boolean(profileValue('diet_flags', field))} onChange={(event) => setProfileValue('diet_flags', field, event.target.checked)} />{label}</label>)}</div>{(['en', 'ru', 'pl', 'uk'] as const).flatMap((lang) => [<EditorField key={`bio-${lang}`} label={`Bioactive ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `bioactive_compounds_${lang}`))} onChange={(value) => setProfileValue('health_profile', `bioactive_compounds_${lang}`, csvToArray(value))} multiline />, <EditorField key={`eff-${lang}`} label={`Health effects ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `health_effects_${lang}`))} onChange={(value) => setProfileValue('health_profile', `health_effects_${lang}`, csvToArray(value))} multiline />])}<EditorField label="Food role" value={String(profileValue('health_profile', 'food_role') || '')} onChange={(value) => setProfileValue('health_profile', 'food_role', value)} /></div> : null}
+          {tab === 'states' ? <div className="catalog-states-list"><button className="btn btn-quiet" type="button" onClick={() => void regenerateStates()} disabled={Boolean(busy)}>{busy === 'states' ? 'Генерируем...' : 'Перегенерировать состояния'}</button>{states.map((state) => <article key={state.id}><strong>{state.name_suffix_pl || state.name_suffix_ru || state.state}</strong><span>{state.calories_per_100g ?? '-'} kcal · {state.storage_temp_c ?? '-'}°C · {state.shelf_life_hours ?? '-'} godz.</span><p>{state.notes_pl || state.notes_ru || state.notes_en}</p></article>)}</div> : null}
         </div>
       </div>
-
-      <div className="catalog-edit-actions">
-        <EditorMessage value={message} />
-        <button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button>
-        <button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : 'Сохранить продукт'}</button>
-      </div>
+      <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : 'Сохранить всё'}</button></div>
     </section>
   </div>;
 }

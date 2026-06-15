@@ -120,6 +120,39 @@ export interface ProductDataQuality {
   sections?: Record<string, unknown>;
 }
 
+
+
+export interface NutritionProductDetail {
+  id: string;
+  slug: string;
+  name_en?: string | null;
+  name_ru?: string | null;
+  name_pl?: string | null;
+  name_uk?: string | null;
+  product_type?: string | null;
+  unit?: string | null;
+  image_url?: string | null;
+  description_en?: string | null;
+  description_ru?: string | null;
+  description_pl?: string | null;
+  description_uk?: string | null;
+  density_g_per_ml?: number | null;
+  typical_portion_g?: number | null;
+  shelf_life_days?: number | null;
+  macros?: AiProfileSection | null;
+  vitamins?: AiProfileSection | null;
+  minerals?: AiProfileSection | null;
+  fatty_acids?: AiProfileSection | null;
+  diet_flags?: AiProfileSection | null;
+  allergens?: AiProfileSection | null;
+  food_properties?: AiProfileSection | null;
+  culinary?: AiProfileSection | null;
+  culinary_behavior?: AiProfileSection | null;
+  health_profile?: AiProfileSection | null;
+  sugar_profile?: AiProfileSection | null;
+  processing_effects?: AiProfileSection | null;
+}
+
 export interface IngredientState {
   id: string;
   ingredient_id: string;
@@ -162,6 +195,12 @@ export function listAdminProducts(): Promise<AdminProduct[]> {
 export function listAdminCategories(): Promise<AdminCategory[]> {
   return apiFetch<AdminCategory[]>('/api/admin/catalog/categories');
 }
+
+
+export function getAdminNutritionProduct(id: string): Promise<NutritionProductDetail> {
+  return apiFetch<NutritionProductDetail>(`/api/admin/nutrition/products/${id}`);
+}
+
 
 export function aiCreateProductDraft(input: string): Promise<AiCreateDraftResponse> {
   return apiFetch<AiCreateDraftResponse>('/api/admin/catalog/ai/create-product-draft', {

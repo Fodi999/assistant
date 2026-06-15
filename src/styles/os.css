@@ -812,3 +812,97 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   .catalog-edit-head,
   .catalog-edit-actions { align-items: stretch; flex-direction: column; }
 }
+
+
+.catalog-edit-overlay.compact {
+  align-items: start;
+  padding-top: 5vh;
+}
+.catalog-edit-modal.compact {
+  width: min(980px, calc(100vw - 36px));
+  max-height: min(760px, calc(100vh - 70px));
+}
+.catalog-edit-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.catalog-edit-tabs button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.catalog-edit-tabs button.active,
+.catalog-edit-tabs button:hover {
+  border-color: rgba(255,106,42,.5);
+  background: rgba(255,106,42,.1);
+  color: var(--text);
+}
+.catalog-edit-body.compact {
+  grid-template-columns: 150px minmax(0, 1fr);
+  padding: 12px 14px;
+}
+.catalog-edit-photo.compact img,
+.catalog-edit-photo.compact > span {
+  max-height: 150px;
+}
+.catalog-edit-modal.compact .gemini-bar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px;
+}
+.catalog-edit-modal.compact .gemini-bar textarea {
+  min-height: 44px;
+}
+.catalog-edit-modal.compact .editor-field textarea {
+  min-height: 70px;
+}
+.editor-grid .span-2,
+.catalog-nutrition-grid.span-2 {
+  grid-column: 1 / -1;
+}
+.toggle-grid.span-2 {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.catalog-states-list {
+  display: grid;
+  gap: 8px;
+}
+.catalog-states-list article {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.025);
+  padding: 10px;
+  display: grid;
+  gap: 5px;
+}
+.catalog-states-list strong,
+.catalog-states-list span,
+.catalog-states-list p {
+  min-width: 0;
+}
+.catalog-states-list span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.catalog-states-list p {
+  margin: 0;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.4;
+}
+@media (max-width: 980px) {
+  .catalog-edit-body.compact { grid-template-columns: 1fr; }
+  .toggle-grid.span-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
