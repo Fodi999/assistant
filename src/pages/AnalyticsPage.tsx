@@ -9,8 +9,9 @@ import {
   type AnalyticsRealtime,
   type SearchConsoleBundle
 } from '../api/analytics';
+import { listAffiliateProductsWithSource } from '../api/affiliate';
 import { dashboardMetrics } from '../lib/mockData';
-import type { SiteKey } from '../types/admin';
+import type { AffiliateProduct, SiteKey } from '../types/admin';
 import { AppIcon } from '../components/AppIcon';
 import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
 import { siteNames } from '../lib/labels';
@@ -40,12 +41,28 @@ function percentValue(value?: number | null): string {
   return `${(value * 100).toLocaleString('ru-RU', { maximumFractionDigits: value > 0 && value < 0.01 ? 2 : 1 })}%`;
 }
 
+function decimalValue(value?: number | null, digits = 1): string {
+  return typeof value === 'number' ? value.toLocaleString('ru-RU', { maximumFractionDigits: digits }) : '0';
+}
+
 function moneyValue(value?: number | null, currency = 'PLN'): string {
   return `${numberValue(value)} ${currency}`;
 }
 
+function durationValue(seconds?: number | null): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return '0 сек';
+  if (seconds < 60) return `${Math.round(seconds)} сек`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return `${minutes} мин ${rest} сек`;
+}
+
 function dateLabel(value: string): string {
   return value.length === 8 ? `${value.slice(6, 8)}.${value.slice(4, 6)}` : value;
+}
+
+function localTitle(product: AffiliateProduct): string {
+  return product.title.ru || product.title.pl || product.title.en || Object.values(product.title)[0] || product.slug;
 }
 
 function siteMatchesPath(activeSite: SiteKey, path: string): boolean {
@@ -143,6 +160,7 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
   const [realtime, setRealtime] = useState<AnalyticsRealtime | null>(null);
   const [searchConsole, setSearchConsole] = useState<SearchConsoleBundle | null>(null);
+  const [affiliateProducts, setAffiliateProducts] = useState<AffiliateProduct[]>([]);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const mock = dashboardMetrics.find((item) => item.site === activeSite) ?? dashboardMetrics[0];
   const filteredPages = useMemo(() => {
@@ -150,15 +168,20 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
     const scoped = pages.filter((page) => siteMatchesPath(activeSite, page.path));
     return scoped.length ? scoped : pages;
   }, [activeSite, analytics?.top_pages]);
-  const topProducts = mock.topProducts;
   const topSearchPages = searchConsole?.pages ?? [];
+  const searchQueries = searchConsole?.queries ?? [];
   const rows = [
     ['GA4 пользователи', numberValue(analytics?.active_users ?? mock.visitors)],
+    ['GA4 сессии', numberValue(analytics?.sessions)],
     ['GA4 просмотры', numberValue(analytics?.page_views ?? mock.affiliateClicks)],
+    ['Engagement', percentValue(analytics?.engagement_rate)],
+    ['Средняя сессия', durationValue(analytics?.average_session_duration)],
     ['Конверсии', numberValue(analytics?.conversions ?? mock.leads)],
     ['Доход', moneyValue(analytics?.total_revenue ?? mock.revenueEstimate, mock.currency)],
-    ['Engagement', percentValue(analytics?.engagement_rate)],
-    ['GSC клики', numberValue(searchConsole?.overview?.clicks)]
+    ['GSC клики', numberValue(searchConsole?.overview?.clicks)],
+    ['GSC показы', numberValue(searchConsole?.overview?.impressions)],
+    ['GSC CTR', percentValue(searchConsole?.overview?.ctr)],
+    ['GSC позиция', decimalValue(searchConsole?.overview?.position)]
   ];
 
   useEffect(() => {
@@ -199,6 +222,10 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
       }
     });
   }, [period]);
+
+  useEffect(() => {
+    void listAffiliateProductsWithSource(activeSite).then((result) => setAffiliateProducts(result.data));
+  }, [activeSite]);
 
   useEffect(() => {
     if (!sourceError || !/GOOGLE|GA4|OAuth|refresh_token|configured/i.test(sourceError)) return;
@@ -263,25 +290,50 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
         <section className="ops-panel">
           <div className="panel-title"><span><AppIcon name="globe" />Realtime</span><small>{numberValue(realtime?.active_users)} active users</small></div>
           <table className="ops-table"><tbody>{(realtime?.pages ?? []).slice(0, 6).map((page) => <tr key={page.path}><td><strong>{page.path || '/'}</strong></td><td>{numberValue(page.active_users)}</td></tr>)}</tbody></table>
+          {realtime?.events?.length ? (
+            <div className="analytics-subtable">
+              <div className="panel-title compact"><span><AppIcon name="external" />Realtime events</span><small>active / count</small></div>
+              <table className="ops-table"><tbody>{realtime.events.slice(0, 5).map((event) => <tr key={event.event_name}><td><strong>{event.event_name}</strong></td><td>{numberValue(event.active_users)}</td><td>{numberValue(event.event_count)}</td></tr>)}</tbody></table>
+            </div>
+          ) : null}
         </section>
         <section className="ops-panel">
-          <div className="panel-title"><span><AppIcon name="cms" />GA4 топ-страницы</span><small>views / leads</small></div>
-          <table className="ops-table"><tbody>{filteredPages.slice(0, 8).map((page) => <tr key={`${page.path}-${page.title}`}><td><strong>{page.title || page.path}</strong><small>{page.path}</small></td><td>{numberValue(page.views)}</td><td>{numberValue(page.conversions)}</td></tr>)}</tbody></table>
+          <div className="panel-title"><span><AppIcon name="cms" />GA4 топ-страницы</span><small>views / users / engagement</small></div>
+          <table className="ops-table"><tbody>{filteredPages.slice(0, 10).map((page) => <tr key={`${page.path}-${page.title}`}><td><strong>{page.title || page.path}</strong><small>{page.path}</small></td><td>{numberValue(page.views)}</td><td>{numberValue(page.active_users)}</td><td>{percentValue(page.engagement_rate)}</td></tr>)}</tbody></table>
         </section>
         <section className="ops-panel">
           <div className="panel-title"><span><AppIcon name="seo" />Search Console страницы</span><small>clicks / impressions</small></div>
-          <table className="ops-table"><tbody>{topSearchPages.slice(0, 8).map((page) => <tr key={page.key}><td><strong>{page.key}</strong><small>pos {page.position.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}</small></td><td>{numberValue(page.clicks)}</td><td>{numberValue(page.impressions)}</td></tr>)}</tbody></table>
+          <table className="ops-table"><tbody>{topSearchPages.slice(0, 10).map((page) => <tr key={page.key}><td><strong>{page.key}</strong><small>pos {decimalValue(page.position)}</small></td><td>{numberValue(page.clicks)}</td><td>{numberValue(page.impressions)}</td><td>{percentValue(page.ctr)}</td></tr>)}</tbody></table>
         </section>
         <section className="ops-panel">
-          <div className="panel-title"><span><AppIcon name="external" />События GA4</span><small>eventCount / users</small></div>
-          <table className="ops-table"><tbody>{(analytics?.events ?? []).slice(0, 8).map((event) => <tr key={event.event_name}><td><strong>{event.event_name}</strong></td><td>{numberValue(event.count)}</td><td>{numberValue(event.users)}</td></tr>)}</tbody></table>
+          <div className="panel-title"><span><AppIcon name="seo" />Search Console запросы</span><small>clicks / impressions / pos</small></div>
+          <table className="ops-table"><tbody>{searchQueries.slice(0, 10).map((query) => <tr key={query.key}><td><strong>{query.key}</strong><small>CTR {percentValue(query.ctr)}</small></td><td>{numberValue(query.clicks)}</td><td>{numberValue(query.impressions)}</td><td>{decimalValue(query.position)}</td></tr>)}</tbody></table>
+        </section>
+      </div>
+
+      <div className="ops-grid two-two">
+        <section className="ops-panel">
+          <div className="panel-title"><span><AppIcon name="external" />События GA4</span><small>eventCount / users / revenue</small></div>
+          <table className="ops-table"><tbody>{(analytics?.events ?? []).slice(0, 10).map((event) => <tr key={event.event_name}><td><strong>{event.event_name}</strong></td><td>{numberValue(event.count)}</td><td>{numberValue(event.users)}</td><td>{moneyValue(event.total_revenue, mock.currency)}</td></tr>)}</tbody></table>
+        </section>
+        <section className="ops-panel">
+          <div className="panel-title"><span><AppIcon name="globe" />Источники трафика</span><small>users / sessions / views</small></div>
+          <table className="ops-table"><tbody>{(analytics?.traffic_sources ?? []).slice(0, 10).map((row) => <tr key={row.name}><td><strong>{row.name || '(not set)'}</strong></td><td>{numberValue(row.active_users)}</td><td>{numberValue(row.sessions)}</td><td>{numberValue(row.page_views)}</td></tr>)}</tbody></table>
+        </section>
+        <section className="ops-panel">
+          <div className="panel-title"><span><AppIcon name="globe" />Города и регионы</span><small>users / sessions</small></div>
+          <table className="ops-table"><tbody>{[...(analytics?.cities ?? []).slice(0, 5), ...(analytics?.regions ?? []).slice(0, 5)].map((row, index) => <tr key={`${row.name}-${index}`}><td><strong>{row.name || '(not set)'}</strong></td><td>{numberValue(row.active_users)}</td><td>{numberValue(row.sessions)}</td></tr>)}</tbody></table>
+        </section>
+        <section className="ops-panel">
+          <div className="panel-title"><span><AppIcon name="globe" />Языки и устройства</span><small>users / sessions / views</small></div>
+          <table className="ops-table"><tbody>{[...(analytics?.languages ?? []).slice(0, 5), ...(analytics?.devices ?? []).slice(0, 5)].map((row) => <tr key={row.name}><td><strong>{row.name || '(not set)'}</strong></td><td>{numberValue(row.active_users)}</td><td>{numberValue(row.sessions)}</td><td>{numberValue(row.page_views)}</td></tr>)}</tbody></table>
         </section>
       </div>
 
       <div className="ops-grid two-one">
         <section className="ops-panel">
-          <div className="panel-title"><span><AppIcon name="shop" />Партнерские товары</span><small>из админ-модели</small></div>
-          <table className="ops-table"><tbody>{topProducts.map((product) => <tr key={product.productId}><td><strong>{product.title}</strong></td><td>{product.clicks} кликов</td><td>{product.revenue.toLocaleString('ru-RU')} {mock.currency}</td></tr>)}</tbody></table>
+          <div className="panel-title"><span><AppIcon name="shop" />Партнерские товары</span><small>backend products</small></div>
+          <table className="ops-table"><tbody>{affiliateProducts.slice(0, 10).map((product) => <tr key={product.id}><td><strong>{localTitle(product)}</strong><small>{product.merchant} / {product.network}</small></td><td>{product.status}</td><td>{product.commissionPercent ? `${decimalValue(product.commissionPercent)}%` : '-'}</td><td>{product.price ? moneyValue(product.price, product.currency) : '-'}</td></tr>)}</tbody></table>
         </section>
         <section className="ops-panel">
           <div className="panel-title"><span><AppIcon name="globe" />География GA4</span><small>countries / devices</small></div>

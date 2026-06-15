@@ -7,6 +7,17 @@
   height: 340px;
 }
 
+.analytics-subtable {
+  margin-top: 14px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+}
+
+.panel-title.compact {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
 .analytics-mode-switcher {
   display: flex;
   flex-wrap: wrap;
