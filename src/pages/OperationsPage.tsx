@@ -427,6 +427,8 @@ function UsbKeyPanel() {
     ['admin_tool', Boolean(status?.admin_tool)],
     ['config', Boolean(status?.config)]
   ];
+  const storage = status?.storage;
+  const dataPaths = status?.data_paths;
 
   return <div className="usb-key-layout">
     <section className="ops-panel usb-key-summary">
@@ -434,6 +436,22 @@ function UsbKeyPanel() {
       <div className="usb-status-grid">{envStatus.map(([label, ok]) => <div key={label}><span>{label}</span><StatusPill tone={ok ? 'good' : 'danger'} label={ok ? 'ok' : 'нет'} /></div>)}</div>
       <p className="page-muted">{status?.root || 'Вставьте флешку с папкой AssistantAdminKey. Koyeb остаётся лёгким, тяжёлые задачи запускаются локально.'}</p>
       <button className="btn btn-quiet" type="button" onClick={() => void refresh()}><AppIcon name="refresh" />Проверить ключ</button>
+    </section>
+
+    <section className="ops-panel usb-storage-panel">
+      <PanelTitle title="Storage" icon="database" action="память флешки" />
+      <div className="usb-storage-cards">
+        <article><span>Всего памяти</span><strong>{storage?.total_label || 'нет данных'}</strong></article>
+        <article><span>Занято</span><strong>{storage?.used_label || 'нет данных'}</strong></article>
+        <article><span>Свободно</span><strong>{storage?.available_label || 'нет данных'}</strong></article>
+      </div>
+      <div className="usb-path-list">
+        <div><span>Config</span><code>{dataPaths?.config || status?.config || 'нет данных'}</code></div>
+        <div><span>Backups</span><code>{dataPaths?.backups || 'нет данных'}</code></div>
+        <div><span>Exports</span><code>{dataPaths?.exports || 'нет данных'}</code></div>
+        <div><span>Local DB</span><code>{dataPaths?.local_db || 'нет данных'}</code></div>
+        <div><span>Logs</span><code>{dataPaths?.logs || 'нет данных'}</code></div>
+      </div>
     </section>
 
     <section className="ops-panel usb-jobs-panel">

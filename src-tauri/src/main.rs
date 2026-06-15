@@ -4,11 +4,32 @@ use serde::Serialize;
 use std::{env, fs, path::PathBuf, process::Command};
 
 #[derive(Debug, Serialize)]
+struct UsbStorageInfo {
+    total_bytes: u64,
+    used_bytes: u64,
+    available_bytes: u64,
+    total_label: String,
+    used_label: String,
+    available_label: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UsbDataPaths {
+    config: String,
+    backups: String,
+    exports: String,
+    local_db: String,
+    logs: String,
+}
+
+#[derive(Debug, Serialize)]
 struct UsbKeyStatus {
     found: bool,
     root: Option<String>,
     admin_tool: Option<String>,
     config: Option<String>,
+    storage: Option<UsbStorageInfo>,
+    data_paths: Option<UsbDataPaths>,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,6 +60,53 @@ fn find_usb_key_root() -> Option<PathBuf> {
     None
 }
 
+fn format_bytes(bytes: u64) -> String {
+    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    let value = bytes as f64;
+    if value >= GB {
+        format!("{:.1} GB", value / GB)
+    } else if value >= MB {
+        format!("{:.0} MB", value / MB)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+fn usb_storage(root: &PathBuf) -> Option<UsbStorageInfo> {
+    let output = Command::new("df").arg("-k").arg(root).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().nth(1)?;
+    let columns: Vec<&str> = line.split_whitespace().collect();
+    if columns.len() < 4 {
+        return None;
+    }
+    let total_bytes = columns.get(1)?.parse::<u64>().ok()?.saturating_mul(1024);
+    let used_bytes = columns.get(2)?.parse::<u64>().ok()?.saturating_mul(1024);
+    let available_bytes = columns.get(3)?.parse::<u64>().ok()?.saturating_mul(1024);
+    Some(UsbStorageInfo {
+        total_bytes,
+        used_bytes,
+        available_bytes,
+        total_label: format_bytes(total_bytes),
+        used_label: format_bytes(used_bytes),
+        available_label: format_bytes(available_bytes),
+    })
+}
+
+fn usb_data_paths(root: &PathBuf) -> UsbDataPaths {
+    UsbDataPaths {
+        config: root.join("config/admin.env").display().to_string(),
+        backups: root.join("data/backups").display().to_string(),
+        exports: root.join("data/exports").display().to_string(),
+        local_db: root.join("data/local-db").display().to_string(),
+        logs: root.join("logs").display().to_string(),
+    }
+}
+
 #[tauri::command]
 fn find_usb_key() -> UsbKeyStatus {
     let Some(root) = find_usb_key_root() else {
@@ -47,6 +115,8 @@ fn find_usb_key() -> UsbKeyStatus {
             root: None,
             admin_tool: None,
             config: None,
+            storage: None,
+            data_paths: None,
         };
     };
 
@@ -54,6 +124,8 @@ fn find_usb_key() -> UsbKeyStatus {
         found: true,
         admin_tool: Some(root.join("bin/admin_tool").display().to_string()),
         config: Some(root.join("config/admin.env").display().to_string()),
+        storage: usb_storage(&root),
+        data_paths: Some(usb_data_paths(&root)),
         root: Some(root.display().to_string()),
     }
 }

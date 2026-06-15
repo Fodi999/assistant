@@ -1,8 +1,27 @@
+export interface UsbStorageInfo {
+  total_bytes: number;
+  used_bytes: number;
+  available_bytes: number;
+  total_label: string;
+  used_label: string;
+  available_label: string;
+}
+
+export interface UsbDataPaths {
+  config: string;
+  backups: string;
+  exports: string;
+  local_db: string;
+  logs: string;
+}
+
 export interface UsbKeyStatus {
   found: boolean;
   root?: string | null;
   admin_tool?: string | null;
   config?: string | null;
+  storage?: UsbStorageInfo | null;
+  data_paths?: UsbDataPaths | null;
 }
 
 export interface AdminToolOutput {
