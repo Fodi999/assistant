@@ -3,7 +3,7 @@ import * as echarts from 'echarts';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import type { AppPage, ManagedSite } from '../components/Sidebar';
 import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
-import { findUsbKey, runAdminTool, type AdminToolOutput, type UsbKeyStatus } from '../api/localAdmin';
+import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
 import { aiCreateArticleDraft, updateArticle } from '../api/cms';
 import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../types/admin';
 import type { AnalyticsOverview, AnalyticsRealtime, SearchConsoleBundle } from '../api/analytics';
@@ -397,73 +397,105 @@ function formatAdminOutput(result: AdminToolOutput | null, error: string | null)
   return [`$ ${result.command}`, `key: ${result.key_root}`, `exit=${result.status}`, '', result.stdout, result.stderr ? `\n[stderr]\n${result.stderr}` : ''].join('\n');
 }
 
+type UsbTab = 'storage' | 'gemini' | 'prompts' | 'site' | 'product' | 'image' | 'history' | 'settings';
+
+function prettyJson(value: unknown) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2);
+}
+
 function UsbKeyPanel() {
   const [status, setStatus] = useState<UsbKeyStatus | null>(null);
+  const [settings, setSettings] = useState<GeminiSettingsStatus | null>(null);
+  const [prompts, setPrompts] = useState<PromptTemplateItem[]>([]);
+  const [history, setHistory] = useState<AiHistoryItem[]>([]);
+  const [tab, setTab] = useState<UsbTab>('gemini');
   const [running, setRunning] = useState<string | null>(null);
-  const [result, setResult] = useState<AdminToolOutput | null>(null);
+  const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [custom, setCustom] = useState('help');
+  const [selectedPrompt, setSelectedPrompt] = useState('templates/prompts/sites/construction-site.ru.txt');
+  const [promptContent, setPromptContent] = useState('');
+  const [siteForm, setSiteForm] = useState({ CITY: 'Алматы', SERVICE: 'ремонт магазинов', LANGUAGE: 'ru', TARGET_AUDIENCE: 'владельцы бизнеса и магазинов', STYLE: 'modern commercial SEO', OUTPUT_FORMAT: 'json' });
+  const [productForm, setProductForm] = useState({ PRODUCT_NAME: 'Гипсокартон Knauf', CATEGORY: 'Гипсокартон', MATERIAL: 'гипс', USE_CASE: 'стены и потолки', CITY: 'Алматы', LANGUAGE: 'ru', OUTPUT_FORMAT: 'json' });
+  const [imageForm, setImageForm] = useState({ PRODUCT_NAME: 'Гипсокартон Knauf', PRODUCT_TYPE: 'строительный листовой материал', BACKGROUND: 'clean warehouse background', STYLE: 'realistic commercial product photography', LIGHTING: 'soft studio lighting', ANGLE: 'front 3/4 view', QUALITY: 'ultra sharp, high detail' });
 
   async function refresh() {
     setError(null);
-    try { setStatus(await findUsbKey()); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Не удалось проверить USB Key'); }
+    try {
+      const [nextStatus, nextSettings, nextPrompts, nextHistory] = await Promise.all([
+        findUsbKey(),
+        adminKeyGeminiSettingsStatus().catch(() => null),
+        adminKeyPromptList().catch(() => null),
+        adminKeyAiHistoryList().catch(() => null)
+      ]);
+      setStatus(nextStatus);
+      setSettings(nextSettings);
+      setPrompts(nextPrompts?.prompts ?? []);
+      setHistory(nextHistory?.history ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось проверить USB Key');
+    }
   }
 
-  async function run(args: string[], title = args.join(' ')) {
-    setRunning(title);
-    setError(null);
-    setResult(null);
+  async function runRaw(args: string[], title = args.join(' ')) {
+    setRunning(title); setError(null); setResult(null);
     try { setResult(await runAdminTool(args)); }
     catch (err) { setError(err instanceof Error ? err.message : 'Не удалось выполнить admin_tool'); }
     finally { setRunning(null); void refresh(); }
   }
 
+  async function runJson(title: string, action: () => Promise<unknown>) {
+    setRunning(title); setError(null); setResult(null);
+    try {
+      const value = await action();
+      setResult(value);
+      if ((value as { ok?: boolean; error?: string }).ok === false) setError((value as { error?: string }).error || 'Команда вернула ошибку');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Команда не выполнилась');
+    } finally {
+      setRunning(null); void refresh();
+    }
+  }
+
   useEffect(() => { void refresh(); }, []);
 
-  const output = formatAdminOutput(result, error);
-  const envStatus: Array<[string, boolean]> = [
-    ['USB Key', Boolean(status?.found)],
-    ['admin_tool', Boolean(status?.admin_tool)],
-    ['config', Boolean(status?.config)]
-  ];
   const storage = status?.storage;
   const dataPaths = status?.data_paths;
+  const output = error ? error + '\n\n' + prettyJson(result) : prettyJson(result) || 'Выберите действие Gemini Studio или локальную задачу.';
+  const envStatus: Array<[string, boolean]> = [['USB Key', Boolean(status?.found)], ['admin_tool', Boolean(status?.admin_tool)], ['Gemini API', settings?.gemini_api_key === 'configured']];
+  const tabs: Array<[UsbTab, string]> = [['storage', 'Storage'], ['gemini', 'Gemini Studio'], ['prompts', 'Prompts'], ['site', 'Site Pages'], ['product', 'Product Cards'], ['image', 'Image Prompts'], ['history', 'History'], ['settings', 'Settings']];
+  const localJobs = LOCAL_JOBS;
 
   return <div className="usb-key-layout">
     <section className="ops-panel usb-key-summary">
       <PanelTitle title="AssistantAdminKey" icon="hard-drive" action={status?.found ? 'флешка подключена' : 'флешка не найдена'} />
-      <div className="usb-status-grid">{envStatus.map(([label, ok]) => <div key={label}><span>{label}</span><StatusPill tone={ok ? 'good' : 'danger'} label={ok ? 'ok' : 'нет'} /></div>)}</div>
-      <p className="page-muted">{status?.root || 'Вставьте флешку с папкой AssistantAdminKey. Koyeb остаётся лёгким, тяжёлые задачи запускаются локально.'}</p>
-      <button className="btn btn-quiet" type="button" onClick={() => void refresh()}><AppIcon name="refresh" />Проверить ключ</button>
+      <div className="usb-status-grid">{envStatus.map(([label, ok]) => <div key={label}><span>{label}</span><StatusPill tone={ok ? 'good' : label === 'Gemini API' ? 'warning' : 'danger'} label={ok ? 'ok' : 'нет'} /></div>)}</div>
+      <p className="page-muted">{status?.root || 'Вставьте флешку с папкой AssistantAdminKey.'}</p>
+      <div className="usb-tab-row">{tabs.map(([id, label]) => <button key={id} className={tab === id ? 'active' : ''} type="button" onClick={() => setTab(id)}>{label}</button>)}</div>
+      <button className="btn btn-quiet" type="button" onClick={() => void refresh()}><AppIcon name="refresh" />Refresh</button>
     </section>
 
-    <section className="ops-panel usb-storage-panel">
-      <PanelTitle title="Storage" icon="database" action="память флешки" />
-      <div className="usb-storage-cards">
-        <article><span>Всего памяти</span><strong>{storage?.total_label || 'нет данных'}</strong></article>
-        <article><span>Занято</span><strong>{storage?.used_label || 'нет данных'}</strong></article>
-        <article><span>Свободно</span><strong>{storage?.available_label || 'нет данных'}</strong></article>
-      </div>
-      <div className="usb-path-list">
-        <div><span>Config</span><code>{dataPaths?.config || status?.config || 'нет данных'}</code></div>
-        <div><span>Backups</span><code>{dataPaths?.backups || 'нет данных'}</code></div>
-        <div><span>Exports</span><code>{dataPaths?.exports || 'нет данных'}</code></div>
-        <div><span>Local DB</span><code>{dataPaths?.local_db || 'нет данных'}</code></div>
-        <div><span>Logs</span><code>{dataPaths?.logs || 'нет данных'}</code></div>
-      </div>
-    </section>
+    {tab === 'storage' ? <section className="ops-panel usb-storage-panel"><PanelTitle title="Storage" icon="database" action="память флешки" /><div className="usb-storage-cards"><article><span>Всего памяти</span><strong>{storage?.total_label || 'нет данных'}</strong></article><article><span>Занято</span><strong>{storage?.used_label || 'нет данных'}</strong></article><article><span>Свободно</span><strong>{storage?.available_label || 'нет данных'}</strong></article></div><div className="usb-path-list"><div><span>Config</span><code>{dataPaths?.config || status?.config || 'нет данных'}</code></div><div><span>Backups</span><code>{dataPaths?.backups || 'нет данных'}</code></div><div><span>Exports</span><code>{dataPaths?.exports || 'нет данных'}</code></div><div><span>Local DB</span><code>{dataPaths?.local_db || 'нет данных'}</code></div><div><span>Logs</span><code>{dataPaths?.logs || 'нет данных'}</code></div></div></section> : null}
 
-    <section className="ops-panel usb-jobs-panel">
-      <PanelTitle title="Локальные задачи" icon="terminal" action="bin/admin_tool" />
-      <div className="usb-job-list">{LOCAL_JOBS.map((job) => <button key={job.title} type="button" onClick={() => void run(job.args, job.title)} disabled={Boolean(running)}><span><strong>{job.title}</strong><small>{job.description}</small></span><StatusPill tone={job.tone} label={running === job.title ? 'run' : job.args[0]} /></button>)}</div>
-      <div className="usb-custom-command"><input value={custom} onChange={(event) => setCustom(event.target.value)} placeholder="autofill-product <product_id>" /><button className="btn btn-primary" type="button" onClick={() => void run(custom.split(' ').filter(Boolean), 'Custom command')} disabled={Boolean(running)}><AppIcon name="zap" />Run</button></div>
-    </section>
+    {tab === 'gemini' ? <section className="ops-panel usb-jobs-panel"><PanelTitle title="Gemini Studio" icon="bot" action="USB Prompt Library" /><div className="usb-storage-cards"><article><span>Prompts</span><strong>{prompts.length}</strong></article><article><span>History</span><strong>{history.length}</strong></article><article><span>API key</span><strong>{settings?.gemini_api_key || 'missing'}</strong></article></div><div className="usb-job-list"><button type="button" onClick={() => setTab('site')}><span><strong>Site Pages</strong><small>SEO-страницы услуг через Gemini</small></span><StatusPill tone="info" label="text" /></button><button type="button" onClick={() => setTab('product')}><span><strong>Product Cards</strong><small>Карточки строительного маркетплейса</small></span><StatusPill tone="good" label="json" /></button><button type="button" onClick={() => setTab('image')}><span><strong>Image Prompts</strong><small>Промты для фото товаров</small></span><StatusPill tone="warning" label="image" /></button></div></section> : null}
 
-    <section className="ops-panel usb-output-panel">
-      <PanelTitle title="Результат" icon="code" action={running ? 'выполняется...' : 'готово'} />
-      <pre>{output}</pre>
-    </section>
+    {tab === 'prompts' ? <section className="ops-panel usb-jobs-panel"><PanelTitle title="Prompt Library" icon="cms" action="templates/prompts" /><div className="usb-custom-command"><select value={selectedPrompt} onChange={(event) => setSelectedPrompt(event.target.value)}>{prompts.map((prompt) => <option key={prompt.path} value={prompt.path}>{prompt.type} / {prompt.name}</option>)}</select><button className="btn btn-quiet" type="button" onClick={() => void adminKeyOpenFolder('prompts')}>Open Folder</button><button className="btn btn-primary" type="button" onClick={() => void runJson('Read Prompt', async () => { const value = await adminKeyPromptRead(selectedPrompt); setPromptContent(value.content || ''); return value; })}>Read Prompt</button><button className="btn btn-quiet" type="button" onClick={() => void runJson('Render Test', () => adminKeyPromptRender(selectedPrompt, selectedPrompt.includes('/images/') ? imageForm : selectedPrompt.includes('marketplace') ? productForm : siteForm))}>Render Test</button></div><pre>{promptContent || 'Выберите prompt и нажмите Read Prompt.'}</pre></section> : null}
+
+    {tab === 'site' ? <section className="ops-panel usb-jobs-panel"><PanelTitle title="Site Pages" icon="seo" action="construction-site.ru.txt" /><div className="settings-matrix">{Object.entries(siteForm).map(([key, value]) => <label key={key}><span>{key}</span><input value={value} onChange={(event) => setSiteForm({ ...siteForm, [key]: event.target.value })} /></label>)}</div><div className="editor-actions"><button className="btn btn-primary" type="button" disabled={Boolean(running)} onClick={() => void runJson('Generate Site Page', () => adminKeyGeminiGenerateText('templates/prompts/sites/construction-site.ru.txt', siteForm))}><AppIcon name="sparkles" />Generate Site Page</button><button className="btn btn-quiet" type="button" onClick={() => void adminKeyOpenFolder('exports')}>Open Export Folder</button></div></section> : null}
+
+    {tab === 'product' ? <section className="ops-panel usb-jobs-panel"><PanelTitle title="Product Cards" icon="catalog" action="marketplace-product.ru.txt" /><div className="settings-matrix">{Object.entries(productForm).map(([key, value]) => <label key={key}><span>{key}</span><input value={value} onChange={(event) => setProductForm({ ...productForm, [key]: event.target.value })} /></label>)}</div><button className="btn btn-primary" type="button" disabled={Boolean(running)} onClick={() => void runJson('Generate Product Card', () => adminKeyGeminiGenerateText('templates/prompts/sites/marketplace-product.ru.txt', productForm))}><AppIcon name="sparkles" />Generate Product Card</button></section> : null}
+
+    {tab === 'image' ? <section className="ops-panel usb-jobs-panel"><PanelTitle title="Image Prompts" icon="sparkles" action="product-photo.ru.txt" /><div className="settings-matrix">{Object.entries(imageForm).map(([key, value]) => <label key={key}><span>{key}</span><input value={value} onChange={(event) => setImageForm({ ...imageForm, [key]: event.target.value })} /></label>)}</div><button className="btn btn-primary" type="button" disabled={Boolean(running)} onClick={() => void runJson('Generate Image Prompt', () => adminKeyGeminiGenerateImagePrompt('templates/prompts/images/product-photo.ru.txt', imageForm))}><AppIcon name="sparkles" />Generate Image Prompt</button></section> : null}
+
+    {tab === 'history' ? <section className="ops-panel usb-jobs-panel"><PanelTitle title="History" icon="database" action="data/ai-history" /><div className="usb-job-list">{history.slice(0, 30).map((item) => <button key={item.id} type="button" onClick={() => void runJson('Read History', () => adminKeyAiHistoryRead(item.id))}><span><strong>{item.type}</strong><small>{item.created_at} · {item.template}</small></span><StatusPill tone="info" label="open" /></button>)}</div><button className="btn btn-quiet" type="button" onClick={() => void adminKeyOpenFolder('history')}>Open History Folder</button></section> : null}
+
+    {tab === 'settings' ? <section className="ops-panel usb-storage-panel"><PanelTitle title="Settings" icon="settings" action="settings/gemini.env.local" /><div className="usb-path-list"><div><span>USB root</span><code>{settings?.usb_root || status?.root || 'not found'}</code></div><div><span>GEMINI_API_KEY</span><code>{settings?.gemini_api_key || 'missing'}</code></div><div><span>Text model</span><code>{settings?.text_model || 'gemini-3-flash-preview'}</code></div><div><span>Image model</span><code>{settings?.image_model || 'not set'}</code></div><div><span>Settings file</span><code>{settings?.settings_path || 'not found'}</code></div></div><div className="editor-actions"><button className="btn btn-quiet" type="button" onClick={() => void adminKeyOpenFolder('settings')}>Open gemini.env.local</button><button className="btn btn-quiet" type="button" onClick={() => void refresh()}>Refresh</button></div></section> : null}
+
+    <section className="ops-panel usb-jobs-panel"><PanelTitle title="Локальные задачи" icon="terminal" action="fallback bin/admin_tool" /><div className="usb-job-list">{localJobs.map((job) => <button key={job.title} type="button" onClick={() => void runRaw(job.args, job.title)} disabled={Boolean(running)}><span><strong>{job.title}</strong><small>{job.description}</small></span><StatusPill tone={job.tone} label={running === job.title ? 'run' : job.args[0]} /></button>)}</div><div className="usb-custom-command"><input value={custom} onChange={(event) => setCustom(event.target.value)} placeholder="autofill-product <product_id>" /><button className="btn btn-primary" type="button" onClick={() => void runRaw(custom.split(' ').filter(Boolean), 'Custom command')} disabled={Boolean(running)}><AppIcon name="zap" />Run</button></div></section>
+
+    <section className="ops-panel usb-output-panel"><PanelTitle title="Результат" icon="code" action={running ? 'выполняется...' : 'готово'} /><pre>{output}</pre></section>
   </div>;
 }
 
