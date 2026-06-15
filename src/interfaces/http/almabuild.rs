@@ -33,6 +33,32 @@ pub struct MaterialCategory {
     pub price: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category_slug: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supplier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purchase_price: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purchase_currency: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sale_price: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sale_currency: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin_percent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub languages: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,15 +133,24 @@ fn clean_items(value: Option<Vec<String>>) -> Vec<String> {
         .collect()
 }
 
+fn non_empty(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
 fn default_content() -> AlmabuildContent {
     AlmabuildContent {
         material_categories: vec![
-            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], photo: "material-drywall".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
-            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], photo: "material-mixes".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
-            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], photo: "material-flooring".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
-            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], photo: "material-electric".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
-            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], photo: "material-ceiling".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
-            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], photo: "material-osb".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
+            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], photo: "material-drywall".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], photo: "material-mixes".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], photo: "material-flooring".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], photo: "material-electric".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], photo: "material-ceiling".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], photo: "material-osb".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
         ],
         products: vec![
             Product { category_slug: "gipsokarton-profili".into(), category: "ГКЛ".into(), title: "ГКЛ 12.5 мм стандартный".into(), spec: "2500x1200 мм · стены и потолки".into(), photo: "photo-plans".into() },
@@ -412,6 +447,19 @@ pub async fn admin_ai_materials_from_photo(
     let mut price = String::new();
     let mut category_slug = String::new();
     let mut category_title = String::new();
+    let mut unit = String::new();
+    let mut availability = String::new();
+    let mut city = "Алматы".to_string();
+    let mut supplier = String::new();
+    let mut purchase_price = String::new();
+    let mut purchase_currency = "KZT".to_string();
+    let mut sale_price = String::new();
+    let mut sale_currency = "KZT".to_string();
+    let mut margin_percent = String::new();
+    let mut status = "draft".to_string();
+    let mut languages = vec!["RU".to_string()];
+    let mut seo_title = String::new();
+    let mut seo_description = String::new();
 
     while let Some(field) = multipart
         .next_field()
@@ -463,6 +511,30 @@ pub async fn admin_ai_materials_from_photo(
             "categoryTitle" => {
                 category_title = field.text().await.unwrap_or_default();
             }
+            "unit" => unit = field.text().await.unwrap_or_default(),
+            "availability" => availability = field.text().await.unwrap_or_default(),
+            "city" => city = field.text().await.unwrap_or_else(|_| "Алматы".to_string()),
+            "supplier" => supplier = field.text().await.unwrap_or_default(),
+            "purchasePrice" => purchase_price = field.text().await.unwrap_or_default(),
+            "purchaseCurrency" => {
+                purchase_currency = field.text().await.unwrap_or_else(|_| "KZT".to_string())
+            }
+            "salePrice" => sale_price = field.text().await.unwrap_or_default(),
+            "saleCurrency" => {
+                sale_currency = field.text().await.unwrap_or_else(|_| "KZT".to_string())
+            }
+            "marginPercent" => margin_percent = field.text().await.unwrap_or_default(),
+            "status" => status = field.text().await.unwrap_or_else(|_| "draft".to_string()),
+            "languages" => {
+                let value = field.text().await.unwrap_or_default();
+                languages = value
+                    .split(',')
+                    .map(|item| item.trim().to_string())
+                    .filter(|item| !item.is_empty())
+                    .collect();
+            }
+            "seoTitle" => seo_title = field.text().await.unwrap_or_default(),
+            "seoDescription" => seo_description = field.text().await.unwrap_or_default(),
             _ => {}
         }
     }
@@ -508,7 +580,7 @@ pub async fn admin_ai_materials_from_photo(
 Создай ровно {count} карточек категорий/материалов для секции "Материалы" сайта.
 
 Верни ТОЛЬКО JSON без markdown в формате:
-{{"materials":[{{"index":"[0:7]","slug":"latin-slug","title":"Название","text":"Короткое B2B-описание","bullets":["Пункт"],"photo":"material-mixes","imageUrl":"{image_url}","detailImageUrl":"{detail_image_url}","price":"{price}","categorySlug":"{category_slug}"}}]}}
+{{"materials":[{{"index":"[0:7]","slug":"latin-slug","title":"Название","text":"Короткое B2B-описание","bullets":["Пункт"],"photo":"material-mixes","imageUrl":"{image_url}","detailImageUrl":"{detail_image_url}","price":"{price}","categorySlug":"{category_slug}","unit":"{unit}","availability":"{availability}","city":"{city}","supplier":"{supplier}","purchasePrice":"{purchase_price}","purchaseCurrency":"{purchase_currency}","salePrice":"{sale_price}","saleCurrency":"{sale_currency}","marginPercent":"{margin_percent}","status":"{status}","languages":["RU"],"seoTitle":"SEO title","seoDescription":"SEO description"}}]}}
 
 Правила:
 - Язык: русский.
@@ -522,6 +594,9 @@ pub async fn admin_ai_materials_from_photo(
 - detailImageUrl всегда ставь ровно: {detail_image_url}
 - price всегда ставь ровно: {price}
 - categorySlug всегда ставь ровно: {category_slug}; категория: {category_title}
+- unit: {unit}; availability: {availability}; city: {city}; supplier: {supplier}
+- purchasePrice: {purchase_price}; purchaseCurrency: {purchase_currency}; salePrice: {sale_price}; saleCurrency: {sale_currency}; marginPercent: {margin_percent}
+- status: {status}; languages: {languages}; seoTitle/seoDescription заполни для SEO, если администратор не задал их.
 - Если фото содержит конкретные товары, группируй их в полезные категории сайта, а не в случайные одиночные позиции.
 - Первое фото — основное. Второе фото, если есть, используй как детальный референс фактуры/упаковки/строительного материала.
 - Не повторяй уже существующие карточки, если можно сделать новые или уточнённые.
@@ -539,6 +614,17 @@ pub async fn admin_ai_materials_from_photo(
         price = price.trim(),
         category_slug = category_slug.trim(),
         category_title = category_title.trim(),
+        unit = unit.trim(),
+        availability = availability.trim(),
+        city = city.trim(),
+        supplier = supplier.trim(),
+        purchase_price = purchase_price.trim(),
+        purchase_currency = purchase_currency.trim(),
+        sale_price = sale_price.trim(),
+        sale_currency = sale_currency.trim(),
+        margin_percent = margin_percent.trim(),
+        status = status.trim(),
+        languages = languages.join(", "),
         first_index = existing_count + 1,
         existing_count = existing_count,
         existing = if existing.trim().is_empty() {
@@ -588,6 +674,23 @@ pub async fn admin_ai_materials_from_photo(
                 }
                 if !category_slug.trim().is_empty() {
                     material.category_slug = Some(category_slug.trim().to_string());
+                }
+                material.unit = non_empty(&unit);
+                material.availability = non_empty(&availability);
+                material.city = non_empty(&city);
+                material.supplier = non_empty(&supplier);
+                material.purchase_price = non_empty(&purchase_price);
+                material.purchase_currency = non_empty(&purchase_currency);
+                material.sale_price = non_empty(&sale_price);
+                material.sale_currency = non_empty(&sale_currency);
+                material.margin_percent = non_empty(&margin_percent);
+                material.status = non_empty(&status);
+                material.languages = languages.clone();
+                if !seo_title.trim().is_empty() {
+                    material.seo_title = Some(seo_title.trim().to_string());
+                }
+                if !seo_description.trim().is_empty() {
+                    material.seo_description = Some(seo_description.trim().to_string());
                 }
                 material
             })
