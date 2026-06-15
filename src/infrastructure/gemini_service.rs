@@ -345,6 +345,41 @@ Return one consistent square catalog image. The ingredient must be immediately r
         .await
     }
 
+    pub async fn generate_material_scene_image(
+        &self,
+        material_title: &str,
+        material_text: &str,
+        scene: &str,
+    ) -> Result<String, AppError> {
+        let prompt = format!(
+            r#"Create a photorealistic commercial construction-material image for ALMABUILD/KAZAXBUD in Almaty.
+
+Material: {material_title}
+Context: {material_text}
+Scene direction: {scene}
+
+Visual requirements:
+- real construction/retail environment, not an isolated white-background packshot
+- show how the material is used, stored, installed, cut, stacked, mounted or prepared
+- suitable for a building materials website for shop renovation and commercial fit-out
+- modern warehouse/store or active construction interior, clean professional lighting
+- no readable text, no logos, no watermarks, no UI, no duplicated impossible objects
+- make this image visibly different from other material cards
+- landscape composition, sharp, realistic, high detail"#,
+            material_title = material_title,
+            material_text = material_text,
+            scene = scene,
+        );
+
+        self.generate_image_from_prompt(
+            &prompt,
+            material_title,
+            "construction material scene",
+            &self.recipe_image_model,
+        )
+        .await
+    }
+
     /// Generate one editorial image variant for a CMS article.
     pub async fn generate_blog_article_image(
         &self,

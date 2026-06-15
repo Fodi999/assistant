@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -590,7 +591,7 @@ pub async fn admin_ai_materials_from_photo(
 - slug: латиница lower-case через дефис, уникальный.
 - index начинай с [0:{first_index}] и продолжай по порядку.
 - photo выбери один класс: material-drywall, material-mixes, material-flooring, material-electric, material-ceiling, material-osb.
-- imageUrl всегда ставь ровно: {image_url}
+- imageUrl можешь оставить пустым: backend заменит его отдельным сгенерированным фото для каждой карточки.
 - detailImageUrl всегда ставь ровно: {detail_image_url}
 - price всегда ставь ровно: {price}
 - categorySlug всегда ставь ровно: {category_slug}; категория: {category_title}
@@ -661,39 +662,71 @@ pub async fn admin_ai_materials_from_photo(
             "Gemini Vision не вернул ни одной карточки материала",
         ));
     }
-    Ok(Json(MaterialsFromPhotoResponse {
-        materials: response
-            .materials
-            .into_iter()
-            .take(count)
-            .map(|mut material| {
-                material.image_url = Some(image_url.clone());
-                material.detail_image_url = detail_image_url.clone();
-                if !price.trim().is_empty() {
-                    material.price = Some(price.trim().to_string());
-                }
-                if !category_slug.trim().is_empty() {
-                    material.category_slug = Some(category_slug.trim().to_string());
-                }
-                material.unit = non_empty(&unit);
-                material.availability = non_empty(&availability);
-                material.city = non_empty(&city);
-                material.supplier = non_empty(&supplier);
-                material.purchase_price = non_empty(&purchase_price);
-                material.purchase_currency = non_empty(&purchase_currency);
-                material.sale_price = non_empty(&sale_price);
-                material.sale_currency = non_empty(&sale_currency);
-                material.margin_percent = non_empty(&margin_percent);
-                material.status = non_empty(&status);
-                material.languages = languages.clone();
-                if !seo_title.trim().is_empty() {
-                    material.seo_title = Some(seo_title.trim().to_string());
-                }
-                if !seo_description.trim().is_empty() {
-                    material.seo_description = Some(seo_description.trim().to_string());
-                }
-                material
-            })
-            .collect(),
-    }))
+    let scenes = [
+        "building-materials retail store aisle with gypsum boards and profiles selected for shop renovation",
+        "commercial interior construction site where workers install gypsum board partitions and ceiling framing",
+        "close realistic process scene of drywall sheet cutting, screw fastening, joint preparation and clean tools",
+        "finished shop fit-out interior under construction with gypsum ceiling, wall lining, profiles and materials staged",
+        "warehouse loading area with gypsum sheets prepared for delivery to a commercial renovation project",
+        "detail scene of moisture-resistant drywall boards being mounted in a clean modern retail space",
+    ];
+    let mut materials = Vec::new();
+    for (index, mut material) in response.materials.into_iter().take(count).enumerate() {
+        let scene = scenes[index % scenes.len()];
+        let generated_url = match llm
+            .generate_material_scene_image(&material.title, &material.text, scene)
+            .await
+        {
+            Ok(base64_png) => {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(base64_png)
+                    .map_err(|e| {
+                        AppError::internal(format!("Gemini image base64 decode failed: {e}"))
+                    })?;
+                let key = format!(
+                    "almabuild/materials/generated-{}-{}.png",
+                    material.slug,
+                    uuid::Uuid::new_v4()
+                );
+                r2.upload_image(&key, bytes::Bytes::from(bytes), "image/png")
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(%error, "failed to upload generated material image to R2");
+                        image_url.clone()
+                    })
+            }
+            Err(error) => {
+                tracing::error!(%error, title = %material.title, "failed to generate unique material scene image");
+                image_url.clone()
+            }
+        };
+        material.image_url = Some(generated_url);
+        material.detail_image_url = detail_image_url.clone();
+        if !price.trim().is_empty() {
+            material.price = Some(price.trim().to_string());
+        }
+        if !category_slug.trim().is_empty() {
+            material.category_slug = Some(category_slug.trim().to_string());
+        }
+        material.unit = non_empty(&unit);
+        material.availability = non_empty(&availability);
+        material.city = non_empty(&city);
+        material.supplier = non_empty(&supplier);
+        material.purchase_price = non_empty(&purchase_price);
+        material.purchase_currency = non_empty(&purchase_currency);
+        material.sale_price = non_empty(&sale_price);
+        material.sale_currency = non_empty(&sale_currency);
+        material.margin_percent = non_empty(&margin_percent);
+        material.status = non_empty(&status);
+        material.languages = languages.clone();
+        if !seo_title.trim().is_empty() {
+            material.seo_title = Some(seo_title.trim().to_string());
+        }
+        if !seo_description.trim().is_empty() {
+            material.seo_description = Some(seo_description.trim().to_string());
+        }
+        materials.push(material);
+    }
+
+    Ok(Json(MaterialsFromPhotoResponse { materials }))
 }
