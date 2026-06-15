@@ -339,6 +339,49 @@ fn strip_json_fence(raw: &str) -> &str {
     trimmed
 }
 
+fn normalize_gemini_materials_value(mut value: Value) -> Value {
+    if let Some(materials) = value.get_mut("materials") {
+        if let Some(object) = materials.as_object() {
+            *materials = Value::Array(object.values().cloned().collect());
+        }
+        if let Some(array) = materials.as_array_mut() {
+            for material in array {
+                if let Some(object) = material.as_object_mut() {
+                    if let Some(languages) = object.get_mut("languages") {
+                        if let Some(language) = languages.as_str() {
+                            *languages = Value::Array(
+                                language
+                                    .split(',')
+                                    .map(|item| Value::String(item.trim().to_string()))
+                                    .filter(|item| {
+                                        item.as_str().is_some_and(|text| !text.is_empty())
+                                    })
+                                    .collect(),
+                            );
+                        } else if let Some(map) = languages.as_object() {
+                            *languages = Value::Array(
+                                map.iter()
+                                    .filter(|(_, enabled)| enabled.as_bool().unwrap_or(true))
+                                    .map(|(key, _)| Value::String(key.to_string()))
+                                    .collect(),
+                            );
+                        }
+                    }
+                    if !object.contains_key("languages") {
+                        object.insert(
+                            "languages".to_string(),
+                            Value::Array(vec![Value::String("RU".to_string())]),
+                        );
+                    }
+                }
+            }
+        }
+    } else if value.is_array() {
+        value = serde_json::json!({ "materials": value });
+    }
+    value
+}
+
 fn almabuild_schema(kind: &str) -> &'static str {
     match kind {
         "material" => {
@@ -654,9 +697,10 @@ pub async fn admin_ai_materials_from_photo(
     };
     let value: Value = serde_json::from_str(strip_json_fence(&raw))
         .map_err(|e| AppError::internal(format!("Gemini Vision вернул не JSON: {e}")))?;
-    let response: MaterialsFromPhotoResponse = serde_json::from_value(value).map_err(|e| {
-        AppError::validation(format!("Gemini Vision вернул неверные материалы: {e}"))
-    })?;
+    let response: MaterialsFromPhotoResponse =
+        serde_json::from_value(normalize_gemini_materials_value(value)).map_err(|e| {
+            AppError::validation(format!("Gemini Vision вернул неверные материалы: {e}"))
+        })?;
     if response.materials.is_empty() {
         return Err(AppError::validation(
             "Gemini Vision не вернул ни одной карточки материала",
