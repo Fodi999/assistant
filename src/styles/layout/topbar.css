@@ -1,0 +1,33 @@
+.topbar {
+  max-width: 1720px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.topbar h1 { font-size: 22px; line-height: 1.1; letter-spacing: -.04em; }
+.topbar-date { margin-top: 4px; color: var(--color-text-secondary); font-size: 11px; }
+.topbar-actions { display: flex; align-items: center; gap: 12px; }
+.topbar-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 230px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text-secondary);
+  background: #fff;
+}
+.topbar-search .app-icon { width: 15px; height: 15px; }
+.topbar-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; font-size: 11px; }
+.topbar-search kbd { padding: 3px 5px; border-radius: 4px; color: #758095; font-size: 9px; background: #f2f4f8; white-space: nowrap; }
+.topbar-icon { display: grid; width: 34px; height: 34px; place-items: center; border: 0; color: #152033; background: transparent; cursor: pointer; }
+.topbar-icon .app-icon { width: 17px; height: 17px; }
+.profile-menu { display: flex; align-items: center; gap: 9px; padding: 0; border: 0; text-align: left; background: transparent; cursor: pointer; }
+.profile-menu > span { display: grid; width: 35px; height: 35px; place-items: center; border-radius: 50%; color: #fff; font-size: 10px; background: linear-gradient(135deg,#a99dfd,#d5b8fc); }
+.profile-menu strong { display: grid; gap: 2px; font-size: 10px; }
+.profile-menu small { color: var(--color-text-secondary); font-size: 9px; font-weight: 500; }
+.profile-menu b { margin-left: 4px; color: var(--color-text-secondary); }

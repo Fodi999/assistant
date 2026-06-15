@@ -1,0 +1,47 @@
+.btn {
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 9px 13px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  color: var(--color-text-inverse);
+  background: linear-gradient(135deg, #5368f5, #7958f5);
+  box-shadow: 0 7px 16px rgba(83, 91, 241, .22);
+}
+
+.btn-secondary {
+  color: var(--color-text-inverse);
+  background: linear-gradient(135deg, var(--color-warning), var(--color-danger));
+}
+
+.btn-danger {
+  color: var(--color-text-inverse);
+  background: var(--color-danger);
+  padding: 7px 10px;
+}
+
+.btn-quiet {
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.btn-ai {
+  color: #fff;
+  background: linear-gradient(135deg, #5368f5, #7958f5);
+  box-shadow: 0 7px 16px rgba(83, 91, 241, .22);
+}
+
+.btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}

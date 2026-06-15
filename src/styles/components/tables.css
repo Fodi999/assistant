@@ -1,0 +1,46 @@
+.orders-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 660px;
+}
+
+.orders-table th,
+.orders-table td {
+  text-align: left;
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 10px;
+}
+
+.orders-table th {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  background: rgba(245, 247, 251, 0.72);
+  text-transform: none;
+}
+
+.orders-table tbody tr {
+  transition: background 150ms ease;
+}
+
+.orders-table tbody tr:hover {
+  background: rgba(38, 103, 255, 0.035);
+}
+.table-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.table-actions .btn {
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: 11px;
+}

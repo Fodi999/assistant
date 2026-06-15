@@ -1,0 +1,38 @@
+.ai-studio,.cms-ai-studio,.shop-studio { color: #fff; border-color: rgba(91,82,255,.28); background: radial-gradient(circle at 10% 0%,rgba(110,91,255,.34),transparent 42%),linear-gradient(135deg,#111b35,#25264f); box-shadow: var(--shadow-card); }
+.ai-studio .eyebrow,.cms-ai-studio .eyebrow,.shop-studio .eyebrow { color: #8e86ff; }
+.ai-studio h3,.cms-ai-studio h3,.shop-studio h3 { color: #fff; }
+.ai-studio p,.cms-ai-studio p,.shop-studio p { color: #b5bfd9; }
+.ai-studio textarea { color: #fff; border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.07); }
+.ai-studio textarea::placeholder { color: #98a4c2; }
+.ai-photo-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ai-photo-head h4 { font-size: 13px; }.ai-photo-head p { margin-top: 2px; color: var(--color-text-secondary); font-size: 9px; }
+.ai-photo-actions { display: flex; align-items: center; gap: 6px; }
+.ai-photo-main { position: relative; overflow: hidden; display: grid; aspect-ratio: 16 / 9; place-items: center; border: 1px solid var(--color-border); border-radius: 11px; background: #eef1f7; }
+.ai-photo-main > img { width: 100%; height: 100%; object-fit: cover; }
+.ai-photo-empty { display: grid; justify-items: center; gap: 7px; color: var(--color-text-secondary); font-size: 9px; }
+.ai-photo-empty b { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(135deg,#5268f2,#7658f4); }
+.ai-photo-overlay { position: absolute; inset: 0; pointer-events: none; }
+.ai-photo-overlay span { position: absolute; left: 9px; bottom: 9px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; color: #fff; font-size: 8px; font-weight: 750; background: rgba(12,18,32,.66); backdrop-filter: blur(12px); }
+.ai-photo-overlay button { position: absolute; top: 9px; right: 9px; display: grid; width: 31px; height: 31px; place-items: center; border: 1px solid rgba(255,255,255,.25); border-radius: 9px; color: #fff; font-size: 16px; background: rgba(12,18,32,.62); backdrop-filter: blur(12px); cursor: pointer; pointer-events: auto; }
+.ai-photo-options { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; }
+.ai-photo-card { position: relative; overflow: hidden; border: 1px solid var(--color-border); border-radius: 9px; background: #f8f9fc; transition: .16s ease; }
+.ai-photo-card.active { border-color: #5267ff; box-shadow: 0 0 0 2px rgba(82,103,255,.12); }
+.ai-photo-select { display: grid; gap: 4px; width: 100%; padding: 3px; border: 0; color: var(--color-text-secondary); background: transparent; cursor: pointer; }
+.ai-photo-select img { width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; object-fit: cover; }
+.ai-photo-select small { padding-bottom: 3px; font-size: 8px; }
+.ai-photo-delete { position: absolute; top: 6px; right: 6px; display: grid; width: 20px; height: 20px; padding: 0; place-items: center; border: 1px solid rgba(255,255,255,.38); border-radius: 6px; color: #fff; background: rgba(16,22,36,.7); cursor: pointer; opacity: 0; }
+.ai-photo-card:hover .ai-photo-delete,.ai-photo-card.active .ai-photo-delete { opacity: 1; }
+.ai-photo-delete:hover { background: rgba(213,62,79,.92); }
+.ai-photo-add { display: grid; min-height: 92px; padding: 10px 6px; place-items: center; align-content: center; gap: 2px; border: 1px dashed rgba(91,103,241,.42); border-radius: 9px; color: #6270d9; background: linear-gradient(145deg,rgba(93,105,245,.07),rgba(130,93,245,.025)); cursor: pointer; }
+.ai-photo-add span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 9px; color: #fff; font-size: 18px; background: linear-gradient(135deg,#5268f2,#7658f4); }
+.ai-photo-add strong { margin-top: 3px; font-size: 8px; }.ai-photo-add small { color: var(--color-text-secondary); font-size: 6px; }
+.ai-reference-upload { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px dashed rgba(139,150,255,.28); border-radius: 11px; background: rgba(255,255,255,.035); }
+.ai-reference-copy { display: grid; gap: 2px; }.ai-reference-copy strong { color: #f3f5ff; font-size: 9px; }.ai-reference-copy span { color: #9fa9c5; font-size: 7px; }
+.ai-reference-items { display: flex; gap: 5px; }.ai-reference-thumb,.ai-reference-add { position: relative; overflow: hidden; display: grid; width: 66px; height: 48px; place-items: center; border: 1px solid rgba(255,255,255,.15); border-radius: 8px; background: rgba(255,255,255,.065); }
+.ai-reference-thumb img { width: 100%; height: 100%; object-fit: cover; }.ai-reference-thumb button { position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%; color: #fff; background: rgba(17,23,46,.75); }
+.ai-reference-add { gap: 1px; color: #b9c2dc; cursor: pointer; }.ai-reference-add input { position: absolute; opacity: 0; }.ai-reference-add b { font-size: 16px; }.ai-reference-add span { font-size: 6px; }
+.ai-lightbox { position: fixed; z-index: 1000; inset: 0; display: grid; grid-template-rows: auto minmax(0,1fr); gap: 12px; padding: 14px; background: rgba(6,9,17,.92); backdrop-filter: blur(18px); }
+.ai-lightbox-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 10px 9px 14px; border: 1px solid rgba(255,255,255,.12); border-radius: 13px; color: #fff; background: rgba(255,255,255,.07); }.ai-lightbox-toolbar > div:first-child { display: grid; gap: 2px; }.ai-lightbox-toolbar span { color: rgba(255,255,255,.58); font-size: 8px; }
+.ai-lightbox-controls { display: flex; gap: 5px; }.ai-lightbox-controls button { min-width: 32px; height: 30px; padding: 0 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; color: #fff; background: rgba(255,255,255,.08); cursor: pointer; }
+.ai-lightbox-canvas { overflow: auto; display: grid; align-items: start; justify-items: center; border-radius: 14px; background: #111522; }.ai-lightbox-canvas img { display: block; min-width: 50%; height: auto; max-width: none; }
+@media(max-width:760px){.ai-photo-options{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-reference-upload,.ai-lightbox-toolbar,.ai-photo-head{align-items:flex-start;flex-direction:column}.ai-photo-actions{align-items:stretch;flex-direction:column}}

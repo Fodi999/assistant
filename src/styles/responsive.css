@@ -1,0 +1,62 @@
+@media (max-width: 1200px) {
+  .admin-shell {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-main-grid, .dashboard-bottom-grid { grid-template-columns: 1fr; }
+  .topbar-search { display: none; }
+}
+
+@media (max-width: 900px) {
+  .admin-shell {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding: 20px 10px;
+  }
+
+  .sidebar-title,
+  .sidebar-subtitle,
+  .sidebar-link {
+    text-align: center;
+  }
+
+  .site-switcher {
+    padding: 5px;
+  }
+
+  .site-switcher-option {
+    display: flex;
+    justify-content: center;
+    min-height: 38px;
+    padding: 4px;
+  }
+
+  .site-switcher-option span:last-child {
+    display: none;
+  }
+
+  .sidebar-link {
+    font-size: 12px;
+    padding: 10px 8px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-table-wrap {
+    overflow-x: auto;
+  }
+}
