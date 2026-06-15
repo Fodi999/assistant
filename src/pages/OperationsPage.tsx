@@ -319,6 +319,18 @@ function AlmabuildEditor({ props, mode }: { props: OperationsPageProps; mode: 'm
 type SeoArticleDraft = Partial<Omit<CmsArticle, 'id' | 'updated_at' | 'created_at'>>;
 type SeoArticleTab = 'content' | 'seo' | 'languages' | 'media';
 
+function extractArticleImages(article?: CmsArticle): string[] {
+  if (!article) return [];
+  const markdownImages = [article.content_ru, article.content_en, article.content_pl, article.content_uk].flatMap((content) =>
+    Array.from(String(content || '').matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)).map((match) => match[1])
+  );
+  return Array.from(new Set([article.image_url || '', ...markdownImages].filter(Boolean)));
+}
+
+function stripArticleVisualStory(content?: string | null): string {
+  return String(content || '').replace(/\n{0,2}##\s+Visual story[\s\S]*$/i, '').trim();
+}
+
 function articleDisplayTitle(article: CmsArticle | SeoArticleDraft) {
   return article.title_ru || article.title_pl || article.title_en || article.slug || 'Новая SEO-страница';
 }
@@ -331,10 +343,10 @@ function articleToDraft(article?: CmsArticle): SeoArticleDraft {
     title_en: article?.title_en || '',
     title_pl: article?.title_pl || '',
     title_uk: article?.title_uk || '',
-    content_ru: article?.content_ru || '',
-    content_en: article?.content_en || '',
-    content_pl: article?.content_pl || '',
-    content_uk: article?.content_uk || '',
+    content_ru: stripArticleVisualStory(article?.content_ru),
+    content_en: stripArticleVisualStory(article?.content_en),
+    content_pl: stripArticleVisualStory(article?.content_pl),
+    content_uk: stripArticleVisualStory(article?.content_uk),
     image_url: article?.image_url || '',
     seo_title: article?.seo_title || '',
     seo_description: article?.seo_description || '',
@@ -378,6 +390,8 @@ function applyArticleAiDraft(current: SeoArticleDraft, ai: Awaited<ReturnType<ty
 
 function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsArticle; onClose: () => void; onSaved: () => Promise<void> | void }) {
   const [draft, setDraft] = useState<SeoArticleDraft>(() => articleToDraft(article));
+  const [images, setImages] = useState<string[]>(() => extractArticleImages(article));
+  const [selectedImage, setSelectedImage] = useState(0);
   const [source, setSource] = useState(article ? articleDisplayTitle(article) : 'Новая SEO/Blog страница для Dima Fomin: тема, аудитория, цель, ключевые слова.');
   const [instruction, setInstruction] = useState(article ? 'Улучши страницу как экспертный материал для сайта Dima Fomin. Обнови 4 языка, структуру текста и SEO.' : 'Создай новую SEO/Blog страницу для сайта Dima Fomin: 4 языка, slug, категория, экспертный текст, SEO title и description.');
   const [tab, setTab] = useState<SeoArticleTab>('content');
@@ -386,6 +400,24 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
   const tabs: Array<[SeoArticleTab, string]> = [['content', 'Контент'], ['seo', 'SEO'], ['languages', '4 языка'], ['media', 'Медиа']];
 
   function setText(field: keyof SeoArticleDraft, value: string) { setDraft((current) => ({ ...current, [field]: value })); }
+  function updateImage(index: number, value: string) {
+    setImages((current) => {
+      const next = [...current];
+      next[index] = value;
+      return next;
+    });
+    if (index === selectedImage) setDraft((current) => ({ ...current, image_url: value }));
+  }
+  function addImage() { setImages((current) => [...current, '']); }
+  function removeImage(index: number) {
+    setImages((current) => {
+      const next = current.filter((_, itemIndex) => itemIndex !== index);
+      const nextSelected = Math.max(0, Math.min(selectedImage, next.length - 1));
+      setSelectedImage(nextSelected);
+      setDraft((draftCurrent) => ({ ...draftCurrent, image_url: next[nextSelected] || '' }));
+      return next;
+    });
+  }
 
   async function runGemini() {
     setBusy('gemini'); setMessage(null);
@@ -403,8 +435,24 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
     try {
       const slug = String(draft.slug || '').trim();
       if (!slug) throw new Error('Slug страницы обязателен.');
-      if (article) await updateArticle(article.id, draft);
-      else await createArticle({ ...draft, slug, category: draft.category || 'blog', published: Boolean(draft.published) });
+      const cleanImages = images.map((url) => url.trim()).filter(Boolean);
+      const coverImage = cleanImages[selectedImage] || cleanImages[0] || String(draft.image_url || '');
+      const visualStory = cleanImages.length > 1
+        ? `\n\n## Visual story\n${cleanImages.filter((url) => url !== coverImage).map((url, index) => `![Step ${index + 1}](${url})`).join('\n\n')}`
+        : '';
+      const payload = {
+        ...draft,
+        slug,
+        category: draft.category || 'blog',
+        image_url: coverImage,
+        content_ru: `${stripArticleVisualStory(draft.content_ru)}${visualStory}`,
+        content_en: `${stripArticleVisualStory(draft.content_en)}${visualStory}`,
+        content_pl: `${stripArticleVisualStory(draft.content_pl)}${visualStory}`,
+        content_uk: `${stripArticleVisualStory(draft.content_uk)}${visualStory}`,
+        published: Boolean(draft.published)
+      };
+      if (article) await updateArticle(article.id, payload);
+      else await createArticle(payload);
       await Promise.resolve(onSaved());
       onClose();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить страницу'); }
@@ -421,12 +469,12 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
         <div className="catalog-generation-actions"><button className="btn btn-primary" type="button" onClick={() => void runGemini()} disabled={Boolean(busy)}><AppIcon name="sparkles" />{busy === 'gemini' ? 'Генерируем...' : 'Текст и SEO'}<small>gemini-3.1-pro-preview</small></button></div>
       </section>
       <div className="catalog-edit-body compact">
-        <aside className="catalog-edit-photo compact">{draft.image_url ? <img src={String(draft.image_url)} alt={articleDisplayTitle(draft)} /> : <span><AppIcon name="seo" size={28} /></span>}<small>SEO/Blog CMS</small></aside>
+        <aside className="catalog-edit-photo compact">{(images[selectedImage] || draft.image_url) ? <img src={String(images[selectedImage] || draft.image_url)} alt={articleDisplayTitle(draft)} /> : <span><AppIcon name="seo" size={28} /></span>}<small>{images.length || 1} фото из CMS/Markdown</small></aside>
         <div className="catalog-edit-form">
           {tab === 'content' ? <div className="editor-grid"><EditorField label="Заголовок RU" value={String(draft.title_ru || '')} onChange={(value) => setText('title_ru', value)} /><EditorField label="Slug страницы" value={String(draft.slug || '')} onChange={(value) => setText('slug', value)} /><EditorField label="Категория" value={String(draft.category || '')} onChange={(value) => setText('category', value)} /><EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} /><EditorField label="Текст RU" value={String(draft.content_ru || '')} onChange={(value) => setText('content_ru', value)} multiline /></div> : null}
           {tab === 'seo' ? <div className="editor-grid"><EditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label="SEO title RU" value={String(draft.seo_title_ru || '')} onChange={(value) => setText('seo_title_ru', value)} /><EditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /><EditorField label="SEO description RU" value={String(draft.seo_description_ru || '')} onChange={(value) => setText('seo_description_ru', value)} multiline /></div> : null}
           {tab === 'languages' ? <div className="editor-grid"><EditorField label="Title EN" value={String(draft.title_en || '')} onChange={(value) => setText('title_en', value)} /><EditorField label="Title PL" value={String(draft.title_pl || '')} onChange={(value) => setText('title_pl', value)} /><EditorField label="Title UK" value={String(draft.title_uk || '')} onChange={(value) => setText('title_uk', value)} /><EditorField label="Content EN" value={String(draft.content_en || '')} onChange={(value) => setText('content_en', value)} multiline /><EditorField label="Content PL" value={String(draft.content_pl || '')} onChange={(value) => setText('content_pl', value)} multiline /><EditorField label="Content UK" value={String(draft.content_uk || '')} onChange={(value) => setText('content_uk', value)} multiline /></div> : null}
-          {tab === 'media' ? <div className="editor-grid"><EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline /><EditorField label="SEO title EN" value={String(draft.seo_title_en || '')} onChange={(value) => setText('seo_title_en', value)} /><EditorField label="SEO description EN" value={String(draft.seo_description_en || '')} onChange={(value) => setText('seo_description_en', value)} multiline /><label className="editor-check span-2"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label></div> : null}
+          {tab === 'media' ? <div className="editor-grid"><div className="span-2 catalog-states-list">{(images.length ? images : [String(draft.image_url || '')]).map((url, index) => <article key={index}><strong>{index === selectedImage ? 'Главное фото' : `Фото ${index + 1}`}</strong><input value={url} onChange={(event) => updateImage(index, event.target.value)} placeholder="https://..." /><div className="editor-actions"><button className="btn btn-quiet" type="button" onClick={() => { setSelectedImage(index); setDraft((current) => ({ ...current, image_url: url })); }}>Сделать главным</button><button className="btn btn-quiet" type="button" onClick={() => removeImage(index)}>Удалить</button></div></article>)}<button className="btn btn-quiet" type="button" onClick={addImage}>Добавить фото URL</button></div><EditorField label="SEO title EN" value={String(draft.seo_title_en || '')} onChange={(value) => setText('seo_title_en', value)} /><EditorField label="SEO title PL" value={String(draft.seo_title_pl || '')} onChange={(value) => setText('seo_title_pl', value)} /><EditorField label="SEO title UK" value={String(draft.seo_title_uk || '')} onChange={(value) => setText('seo_title_uk', value)} /><EditorField label="SEO description EN" value={String(draft.seo_description_en || '')} onChange={(value) => setText('seo_description_en', value)} multiline /><EditorField label="SEO description PL" value={String(draft.seo_description_pl || '')} onChange={(value) => setText('seo_description_pl', value)} multiline /><EditorField label="SEO description UK" value={String(draft.seo_description_uk || '')} onChange={(value) => setText('seo_description_uk', value)} multiline /><label className="editor-check span-2"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label></div> : null}
         </div>
       </div>
       <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : article ? 'Сохранить страницу' : 'Создать страницу'}</button></div>
