@@ -16,10 +16,21 @@ import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, Sh
 type AnalyticsPeriod = 7 | 28 | 90;
 type PageBySite = Record<ManagedSite, AppPage>;
 
+function pageAllowedForSite(site: ManagedSite, page: AppPage) {
+  if (site === 'almabuild' && page === 'catalog') return false;
+  if (site === 'dima' && page === 'materials') return false;
+  return true;
+}
+
+function normalizeSitePage(site: ManagedSite, page: AppPage): AppPage {
+  if (pageAllowedForSite(site, page)) return page;
+  return site === 'almabuild' ? 'materials' : 'catalog';
+}
+
 export function App() {
   const [activeSite, setActiveSite] = useState<ManagedSite>('almabuild');
   const [pageBySite, setPageBySite] = useState<PageBySite>({ almabuild: 'overview', dima: 'overview' });
-  const activePage = pageBySite[activeSite];
+  const activePage = normalizeSitePage(activeSite, pageBySite[activeSite]);
   const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'anonymous'>('checking');
   const [authError, setAuthError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,10 +48,12 @@ export function App() {
   const [analyticsPeriod] = useState<AnalyticsPeriod>(28);
 
   function navigate(page: AppPage) {
+    if (!pageAllowedForSite(activeSite, page)) return;
     setPageBySite((current) => ({ ...current, [activeSite]: page }));
   }
 
   function changeSite(site: ManagedSite) {
+    setPageBySite((current) => ({ ...current, [site]: normalizeSitePage(site, current[site]) }));
     setActiveSite(site);
   }
 

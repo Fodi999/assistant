@@ -34,7 +34,15 @@ const NAV_ITEMS: Array<{ page: AppPage; label: string; icon: AppIconName; shortc
   { page: 'settings', label: 'Настройки', icon: 'settings', shortcut: 'S' }
 ];
 
+function navItemAllowed(site: ManagedSite, page: AppPage) {
+  if (site === 'almabuild' && page === 'catalog') return false;
+  if (site === 'dima' && page === 'materials') return false;
+  return true;
+}
+
 export function Sidebar({ activeSite, activePage, onSiteChange, onNavigate }: SidebarProps) {
+  const visibleNavItems = NAV_ITEMS.filter((item) => navItemAllowed(activeSite, item.page));
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -61,7 +69,7 @@ export function Sidebar({ activeSite, activePage, onSiteChange, onNavigate }: Si
 
       <nav className="sidebar-nav" aria-label="Основная навигация">
         <p className="sidebar-section-label">Разделы управления</p>
-        {NAV_ITEMS.map((item) => (
+        {visibleNavItems.map((item) => (
           <button key={item.page} className={'sidebar-link' + (activePage === item.page ? ' active' : '')} type="button" onClick={() => onNavigate(item.page)}>
             <AppIcon name={item.icon} />
             <span>{item.label}</span>

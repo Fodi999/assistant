@@ -43,15 +43,22 @@ const COMMANDS: Array<{ page: AppPage; title: string; hint: string }> = [
   { page: 'seo', title: 'Опубликовать sitemap', hint: 'robots и sitemap' }
 ];
 
+function commandAllowed(site: ManagedSite, page: AppPage) {
+  if (site === 'almabuild' && page === 'catalog') return false;
+  if (site === 'dima' && page === 'materials') return false;
+  return true;
+}
+
 export function Topbar({ activeSite, activePage, connectionState, onNavigate, onLogout }: TopbarProps) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [query, setQuery] = useState('');
   const site = SITE_META[activeSite];
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return COMMANDS;
-    return COMMANDS.filter((command) => (command.title + ' ' + command.hint).toLowerCase().includes(needle));
-  }, [query]);
+    const siteCommands = COMMANDS.filter((command) => commandAllowed(activeSite, command.page));
+    if (!needle) return siteCommands;
+    return siteCommands.filter((command) => (command.title + ' ' + command.hint).toLowerCase().includes(needle));
+  }, [activeSite, query]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {

@@ -838,7 +838,6 @@ function ModuleContent({ props, data }: { props: OperationsPageProps; data: Site
 }
 
 export function OperationsPage(props: OperationsPageProps) {
-  const pageSite: ManagedSite = props.page === 'catalog' ? 'dima' : props.page === 'materials' ? 'almabuild' : props.activeSite;
-  const data = dataset({ ...props, activeSite: pageSite });
-  return <section className="ops-page" key={pageSite + '-' + props.page}><PageHeader props={props} data={data} />{props.error ? <p className="ops-alert"><AppIcon name="shield" />{props.error}</p> : null}<ModuleContent props={props} data={data} /></section>;
+  const data = dataset(props);
+  return <section className="ops-page" key={props.activeSite + '-' + props.page}><PageHeader props={props} data={data} />{props.error ? <p className="ops-alert"><AppIcon name="shield" />{props.error}</p> : null}<ModuleContent props={props} data={data} /></section>;
 }
