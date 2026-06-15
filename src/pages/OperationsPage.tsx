@@ -5,7 +5,7 @@ import type { AppPage, ManagedSite } from '../components/Sidebar';
 import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
 import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
 import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
-import { aiCreateArticleDraft, updateArticle } from '../api/cms';
+import { aiCreateArticleDraft, createArticle, updateArticle } from '../api/cms';
 import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../types/admin';
 import type { AnalyticsOverview, AnalyticsRealtime, SearchConsoleBundle } from '../api/analytics';
 
@@ -316,28 +316,144 @@ function AlmabuildEditor({ props, mode }: { props: OperationsPageProps; mode: 'm
   return <section className="ops-panel"><PanelTitle title={title} icon="cms" action="редактируется через Gemini и backend Kazaxbud" /><div className="editor-toolbar"><button className="btn btn-primary" type="button" onClick={addItem}>{addLabel}</button><EditorMessage value={message} /></div><div className="editor-list">{mode === 'materials' && content.materialCategories.map((item, index) => <MaterialCardEditor key={item.slug + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'products' && content.products.map((item, index) => <ProductCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'kits' && content.kits.map((item, index) => <KitCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'projects' && content.projects.map((item, index) => <ProjectCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}</div></section>;
 }
 
-function DimaArticleEditor({ article, onRefresh }: { article: CmsArticle; onRefresh: () => void }) {
-  const [draft, setDraft] = useState({ title_ru: article.title_ru || '', title_en: article.title_en || '', content_ru: article.content_ru || '', slug: article.slug || '', category: article.category || '', seo_title_ru: article.seo_title_ru || article.seo_title || '', seo_description_ru: article.seo_description_ru || article.seo_description || '', published: Boolean(article.published) });
-  const [aiInstruction, setAiInstruction] = useState('Улучши страницу как экспертный материал для сайта Dima Fomin. Обнови заголовок, текст и SEO на русском.');
-  const [aiBusy, setAiBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+type SeoArticleDraft = Partial<Omit<CmsArticle, 'id' | 'updated_at' | 'created_at'>>;
+type SeoArticleTab = 'content' | 'seo' | 'languages' | 'media';
+
+function articleDisplayTitle(article: CmsArticle | SeoArticleDraft) {
+  return article.title_ru || article.title_pl || article.title_en || article.slug || 'Новая SEO-страница';
+}
+
+function articleToDraft(article?: CmsArticle): SeoArticleDraft {
+  return {
+    slug: article?.slug || '',
+    category: article?.category || 'blog',
+    title_ru: article?.title_ru || '',
+    title_en: article?.title_en || '',
+    title_pl: article?.title_pl || '',
+    title_uk: article?.title_uk || '',
+    content_ru: article?.content_ru || '',
+    content_en: article?.content_en || '',
+    content_pl: article?.content_pl || '',
+    content_uk: article?.content_uk || '',
+    image_url: article?.image_url || '',
+    seo_title: article?.seo_title || '',
+    seo_description: article?.seo_description || '',
+    seo_title_ru: article?.seo_title_ru || article?.seo_title || '',
+    seo_title_en: article?.seo_title_en || '',
+    seo_title_pl: article?.seo_title_pl || '',
+    seo_title_uk: article?.seo_title_uk || '',
+    seo_description_ru: article?.seo_description_ru || article?.seo_description || '',
+    seo_description_en: article?.seo_description_en || '',
+    seo_description_pl: article?.seo_description_pl || '',
+    seo_description_uk: article?.seo_description_uk || '',
+    published: Boolean(article?.published)
+  };
+}
+
+function applyArticleAiDraft(current: SeoArticleDraft, ai: Awaited<ReturnType<typeof aiCreateArticleDraft>>): SeoArticleDraft {
+  return {
+    ...current,
+    slug: ai.slug || current.slug,
+    category: ai.category || current.category,
+    title_ru: ai.title_ru || current.title_ru,
+    title_en: ai.title_en || current.title_en,
+    title_pl: ai.title_pl || current.title_pl,
+    title_uk: ai.title_uk || current.title_uk,
+    content_ru: ai.content_ru || current.content_ru,
+    content_en: ai.content_en || current.content_en,
+    content_pl: ai.content_pl || current.content_pl,
+    content_uk: ai.content_uk || current.content_uk,
+    seo_title: ai.seo_title || ai.seo_title_ru || current.seo_title,
+    seo_description: ai.seo_description || ai.seo_description_ru || current.seo_description,
+    seo_title_ru: ai.seo_title_ru || ai.seo_title || current.seo_title_ru,
+    seo_title_en: ai.seo_title_en || current.seo_title_en,
+    seo_title_pl: ai.seo_title_pl || current.seo_title_pl,
+    seo_title_uk: ai.seo_title_uk || current.seo_title_uk,
+    seo_description_ru: ai.seo_description_ru || ai.seo_description || current.seo_description_ru,
+    seo_description_en: ai.seo_description_en || current.seo_description_en,
+    seo_description_pl: ai.seo_description_pl || current.seo_description_pl,
+    seo_description_uk: ai.seo_description_uk || current.seo_description_uk
+  };
+}
+
+function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsArticle; onClose: () => void; onSaved: () => Promise<void> | void }) {
+  const [draft, setDraft] = useState<SeoArticleDraft>(() => articleToDraft(article));
+  const [source, setSource] = useState(article ? articleDisplayTitle(article) : 'Новая SEO/Blog страница для Dima Fomin: тема, аудитория, цель, ключевые слова.');
+  const [instruction, setInstruction] = useState(article ? 'Улучши страницу как экспертный материал для сайта Dima Fomin. Обнови 4 языка, структуру текста и SEO.' : 'Создай новую SEO/Blog страницу для сайта Dima Fomin: 4 языка, slug, категория, экспертный текст, SEO title и description.');
+  const [tab, setTab] = useState<SeoArticleTab>('content');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(article ? 'Страница загружена из CMS backend.' : 'Опиши тему и нажми «Текст и SEO».');
+  const tabs: Array<[SeoArticleTab, string]> = [['content', 'Контент'], ['seo', 'SEO'], ['languages', '4 языка'], ['media', 'Медиа']];
+
+  function setText(field: keyof SeoArticleDraft, value: string) { setDraft((current) => ({ ...current, [field]: value })); }
+
   async function runGemini() {
-    setAiBusy(true); setMessage(null);
+    setBusy('gemini'); setMessage(null);
     try {
-      const topic = [draft.title_ru || draft.title_en || article.slug, aiInstruction, draft.content_ru].filter(Boolean).join('\n\n');
-      const ai = await aiCreateArticleDraft(topic, 3500, 1);
-      setDraft({ ...draft, title_ru: ai.title_ru || draft.title_ru, title_en: ai.title_en || draft.title_en, content_ru: ai.content_ru || draft.content_ru, slug: ai.slug || draft.slug, category: ai.category || draft.category, seo_title_ru: ai.seo_title_ru || ai.seo_title || draft.seo_title_ru, seo_description_ru: ai.seo_description_ru || ai.seo_description || draft.seo_description_ru });
-      setMessage('Gemini подготовил обновление. Проверьте и нажмите «Сохранить страницу».');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Gemini не смог обновить страницу'); }
-    finally { setAiBusy(false); }
+      const topic = [instruction, 'Тема/задача:', source, 'Текущая страница:', JSON.stringify(draft, null, 2)].filter(Boolean).join('\n\n');
+      const ai = await aiCreateArticleDraft(topic, 5200, 1);
+      setDraft((current) => applyArticleAiDraft(current, ai));
+      setMessage('Gemini подготовил SEO/Blog страницу. Проверь вкладки и сохрани.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Gemini не смог подготовить страницу'); }
+    finally { setBusy(null); }
   }
-  async function save() { setMessage('Сохраняем страницу...'); await updateArticle(article.id, draft); setMessage('Страница Dima Fomin сохранена'); await onRefresh(); }
-  return <article className="editor-card"><div className="editor-card-head"><strong>{draft.title_ru || draft.title_en || article.slug}</strong><StatusPill tone={draft.published ? 'good' : 'neutral'} label={draft.published ? 'опубликовано' : 'черновик'} /></div><div className="editor-grid"><EditorField label="Заголовок RU" value={draft.title_ru} onChange={(title_ru) => setDraft({ ...draft, title_ru })} /><EditorField label="Заголовок EN" value={draft.title_en} onChange={(title_en) => setDraft({ ...draft, title_en })} /><EditorField label="Slug страницы" value={draft.slug} onChange={(slug) => setDraft({ ...draft, slug })} /><EditorField label="Категория" value={draft.category} onChange={(category) => setDraft({ ...draft, category })} /><EditorField label="Текст RU" value={draft.content_ru} onChange={(content_ru) => setDraft({ ...draft, content_ru })} multiline /><EditorField label="SEO title RU" value={draft.seo_title_ru} onChange={(seo_title_ru) => setDraft({ ...draft, seo_title_ru })} /><EditorField label="SEO description RU" value={draft.seo_description_ru} onChange={(seo_description_ru) => setDraft({ ...draft, seo_description_ru })} multiline /></div><GeminiBar instruction={aiInstruction} busy={aiBusy} onChange={setAiInstruction} onRun={() => void runGemini()} /><label className="editor-check"><input type="checkbox" checked={draft.published} onChange={(event) => setDraft({ ...draft, published: event.target.checked })} />Опубликовано на сайте</label><div className="editor-actions"><button className="btn btn-primary" type="button" onClick={save}>Сохранить страницу</button></div><EditorMessage value={message} /></article>;
+
+  async function save() {
+    setBusy('save'); setMessage(null);
+    try {
+      const slug = String(draft.slug || '').trim();
+      if (!slug) throw new Error('Slug страницы обязателен.');
+      if (article) await updateArticle(article.id, draft);
+      else await createArticle({ ...draft, slug, category: draft.category || 'blog', published: Boolean(draft.published) });
+      await Promise.resolve(onSaved());
+      onClose();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить страницу'); }
+    finally { setBusy(null); }
+  }
+
+  return <div className="catalog-edit-overlay compact" role="presentation" onMouseDown={onClose}>
+    <section className="catalog-edit-modal compact" role="dialog" aria-label="SEO Blog editor" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="catalog-edit-head"><div><p className="eyebrow">Gemini SEO editor</p><h3>{articleDisplayTitle(draft)}</h3><span>{draft.category || 'blog'} · {draft.slug || 'new-page'}</span></div><button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button></div>
+      <nav className="catalog-edit-tabs">{tabs.map(([id, label]) => <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
+      <section className="catalog-generation-panel">
+        <label><span>Тема / задача</span><textarea value={source} onChange={(event) => setSource(event.target.value)} /></label>
+        <label><span>Инструкция Gemini</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
+        <div className="catalog-generation-actions"><button className="btn btn-primary" type="button" onClick={() => void runGemini()} disabled={Boolean(busy)}><AppIcon name="sparkles" />{busy === 'gemini' ? 'Генерируем...' : 'Текст и SEO'}<small>gemini-3.1-pro-preview</small></button></div>
+      </section>
+      <div className="catalog-edit-body compact">
+        <aside className="catalog-edit-photo compact">{draft.image_url ? <img src={String(draft.image_url)} alt={articleDisplayTitle(draft)} /> : <span><AppIcon name="seo" size={28} /></span>}<small>SEO/Blog CMS</small></aside>
+        <div className="catalog-edit-form">
+          {tab === 'content' ? <div className="editor-grid"><EditorField label="Заголовок RU" value={String(draft.title_ru || '')} onChange={(value) => setText('title_ru', value)} /><EditorField label="Slug страницы" value={String(draft.slug || '')} onChange={(value) => setText('slug', value)} /><EditorField label="Категория" value={String(draft.category || '')} onChange={(value) => setText('category', value)} /><EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} /><EditorField label="Текст RU" value={String(draft.content_ru || '')} onChange={(value) => setText('content_ru', value)} multiline /></div> : null}
+          {tab === 'seo' ? <div className="editor-grid"><EditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label="SEO title RU" value={String(draft.seo_title_ru || '')} onChange={(value) => setText('seo_title_ru', value)} /><EditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /><EditorField label="SEO description RU" value={String(draft.seo_description_ru || '')} onChange={(value) => setText('seo_description_ru', value)} multiline /></div> : null}
+          {tab === 'languages' ? <div className="editor-grid"><EditorField label="Title EN" value={String(draft.title_en || '')} onChange={(value) => setText('title_en', value)} /><EditorField label="Title PL" value={String(draft.title_pl || '')} onChange={(value) => setText('title_pl', value)} /><EditorField label="Title UK" value={String(draft.title_uk || '')} onChange={(value) => setText('title_uk', value)} /><EditorField label="Content EN" value={String(draft.content_en || '')} onChange={(value) => setText('content_en', value)} multiline /><EditorField label="Content PL" value={String(draft.content_pl || '')} onChange={(value) => setText('content_pl', value)} multiline /><EditorField label="Content UK" value={String(draft.content_uk || '')} onChange={(value) => setText('content_uk', value)} multiline /></div> : null}
+          {tab === 'media' ? <div className="editor-grid"><EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline /><EditorField label="SEO title EN" value={String(draft.seo_title_en || '')} onChange={(value) => setText('seo_title_en', value)} /><EditorField label="SEO description EN" value={String(draft.seo_description_en || '')} onChange={(value) => setText('seo_description_en', value)} multiline /><label className="editor-check span-2"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label></div> : null}
+        </div>
+      </div>
+      <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : article ? 'Сохранить страницу' : 'Создать страницу'}</button></div>
+    </section>
+  </div>;
 }
 
 function DimaPagesEditor({ props }: { props: OperationsPageProps }) {
-  const rows = props.articles.slice(0, 12);
-  return <section className="ops-panel"><PanelTitle title="Страницы и карточки Dima Fomin" icon="cms" action="редактируется через Gemini и CMS backend" />{rows.length === 0 ? <p className="empty-state">Страницы не загружены. Нажмите «Обновить».</p> : <div className="editor-list">{rows.map((article) => <DimaArticleEditor key={article.id} article={article} onRefresh={props.onRefresh} />)}</div>}</section>;
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('all');
+  const [editingArticle, setEditingArticle] = useState<CmsArticle | null>(null);
+  const [creatingArticle, setCreatingArticle] = useState(false);
+  const categories = Array.from(new Set(props.articles.map((article) => article.category || 'blog'))).sort();
+  const needle = query.trim().toLowerCase();
+  const rows = props.articles.filter((article) => {
+    const haystack = [article.title_ru, article.title_en, article.slug, article.category, article.seo_title, article.seo_description].filter(Boolean).join(' ').toLowerCase();
+    return (!needle || haystack.includes(needle)) && (category === 'all' || (article.category || 'blog') === category);
+  });
+  return <section className="ops-panel catalog-browser">
+    <PanelTitle title="SEO Blog Dima Fomin" icon="seo" action={`${rows.length} из ${props.articles.length}`} />
+    <div className="catalog-toolbar"><label><span>Поиск</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Заголовок, slug, SEO, категория" /></label><label><span>Категория</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">Все категории</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><button className="btn btn-primary" type="button" onClick={() => setCreatingArticle(true)}><AppIcon name="sparkles" />Создать SEO страницу</button><button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из backend</button></div>
+    <div className="catalog-stats-row"><article><span>Всего страниц</span><strong>{props.articles.length}</strong></article><article><span>Опубликовано</span><strong>{props.articles.filter((article) => article.published).length}</strong></article><article><span>SEO готово</span><strong>{props.articles.filter((article) => article.seo_title || article.seo_title_ru).length}</strong></article><article><span>Категорий</span><strong>{categories.length}</strong></article></div>
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Название</th><th>Категория</th><th>Slug</th><th>SEO</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{rows.map((article) => <tr key={article.id}><td><strong>{articleDisplayTitle(article)}</strong><small>{article.title_en}</small></td><td>{article.category || 'blog'}</td><td><code>{article.slug}</code></td><td><StatusPill tone={article.seo_title || article.seo_title_ru ? 'good' : 'warning'} label={article.seo_title || article.seo_title_ru ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={article.published ? 'good' : 'neutral'} label={article.published ? 'опубликовано' : 'черновик'} /></td><td><button className="table-action" type="button" onClick={() => setEditingArticle(article)}>Редактировать</button></td></tr>)}</tbody></table></div>
+    {props.articles.length === 0 ? <p className="empty-state">SEO/Blog страницы не загружены. Нажмите «Обновить».</p> : null}
+    {creatingArticle ? <DimaArticleEditorModal onClose={() => setCreatingArticle(false)} onSaved={props.onRefresh} /> : null}
+    {editingArticle ? <DimaArticleEditorModal article={editingArticle} onClose={() => setEditingArticle(null)} onSaved={props.onRefresh} /> : null}
+  </section>;
 }
 
 function SiteSettings({ data }: { data: SiteDataset }) {
