@@ -914,7 +914,7 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
 
 
 .catalog-edit-modal.compact {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 .catalog-edit-modal.compact .catalog-edit-head {
   position: relative;

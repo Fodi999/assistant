@@ -1,4 +1,4 @@
-const API_BASE = String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/+$/, '');
+const API_BASE = String(import.meta.env.VITE_API_BASE_URL || 'https://ministerial-yetta-fodi999-c58d8823.koyeb.app').replace(/\/+$/, '');
 const ADMIN_TOKEN_KEY = 'admin_token';
 const STATIC_ADMIN_TOKEN = (import.meta.env.VITE_ADMIN_STATIC_TOKEN || '').trim();
 

@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Textarea } from '../components/ui/textarea';
 import type { AppPage, ManagedSite } from '../components/Sidebar';
-import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
+import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type AlmabuildLead, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
 import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
 import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
 import { aiCreateArticleDraft, aiGenerateArticleImage, createArticle, updateArticle } from '../api/cms';
@@ -23,6 +25,7 @@ interface OperationsPageProps {
   articles: CmsArticle[];
   shopProducts: ShopProduct[];
   almabuildContent: AlmabuildContent | null;
+  almabuildLeads: AlmabuildLead[];
   analytics: AnalyticsOverview | null;
   realtime: AnalyticsRealtime | null;
   searchConsole: SearchConsoleBundle | null;
@@ -59,6 +62,15 @@ const TONE_LABELS: Record<Tone, string> = {
   neutral: 'нет данных'
 };
 
+function isToday(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear()
+    && date.getMonth() === today.getMonth()
+    && date.getDate() === today.getDate();
+}
+
 const MODULE_META: Record<AppPage, { title: string; subtitle: string; icon: AppIconName }> = {
   overview: { title: 'Панель управления', subtitle: 'Отдельная панель выбранного сайта без смешивания данных.', icon: 'dashboard' },
   sites: { title: 'Настройки сайта', subtitle: 'Домен, GitHub, Cloudflare Pages, API бэкенда и интеграции выбранного сайта.', icon: 'globe' },
@@ -83,18 +95,18 @@ function dataset(props: OperationsPageProps): SiteDataset {
       domain: 'https://kazaxbud.pages.dev/',
       cloudflare: 'kazaxbud.pages.dev',
       github: 'kazaxbud',
-      backend: 'Koyeb / /api/admin/almabuild/content',
+      backend: 'Koyeb /api/admin/almabuild + /public/almabuild',
       languages: 'RU / KK / EN',
       ga4: false,
       searchConsole: false,
       categories: content?.materialCategories.length ?? 0,
       products: content?.products.length ?? 0,
       projects: content?.projects.length ?? 0,
-      seoPages: (content?.materialCategories.length ?? 0) * 3,
-      leadsToday: 0,
-      leadsMonth: 0,
+      seoPages: content?.kits.length ?? 0,
+      leadsToday: props.almabuildLeads.filter((lead) => isToday(lead.createdAt)).length,
+      leadsMonth: props.almabuildLeads.length,
       activeObjects: content?.projects.length ?? 0,
-      deployLabel: 'kazaxbud.pages.dev продакшн'
+      deployLabel: 'нет API деплоев'
     };
   }
 
@@ -111,10 +123,10 @@ function dataset(props: OperationsPageProps): SiteDataset {
     products: props.products.length + props.shopProducts.length,
     projects: props.articles.length,
     seoPages: props.articles.length,
-    leadsToday: 3,
-    leadsMonth: 47,
+    leadsToday: 0,
+    leadsMonth: 0,
     activeObjects: props.stats?.total_restaurants ?? 0,
-    deployLabel: 'dima-fomin.pl продакшн'
+    deployLabel: 'нет API деплоев'
   };
 }
 
@@ -122,28 +134,34 @@ function metric(title: string, value: string | number, change: string, tone: Ton
   return { title, value: String(value), change, tone, icon };
 }
 
-function TrafficChart({ connected = true }: { connected?: boolean }) {
+function TrafficChart({ analytics, searchConsole }: { analytics: AnalyticsOverview | null; searchConsole: SearchConsoleBundle | null }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const analyticsDaily = useMemo(() => analytics?.daily ?? [], [analytics]);
+  const searchDaily = useMemo(() => searchConsole?.daily ?? [], [searchConsole]);
+  const connected = Boolean(analytics?.configured && analyticsDaily.length) || Boolean(searchConsole?.overview?.configured && searchDaily.length);
   useEffect(() => {
     if (!ref.current || !connected) return;
     const chart = echarts.init(ref.current, 'dark');
+    const labels = (analyticsDaily.length ? analyticsDaily : searchDaily).slice(-14).map((row) => row.date);
+    const usersByDate = new Map(analyticsDaily.map((row) => [row.date, row.active_users]));
+    const clicksByDate = new Map(searchDaily.map((row) => [row.date, row.clicks]));
     chart.setOption({
       backgroundColor: 'transparent',
       grid: { top: 18, right: 12, bottom: 24, left: 34 },
       tooltip: { trigger: 'axis', backgroundColor: '#18181b', borderColor: '#27272a', textStyle: { color: '#fafafa' } },
-      xAxis: { type: 'category', boundaryGap: false, data: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'], axisLine: { lineStyle: { color: '#27272a' } }, axisLabel: { color: '#a1a1aa' } },
+      xAxis: { type: 'category', boundaryGap: false, data: labels, axisLine: { lineStyle: { color: '#27272a' } }, axisLabel: { color: '#a1a1aa' } },
       yAxis: { type: 'value', splitLine: { lineStyle: { color: '#27272a' } }, axisLabel: { color: '#a1a1aa' } },
       series: [
-        { name: 'Пользователи GA4', type: 'line', smooth: true, symbol: 'none', lineStyle: { width: 3, color: '#ff6a2a' }, areaStyle: { color: 'rgba(255,106,42,.13)' }, data: [42, 57, 48, 76, 92, 84, 118] },
-        { name: 'Клики GSC', type: 'line', smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#3b82f6' }, data: [18, 22, 31, 28, 44, 39, 53] }
+        { name: 'Пользователи GA4', type: 'line', smooth: true, symbol: 'none', lineStyle: { width: 3, color: '#ff6a2a' }, areaStyle: { color: 'rgba(255,106,42,.13)' }, data: labels.map((date) => usersByDate.get(date) ?? 0) },
+        { name: 'Клики GSC', type: 'line', smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#3b82f6' }, data: labels.map((date) => clicksByDate.get(date) ?? 0) }
       ]
     });
     const resize = () => chart.resize();
     window.addEventListener('resize', resize);
     return () => { window.removeEventListener('resize', resize); chart.dispose(); };
-  }, [connected]);
+  }, [connected, analyticsDaily, searchDaily]);
 
-  if (!connected) return <div className="ops-chart empty-analytics"><AppIcon name="analytics" size={28} /><strong>Аналитика не подключена</strong><span>Для этого сайта еще не подключены GA4 и Search Console.</span></div>;
+  if (!connected) return <div className="ops-chart empty-analytics"><AppIcon name="analytics" size={28} /><strong>Нет live-графика</strong><span>Backend не вернул daily данные GA4/Search Console для выбранного сайта.</span></div>;
   return <div className="ops-chart" ref={ref} />;
 }
 
@@ -181,23 +199,15 @@ function Overview({ props, data }: { props: OperationsPageProps; data: SiteDatas
   const ga4Users = data.ga4 ? (props.analytics?.active_users ?? props.realtime?.active_users ?? 0) : 0;
   const gscClicks = data.searchConsole ? (props.searchConsole?.overview?.clicks ?? 0) : 0;
   const cards = [
-    metric('Заявки сегодня', data.leadsToday, data.ga4 ? '+18% к вчерашнему дню' : 'CRM для сайта пока не подключена', data.leadsToday ? 'good' : 'neutral', 'leads'),
-    metric('Заявки за месяц', data.leadsMonth, data.ga4 ? '+11% за месяц' : 'отдельная воронка пустая', data.leadsMonth ? 'good' : 'neutral', 'trend'),
-    metric('Активные объекты', data.activeObjects, 'только текущий сайт', data.activeObjects ? 'warning' : 'neutral', 'folder'),
-    metric('SEO-страницы', data.seoPages, 'только этот сайт', 'info', 'seo'),
-    metric('Товары в каталоге', data.products, 'каталог этого сайта', 'good', 'catalog'),
-    metric('Материалы / категории', data.categories, 'контент этого сайта', 'info', 'materials'),
-    metric('Пользователи GA4', ga4Users, data.ga4 ? 'подключено для dima-fomin.pl' : 'не подключено для kazaxbud', data.ga4 ? 'info' : 'warning', 'analytics'),
-    metric('Клики GSC', gscClicks, data.searchConsole ? 'Search Console подключен' : 'не подключено для kazaxbud', data.searchConsole ? 'info' : 'warning', 'activity'),
-    metric('Последний деплой', '12м', data.deployLabel, 'good', 'deploy'),
-    metric('Ошибки сайта', 0, 'критических ошибок нет', 'good', 'shield')
+    metric('Активные объекты', data.activeObjects, 'получено из backend/admin данных', data.activeObjects ? 'info' : 'neutral', 'folder'),
+    metric('SEO-страницы', data.seoPages, 'получено из CMS/Kazaxbud content', data.seoPages ? 'info' : 'neutral', 'seo'),
+    metric('Товары / карточки', data.products, 'получено из API выбранного сайта', data.products ? 'good' : 'neutral', 'catalog'),
+    metric('Материалы / категории', data.categories, 'получено из API выбранного сайта', data.categories ? 'info' : 'neutral', 'materials'),
+    metric('Пользователи GA4', ga4Users, props.analytics?.configured ? 'получено из Analytics API' : 'нет данных Analytics API', props.analytics?.configured ? 'info' : 'warning', 'analytics'),
+    metric('Клики GSC', gscClicks, props.searchConsole?.overview?.configured ? 'получено из Search Console API' : 'нет данных Search Console API', props.searchConsole?.overview?.configured ? 'info' : 'warning', 'activity')
   ];
 
-  const seoItems = props.activeSite === 'almabuild'
-    ? ['/ru/stroymaterialy-almaty', '/ru/gipsokarton-almaty', '/kk/almaty-qurylys-materialdary']
-    : ['/pl', '/ru', '/blog'];
-
-  return <><div className="kpi-grid">{cards.map((card) => <KpiCard key={card.title} {...card} />)}</div><div className="ops-grid two-one"><section className="ops-panel wide"><PanelTitle title="Трафик и аналитика" icon="analytics" action={data.ga4 ? 'GA4 + GSC подключены' : 'GA4 / GSC не подключены'} /><TrafficChart connected={data.ga4 || data.searchConsole} /></section><section className="ops-panel"><PanelTitle title="Очередь сайта" icon="terminal" action={data.name} /><QueueList data={data} /></section></div><div className="ops-grid three"><MiniList title="Последние заявки" icon="leads" items={data.leadsToday ? ['Новая заявка с сайта', 'Форма консультации', 'Email-заявка'] : ['CRM сайта пустая', 'Подключить формы заявок', 'Настроить источники']} /><MiniList title="SEO задачи" icon="seo" items={seoItems} /><MiniList title="Последние деплои" icon="deploy" items={[data.deployLabel, 'проверка sitemap', 'проверка robots.txt']} /></div></>;
+  return <><div className="kpi-grid">{cards.map((card) => <KpiCard key={card.title} {...card} />)}</div><div className="ops-grid two-one"><section className="ops-panel wide"><PanelTitle title="Трафик и аналитика" icon="analytics" action={props.analytics?.configured || props.searchConsole?.overview?.configured ? 'данные из API' : 'нет API-данных'} /><TrafficChart analytics={props.analytics} searchConsole={props.searchConsole} /></section><section className="ops-panel"><PanelTitle title="Подключения backend" icon="terminal" action={data.name} /><QueueList data={data} /></section></div></>;
 }
 
 function QueueList({ data }: { data: SiteDataset }) {
@@ -205,13 +215,9 @@ function QueueList({ data }: { data: SiteDataset }) {
     ['Область данных', data.name, 'info'],
     ['Аналитика', data.ga4 ? 'подключено' : 'не подключено', data.ga4 ? 'good' : 'warning'],
     ['Search Console', data.searchConsole ? 'подключено' : 'не подключено', data.searchConsole ? 'good' : 'warning'],
-    ['Деплой Cloudflare', 'успешно', 'good']
+    ['Деплой Cloudflare', 'нет API', 'warning']
   ];
   return <div className="ops-list">{rows.map(([name, value, tone]) => <div key={name}><span>{name}</span><StatusPill tone={tone} label={value} /></div>)}</div>;
-}
-
-function MiniList({ title, icon, items }: { title: string; icon: AppIconName; items: string[] }) {
-  return <section className="ops-panel"><PanelTitle title={title} icon={icon} /><div className="mini-list">{items.map((item) => <button key={item} type="button"><span>{item}</span><AppIcon name="external" /></button>)}</div></section>;
 }
 
 
@@ -255,6 +261,88 @@ function MaterialCardEditor({ item, index, content, onRefresh }: { item: Materia
   return <article className="editor-card"><div className="editor-card-head"><strong>Карточка материала #{index + 1}</strong><StatusPill tone="good" label="блок Материалы" /></div><div className="editor-grid"><EditorField label="Название карточки" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} /><EditorField label="URL slug" value={draft.slug} onChange={(slug) => setDraft({ ...draft, slug })} /><EditorField label="Индекс" value={draft.index} onChange={(nextIndex) => setDraft({ ...draft, index: nextIndex })} /><EditorField label="Визуальный класс" value={draft.photo} onChange={(photo) => setDraft({ ...draft, photo })} /><EditorField label="Описание" value={draft.text} onChange={(nextText) => setDraft({ ...draft, text: nextText })} multiline /><EditorField label="Пункты внутри карточки, каждый с новой строки" value={draft.bullets.join('\n')} onChange={(bullets) => setDraft({ ...draft, bullets: splitLines(bullets) })} multiline /></div><GeminiBar instruction={aiInstruction} busy={aiBusy} onChange={setAiInstruction} onRun={() => void runGemini()} /><div className="editor-actions"><button className="btn btn-primary" type="button" onClick={save}>Сохранить карточку</button><button className="btn btn-quiet" type="button" onClick={remove}>Удалить</button></div><EditorMessage value={message} /></article>;
 }
 
+function KazaxbudMaterialEditorModal({ item, index, content, onClose, onRefresh }: { item?: MaterialCategory; index?: number; content: AlmabuildContent; onClose: () => void; onRefresh: () => void }) {
+  const [draft, setDraft] = useState<MaterialCategory>(() => item || {
+    index: '',
+    slug: '',
+    title: '',
+    text: '',
+    bullets: [],
+    photo: ''
+  });
+  const [instruction, setInstruction] = useState('Улучши карточку материала для сайта строительных материалов. Сделай описание конкретным, продающим и полезным для закупщика. Пункты короткие.');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(item ? 'Материал загружен из Kazaxbud content.' : 'Заполни материал и сохрани в backend.');
+  const editing = typeof index === 'number';
+
+  async function runGemini() {
+    setBusy('gemini'); setMessage(null);
+    try {
+      setDraft(await aiEditAlmabuildItem<MaterialCategory>('material', instruction, draft));
+      setMessage('Gemini обновил карточку. Проверь поля и сохрани.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Gemini не смог обновить карточку'); }
+    finally { setBusy(null); }
+  }
+
+  async function save() {
+    setBusy('save'); setMessage(null);
+    try {
+      const nextRows = editing
+        ? content.materialCategories.map((row, rowIndex) => rowIndex === index ? draft : row)
+        : [...content.materialCategories, draft];
+      await saveAlmabuildContent({ ...content, materialCategories: nextRows });
+      await onRefresh();
+      onClose();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить материал'); }
+    finally { setBusy(null); }
+  }
+
+  async function remove() {
+    if (!editing) return;
+    setBusy('remove'); setMessage(null);
+    try {
+      await saveAlmabuildContent({ ...content, materialCategories: content.materialCategories.filter((_, rowIndex) => rowIndex !== index) });
+      await onRefresh();
+      onClose();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось удалить материал'); }
+    finally { setBusy(null); }
+  }
+
+  return <div className="catalog-edit-overlay compact" role="presentation" onMouseDown={onClose}>
+    <section className="catalog-edit-modal compact" role="dialog" aria-label="Редактирование материала Kazaxbud" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="catalog-edit-head"><div><p className="eyebrow">Kazaxbud material editor</p><h3>{draft.title || 'Новый материал'}</h3><span>{draft.slug || 'new-material'} · {draft.index || '[0:0]'}</span></div><Button variant="secondary" type="button" onClick={onClose}>Закрыть</Button></div>
+      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+        <section className="grid gap-3 border-b border-zinc-800 p-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <SeoEditorField label="Задача для Gemini" value={instruction} onChange={setInstruction} multiline textareaClassName="min-h-16 max-h-28" />
+          <Button className="grid min-h-16 grid-cols-[auto_1fr] grid-rows-2 content-center justify-items-start self-end bg-orange-500 text-black hover:bg-orange-400" type="button" onClick={() => void runGemini()} disabled={Boolean(busy)}><span className="row-span-2"><AppIcon name="sparkles" /></span>{busy === 'gemini' ? 'Улучшаем...' : 'Улучшить Gemini'}<small className="text-xs opacity-70">backend Kazaxbud</small></Button>
+        </section>
+        <div className="grid min-h-0 gap-4 overflow-auto p-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <aside className="grid content-start gap-3">
+            <Card className="bg-zinc-950">
+              <CardContent className="grid aspect-square place-items-center p-4 text-center">
+                <div className="grid gap-3 justify-items-center text-zinc-400"><AppIcon name="materials" size={36} /><strong className="text-zinc-100">{draft.photo || 'visual class'}</strong><small>{draft.slug || 'slug'}</small></div>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-950"><CardContent className="grid gap-2 p-3 text-xs text-zinc-400"><strong className="text-sm text-zinc-100">{editing ? 'Редактирование' : 'Новый материал'}</strong><span>{draft.bullets.length} пунктов внутри карточки</span></CardContent></Card>
+          </aside>
+          <Card className="bg-zinc-950/60">
+            <CardHeader><CardTitle>Карточка материала</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 xl:grid-cols-2">
+              <SeoEditorField label="Название карточки" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} />
+              <SeoEditorField label="URL slug" value={draft.slug} onChange={(slug) => setDraft({ ...draft, slug })} />
+              <SeoEditorField label="Индекс" value={draft.index} onChange={(nextIndex) => setDraft({ ...draft, index: nextIndex })} />
+              <SeoEditorField label="Визуальный класс" value={draft.photo} onChange={(photo) => setDraft({ ...draft, photo })} />
+              <SeoEditorField label="Описание" value={draft.text} onChange={(text) => setDraft({ ...draft, text })} multiline textareaClassName="min-h-[190px]" />
+              <SeoEditorField label="Пункты внутри карточки, каждый с новой строки" value={draft.bullets.join('\n')} onChange={(bullets) => setDraft({ ...draft, bullets: splitLines(bullets) })} multiline textareaClassName="min-h-[190px]" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      <div className="catalog-edit-actions"><EditorMessage value={message} /><Button variant="secondary" type="button" onClick={onClose}>Отмена</Button>{editing ? <Button variant="destructive" type="button" onClick={() => void remove()} disabled={Boolean(busy)}>Удалить</Button> : null}<Button type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : editing ? 'Сохранить материал' : 'Создать материал'}</Button></div>
+    </section>
+  </div>;
+}
+
 function ProductCardEditor({ item, index, content, onRefresh }: { item: Product; index: number; content: AlmabuildContent; onRefresh: () => void }) {
   const [draft, setDraft] = useState(item);
   const [message, setMessage] = useState<string | null>(null);
@@ -287,6 +375,78 @@ function KitCardEditor({ item, index, content, onRefresh }: { item: Kit; index: 
   return <article className="editor-card"><div className="editor-card-head"><strong>Комплект #{index + 1}</strong><StatusPill tone="info" label="готовый набор" /></div><div className="editor-grid"><EditorField label="Название комплекта" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} /><EditorField label="Описание" value={draft.text} onChange={(nextText) => setDraft({ ...draft, text: nextText })} multiline /><EditorField label="Состав, каждый пункт с новой строки" value={draft.items.join('\n')} onChange={(items) => setDraft({ ...draft, items: splitLines(items) })} multiline /></div><GeminiBar instruction={aiInstruction} busy={aiBusy} onChange={setAiInstruction} onRun={() => void runGemini()} /><div className="editor-actions"><button className="btn btn-primary" type="button" onClick={save}>Сохранить комплект</button><button className="btn btn-quiet" type="button" onClick={remove}>Удалить</button></div><EditorMessage value={message} /></article>;
 }
 
+function KazaxbudSeoKitEditorModal({ item, index, content, onClose, onRefresh }: { item?: Kit; index?: number; content: AlmabuildContent; onClose: () => void; onRefresh: () => void }) {
+  const [draft, setDraft] = useState<Kit>(() => item || {
+    title: '',
+    text: '',
+    items: []
+  });
+  const [instruction, setInstruction] = useState('Улучши SEO-комплект материалов для Kazaxbud: название понятное, описание конкретное для закупщика, состав короткий и практичный.');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(item ? 'SEO-комплект загружен из Kazaxbud content.' : 'Создай SEO-комплект и сохрани в backend.');
+  const editing = typeof index === 'number';
+
+  async function runGemini() {
+    setBusy('gemini'); setMessage(null);
+    try {
+      setDraft(await aiEditAlmabuildItem<Kit>('kit', instruction, draft));
+      setMessage('Gemini обновил SEO-комплект. Проверь поля и сохрани.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Gemini не смог обновить SEO-комплект'); }
+    finally { setBusy(null); }
+  }
+
+  async function save() {
+    setBusy('save'); setMessage(null);
+    try {
+      const nextRows = editing
+        ? content.kits.map((row, rowIndex) => rowIndex === index ? draft : row)
+        : [...content.kits, draft];
+      await saveAlmabuildContent({ ...content, kits: nextRows });
+      await onRefresh();
+      onClose();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить SEO-комплект'); }
+    finally { setBusy(null); }
+  }
+
+  async function remove() {
+    if (!editing) return;
+    setBusy('remove'); setMessage(null);
+    try {
+      await saveAlmabuildContent({ ...content, kits: content.kits.filter((_, rowIndex) => rowIndex !== index) });
+      await onRefresh();
+      onClose();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось удалить SEO-комплект'); }
+    finally { setBusy(null); }
+  }
+
+  return <div className="catalog-edit-overlay compact" role="presentation" onMouseDown={onClose}>
+    <section className="catalog-edit-modal compact" role="dialog" aria-label="Редактирование SEO Kazaxbud" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="catalog-edit-head"><div><p className="eyebrow">Kazaxbud SEO editor</p><h3>{draft.title || 'Новый SEO-комплект'}</h3><span>{draft.items.length} позиций в составе</span></div><Button variant="secondary" type="button" onClick={onClose}>Закрыть</Button></div>
+      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+        <section className="grid gap-3 border-b border-zinc-800 p-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <SeoEditorField label="Задача для Gemini" value={instruction} onChange={setInstruction} multiline textareaClassName="min-h-16 max-h-28" />
+          <Button className="grid min-h-16 grid-cols-[auto_1fr] grid-rows-2 content-center justify-items-start self-end bg-orange-500 text-black hover:bg-orange-400" type="button" onClick={() => void runGemini()} disabled={Boolean(busy)}><span className="row-span-2"><AppIcon name="sparkles" /></span>{busy === 'gemini' ? 'Улучшаем...' : 'Улучшить Gemini'}<small className="text-xs opacity-70">SEO Kazaxbud</small></Button>
+        </section>
+        <div className="grid min-h-0 gap-4 overflow-auto p-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <aside className="grid content-start gap-3">
+            <Card className="bg-zinc-950"><CardContent className="grid aspect-square place-items-center p-4 text-center"><div className="grid gap-3 justify-items-center text-zinc-400"><AppIcon name="seo" size={36} /><strong className="text-zinc-100">SEO блок</strong><small>{draft.items.length} позиций</small></div></CardContent></Card>
+            <Card className="bg-zinc-950"><CardContent className="grid gap-2 p-3 text-xs text-zinc-400"><strong className="text-sm text-zinc-100">{editing ? 'Редактирование' : 'Новый SEO-комплект'}</strong><span>{draft.text ? 'Описание заполнено' : 'Описание пустое'}</span></CardContent></Card>
+          </aside>
+          <Card className="bg-zinc-950/60">
+            <CardHeader><CardTitle>SEO-комплект</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 xl:grid-cols-2">
+              <SeoEditorField label="Название комплекта" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} />
+              <SeoEditorField label="Описание" value={draft.text} onChange={(text) => setDraft({ ...draft, text })} multiline textareaClassName="min-h-[220px]" />
+              <SeoEditorField label="Состав, каждый пункт с новой строки" value={draft.items.join('\n')} onChange={(items) => setDraft({ ...draft, items: splitLines(items) })} multiline className="xl:col-span-2" textareaClassName="min-h-[220px]" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      <div className="catalog-edit-actions"><EditorMessage value={message} /><Button variant="secondary" type="button" onClick={onClose}>Отмена</Button>{editing ? <Button variant="destructive" type="button" onClick={() => void remove()} disabled={Boolean(busy)}>Удалить</Button> : null}<Button type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : editing ? 'Сохранить SEO' : 'Создать SEO'}</Button></div>
+    </section>
+  </div>;
+}
+
 function ProjectCardEditor({ item, index, content, onRefresh }: { item: Project; index: number; content: AlmabuildContent; onRefresh: () => void }) {
   const [draft, setDraft] = useState(item);
   const [message, setMessage] = useState<string | null>(null);
@@ -310,10 +470,10 @@ function AlmabuildEditor({ props, mode }: { props: OperationsPageProps; mode: 'm
   async function addItem() {
     const current = props.almabuildContent;
     if (!current) return;
-    if (mode === 'materials') await saveAlmabuildDraft({ ...current, materialCategories: [...current.materialCategories, { index: '[0:0]', slug: 'novaya-kategoriya', title: 'Новая категория', text: 'Описание категории', bullets: ['Пункт'], photo: 'material-new' }] }, props.onRefresh, setMessage);
-    if (mode === 'products') await saveAlmabuildDraft({ ...current, products: [...current.products, { title: 'Новый товар', category: 'Категория', categorySlug: 'novaya-kategoriya', spec: 'Характеристики', photo: 'photo-building' }] }, props.onRefresh, setMessage);
-    if (mode === 'kits') await saveAlmabuildDraft({ ...current, kits: [...current.kits, { title: 'Новый комплект', text: 'Описание комплекта', items: ['Позиция'] }] }, props.onRefresh, setMessage);
-    if (mode === 'projects') await saveAlmabuildDraft({ ...current, projects: [...current.projects, { title: 'Новый проект', meta: 'Тип · площадь · срок', photo: 'photo-building' }] }, props.onRefresh, setMessage);
+    if (mode === 'materials') await saveAlmabuildDraft({ ...current, materialCategories: [...current.materialCategories, { index: '', slug: '', title: '', text: '', bullets: [], photo: '' }] }, props.onRefresh, setMessage);
+    if (mode === 'products') await saveAlmabuildDraft({ ...current, products: [...current.products, { title: '', category: '', categorySlug: '', spec: '', photo: '' }] }, props.onRefresh, setMessage);
+    if (mode === 'kits') await saveAlmabuildDraft({ ...current, kits: [...current.kits, { title: '', text: '', items: [] }] }, props.onRefresh, setMessage);
+    if (mode === 'projects') await saveAlmabuildDraft({ ...current, projects: [...current.projects, { title: '', meta: '', photo: '' }] }, props.onRefresh, setMessage);
   }
   const title = mode === 'materials' ? 'Карточки материалов Kazaxbud' : mode === 'products' ? 'Товарные карточки Kazaxbud' : mode === 'kits' ? 'Комплекты Kazaxbud' : 'Проектные карточки Kazaxbud';
   const addLabel = mode === 'materials' ? 'Добавить материал' : mode === 'products' ? 'Добавить товар' : mode === 'kits' ? 'Добавить комплект' : 'Добавить проект';
@@ -364,6 +524,15 @@ function articleToDraft(article?: CmsArticle): SeoArticleDraft {
     seo_description_uk: article?.seo_description_uk || '',
     published: Boolean(article?.published)
   };
+}
+
+function SeoEditorField({ label, value, onChange, multiline = false, className = '', textareaClassName = '' }: { label: string; value: string; onChange: (value: string) => void; multiline?: boolean; className?: string; textareaClassName?: string }) {
+  return <label className={`grid min-w-0 gap-2 text-sm font-black text-zinc-400 ${className}`}>
+    <span>{label}</span>
+    {multiline
+      ? <Textarea className={`min-h-40 resize-y font-semibold leading-relaxed ${textareaClassName}`} value={value} onChange={(event) => onChange(event.target.value)} />
+      : <Input className="font-semibold" value={value} onChange={(event) => onChange(event.target.value)} />}
+  </label>;
 }
 
 function applyArticleAiDraft(current: SeoArticleDraft, ai: Awaited<ReturnType<typeof aiCreateArticleDraft>>): SeoArticleDraft {
@@ -496,28 +665,72 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
 
   return <div className="catalog-edit-overlay compact" role="presentation" onMouseDown={onClose}>
     <section className="catalog-edit-modal compact" role="dialog" aria-label="SEO Blog editor" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="catalog-edit-head"><div><p className="eyebrow">Gemini SEO editor</p><h3>{articleDisplayTitle(draft)}</h3><span>{draft.category || 'blog'} · {draft.slug || 'new-page'}</span></div><button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button></div>
-      <nav className="catalog-edit-tabs">{tabs.map(([id, label]) => <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
-      <section className="catalog-generation-panel seo-generation-panel">
-        <label><span>Тема / задача</span><textarea value={source} onChange={(event) => setSource(event.target.value)} /></label>
-        <label><span>Инструкция Gemini</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
-        <div className="catalog-generation-actions"><button className="btn btn-primary" type="button" onClick={() => void runGemini()} disabled={Boolean(busy)}><AppIcon name="sparkles" />{busy === 'gemini' ? 'Генерируем...' : 'Текст и SEO'}<small>gemini-3.1-pro-preview</small></button></div>
-      </section>
-      <div className="catalog-edit-body compact">
-        <aside className="catalog-edit-photo compact">{(images[selectedImage] || draft.image_url) ? <img src={String(images[selectedImage] || draft.image_url)} alt={articleDisplayTitle(draft)} /> : <span><AppIcon name="seo" size={28} /></span>}<small>{images.length || 1} фото из CMS/Markdown</small></aside>
-        <div className="catalog-edit-form">
-          {(tab === 'content' || tab === 'languages') ? <div className="editor-grid"><div className="span-2 seo-language-tabs">{langTabs.map(([id, label]) => <button key={id} type="button" className={language === id ? 'active' : ''} onClick={() => setLanguage(id)}>{label}</button>)}</div><EditorField label={`Title ${language.toUpperCase()}`} value={String(draft[titleField] || '')} onChange={(value) => setText(titleField, value)} /><EditorField label="Slug страницы" value={String(draft.slug || '')} onChange={(value) => setText('slug', value)} /><EditorField label="Категория" value={String(draft.category || '')} onChange={(value) => setText('category', value)} /><EditorField label={`Content ${language.toUpperCase()}`} value={String(draft[contentField] || '')} onChange={(value) => setText(contentField, value)} multiline /></div> : null}
-          {tab === 'seo' ? <div className="editor-grid"><div className="span-2 seo-language-tabs">{langTabs.map(([id, label]) => <button key={id} type="button" className={language === id ? 'active' : ''} onClick={() => setLanguage(id)}>{label}</button>)}</div><EditorField label={`SEO title ${language.toUpperCase()}`} value={String(draft[seoTitleField] || '')} onChange={(value) => setText(seoTitleField, value)} /><EditorField label="Fallback SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label={`SEO description ${language.toUpperCase()}`} value={String(draft[seoDescriptionField] || '')} onChange={(value) => setText(seoDescriptionField, value)} multiline /><EditorField label="Fallback SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /></div> : null}
-          {tab === 'media' ? <div className="col-span-2 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="catalog-edit-head"><div><p className="eyebrow">Gemini SEO editor</p><h3>{articleDisplayTitle(draft)}</h3><span>{draft.category || 'blog'} · {draft.slug || 'new-page'}</span></div><Button variant="secondary" type="button" onClick={onClose}>Закрыть</Button></div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as SeoArticleTab)} className="grid min-h-0 flex-1 grid-rows-[auto_auto_minmax(0,1fr)]">
+        <div className="border-b border-zinc-800 px-4 py-3">
+          <TabsList>{tabs.map(([id, label]) => <TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList>
+        </div>
+        <section className="grid gap-3 border-b border-zinc-800 p-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)_200px]">
+          <SeoEditorField label="Тема / задача" value={source} onChange={setSource} multiline textareaClassName="min-h-16 max-h-28" />
+          <SeoEditorField label="Инструкция Gemini" value={instruction} onChange={setInstruction} multiline textareaClassName="min-h-16 max-h-28" />
+          <Button className="grid h-full min-h-16 grid-cols-[auto_1fr] grid-rows-2 content-center justify-items-start self-end bg-orange-500 text-black hover:bg-orange-400" type="button" onClick={() => void runGemini()} disabled={Boolean(busy)}><span className="row-span-2"><AppIcon name="sparkles" /></span>{busy === 'gemini' ? 'Генерируем...' : 'Текст и SEO'}<small className="text-xs opacity-70">gemini-3.1-pro-preview</small></Button>
+        </section>
+        <div className="grid min-h-0 gap-4 overflow-auto p-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <aside className="grid content-start gap-3">
+            <Card className="overflow-hidden bg-zinc-950">
+              {(images[selectedImage] || draft.image_url) ? <img className="aspect-square w-full object-cover" src={String(images[selectedImage] || draft.image_url)} alt={articleDisplayTitle(draft)} /> : <div className="grid aspect-square place-items-center text-zinc-500"><AppIcon name="seo" size={28} /></div>}
+              <CardContent className="p-3 text-xs font-bold text-zinc-500">{images.length || 1} фото из CMS/Markdown</CardContent>
+            </Card>
+            <Card className="bg-zinc-950">
+              <CardContent className="grid gap-2 p-3 text-xs text-zinc-400">
+                <strong className="text-sm text-zinc-100">{draft.published ? 'Опубликовано' : 'Черновик'}</strong>
+                <span>{String(draft.slug || 'new-page')}</span>
+              </CardContent>
+            </Card>
+          </aside>
+          <div className="min-w-0">
+            <TabsContent value="content" className="m-0">
+              <Card className="bg-zinc-950/60">
+                <CardHeader className="flex-row items-center justify-between gap-3"><CardTitle>Контент страницы</CardTitle><Tabs value={language} onValueChange={(value) => setLanguage(value as SeoArticleLang)}><TabsList>{langTabs.map(([id, label]) => <TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs></CardHeader>
+                <CardContent className="grid gap-4 xl:grid-cols-2">
+                  <SeoEditorField label={`Title ${language.toUpperCase()}`} value={String(draft[titleField] || '')} onChange={(value) => setText(titleField, value)} />
+                  <SeoEditorField label="Slug страницы" value={String(draft.slug || '')} onChange={(value) => setText('slug', value)} />
+                  <SeoEditorField label="Категория" value={String(draft.category || '')} onChange={(value) => setText('category', value)} />
+                  <SeoEditorField label={`Content ${language.toUpperCase()}`} value={String(draft[contentField] || '')} onChange={(value) => setText(contentField, value)} multiline className="xl:col-span-2" textareaClassName="min-h-[280px]" />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="languages" className="m-0">
+              <Card className="bg-zinc-950/60">
+                <CardHeader className="flex-row items-center justify-between gap-3"><CardTitle>4 языка</CardTitle><Tabs value={language} onValueChange={(value) => setLanguage(value as SeoArticleLang)}><TabsList>{langTabs.map(([id, label]) => <TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs></CardHeader>
+                <CardContent className="grid gap-4 xl:grid-cols-2">
+                  <SeoEditorField label={`Title ${language.toUpperCase()}`} value={String(draft[titleField] || '')} onChange={(value) => setText(titleField, value)} />
+                  <SeoEditorField label={`Content ${language.toUpperCase()}`} value={String(draft[contentField] || '')} onChange={(value) => setText(contentField, value)} multiline className="xl:col-span-2" textareaClassName="min-h-[340px]" />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="seo" className="m-0">
+              <Card className="bg-zinc-950/60">
+                <CardHeader className="flex-row items-center justify-between gap-3"><CardTitle>SEO</CardTitle><Tabs value={language} onValueChange={(value) => setLanguage(value as SeoArticleLang)}><TabsList>{langTabs.map(([id, label]) => <TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs></CardHeader>
+                <CardContent className="grid gap-4 xl:grid-cols-2">
+                  <SeoEditorField label={`SEO title ${language.toUpperCase()}`} value={String(draft[seoTitleField] || '')} onChange={(value) => setText(seoTitleField, value)} />
+                  <SeoEditorField label="Fallback SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} />
+                  <SeoEditorField label={`SEO description ${language.toUpperCase()}`} value={String(draft[seoDescriptionField] || '')} onChange={(value) => setText(seoDescriptionField, value)} multiline textareaClassName="min-h-[220px]" />
+                  <SeoEditorField label="Fallback SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline textareaClassName="min-h-[220px]" />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="media" className="m-0">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
             <Card className="bg-zinc-950/60">
               <CardHeader><CardTitle>Изображения статьи</CardTitle></CardHeader>
               <CardContent>
                 <ScrollArea className="max-h-[58vh] pr-2">
                   <div className="grid gap-3 lg:grid-cols-2">
                     {(images.length ? images : [String(draft.image_url || '')]).map((url, index) => <Card key={index} className={index === selectedImage ? 'border-orange-500/70 bg-zinc-950' : 'bg-zinc-950'}>
-                      <CardContent className="grid gap-3 p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-                        <button className="aspect-video overflow-hidden rounded-md border border-zinc-800 bg-zinc-950" type="button" onClick={() => url && setFullscreenImage(url)}>
-                          {url ? <img className="h-full w-full object-cover" src={url} alt={`Фото ${index + 1}`} /> : <span className="grid h-full place-items-center text-zinc-500"><AppIcon name="seo" /></span>}
+                      <CardContent className="grid gap-3 p-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+                        <button className="relative block aspect-video overflow-hidden rounded-md border border-zinc-800 bg-zinc-950" type="button" onClick={() => url && setFullscreenImage(url)}>
+                          {url ? <img className="absolute inset-0 block h-full w-full object-cover object-center" src={url} alt={`Фото ${index + 1}`} /> : <span className="grid h-full place-items-center text-zinc-500"><AppIcon name="seo" /></span>}
                         </button>
                         <div className="grid min-w-0 gap-2">
                           <strong>{index === 0 ? 'Обложка' : `Фото ${index + 1}`}</strong>
@@ -543,13 +756,15 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
                 <Card className="bg-zinc-950"><CardContent className="flex items-center gap-3 p-3"><AppIcon name="sparkles" /><span><strong>Текст и SEO</strong><small className="block text-orange-400">gemini-3.1-pro-preview</small></span></CardContent></Card>
                 <Card className="bg-zinc-950"><CardContent className="flex items-center gap-3 p-3"><AppIcon name="package" /><span><strong>Фото</strong><small className="block text-orange-400">gemini-3.1-flash-image</small></span></CardContent></Card>
                 <div><h4 className="mb-2 text-sm font-black">Что можно сделать</h4><ul className="list-disc space-y-2 pl-5 text-sm text-zinc-400"><li>Перегенерировать выбранное фото</li><li>Создать обложку с помощью Gemini</li><li>Добавить изображение по URL</li><li>Сохранить страницу и опубликовать</li></ul></div>
-                <Card className="bg-zinc-950"><CardContent className="flex items-center gap-3 p-3">{(images[selectedImage] || draft.image_url) ? <img className="h-14 w-14 rounded-md object-cover" src={String(images[selectedImage] || draft.image_url)} alt="Выбранное фото" /> : null}<span><strong>Выбрано: {selectedImage === 0 ? 'Обложка' : `Фото ${selectedImage + 1}`}</strong><small className="block text-orange-400">{busy ? 'В работе...' : 'Готово'}</small></span></CardContent></Card>
+                <Card className="bg-zinc-950"><CardContent className="flex items-center gap-3 p-3">{(images[selectedImage] || draft.image_url) ? <img className="h-14 w-14 rounded-md bg-zinc-900 object-contain" src={String(images[selectedImage] || draft.image_url)} alt="Выбранное фото" /> : null}<span><strong>Выбрано: {selectedImage === 0 ? 'Обложка' : `Фото ${selectedImage + 1}`}</strong><small className="block text-orange-400">{busy ? 'В работе...' : 'Готово'}</small></span></CardContent></Card>
                 <label className="flex items-center gap-2 text-sm font-bold text-zinc-300"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label>
               </CardContent>
             </Card>
-          </div> : null}
+              </div>
+            </TabsContent>
+          </div>
         </div>
-      </div>
+      </Tabs>
       <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : article ? 'Сохранить страницу' : 'Создать страницу'}</button></div>
     </section>
     {fullscreenImage ? (
@@ -592,11 +807,12 @@ function DimaPagesEditor({ props }: { props: OperationsPageProps }) {
     const haystack = [article.title_ru, article.title_en, article.slug, article.category, article.seo_title, article.seo_description].filter(Boolean).join(' ').toLowerCase();
     return (!needle || haystack.includes(needle)) && (category === 'all' || (article.category || 'blog') === category);
   });
+  const imageReadyCount = props.articles.filter((article) => Boolean(article.image_url)).length;
   return <section className="ops-panel catalog-browser">
     <PanelTitle title="SEO Blog Dima Fomin" icon="seo" action={`${rows.length} из ${props.articles.length}`} />
     <div className="catalog-toolbar"><label><span>Поиск</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Заголовок, slug, SEO, категория" /></label><label><span>Категория</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">Все категории</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><button className="btn btn-primary" type="button" onClick={() => setCreatingArticle(true)}><AppIcon name="sparkles" />Создать SEO страницу</button><button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из backend</button></div>
-    <div className="catalog-stats-row"><article><span>Всего страниц</span><strong>{props.articles.length}</strong></article><article><span>Опубликовано</span><strong>{props.articles.filter((article) => article.published).length}</strong></article><article><span>SEO готово</span><strong>{props.articles.filter((article) => article.seo_title || article.seo_title_ru).length}</strong></article><article><span>Категорий</span><strong>{categories.length}</strong></article></div>
-    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Название</th><th>Категория</th><th>Slug</th><th>SEO</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{rows.map((article) => <tr key={article.id}><td><strong>{articleDisplayTitle(article)}</strong><small>{article.title_en}</small></td><td>{article.category || 'blog'}</td><td><code>{article.slug}</code></td><td><StatusPill tone={article.seo_title || article.seo_title_ru ? 'good' : 'warning'} label={article.seo_title || article.seo_title_ru ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={article.published ? 'good' : 'neutral'} label={article.published ? 'опубликовано' : 'черновик'} /></td><td><button className="table-action" type="button" onClick={() => setEditingArticle(article)}>Редактировать</button></td></tr>)}</tbody></table></div>
+    <div className="catalog-stats-row"><article><span>Всего страниц</span><strong>{props.articles.length}</strong></article><article><span>Опубликовано</span><strong>{props.articles.filter((article) => article.published).length}</strong></article><article><span>SEO готово</span><strong>{props.articles.filter((article) => article.seo_title || article.seo_title_ru).length}</strong></article><article><span>С фото</span><strong>{imageReadyCount}</strong></article><article><span>Категорий</span><strong>{categories.length}</strong></article></div>
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Фото</th><th>Название</th><th>Категория</th><th>Slug</th><th>SEO</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{rows.map((article) => <tr key={article.id}><td>{article.image_url ? <img className="catalog-product-thumb" src={article.image_url} alt={articleDisplayTitle(article)} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="seo" size={18} /></span>}</td><td><strong>{articleDisplayTitle(article)}</strong><small>{article.title_en}</small></td><td>{article.category || 'blog'}</td><td><code>{article.slug}</code></td><td><StatusPill tone={article.seo_title || article.seo_title_ru ? 'good' : 'warning'} label={article.seo_title || article.seo_title_ru ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={article.published ? 'good' : 'neutral'} label={article.published ? 'опубликовано' : 'черновик'} /></td><td><button className="table-action" type="button" onClick={() => setEditingArticle(article)}>Редактировать</button></td></tr>)}</tbody></table></div>
     {props.articles.length === 0 ? <p className="empty-state">SEO/Blog страницы не загружены. Нажмите «Обновить».</p> : null}
     {creatingArticle ? <DimaArticleEditorModal onClose={() => setCreatingArticle(false)} onSaved={props.onRefresh} /> : null}
     {editingArticle ? <DimaArticleEditorModal article={editingArticle} onClose={() => setEditingArticle(null)} onSaved={props.onRefresh} /> : null}
@@ -607,9 +823,55 @@ function SiteSettings({ data }: { data: SiteDataset }) {
   return <div className="site-card-grid"><article className="site-card"><div><h3>{data.name}</h3><StatusPill tone={data.ga4 ? 'good' : 'warning'} label={data.ga4 ? 'аналитика подключена' : 'аналитика не подключена'} /></div><p>{data.domain}</p><dl><dt>Cloudflare</dt><dd>{data.cloudflare}</dd><dt>GitHub</dt><dd>{data.github}</dd><dt>Backend</dt><dd>{data.backend}</dd><dt>Языки</dt><dd>{data.languages}</dd><dt>GA4</dt><dd>{data.ga4 ? 'подключено' : 'не подключено'}</dd><dt>Search Console</dt><dd>{data.searchConsole ? 'подключено' : 'не подключено'}</dd><dt>Sitemap</dt><dd>{data.ga4 ? 'валидно' : 'нужна проверка'}</dd><dt>robots.txt</dt><dd>{data.ga4 ? 'валидно' : 'нужна проверка'}</dd></dl><div className="card-actions"><button>Открыть сайт</button><button>Синхронизировать</button><button>Деплой</button></div></article></div>;
 }
 
-function LeadsCrm({ data }: { data: SiteDataset }) {
-  const stages = ['Новая', 'Связались', 'Замер', 'Смета', 'Договор', 'В работе', 'Сдано', 'Отказ'];
-  return <div className="kanban-board">{stages.map((stage, index) => <section className="kanban-column" key={stage}><h3>{stage}<span>{data.leadsMonth && index < 5 ? index + 1 : 0}</span></h3>{data.leadsMonth && index < 5 ? <article className="lead-card"><strong>{['Заявка сайта', 'Консультация', 'SEO-заявка', 'Смета', 'Договор'][index]}</strong><p>{data.name} · источник: сайт</p><small>Отдельная воронка сайта</small></article> : <div className="empty-state">Нет заявок для {data.name}</div>}</section>)}</div>;
+function NotConnectedPanel({ title, icon, endpoint, description }: { title: string; icon: AppIconName; endpoint: string; description: string }) {
+  return <section className="ops-panel">
+    <PanelTitle title={title} icon={icon} action="API не подключён" />
+    <div className="empty-state">
+      <strong>{description}</strong>
+      <p>Чтобы здесь не было демо-данных, нужен backend endpoint: <code>{endpoint}</code></p>
+    </div>
+  </section>;
+}
+
+function LeadsCrm({ props }: { props: OperationsPageProps }) {
+  if (props.activeSite !== 'almabuild') {
+    return <NotConnectedPanel title="CRM заявок" icon="leads" endpoint="/api/admin/leads" description="Backend пока не отдаёт заявки и стадии воронки для выбранного сайта." />;
+  }
+
+  const leads = props.almabuildLeads;
+  const todayCount = leads.filter((lead) => isToday(lead.createdAt)).length;
+  const withItemsCount = leads.filter((lead) => lead.items.length > 0).length;
+
+  return <section className="ops-panel catalog-browser">
+    <PanelTitle title="CRM заявок Kazaxbud" icon="leads" action={`${leads.length} заявок из /api/leads`} />
+    <div className="catalog-toolbar">
+      <label><span>Источник</span><input value="http://localhost:3000/api/leads/" readOnly /></label>
+      <button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из сайта</button>
+    </div>
+    <div className="catalog-stats-row">
+      <article><span>Всего заявок</span><strong>{leads.length}</strong></article>
+      <article><span>Сегодня</span><strong>{todayCount}</strong></article>
+      <article><span>С позициями сметы</span><strong>{withItemsCount}</strong></article>
+      <article><span>С площадью</span><strong>{leads.filter((lead) => lead.area).length}</strong></article>
+      <article><span>Телефоны</span><strong>{leads.filter((lead) => lead.phone).length}</strong></article>
+    </div>
+    <div className="table-scroll">
+      <table className="ops-table">
+        <thead><tr><th>Дата</th><th>Клиент</th><th>Телефон</th><th>Объект</th><th>Комментарий</th><th>Позиции</th></tr></thead>
+        <tbody>{leads.map((lead) => (
+          <tr key={lead.id}>
+            <td><code>{new Date(lead.createdAt).toLocaleString('ru-RU')}</code></td>
+            <td><strong>{lead.name || 'Без имени'}</strong><small>{lead.id.slice(0, 8)}</small></td>
+            <td><a className="table-action" href={`tel:${lead.phone}`}>{lead.phone || 'нет телефона'}</a></td>
+            <td>{lead.type || 'не указан'}<small>{lead.area ? `${lead.area} м2` : 'площадь не указана'}</small></td>
+            <td>{lead.comment || 'Комментарий не указан'}</td>
+            <td>{lead.items.length ? lead.items.join(', ') : 'нет позиций'}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+    {leads.length === 0 ? <p className="empty-state">Заявок пока нет. Когда клиент отправит форму на сайте Kazaxbud, она появится здесь.</p> : null}
+  </section>;
 }
 
 function productDisplayName(product: AdminProduct) {
@@ -629,6 +891,13 @@ const CATALOG_MINERALS = [['calcium', 'Calcium'], ['iron', 'Iron'], ['magnesium'
 const CATALOG_DIETS = [['vegan', 'Vegan'], ['vegetarian', 'Vegetarian'], ['keto', 'Keto'], ['paleo', 'Paleo'], ['gluten_free', 'Gluten free'], ['mediterranean', 'Mediterranean'], ['low_carb', 'Low carb']] as const;
 const CATALOG_TEXT_MODEL = 'gemini-3.1-pro-preview';
 const CATALOG_IMAGE_MODEL = 'gemini-3.1-flash-image';
+
+function CatalogNumberField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: string) => void }) {
+  return <label className="grid min-w-0 gap-2 text-sm font-black text-zinc-400">
+    <span>{label}</span>
+    <Input type="number" step="any" value={value as number ?? ''} onChange={(event) => onChange(event.target.value)} />
+  </label>;
+}
 
 function productToCatalogEditDraft(product: AdminProduct): CatalogEditDraft {
   return {
@@ -769,30 +1038,83 @@ function CatalogProductEditor({ product, category, onClose, onSaved }: { product
 
   return <div className="catalog-edit-overlay compact" role="presentation" onMouseDown={onClose}>
     <section className="catalog-edit-modal compact" role="dialog" aria-label="Редактирование продукта" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="catalog-edit-head"><div><p className="eyebrow">Gemini product editor</p><h3>{productDisplayName(product)}</h3><span>{categoryDisplayName(category)} · {product.slug || product.id}</span></div><button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button></div>
-      <nav className="catalog-edit-tabs">{tabs.map(([id, label]) => <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
-      <section className="catalog-generation-panel">
-        <label><span>Задача для Gemini</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
-        <div className="catalog-generation-actions">
-          <button className="btn btn-primary" type="button" onClick={() => void runGeminiEdit()} disabled={Boolean(busy)}><AppIcon name="sparkles" />{busy === 'gemini' ? 'Генерируем текст...' : 'Текст и профиль'}<small>{CATALOG_TEXT_MODEL}</small></button>
-          <button className="btn btn-quiet" type="button" onClick={() => void generateImage()} disabled={Boolean(busy)}><AppIcon name="package" />{busy === 'image' ? 'Генерируем фото...' : 'Фото'}<small>{CATALOG_IMAGE_MODEL}</small></button>
-          <button className="btn btn-quiet" type="button" onClick={() => void regenerateStates()} disabled={Boolean(busy)}><AppIcon name="refresh" />{busy === 'states' ? 'Состояния...' : 'Состояния'}<small>{CATALOG_TEXT_MODEL}</small></button>
+      <div className="catalog-edit-head"><div><p className="eyebrow">Gemini product editor</p><h3>{productDisplayName(product)}</h3><span>{categoryDisplayName(category)} · {product.slug || product.id}</span></div><Button variant="secondary" type="button" onClick={onClose}>Закрыть</Button></div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as CatalogEditTab)} className="grid min-h-0 flex-1 grid-rows-[auto_auto_minmax(0,1fr)]">
+        <div className="border-b border-zinc-800 px-4 py-3">
+          <TabsList className="max-w-full overflow-x-auto">{tabs.map(([id, label]) => <TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList>
         </div>
-      </section>
-      <div className="catalog-edit-body compact">
-        <aside className="catalog-edit-photo compact">{draft.image_url ? <img src={draft.image_url} alt={productDisplayName(product)} /> : <span><AppIcon name="package" size={28} /></span>}<small>Фото: {CATALOG_IMAGE_MODEL}</small></aside>
-        <div className="catalog-edit-form">
-          {tab === 'basic' ? <div className="editor-grid"><EditorField label="Название RU" value={String(draft.name_ru || '')} onChange={(value) => setText('name_ru', value)} /><EditorField label="Название EN" value={String(draft.name_en || '')} onChange={(value) => setText('name_en', value)} /><EditorField label="Название PL" value={String(draft.name_pl || '')} onChange={(value) => setText('name_pl', value)} /><EditorField label="Название UK" value={String(draft.name_uk || '')} onChange={(value) => setText('name_uk', value)} /><EditorField label="Тип продукта" value={String(draft.product_type || '')} onChange={(value) => setText('product_type', value)} /><EditorField label="Единица" value={String(draft.unit || '')} onChange={(value) => setText('unit', value)} /><EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline /></div> : null}
-          {tab === 'content' ? <div className="editor-grid"><EditorField label="Описание RU" value={String(draft.description_ru || '')} onChange={(value) => setText('description_ru', value)} multiline /><EditorField label="Описание EN" value={String(draft.description_en || '')} onChange={(value) => setText('description_en', value)} multiline /><EditorField label="Описание PL" value={String(draft.description_pl || '')} onChange={(value) => setText('description_pl', value)} multiline /><EditorField label="Описание UK" value={String(draft.description_uk || '')} onChange={(value) => setText('description_uk', value)} multiline /><EditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label="SEO H1" value={String(draft.seo_h1 || '')} onChange={(value) => setText('seo_h1', value)} /><EditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /></div> : null}
-          {tab === 'nutrition' ? <div className="catalog-nutrition-grid">{([['calories_per_100g', 'Kalorie/kcal'], ['protein_per_100g', 'Białko'], ['fat_per_100g', 'Tłuszcz'], ['carbs_per_100g', 'Węglowodany'], ['fiber_per_100g', 'Błonnik'], ['sugar_per_100g', 'Cukier'], ['density_g_per_ml', 'Gęstość'], ['typical_portion_g', 'Porcja'], ['shelf_life_days', 'Trwałość'], ['starch_g', 'Starch'], ['water_g', 'Water'], ['alcohol_g', 'Alcohol']] as Array<[string, string]>).map(([field, label]) => field in draft ? <label key={field}><span>{label}</span><input type="number" step="any" value={draft[field as keyof CatalogEditDraft] as number ?? ''} onChange={(event) => setNumber(field as keyof CatalogEditDraft, event.target.value)} /></label> : <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('macros', field) as number ?? ''} onChange={(event) => setProfileNumber('macros', field, event.target.value)} /></label>)}</div> : null}
-          {tab === 'vitamins' ? <div className="catalog-nutrition-grid">{CATALOG_VITAMINS.map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('vitamins', field) as number ?? ''} onChange={(event) => setProfileNumber('vitamins', field, event.target.value)} /></label>)}</div> : null}
-          {tab === 'minerals' ? <div className="catalog-nutrition-grid">{CATALOG_MINERALS.map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('minerals', field) as number ?? ''} onChange={(event) => setProfileNumber('minerals', field, event.target.value)} /></label>)}</div> : null}
-          {tab === 'culinary' ? <div className="editor-grid"><div className="catalog-nutrition-grid span-2">{(['sweetness', 'acidity', 'bitterness', 'umami', 'aroma'] as const).map((field) => <label key={field}><span>{field}</span><input type="number" step="any" value={profileValue('culinary', field) as number ?? ''} onChange={(event) => setProfileNumber('culinary', field, event.target.value)} /></label>)}{(['glycemic_index', 'glycemic_load', 'ph', 'smoke_point', 'water_activity'] as const).map((field) => <label key={field}><span>{field}</span><input type="number" step="any" value={profileValue('food_properties', field) as number ?? ''} onChange={(event) => setProfileNumber('food_properties', field, event.target.value)} /></label>)}</div><EditorField label="Texture" value={String(profileValue('culinary', 'texture') || '')} onChange={(value) => setProfileValue('culinary', 'texture', value)} multiline /><EditorField label="Processing notes PL" value={String(profileValue('processing_effects', 'processing_notes_pl') || '')} onChange={(value) => setProfileValue('processing_effects', 'processing_notes_pl', value)} multiline /></div> : null}
-          {tab === 'health' ? <div className="editor-grid"><div className="toggle-grid span-2">{CATALOG_DIETS.map(([field, label]) => <label className="editor-check" key={field}><input type="checkbox" checked={Boolean(profileValue('diet_flags', field))} onChange={(event) => setProfileValue('diet_flags', field, event.target.checked)} />{label}</label>)}</div>{(['en', 'ru', 'pl', 'uk'] as const).flatMap((lang) => [<EditorField key={`bio-${lang}`} label={`Bioactive ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `bioactive_compounds_${lang}`))} onChange={(value) => setProfileValue('health_profile', `bioactive_compounds_${lang}`, csvToArray(value))} multiline />, <EditorField key={`eff-${lang}`} label={`Health effects ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `health_effects_${lang}`))} onChange={(value) => setProfileValue('health_profile', `health_effects_${lang}`, csvToArray(value))} multiline />])}<EditorField label="Food role" value={String(profileValue('health_profile', 'food_role') || '')} onChange={(value) => setProfileValue('health_profile', 'food_role', value)} /></div> : null}
-          {tab === 'states' ? <div className="catalog-states-list">{states.map((state) => <article key={state.id}><strong>{state.name_suffix_pl || state.name_suffix_ru || state.state}</strong><span>{state.calories_per_100g ?? '-'} kcal · {state.storage_temp_c ?? '-'}°C · {state.shelf_life_hours ?? '-'} godz.</span><p>{state.notes_pl || state.notes_ru || state.notes_en}</p></article>)}</div> : null}
+        <section className="grid gap-3 border-b border-zinc-800 p-4 xl:grid-cols-[minmax(0,1fr)_auto]">
+          <SeoEditorField label="Задача для Gemini" value={instruction} onChange={setInstruction} multiline textareaClassName="min-h-16 max-h-28" />
+          <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[620px]">
+            <Button className="grid min-h-16 grid-cols-[auto_1fr] grid-rows-2 content-center justify-items-start bg-orange-500 text-black hover:bg-orange-400" type="button" onClick={() => void runGeminiEdit()} disabled={Boolean(busy)}><span className="row-span-2"><AppIcon name="sparkles" /></span>{busy === 'gemini' ? 'Генерируем...' : 'Текст и профиль'}<small className="text-xs opacity-70">{CATALOG_TEXT_MODEL}</small></Button>
+            <Button className="grid min-h-16 grid-cols-[auto_1fr] grid-rows-2 content-center justify-items-start" variant="secondary" type="button" onClick={() => void generateImage()} disabled={Boolean(busy)}><span className="row-span-2"><AppIcon name="package" /></span>{busy === 'image' ? 'Фото...' : 'Фото'}<small className="text-xs opacity-70">{CATALOG_IMAGE_MODEL}</small></Button>
+            <Button className="grid min-h-16 grid-cols-[auto_1fr] grid-rows-2 content-center justify-items-start" variant="secondary" type="button" onClick={() => void regenerateStates()} disabled={Boolean(busy)}><span className="row-span-2"><AppIcon name="refresh" /></span>{busy === 'states' ? 'Обновляем...' : 'Состояния'}<small className="text-xs opacity-70">{CATALOG_TEXT_MODEL}</small></Button>
+          </div>
+        </section>
+        <div className="grid min-h-0 gap-4 overflow-auto p-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <aside className="grid content-start gap-3">
+            <Card className="overflow-hidden bg-zinc-950">
+              {draft.image_url ? <img className="aspect-square w-full object-cover" src={draft.image_url} alt={productDisplayName(product)} /> : <div className="grid aspect-square place-items-center text-zinc-500"><AppIcon name="package" size={28} /></div>}
+              <CardContent className="grid gap-2 p-3 text-xs font-bold text-zinc-500"><span>Фото: {CATALOG_IMAGE_MODEL}</span><span className="break-all">{String(draft.image_url || 'Фото не задано')}</span></CardContent>
+            </Card>
+            <Card className="bg-zinc-950">
+              <CardContent className="grid gap-2 p-3 text-xs text-zinc-400">
+                <strong className="text-sm text-zinc-100">{String(draft.product_type || 'product')}</strong>
+                <span>{String(draft.unit || 'unit не задан')}</span>
+              </CardContent>
+            </Card>
+          </aside>
+          <div className="min-w-0">
+            <TabsContent value="basic" className="m-0">
+              <Card className="bg-zinc-950/60">
+                <CardHeader><CardTitle>Основное</CardTitle></CardHeader>
+                <CardContent className="grid gap-4 xl:grid-cols-2">
+                  <SeoEditorField label="Название RU" value={String(draft.name_ru || '')} onChange={(value) => setText('name_ru', value)} />
+                  <SeoEditorField label="Название EN" value={String(draft.name_en || '')} onChange={(value) => setText('name_en', value)} />
+                  <SeoEditorField label="Название PL" value={String(draft.name_pl || '')} onChange={(value) => setText('name_pl', value)} />
+                  <SeoEditorField label="Название UK" value={String(draft.name_uk || '')} onChange={(value) => setText('name_uk', value)} />
+                  <SeoEditorField label="Тип продукта" value={String(draft.product_type || '')} onChange={(value) => setText('product_type', value)} />
+                  <SeoEditorField label="Единица" value={String(draft.unit || '')} onChange={(value) => setText('unit', value)} />
+                  <SeoEditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline className="xl:col-span-2" textareaClassName="min-h-24" />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="content" className="m-0">
+              <Card className="bg-zinc-950/60">
+                <CardHeader><CardTitle>4 языка и SEO</CardTitle></CardHeader>
+                <CardContent className="grid gap-4 xl:grid-cols-2">
+                  <SeoEditorField label="Описание RU" value={String(draft.description_ru || '')} onChange={(value) => setText('description_ru', value)} multiline textareaClassName="min-h-[180px]" />
+                  <SeoEditorField label="Описание EN" value={String(draft.description_en || '')} onChange={(value) => setText('description_en', value)} multiline textareaClassName="min-h-[180px]" />
+                  <SeoEditorField label="Описание PL" value={String(draft.description_pl || '')} onChange={(value) => setText('description_pl', value)} multiline textareaClassName="min-h-[180px]" />
+                  <SeoEditorField label="Описание UK" value={String(draft.description_uk || '')} onChange={(value) => setText('description_uk', value)} multiline textareaClassName="min-h-[180px]" />
+                  <SeoEditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} />
+                  <SeoEditorField label="SEO H1" value={String(draft.seo_h1 || '')} onChange={(value) => setText('seo_h1', value)} />
+                  <SeoEditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline className="xl:col-span-2" textareaClassName="min-h-[160px]" />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="nutrition" className="m-0">
+              <Card className="bg-zinc-950/60"><CardHeader><CardTitle>Макросы на 100 г</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{([['calories_per_100g', 'Kalorie/kcal'], ['protein_per_100g', 'Białko'], ['fat_per_100g', 'Tłuszcz'], ['carbs_per_100g', 'Węglowodany'], ['fiber_per_100g', 'Błonnik'], ['sugar_per_100g', 'Cukier'], ['density_g_per_ml', 'Gęstość'], ['typical_portion_g', 'Porcja'], ['shelf_life_days', 'Trwałość'], ['starch_g', 'Starch'], ['water_g', 'Water'], ['alcohol_g', 'Alcohol']] as Array<[string, string]>).map(([field, label]) => field in draft ? <CatalogNumberField key={field} label={label} value={draft[field as keyof CatalogEditDraft]} onChange={(value) => setNumber(field as keyof CatalogEditDraft, value)} /> : <CatalogNumberField key={field} label={label} value={profileValue('macros', field)} onChange={(value) => setProfileNumber('macros', field, value)} />)}</CardContent></Card>
+            </TabsContent>
+            <TabsContent value="vitamins" className="m-0">
+              <Card className="bg-zinc-950/60"><CardHeader><CardTitle>Витамины</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{CATALOG_VITAMINS.map(([field, label]) => <CatalogNumberField key={field} label={label} value={profileValue('vitamins', field)} onChange={(value) => setProfileNumber('vitamins', field, value)} />)}</CardContent></Card>
+            </TabsContent>
+            <TabsContent value="minerals" className="m-0">
+              <Card className="bg-zinc-950/60"><CardHeader><CardTitle>Минералы</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{CATALOG_MINERALS.map(([field, label]) => <CatalogNumberField key={field} label={label} value={profileValue('minerals', field)} onChange={(value) => setProfileNumber('minerals', field, value)} />)}</CardContent></Card>
+            </TabsContent>
+            <TabsContent value="culinary" className="m-0">
+              <Card className="bg-zinc-950/60"><CardHeader><CardTitle>Кулинария</CardTitle></CardHeader><CardContent className="grid gap-4 xl:grid-cols-2"><div className="grid gap-4 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-5">{(['sweetness', 'acidity', 'bitterness', 'umami', 'aroma'] as const).map((field) => <CatalogNumberField key={field} label={field} value={profileValue('culinary', field)} onChange={(value) => setProfileNumber('culinary', field, value)} />)}{(['glycemic_index', 'glycemic_load', 'ph', 'smoke_point', 'water_activity'] as const).map((field) => <CatalogNumberField key={field} label={field} value={profileValue('food_properties', field)} onChange={(value) => setProfileNumber('food_properties', field, value)} />)}</div><SeoEditorField label="Texture" value={String(profileValue('culinary', 'texture') || '')} onChange={(value) => setProfileValue('culinary', 'texture', value)} multiline textareaClassName="min-h-[180px]" /><SeoEditorField label="Processing notes PL" value={String(profileValue('processing_effects', 'processing_notes_pl') || '')} onChange={(value) => setProfileValue('processing_effects', 'processing_notes_pl', value)} multiline textareaClassName="min-h-[180px]" /></CardContent></Card>
+            </TabsContent>
+            <TabsContent value="health" className="m-0">
+              <Card className="bg-zinc-950/60"><CardHeader><CardTitle>Health profile</CardTitle></CardHeader><CardContent className="grid gap-4 xl:grid-cols-2"><div className="grid gap-2 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-4">{CATALOG_DIETS.map(([field, label]) => <label className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 p-3 text-sm font-bold text-zinc-300" key={field}><input type="checkbox" checked={Boolean(profileValue('diet_flags', field))} onChange={(event) => setProfileValue('diet_flags', field, event.target.checked)} />{label}</label>)}</div>{(['en', 'ru', 'pl', 'uk'] as const).flatMap((lang) => [<SeoEditorField key={`bio-${lang}`} label={`Bioactive ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `bioactive_compounds_${lang}`))} onChange={(value) => setProfileValue('health_profile', `bioactive_compounds_${lang}`, csvToArray(value))} multiline textareaClassName="min-h-[150px]" />, <SeoEditorField key={`eff-${lang}`} label={`Health effects ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `health_effects_${lang}`))} onChange={(value) => setProfileValue('health_profile', `health_effects_${lang}`, csvToArray(value))} multiline textareaClassName="min-h-[150px]" />])}<SeoEditorField label="Food role" value={String(profileValue('health_profile', 'food_role') || '')} onChange={(value) => setProfileValue('health_profile', 'food_role', value)} className="xl:col-span-2" /></CardContent></Card>
+            </TabsContent>
+            <TabsContent value="states" className="m-0">
+              <Card className="bg-zinc-950/60"><CardHeader><CardTitle>Состояния обработки</CardTitle></CardHeader><CardContent><div className="grid gap-3">{states.map((state) => <Card key={state.id} className="bg-zinc-950"><CardContent className="grid gap-1 p-3"><strong>{state.name_suffix_pl || state.name_suffix_ru || state.state}</strong><span className="text-sm text-zinc-400">{state.calories_per_100g ?? '-'} kcal · {state.storage_temp_c ?? '-'}°C · {state.shelf_life_hours ?? '-'} godz.</span><p className="m-0 text-sm text-zinc-500">{state.notes_pl || state.notes_ru || state.notes_en}</p></CardContent></Card>)}</div></CardContent></Card>
+            </TabsContent>
+          </div>
         </div>
-      </div>
-      <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : 'Сохранить всё'}</button></div>
+      </Tabs>
+      <div className="catalog-edit-actions"><EditorMessage value={message} /><Button variant="secondary" type="button" onClick={onClose}>Отмена</Button><Button type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : 'Сохранить всё'}</Button></div>
     </section>
   </div>;
 }
@@ -938,23 +1260,59 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
 }
 
 function MaterialsTable({ props }: { props: OperationsPageProps }) {
-  return <AlmabuildEditor props={props} mode="materials" />;
+  const [query, setQuery] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const content = props.almabuildContent;
+  if (!content) return <section className="ops-panel"><PanelTitle title="Материалы Kazaxbud" icon="materials" action="контент не загружен" /><p className="empty-state">Нажмите «Обновить», чтобы загрузить контент сайта.</p></section>;
+  const needle = query.trim().toLowerCase();
+  const rows = content.materialCategories
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => {
+      const haystack = [item.title, item.slug, item.index, item.text, item.photo, ...item.bullets].join(' ').toLowerCase();
+      return !needle || haystack.includes(needle);
+    });
+  return <section className="ops-panel catalog-browser">
+    <PanelTitle title="Материалы Kazaxbud" icon="materials" action={`${rows.length} из ${content.materialCategories.length}`} />
+    <div className="catalog-toolbar"><label><span>Поиск</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Название, slug, индекс, визуальный класс" /></label><button className="btn btn-primary" type="button" onClick={() => setCreating(true)}><AppIcon name="sparkles" />Добавить материал</button><button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из backend</button></div>
+    <div className="catalog-stats-row"><article><span>Всего материалов</span><strong>{content.materialCategories.length}</strong></article><article><span>С описанием</span><strong>{content.materialCategories.filter((item) => item.text).length}</strong></article><article><span>С пунктами</span><strong>{content.materialCategories.filter((item) => item.bullets.length).length}</strong></article><article><span>Визуальных классов</span><strong>{new Set(content.materialCategories.map((item) => item.photo).filter(Boolean)).size}</strong></article><article><span>Показано</span><strong>{rows.length}</strong></article></div>
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Вид</th><th>Название</th><th>Slug</th><th>Индекс</th><th>Пункты</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{rows.map(({ item, index }) => <tr key={`${item.slug}-${index}`}><td><span className="catalog-product-thumb empty"><AppIcon name="materials" size={18} /></span></td><td><strong>{item.title}</strong><small>{item.text}</small></td><td><code>{item.slug}</code></td><td><code>{item.index}</code></td><td>{item.bullets.length}</td><td><StatusPill tone={item.title && item.slug && item.text ? 'good' : 'warning'} label={item.title && item.slug && item.text ? 'готово' : 'проверить'} /></td><td><button className="table-action" type="button" onClick={() => setEditingIndex(index)}>Редактировать</button></td></tr>)}</tbody></table></div>
+    {content.materialCategories.length === 0 ? <p className="empty-state">Материалы не загружены. Добавьте первый материал.</p> : null}
+    {creating ? <KazaxbudMaterialEditorModal content={content} onClose={() => setCreating(false)} onRefresh={props.onRefresh} /> : null}
+    {editingIndex !== null ? <KazaxbudMaterialEditorModal item={content.materialCategories[editingIndex]} index={editingIndex} content={content} onClose={() => setEditingIndex(null)} onRefresh={props.onRefresh} /> : null}
+  </section>;
 }
 
-function GenericCards({ data, icon, items }: { data: SiteDataset; icon: AppIconName; items: string[] }) {
-  return <div className="ops-grid three">{items.map((item) => <article className="ops-panel module-card" key={item}><PanelTitle title={item} icon={icon} /><p>{data.name}</p><div className="card-actions"><button>Редактировать</button><button>Открыть</button><button>Опубликовать</button></div></article>)}</div>;
+function KazaxbudSeoTable({ props }: { props: OperationsPageProps }) {
+  const [query, setQuery] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const content = props.almabuildContent;
+  if (!content) return <section className="ops-panel"><PanelTitle title="SEO Kazaxbud" icon="seo" action="контент не загружен" /><p className="empty-state">Нажмите «Обновить», чтобы загрузить SEO-контент сайта.</p></section>;
+  const needle = query.trim().toLowerCase();
+  const rows = content.kits
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => {
+      const haystack = [item.title, item.text, ...item.items].join(' ').toLowerCase();
+      return !needle || haystack.includes(needle);
+    });
+  return <section className="ops-panel catalog-browser">
+    <PanelTitle title="SEO Kazaxbud" icon="seo" action={`${rows.length} из ${content.kits.length}`} />
+    <div className="catalog-toolbar"><label><span>Поиск</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Название, описание, состав" /></label><button className="btn btn-primary" type="button" onClick={() => setCreating(true)}><AppIcon name="sparkles" />Добавить SEO</button><button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из backend</button></div>
+    <div className="catalog-stats-row"><article><span>Всего SEO-блоков</span><strong>{content.kits.length}</strong></article><article><span>С описанием</span><strong>{content.kits.filter((item) => item.text).length}</strong></article><article><span>С составом</span><strong>{content.kits.filter((item) => item.items.length).length}</strong></article><article><span>Позиций</span><strong>{content.kits.reduce((sum, item) => sum + item.items.length, 0)}</strong></article><article><span>Показано</span><strong>{rows.length}</strong></article></div>
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Вид</th><th>Название</th><th>Описание</th><th>Состав</th><th>SEO</th><th>Действие</th></tr></thead><tbody>{rows.map(({ item, index }) => <tr key={`${item.title}-${index}`}><td><span className="catalog-product-thumb empty"><AppIcon name="seo" size={18} /></span></td><td><strong>{item.title}</strong><small>SEO-комплект Kazaxbud</small></td><td>{item.text}</td><td>{item.items.length} поз.</td><td><StatusPill tone={item.title && item.text && item.items.length ? 'good' : 'warning'} label={item.title && item.text && item.items.length ? 'готово' : 'проверить'} /></td><td><button className="table-action" type="button" onClick={() => setEditingIndex(index)}>Редактировать</button></td></tr>)}</tbody></table></div>
+    {content.kits.length === 0 ? <p className="empty-state">SEO-комплекты не загружены. Добавьте первый блок.</p> : null}
+    {creating ? <KazaxbudSeoKitEditorModal content={content} onClose={() => setCreating(false)} onRefresh={props.onRefresh} /> : null}
+    {editingIndex !== null ? <KazaxbudSeoKitEditorModal item={content.kits[editingIndex]} index={editingIndex} content={content} onClose={() => setEditingIndex(null)} onRefresh={props.onRefresh} /> : null}
+  </section>;
 }
 
-function SeoFactory({ data, activeSite }: { data: SiteDataset; activeSite: ManagedSite }) {
-  const rows = activeSite === 'almabuild'
-    ? ['/ru/stroymaterialy-almaty', '/ru/gipsokarton-almaty', '/kk/almaty-qurylys-materialdary', '/en/building-materials-almaty']
-    : ['/pl', '/ru', '/en', '/blog'];
-  return <section className="ops-panel"><PanelTitle title="Очередь SEO-страниц" icon="seo" action={data.name} /><table className="ops-table"><thead><tr><th>Slug</th><th>Статус</th><th>Клики</th><th>Показы</th><th>AI-оценка</th><th>Действие</th></tr></thead><tbody>{rows.map((row, index) => <tr key={row}><td>{row}</td><td><StatusPill tone={data.searchConsole ? 'good' : 'warning'} label={data.searchConsole ? 'в индексе' : 'не подключено'} /></td><td>{data.searchConsole ? 42 + index * 18 : 0}</td><td>{data.searchConsole ? 900 + index * 210 : 0}</td><td>{86 - index * 4}</td><td><button className="table-action">Обновить</button></td></tr>)}</tbody></table></section>;
+function SuppliersPanel() {
+  return <NotConnectedPanel title="Поставщики" icon="suppliers" endpoint="/api/admin/suppliers" description="Backend пока не отдаёт поставщиков, прайсы и статусы синхронизации." />;
 }
 
-function AiStudio({ data }: { data: SiteDataset }) {
-  const templates = ['Описание товара', 'SEO-лендинг', 'Страница категории материалов', 'Кейс проекта', 'Перевод RU/KK/EN', 'Резюме сметы'];
-  return <div className="ai-studio"><aside>{templates.map((item, index) => <button className={index === 1 ? 'active' : ''} key={item}>{item}</button>)}</aside><section className="ops-panel"><PanelTitle title="Рабочее поле промта" icon="bot" /><textarea placeholder="Опиши задачу для генерации..." defaultValue={'Сгенерируй SEO-лендинг для ' + data.name + ' на домене ' + data.domain} /><button className="btn btn-primary"><AppIcon name="sparkles" />Генерировать</button></section><section className="ops-panel preview-panel"><PanelTitle title="Предпросмотр" icon="cms" /><p>Результат будет привязан только к сайту {data.name}.</p></section></div>;
+function AiStudio() {
+  return <NotConnectedPanel title="AI-студия" icon="bot" endpoint="/api/admin/ai/tasks" description="Общая AI-студия пока не имеет backend endpoint. Рабочие AI-действия уже подключены внутри редакторов каталога, SEO и Kazaxbud." />;
 }
 
 
@@ -1076,25 +1434,25 @@ function UsbKeyPanel() {
 }
 
 function Deployments({ data }: { data: SiteDataset }) {
-  return <section className="ops-panel"><PanelTitle title="Деплои Cloudflare Pages" icon="deploy" action={data.cloudflare} /><div className="deploy-list"><div><span><strong>{data.deployLabel}</strong><small>ветка main · последний коммит · продакшн</small></span><StatusPill tone="good" label="успешно" /><button>Логи</button></div></div></section>;
+  return <NotConnectedPanel title="Деплои Cloudflare Pages" icon="deploy" endpoint="/api/admin/deployments" description={`Backend пока не отдаёт деплои для ${data.cloudflare}.`} />;
 }
 
 function SettingsMatrix({ data }: { data: SiteDataset }) {
-  const rows = [['URL бэкенда Koyeb', data.backend], ['Проект Cloudflare Pages', data.cloudflare], ['Репозиторий GitHub', data.github], ['Свойство GA4', data.ga4 ? 'подключено' : 'не подключено'], ['Сайт Search Console', data.searchConsole ? 'подключено' : 'не подключено'], ['Языки', data.languages], ['Telegram / WhatsApp', 'не настроено']];
-  return <section className="ops-panel"><PanelTitle title="Настройки сайта" icon="settings" /><div className="settings-matrix">{rows.map(([row, value]) => <label key={row}><span>{row}</span><input defaultValue={value} /></label>)}</div></section>;
+  const rows = [['URL бэкенда', data.backend], ['Домен', data.domain], ['Cloudflare', data.cloudflare], ['Языки', data.languages], ['GA4', data.ga4 ? 'ожидается из Analytics API' : 'не подключено'], ['Search Console', data.searchConsole ? 'ожидается из Search Console API' : 'не подключено']];
+  return <section className="ops-panel"><PanelTitle title="Настройки сайта" icon="settings" action="только подключённые значения" /><div className="settings-matrix">{rows.map(([row, value]) => <label key={row}><span>{row}</span><input value={value} readOnly /></label>)}</div><p className="page-muted">Редактирование настроек требует backend endpoint <code>/api/admin/site-settings</code>.</p></section>;
 }
 
 function ModuleContent({ props, data }: { props: OperationsPageProps; data: SiteDataset }) {
   if (props.page === 'overview') return <Overview props={props} data={data} />;
   if (props.page === 'sites') return <SiteSettings data={data} />;
-  if (props.page === 'leads') return <LeadsCrm data={data} />;
+  if (props.page === 'leads') return <LeadsCrm props={props} />;
   if (props.page === 'catalog') return <CatalogTable props={props} />;
   if (props.page === 'materials') return <MaterialsTable props={props} />;
-  if (props.page === 'suppliers') return <GenericCards data={data} icon="suppliers" items={props.activeSite === 'almabuild' ? ['Партнер Knauf Алматы', 'Электрика Trade KZ', 'Плитка Market Almaty'] : ['Консалтинг-партнер', 'Хостинг-провайдер', 'Контент-подрядчик']} />;
+  if (props.page === 'suppliers') return <SuppliersPanel />;
   if (props.page === 'projects') return props.activeSite === 'almabuild' ? <AlmabuildEditor props={props} mode="projects" /> : <DimaPagesEditor props={props} />;
-  if (props.page === 'seo') return props.activeSite === 'almabuild' ? <AlmabuildEditor props={props} mode="kits" /> : <DimaPagesEditor props={props} />;
-  if (props.page === 'analytics') return <section className="ops-panel"><PanelTitle title="Аналитика" icon="analytics" action={data.ga4 ? 'GA4 + Search Console' : 'не подключено'} /><TrafficChart connected={data.ga4 || data.searchConsole} /></section>;
-  if (props.page === 'ai') return <AiStudio data={data} />;
+  if (props.page === 'seo') return props.activeSite === 'almabuild' ? <KazaxbudSeoTable props={props} /> : <DimaPagesEditor props={props} />;
+  if (props.page === 'analytics') return <section className="ops-panel"><PanelTitle title="Аналитика" icon="analytics" action={props.analytics?.configured || props.searchConsole?.overview?.configured ? 'данные из API' : 'нет API-данных'} /><TrafficChart analytics={props.analytics} searchConsole={props.searchConsole} /></section>;
+  if (props.page === 'ai') return <AiStudio />;
   if (props.page === 'usb') return <UsbKeyPanel />;
   if (props.page === 'deployments') return <Deployments data={data} />;
   return <SettingsMatrix data={data} />;

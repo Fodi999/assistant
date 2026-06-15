@@ -38,6 +38,17 @@ export type AlmabuildContent = {
   projects: Project[];
 };
 
+export type AlmabuildLead = {
+  id: string;
+  createdAt: string;
+  name: string;
+  phone: string;
+  type: string;
+  area: string;
+  comment: string;
+  items: string[];
+};
+
 export function getAlmabuildContent(): Promise<AlmabuildContent> {
   return apiFetch<AlmabuildContent>('/api/admin/almabuild/content');
 }
@@ -47,6 +58,10 @@ export function saveAlmabuildContent(content: AlmabuildContent): Promise<Almabui
     method: 'PUT',
     body: JSON.stringify(content)
   });
+}
+
+export function listAlmabuildLeads(): Promise<AlmabuildLead[]> {
+  return apiFetch<AlmabuildLead[]>('/api/admin/almabuild/leads');
 }
 
 

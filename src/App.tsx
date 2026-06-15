@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { deleteAdminUser, getAdminStats, listAdminUsers } from './api/admin';
 import { getAnalyticsOverview, getAnalyticsRealtime, getSearchConsoleBundle, type AnalyticsOverview, type AnalyticsRealtime, type SearchConsoleBundle } from './api/analytics';
-import { getAlmabuildContent, type AlmabuildContent } from './api/almabuild';
+import { getAlmabuildContent, listAlmabuildLeads, type AlmabuildContent, type AlmabuildLead } from './api/almabuild';
 import { adminLogin, adminLogout, verifyAdminToken } from './api/auth';
 import { listAdminCategories, listAdminProducts } from './api/catalog';
 import { listArticles } from './api/cms';
@@ -43,6 +43,7 @@ export function App() {
   const [articles, setArticles] = useState<CmsArticle[]>([]);
   const [shopProducts, setShopProducts] = useState<ShopProduct[]>([]);
   const [almabuildContent, setAlmabuildContent] = useState<AlmabuildContent | null>(null);
+  const [almabuildLeads, setAlmabuildLeads] = useState<AlmabuildLead[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
   const [realtimeAnalytics, setRealtimeAnalytics] = useState<AnalyticsRealtime | null>(null);
   const [searchConsole, setSearchConsole] = useState<SearchConsoleBundle | null>(null);
@@ -71,7 +72,7 @@ export function App() {
     setLoading(true);
     setDataError(null);
     try {
-      const [nextStats, nextUsers, nextProducts, nextCategories, nextArticles, nextShopProducts, nextAlmabuild, nextAnalytics, nextRealtime, nextSearchConsole] = await Promise.all([
+      const [nextStats, nextUsers, nextProducts, nextCategories, nextArticles, nextShopProducts, nextAlmabuild, nextAlmabuildLeads, nextAnalytics, nextRealtime, nextSearchConsole] = await Promise.all([
         getAdminStats(),
         listAdminUsers(),
         listAdminProducts(),
@@ -79,6 +80,7 @@ export function App() {
         listArticles(),
         listShopProducts(),
         getAlmabuildContent().catch(() => null),
+        listAlmabuildLeads().catch(() => []),
         getAnalyticsOverview(days).catch(() => null),
         getAnalyticsRealtime().catch(() => null),
         getSearchConsoleBundle(days).catch(() => null)
@@ -90,6 +92,7 @@ export function App() {
       setArticles(nextArticles);
       setShopProducts(nextShopProducts);
       setAlmabuildContent(nextAlmabuild);
+      setAlmabuildLeads(nextAlmabuildLeads);
       setAnalytics(nextAnalytics);
       setRealtimeAnalytics(nextRealtime);
       setSearchConsole(nextSearchConsole);
@@ -179,6 +182,7 @@ export function App() {
             articles={articles}
             shopProducts={shopProducts}
             almabuildContent={almabuildContent}
+            almabuildLeads={almabuildLeads}
             analytics={activeSite === 'dima' ? analytics : null}
             realtime={activeSite === 'dima' ? realtimeAnalytics : null}
             searchConsole={activeSite === 'dima' ? searchConsole : null}

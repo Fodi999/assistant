@@ -28,38 +28,38 @@ function joinList(value: string[]) {
 
 function categoryTemplate(index: number): MaterialCategory {
   return {
-    index: '[0:' + (index + 1) + ']',
-    slug: 'new-category-' + Date.now().toString(36),
-    title: 'Новая категория',
-    text: 'Коротко опишите, какие материалы входят в этот раздел.',
-    bullets: ['Позиция 1', 'Позиция 2'],
-    photo: 'material-drywall'
+    index: '',
+    slug: '',
+    title: '',
+    text: '',
+    bullets: [],
+    photo: ''
   };
 }
 
-function productTemplate(categorySlug = 'gipsokarton-profili'): Product {
+function productTemplate(categorySlug = ''): Product {
   return {
     categorySlug,
-    category: 'Материалы',
-    title: 'Новый материал',
-    spec: 'Характеристики и применение',
-    photo: 'photo-building'
+    category: '',
+    title: '',
+    spec: '',
+    photo: ''
   };
 }
 
 function kitTemplate(): Kit {
   return {
-    title: 'Новый комплект',
-    text: 'Описание комплекта под объект.',
-    items: ['Материал', 'Монтаж']
+    title: '',
+    text: '',
+    items: []
   };
 }
 
 function projectTemplate(): Project {
   return {
-    title: 'Новый проект',
-    meta: 'Тип объекта · площадь · сроки',
-    photo: 'photo-retail'
+    title: '',
+    meta: '',
+    photo: ''
   };
 }
 

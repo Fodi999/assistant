@@ -25,16 +25,6 @@ interface CmsPageProps {
   onLoadCms: () => Promise<void>;
 }
 
-const CATEGORY_FALLBACK: Array<{ slug: string; title: string }> = [
-  { slug: 'food', title: 'Еда' },
-  { slug: 'equipment', title: 'Оборудование' },
-  { slug: 'recipes', title: 'Рецепты' },
-  { slug: 'techniques', title: 'Техники' },
-  { slug: 'ingredients', title: 'Ингредиенты' },
-  { slug: 'restaurant-management', title: 'Менеджмент ресторана' },
-  { slug: 'nutrition', title: 'Питание' },
-  { slug: 'beverages', title: 'Напитки' }
-];
 const TEXT_LENGTHS = [2000, 3500, 5000, 7500, 10000];
 const PHOTO_COUNTS = [1, 2, 4, 6, 8, 10, 12];
 const IMAGE_MODELS = [
@@ -228,7 +218,7 @@ export function CmsPage({ articles, loading, error, onLoadCms }: CmsPageProps) {
         title: category.title_ru || category.title_en || category.slug
       }));
     }
-    return CATEGORY_FALLBACK;
+    return [];
   }, [categories]);
 
   function normalizeCategory(raw: string): string {
