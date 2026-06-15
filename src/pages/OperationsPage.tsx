@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { ScrollArea } from '../components/ui/scroll-area';
 import type { AppPage, ManagedSite } from '../components/Sidebar';
 import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
 import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
@@ -504,12 +509,56 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
         <div className="catalog-edit-form">
           {(tab === 'content' || tab === 'languages') ? <div className="editor-grid"><div className="span-2 seo-language-tabs">{langTabs.map(([id, label]) => <button key={id} type="button" className={language === id ? 'active' : ''} onClick={() => setLanguage(id)}>{label}</button>)}</div><EditorField label={`Title ${language.toUpperCase()}`} value={String(draft[titleField] || '')} onChange={(value) => setText(titleField, value)} /><EditorField label="Slug страницы" value={String(draft.slug || '')} onChange={(value) => setText('slug', value)} /><EditorField label="Категория" value={String(draft.category || '')} onChange={(value) => setText('category', value)} /><EditorField label={`Content ${language.toUpperCase()}`} value={String(draft[contentField] || '')} onChange={(value) => setText(contentField, value)} multiline /></div> : null}
           {tab === 'seo' ? <div className="editor-grid"><div className="span-2 seo-language-tabs">{langTabs.map(([id, label]) => <button key={id} type="button" className={language === id ? 'active' : ''} onClick={() => setLanguage(id)}>{label}</button>)}</div><EditorField label={`SEO title ${language.toUpperCase()}`} value={String(draft[seoTitleField] || '')} onChange={(value) => setText(seoTitleField, value)} /><EditorField label="Fallback SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label={`SEO description ${language.toUpperCase()}`} value={String(draft[seoDescriptionField] || '')} onChange={(value) => setText(seoDescriptionField, value)} multiline /><EditorField label="Fallback SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /></div> : null}
-          {tab === 'media' ? <div className="seo-media-layout"><section className="seo-media-main"><h4>Изображения статьи</h4><div className="seo-photo-grid">{(images.length ? images : [String(draft.image_url || '')]).map((url, index) => <article key={index} className={index === selectedImage ? 'active' : ''}><button className="seo-photo-preview" type="button" onClick={() => url && setFullscreenImage(url)}>{url ? <img src={url} alt={`Фото ${index + 1}`} /> : <span><AppIcon name="seo" /></span>}</button><div className="seo-photo-meta"><strong>{index === 0 ? 'Обложка' : `Фото ${index + 1}`}</strong><input value={url} onChange={(event) => updateImage(index, event.target.value)} placeholder="https://..." /><div className="editor-actions"><button className="btn btn-quiet" type="button" onClick={() => { setSelectedImage(index); setDraft((current) => ({ ...current, image_url: url })); }}>Главное</button><button className="btn btn-quiet" type="button" onClick={() => void generateArticleImage(index)} disabled={Boolean(busy)}>{busy === `image-${index}` ? 'Генерируем...' : 'Gemini фото'}</button><button className="btn btn-quiet" type="button" onClick={() => url && setFullscreenImage(url)} disabled={!url}>Открыть</button><button className="btn btn-quiet" type="button" onClick={() => removeImage(index)}>Удалить</button></div></div></article>)}<button className="btn btn-primary seo-photo-add" type="button" onClick={() => void addGeneratedImage()} disabled={Boolean(busy)}><AppIcon name="sparkles" />+ Фото Gemini<small>gemini-3.1-flash-image</small></button><button className="btn btn-quiet seo-photo-add" type="button" onClick={addImage}>+ URL</button></div></section><aside className="seo-media-side"><h4>Параметры медиа</h4><div className="seo-model-card"><AppIcon name="sparkles" /><span><strong>Текст и SEO</strong><small>gemini-3.1-pro-preview</small></span></div><div className="seo-model-card"><AppIcon name="package" /><span><strong>Фото</strong><small>gemini-3.1-flash-image</small></span></div><h4>Что можно сделать</h4><ul><li>Перегенерировать выбранное фото</li><li>Создать обложку с помощью Gemini</li><li>Добавить изображение по URL</li><li>Сохранить страницу и опубликовать</li></ul><h4>Статус генерации</h4><div className="seo-status-card">{(images[selectedImage] || draft.image_url) ? <img src={String(images[selectedImage] || draft.image_url)} alt="Выбранное фото" /> : null}<span><strong>Выбрано: {selectedImage === 0 ? 'Обложка' : `Фото ${selectedImage + 1}`}</strong><small>{busy ? 'В работе...' : 'Готово'}</small></span></div><label className="editor-check"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label></aside></div> : null}
+          {tab === 'media' ? <div className="col-span-2 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <Card className="bg-zinc-950/60">
+              <CardHeader><CardTitle>Изображения статьи</CardTitle></CardHeader>
+              <CardContent>
+                <ScrollArea className="max-h-[58vh] pr-2">
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {(images.length ? images : [String(draft.image_url || '')]).map((url, index) => <Card key={index} className={index === selectedImage ? 'border-orange-500/70 bg-zinc-950' : 'bg-zinc-950'}>
+                      <CardContent className="grid gap-3 p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                        <button className="aspect-video overflow-hidden rounded-md border border-zinc-800 bg-zinc-950" type="button" onClick={() => url && setFullscreenImage(url)}>
+                          {url ? <img className="h-full w-full object-cover" src={url} alt={`Фото ${index + 1}`} /> : <span className="grid h-full place-items-center text-zinc-500"><AppIcon name="seo" /></span>}
+                        </button>
+                        <div className="grid min-w-0 gap-2">
+                          <strong>{index === 0 ? 'Обложка' : `Фото ${index + 1}`}</strong>
+                          <Input value={url} onChange={(event) => updateImage(index, event.target.value)} placeholder="https://..." />
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="secondary" type="button" onClick={() => { setSelectedImage(index); setDraft((current) => ({ ...current, image_url: url })); }}>Главное</Button>
+                            <Button size="sm" variant="secondary" type="button" onClick={() => void generateArticleImage(index)} disabled={Boolean(busy)}>{busy === `image-${index}` ? 'Генерируем...' : 'Gemini фото'}</Button>
+                            <Button size="sm" variant="secondary" type="button" onClick={() => url && setFullscreenImage(url)} disabled={!url}>Открыть</Button>
+                            <Button size="sm" variant="destructive" type="button" onClick={() => removeImage(index)}>Удалить</Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>)}
+                    <Button className="h-20 border border-dashed border-orange-500/70 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20" type="button" onClick={() => void addGeneratedImage()} disabled={Boolean(busy)}><AppIcon name="sparkles" />+ Фото Gemini <small className="text-xs opacity-70">gemini-3.1-flash-image</small></Button>
+                    <Button className="h-20 border-dashed" variant="outline" type="button" onClick={addImage}>+ URL</Button>
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-950/60">
+              <CardHeader><CardTitle>Параметры медиа</CardTitle></CardHeader>
+              <CardContent className="grid gap-4">
+                <Card className="bg-zinc-950"><CardContent className="flex items-center gap-3 p-3"><AppIcon name="sparkles" /><span><strong>Текст и SEO</strong><small className="block text-orange-400">gemini-3.1-pro-preview</small></span></CardContent></Card>
+                <Card className="bg-zinc-950"><CardContent className="flex items-center gap-3 p-3"><AppIcon name="package" /><span><strong>Фото</strong><small className="block text-orange-400">gemini-3.1-flash-image</small></span></CardContent></Card>
+                <div><h4 className="mb-2 text-sm font-black">Что можно сделать</h4><ul className="list-disc space-y-2 pl-5 text-sm text-zinc-400"><li>Перегенерировать выбранное фото</li><li>Создать обложку с помощью Gemini</li><li>Добавить изображение по URL</li><li>Сохранить страницу и опубликовать</li></ul></div>
+                <Card className="bg-zinc-950"><CardContent className="flex items-center gap-3 p-3">{(images[selectedImage] || draft.image_url) ? <img className="h-14 w-14 rounded-md object-cover" src={String(images[selectedImage] || draft.image_url)} alt="Выбранное фото" /> : null}<span><strong>Выбрано: {selectedImage === 0 ? 'Обложка' : `Фото ${selectedImage + 1}`}</strong><small className="block text-orange-400">{busy ? 'В работе...' : 'Готово'}</small></span></CardContent></Card>
+                <label className="flex items-center gap-2 text-sm font-bold text-zinc-300"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label>
+              </CardContent>
+            </Card>
+          </div> : null}
         </div>
       </div>
       <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : article ? 'Сохранить страницу' : 'Создать страницу'}</button></div>
     </section>
-    {fullscreenImage ? <div className="seo-photo-fullscreen" role="dialog" aria-label="Фото на весь экран" onMouseDown={(event) => { event.stopPropagation(); setFullscreenImage(null); }}><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={() => setFullscreenImage(null)}>Закрыть</button><img src={fullscreenImage} alt="Фото на весь экран" onMouseDown={(event) => event.stopPropagation()} /></div> : null}
+    <Dialog open={Boolean(fullscreenImage)} onOpenChange={(open) => { if (!open) setFullscreenImage(null); }}>
+      <DialogContent className="w-[min(96vw,1600px)] border-zinc-800 bg-black/95 p-4">
+        <DialogTitle className="sr-only">Фото на весь экран</DialogTitle>
+        {fullscreenImage ? <img className="max-h-[86vh] w-full rounded-md object-contain" src={fullscreenImage} alt="Фото на весь экран" /> : null}
+      </DialogContent>
+    </Dialog>
   </div>;
 }
 
