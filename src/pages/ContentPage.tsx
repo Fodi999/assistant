@@ -26,6 +26,7 @@ const languages: Array<{ key: Language; label: string }> = [
 ];
 
 const ARTICLE_IMAGE_COUNT = 4;
+const ARTICLE_IMAGE_MAX = 12;
 
 type ArticleDraft = {
   id?: string;
@@ -132,7 +133,8 @@ function articleImageSeries(article?: CmsArticle): string[] {
     .map((url) => url.trim())
     .filter(Boolean)
     .filter((url, index, list) => list.indexOf(url) === index);
-  return unique.slice(0, ARTICLE_IMAGE_COUNT).concat(Array(ARTICLE_IMAGE_COUNT).fill('')).slice(0, ARTICLE_IMAGE_COUNT);
+  const targetCount = Math.max(ARTICLE_IMAGE_COUNT, Math.min(ARTICLE_IMAGE_MAX, unique.length));
+  return unique.slice(0, ARTICLE_IMAGE_MAX).concat(Array(targetCount).fill('')).slice(0, targetCount);
 }
 
 function withVisualStory(content: string, images: string[]): string {
@@ -196,6 +198,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [draft, setDraft] = useState<ArticleDraft>(() => draftFromArticle());
   const [images, setImages] = useState<string[]>(() => articleImageSeries());
   const [selectedImage, setSelectedImage] = useState(0);
+  const [fullscreenImage, setFullscreenImage] = useState<number | null>(null);
   const [activeLang, setActiveLang] = useState<Language>('ru');
   const [aiTopic, setAiTopic] = useState('');
   const [aiImagePrompt, setAiImagePrompt] = useState('');
@@ -230,6 +233,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setDraft(draftFromArticle());
     setImages(articleImageSeries());
     setSelectedImage(0);
+    setFullscreenImage(null);
     setAiTopic('');
     setAiImagePrompt('');
     setActiveLang('ru');
@@ -243,6 +247,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setDraft(draftFromArticle(article));
     setImages(articleImageSeries(article));
     setSelectedImage(0);
+    setFullscreenImage(null);
     setAiTopic(articleTitle(article));
     setAiImagePrompt(`Editorial food photo for article: ${articleTitle(article)}`);
     setActiveLang('ru');
@@ -388,9 +393,61 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     }
   };
 
+  const generateAdditionalPhoto = async () => {
+    if (images.length >= ARTICLE_IMAGE_MAX) {
+      setMessage(`Максимум ${ARTICLE_IMAGE_MAX} фото в галерее.`);
+      return;
+    }
+    const title = draft.title_en || draft.title_ru || draft.title_pl || draft.title_uk || aiTopic;
+    if (!title.trim()) {
+      setMessage('Нужен заголовок или тема для генерации фото.');
+      return;
+    }
+    const index = images.length;
+    setImages((current) => [...current, '']);
+    setSelectedImage(index);
+    setImageBusy(true);
+    setMessage(undefined);
+    try {
+      const prompt = `${aiImagePrompt || title}. Additional gallery photo ${index + 1}, realistic editorial food image, no text.`;
+      const result = await aiGenerateArticleImage(title, prompt, index, false, [], 'flash', 'editorial', { photoScenarios: [] });
+      setImages((current) => current.map((item, itemIndex) => itemIndex === index ? result.image_url : item));
+      setMessage(`AI добавил фото ${index + 1}.`);
+    } catch (error) {
+      setImages((current) => current.filter((_, itemIndex) => itemIndex !== index));
+      setSelectedImage(Math.max(0, index - 1));
+      setMessage(error instanceof Error ? error.message : 'AI не создал дополнительное фото.');
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
   const setImageAt = (index: number, url: string) => {
     setImages((current) => current.map((item, itemIndex) => itemIndex === index ? url : item));
     if (index === 0) patchDraft({ image_url: url });
+  };
+
+  const addImageSlot = () => {
+    setImages((current) => {
+      if (current.length >= ARTICLE_IMAGE_MAX) return current;
+      setSelectedImage(current.length);
+      return [...current, ''];
+    });
+  };
+
+  const removeSelectedImage = () => {
+    setImages((current) => {
+      if (current.length <= ARTICLE_IMAGE_COUNT) {
+        const next = current.map((item, index) => index === selectedImage ? '' : item);
+        if (selectedImage === 0) patchDraft({ image_url: '' });
+        return next;
+      }
+      const next = current.filter((_, index) => index !== selectedImage);
+      const nextSelected = Math.min(selectedImage, next.length - 1);
+      setSelectedImage(nextSelected);
+      if (selectedImage === 0) patchDraft({ image_url: next[0] || '' });
+      return next;
+    });
   };
 
   const removeDraft = async () => {
@@ -420,7 +477,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       <div className="filter-bar"><select value={site} onChange={(event) => setSite(event.target.value as SiteKey | 'all')}><option value="all">Все сайты</option><option value="culinary">Кулинарный</option><option value="construction">Строительный</option></select><select value={type} onChange={(event) => setType(event.target.value as ContentType | 'all')}><option value="all">Все типы</option><option value="article">статья</option><option value="review">обзор</option><option value="comparison">сравнение</option><option value="roundup">подборка</option><option value="recipe">рецепт</option></select></div>
       <section className="ops-panel"><table className="ops-table"><thead><tr><th>Фото</th><th>Материал</th><th>Сайт</th><th>Тип</th><th>Партнерские товары</th><th>Статус</th><th /></tr></thead><tbody>{rows.map((item) => {
         const imageUrl = articleImages.get(item.id);
-        return <tr key={item.id}><td>{imageUrl ? <img className="catalog-product-thumb" src={imageUrl} alt={item.title.ru} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="cms" size={18} /></span>}</td><td><strong>{item.title.ru}</strong><small>{item.slug}</small><small>Фото: {articleImageCounts.get(item.id) ?? 0}/4</small></td><td>{siteLabel(item.site)}</td><td>{contentTypeLabels[item.type]}</td><td>{item.affiliateProductIds.join(', ') || 'нет'}</td><td><span className="status-pill info"><i />{publishStatusLabels[item.status as PublishStatus]}</span></td><td><button className="table-action" type="button" onClick={() => openEdit(item.id)}>Редактировать</button></td></tr>;
+        return <tr key={item.id}><td>{imageUrl ? <img className="catalog-product-thumb" src={imageUrl} alt={item.title.ru} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="cms" size={18} /></span>}</td><td><strong>{item.title.ru}</strong><small>{item.slug}</small><small>Фото: {articleImageCounts.get(item.id) ?? 0}/{Math.max(ARTICLE_IMAGE_COUNT, articleImageCounts.get(item.id) ?? 0)}</small></td><td>{siteLabel(item.site)}</td><td>{contentTypeLabels[item.type]}</td><td>{item.affiliateProductIds.join(', ') || 'нет'}</td><td><span className="status-pill info"><i />{publishStatusLabels[item.status as PublishStatus]}</span></td><td><button className="table-action" type="button" onClick={() => openEdit(item.id)}>Редактировать</button></td></tr>;
       })}</tbody></table></section>
       {editorOpen ? (
         <div className="modal-overlay">
@@ -446,19 +503,22 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
             </div>
 
             <section className="content-photo-panel">
-              <div className="content-photo-preview">
+              <button className="content-photo-preview" type="button" onClick={() => images[selectedImage] ? setFullscreenImage(selectedImage) : undefined}>
                 {images[selectedImage] ? <img src={images[selectedImage]} alt={draft.title_ru || draft.slug || 'Фото материала'} onError={() => setMessage('Фото URL не загрузился в браузере. Проверь, что R2 public URL доступен без авторизации.')} /> : <span><AppIcon name="cms" size={34} />Фото {selectedImage + 1} не выбрано</span>}
-              </div>
+              </button>
               <div className="content-photo-tools">
                 <div className="content-image-strip">
                   {images.map((url, index) => <button key={index} className={selectedImage === index ? 'active' : ''} type="button" onClick={() => setSelectedImage(index)}>{url ? <img src={url} alt={`Фото ${index + 1}`} /> : <span>{index + 1}</span>}<small>{index === 0 ? 'Обложка' : `Фото ${index + 1}`}</small></button>)}
+                  {images.length < ARTICLE_IMAGE_MAX ? <button className="content-image-add" type="button" onClick={addImageSlot}><span>+</span><small>Фото</small></button> : null}
                 </div>
                 <label className="editor-field"><span>Промпт фото</span><textarea value={aiImagePrompt} onChange={(event) => setAiImagePrompt(event.target.value)} placeholder="Editorial food photo, crispy fish skin, professional kitchen lighting" /></label>
                 <div className="editor-actions">
                   <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)} />Загрузить</label>
                   <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhoto}><AppIcon name="bot" />AI фото</button>
                   <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhotoSeries}><AppIcon name="bot" />AI 4 фото</button>
-                  <button className="btn btn-quiet" type="button" disabled={imageBusy || !images[selectedImage]} onClick={() => setImageAt(selectedImage, '')}>Убрать</button>
+                  <button className="btn btn-ai" type="button" disabled={imageBusy || images.length >= ARTICLE_IMAGE_MAX} onClick={generateAdditionalPhoto}><AppIcon name="bot" />AI + фото</button>
+                  <button className="btn btn-quiet" type="button" disabled={imageBusy || !images[selectedImage]} onClick={() => setFullscreenImage(selectedImage)}>На весь экран</button>
+                  <button className="btn btn-quiet" type="button" disabled={imageBusy || (!images[selectedImage] && images.length <= ARTICLE_IMAGE_COUNT)} onClick={removeSelectedImage}>Убрать</button>
                 </div>
               </div>
             </section>
@@ -481,6 +541,26 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
               <button className="btn btn-primary" type="button" disabled={busy} onClick={saveDraft}>Сохранить</button>
             </div>
           </div>
+          {fullscreenImage !== null ? (
+            <div className="image-lightbox" onClick={() => setFullscreenImage(null)}>
+              <div className="image-lightbox-panel" onClick={(event) => event.stopPropagation()}>
+                <div className="image-lightbox-head">
+                  <strong>{fullscreenImage === 0 ? 'Обложка' : `Фото ${fullscreenImage + 1}`}</strong>
+                  <div className="editor-actions">
+                    <button className="btn btn-quiet" type="button" onClick={() => setFullscreenImage((current) => current === null ? null : Math.max(0, current - 1))}>Назад</button>
+                    <button className="btn btn-quiet" type="button" onClick={() => setFullscreenImage((current) => current === null ? null : Math.min(images.length - 1, current + 1))}>Вперед</button>
+                    <button className="btn btn-primary" type="button" onClick={() => setFullscreenImage(null)}>Закрыть</button>
+                  </div>
+                </div>
+                <div className="image-lightbox-stage">
+                  {images[fullscreenImage] ? <img src={images[fullscreenImage]} alt={`Фото ${fullscreenImage + 1}`} /> : <span>Фото не выбрано</span>}
+                </div>
+                <div className="content-image-strip lightbox-strip">
+                  {images.map((url, index) => <button key={index} className={fullscreenImage === index ? 'active' : ''} type="button" onClick={() => setFullscreenImage(index)}>{url ? <img src={url} alt={`Фото ${index + 1}`} /> : <span>{index + 1}</span>}<small>{index === 0 ? 'Обложка' : `Фото ${index + 1}`}</small></button>)}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
