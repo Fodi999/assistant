@@ -402,6 +402,16 @@ pub fn create_router(
             admin_auth_service.clone(),
             require_super_admin,
         ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
         .with_state(pool.clone());
 
     let admin_almabuild_routes = Router::new()
@@ -424,6 +434,16 @@ pub fn create_router(
             admin_auth_service.clone(),
             require_super_admin,
         ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
         .with_state(pool.clone());
 
     let admin_ai_routes = Router::new()
@@ -443,6 +463,16 @@ pub fn create_router(
             admin_auth_service.clone(),
             require_super_admin,
         ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
         .with_state(pool.clone());
 
     let admin_panel_routes = Router::new()
@@ -505,6 +535,16 @@ pub fn create_router(
             admin_auth_service.clone(),
             require_super_admin,
         ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
         .with_state(pool.clone());
 
     // Admin analytics routes (protected with admin JWT)
