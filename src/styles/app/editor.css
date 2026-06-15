@@ -48,7 +48,8 @@
 }
 
 .editor-field input,
-.editor-field textarea {
+.editor-field textarea,
+.editor-field select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -65,8 +66,22 @@
 }
 
 .editor-field:focus-within input,
-.editor-field:focus-within textarea {
+.editor-field:focus-within textarea,
+.editor-field:focus-within select {
   border-color: rgba(96,113,149,.55);
+}
+
+.content-editor-modal {
+  width: min(1280px, calc(100vw - 44px));
+}
+
+.content-lang-tabs {
+  justify-content: flex-start;
+}
+
+.content-body-editor {
+  min-height: 300px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .editor-actions {
