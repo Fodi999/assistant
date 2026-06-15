@@ -9,11 +9,15 @@ use serde_json::Value;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 
-use crate::{infrastructure::llm_adapter::LlmAdapter, shared::AppError};
+use crate::{
+    infrastructure::{llm_adapter::LlmAdapter, R2Client},
+    shared::AppError,
+};
 
 const SITE_KEY: &str = "almabuild";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MaterialCategory {
     pub index: String,
     pub slug: String,
@@ -21,6 +25,8 @@ pub struct MaterialCategory {
     pub text: String,
     pub bullets: Vec<String>,
     pub photo: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,12 +104,12 @@ fn clean_items(value: Option<Vec<String>>) -> Vec<String> {
 fn default_content() -> AlmabuildContent {
     AlmabuildContent {
         material_categories: vec![
-            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], photo: "material-drywall".into() },
-            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], photo: "material-mixes".into() },
-            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], photo: "material-flooring".into() },
-            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], photo: "material-electric".into() },
-            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], photo: "material-ceiling".into() },
-            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], photo: "material-osb".into() },
+            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], photo: "material-drywall".into(), image_url: None },
+            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], photo: "material-mixes".into(), image_url: None },
+            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], photo: "material-flooring".into(), image_url: None },
+            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], photo: "material-electric".into(), image_url: None },
+            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], photo: "material-ceiling".into(), image_url: None },
+            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], photo: "material-osb".into(), image_url: None },
         ],
         products: vec![
             Product { category_slug: "gipsokarton-profili".into(), category: "ГКЛ".into(), title: "ГКЛ 12.5 мм стандартный".into(), spec: "2500x1200 мм · стены и потолки".into(), photo: "photo-plans".into() },
@@ -386,6 +392,7 @@ pub async fn admin_ai_edit(
 
 pub async fn admin_ai_materials_from_photo(
     Extension(llm): Extension<Arc<LlmAdapter>>,
+    Extension(r2): Extension<R2Client>,
     mut multipart: Multipart,
 ) -> Result<Json<MaterialsFromPhotoResponse>, AppError> {
     let mut image: Option<bytes::Bytes> = None;
@@ -433,13 +440,25 @@ pub async fn admin_ai_materials_from_photo(
     let image = image
         .ok_or_else(|| AppError::validation("Загрузите фото материала в поле image или file"))?;
 
+    let extension = match mime_type.as_str() {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        "image/jpeg" | "image/jpg" => "jpg",
+        _ => "jpg",
+    };
+    let image_key = format!("almabuild/materials/{}.{}", uuid::Uuid::new_v4(), extension);
+    let image_url = r2
+        .upload_image(&image_key, image.clone(), &mime_type)
+        .await?;
+
     let prompt = format!(
         r#"Ты Vision-модель для CRM строительного сайта KAZAXBUD / ALMABUILD в Алматы.
 Проанализируй загруженное фото: упаковки, листы, профили, смеси, плитку, инструмент, складскую полку или группу стройматериалов.
 Создай ровно {count} карточек категорий/материалов для секции "Материалы" сайта.
 
 Верни ТОЛЬКО JSON без markdown в формате:
-{{"materials":[{{"index":"[0:7]","slug":"latin-slug","title":"Название","text":"Короткое B2B-описание","bullets":["Пункт"],"photo":"material-mixes"}}]}}
+{{"materials":[{{"index":"[0:7]","slug":"latin-slug","title":"Название","text":"Короткое B2B-описание","bullets":["Пункт"],"photo":"material-mixes","imageUrl":"{image_url}"}}]}}
 
 Правила:
 - Язык: русский.
@@ -449,6 +468,7 @@ pub async fn admin_ai_materials_from_photo(
 - slug: латиница lower-case через дефис, уникальный.
 - index начинай с [0:{first_index}] и продолжай по порядку.
 - photo выбери один класс: material-drywall, material-mixes, material-flooring, material-electric, material-ceiling, material-osb.
+- imageUrl всегда ставь ровно: {image_url}
 - Если фото содержит конкретные товары, группируй их в полезные категории сайта, а не в случайные одиночные позиции.
 - Не повторяй уже существующие карточки, если можно сделать новые или уточнённые.
 
@@ -460,6 +480,7 @@ pub async fn admin_ai_materials_from_photo(
 {instruction}
 "#,
         count = count,
+        image_url = image_url,
         first_index = existing_count + 1,
         existing_count = existing_count,
         existing = if existing.trim().is_empty() {
@@ -486,6 +507,14 @@ pub async fn admin_ai_materials_from_photo(
         ));
     }
     Ok(Json(MaterialsFromPhotoResponse {
-        materials: response.materials.into_iter().take(count).collect(),
+        materials: response
+            .materials
+            .into_iter()
+            .take(count)
+            .map(|mut material| {
+                material.image_url = Some(image_url.clone());
+                material
+            })
+            .collect(),
     }))
 }

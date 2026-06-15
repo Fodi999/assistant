@@ -416,6 +416,7 @@ pub fn create_router(
 
     let admin_almabuild_routes = admin_almabuild_routes
         .layer(Extension(Arc::clone(&llm_adapter)))
+        .layer(Extension(r2_client.clone()))
         .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
