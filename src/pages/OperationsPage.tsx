@@ -1351,13 +1351,38 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
     <PanelTitle title="Материалы Kazaxbud" icon="materials" action={`${rows.length} из ${content.materialCategories.length}`} />
     <div className="catalog-toolbar"><label><span>Поиск</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Название, slug, индекс, визуальный класс" /></label><button className="btn btn-primary" type="button" onClick={() => setCreating(true)}><AppIcon name="sparkles" />Добавить материал</button><button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из backend</button></div>
     <Card className="bg-zinc-950/70">
-      <CardHeader><CardTitle>Gemini Vision: материалы по фото</CardTitle></CardHeader>
+      <CardHeader className="pb-3"><CardTitle>Gemini Vision: материалы по фото</CardTitle></CardHeader>
       <CardContent className="grid gap-4">
-        <div className="grid gap-3 xl:grid-cols-[minmax(220px,320px)_180px_minmax(0,1fr)_220px]">
-          <label className="grid gap-2 text-sm font-semibold text-zinc-400"><span>Фото материала</span><input type="file" accept="image/*" onChange={(event) => setVisionFile(event.target.files?.[0] || null)} />{visionPreviewUrl ? <img className="h-28 w-full rounded border border-zinc-800 object-cover" src={visionPreviewUrl} alt="Фото для Gemini Vision" /> : <span className="grid h-28 place-items-center rounded border border-dashed border-zinc-800 text-xs text-zinc-500">Gemini увидит выбранное фото</span>}</label>
-          <div className="grid gap-2 text-sm font-semibold text-zinc-400"><span>Количество</span><div className="flex h-11 items-center gap-2"><button className="btn btn-quiet h-10 w-10 px-0" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value - 1))}>-</button><input className="h-10 w-16 rounded border border-zinc-800 bg-black text-center text-zinc-100" type="number" min={1} max={12} value={visionCount} onChange={(event) => setVisionCount(clampMaterialCount(Number(event.target.value) || 1))} /><button className="btn btn-quiet h-10 w-10 px-0" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value + 1))}>+</button></div></div>
-          <SeoEditorField label="Задача для Gemini" value={visionInstruction} onChange={setVisionInstruction} multiline textareaClassName="min-h-20" />
-          <Button className="min-h-20 bg-orange-500 text-black hover:bg-orange-400" type="button" onClick={() => void runVision()} disabled={visionBusy}><AppIcon name="sparkles" />{visionBusy ? 'Gemini смотрит фото...' : 'Создать по фото'}</Button>
+        <div className="grid gap-4 xl:grid-cols-[minmax(260px,360px)_170px_minmax(360px,1fr)]">
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-black text-zinc-400">Фото материала</span>
+              <Button asChild variant="secondary" size="sm">
+                <label htmlFor="kazaxbud-material-photo" className="cursor-pointer"><AppIcon name="materials" />Выбрать фото</label>
+              </Button>
+            </div>
+            <Input id="kazaxbud-material-photo" className="sr-only" type="file" accept="image/*" onChange={(event) => setVisionFile(event.target.files?.[0] || null)} />
+            <div className="overflow-hidden rounded-md border border-zinc-800 bg-black">
+              {visionPreviewUrl ? <img className="h-44 w-full object-cover" src={visionPreviewUrl} alt="Фото для Gemini Vision" /> : <div className="grid h-44 place-items-center text-center text-xs font-bold text-zinc-500"><span>Фото для Gemini Vision</span></div>}
+            </div>
+            <div className="min-h-5 truncate text-xs font-bold text-zinc-500">{visionFile?.name || 'Файл не выбран'}</div>
+          </div>
+          <div className="grid content-start gap-3">
+            <span className="text-sm font-black text-zinc-400">Количество</span>
+            <div className="grid grid-cols-[40px_minmax(0,1fr)_40px] gap-2">
+              <Button variant="secondary" size="icon" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value - 1))}>-</Button>
+              <Input className="text-center text-base font-black" type="number" min={1} max={12} value={visionCount} onChange={(event) => setVisionCount(clampMaterialCount(Number(event.target.value) || 1))} />
+              <Button variant="secondary" size="icon" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value + 1))}>+</Button>
+            </div>
+            <div className="rounded-md border border-zinc-800 bg-black/60 px-3 py-2 text-center text-xs font-bold text-zinc-500">1-12 карточек</div>
+          </div>
+          <div className="grid gap-3">
+            <label className="grid gap-2"><span className="text-sm font-black text-zinc-400">Промт для Gemini</span><Textarea className="min-h-32 resize-none text-base font-bold leading-relaxed" value={visionInstruction} onChange={(event) => setVisionInstruction(event.target.value)} /></label>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs font-bold text-zinc-500">Backend сохранит фото в Cloudflare R2</span>
+              <Button size="lg" type="button" onClick={() => void runVision()} disabled={visionBusy || !visionFile}><AppIcon name="sparkles" />{visionBusy ? 'Gemini смотрит фото...' : 'Создать по фото'}</Button>
+            </div>
+          </div>
         </div>
         <EditorMessage value={visionMessage} />
         {visionDrafts.length ? <div className="grid gap-3">
