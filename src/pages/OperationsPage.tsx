@@ -5,7 +5,7 @@ import type { AppPage, ManagedSite } from '../components/Sidebar';
 import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
 import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
 import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
-import { aiCreateArticleDraft, createArticle, updateArticle } from '../api/cms';
+import { aiCreateArticleDraft, aiGenerateArticleImage, createArticle, updateArticle } from '../api/cms';
 import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../types/admin';
 import type { AnalyticsOverview, AnalyticsRealtime, SearchConsoleBundle } from '../api/analytics';
 
@@ -318,12 +318,12 @@ function AlmabuildEditor({ props, mode }: { props: OperationsPageProps; mode: 'm
 
 type SeoArticleDraft = Partial<Omit<CmsArticle, 'id' | 'updated_at' | 'created_at'>>;
 type SeoArticleTab = 'content' | 'seo' | 'languages' | 'media';
+type SeoArticleLang = 'ru' | 'en' | 'pl' | 'uk';
 
 function extractArticleImages(article?: CmsArticle): string[] {
   if (!article) return [];
-  const markdownImages = [article.content_ru, article.content_en, article.content_pl, article.content_uk].flatMap((content) =>
-    Array.from(String(content || '').matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)).map((match) => match[1])
-  );
+  const storySource = article.content_ru || article.content_en || article.content_pl || article.content_uk || '';
+  const markdownImages = Array.from(String(storySource || '').matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)).map((match) => match[1]);
   return [article.image_url || '', ...markdownImages].filter(Boolean);
 }
 
@@ -395,9 +395,15 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
   const [source, setSource] = useState(article ? articleDisplayTitle(article) : 'Новая SEO/Blog страница для Dima Fomin: тема, аудитория, цель, ключевые слова.');
   const [instruction, setInstruction] = useState(article ? 'Улучши страницу как экспертный материал для сайта Dima Fomin. Обнови 4 языка, структуру текста и SEO.' : 'Создай новую SEO/Blog страницу для сайта Dima Fomin: 4 языка, slug, категория, экспертный текст, SEO title и description.');
   const [tab, setTab] = useState<SeoArticleTab>('content');
+  const [language, setLanguage] = useState<SeoArticleLang>('ru');
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(article ? 'Страница загружена из CMS backend.' : 'Опиши тему и нажми «Текст и SEO».');
   const tabs: Array<[SeoArticleTab, string]> = [['content', 'Контент'], ['seo', 'SEO'], ['languages', '4 языка'], ['media', 'Медиа']];
+  const langTabs: Array<[SeoArticleLang, string]> = [['ru', 'RU'], ['en', 'EN'], ['pl', 'PL'], ['uk', 'UK']];
+  const titleField = `title_${language}` as keyof SeoArticleDraft;
+  const contentField = `content_${language}` as keyof SeoArticleDraft;
+  const seoTitleField = `seo_title_${language}` as keyof SeoArticleDraft;
+  const seoDescriptionField = `seo_description_${language}` as keyof SeoArticleDraft;
 
   function setText(field: keyof SeoArticleDraft, value: string) { setDraft((current) => ({ ...current, [field]: value })); }
   function updateImage(index: number, value: string) {
@@ -417,6 +423,30 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
       setDraft((draftCurrent) => ({ ...draftCurrent, image_url: next[nextSelected] || '' }));
       return next;
     });
+  }
+
+  async function generateArticleImage(index: number) {
+    setBusy(`image-${index}`); setMessage(null);
+    try {
+      const title = String(draft.title_en || draft.title_ru || articleDisplayTitle(draft));
+      const prompt = [articleDisplayTitle(draft), draft.category, `editorial food article image ${index + 1}`, source].filter(Boolean).join(', ');
+      const result = await aiGenerateArticleImage(title, prompt, index, false, [], 'flash', 'editorial', { photoScenarios: [] });
+      setImages((current) => {
+        const next = [...current];
+        next[index] = result.image_url;
+        return next;
+      });
+      setSelectedImage(index);
+      setDraft((current) => ({ ...current, image_url: index === 0 ? result.image_url : current.image_url }));
+      setMessage(index === 0 ? 'Главное фото перегенерировано.' : `Фото ${index + 1} перегенерировано.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сгенерировать фото'); }
+    finally { setBusy(null); }
+  }
+
+  async function addGeneratedImage() {
+    const index = images.length;
+    setImages((current) => [...current, '']);
+    await generateArticleImage(index);
   }
 
   async function runGemini() {
@@ -463,7 +493,7 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
     <section className="catalog-edit-modal compact" role="dialog" aria-label="SEO Blog editor" onMouseDown={(event) => event.stopPropagation()}>
       <div className="catalog-edit-head"><div><p className="eyebrow">Gemini SEO editor</p><h3>{articleDisplayTitle(draft)}</h3><span>{draft.category || 'blog'} · {draft.slug || 'new-page'}</span></div><button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button></div>
       <nav className="catalog-edit-tabs">{tabs.map(([id, label]) => <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
-      <section className="catalog-generation-panel">
+      <section className="catalog-generation-panel seo-generation-panel">
         <label><span>Тема / задача</span><textarea value={source} onChange={(event) => setSource(event.target.value)} /></label>
         <label><span>Инструкция Gemini</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
         <div className="catalog-generation-actions"><button className="btn btn-primary" type="button" onClick={() => void runGemini()} disabled={Boolean(busy)}><AppIcon name="sparkles" />{busy === 'gemini' ? 'Генерируем...' : 'Текст и SEO'}<small>gemini-3.1-pro-preview</small></button></div>
@@ -471,10 +501,9 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
       <div className="catalog-edit-body compact">
         <aside className="catalog-edit-photo compact">{(images[selectedImage] || draft.image_url) ? <img src={String(images[selectedImage] || draft.image_url)} alt={articleDisplayTitle(draft)} /> : <span><AppIcon name="seo" size={28} /></span>}<small>{images.length || 1} фото из CMS/Markdown</small></aside>
         <div className="catalog-edit-form">
-          {tab === 'content' ? <div className="editor-grid"><EditorField label="Заголовок RU" value={String(draft.title_ru || '')} onChange={(value) => setText('title_ru', value)} /><EditorField label="Title EN" value={String(draft.title_en || '')} onChange={(value) => setText('title_en', value)} /><EditorField label="Slug страницы" value={String(draft.slug || '')} onChange={(value) => setText('slug', value)} /><EditorField label="Категория" value={String(draft.category || '')} onChange={(value) => setText('category', value)} /><EditorField label="Текст RU" value={String(draft.content_ru || '')} onChange={(value) => setText('content_ru', value)} multiline /><EditorField label="Content EN" value={String(draft.content_en || '')} onChange={(value) => setText('content_en', value)} multiline /><EditorField label="Tekst PL" value={String(draft.content_pl || '')} onChange={(value) => setText('content_pl', value)} multiline /><EditorField label="Текст UK" value={String(draft.content_uk || '')} onChange={(value) => setText('content_uk', value)} multiline /></div> : null}
-          {tab === 'seo' ? <div className="editor-grid"><EditorField label="SEO title RU" value={String(draft.seo_title_ru || '')} onChange={(value) => setText('seo_title_ru', value)} /><EditorField label="SEO title EN" value={String(draft.seo_title_en || '')} onChange={(value) => setText('seo_title_en', value)} /><EditorField label="SEO title PL" value={String(draft.seo_title_pl || '')} onChange={(value) => setText('seo_title_pl', value)} /><EditorField label="SEO title UK" value={String(draft.seo_title_uk || '')} onChange={(value) => setText('seo_title_uk', value)} /><EditorField label="SEO description RU" value={String(draft.seo_description_ru || '')} onChange={(value) => setText('seo_description_ru', value)} multiline /><EditorField label="SEO description EN" value={String(draft.seo_description_en || '')} onChange={(value) => setText('seo_description_en', value)} multiline /><EditorField label="SEO description PL" value={String(draft.seo_description_pl || '')} onChange={(value) => setText('seo_description_pl', value)} multiline /><EditorField label="SEO description UK" value={String(draft.seo_description_uk || '')} onChange={(value) => setText('seo_description_uk', value)} multiline /></div> : null}
-          {tab === 'languages' ? <div className="editor-grid"><EditorField label="Title PL" value={String(draft.title_pl || '')} onChange={(value) => setText('title_pl', value)} /><EditorField label="Title UK" value={String(draft.title_uk || '')} onChange={(value) => setText('title_uk', value)} /><EditorField label="Title RU" value={String(draft.title_ru || '')} onChange={(value) => setText('title_ru', value)} /><EditorField label="Title EN" value={String(draft.title_en || '')} onChange={(value) => setText('title_en', value)} /><EditorField label="Content RU" value={String(draft.content_ru || '')} onChange={(value) => setText('content_ru', value)} multiline /><EditorField label="Content EN" value={String(draft.content_en || '')} onChange={(value) => setText('content_en', value)} multiline /><EditorField label="Content PL" value={String(draft.content_pl || '')} onChange={(value) => setText('content_pl', value)} multiline /><EditorField label="Content UK" value={String(draft.content_uk || '')} onChange={(value) => setText('content_uk', value)} multiline /></div> : null}
-          {tab === 'media' ? <div className="editor-grid"><div className="span-2 catalog-states-list">{(images.length ? images : [String(draft.image_url || '')]).map((url, index) => <article key={index}><strong>{index === selectedImage ? 'Главное фото' : `Фото ${index + 1}`}</strong><input value={url} onChange={(event) => updateImage(index, event.target.value)} placeholder="https://..." /><div className="editor-actions"><button className="btn btn-quiet" type="button" onClick={() => { setSelectedImage(index); setDraft((current) => ({ ...current, image_url: url })); }}>Сделать главным</button><button className="btn btn-quiet" type="button" onClick={() => removeImage(index)}>Удалить</button></div></article>)}<button className="btn btn-quiet" type="button" onClick={addImage}>Добавить фото URL</button></div><EditorField label="SEO title EN" value={String(draft.seo_title_en || '')} onChange={(value) => setText('seo_title_en', value)} /><EditorField label="SEO title PL" value={String(draft.seo_title_pl || '')} onChange={(value) => setText('seo_title_pl', value)} /><EditorField label="SEO title UK" value={String(draft.seo_title_uk || '')} onChange={(value) => setText('seo_title_uk', value)} /><EditorField label="SEO description EN" value={String(draft.seo_description_en || '')} onChange={(value) => setText('seo_description_en', value)} multiline /><EditorField label="SEO description PL" value={String(draft.seo_description_pl || '')} onChange={(value) => setText('seo_description_pl', value)} multiline /><EditorField label="SEO description UK" value={String(draft.seo_description_uk || '')} onChange={(value) => setText('seo_description_uk', value)} multiline /><label className="editor-check span-2"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label></div> : null}
+          {(tab === 'content' || tab === 'languages') ? <div className="editor-grid"><div className="span-2 seo-language-tabs">{langTabs.map(([id, label]) => <button key={id} type="button" className={language === id ? 'active' : ''} onClick={() => setLanguage(id)}>{label}</button>)}</div><EditorField label={`Title ${language.toUpperCase()}`} value={String(draft[titleField] || '')} onChange={(value) => setText(titleField, value)} /><EditorField label="Slug страницы" value={String(draft.slug || '')} onChange={(value) => setText('slug', value)} /><EditorField label="Категория" value={String(draft.category || '')} onChange={(value) => setText('category', value)} /><EditorField label={`Content ${language.toUpperCase()}`} value={String(draft[contentField] || '')} onChange={(value) => setText(contentField, value)} multiline /></div> : null}
+          {tab === 'seo' ? <div className="editor-grid"><div className="span-2 seo-language-tabs">{langTabs.map(([id, label]) => <button key={id} type="button" className={language === id ? 'active' : ''} onClick={() => setLanguage(id)}>{label}</button>)}</div><EditorField label={`SEO title ${language.toUpperCase()}`} value={String(draft[seoTitleField] || '')} onChange={(value) => setText(seoTitleField, value)} /><EditorField label="Fallback SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label={`SEO description ${language.toUpperCase()}`} value={String(draft[seoDescriptionField] || '')} onChange={(value) => setText(seoDescriptionField, value)} multiline /><EditorField label="Fallback SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /></div> : null}
+          {tab === 'media' ? <div className="editor-grid"><div className="span-2 seo-photo-grid">{(images.length ? images : [String(draft.image_url || '')]).map((url, index) => <article key={index} className={index === selectedImage ? 'active' : ''}><div className="seo-photo-preview">{url ? <img src={url} alt={`Фото ${index + 1}`} /> : <span><AppIcon name="seo" /></span>}</div><strong>{index === 0 ? 'Обложка' : `Фото ${index + 1}`}</strong><input value={url} onChange={(event) => updateImage(index, event.target.value)} placeholder="https://..." /><div className="editor-actions"><button className="btn btn-quiet" type="button" onClick={() => { setSelectedImage(index); setDraft((current) => ({ ...current, image_url: url })); }}>Главное</button><button className="btn btn-quiet" type="button" onClick={() => void generateArticleImage(index)} disabled={Boolean(busy)}>{busy === `image-${index}` ? 'Генерируем...' : 'Gemini фото'}</button><button className="btn btn-quiet" type="button" onClick={() => removeImage(index)}>Удалить</button></div></article>)}<button className="btn btn-primary seo-photo-add" type="button" onClick={() => void addGeneratedImage()} disabled={Boolean(busy)}><AppIcon name="sparkles" />+ Фото Gemini<small>gemini-3.1-flash-image</small></button><button className="btn btn-quiet seo-photo-add" type="button" onClick={addImage}>+ URL</button></div><label className="editor-check span-2"><input type="checkbox" checked={Boolean(draft.published)} onChange={(event) => setDraft((current) => ({ ...current, published: event.target.checked }))} />Опубликовано на сайте</label></div> : null}
         </div>
       </div>
       <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : article ? 'Сохранить страницу' : 'Создать страницу'}</button></div>
