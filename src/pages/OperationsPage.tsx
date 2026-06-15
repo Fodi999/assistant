@@ -3,7 +3,6 @@ import * as echarts from 'echarts';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
 import type { AppPage, ManagedSite } from '../components/Sidebar';
@@ -553,12 +552,32 @@ function DimaArticleEditorModal({ article, onClose, onSaved }: { article?: CmsAr
       </div>
       <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : article ? 'Сохранить страницу' : 'Создать страницу'}</button></div>
     </section>
-    <Dialog open={Boolean(fullscreenImage)} onOpenChange={(open) => { if (!open) setFullscreenImage(null); }}>
-      <DialogContent className="w-[min(96vw,1600px)] border-zinc-800 bg-black/95 p-4">
-        <DialogTitle className="sr-only">Фото на весь экран</DialogTitle>
-        {fullscreenImage ? <img className="max-h-[86vh] w-full rounded-md object-contain" src={fullscreenImage} alt="Фото на весь экран" /> : null}
-      </DialogContent>
-    </Dialog>
+    {fullscreenImage ? (
+      <div
+        className="fixed inset-0 z-[1000] grid place-items-center bg-black/95 p-6"
+        role="dialog"
+        aria-label="Фото на весь экран"
+        onMouseDown={(event) => {
+          event.stopPropagation();
+          setFullscreenImage(null);
+        }}
+      >
+        <button
+          className="absolute right-6 top-6 rounded-md border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm font-black text-zinc-200 hover:border-orange-500 hover:text-white"
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => setFullscreenImage(null)}
+        >
+          Закрыть
+        </button>
+        <img
+          className="max-h-[88vh] max-w-[96vw] rounded-md border border-zinc-800 object-contain shadow-2xl"
+          src={fullscreenImage}
+          alt="Фото на весь экран"
+          onMouseDown={(event) => event.stopPropagation()}
+        />
+      </div>
+    ) : null}
   </div>;
 }
 
