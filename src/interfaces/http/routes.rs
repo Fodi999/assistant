@@ -23,12 +23,14 @@ use crate::application::{
 };
 use crate::infrastructure::JwtService;
 use crate::interfaces::http::{
+    admin_ai,
     admin_analytics,
     admin_auth,
     admin_catalog,
     admin_cms,
     admin_intent_pages,
     admin_nutrition,
+    admin_panel,
     admin_search_console,
     admin_states,
     admin_users,
@@ -418,6 +420,87 @@ pub fn create_router(
         .layer(Extension(Arc::clone(&llm_adapter)))
         .layer(Extension(r2_client.clone()))
         .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .with_state(pool.clone());
+
+    let admin_ai_routes = Router::new()
+        .route("/affiliate-product", post(admin_ai::affiliate_product))
+        .route("/seo", post(admin_ai::seo))
+        .route("/photo-prompt", post(admin_ai::photo_prompt))
+        .route(
+            "/improve-product-card",
+            post(admin_ai::improve_product_card),
+        )
+        .route("/vision/photo", post(admin_ai::vision_from_photo))
+        .route("/image", post(admin_ai::generate_image))
+        .layer(Extension(Arc::clone(&llm_adapter)))
+        .layer(Extension(r2_client.clone()))
+        .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .with_state(pool.clone());
+
+    let admin_panel_routes = Router::new()
+        .route("/dashboard", get(admin_panel::dashboard_metrics))
+        .route(
+            "/affiliate/products",
+            get(admin_panel::list_affiliate_products),
+        )
+        .route(
+            "/affiliate/products",
+            post(admin_panel::create_affiliate_product),
+        )
+        .route(
+            "/affiliate/products/:id",
+            get(admin_panel::get_affiliate_product)
+                .patch(admin_panel::update_affiliate_product)
+                .delete(admin_panel::delete_affiliate_product),
+        )
+        .route(
+            "/affiliate/products/:id/offers",
+            get(admin_panel::list_affiliate_offers),
+        )
+        .route(
+            "/affiliate/import-url",
+            post(admin_panel::import_affiliate_url),
+        )
+        .route(
+            "/culinary/products",
+            get(admin_panel::list_culinary_products),
+        )
+        .route("/culinary/recipes", get(admin_panel::list_culinary_recipes))
+        .route("/culinary/reviews", get(admin_panel::list_culinary_reviews))
+        .route(
+            "/construction/materials",
+            get(admin_panel::list_construction_materials),
+        )
+        .route(
+            "/construction/bundles",
+            get(admin_panel::list_construction_bundles)
+                .post(admin_panel::create_construction_bundle),
+        )
+        .route(
+            "/construction/calculate",
+            post(admin_panel::calculate_repair),
+        )
+        .route(
+            "/suppliers",
+            get(admin_panel::list_suppliers).post(admin_panel::create_supplier),
+        )
+        .route(
+            "/suppliers/:id",
+            axum::routing::patch(admin_panel::update_supplier),
+        )
+        .route("/leads", get(admin_panel::list_leads))
+        .route(
+            "/leads/:id/status",
+            axum::routing::patch(admin_panel::update_lead_status),
+        )
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1404,6 +1487,8 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/almabuild", admin_almabuild_routes)
+        .nest("/api/admin/ai", admin_ai_routes)
+        .nest("/api/admin", admin_panel_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
