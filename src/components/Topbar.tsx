@@ -46,6 +46,7 @@ const COMMANDS: Array<{ page: AppPage; title: string; hint: string }> = [
 function commandAllowed(site: ManagedSite, page: AppPage) {
   if (site === 'almabuild' && page === 'catalog') return false;
   if (site === 'dima' && page === 'materials') return false;
+  if (site === 'dima' && page === 'projects') return false;
   return true;
 }
 

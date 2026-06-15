@@ -37,6 +37,7 @@ const NAV_ITEMS: Array<{ page: AppPage; label: string; icon: AppIconName; shortc
 function navItemAllowed(site: ManagedSite, page: AppPage) {
   if (site === 'almabuild' && page === 'catalog') return false;
   if (site === 'dima' && page === 'materials') return false;
+  if (site === 'dima' && page === 'projects') return false;
   return true;
 }
 
