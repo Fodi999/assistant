@@ -1,7 +1,7 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::sync::Arc;
 
 use crate::{infrastructure::llm_adapter::LlmAdapter, shared::AppError};
@@ -49,6 +49,45 @@ pub struct AlmabuildContent {
     pub products: Vec<Product>,
     pub kits: Vec<Kit>,
     pub projects: Vec<Project>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lead {
+    pub id: String,
+    pub created_at: String,
+    pub name: String,
+    pub phone: String,
+    #[serde(rename = "type")]
+    pub object_type: String,
+    pub area: String,
+    pub comment: String,
+    pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateLeadRequest {
+    pub name: Option<String>,
+    pub phone: String,
+    #[serde(rename = "type")]
+    pub object_type: Option<String>,
+    pub area: Option<String>,
+    pub comment: Option<String>,
+    pub items: Option<Vec<String>>,
+}
+
+fn clean_string(value: Option<String>) -> String {
+    value.unwrap_or_default().trim().to_string()
+}
+
+fn clean_items(value: Option<Vec<String>>) -> Vec<String> {
+    value
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
 }
 
 fn default_content() -> AlmabuildContent {
@@ -135,6 +174,89 @@ pub async fn admin_put_content(
     })?;
 
     Ok(Json(content))
+}
+
+fn lead_from_row(row: sqlx::postgres::PgRow) -> Result<Lead, StatusCode> {
+    Ok(Lead {
+        id: row
+            .try_get::<uuid::Uuid, _>("id")
+            .map_err(|error| {
+                tracing::error!(%error, "failed to decode lead id");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .to_string(),
+        created_at: row.try_get("created_at").map_err(|error| {
+            tracing::error!(%error, "failed to decode lead created_at");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?,
+        name: row.try_get("name").unwrap_or_default(),
+        phone: row.try_get("phone").unwrap_or_default(),
+        object_type: row.try_get("object_type").unwrap_or_default(),
+        area: row.try_get("area").unwrap_or_default(),
+        comment: row.try_get("comment").unwrap_or_default(),
+        items: row.try_get("items").unwrap_or_default(),
+    })
+}
+
+pub async fn public_create_lead(
+    State(pool): State<PgPool>,
+    Json(payload): Json<CreateLeadRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let phone = payload.phone.trim().to_string();
+    if phone.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO site_leads (site, name, phone, object_type, area, comment, items)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+                  name, phone, object_type, area, comment, items
+        "#,
+    )
+    .bind(SITE_KEY)
+    .bind(clean_string(payload.name))
+    .bind(phone)
+    .bind(clean_string(payload.object_type))
+    .bind(clean_string(payload.area))
+    .bind(clean_string(payload.comment))
+    .bind(clean_items(payload.items))
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "failed to create almabuild lead");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok((StatusCode::CREATED, Json(lead_from_row(row)?)))
+}
+
+pub async fn admin_get_leads(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+               name, phone, object_type, area, comment, items
+        FROM site_leads
+        WHERE site = $1
+        ORDER BY created_at DESC
+        LIMIT 500
+        "#,
+    )
+    .bind(SITE_KEY)
+    .fetch_all(&pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "failed to load almabuild leads");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let leads = rows
+        .into_iter()
+        .map(lead_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Json(leads))
 }
 
 #[derive(Debug, Deserialize)]

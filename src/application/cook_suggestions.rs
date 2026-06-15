@@ -1909,7 +1909,10 @@ fn build_inventory_insight(ctx: &InventoryContext) -> InventoryInsight {
 
 // ── Unlock Suggestions Builder ───────────────────────────────────────────────
 
-fn build_unlock_suggestions(_all: &[&SuggestedDish], almost: &[SuggestedDish]) -> UnlockSuggestions {
+fn build_unlock_suggestions(
+    _all: &[&SuggestedDish],
+    almost: &[SuggestedDish],
+) -> UnlockSuggestions {
     use std::collections::HashMap;
 
     // Count how often each ingredient is missing across "almost" dishes

@@ -52,6 +52,49 @@ cargo sqlx migrate run    # Apply migrations
 cargo run                 # Start server
 ```
 
+### Local Admin Tool
+
+Heavy admin jobs can run locally without sending long-running work through the
+Koyeb web process:
+
+```bash
+cargo run --bin admin_tool -- help
+cargo run --bin admin_tool -- state-audit
+cargo run --bin admin_tool -- data-quality
+cargo run --bin admin_tool -- generate-states-all
+cargo run --bin admin_tool -- autofill-product <product_id>
+cargo run --bin admin_tool -- generate-seo <product_id>
+cargo run --bin admin_tool -- generate-pairings <product_id>
+cargo run --bin admin_tool -- create-product-draft "black garlic"
+cargo run --bin admin_tool -- run-intent-scheduler
+```
+
+Shortcuts:
+
+```bash
+make admin-help
+make admin-state-audit
+make admin-data-quality
+make admin-generate-states-all
+make admin-run-intent-scheduler
+```
+
+Required locally: `DATABASE_URL`. AI commands also need `GEMINI_API_KEY`.
+Image upload commands also need the Cloudflare R2 env vars.
+
+### Lightweight Koyeb Mode
+
+Production can keep the web process small by disabling heavy admin HTTP routes:
+
+```bash
+ENABLE_HEAVY_ADMIN_ROUTES=false
+ENABLE_INTENT_PAGES_SCHEDULER=false
+```
+
+This keeps public reads, auth, user APIs, admin CRUD, and upload-url flows online.
+AI generation, bulk catalog jobs, analytics/search-console routes, pSEO generation,
+and the intent-pages scheduler should be run locally through `admin_tool`.
+
 ## 📡 API Endpoints
 
 ### Auth

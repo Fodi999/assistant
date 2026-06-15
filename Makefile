@@ -1,4 +1,4 @@
-.PHONY: help setup db-create db-migrate db-drop test run clean lint format check
+.PHONY: help setup db-create db-migrate db-drop test run clean lint format check admin-help admin-state-audit admin-data-quality admin-generate-states-all admin-run-intent-scheduler
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -32,6 +32,21 @@ test-verbose: ## Run tests with output
 
 run: ## Run the application
 	cargo run
+
+admin-help: ## Show local admin tool commands
+	cargo run --bin admin_tool -- help
+
+admin-state-audit: ## Run local catalog state coverage audit
+	cargo run --bin admin_tool -- state-audit
+
+admin-data-quality: ## Run local product data quality report
+	cargo run --bin admin_tool -- data-quality
+
+admin-generate-states-all: ## Generate missing ingredient states locally
+	cargo run --bin admin_tool -- generate-states-all
+
+admin-run-intent-scheduler: ## Run intent-pages scheduler locally
+	cargo run --bin admin_tool -- run-intent-scheduler
 
 dev: ## Run with auto-reload (requires cargo-watch)
 	cargo watch -x run

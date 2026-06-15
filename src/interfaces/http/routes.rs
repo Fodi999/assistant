@@ -128,6 +128,15 @@ pub fn create_router(
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
 ) -> Router {
+    let heavy_admin_enabled = env_bool("ENABLE_HEAVY_ADMIN_ROUTES", true);
+    if heavy_admin_enabled {
+        tracing::info!("Heavy admin HTTP routes are enabled");
+    } else {
+        tracing::info!(
+            "Heavy admin HTTP routes are disabled; use `cargo run --bin admin_tool -- help` locally"
+        );
+    }
+
     // ── CORS: strict mode, never permissive ──
     let cors = build_strict_cors(allowed_origins);
 
@@ -219,13 +228,6 @@ pub fn create_router(
             "/products/:id/image",
             axum::routing::delete(admin_catalog::delete_product_image),
         )
-        // AI Autofill
-        .route(
-            "/products/:id/ai-autofill",
-            post(admin_catalog::ai_autofill_product),
-        )
-        // AI SEO generation
-        .route("/products/:id/ai-seo", post(admin_catalog::ai_generate_seo))
         // Publish / Unpublish — controls visibility in blog
         .route(
             "/products/:id/publish",
@@ -234,22 +236,6 @@ pub fn create_router(
         .route(
             "/products/:id/unpublish",
             post(admin_catalog::unpublish_product),
-        )
-        // AI Audit — catalog completeness & accuracy checker
-        .route("/audit", get(admin_catalog::ai_audit))
-        // AI Create Product Draft — returns draft for review, NEVER saves
-        .route(
-            "/ai/create-product-draft",
-            post(admin_catalog::ai_create_product_draft),
-        )
-        .route(
-            "/ai/generate-product-image",
-            post(admin_catalog::ai_generate_product_image),
-        )
-        // AI Suggest Products — AI suggests 5 products to add
-        .route(
-            "/ai/suggest-products",
-            post(admin_catalog::ai_suggest_products),
         )
         // Dictionary admin — review AI translations
         .route(
@@ -276,10 +262,6 @@ pub fn create_router(
             "/products/:id/pairings/:pairing_id",
             axum::routing::delete(admin_catalog::delete_pairing),
         )
-        .route(
-            "/products/:id/ai-pairings",
-            post(admin_catalog::ai_generate_pairings),
-        )
         // Product search (for pairing ingredient picker)
         .route("/products/search", get(admin_catalog::search_products))
         // Categories
@@ -292,7 +274,42 @@ pub fn create_router(
         .route(
             "/categories/:id",
             axum::routing::delete(admin_catalog::delete_category),
-        )
+        );
+
+    let admin_catalog_routes = if heavy_admin_enabled {
+        admin_catalog_routes
+            // AI Autofill
+            .route(
+                "/products/:id/ai-autofill",
+                post(admin_catalog::ai_autofill_product),
+            )
+            // AI SEO generation
+            .route("/products/:id/ai-seo", post(admin_catalog::ai_generate_seo))
+            // AI Audit — catalog completeness & accuracy checker
+            .route("/audit", get(admin_catalog::ai_audit))
+            // AI Create Product Draft — returns draft for review, NEVER saves
+            .route(
+                "/ai/create-product-draft",
+                post(admin_catalog::ai_create_product_draft),
+            )
+            .route(
+                "/ai/generate-product-image",
+                post(admin_catalog::ai_generate_product_image),
+            )
+            // AI Suggest Products — AI suggests 5 products to add
+            .route(
+                "/ai/suggest-products",
+                post(admin_catalog::ai_suggest_products),
+            )
+            .route(
+                "/products/:id/ai-pairings",
+                post(admin_catalog::ai_generate_pairings),
+            )
+    } else {
+        admin_catalog_routes
+    };
+
+    let admin_catalog_routes = admin_catalog_routes
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -390,7 +407,15 @@ pub fn create_router(
             "/content",
             get(almabuild::admin_get_content).put(almabuild::admin_put_content),
         )
-        .route("/ai/edit", post(almabuild::admin_ai_edit))
+        .route("/leads", get(almabuild::admin_get_leads));
+
+    let admin_almabuild_routes = if heavy_admin_enabled {
+        admin_almabuild_routes.route("/ai/edit", post(almabuild::admin_ai_edit))
+    } else {
+        admin_almabuild_routes
+    };
+
+    let admin_almabuild_routes = admin_almabuild_routes
         .layer(Extension(Arc::clone(&llm_adapter)))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
@@ -470,13 +495,6 @@ pub fn create_router(
 
     let admin_states_routes = Router::new()
         .route(
-            "/generate/:ingredient_id",
-            post(admin_states::generate_states),
-        )
-        .route("/generate-all", post(admin_states::generate_all_states))
-        .route("/audit", get(admin_states::state_audit))
-        .route("/data-quality", get(admin_states::data_quality))
-        .route(
             "/data-quality/:product_id",
             get(admin_states::data_quality_single),
         )
@@ -485,7 +503,22 @@ pub fn create_router(
         .route(
             "/products/:id/states/:state",
             axum::routing::put(admin_states::update_product_state),
-        )
+        );
+
+    let admin_states_routes = if heavy_admin_enabled {
+        admin_states_routes
+            .route(
+                "/generate/:ingredient_id",
+                post(admin_states::generate_states),
+            )
+            .route("/generate-all", post(admin_states::generate_all_states))
+            .route("/audit", get(admin_states::state_audit))
+            .route("/data-quality", get(admin_states::data_quality))
+    } else {
+        admin_states_routes
+    };
+
+    let admin_states_routes = admin_states_routes
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1025,19 +1058,7 @@ pub fn create_router(
 
     // Admin intent pages routes (protected)
     let admin_intent_pages_routes = Router::new()
-        .route("/generate", post(admin_intent_pages::generate_intent_page))
-        .route("/generate-batch", post(admin_intent_pages::generate_batch))
-        .route("/enqueue-bulk", post(admin_intent_pages::enqueue_bulk))
-        .route("/publish-bulk", post(admin_intent_pages::publish_bulk))
-        .route("/archive-bulk", post(admin_intent_pages::archive_bulk))
-        .route("/delete-bulk", post(admin_intent_pages::delete_bulk))
         .route("/duplicates", get(admin_intent_pages::find_duplicates))
-        .route("/cleanup-slugs", post(admin_intent_pages::cleanup_slugs))
-        .route(
-            "/cleanup-quality",
-            post(admin_intent_pages::cleanup_low_quality),
-        )
-        .route("/seo-audit", get(admin_intent_pages::seo_audit))
         .route(
             "/google-discovered",
             axum::routing::put(admin_intent_pages::set_google_discovered),
@@ -1048,7 +1069,6 @@ pub fn create_router(
             "/settings",
             get(admin_intent_pages::get_settings).put(admin_intent_pages::update_settings),
         )
-        .route("/scheduler/run", post(admin_intent_pages::run_scheduler))
         .route("/:id", get(admin_intent_pages::get_intent_page))
         .route(
             "/:id",
@@ -1075,14 +1095,35 @@ pub fn create_router(
             axum::routing::delete(admin_intent_pages::delete_intent_page),
         )
         .route(
-            "/:id/regenerate",
-            post(admin_intent_pages::regenerate_intent_page),
-        )
-        .route(
             "/:id/images/:key/upload-url",
             get(admin_intent_pages::get_image_upload_url),
         )
-        .route("/:id/images/:key", post(admin_intent_pages::save_image_url))
+        .route("/:id/images/:key", post(admin_intent_pages::save_image_url));
+
+    let admin_intent_pages_routes = if heavy_admin_enabled {
+        admin_intent_pages_routes
+            .route("/generate", post(admin_intent_pages::generate_intent_page))
+            .route("/generate-batch", post(admin_intent_pages::generate_batch))
+            .route("/enqueue-bulk", post(admin_intent_pages::enqueue_bulk))
+            .route("/publish-bulk", post(admin_intent_pages::publish_bulk))
+            .route("/archive-bulk", post(admin_intent_pages::archive_bulk))
+            .route("/delete-bulk", post(admin_intent_pages::delete_bulk))
+            .route("/cleanup-slugs", post(admin_intent_pages::cleanup_slugs))
+            .route(
+                "/cleanup-quality",
+                post(admin_intent_pages::cleanup_low_quality),
+            )
+            .route("/seo-audit", get(admin_intent_pages::seo_audit))
+            .route("/scheduler/run", post(admin_intent_pages::run_scheduler))
+            .route(
+                "/:id/regenerate",
+                post(admin_intent_pages::regenerate_intent_page),
+            )
+    } else {
+        admin_intent_pages_routes
+    };
+
+    let admin_intent_pages_routes = admin_intent_pages_routes
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1115,7 +1156,7 @@ pub fn create_router(
         .with_state(intent_pages_svc.clone());
 
     // ── Background scheduler: publish queued pages every hour ────────────────
-    {
+    if heavy_admin_enabled && env_bool("ENABLE_INTENT_PAGES_SCHEDULER", true) {
         let svc = intent_pages_svc.clone();
         tokio::spawn(async move {
             // Wait 30s after startup before first check
@@ -1135,6 +1176,10 @@ pub fn create_router(
                 }
             }
         });
+    } else {
+        tracing::info!(
+            "Intent pages scheduler disabled; run it locally with admin tooling when needed"
+        );
     }
 
     // ── Admin CMS routes (protected) ─────────────────────────────────────────
@@ -1175,15 +1220,6 @@ pub fn create_router(
             "/gallery-categories",
             get(admin_cms::list_gallery_categories),
         )
-        // Knowledge Articles
-        .route(
-            "/articles/ai/draft",
-            post(admin_cms::create_ai_article_draft),
-        )
-        .route(
-            "/articles/ai/images",
-            post(admin_cms::generate_ai_article_image),
-        )
         .route(
             "/articles",
             get(admin_cms::list_articles).post(admin_cms::create_article),
@@ -1194,10 +1230,6 @@ pub fn create_router(
             axum::routing::put(admin_cms::update_article).delete(admin_cms::delete_article),
         )
         // Online shop products
-        .route(
-            "/shop-products/ai/draft",
-            post(admin_cms::create_ai_shop_product_draft),
-        )
         .route(
             "/shop-products",
             get(admin_cms::list_shop_products).post(admin_cms::create_shop_product),
@@ -1221,7 +1253,28 @@ pub fn create_router(
         .route(
             "/article-categories",
             get(admin_cms::list_article_categories),
-        )
+        );
+
+    let admin_cms_routes = if heavy_admin_enabled {
+        admin_cms_routes
+            // Knowledge Articles
+            .route(
+                "/articles/ai/draft",
+                post(admin_cms::create_ai_article_draft),
+            )
+            .route(
+                "/articles/ai/images",
+                post(admin_cms::generate_ai_article_image),
+            )
+            .route(
+                "/shop-products/ai/draft",
+                post(admin_cms::create_ai_shop_product_draft),
+            )
+    } else {
+        admin_cms_routes
+    };
+
+    let admin_cms_routes = admin_cms_routes
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1241,6 +1294,7 @@ pub fn create_router(
     // ── Public CMS routes (no auth) ───────────────────────────────────────────
     let public_almabuild_router = Router::new()
         .route("/almabuild/content", get(almabuild::public_content))
+        .route("/almabuild/leads", post(almabuild::public_create_lead))
         .with_state(pool_for_public.clone());
 
     let public_cms_router = Router::new()
@@ -1329,7 +1383,6 @@ pub fn create_router(
     let mut router = Router::new()
         .merge(sitemap_router)
         .merge(health_route)
-        .merge(google_auth_routes)
         .merge(chef_reference_routes)
         // 🆕 Static file serving for Laboratory v2 uploads (no auth).
         // Files written by `LocalStorageAdapter("./uploads", "/static")`
@@ -1351,9 +1404,6 @@ pub fn create_router(
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/almabuild", admin_almabuild_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
-        .nest("/api/admin/analytics", admin_analytics_routes)
-        .nest("/api/admin/analytics", admin_analytics_oauth_callback_route)
-        .nest("/api/admin/search-console", admin_search_console_routes)
         .nest("/api/admin", admin_users_route)
         .nest("/api", smart_router) // 🆕 SmartService: POST /api/smart/ingredient
         .nest("/api", smart_autocomplete_router) // 🆕 GET /api/smart/autocomplete
@@ -1361,6 +1411,14 @@ pub fn create_router(
         .nest("/api", smart_from_text_router) // 🆕 POST /api/smart/from-text
         .nest("/api", protected_chat_routes)
         .nest("/api", protected_routes);
+
+    if heavy_admin_enabled {
+        router = router
+            .merge(google_auth_routes)
+            .nest("/api/admin/analytics", admin_analytics_routes)
+            .nest("/api/admin/analytics", admin_analytics_oauth_callback_route)
+            .nest("/api/admin/search-console", admin_search_console_routes);
+    }
 
     // 🆕 Stripe billing — only mounted when STRIPE_SECRET_KEY is set.
     if let Some(r) = billing_public_bundles {
@@ -1410,6 +1468,16 @@ async fn fix_static_mime(
 }
 
 // ── Strict CORS builder ──
+
+fn env_bool(key: &str, default: bool) -> bool {
+    match std::env::var(key) {
+        Ok(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => default,
+    }
+}
 
 fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
     // Always-allowed production origins (never depend on env alone)
