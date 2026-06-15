@@ -25,6 +25,8 @@ const languages: Array<{ key: Language; label: string }> = [
   { key: 'uk', label: 'UK' }
 ];
 
+const ARTICLE_IMAGE_COUNT = 4;
+
 type ArticleDraft = {
   id?: string;
   slug: string;
@@ -99,10 +101,10 @@ function draftFromArticle(article?: CmsArticle): ArticleDraft {
     title_pl: article?.title_pl ?? '',
     title_en: article?.title_en ?? '',
     title_uk: article?.title_uk ?? '',
-    content_ru: article?.content_ru ?? '',
-    content_pl: article?.content_pl ?? '',
-    content_en: article?.content_en ?? '',
-    content_uk: article?.content_uk ?? '',
+    content_ru: stripVisualStory(article?.content_ru),
+    content_pl: stripVisualStory(article?.content_pl),
+    content_en: stripVisualStory(article?.content_en),
+    content_uk: stripVisualStory(article?.content_uk),
     seo_title: article?.seo_title ?? '',
     seo_description: article?.seo_description ?? '',
     seo_title_ru: article?.seo_title_ru ?? '',
@@ -116,20 +118,45 @@ function draftFromArticle(article?: CmsArticle): ArticleDraft {
   };
 }
 
-function payloadFromDraft(draft: ArticleDraft): Omit<CmsArticle, 'id' | 'updated_at'> {
+function extractMarkdownImages(content?: string | null): string[] {
+  return Array.from(String(content || '').matchAll(/!\[[^\]]*]\((https?:\/\/[^)\s]+)\)/g)).map((match) => match[1]);
+}
+
+function stripVisualStory(content?: string | null): string {
+  return String(content || '').replace(/\n{0,2}##\s+Visual story[\s\S]*$/i, '').trim();
+}
+
+function articleImageSeries(article?: CmsArticle): string[] {
+  const storyImages = extractMarkdownImages([article?.content_ru, article?.content_en, article?.content_pl, article?.content_uk].filter(Boolean).join('\n'));
+  const unique = [article?.image_url || '', ...storyImages]
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .filter((url, index, list) => list.indexOf(url) === index);
+  return unique.slice(0, ARTICLE_IMAGE_COUNT).concat(Array(ARTICLE_IMAGE_COUNT).fill('')).slice(0, ARTICLE_IMAGE_COUNT);
+}
+
+function withVisualStory(content: string, images: string[]): string {
+  const cleanContent = stripVisualStory(content);
+  const story = images.slice(1).filter(Boolean);
+  if (!story.length) return cleanContent;
+  return `${cleanContent}\n\n## Visual story\n${story.map((url, index) => `![Step ${index + 1}](${url})`).join('\n\n')}`;
+}
+
+function payloadFromDraft(draft: ArticleDraft, images: string[]): Omit<CmsArticle, 'id' | 'updated_at'> {
+  const cleanImages = images.map((url) => url.trim()).filter(Boolean);
   return {
     slug: draft.slug,
     category: draft.category,
-    image_url: draft.image_url || null,
+    image_url: cleanImages[0] || draft.image_url || null,
     published: draft.published,
     title_ru: draft.title_ru || null,
     title_pl: draft.title_pl || null,
     title_en: draft.title_en || null,
     title_uk: draft.title_uk || null,
-    content_ru: draft.content_ru || null,
-    content_pl: draft.content_pl || null,
-    content_en: draft.content_en || null,
-    content_uk: draft.content_uk || null,
+    content_ru: withVisualStory(draft.content_ru, cleanImages) || null,
+    content_pl: withVisualStory(draft.content_pl, cleanImages) || null,
+    content_en: withVisualStory(draft.content_en, cleanImages) || null,
+    content_uk: withVisualStory(draft.content_uk, cleanImages) || null,
     seo_title: draft.seo_title || null,
     seo_description: draft.seo_description || null,
     seo_title_ru: draft.seo_title_ru || null,
@@ -167,6 +194,8 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [sourceError, setSourceError] = useState<string | undefined>();
   const [editorOpen, setEditorOpen] = useState(false);
   const [draft, setDraft] = useState<ArticleDraft>(() => draftFromArticle());
+  const [images, setImages] = useState<string[]>(() => articleImageSeries());
+  const [selectedImage, setSelectedImage] = useState(0);
   const [activeLang, setActiveLang] = useState<Language>('ru');
   const [aiTopic, setAiTopic] = useState('');
   const [aiImagePrompt, setAiImagePrompt] = useState('');
@@ -175,6 +204,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [message, setMessage] = useState<string | undefined>();
   const rows = useMemo(() => items.filter((item) => (site === 'all' || item.site === site) && (type === 'all' || item.type === type)), [items, site, type]);
   const articleImages = useMemo(() => new Map(apiArticles.map((article) => [article.id, article.image_url || ''])), [apiArticles]);
+  const articleImageCounts = useMemo(() => new Map(apiArticles.map((article) => [article.id, articleImageSeries(article).filter(Boolean).length])), [apiArticles]);
 
   const refresh = () => listArticles().then((articles) => {
     setApiArticles(articles);
@@ -198,6 +228,8 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
 
   const openNew = () => {
     setDraft(draftFromArticle());
+    setImages(articleImageSeries());
+    setSelectedImage(0);
     setAiTopic('');
     setAiImagePrompt('');
     setActiveLang('ru');
@@ -209,6 +241,8 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     const article = apiArticles.find((item) => item.id === id);
     if (!article) return;
     setDraft(draftFromArticle(article));
+    setImages(articleImageSeries(article));
+    setSelectedImage(0);
     setAiTopic(articleTitle(article));
     setAiImagePrompt(`Editorial food photo for article: ${articleTitle(article)}`);
     setActiveLang('ru');
@@ -251,6 +285,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
         seo_description_pl: result.seo_description_pl || result.seo_description || current.seo_description_pl,
         seo_description_uk: result.seo_description_uk || result.seo_description || current.seo_description_uk
       }));
+      setImages(articleImageSeries({ image_url: '', content_ru: '', content_en: '', content_pl: '', content_uk: '' } as CmsArticle));
       setAiImagePrompt(result.image_prompts[0] || `Editorial food photo for article: ${topic}`);
       setMessage(`AI создал черновик. Промптов фото: ${result.image_prompts.length}.`);
     } catch (error) {
@@ -272,9 +307,9 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setMessage(undefined);
     try {
       if (nextDraft.id) {
-        await updateArticle(nextDraft.id, payloadFromDraft(nextDraft));
+        await updateArticle(nextDraft.id, payloadFromDraft(nextDraft, images));
       } else {
-        await createArticle(payloadFromDraft(nextDraft));
+        await createArticle(payloadFromDraft(nextDraft, images));
       }
       await refresh();
       setEditorOpen(false);
@@ -295,7 +330,8 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setMessage(undefined);
     try {
       const url = await uploadCmsReference(file);
-      patchDraft({ image_url: url });
+      setImages((current) => current.map((item, index) => index === selectedImage ? url : item));
+      if (selectedImage === 0) patchDraft({ image_url: url });
       setMessage('Фото загружено в R2 и добавлено в материал.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Не удалось загрузить фото.');
@@ -313,14 +349,48 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setImageBusy(true);
     setMessage(undefined);
     try {
-      const result = await aiGenerateArticleImage(title, aiImagePrompt || undefined, 0, false, [], 'flash', 'editorial', { photoScenarios: [] });
-      patchDraft({ image_url: result.image_url });
-      setMessage('AI фото создано и поставлено как обложка.');
+      const result = await aiGenerateArticleImage(title, aiImagePrompt || undefined, selectedImage, false, [], 'flash', 'editorial', { photoScenarios: [] });
+      setImages((current) => current.map((item, index) => index === selectedImage ? result.image_url : item));
+      if (selectedImage === 0) patchDraft({ image_url: result.image_url });
+      setMessage(`AI фото ${selectedImage + 1} создано.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'AI не создал фото.');
     } finally {
       setImageBusy(false);
     }
+  };
+
+  const generatePhotoSeries = async () => {
+    const title = draft.title_en || draft.title_ru || draft.title_pl || draft.title_uk || aiTopic;
+    if (!title.trim()) {
+      setMessage('Нужен заголовок или тема для генерации фото.');
+      return;
+    }
+    setImageBusy(true);
+    setMessage(undefined);
+    try {
+      const next: string[] = [];
+      for (let index = 0; index < ARTICLE_IMAGE_COUNT; index += 1) {
+        const prompt = index === 0
+          ? aiImagePrompt || `Editorial food cover photo for article: ${title}`
+          : `${aiImagePrompt || title}. Step ${index}: detailed supporting article photo, no text, realistic food editorial.`;
+        const result = await aiGenerateArticleImage(title, prompt, index, false, [], 'flash', 'editorial', { photoScenarios: [] });
+        next.push(result.image_url);
+        setImages([...next, ...Array(ARTICLE_IMAGE_COUNT - next.length).fill('')]);
+      }
+      patchDraft({ image_url: next[0] || '' });
+      setSelectedImage(0);
+      setMessage('AI создал серию из 4 фото.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'AI не создал 4 фото.');
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const setImageAt = (index: number, url: string) => {
+    setImages((current) => current.map((item, itemIndex) => itemIndex === index ? url : item));
+    if (index === 0) patchDraft({ image_url: url });
   };
 
   const removeDraft = async () => {
@@ -350,7 +420,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       <div className="filter-bar"><select value={site} onChange={(event) => setSite(event.target.value as SiteKey | 'all')}><option value="all">Все сайты</option><option value="culinary">Кулинарный</option><option value="construction">Строительный</option></select><select value={type} onChange={(event) => setType(event.target.value as ContentType | 'all')}><option value="all">Все типы</option><option value="article">статья</option><option value="review">обзор</option><option value="comparison">сравнение</option><option value="roundup">подборка</option><option value="recipe">рецепт</option></select></div>
       <section className="ops-panel"><table className="ops-table"><thead><tr><th>Фото</th><th>Материал</th><th>Сайт</th><th>Тип</th><th>Партнерские товары</th><th>Статус</th><th /></tr></thead><tbody>{rows.map((item) => {
         const imageUrl = articleImages.get(item.id);
-        return <tr key={item.id}><td>{imageUrl ? <img className="catalog-product-thumb" src={imageUrl} alt={item.title.ru} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="cms" size={18} /></span>}</td><td><strong>{item.title.ru}</strong><small>{item.slug}</small></td><td>{siteLabel(item.site)}</td><td>{contentTypeLabels[item.type]}</td><td>{item.affiliateProductIds.join(', ') || 'нет'}</td><td><span className="status-pill info"><i />{publishStatusLabels[item.status as PublishStatus]}</span></td><td><button className="table-action" type="button" onClick={() => openEdit(item.id)}>Редактировать</button></td></tr>;
+        return <tr key={item.id}><td>{imageUrl ? <img className="catalog-product-thumb" src={imageUrl} alt={item.title.ru} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="cms" size={18} /></span>}</td><td><strong>{item.title.ru}</strong><small>{item.slug}</small><small>Фото: {articleImageCounts.get(item.id) ?? 0}/4</small></td><td>{siteLabel(item.site)}</td><td>{contentTypeLabels[item.type]}</td><td>{item.affiliateProductIds.join(', ') || 'нет'}</td><td><span className="status-pill info"><i />{publishStatusLabels[item.status as PublishStatus]}</span></td><td><button className="table-action" type="button" onClick={() => openEdit(item.id)}>Редактировать</button></td></tr>;
       })}</tbody></table></section>
       {editorOpen ? (
         <div className="modal-overlay">
@@ -371,20 +441,24 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
             <div className="editor-grid">
               <label className="editor-field"><span>Slug</span><input value={draft.slug} onChange={(event) => patchDraft({ slug: slugify(event.target.value) })} placeholder="how-to-choose-fish-knife" /></label>
               <label className="editor-field"><span>Категория</span><select value={draft.category} onChange={(event) => patchDraft({ category: event.target.value })}>{categories.length ? categories.map((category) => <option key={category.slug} value={category.slug}>{category.title_ru || category.title_pl || category.slug}</option>) : <><option value="general">general</option><option value="fish">fish</option><option value="tools">tools</option><option value="review">review</option></>}</select></label>
-              <label className="editor-field"><span>Фото URL</span><input value={draft.image_url} onChange={(event) => patchDraft({ image_url: event.target.value })} placeholder="https://..." /></label>
+              <label className="editor-field"><span>Фото URL {selectedImage + 1}</span><input value={images[selectedImage] || ''} onChange={(event) => setImageAt(selectedImage, event.target.value)} placeholder="https://..." /></label>
               <label className="editor-check"><input type="checkbox" checked={draft.published} onChange={(event) => patchDraft({ published: event.target.checked })} />Опубликовано</label>
             </div>
 
             <section className="content-photo-panel">
               <div className="content-photo-preview">
-                {draft.image_url ? <img src={draft.image_url} alt={draft.title_ru || draft.slug || 'Фото материала'} onError={() => setMessage('Фото URL не загрузился в браузере. Проверь, что R2 public URL доступен без авторизации.')} /> : <span><AppIcon name="cms" size={34} />Фото не выбрано</span>}
+                {images[selectedImage] ? <img src={images[selectedImage]} alt={draft.title_ru || draft.slug || 'Фото материала'} onError={() => setMessage('Фото URL не загрузился в браузере. Проверь, что R2 public URL доступен без авторизации.')} /> : <span><AppIcon name="cms" size={34} />Фото {selectedImage + 1} не выбрано</span>}
               </div>
               <div className="content-photo-tools">
+                <div className="content-image-strip">
+                  {images.map((url, index) => <button key={index} className={selectedImage === index ? 'active' : ''} type="button" onClick={() => setSelectedImage(index)}>{url ? <img src={url} alt={`Фото ${index + 1}`} /> : <span>{index + 1}</span>}<small>{index === 0 ? 'Обложка' : `Фото ${index + 1}`}</small></button>)}
+                </div>
                 <label className="editor-field"><span>Промпт фото</span><textarea value={aiImagePrompt} onChange={(event) => setAiImagePrompt(event.target.value)} placeholder="Editorial food photo, crispy fish skin, professional kitchen lighting" /></label>
                 <div className="editor-actions">
                   <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)} />Загрузить</label>
                   <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhoto}><AppIcon name="bot" />AI фото</button>
-                  <button className="btn btn-quiet" type="button" disabled={imageBusy || !draft.image_url} onClick={() => patchDraft({ image_url: '' })}>Убрать</button>
+                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhotoSeries}><AppIcon name="bot" />AI 4 фото</button>
+                  <button className="btn btn-quiet" type="button" disabled={imageBusy || !images[selectedImage]} onClick={() => setImageAt(selectedImage, '')}>Убрать</button>
                 </div>
               </div>
             </section>

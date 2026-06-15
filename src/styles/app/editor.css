@@ -123,6 +123,49 @@
   gap: 10px;
 }
 
+.content-image-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.content-image-strip button {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0d0d10;
+  color: var(--muted);
+  padding: 6px;
+  display: grid;
+  gap: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.content-image-strip button.active {
+  border-color: rgba(96,113,149,.72);
+  background: rgba(96,113,149,.18);
+  color: var(--text);
+}
+
+.content-image-strip img,
+.content-image-strip span {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: calc(var(--radius) - 1px);
+  background: rgba(255,255,255,.04);
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+}
+
+.content-image-strip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
