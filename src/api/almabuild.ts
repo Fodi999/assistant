@@ -13,6 +13,19 @@ export type MaterialCategory = {
   detailImageUrl?: string;
   price?: string;
   categorySlug?: string;
+  unit?: string;
+  availability?: string;
+  city?: string;
+  supplier?: string;
+  purchasePrice?: string;
+  purchaseCurrency?: string;
+  salePrice?: string;
+  saleCurrency?: string;
+  marginPercent?: string;
+  status?: string;
+  languages?: string[];
+  seoTitle?: string;
+  seoDescription?: string;
 };
 
 export type Product = {
@@ -88,6 +101,19 @@ export type MaterialsFromPhotoRequest = {
   price?: string;
   categorySlug?: string;
   categoryTitle?: string;
+  unit?: string;
+  availability?: string;
+  city?: string;
+  supplier?: string;
+  purchasePrice?: string;
+  purchaseCurrency?: string;
+  salePrice?: string;
+  saleCurrency?: string;
+  marginPercent?: string;
+  status?: string;
+  languages?: string[];
+  seoTitle?: string;
+  seoDescription?: string;
 };
 
 export type MaterialsFromPhotoResponse = {
@@ -105,6 +131,19 @@ export function generateAlmabuildMaterialsFromPhoto(request: MaterialsFromPhotoR
   form.set('price', request.price || '');
   form.set('categorySlug', request.categorySlug || '');
   form.set('categoryTitle', request.categoryTitle || '');
+  form.set('unit', request.unit || '');
+  form.set('availability', request.availability || '');
+  form.set('city', request.city || 'Алматы');
+  form.set('supplier', request.supplier || '');
+  form.set('purchasePrice', request.purchasePrice || '');
+  form.set('purchaseCurrency', request.purchaseCurrency || 'KZT');
+  form.set('salePrice', request.salePrice || '');
+  form.set('saleCurrency', request.saleCurrency || 'KZT');
+  form.set('marginPercent', request.marginPercent || '');
+  form.set('status', request.status || 'draft');
+  form.set('languages', (request.languages || ['RU']).join(','));
+  form.set('seoTitle', request.seoTitle || '');
+  form.set('seoDescription', request.seoDescription || '');
   return apiFetch<MaterialsFromPhotoResponse>('/api/admin/almabuild/ai/materials-from-photo', {
     method: 'POST',
     body: form
