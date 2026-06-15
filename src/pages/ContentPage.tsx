@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   aiCreateArticleDraft,
+  aiGenerateArticleImage,
   createArticle,
   deleteArticle,
   listArticleCategories,
   listArticles,
   updateArticle,
+  uploadCmsReference,
   type CmsArticleCategory
 } from '../api/cms';
 import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
@@ -167,9 +169,12 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [draft, setDraft] = useState<ArticleDraft>(() => draftFromArticle());
   const [activeLang, setActiveLang] = useState<Language>('ru');
   const [aiTopic, setAiTopic] = useState('');
+  const [aiImagePrompt, setAiImagePrompt] = useState('');
   const [busy, setBusy] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
   const [message, setMessage] = useState<string | undefined>();
   const rows = useMemo(() => items.filter((item) => (site === 'all' || item.site === site) && (type === 'all' || item.type === type)), [items, site, type]);
+  const articleImages = useMemo(() => new Map(apiArticles.map((article) => [article.id, article.image_url || ''])), [apiArticles]);
 
   const refresh = () => listArticles().then((articles) => {
     setApiArticles(articles);
@@ -194,6 +199,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const openNew = () => {
     setDraft(draftFromArticle());
     setAiTopic('');
+    setAiImagePrompt('');
     setActiveLang('ru');
     setMessage(undefined);
     setEditorOpen(true);
@@ -204,6 +210,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     if (!article) return;
     setDraft(draftFromArticle(article));
     setAiTopic(articleTitle(article));
+    setAiImagePrompt(`Editorial food photo for article: ${articleTitle(article)}`);
     setActiveLang('ru');
     setMessage(undefined);
     setEditorOpen(true);
@@ -244,6 +251,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
         seo_description_pl: result.seo_description_pl || result.seo_description || current.seo_description_pl,
         seo_description_uk: result.seo_description_uk || result.seo_description || current.seo_description_uk
       }));
+      setAiImagePrompt(result.image_prompts[0] || `Editorial food photo for article: ${topic}`);
       setMessage(`AI создал черновик. Промптов фото: ${result.image_prompts.length}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'AI не вернул черновик.');
@@ -277,6 +285,44 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     }
   };
 
+  const uploadPhoto = async (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setMessage('Файл должен быть изображением.');
+      return;
+    }
+    setImageBusy(true);
+    setMessage(undefined);
+    try {
+      const url = await uploadCmsReference(file);
+      patchDraft({ image_url: url });
+      setMessage('Фото загружено в R2 и добавлено в материал.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить фото.');
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const generatePhoto = async () => {
+    const title = draft.title_en || draft.title_ru || draft.title_pl || draft.title_uk || aiTopic;
+    if (!title.trim()) {
+      setMessage('Нужен заголовок или тема для генерации фото.');
+      return;
+    }
+    setImageBusy(true);
+    setMessage(undefined);
+    try {
+      const result = await aiGenerateArticleImage(title, aiImagePrompt || undefined, 0, false, [], 'flash', 'editorial', { photoScenarios: [] });
+      patchDraft({ image_url: result.image_url });
+      setMessage('AI фото создано и поставлено как обложка.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'AI не создал фото.');
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
   const removeDraft = async () => {
     if (!draft.id) return;
     setBusy(true);
@@ -302,7 +348,10 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       <Header title="Контент" subtitle="Статьи, обзоры, сравнения, подборки и связка с партнерскими товарами." icon="cms" source={source} onCreate={openNew} />
       {sourceError ? <p className="ops-alert"><AppIcon name="terminal" />API не вернул контент: {sourceError}. Показаны mock-данные.</p> : null}
       <div className="filter-bar"><select value={site} onChange={(event) => setSite(event.target.value as SiteKey | 'all')}><option value="all">Все сайты</option><option value="culinary">Кулинарный</option><option value="construction">Строительный</option></select><select value={type} onChange={(event) => setType(event.target.value as ContentType | 'all')}><option value="all">Все типы</option><option value="article">статья</option><option value="review">обзор</option><option value="comparison">сравнение</option><option value="roundup">подборка</option><option value="recipe">рецепт</option></select></div>
-      <section className="ops-panel"><table className="ops-table"><thead><tr><th>Материал</th><th>Сайт</th><th>Тип</th><th>Партнерские товары</th><th>Статус</th><th /></tr></thead><tbody>{rows.map((item) => <tr key={item.id}><td><strong>{item.title.ru}</strong><small>{item.slug}</small></td><td>{siteLabel(item.site)}</td><td>{contentTypeLabels[item.type]}</td><td>{item.affiliateProductIds.join(', ') || 'нет'}</td><td><span className="status-pill info"><i />{publishStatusLabels[item.status as PublishStatus]}</span></td><td><button className="table-action" type="button" onClick={() => openEdit(item.id)}>Редактировать</button></td></tr>)}</tbody></table></section>
+      <section className="ops-panel"><table className="ops-table"><thead><tr><th>Фото</th><th>Материал</th><th>Сайт</th><th>Тип</th><th>Партнерские товары</th><th>Статус</th><th /></tr></thead><tbody>{rows.map((item) => {
+        const imageUrl = articleImages.get(item.id);
+        return <tr key={item.id}><td>{imageUrl ? <img className="catalog-product-thumb" src={imageUrl} alt={item.title.ru} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="cms" size={18} /></span>}</td><td><strong>{item.title.ru}</strong><small>{item.slug}</small></td><td>{siteLabel(item.site)}</td><td>{contentTypeLabels[item.type]}</td><td>{item.affiliateProductIds.join(', ') || 'нет'}</td><td><span className="status-pill info"><i />{publishStatusLabels[item.status as PublishStatus]}</span></td><td><button className="table-action" type="button" onClick={() => openEdit(item.id)}>Редактировать</button></td></tr>;
+      })}</tbody></table></section>
       {editorOpen ? (
         <div className="modal-overlay">
           <div className="editor-modal content-editor-modal">
@@ -325,6 +374,20 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
               <label className="editor-field"><span>Фото URL</span><input value={draft.image_url} onChange={(event) => patchDraft({ image_url: event.target.value })} placeholder="https://..." /></label>
               <label className="editor-check"><input type="checkbox" checked={draft.published} onChange={(event) => patchDraft({ published: event.target.checked })} />Опубликовано</label>
             </div>
+
+            <section className="content-photo-panel">
+              <div className="content-photo-preview">
+                {draft.image_url ? <img src={draft.image_url} alt={draft.title_ru || draft.slug || 'Фото материала'} onError={() => setMessage('Фото URL не загрузился в браузере. Проверь, что R2 public URL доступен без авторизации.')} /> : <span><AppIcon name="cms" size={34} />Фото не выбрано</span>}
+              </div>
+              <div className="content-photo-tools">
+                <label className="editor-field"><span>Промпт фото</span><textarea value={aiImagePrompt} onChange={(event) => setAiImagePrompt(event.target.value)} placeholder="Editorial food photo, crispy fish skin, professional kitchen lighting" /></label>
+                <div className="editor-actions">
+                  <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)} />Загрузить</label>
+                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhoto}><AppIcon name="bot" />AI фото</button>
+                  <button className="btn btn-quiet" type="button" disabled={imageBusy || !draft.image_url} onClick={() => patchDraft({ image_url: '' })}>Убрать</button>
+                </div>
+              </div>
+            </section>
 
             <div className="analytics-mode-switcher content-lang-tabs">
               {languages.map((language) => <button key={language.key} className={activeLang === language.key ? 'analytics-mode-button active' : 'analytics-mode-button'} type="button" onClick={() => setActiveLang(language.key)}>{language.label}</button>)}
