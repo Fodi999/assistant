@@ -911,3 +911,30 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   .catalog-edit-body.compact { grid-template-columns: 1fr; }
   .toggle-grid.span-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+
+.catalog-edit-modal.compact {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.catalog-edit-modal.compact .catalog-edit-head {
+  position: relative;
+  z-index: 3;
+  background: var(--bg);
+}
+.catalog-edit-modal.compact .catalog-edit-tabs {
+  position: relative;
+  z-index: 4;
+  min-height: 48px;
+  align-items: center;
+  background: var(--bg);
+  padding: 8px 14px 9px;
+}
+.catalog-edit-modal.compact .catalog-edit-body {
+  overflow: auto;
+  min-height: 0;
+}
+.catalog-edit-modal.compact .catalog-edit-actions {
+  position: relative;
+  z-index: 3;
+  background: var(--bg);
+}
