@@ -27,6 +27,12 @@ pub struct MaterialCategory {
     pub photo: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail_image_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_slug: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,12 +110,12 @@ fn clean_items(value: Option<Vec<String>>) -> Vec<String> {
 fn default_content() -> AlmabuildContent {
     AlmabuildContent {
         material_categories: vec![
-            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], photo: "material-drywall".into(), image_url: None },
-            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], photo: "material-mixes".into(), image_url: None },
-            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], photo: "material-flooring".into(), image_url: None },
-            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], photo: "material-electric".into(), image_url: None },
-            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], photo: "material-ceiling".into(), image_url: None },
-            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], photo: "material-osb".into(), image_url: None },
+            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], photo: "material-drywall".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
+            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], photo: "material-mixes".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
+            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], photo: "material-flooring".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
+            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], photo: "material-electric".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
+            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], photo: "material-ceiling".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
+            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], photo: "material-osb".into(), image_url: None, detail_image_url: None, price: None, category_slug: None },
         ],
         products: vec![
             Product { category_slug: "gipsokarton-profili".into(), category: "ГКЛ".into(), title: "ГКЛ 12.5 мм стандартный".into(), spec: "2500x1200 мм · стены и потолки".into(), photo: "photo-plans".into() },
@@ -397,10 +403,15 @@ pub async fn admin_ai_materials_from_photo(
 ) -> Result<Json<MaterialsFromPhotoResponse>, AppError> {
     let mut image: Option<bytes::Bytes> = None;
     let mut mime_type = "image/jpeg".to_string();
+    let mut detail_image: Option<bytes::Bytes> = None;
+    let mut detail_mime_type = "image/jpeg".to_string();
     let mut count = 1usize;
     let mut instruction = String::new();
     let mut existing_count = 0usize;
     let mut existing = String::new();
+    let mut price = String::new();
+    let mut category_slug = String::new();
+    let mut category_title = String::new();
 
     while let Some(field) = multipart
         .next_field()
@@ -419,6 +430,16 @@ pub async fn admin_ai_materials_from_photo(
                     AppError::validation(format!("Failed to read uploaded image: {e}"))
                 })?);
             }
+            "detailImage" | "detailFile" => {
+                detail_mime_type = field
+                    .content_type()
+                    .filter(|value| value.starts_with("image/"))
+                    .unwrap_or("image/jpeg")
+                    .to_string();
+                detail_image = Some(field.bytes().await.map_err(|e| {
+                    AppError::validation(format!("Failed to read detail image: {e}"))
+                })?);
+            }
             "count" => {
                 let value = field.text().await.unwrap_or_default();
                 count = value.parse::<usize>().unwrap_or(1).clamp(1, 12);
@@ -432,6 +453,15 @@ pub async fn admin_ai_materials_from_photo(
             }
             "existing" => {
                 existing = field.text().await.unwrap_or_default();
+            }
+            "price" => {
+                price = field.text().await.unwrap_or_default();
+            }
+            "categorySlug" => {
+                category_slug = field.text().await.unwrap_or_default();
+            }
+            "categoryTitle" => {
+                category_title = field.text().await.unwrap_or_default();
             }
             _ => {}
         }
@@ -451,6 +481,26 @@ pub async fn admin_ai_materials_from_photo(
     let image_url = r2
         .upload_image(&image_key, image.clone(), &mime_type)
         .await?;
+    let detail_image_url = if let Some(detail_image) = detail_image.clone() {
+        let extension = match detail_mime_type.as_str() {
+            "image/png" => "png",
+            "image/webp" => "webp",
+            "image/gif" => "gif",
+            "image/jpeg" | "image/jpg" => "jpg",
+            _ => "jpg",
+        };
+        let key = format!(
+            "almabuild/materials/detail-{}.{}",
+            uuid::Uuid::new_v4(),
+            extension
+        );
+        Some(
+            r2.upload_image(&key, detail_image, &detail_mime_type)
+                .await?,
+        )
+    } else {
+        None
+    };
 
     let prompt = format!(
         r#"Ты Vision-модель для CRM строительного сайта KAZAXBUD / ALMABUILD в Алматы.
@@ -458,7 +508,7 @@ pub async fn admin_ai_materials_from_photo(
 Создай ровно {count} карточек категорий/материалов для секции "Материалы" сайта.
 
 Верни ТОЛЬКО JSON без markdown в формате:
-{{"materials":[{{"index":"[0:7]","slug":"latin-slug","title":"Название","text":"Короткое B2B-описание","bullets":["Пункт"],"photo":"material-mixes","imageUrl":"{image_url}"}}]}}
+{{"materials":[{{"index":"[0:7]","slug":"latin-slug","title":"Название","text":"Короткое B2B-описание","bullets":["Пункт"],"photo":"material-mixes","imageUrl":"{image_url}","detailImageUrl":"{detail_image_url}","price":"{price}","categorySlug":"{category_slug}"}}]}}
 
 Правила:
 - Язык: русский.
@@ -469,7 +519,11 @@ pub async fn admin_ai_materials_from_photo(
 - index начинай с [0:{first_index}] и продолжай по порядку.
 - photo выбери один класс: material-drywall, material-mixes, material-flooring, material-electric, material-ceiling, material-osb.
 - imageUrl всегда ставь ровно: {image_url}
+- detailImageUrl всегда ставь ровно: {detail_image_url}
+- price всегда ставь ровно: {price}
+- categorySlug всегда ставь ровно: {category_slug}; категория: {category_title}
 - Если фото содержит конкретные товары, группируй их в полезные категории сайта, а не в случайные одиночные позиции.
+- Первое фото — основное. Второе фото, если есть, используй как детальный референс фактуры/упаковки/строительного материала.
 - Не повторяй уже существующие карточки, если можно сделать новые или уточнённые.
 
 Текущее количество карточек: {existing_count}
@@ -481,6 +535,10 @@ pub async fn admin_ai_materials_from_photo(
 "#,
         count = count,
         image_url = image_url,
+        detail_image_url = detail_image_url.as_deref().unwrap_or(""),
+        price = price.trim(),
+        category_slug = category_slug.trim(),
+        category_title = category_title.trim(),
         first_index = existing_count + 1,
         existing_count = existing_count,
         existing = if existing.trim().is_empty() {
@@ -495,7 +553,18 @@ pub async fn admin_ai_materials_from_photo(
         }
     );
 
-    let raw = llm.analyze_image_json(&prompt, &image, &mime_type).await?;
+    let raw = if let Some(detail_image) = detail_image.as_ref() {
+        llm.analyze_images_json(
+            &prompt,
+            &[
+                (image.as_ref(), mime_type.as_str()),
+                (detail_image.as_ref(), detail_mime_type.as_str()),
+            ],
+        )
+        .await?
+    } else {
+        llm.analyze_image_json(&prompt, &image, &mime_type).await?
+    };
     let value: Value = serde_json::from_str(strip_json_fence(&raw))
         .map_err(|e| AppError::internal(format!("Gemini Vision вернул не JSON: {e}")))?;
     let response: MaterialsFromPhotoResponse = serde_json::from_value(value).map_err(|e| {
@@ -513,6 +582,13 @@ pub async fn admin_ai_materials_from_photo(
             .take(count)
             .map(|mut material| {
                 material.image_url = Some(image_url.clone());
+                material.detail_image_url = detail_image_url.clone();
+                if !price.trim().is_empty() {
+                    material.price = Some(price.trim().to_string());
+                }
+                if !category_slug.trim().is_empty() {
+                    material.category_slug = Some(category_slug.trim().to_string());
+                }
                 material
             })
             .collect(),

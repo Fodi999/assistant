@@ -389,4 +389,21 @@ impl LlmAdapter {
             .await;
         Ok(result)
     }
+
+    pub async fn analyze_images_json(
+        &self,
+        prompt: &str,
+        images: &[(&[u8], &str)],
+    ) -> Result<String, AppError> {
+        let start = Instant::now();
+        let result = timeout(
+            Duration::from_secs(125),
+            self.gemini_service.analyze_images_json(prompt, images),
+        )
+        .await
+        .map_err(|_| AppError::internal("AI timeout (125s) for Gemini Vision"))??;
+        self.log_usage("gemini_vision_json", start.elapsed().as_millis() as i32)
+            .await;
+        Ok(result)
+    }
 }

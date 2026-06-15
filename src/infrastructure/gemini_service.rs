@@ -634,25 +634,36 @@ STRICTLY EXCLUDE:
         image_bytes: &[u8],
         mime_type: &str,
     ) -> Result<String, AppError> {
-        if image_bytes.is_empty() {
+        self.analyze_images_json(prompt, &[(image_bytes, mime_type)])
+            .await
+    }
+
+    pub async fn analyze_images_json(
+        &self,
+        prompt: &str,
+        images: &[(&[u8], &str)],
+    ) -> Result<String, AppError> {
+        if images.is_empty() {
             return Err(AppError::validation("Image file is empty"));
         }
-        if image_bytes.len() > 10 * 1024 * 1024 {
-            return Err(AppError::validation("Image must be smaller than 10 MB"));
+        let mut parts = vec![serde_json::json!({"text": prompt})];
+        for (image_bytes, mime_type) in images.iter().take(2) {
+            if image_bytes.is_empty() {
+                return Err(AppError::validation("Image file is empty"));
+            }
+            if image_bytes.len() > 10 * 1024 * 1024 {
+                return Err(AppError::validation("Image must be smaller than 10 MB"));
+            }
+            parts.push(serde_json::json!({
+                "inlineData": {
+                    "mimeType": mime_type,
+                    "data": base64::engine::general_purpose::STANDARD.encode(image_bytes)
+                }
+            }));
         }
 
         let body = serde_json::json!({
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {
-                        "inlineData": {
-                            "mimeType": mime_type,
-                            "data": base64::engine::general_purpose::STANDARD.encode(image_bytes)
-                        }
-                    }
-                ]
-            }],
+            "contents": [{"parts": parts}],
             "generationConfig": {
                 "temperature": 0.2,
                 "responseMimeType": "application/json"
