@@ -347,14 +347,62 @@ function LeadsCrm({ data }: { data: SiteDataset }) {
   return <div className="kanban-board">{stages.map((stage, index) => <section className="kanban-column" key={stage}><h3>{stage}<span>{data.leadsMonth && index < 5 ? index + 1 : 0}</span></h3>{data.leadsMonth && index < 5 ? <article className="lead-card"><strong>{['Заявка сайта', 'Консультация', 'SEO-заявка', 'Смета', 'Договор'][index]}</strong><p>{data.name} · источник: сайт</p><small>Отдельная воронка сайта</small></article> : <div className="empty-state">Нет заявок для {data.name}</div>}</section>)}</div>;
 }
 
+function productDisplayName(product: AdminProduct) {
+  return product.name_ru || product.name_pl || product.name_en || product.slug || product.id;
+}
+
+function categoryDisplayName(category?: AdminCategory) {
+  return category?.name_ru || category?.name_pl || category?.name_en || category?.id || 'Без категории';
+}
+
 function CatalogTable({ props }: { props: OperationsPageProps }) {
+  const [query, setQuery] = useState('');
+  const [categoryId, setCategoryId] = useState('all');
+  const [limit, setLimit] = useState(50);
+
   if (props.activeSite === 'almabuild') {
     const rows = props.almabuildContent?.products ?? [];
     return <section className="ops-panel"><PanelTitle title="Товары Kazaxbud" icon="catalog" action="из /almabuild/content" /><table className="ops-table"><thead><tr><th>Название</th><th>Категория</th><th>Slug</th><th>Характеристики</th><th>Статус</th></tr></thead><tbody>{rows.map((product) => <tr key={product.title}><td>{product.title}</td><td>{product.category}</td><td>{product.categorySlug}</td><td>{product.spec}</td><td><StatusPill tone="good" label="опубликовано" /></td></tr>)}</tbody></table></section>;
   }
 
-  const rows = props.products.slice(0, 8);
-  return <section className="ops-panel"><PanelTitle title="Каталог Dima" icon="catalog" action="из бэкенда Dima" /><table className="ops-table"><thead><tr><th>Название</th><th>Категория</th><th>SKU</th><th>SEO</th><th>Статус</th></tr></thead><tbody>{rows.map((product) => <tr key={product.id}><td>{product.name_ru || product.name_en}</td><td>{product.category_id}</td><td>{product.slug || product.id.slice(0, 8)}</td><td><StatusPill tone={product.seo_title ? 'good' : 'warning'} label={product.seo_title ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={product.is_published ? 'good' : 'neutral'} label={product.is_published ? 'опубликовано' : 'черновик'} /></td></tr>)}</tbody></table></section>;
+  const categoriesById = new Map(props.categories.map((category) => [category.id, category]));
+  const needle = query.trim().toLowerCase();
+  const filtered = props.products.filter((product) => {
+    const category = categoriesById.get(product.category_id);
+    const haystack = [product.name_ru, product.name_en, product.name_pl, product.slug, product.product_type, categoryDisplayName(category)]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const matchesSearch = !needle || haystack.includes(needle);
+    const matchesCategory = categoryId === 'all' || product.category_id === categoryId;
+    return matchesSearch && matchesCategory;
+  });
+  const visibleRows = filtered.slice(0, limit);
+  const publishedCount = props.products.filter((product) => product.is_published).length;
+  const seoReadyCount = props.products.filter((product) => product.seo_title && product.seo_description).length;
+
+  return <section className="ops-panel catalog-browser">
+    <PanelTitle title="Каталог Dima" icon="catalog" action={`${visibleRows.length} из ${filtered.length} / всего ${props.products.length}`} />
+    <div className="catalog-toolbar">
+      <label><span>Поиск</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Название, slug, тип, категория" /></label>
+      <label><span>Категория</span><select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="all">Все категории</option>{props.categories.map((category) => <option key={category.id} value={category.id}>{categoryDisplayName(category)}</option>)}</select></label>
+      <label><span>Показать</span><select value={String(limit)} onChange={(event) => setLimit(Number(event.target.value))}><option value="50">50 товаров</option><option value="100">100 товаров</option><option value="250">250 товаров</option><option value="99999">Все товары</option></select></label>
+      <button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из backend</button>
+    </div>
+    <div className="catalog-stats-row">
+      <article><span>Всего из backend</span><strong>{props.products.length}</strong></article>
+      <article><span>Опубликовано</span><strong>{publishedCount}</strong></article>
+      <article><span>SEO готово</span><strong>{seoReadyCount}</strong></article>
+      <article><span>Категорий</span><strong>{props.categories.length}</strong></article>
+    </div>
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Название</th><th>Категория</th><th>Slug / SKU</th><th>Тип</th><th>Питание</th><th>SEO</th><th>Статус</th></tr></thead><tbody>{visibleRows.map((product) => {
+      const category = categoriesById.get(product.category_id);
+      const nutritionReady = product.calories_per_100g != null || product.protein_per_100g != null || product.carbs_per_100g != null || product.fat_per_100g != null;
+      return <tr key={product.id}><td><strong>{productDisplayName(product)}</strong><small>{product.name_en}</small></td><td>{categoryDisplayName(category)}</td><td><code>{product.slug || product.id.slice(0, 8)}</code></td><td>{product.product_type || 'other'}</td><td><StatusPill tone={nutritionReady ? 'good' : 'warning'} label={nutritionReady ? 'есть' : 'пусто'} /></td><td><StatusPill tone={product.seo_title && product.seo_description ? 'good' : 'warning'} label={product.seo_title && product.seo_description ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={product.is_published ? 'good' : 'neutral'} label={product.is_published ? 'опубликовано' : 'черновик'} /></td></tr>;
+    })}</tbody></table></div>
+    {filtered.length > visibleRows.length ? <p className="page-muted">Показано {visibleRows.length}. Увеличьте лимит, чтобы увидеть остальные {filtered.length - visibleRows.length}.</p> : null}
+    {props.products.length === 0 ? <p className="empty-state">Backend не вернул товары. Нажмите «Обновить» или проверьте авторизацию/API.</p> : null}
+  </section>;
 }
 
 function MaterialsTable({ props }: { props: OperationsPageProps }) {
