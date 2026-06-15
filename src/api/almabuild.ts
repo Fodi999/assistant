@@ -10,6 +10,9 @@ export type MaterialCategory = {
   bullets: string[];
   photo: string;
   imageUrl?: string;
+  detailImageUrl?: string;
+  price?: string;
+  categorySlug?: string;
 };
 
 export type Product = {
@@ -81,6 +84,10 @@ export type MaterialsFromPhotoRequest = {
   instruction?: string;
   existingCount?: number;
   existing?: MaterialCategory[];
+  detailImage?: File | null;
+  price?: string;
+  categorySlug?: string;
+  categoryTitle?: string;
 };
 
 export type MaterialsFromPhotoResponse = {
@@ -94,6 +101,10 @@ export function generateAlmabuildMaterialsFromPhoto(request: MaterialsFromPhotoR
   form.set('instruction', request.instruction || '');
   form.set('existingCount', String(request.existingCount ?? 0));
   form.set('existing', JSON.stringify(request.existing || []));
+  if (request.detailImage) form.set('detailImage', request.detailImage);
+  form.set('price', request.price || '');
+  form.set('categorySlug', request.categorySlug || '');
+  form.set('categoryTitle', request.categoryTitle || '');
   return apiFetch<MaterialsFromPhotoResponse>('/api/admin/almabuild/ai/materials-from-photo', {
     method: 'POST',
     body: form

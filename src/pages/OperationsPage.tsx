@@ -352,6 +352,9 @@ function KazaxbudMaterialEditorModal({ item, index, content, onClose, onRefresh,
               <SeoEditorField label="Индекс" value={draft.index} onChange={(nextIndex) => setDraft({ ...draft, index: nextIndex })} />
               <SeoEditorField label="Визуальный класс" value={draft.photo} onChange={(photo) => setDraft({ ...draft, photo })} />
               <SeoEditorField label="Cloudflare R2 imageUrl" value={draft.imageUrl || ''} onChange={(imageUrl) => setDraft({ ...draft, imageUrl })} />
+              <SeoEditorField label="Детальное фото detailImageUrl" value={draft.detailImageUrl || ''} onChange={(detailImageUrl) => setDraft({ ...draft, detailImageUrl })} />
+              <SeoEditorField label="Цена" value={draft.price || ''} onChange={(price) => setDraft({ ...draft, price })} />
+              <SeoEditorField label="Категория в базе" value={draft.categorySlug || ''} onChange={(categorySlug) => setDraft({ ...draft, categorySlug })} />
               <SeoEditorField label="Описание" value={draft.text} onChange={(text) => setDraft({ ...draft, text })} multiline textareaClassName="min-h-[190px]" />
               <SeoEditorField label="Пункты внутри карточки, каждый с новой строки" value={draft.bullets.join('\n')} onChange={(bullets) => setDraft({ ...draft, bullets: splitLines(bullets) })} multiline textareaClassName="min-h-[190px]" />
             </CardContent>
@@ -1285,12 +1288,16 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [visionFile, setVisionFile] = useState<File | null>(null);
+  const [visionDetailFile, setVisionDetailFile] = useState<File | null>(null);
   const [visionCount, setVisionCount] = useState(4);
   const [visionInstruction, setVisionInstruction] = useState('Определи материалы на фото и создай категории для сайта стройматериалов в Алматы.');
+  const [visionPrice, setVisionPrice] = useState('');
+  const [visionCategorySlug, setVisionCategorySlug] = useState('all');
   const [visionBusy, setVisionBusy] = useState(false);
   const [visionMessage, setVisionMessage] = useState<string | null>(null);
   const [visionDrafts, setVisionDrafts] = useState<MaterialCategory[]>([]);
   const [visionPreviewUrl, setVisionPreviewUrl] = useState<string | null>(null);
+  const [visionDetailPreviewUrl, setVisionDetailPreviewUrl] = useState<string | null>(null);
   const content = props.almabuildContent;
   useEffect(() => {
     if (!visionFile) {
@@ -1301,6 +1308,12 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
     setVisionPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [visionFile]);
+  useEffect(() => {
+    if (!visionDetailFile) { setVisionDetailPreviewUrl(null); return undefined; }
+    const url = URL.createObjectURL(visionDetailFile);
+    setVisionDetailPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [visionDetailFile]);
   if (!content) return <section className="ops-panel"><PanelTitle title="Материалы Kazaxbud" icon="materials" action="контент не загружен" /><p className="empty-state">Нажмите «Обновить», чтобы загрузить контент сайта.</p></section>;
   const loadedContent = content;
   const needle = query.trim().toLowerCase();
@@ -1310,6 +1323,7 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
       const haystack = [item.title, item.slug, item.index, item.text, item.photo, ...item.bullets].join(' ').toLowerCase();
       return !needle || haystack.includes(needle);
     });
+  const visionCategory = visionCategorySlug === 'all' ? null : content.materialCategories.find((item) => item.slug === visionCategorySlug) || null;
 
   async function runVision() {
     if (!visionFile) {
@@ -1323,7 +1337,11 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
         count: visionCount,
         instruction: visionInstruction,
         existingCount: loadedContent.materialCategories.length,
-        existing: loadedContent.materialCategories
+        existing: loadedContent.materialCategories,
+        detailImage: visionDetailFile,
+        price: visionPrice,
+        categorySlug: visionCategory?.slug || '',
+        categoryTitle: visionCategory?.title || 'Все'
       });
       setVisionDrafts(response.materials);
       setVisionMessage(`Gemini Vision подготовил ${response.materials.length} карточек. Проверьте и добавьте в сайт.`);
@@ -1340,7 +1358,9 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
       await saveAlmabuildContent({ ...loadedContent, materialCategories: [...loadedContent.materialCategories, ...nextMaterials] });
       setVisionDrafts([]);
       setVisionFile(null);
+      setVisionDetailFile(null);
       setVisionPreviewUrl(null);
+      setVisionDetailPreviewUrl(null);
       setVisionMessage('Материалы добавлены и доступны сайту Kazaxbud.');
       await props.onRefresh();
       setCreating(false);
@@ -1355,7 +1375,7 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
     <div className="catalog-stats-row"><article><span>Всего материалов</span><strong>{content.materialCategories.length}</strong></article><article><span>С описанием</span><strong>{content.materialCategories.filter((item) => item.text).length}</strong></article><article><span>С пунктами</span><strong>{content.materialCategories.filter((item) => item.bullets.length).length}</strong></article><article><span>Визуальных классов</span><strong>{new Set(content.materialCategories.map((item) => item.photo).filter(Boolean)).size}</strong></article><article><span>Показано</span><strong>{rows.length}</strong></article></div>
     <div className="table-scroll"><table className="ops-table"><thead><tr><th>Вид</th><th>Название</th><th>Slug</th><th>Индекс</th><th>Пункты</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{rows.map(({ item, index }) => <tr key={`${item.slug}-${index}`}><td>{item.imageUrl ? <img className="catalog-product-thumb" src={item.imageUrl} alt={item.title} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="materials" size={18} /></span>}</td><td><strong>{item.title}</strong><small>{item.text}</small>{item.imageUrl ? <small>R2 фото сохранено</small> : null}</td><td><code>{item.slug}</code></td><td><code>{item.index}</code></td><td>{item.bullets.length}</td><td><StatusPill tone={item.title && item.slug && item.text ? 'good' : 'warning'} label={item.title && item.slug && item.text ? 'готово' : 'проверить'} /></td><td><button className="table-action" type="button" onClick={() => setEditingIndex(index)}>Редактировать</button></td></tr>)}</tbody></table></div>
     {content.materialCategories.length === 0 ? <p className="empty-state">Материалы не загружены. Добавьте первый материал.</p> : null}
-    {creating ? <KazaxbudMaterialEditorModal content={content} onClose={() => setCreating(false)} onRefresh={props.onRefresh} visionPanel={<Card className="bg-zinc-950"><CardHeader><CardTitle>Gemini Vision по фото</CardTitle></CardHeader><CardContent className="grid gap-3"><Button asChild variant="secondary"><label htmlFor="kazaxbud-material-photo-modal" className="cursor-pointer"><AppIcon name="materials" />Выбрать фото</label></Button><Input id="kazaxbud-material-photo-modal" className="sr-only" type="file" accept="image/*" onChange={(event) => setVisionFile(event.target.files?.[0] || null)} /><div className="overflow-hidden rounded-md border border-zinc-800 bg-black">{visionPreviewUrl ? <img className="h-48 w-full object-cover" src={visionPreviewUrl} alt="Фото для Gemini Vision" /> : <div className="grid h-48 place-items-center text-center text-sm font-bold text-zinc-500">Gemini увидит выбранное фото</div>}</div><span className="truncate text-xs font-bold text-zinc-500">{visionFile?.name || 'Файл не выбран'}</span><div className="grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2"><Button variant="secondary" size="icon" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value - 1))}>-</Button><Input className="text-center text-lg font-black" type="number" min={1} max={12} value={visionCount} onChange={(event) => setVisionCount(clampMaterialCount(Number(event.target.value) || 1))} /><Button variant="secondary" size="icon" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value + 1))}>+</Button></div><Textarea className="min-h-32 resize-none text-sm font-bold leading-relaxed" value={visionInstruction} onChange={(event) => setVisionInstruction(event.target.value)} /><Button type="button" onClick={() => void runVision()} disabled={visionBusy || !visionFile}><AppIcon name="sparkles" />{visionBusy ? 'Gemini смотрит...' : 'Создать по фото'}</Button><EditorMessage value={visionMessage} />{visionDrafts.length ? <div className="grid gap-3"><div className="flex items-center justify-between gap-3"><strong className="text-sm text-zinc-100">Предпросмотр: {visionDrafts.length}</strong><Button size="sm" type="button" onClick={() => void saveVisionDrafts()} disabled={visionBusy}><AppIcon name="check" />Добавить все</Button></div><div className="grid max-h-72 gap-3 overflow-auto pr-1">{visionDrafts.map((item, index) => <article key={`${item.slug}-${index}`} className="rounded border border-zinc-800 bg-black p-3">{item.imageUrl ? <img className="mb-3 h-24 w-full rounded object-cover" src={item.imageUrl} alt={item.title} /> : null}<div className="mb-2 flex items-start justify-between gap-2"><strong className="text-zinc-100">{item.title}</strong><code className="text-xs text-zinc-500">{item.index}</code></div><p className="text-sm text-zinc-400">{item.text}</p><small className="mt-2 block text-zinc-500">{item.slug} · {item.photo}</small></article>)}</div></div> : null}</CardContent></Card>} /> : null}
+    {creating ? <KazaxbudMaterialEditorModal content={content} onClose={() => setCreating(false)} onRefresh={props.onRefresh} visionPanel={<Card className="bg-zinc-950"><CardHeader><CardTitle>Gemini Vision по фото</CardTitle></CardHeader><CardContent className="grid gap-3"><div className="grid gap-2"><span className="text-xs font-black text-zinc-400">Категория в базе</span><select className="h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm font-bold text-zinc-50" value={visionCategorySlug} onChange={(event) => setVisionCategorySlug(event.target.value)}><option value="all">Все</option>{content.materialCategories.map((category) => <option key={category.slug} value={category.slug}>{category.title}</option>)}</select></div><div className="grid gap-2"><span className="text-xs font-black text-zinc-400">Цена</span><Input value={visionPrice} onChange={(event) => setVisionPrice(event.target.value)} placeholder="например: от 3 500 ₸ / лист" /></div><div className="grid gap-2"><Button asChild variant="secondary"><label htmlFor="kazaxbud-material-photo-modal" className="cursor-pointer"><AppIcon name="materials" />Основное фото</label></Button><Input id="kazaxbud-material-photo-modal" className="sr-only" type="file" accept="image/*" onChange={(event) => setVisionFile(event.target.files?.[0] || null)} /><div className="overflow-hidden rounded-md border border-zinc-800 bg-black">{visionPreviewUrl ? <img className="h-40 w-full object-cover" src={visionPreviewUrl} alt="Основное фото для Gemini Vision" /> : <div className="grid h-40 place-items-center text-center text-sm font-bold text-zinc-500">Основное фото</div>}</div><span className="truncate text-xs font-bold text-zinc-500">{visionFile?.name || 'Файл не выбран'}</span></div><div className="grid gap-2"><Button asChild variant="secondary"><label htmlFor="kazaxbud-material-detail-photo-modal" className="cursor-pointer"><AppIcon name="materials" />Детальное фото</label></Button><Input id="kazaxbud-material-detail-photo-modal" className="sr-only" type="file" accept="image/*" onChange={(event) => setVisionDetailFile(event.target.files?.[0] || null)} /><div className="overflow-hidden rounded-md border border-zinc-800 bg-black">{visionDetailPreviewUrl ? <img className="h-32 w-full object-cover" src={visionDetailPreviewUrl} alt="Детальное фото для Gemini Vision" /> : <div className="grid h-32 place-items-center text-center text-sm font-bold text-zinc-500">Второе фото для детализации</div>}</div><span className="truncate text-xs font-bold text-zinc-500">{visionDetailFile?.name || 'Второе фото не выбрано'}</span></div><div className="grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2"><Button variant="secondary" size="icon" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value - 1))}>-</Button><Input className="text-center text-lg font-black" type="number" min={1} max={12} value={visionCount} onChange={(event) => setVisionCount(clampMaterialCount(Number(event.target.value) || 1))} /><Button variant="secondary" size="icon" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value + 1))}>+</Button></div><Textarea className="min-h-32 resize-none text-sm font-bold leading-relaxed" value={visionInstruction} onChange={(event) => setVisionInstruction(event.target.value)} /><Button type="button" onClick={() => void runVision()} disabled={visionBusy || !visionFile}><AppIcon name="sparkles" />{visionBusy ? 'Gemini смотрит...' : 'Создать по фото'}</Button><EditorMessage value={visionMessage} />{visionDrafts.length ? <div className="grid gap-3"><div className="flex items-center justify-between gap-3"><strong className="text-sm text-zinc-100">Предпросмотр: {visionDrafts.length}</strong><Button size="sm" type="button" onClick={() => void saveVisionDrafts()} disabled={visionBusy}><AppIcon name="check" />Добавить все</Button></div><div className="grid max-h-72 gap-3 overflow-auto pr-1">{visionDrafts.map((item, index) => <article key={`${item.slug}-${index}`} className="rounded border border-zinc-800 bg-black p-3">{item.imageUrl ? <img className="mb-3 h-24 w-full rounded object-cover" src={item.imageUrl} alt={item.title} /> : null}<div className="mb-2 flex items-start justify-between gap-2"><strong className="text-zinc-100">{item.title}</strong><code className="text-xs text-zinc-500">{item.index}</code></div><p className="text-sm text-zinc-400">{item.text}</p><small className="mt-2 block text-zinc-500">{item.slug} · {item.photo}</small>{item.price ? <small className="mt-1 block text-orange-300">{item.price}</small> : null}</article>)}</div></div> : null}</CardContent></Card>} /> : null}
     {editingIndex !== null ? <KazaxbudMaterialEditorModal item={content.materialCategories[editingIndex]} index={editingIndex} content={content} onClose={() => setEditingIndex(null)} onRefresh={props.onRefresh} /> : null}
   </section>;
 }
