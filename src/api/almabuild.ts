@@ -73,3 +73,28 @@ export function aiEditAlmabuildItem<T>(kind: AlmabuildAiKind, instruction: strin
     body: JSON.stringify({ kind, instruction, value })
   });
 }
+
+export type MaterialsFromPhotoRequest = {
+  image: File;
+  count: number;
+  instruction?: string;
+  existingCount?: number;
+  existing?: MaterialCategory[];
+};
+
+export type MaterialsFromPhotoResponse = {
+  materials: MaterialCategory[];
+};
+
+export function generateAlmabuildMaterialsFromPhoto(request: MaterialsFromPhotoRequest): Promise<MaterialsFromPhotoResponse> {
+  const form = new FormData();
+  form.set('image', request.image);
+  form.set('count', String(Math.min(12, Math.max(1, request.count))));
+  form.set('instruction', request.instruction || '');
+  form.set('existingCount', String(request.existingCount ?? 0));
+  form.set('existing', JSON.stringify(request.existing || []));
+  return apiFetch<MaterialsFromPhotoResponse>('/api/admin/almabuild/ai/materials-from-photo', {
+    method: 'POST',
+    body: form
+  });
+}
