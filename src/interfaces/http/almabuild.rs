@@ -1,4 +1,9 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{
+    extract::{Multipart, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Extension, Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -267,6 +272,12 @@ pub struct AiEditRequest {
     pub value: Value,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialsFromPhotoResponse {
+    pub materials: Vec<MaterialCategory>,
+}
+
 fn strip_json_fence(raw: &str) -> &str {
     let trimmed = raw.trim();
     let fence_json = "`".repeat(3) + "json";
@@ -371,4 +382,110 @@ pub async fn admin_ai_edit(
     let value: Value = serde_json::from_str(strip_json_fence(&raw))
         .map_err(|e| AppError::internal(format!("Gemini вернул не JSON: {e}")))?;
     Ok(Json(validate_ai_value(&req.kind, value)?))
+}
+
+pub async fn admin_ai_materials_from_photo(
+    Extension(llm): Extension<Arc<LlmAdapter>>,
+    mut multipart: Multipart,
+) -> Result<Json<MaterialsFromPhotoResponse>, AppError> {
+    let mut image: Option<bytes::Bytes> = None;
+    let mut mime_type = "image/jpeg".to_string();
+    let mut count = 1usize;
+    let mut instruction = String::new();
+    let mut existing_count = 0usize;
+    let mut existing = String::new();
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::validation(format!("Invalid multipart data: {e}")))?
+    {
+        let name = field.name().unwrap_or_default().to_string();
+        match name.as_str() {
+            "image" | "file" => {
+                mime_type = field
+                    .content_type()
+                    .filter(|value| value.starts_with("image/"))
+                    .unwrap_or("image/jpeg")
+                    .to_string();
+                image = Some(field.bytes().await.map_err(|e| {
+                    AppError::validation(format!("Failed to read uploaded image: {e}"))
+                })?);
+            }
+            "count" => {
+                let value = field.text().await.unwrap_or_default();
+                count = value.parse::<usize>().unwrap_or(1).clamp(1, 12);
+            }
+            "instruction" => {
+                instruction = field.text().await.unwrap_or_default();
+            }
+            "existingCount" => {
+                let value = field.text().await.unwrap_or_default();
+                existing_count = value.parse::<usize>().unwrap_or(0);
+            }
+            "existing" => {
+                existing = field.text().await.unwrap_or_default();
+            }
+            _ => {}
+        }
+    }
+
+    let image = image
+        .ok_or_else(|| AppError::validation("Загрузите фото материала в поле image или file"))?;
+
+    let prompt = format!(
+        r#"Ты Vision-модель для CRM строительного сайта KAZAXBUD / ALMABUILD в Алматы.
+Проанализируй загруженное фото: упаковки, листы, профили, смеси, плитку, инструмент, складскую полку или группу стройматериалов.
+Создай ровно {count} карточек категорий/материалов для секции "Материалы" сайта.
+
+Верни ТОЛЬКО JSON без markdown в формате:
+{{"materials":[{{"index":"[0:7]","slug":"latin-slug","title":"Название","text":"Короткое B2B-описание","bullets":["Пункт"],"photo":"material-mixes"}}]}}
+
+Правила:
+- Язык: русский.
+- title: понятное название категории/материала, не длиннее 44 символов.
+- text: 1 предложение для закупщика, наличие/объём/доставка/монтаж, без фантазий о бренде если на фото его не видно.
+- bullets: 3-5 коротких пунктов, каждый до 32 символов.
+- slug: латиница lower-case через дефис, уникальный.
+- index начинай с [0:{first_index}] и продолжай по порядку.
+- photo выбери один класс: material-drywall, material-mixes, material-flooring, material-electric, material-ceiling, material-osb.
+- Если фото содержит конкретные товары, группируй их в полезные категории сайта, а не в случайные одиночные позиции.
+- Не повторяй уже существующие карточки, если можно сделать новые или уточнённые.
+
+Текущее количество карточек: {existing_count}
+Текущие карточки JSON:
+{existing}
+
+Задача администратора:
+{instruction}
+"#,
+        count = count,
+        first_index = existing_count + 1,
+        existing_count = existing_count,
+        existing = if existing.trim().is_empty() {
+            "[]"
+        } else {
+            existing.trim()
+        },
+        instruction = if instruction.trim().is_empty() {
+            "Создай материалы по фото для каталога стройматериалов."
+        } else {
+            instruction.trim()
+        }
+    );
+
+    let raw = llm.analyze_image_json(&prompt, &image, &mime_type).await?;
+    let value: Value = serde_json::from_str(strip_json_fence(&raw))
+        .map_err(|e| AppError::internal(format!("Gemini Vision вернул не JSON: {e}")))?;
+    let response: MaterialsFromPhotoResponse = serde_json::from_value(value).map_err(|e| {
+        AppError::validation(format!("Gemini Vision вернул неверные материалы: {e}"))
+    })?;
+    if response.materials.is_empty() {
+        return Err(AppError::validation(
+            "Gemini Vision не вернул ни одной карточки материала",
+        ));
+    }
+    Ok(Json(MaterialsFromPhotoResponse {
+        materials: response.materials.into_iter().take(count).collect(),
+    }))
 }

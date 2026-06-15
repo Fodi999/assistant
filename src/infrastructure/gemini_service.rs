@@ -628,6 +628,88 @@ STRICTLY EXCLUDE:
         Ok(base64)
     }
 
+    pub async fn analyze_image_json(
+        &self,
+        prompt: &str,
+        image_bytes: &[u8],
+        mime_type: &str,
+    ) -> Result<String, AppError> {
+        if image_bytes.is_empty() {
+            return Err(AppError::validation("Image file is empty"));
+        }
+        if image_bytes.len() > 10 * 1024 * 1024 {
+            return Err(AppError::validation("Image must be smaller than 10 MB"));
+        }
+
+        let body = serde_json::json!({
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": base64::engine::general_purpose::STANDARD.encode(image_bytes)
+                        }
+                    }
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json"
+            }
+        });
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            self.smart_model, self.api_key
+        );
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            self.http_client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send(),
+        )
+        .await
+        .map_err(|_| AppError::internal("Timeout: Gemini Vision took too long"))?
+        .map_err(|e| AppError::internal(format!("Gemini Vision request failed: {e}")))?;
+
+        let status = result.status();
+        if !status.is_success() {
+            let err = result.text().await.unwrap_or_default();
+            tracing::error!(
+                "Gemini Vision failed (HTTP {}): {}",
+                status,
+                &err[..err.len().min(300)]
+            );
+            return Err(AppError::internal(format!(
+                "Gemini Vision API error: {status}"
+            )));
+        }
+
+        let json: serde_json::Value = result.json().await.map_err(|e| {
+            AppError::internal(format!("Failed to parse Gemini Vision response: {e}"))
+        })?;
+
+        json.pointer("/candidates/0/content/parts")
+            .and_then(|parts| parts.as_array())
+            .and_then(|parts| {
+                parts
+                    .iter()
+                    .find_map(|part| part.get("text").and_then(|text| text.as_str()))
+            })
+            .map(|text| text.to_string())
+            .ok_or_else(|| {
+                tracing::error!(
+                    "No text JSON in Gemini Vision response: {:?}",
+                    json.pointer("/candidates/0/content/parts")
+                );
+                AppError::internal("No text JSON in Gemini Vision response")
+            })
+    }
+
     // ── Internal helpers ────────────────────────────────────────────────────
 
     fn build_request(

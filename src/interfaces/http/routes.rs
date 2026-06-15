@@ -407,16 +407,16 @@ pub fn create_router(
             "/content",
             get(almabuild::admin_get_content).put(almabuild::admin_put_content),
         )
-        .route("/leads", get(almabuild::admin_get_leads));
-
-    let admin_almabuild_routes = if heavy_admin_enabled {
-        admin_almabuild_routes.route("/ai/edit", post(almabuild::admin_ai_edit))
-    } else {
-        admin_almabuild_routes
-    };
+        .route("/leads", get(almabuild::admin_get_leads))
+        .route("/ai/edit", post(almabuild::admin_ai_edit))
+        .route(
+            "/ai/materials-from-photo",
+            post(almabuild::admin_ai_materials_from_photo),
+        );
 
     let admin_almabuild_routes = admin_almabuild_routes
         .layer(Extension(Arc::clone(&llm_adapter)))
+        .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
