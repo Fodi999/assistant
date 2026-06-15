@@ -27,6 +27,7 @@ const languages: Array<{ key: Language; label: string }> = [
 
 const ARTICLE_IMAGE_COUNT = 4;
 const ARTICLE_IMAGE_MAX = 12;
+const ARTICLE_REFERENCE_MAX = 4;
 
 type ArticleDraft = {
   id?: string;
@@ -202,8 +203,11 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [activeLang, setActiveLang] = useState<Language>('ru');
   const [aiTopic, setAiTopic] = useState('');
   const [aiImagePrompt, setAiImagePrompt] = useState('');
+  const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
+  const [referenceUrlInput, setReferenceUrlInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
+  const [referenceBusy, setReferenceBusy] = useState(false);
   const [message, setMessage] = useState<string | undefined>();
   const rows = useMemo(() => items.filter((item) => (site === 'all' || item.site === site) && (type === 'all' || item.type === type)), [items, site, type]);
   const articleImages = useMemo(() => new Map(apiArticles.map((article) => [article.id, article.image_url || ''])), [apiArticles]);
@@ -236,6 +240,8 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setFullscreenImage(null);
     setAiTopic('');
     setAiImagePrompt('');
+    setReferenceUrls([]);
+    setReferenceUrlInput('');
     setActiveLang('ru');
     setMessage(undefined);
     setEditorOpen(true);
@@ -250,6 +256,8 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setFullscreenImage(null);
     setAiTopic(articleTitle(article));
     setAiImagePrompt(`Editorial food photo for article: ${articleTitle(article)}`);
+    setReferenceUrls([]);
+    setReferenceUrlInput('');
     setActiveLang('ru');
     setMessage(undefined);
     setEditorOpen(true);
@@ -354,7 +362,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setImageBusy(true);
     setMessage(undefined);
     try {
-      const result = await aiGenerateArticleImage(title, aiImagePrompt || undefined, selectedImage, false, [], 'flash', 'editorial', { photoScenarios: [] });
+      const result = await aiGenerateArticleImage(title, aiImagePrompt || undefined, selectedImage, false, referenceUrls, 'flash', 'editorial', { photoScenarios: [] });
       setImages((current) => current.map((item, index) => index === selectedImage ? result.image_url : item));
       if (selectedImage === 0) patchDraft({ image_url: result.image_url });
       setMessage(`AI фото ${selectedImage + 1} создано.`);
@@ -379,7 +387,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
         const prompt = index === 0
           ? aiImagePrompt || `Editorial food cover photo for article: ${title}`
           : `${aiImagePrompt || title}. Step ${index}: detailed supporting article photo, no text, realistic food editorial.`;
-        const result = await aiGenerateArticleImage(title, prompt, index, false, [], 'flash', 'editorial', { photoScenarios: [] });
+        const result = await aiGenerateArticleImage(title, prompt, index, false, referenceUrls, 'flash', 'editorial', { photoScenarios: [] });
         next.push(result.image_url);
         setImages([...next, ...Array(ARTICLE_IMAGE_COUNT - next.length).fill('')]);
       }
@@ -410,7 +418,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setMessage(undefined);
     try {
       const prompt = `${aiImagePrompt || title}. Additional gallery photo ${index + 1}, realistic editorial food image, no text.`;
-      const result = await aiGenerateArticleImage(title, prompt, index, false, [], 'flash', 'editorial', { photoScenarios: [] });
+      const result = await aiGenerateArticleImage(title, prompt, index, false, referenceUrls, 'flash', 'editorial', { photoScenarios: [] });
       setImages((current) => current.map((item, itemIndex) => itemIndex === index ? result.image_url : item));
       setMessage(`AI добавил фото ${index + 1}.`);
     } catch (error) {
@@ -425,6 +433,49 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const setImageAt = (index: number, url: string) => {
     setImages((current) => current.map((item, itemIndex) => itemIndex === index ? url : item));
     if (index === 0) patchDraft({ image_url: url });
+  };
+
+  const addReferenceFiles = async (files: FileList | null) => {
+    if (!files) return;
+    const slots = ARTICLE_REFERENCE_MAX - referenceUrls.length;
+    const selected = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, slots);
+    if (!selected.length) {
+      setMessage(`Можно добавить максимум ${ARTICLE_REFERENCE_MAX} референса.`);
+      return;
+    }
+    setReferenceBusy(true);
+    setMessage(undefined);
+    try {
+      const uploaded: string[] = [];
+      for (const file of selected) {
+        if (file.size > 10 * 1024 * 1024) throw new Error('Каждый референс должен быть меньше 10 MB');
+        uploaded.push(await uploadCmsReference(file));
+      }
+      setReferenceUrls((current) => [...current, ...uploaded].slice(0, ARTICLE_REFERENCE_MAX));
+      setMessage(`Добавлено референсов: ${uploaded.length}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить референсы.');
+    } finally {
+      setReferenceBusy(false);
+    }
+  };
+
+  const addReferenceUrl = () => {
+    const url = referenceUrlInput.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      setMessage('URL референса должен начинаться с http:// или https://');
+      return;
+    }
+    setReferenceUrls((current) => {
+      if (current.includes(url)) return current;
+      return [...current, url].slice(0, ARTICLE_REFERENCE_MAX);
+    });
+    setReferenceUrlInput('');
+  };
+
+  const removeReferenceUrl = (index: number) => {
+    setReferenceUrls((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const addImageSlot = () => {
@@ -512,6 +563,14 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
                   {images.length < ARTICLE_IMAGE_MAX ? <button className="content-image-add" type="button" onClick={addImageSlot}><span>+</span><small>Фото</small></button> : null}
                 </div>
                 <label className="editor-field"><span>Промпт фото</span><textarea value={aiImagePrompt} onChange={(event) => setAiImagePrompt(event.target.value)} placeholder="Editorial food photo, crispy fish skin, professional kitchen lighting" /></label>
+                <section className="content-reference-panel">
+                  <div className="panel-title compact"><span><AppIcon name="external" />Референсы для AI</span><small>{referenceUrls.length}/{ARTICLE_REFERENCE_MAX}</small></div>
+                  <div className="content-reference-actions">
+                    <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" multiple disabled={referenceBusy || referenceUrls.length >= ARTICLE_REFERENCE_MAX} onChange={(event) => void addReferenceFiles(event.target.files)} />Загрузить с ПК</label>
+                    <div className="content-reference-url"><input value={referenceUrlInput} onChange={(event) => setReferenceUrlInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addReferenceUrl(); }} placeholder="https://... фото-референс" /><button className="btn btn-quiet" type="button" disabled={referenceUrls.length >= ARTICLE_REFERENCE_MAX} onClick={addReferenceUrl}>URL</button></div>
+                  </div>
+                  {referenceUrls.length ? <div className="content-reference-strip">{referenceUrls.map((url, index) => <div key={`${url}-${index}`} className="content-reference-thumb"><img src={url} alt={`Референс ${index + 1}`} /><button type="button" onClick={() => removeReferenceUrl(index)}>×</button></div>)}</div> : <p className="editor-message">AI будет генерировать без визуального референса.</p>}
+                </section>
                 <div className="editor-actions">
                   <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)} />Загрузить</label>
                   <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhoto}><AppIcon name="bot" />AI фото</button>
