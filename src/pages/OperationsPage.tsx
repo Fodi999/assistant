@@ -71,7 +71,7 @@ function isToday(value: string) {
     && date.getDate() === today.getDate();
 }
 
-const MODULE_META: Record<AppPage, { title: string; subtitle: string; icon: AppIconName }> = {
+const MODULE_META: Partial<Record<AppPage, { title: string; subtitle: string; icon: AppIconName }>> = {
   overview: { title: 'Панель управления', subtitle: 'Отдельная панель выбранного сайта без смешивания данных.', icon: 'dashboard' },
   sites: { title: 'Настройки сайта', subtitle: 'Домен, GitHub, Cloudflare Pages, API бэкенда и интеграции выбранного сайта.', icon: 'globe' },
   leads: { title: 'CRM заявок', subtitle: 'Заявки и воронка только выбранного сайта.', icon: 'leads' },
@@ -174,7 +174,7 @@ function PanelTitle({ title, icon, action }: { title: string; icon: AppIconName;
 }
 
 function PageHeader({ props, data }: { props: OperationsPageProps; data: SiteDataset }) {
-  const meta = MODULE_META[props.page];
+  const meta = MODULE_META[props.page] ?? MODULE_META.overview!;
   return (
     <section className="ops-header">
       <div className="ops-header-icon"><AppIcon name={meta.icon} size={22} /></div>

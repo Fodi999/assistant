@@ -1,62 +1,79 @@
+import { useEffect, useState } from 'react';
+import { listAdminUsers } from '../api/admin';
+import { AppIcon } from '../components/AppIcon';
+import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
 import type { AdminUser } from '../types/admin';
 
-interface UsersPageProps {
-  users: AdminUser[];
-  loading: boolean;
-  error: string | null;
-  onReload: () => Promise<void>;
-  onDelete: (user: AdminUser) => Promise<void>;
-}
+const mockUsers: AdminUser[] = [
+  {
+    id: 'local-admin',
+    email: 'admin@fodi.app',
+    name: 'Дима Админ',
+    restaurant_name: 'Админка',
+    language: 'ru',
+    created_at: new Date().toISOString(),
+    login_count: 1,
+    last_login_at: new Date().toISOString()
+  },
+  {
+    id: 'content-editor',
+    email: 'editor@example.local',
+    name: 'Контент-редактор',
+    restaurant_name: 'Контент',
+    language: 'ru',
+    created_at: new Date().toISOString(),
+    login_count: 0,
+    last_login_at: null
+  }
+];
 
-function formatDate(value: string | null): string {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('ru-RU');
-}
+export function UsersPage() {
+  const [users, setUsers] = useState<AdminUser[]>(mockUsers);
+  const [source, setSource] = useState<DataSource>('mock');
+  const [sourceError, setSourceError] = useState<string | undefined>();
 
-export function UsersPage({ users, loading, error, onReload, onDelete }: UsersPageProps) {
+  useEffect(() => {
+    void listAdminUsers()
+      .then((response) => {
+        setUsers(response.users);
+        setSource('api');
+        setSourceError(undefined);
+      })
+      .catch((error) => {
+        setUsers(mockUsers);
+        setSource('mock');
+        setSourceError(error instanceof Error ? error.message : 'API недоступен');
+      });
+  }, []);
+
   return (
-    <section className="orders-page page-card">
-      <div className="section-head">
+    <section className="ops-page">
+      <div className="ops-header">
+        <div className="ops-header-icon"><AppIcon name="users" /></div>
         <div>
+          <p className="eyebrow">Управление доступом</p>
           <h2>Пользователи</h2>
-          <p className="page-muted">Рестораны и владельцы аккаунтов: {users.length}</p>
+          <p>Суперадминистраторы, редакторы партнерского каталога, контент-редакторы и операторы заявок.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => void onReload()} disabled={loading}>Обновить</button>
+        <div className="ops-header-actions"><DataSourceBadge source={source} label="Пользователи" /></div>
       </div>
-
-      {loading && <p className="page-muted">Загружаем пользователей...</p>}
-      {error && <p className="form-error">{error}</p>}
-
-      {!loading && !error && (
-        <div className="orders-table-wrap">
-          <table className="orders-table">
-            <thead>
-              <tr>
-                <th>Пользователь</th>
-                <th>Ресторан</th>
-                <th>Язык</th>
-                <th>Входы</th>
-                <th>Последний вход</th>
-                <th />
+      {sourceError ? <p className="ops-alert"><AppIcon name="terminal" />API не вернул пользователей: {sourceError}. Показаны mock-данные.</p> : null}
+      <section className="ops-panel">
+        <table className="ops-table">
+          <thead><tr><th>Пользователь</th><th>Ресторан / объект</th><th>Язык</th><th>Входы</th><th>Последний вход</th></tr></thead>
+          <tbody>
+            {users.map((user) => (
+              <tr key={user.id}>
+                <td><strong>{user.name || user.email}</strong><small>{user.email}</small></td>
+                <td>{user.restaurant_name}</td>
+                <td>{user.language.toUpperCase()}</td>
+                <td>{user.login_count}</td>
+                <td>{user.last_login_at ? new Date(user.last_login_at).toLocaleString('ru-RU') : '-'}</td>
               </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td><strong>{user.name || user.email}</strong><br /><span className="page-muted">{user.email}</span></td>
-                  <td>{user.restaurant_name}</td>
-                  <td>{user.language.toUpperCase()}</td>
-                  <td>{user.login_count}</td>
-                  <td>{formatDate(user.last_login_at)}</td>
-                  <td>
-                    <button className="btn btn-danger" onClick={() => void onDelete(user)}>Удалить</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </section>
     </section>
   );
 }

@@ -1,106 +1,51 @@
 import { useEffect, useState } from 'react';
-import { deleteAdminUser, getAdminStats, listAdminUsers } from './api/admin';
-import { getAnalyticsOverview, getAnalyticsRealtime, getSearchConsoleBundle, type AnalyticsOverview, type AnalyticsRealtime, type SearchConsoleBundle } from './api/analytics';
-import { getAlmabuildContent, listAlmabuildLeads, type AlmabuildContent, type AlmabuildLead } from './api/almabuild';
 import { adminLogin, adminLogout, verifyAdminToken } from './api/auth';
-import { listAdminCategories, listAdminProducts } from './api/catalog';
-import { listArticles } from './api/cms';
-import { listShopProducts } from './api/shop';
 import { bootstrapAdminToken, getAdminToken } from './api/client';
-import { Sidebar, type AppPage, type ManagedSite } from './components/Sidebar';
+import { normalizeSitePage, Sidebar, type AppPage } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
+import { AboutPage } from './pages/AboutPage';
+import { AffiliatePage } from './pages/AffiliatePage';
+import { AiStudioPage } from './pages/AiStudioPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
+import { ConstructionPage } from './pages/ConstructionPage';
+import { ContentPage } from './pages/ContentPage';
+import { CulinaryPage } from './pages/CulinaryPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { LeadsPage } from './pages/LeadsPage';
 import { LoginPage } from './pages/LoginPage';
-import { OperationsPage } from './pages/OperationsPage';
-import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from './types/admin';
+import { SettingsPage } from './pages/SettingsPage';
+import { SitesPage } from './pages/SitesPage';
+import { SuppliersPage } from './pages/SuppliersPage';
+import { UsersPage } from './pages/UsersPage';
+import type { SiteKey } from './types/admin';
 
-type AnalyticsPeriod = 7 | 28 | 90;
-type PageBySite = Record<ManagedSite, AppPage>;
-
-function pageAllowedForSite(site: ManagedSite, page: AppPage) {
-  if (site === 'almabuild' && page === 'catalog') return false;
-  if (site === 'dima' && page === 'materials') return false;
-  if (site === 'dima' && page === 'projects') return false;
-  return true;
-}
-
-function normalizeSitePage(site: ManagedSite, page: AppPage): AppPage {
-  if (pageAllowedForSite(site, page)) return page;
-  return site === 'almabuild' ? 'materials' : 'catalog';
-}
+type PageBySite = Record<SiteKey, AppPage>;
 
 export function App() {
-  const [activeSite, setActiveSite] = useState<ManagedSite>('almabuild');
-  const [pageBySite, setPageBySite] = useState<PageBySite>({ almabuild: 'overview', dima: 'overview' });
+  const [activeSite, setActiveSite] = useState<SiteKey>('construction');
+  const [pageBySite, setPageBySite] = useState<PageBySite>({ culinary: 'dashboard', construction: 'dashboard' });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true');
   const activePage = normalizeSitePage(activeSite, pageBySite[activeSite]);
   const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'anonymous'>('checking');
   const [authError, setAuthError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [dataError, setDataError] = useState<string | null>(null);
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [products, setProducts] = useState<AdminProduct[]>([]);
-  const [categories, setCategories] = useState<AdminCategory[]>([]);
-  const [articles, setArticles] = useState<CmsArticle[]>([]);
-  const [shopProducts, setShopProducts] = useState<ShopProduct[]>([]);
-  const [almabuildContent, setAlmabuildContent] = useState<AlmabuildContent | null>(null);
-  const [almabuildLeads, setAlmabuildLeads] = useState<AlmabuildLead[]>([]);
-  const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
-  const [realtimeAnalytics, setRealtimeAnalytics] = useState<AnalyticsRealtime | null>(null);
-  const [searchConsole, setSearchConsole] = useState<SearchConsoleBundle | null>(null);
-  const [analyticsPeriod] = useState<AnalyticsPeriod>(28);
+  const [dataError] = useState<string | null>(null);
 
   function navigate(page: AppPage) {
-    if (!pageAllowedForSite(activeSite, page)) return;
-    setPageBySite((current) => ({ ...current, [activeSite]: page }));
+    setPageBySite((current) => ({ ...current, [activeSite]: normalizeSitePage(activeSite, page) }));
   }
 
-  function changeSite(site: ManagedSite) {
+  function changeSite(site: SiteKey) {
     setPageBySite((current) => ({ ...current, [site]: normalizeSitePage(site, current[site]) }));
     setActiveSite(site);
   }
 
-  async function loadRealtimeAnalytics() {
-    if (activeSite !== 'dima') return;
-    try {
-      setRealtimeAnalytics(await getAnalyticsRealtime());
-    } catch {
-      setRealtimeAnalytics(null);
-    }
-  }
-
-  async function loadAdminData(days = analyticsPeriod) {
-    setLoading(true);
-    setDataError(null);
-    try {
-      const [nextStats, nextUsers, nextProducts, nextCategories, nextArticles, nextShopProducts, nextAlmabuild, nextAlmabuildLeads, nextAnalytics, nextRealtime, nextSearchConsole] = await Promise.all([
-        getAdminStats(),
-        listAdminUsers(),
-        listAdminProducts(),
-        listAdminCategories(),
-        listArticles(),
-        listShopProducts(),
-        getAlmabuildContent().catch(() => null),
-        listAlmabuildLeads().catch(() => []),
-        getAnalyticsOverview(days).catch(() => null),
-        getAnalyticsRealtime().catch(() => null),
-        getSearchConsoleBundle(days).catch(() => null)
-      ]);
-      setStats(nextStats);
-      setUsers(nextUsers.users);
-      setProducts(nextProducts);
-      setCategories(nextCategories);
-      setArticles(nextArticles);
-      setShopProducts(nextShopProducts);
-      setAlmabuildContent(nextAlmabuild);
-      setAlmabuildLeads(nextAlmabuildLeads);
-      setAnalytics(nextAnalytics);
-      setRealtimeAnalytics(nextRealtime);
-      setSearchConsole(nextSearchConsole);
-    } catch (error) {
-      setDataError(error instanceof Error ? error.message : 'Не удалось загрузить данные');
-    } finally {
-      setLoading(false);
-    }
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem('admin_sidebar_collapsed', String(next));
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -111,17 +56,8 @@ export function App() {
     }
     void verifyAdminToken().then((valid) => {
       setAuthState(valid ? 'authenticated' : 'anonymous');
-      if (valid) void loadAdminData();
     });
   }, []);
-
-  useEffect(() => {
-    if (authState !== 'authenticated') return;
-    const timer = window.setInterval(() => {
-      void loadRealtimeAnalytics();
-    }, 30000);
-    return () => window.clearInterval(timer);
-  }, [authState, activeSite]);
 
   async function login(email: string, password: string) {
     setLoading(true);
@@ -131,7 +67,6 @@ export function App() {
       const valid = await verifyAdminToken();
       if (!valid) throw new Error('Backend не подтвердил admin token');
       setAuthState('authenticated');
-      await loadAdminData();
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Ошибка входа');
       setAuthState('anonymous');
@@ -145,52 +80,34 @@ export function App() {
     setAuthState('anonymous');
   }
 
-  async function removeUser(user: AdminUser) {
-    if (!window.confirm('Удалить ' + user.email + ', ресторан и все связанные данные? Это необратимо.')) return;
-    setLoading(true);
-    setDataError(null);
-    try {
-      await deleteAdminUser(user.id);
-      await loadAdminData();
-    } catch (error) {
-      setDataError(error instanceof Error ? error.message : 'Не удалось удалить пользователя');
-    } finally {
-      setLoading(false);
+  function renderPage() {
+    switch (activePage) {
+      case 'dashboard': return <DashboardPage activeSite={activeSite} />;
+      case 'sites': return <SitesPage />;
+      case 'affiliate': return <AffiliatePage activeSite={activeSite} />;
+      case 'content': return <ContentPage activeSite={activeSite} />;
+      case 'ai-studio': return <AiStudioPage activeSite={activeSite} />;
+      case 'construction': return <ConstructionPage />;
+      case 'culinary': return <CulinaryPage />;
+      case 'leads': return <LeadsPage activeSite={activeSite} />;
+      case 'suppliers': return <SuppliersPage />;
+      case 'analytics': return <AnalyticsPage activeSite={activeSite} />;
+      case 'users': return <UsersPage />;
+      case 'settings': return <SettingsPage />;
+      case 'about': return <AboutPage />;
+      default: return <DashboardPage activeSite={activeSite} />;
     }
   }
-
-  void removeUser;
 
   if (authState === 'checking') return <main className="login-page"><p className="page-muted">Проверяем подключение к backend...</p></main>;
   if (authState === 'anonymous') return <LoginPage loading={loading} error={authError} onLogin={login} />;
 
-  const reload = async () => { await loadAdminData(analyticsPeriod); };
-
   return (
-    <div className="admin-shell">
-      <Sidebar activeSite={activeSite} activePage={activePage} onSiteChange={changeSite} onNavigate={navigate} />
+    <div className={'admin-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
+      <Sidebar activeSite={activeSite} activePage={activePage} collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} onSiteChange={changeSite} onNavigate={navigate} />
       <div className="content-shell">
-        <Topbar activeSite={activeSite} activePage={activePage} connectionState={dataError ? 'limited' : 'online'} onNavigate={navigate} onLogout={logout} />
-        <main className="page-content">
-          <OperationsPage
-            page={activePage}
-            activeSite={activeSite}
-            stats={stats}
-            users={users}
-            products={products}
-            categories={categories}
-            articles={articles}
-            shopProducts={shopProducts}
-            almabuildContent={almabuildContent}
-            almabuildLeads={almabuildLeads}
-            analytics={activeSite === 'dima' ? analytics : null}
-            realtime={activeSite === 'dima' ? realtimeAnalytics : null}
-            searchConsole={activeSite === 'dima' ? searchConsole : null}
-            loading={loading}
-            error={dataError}
-            onRefresh={reload}
-          />
-        </main>
+        <Topbar activeSite={activeSite} activePage={activePage} connectionState={dataError ? 'limited' : 'online'} onSiteChange={changeSite} onNavigate={navigate} onLogout={logout} />
+        <main className="page-content">{renderPage()}</main>
       </div>
     </div>
   );

@@ -1,28 +1,23 @@
-import { StatusBadge } from '../components/StatusBadge';
+import { siteConfigs } from '../lib/mockData';
+import { AppIcon } from '../components/AppIcon';
 
-interface SettingsPageProps {
-  tokenReady: boolean;
-  status: string;
-  onReload: () => Promise<void>;
-  onLogout: () => void;
-}
-
-export function SettingsPage({ tokenReady, status, onReload, onLogout }: SettingsPageProps) {
+export function SettingsPage() {
   return (
-    <section className="settings-page">
-      <article className="page-card">
-        <div className="section-head"><h2>Диагностика подключения</h2></div>
-        <div className="diagnostics-grid">
-          <div className="diag-item"><p className="diag-label">Admin JWT</p><StatusBadge tone={tokenReady ? 'ok' : 'danger'} label={tokenReady ? 'Проверен' : 'Отсутствует'} /></div>
-          <div className="diag-item"><p className="diag-label">Backend</p><p className="diag-value">{status}</p></div>
-          <div className="diag-item"><p className="diag-label">Действия</p><button className="btn btn-primary" onClick={() => void onReload()}>Обновить данные</button></div>
+    <section className="ops-page">
+      <div className="ops-header">
+        <div className="ops-header-icon"><AppIcon name="settings" /></div>
+        <div>
+          <p className="eyebrow">Системные настройки</p>
+          <h2>Настройки</h2>
+          <p>API endpoints, Gemini, Cloudflare R2, ревалидация, языки, валюты и сайты.</p>
         </div>
-      </article>
-      <article className="page-card">
-        <div className="section-head"><h2>Сессия</h2></div>
-        <p className="page-muted">Токен хранится локально под ключом admin_token и отправляется как Bearer token.</p>
-        <div className="settings-actions"><button className="btn btn-secondary" onClick={onLogout}>Выйти из admin API</button></div>
-      </article>
+      </div>
+      <div className="settings-matrix">
+        <section className="ops-panel"><div className="panel-title"><span><AppIcon name="terminal" />Адреса API</span></div><label className="editor-field"><span>API бэкенда</span><input value={String(import.meta.env.VITE_API_BASE_URL || 'Koyeb default')} readOnly /></label><label className="editor-field"><span>Ревалидация</span><input value="/api/admin/revalidate" readOnly /></label></section>
+        <section className="ops-panel"><div className="panel-title"><span><AppIcon name="bot" />Gemini</span></div><div className="ops-list"><div><span>Gemini API key</span><span className="status-pill warning"><i />только backend</span></div><div><span>AI-студия</span><span className="status-pill good"><i />включена</span></div></div></section>
+        <section className="ops-panel"><div className="panel-title"><span><AppIcon name="cloud" />Cloudflare R2</span></div><div className="ops-list"><div><span>Бакет изображений</span><strong>запланировано</strong></div><div><span>Детальные изображения</span><strong>готовы URL-поля</strong></div></div></section>
+        <section className="ops-panel"><div className="panel-title"><span><AppIcon name="globe" />Сайты</span></div><div className="ops-list">{siteConfigs.map((site) => <div key={site.key}><span>{site.name}</span><strong>{site.languages.join(' / ')} · {site.defaultCurrency}</strong></div>)}</div></section>
+      </div>
     </section>
   );
 }

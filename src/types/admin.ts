@@ -174,3 +174,190 @@ export interface ShopProduct extends ShopProductDraft {
   created_at: string | number[];
   updated_at: string | number[];
 }
+
+export type SiteKey = 'culinary' | 'construction';
+export type LanguageCode = 'ru' | 'pl' | 'en' | 'kk';
+export type CurrencyCode = 'PLN' | 'KZT' | 'EUR' | 'USD';
+export type AffiliateNetwork = 'amazon' | 'allegro' | 'ceneo' | 'awin' | 'custom';
+export type PublishStatus = 'draft' | 'active' | 'published' | 'archived';
+export type ContentType = 'article' | 'review' | 'comparison' | 'roundup' | 'recipe';
+export type LeadStatus = 'new' | 'contacted' | 'quoted' | 'won' | 'lost';
+export type SupplierType = 'marketplace' | 'local_supplier' | 'manufacturer' | 'affiliate_merchant';
+export type AiGenerationType = 'product_description' | 'seo' | 'slug' | 'photo_prompt' | 'translation' | 'quality_check';
+
+export type LocalizedText = Record<LanguageCode, string>;
+
+export interface SiteConfig {
+  key: SiteKey;
+  name: string;
+  domain: string;
+  primaryLanguage: LanguageCode;
+  languages: LanguageCode[];
+  status: PublishStatus;
+  apiStatus: 'online' | 'limited' | 'offline';
+  revalidateStatus: 'ready' | 'queued' | 'failed';
+  defaultCurrency: CurrencyCode;
+  region: string;
+}
+
+export interface AffiliateOffer {
+  id: string;
+  productId: string;
+  network: AffiliateNetwork;
+  merchant: string;
+  affiliateUrl: string;
+  price?: number;
+  currency: CurrencyCode;
+  commissionPercent?: number;
+  cookieDays?: number;
+  isActive: boolean;
+}
+
+export interface AffiliateProduct {
+  id: string;
+  site: SiteKey;
+  title: LocalizedText;
+  slug: string;
+  category: string;
+  network: AffiliateNetwork;
+  merchant: string;
+  affiliateUrl: string;
+  imageUrl?: string;
+  detailImageUrl?: string;
+  price?: number;
+  currency: CurrencyCode;
+  commissionPercent?: number;
+  cookieDays?: number;
+  status: PublishStatus;
+  languages: LanguageCode[];
+  seoTitle?: LocalizedText;
+  seoDescription?: LocalizedText;
+  offers?: AffiliateOffer[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContentArticle {
+  id: string;
+  site: SiteKey;
+  type: ContentType;
+  title: LocalizedText;
+  slug: string;
+  excerpt: LocalizedText;
+  status: PublishStatus;
+  languages: LanguageCode[];
+  affiliateProductIds: string[];
+  seoTitle?: LocalizedText;
+  seoDescription?: LocalizedText;
+  publishedAt?: string;
+  updatedAt?: string;
+}
+
+export interface ConstructionMaterial {
+  id: string;
+  title: LocalizedText;
+  slug: string;
+  category: string;
+  city: string;
+  supplierIds: string[];
+  unit: 'm2' | 'm3' | 'piece' | 'kg' | 'bag' | 'hour';
+  materialPrice?: number;
+  workPrice?: number;
+  currency: CurrencyCode;
+  marginPercent?: number;
+  status: PublishStatus;
+}
+
+export interface ConstructionCalculatorPreset {
+  id: string;
+  title: LocalizedText;
+  city: string;
+  areaM2: number;
+  materialCost: number;
+  workCost: number;
+  marginPercent: number;
+  totalPrice: number;
+  currency: CurrencyCode;
+  updatedAt?: string;
+}
+
+export interface ConstructionBundle {
+  id: string;
+  title: LocalizedText;
+  slug: string;
+  city: string;
+  materials: string[];
+  works: string[];
+  areaM2?: number;
+  materialCost?: number;
+  workCost?: number;
+  totalPrice?: number;
+  currency: CurrencyCode;
+  supplierIds: string[];
+  leadFormEnabled: boolean;
+  status: PublishStatus;
+}
+
+export interface Lead {
+  id: string;
+  clientName: string;
+  contact: string;
+  sourceSite: SiteKey;
+  category: string;
+  city?: string;
+  message: string;
+  status: LeadStatus;
+  potentialValue?: number;
+  currency: CurrencyCode;
+  createdAt: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  country: string;
+  city?: string;
+  categories: string[];
+  contact: string;
+  website?: string;
+  commissionTerms?: string;
+  type: SupplierType;
+}
+
+export interface AiGenerationRequest {
+  site: SiteKey;
+  language: LanguageCode;
+  type: AiGenerationType;
+  sourceText?: string;
+  productId?: string;
+  tone?: 'commercial' | 'expert' | 'seo' | 'short';
+  keywords?: string[];
+}
+
+export interface AiGenerationResult {
+  id: string;
+  request: AiGenerationRequest;
+  title?: string;
+  description?: string;
+  slug?: string;
+  photoPrompt?: string;
+  qualityScore?: number;
+  suggestions: string[];
+  createdAt: string;
+}
+
+export interface SiteDashboardMetrics {
+  site: SiteKey;
+  visitors: number;
+  affiliateClicks: number;
+  leads: number;
+  revenueEstimate: number;
+  currency: CurrencyCode;
+  publishedPages: number;
+  aiDrafts: number;
+  seoStatus: 'good' | 'needs_work' | 'critical';
+  topPages: Array<{ title: string; path: string; visitors: number; ctr: number }>;
+  topProducts: Array<{ productId: string; title: string; clicks: number; revenue: number }>;
+  recentLeads: Lead[];
+  seoTasks: Array<{ title: string; priority: 'high' | 'medium' | 'low'; status: PublishStatus }>;
+}

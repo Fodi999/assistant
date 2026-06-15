@@ -1,0 +1,139 @@
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.editor-list {
+  display: grid;
+  gap: 12px;
+}
+
+.editor-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.025);
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.editor-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-card-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.editor-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.editor-field input,
+.editor-field textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0d0d10;
+  color: var(--text);
+  padding: 9px 10px;
+  outline: 0;
+}
+
+.editor-field textarea {
+  min-height: 86px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.editor-field:focus-within input,
+.editor-field:focus-within textarea {
+  border-color: rgba(96,113,149,.55);
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editor-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.editor-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.editor-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+@media (max-width: 860px) {
+  .editor-grid { grid-template-columns: 1fr; }
+}
+
+
+.gemini-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid rgba(96,113,149,.28);
+  border-radius: var(--radius);
+  background: rgba(96,113,149,.08);
+}
+
+.gemini-bar label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.gemini-bar textarea {
+  min-height: 64px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0d0d10;
+  color: var(--text);
+  padding: 9px 10px;
+  outline: 0;
+}
+
+.gemini-bar textarea:focus {
+  border-color: rgba(96,113,149,.6);
+}
+
+@media (max-width: 860px) {
+  .gemini-bar { grid-template-columns: 1fr; }
+}

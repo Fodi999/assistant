@@ -1,0 +1,41 @@
+.total-strip {
+  min-height: 74px;
+  border: 4px solid var(--border);
+  border-radius: var(--radius);
+  background: #b9b8af;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+}
+
+.total-strip span,
+.total-strip small {
+  color: #1f1f22;
+}
+
+.total-strip strong {
+  color: #1f1f22;
+  font-size: 24px;
+}
+
+.kpi-grid.six .kpi-card:first-child,
+.kpi-grid .kpi-card:first-child {
+  background: var(--accent);
+}
+
+.kpi-grid.six .kpi-card:first-child p,
+.kpi-grid.six .kpi-card:first-child strong,
+.kpi-grid.six .kpi-card:first-child small,
+.kpi-grid .kpi-card:first-child p,
+.kpi-grid .kpi-card:first-child strong,
+.kpi-grid .kpi-card:first-child small {
+  color: var(--text);
+}
+
+.ops-page > .ops-panel:last-child:nth-child(3),
+.ops-page > .settings-matrix + .ops-panel {
+  background: #b9b8af;
+  color: #1f1f22;
+}

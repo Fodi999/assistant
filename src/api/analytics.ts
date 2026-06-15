@@ -75,6 +75,12 @@ export interface AnalyticsRealtime {
   events: AnalyticsRealtimeEvent[];
 }
 
+export interface AnalyticsOAuthUrl {
+  url: string;
+  redirect_uri: string;
+  scope: string;
+}
+
 export interface SearchConsoleSite {
   site_url: string;
   permission_level: string;
@@ -120,6 +126,10 @@ export function getAnalyticsOverview(days = 30): Promise<AnalyticsOverview> {
 
 export function getAnalyticsRealtime(): Promise<AnalyticsRealtime> {
   return apiFetch<AnalyticsRealtime>('/api/admin/analytics/realtime');
+}
+
+export function getAnalyticsOAuthUrl(): Promise<AnalyticsOAuthUrl> {
+  return apiFetch<AnalyticsOAuthUrl>('/api/admin/analytics/oauth/url');
 }
 
 export async function getSearchConsoleBundle(days = 30): Promise<SearchConsoleBundle> {

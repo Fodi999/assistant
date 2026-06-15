@@ -8,7 +8,7 @@ export const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
 >(({ className, ...props }, ref) => (
-  <TabsPrimitive.List ref={ref} className={cn('inline-flex h-10 items-center rounded-md border border-zinc-800 bg-zinc-950 p-1', className)} {...props} />
+  <TabsPrimitive.List ref={ref} className={cn('inline-flex h-10 items-center rounded-[2px] border border-[#08080b] bg-[#1f1f22] p-1 font-mono', className)} {...props} />
 ));
 TabsList.displayName = TabsPrimitive.List.displayName;
 
@@ -16,7 +16,7 @@ export const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
 >(({ className, ...props }, ref) => (
-  <TabsPrimitive.Trigger ref={ref} className={cn('inline-flex h-8 items-center justify-center rounded px-3 text-sm font-black text-zinc-400 transition-colors data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-300', className)} {...props} />
+  <TabsPrimitive.Trigger ref={ref} className={cn('inline-flex h-8 items-center justify-center rounded-[2px] px-3 text-sm font-black uppercase tracking-[.04em] text-[#aaa9a1] transition-colors data-[state=active]:bg-[#607195] data-[state=active]:text-[#e7e5dc]', className)} {...props} />
 ));
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 

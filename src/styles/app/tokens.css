@@ -1,0 +1,37 @@
+:root {
+  color-scheme: dark;
+  --bg: #171719;
+  --sidebar: #08080b;
+  --panel: #1f1f22;
+  --card: #242428;
+  --card-2: #313136;
+  --border: #08080b;
+  --border-soft: rgba(229,228,218,.1);
+  --text: #e7e5dc;
+  --muted: #aaa9a1;
+  --faint: #777973;
+  --accent: #607195;
+  --accent-soft: rgba(96,113,149,.28);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #3b82f6;
+  --sidebar-width: 260px;
+  --radius: 2px;
+  --shadow: 0 24px 90px rgba(0,0,0,.52);
+  font-family: "IBM Plex Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  overflow: hidden;
+}
+button, input, textarea, select { font: inherit; }
+button { color: inherit; }
+.app-icon { flex: 0 0 auto; }

@@ -3,9 +3,9 @@ interface ConnectionBadgeProps {
 }
 
 const LABELS: Record<ConnectionBadgeProps['state'], string> = {
-  online: 'Backend online',
-  limited: 'Limited mode',
-  offline: 'Backend offline'
+  online: 'Бэкенд онлайн',
+  limited: 'Ограниченный режим',
+  offline: 'Бэкенд офлайн'
 };
 
 export function ConnectionBadge({ state }: ConnectionBadgeProps) {

@@ -1,65 +1,62 @@
 import { useEffect, useMemo, useState } from 'react';
+import { siteConfigs } from '../lib/mockData';
+import { apiStatusLabels } from '../lib/labels';
+import type { SiteKey } from '../types/admin';
 import { AppIcon } from './AppIcon';
-import type { AppPage, ManagedSite } from './Sidebar';
+import { SiteSwitcher } from './SiteSwitcher';
+import type { AppPage } from './Sidebar';
 
 interface TopbarProps {
-  activeSite: ManagedSite;
+  activeSite: SiteKey;
   activePage: AppPage;
   connectionState: 'online' | 'limited' | 'offline';
+  onSiteChange: (site: SiteKey) => void;
   onNavigate: (page: AppPage) => void;
   onLogout: () => void;
 }
 
-const SITE_META: Record<ManagedSite, { name: string; domain: string; env: string }> = {
-  almabuild: { name: 'KAZAXBUD', domain: 'kazaxbud.pages.dev / localhost:3000', env: 'Продакшн + локально' },
-  dima: { name: 'Dima Fomin', domain: 'dima-fomin.pl', env: 'Продакшн' }
-};
-
 const PAGE_LABELS: Record<AppPage, string> = {
+  dashboard: 'Панель',
   overview: 'Обзор',
-  sites: 'Сайт',
-  leads: 'CRM заявок',
+  sites: 'Сайты',
+  affiliate: 'Партнерка',
+  content: 'Контент',
+  'ai-studio': 'AI-студия',
+  construction: 'Стройка',
+  culinary: 'Кулинария',
+  leads: 'Заявки',
   catalog: 'Каталог',
   materials: 'Материалы',
-  suppliers: 'Поставщики',
   projects: 'Проекты',
-  seo: 'SEO-фабрика',
+  seo: 'SEO',
+  suppliers: 'Поставщики',
   analytics: 'Аналитика',
-  ai: 'AI-студия',
+  ai: 'AI',
   usb: 'USB Key',
   deployments: 'Деплои',
-  settings: 'Настройки'
+  users: 'Пользователи',
+  settings: 'Настройки',
+  about: 'О системе'
 };
 
 const COMMANDS: Array<{ page: AppPage; title: string; hint: string }> = [
-  { page: 'seo', title: 'Создать SEO-страницу', hint: 'услуга + город' },
-  { page: 'catalog', title: 'Добавить товар', hint: 'позиция каталога' },
-  { page: 'materials', title: 'Импорт CSV', hint: 'цены материалов' },
-  { page: 'ai', title: 'Сгенерировать статью', hint: 'шаблон AI-студии' },
-  { page: 'sites', title: 'Синхронизировать сайт', hint: 'загрузить публичный контент' },
-  { page: 'usb', title: 'Открыть USB Key', hint: 'локальные тяжёлые задачи' },
-  { page: 'deployments', title: 'Открыть деплои Cloudflare', hint: 'лог публикации' },
-  { page: 'leads', title: 'Создать заявку', hint: 'карточка CRM' },
-  { page: 'seo', title: 'Опубликовать sitemap', hint: 'robots и sitemap' }
+  { page: 'affiliate', title: 'Создать партнерский товар', hint: 'Amazon / Allegro / Ceneo / Awin / своя сеть' },
+  { page: 'ai-studio', title: 'Создать через AI', hint: 'описание, SEO, slug, фото-промт' },
+  { page: 'content', title: 'Новая статья или обзор', hint: 'статья / обзор / подборка' },
+  { page: 'construction', title: 'Открыть калькулятор ремонта', hint: 'Алматы, KZT, маржа' },
+  { page: 'leads', title: 'Посмотреть заявки', hint: 'новые / в работе / смета / выиграно / потеряно' },
+  { page: 'analytics', title: 'Партнерская аналитика', hint: 'CTR, EPC, доход' }
 ];
 
-function commandAllowed(site: ManagedSite, page: AppPage) {
-  if (site === 'almabuild' && page === 'catalog') return false;
-  if (site === 'dima' && page === 'materials') return false;
-  if (site === 'dima' && page === 'projects') return false;
-  return true;
-}
-
-export function Topbar({ activeSite, activePage, connectionState, onNavigate, onLogout }: TopbarProps) {
+export function Topbar({ activeSite, activePage, connectionState, onSiteChange, onNavigate, onLogout }: TopbarProps) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const site = SITE_META[activeSite];
+  const site = siteConfigs.find((item) => item.key === activeSite) ?? siteConfigs[0];
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const siteCommands = COMMANDS.filter((command) => commandAllowed(activeSite, command.page));
-    if (!needle) return siteCommands;
-    return siteCommands.filter((command) => (command.title + ' ' + command.hint).toLowerCase().includes(needle));
-  }, [activeSite, query]);
+    if (!needle) return COMMANDS;
+    return COMMANDS.filter((command) => (command.title + ' ' + command.hint).toLowerCase().includes(needle));
+  }, [query]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -74,28 +71,28 @@ export function Topbar({ activeSite, activePage, connectionState, onNavigate, on
   }, []);
 
   return (
-    <header className="topbar">
+    <header className="topbar new-topbar">
       <div className="topbar-context">
         <p className="eyebrow">{PAGE_LABELS[activePage]}</p>
         <h1>{site.name}</h1>
         <div className="topbar-meta">
           <span><AppIcon name="globe" />{site.domain}</span>
-          <span><AppIcon name="cloud" />{site.env}</span>
+          <span><AppIcon name="cloud" />{site.region}</span>
         </div>
       </div>
 
+      <SiteSwitcher activeSite={activeSite} onSiteChange={onSiteChange} />
+
       <button className="command-search" type="button" onClick={() => setCommandOpen(true)}>
         <AppIcon name="search" />
-        <span>Поиск по сайтам, заявкам, товарам, SEO-страницам...</span>
+        <span>Поиск по товарам, статьям, заявкам, поставщикам...</span>
         <kbd>⌘ K</kbd>
       </button>
 
       <div className="topbar-actions">
-        <button className="btn btn-quiet topbar-action-btn" type="button" aria-label="Синхронизировать" title="Синхронизировать"><AppIcon name="refresh" /><span>Синхронизировать</span></button>
-        <button className="btn btn-quiet topbar-action-btn" type="button" aria-label="Генерировать" title="Генерировать"><AppIcon name="sparkles" /><span>Генерировать</span></button>
-        <button className="btn btn-primary topbar-action-btn primary" type="button"><AppIcon name="deploy" /><span>Опубликовать</span></button>
-        <span className={'deploy-pill ' + connectionState}><i />Деплой готов</span>
-        <button className="topbar-icon" type="button"><AppIcon name="settings" /></button>
+        <button className="btn btn-quiet topbar-action-btn" type="button" onClick={() => onNavigate('ai-studio')}><AppIcon name="sparkles" /><span>Создать AI</span></button>
+        <span className={'deploy-pill ' + connectionState}><i />Бэкенд: {apiStatusLabels[connectionState]}</span>
+        <button className="topbar-icon" type="button" onClick={() => onNavigate('settings')} aria-label="Настройки"><AppIcon name="settings" /></button>
         <button className="profile-menu" type="button" onClick={onLogout}><span>ДА</span><strong>Дима Админ<small>Выйти</small></strong></button>
       </div>
 

@@ -1,77 +1,100 @@
 import { AppIcon, type AppIconName } from './AppIcon';
+import { siteConfigs } from '../lib/mockData';
+import { apiStatusLabels, revalidateStatusLabels } from '../lib/labels';
+import type { SiteKey } from '../types/admin';
 
 export type AppPage =
-  | 'overview' | 'sites' | 'leads' | 'catalog' | 'materials' | 'suppliers'
-  | 'projects' | 'seo' | 'analytics' | 'ai' | 'usb' | 'deployments' | 'settings';
+  | 'dashboard'
+  | 'overview'
+  | 'sites'
+  | 'affiliate'
+  | 'content'
+  | 'ai-studio'
+  | 'construction'
+  | 'culinary'
+  | 'leads'
+  | 'catalog'
+  | 'materials'
+  | 'projects'
+  | 'seo'
+  | 'suppliers'
+  | 'analytics'
+  | 'ai'
+  | 'usb'
+  | 'deployments'
+  | 'users'
+  | 'settings'
+  | 'about';
 
-export type ManagedSite = 'almabuild' | 'dima';
+export type ManagedSite = SiteKey | 'almabuild' | 'dima';
 
 interface SidebarProps {
-  activeSite: ManagedSite;
+  activeSite: SiteKey;
   activePage: AppPage;
-  onSiteChange: (site: ManagedSite) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onSiteChange: (site: SiteKey) => void;
   onNavigate: (page: AppPage) => void;
 }
 
-const SITE_SWITCH_ITEMS: Array<{ id: ManagedSite; label: string; domain: string; status: 'prod' | 'warning' }> = [
-  { id: 'almabuild', label: 'KAZAXBUD', domain: 'kazaxbud.pages.dev', status: 'warning' },
-  { id: 'dima', label: 'Dima Fomin', domain: 'dima-fomin.pl', status: 'prod' }
+const NAV_ITEMS: Array<{ page: AppPage; label: string; icon: AppIconName; shortcut: string; site?: SiteKey }> = [
+  { page: 'dashboard', label: 'Панель', icon: 'dashboard', shortcut: '1' },
+  { page: 'sites', label: 'Сайты', icon: 'globe', shortcut: '2' },
+  { page: 'affiliate', label: 'Партнерка', icon: 'shop', shortcut: '3' },
+  { page: 'content', label: 'Контент', icon: 'cms', shortcut: '4' },
+  { page: 'ai-studio', label: 'AI-студия', icon: 'bot', shortcut: '5' },
+  { page: 'construction', label: 'Стройка', icon: 'building', shortcut: '6', site: 'construction' },
+  { page: 'culinary', label: 'Кулинария', icon: 'catalog', shortcut: '7', site: 'culinary' },
+  { page: 'leads', label: 'Заявки', icon: 'leads', shortcut: '8' },
+  { page: 'suppliers', label: 'Поставщики', icon: 'suppliers', shortcut: '9' },
+  { page: 'analytics', label: 'Аналитика', icon: 'analytics', shortcut: 'A' },
+  { page: 'users', label: 'Пользователи', icon: 'users', shortcut: 'U' },
+  { page: 'settings', label: 'Настройки', icon: 'settings', shortcut: 'S' },
+  { page: 'about', label: 'О системе', icon: 'shield', shortcut: '?' }
 ];
 
-const NAV_ITEMS: Array<{ page: AppPage; label: string; icon: AppIconName; shortcut: string }> = [
-  { page: 'overview', label: 'Обзор', icon: 'dashboard', shortcut: '1' },
-  { page: 'sites', label: 'Сайт', icon: 'globe', shortcut: '2' },
-  { page: 'leads', label: 'Заявки', icon: 'leads', shortcut: '3' },
-  { page: 'catalog', label: 'Каталог', icon: 'catalog', shortcut: '4' },
-  { page: 'materials', label: 'Материалы', icon: 'materials', shortcut: '5' },
-  { page: 'suppliers', label: 'Поставщики', icon: 'suppliers', shortcut: '6' },
-  { page: 'projects', label: 'Проекты', icon: 'folder', shortcut: '7' },
-  { page: 'seo', label: 'SEO-фабрика', icon: 'seo', shortcut: '8' },
-  { page: 'analytics', label: 'Аналитика', icon: 'analytics', shortcut: '9' },
-  { page: 'ai', label: 'AI-студия', icon: 'bot', shortcut: 'A' },
-  { page: 'usb', label: 'USB Key', icon: 'hard-drive', shortcut: 'U' },
-  { page: 'deployments', label: 'Деплои', icon: 'deploy', shortcut: 'D' },
-  { page: 'settings', label: 'Настройки', icon: 'settings', shortcut: 'S' }
-];
-
-function navItemAllowed(site: ManagedSite, page: AppPage) {
-  if (site === 'almabuild' && page === 'catalog') return false;
-  if (site === 'dima' && page === 'materials') return false;
-  if (site === 'dima' && page === 'projects') return false;
-  return true;
+export function pageAllowedForSite(site: ManagedSite, page: AppPage) {
+  const item = NAV_ITEMS.find((nav) => nav.page === page);
+  return !item?.site || item.site === site;
 }
 
-export function Sidebar({ activeSite, activePage, onSiteChange, onNavigate }: SidebarProps) {
-  const visibleNavItems = NAV_ITEMS.filter((item) => navItemAllowed(activeSite, item.page));
+export function normalizeSitePage(site: ManagedSite, page: AppPage): AppPage {
+  if (pageAllowedForSite(site, page)) return page;
+  return site === 'construction' ? 'construction' : 'culinary';
+}
+
+export function Sidebar({ activeSite, activePage, collapsed, onToggleCollapse, onSiteChange, onNavigate }: SidebarProps) {
+  const visibleNavItems = NAV_ITEMS.filter((item) => !item.site || item.site === activeSite);
+  const activeConfig = siteConfigs.find((site) => site.key === activeSite) ?? siteConfigs[0];
 
   return (
-    <aside className="sidebar">
+    <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
       <div className="sidebar-brand">
-        <div className="brand-mark">AO</div>
+        <div className="brand-mark">AF</div>
         <div>
-          <p className="sidebar-title">ALMABUILD OS</p>
-          <p className="sidebar-subtitle">Центр управления операциями</p>
+          <p className="sidebar-title">ПАРТНЕРСКАЯ ОС</p>
+          <p className="sidebar-subtitle">Мультисайтовая админ-панель</p>
         </div>
       </div>
 
       <div className="site-switcher" aria-label="Сайты">
-        <p className="sidebar-section-label">Сайты</p>
-        {SITE_SWITCH_ITEMS.map((site) => {
-          const active = site.id === activeSite;
+        <p className="sidebar-section-label">Активный сайт</p>
+        {siteConfigs.map((site) => {
+          const active = site.key === activeSite;
           return (
-            <button key={site.id} className={'site-switcher-option' + (active ? ' active' : '')} type="button" aria-current={active ? 'true' : undefined} onClick={() => onSiteChange(site.id)}>
-              <span className="site-switcher-mark">{site.label.slice(0, 2)}</span>
-              <span><strong>{site.label}</strong><small>{site.domain}</small></span>
-              <i className={'site-dot ' + site.status} />
+            <button key={site.key} className={'site-switcher-option' + (active ? ' active' : '')} type="button" title={site.name} aria-current={active ? 'true' : undefined} onClick={() => onSiteChange(site.key)}>
+              <span className="site-switcher-mark">{site.key === 'culinary' ? 'CU' : 'CO'}</span>
+              <span><strong>{site.name}</strong><small>{site.domain}</small></span>
+              <i className={'site-dot ' + (site.apiStatus === 'online' ? 'prod' : 'warning')} />
             </button>
           );
         })}
       </div>
 
       <nav className="sidebar-nav" aria-label="Основная навигация">
-        <p className="sidebar-section-label">Разделы управления</p>
+        <p className="sidebar-section-label">Разделы</p>
         {visibleNavItems.map((item) => (
-          <button key={item.page} className={'sidebar-link' + (activePage === item.page ? ' active' : '')} type="button" onClick={() => onNavigate(item.page)}>
+          <button key={item.page} className={'sidebar-link' + (activePage === item.page ? ' active' : '')} type="button" title={item.label} onClick={() => onNavigate(item.page)}>
             <AppIcon name={item.icon} />
             <span>{item.label}</span>
             <kbd>{item.shortcut}</kbd>
@@ -80,13 +103,16 @@ export function Sidebar({ activeSite, activePage, onSiteChange, onNavigate }: Si
       </nav>
 
       <div className="sidebar-system">
-        <div className="system-row"><span>API</span><strong><i className="live-dot" /> Онлайн</strong></div>
-        <div className="system-row"><span>Локальный бэкенд</span><strong><i className="live-dot warning" /> Tauri</strong></div>
-        <div className="system-row"><span>Версия</span><strong>v2.6.0</strong></div>
+        <div className="system-row"><span>API</span><strong><i className={'live-dot ' + (activeConfig.apiStatus === 'online' ? '' : 'warning')} /> {apiStatusLabels[activeConfig.apiStatus]}</strong></div>
+        <div className="system-row"><span>Ревалидация</span><strong>{revalidateStatusLabels[activeConfig.revalidateStatus]}</strong></div>
+        <div className="system-row"><span>Валюта</span><strong>{activeConfig.defaultCurrency}</strong></div>
         <div className="sidebar-user"><span>ДА</span><p><strong>Дима Админ</strong><small>Суперадминистратор</small></p></div>
       </div>
 
-      <button className="sidebar-collapse" type="button"><AppIcon name="chevron-left" /><span>Компактный режим</span></button>
+      <button className="sidebar-collapse" type="button" aria-pressed={collapsed} title={collapsed ? 'Развернуть меню' : 'Свернуть меню'} onClick={onToggleCollapse}>
+        <AppIcon name="chevron-left" />
+        <span>{collapsed ? 'Развернуть меню' : 'Свернуть меню'}</span>
+      </button>
     </aside>
   );
 }
