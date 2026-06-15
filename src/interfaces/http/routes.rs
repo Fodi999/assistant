@@ -1538,13 +1538,11 @@ pub fn create_router(
         .nest("/api", protected_chat_routes)
         .nest("/api", protected_routes);
 
-    if heavy_admin_enabled {
-        router = router
-            .merge(google_auth_routes)
-            .nest("/api/admin/analytics", admin_analytics_routes)
-            .nest("/api/admin/analytics", admin_analytics_oauth_callback_route)
-            .nest("/api/admin/search-console", admin_search_console_routes);
-    }
+    router = router
+        .merge(google_auth_routes)
+        .nest("/api/admin/analytics", admin_analytics_routes)
+        .nest("/api/admin/analytics", admin_analytics_oauth_callback_route)
+        .nest("/api/admin/search-console", admin_search_console_routes);
 
     // 🆕 Stripe billing — only mounted when STRIPE_SECRET_KEY is set.
     if let Some(r) = billing_public_bundles {
