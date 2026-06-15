@@ -1484,7 +1484,11 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
     const REQUIRED_ORIGINS: &[&str] = &[
         "https://dima-fomin.pl",
         "https://www.dima-fomin.pl",
+        "https://kazaxbud.pages.dev",
+        "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "tauri://localhost",
         "http://tauri.localhost",
     ];
