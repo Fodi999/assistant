@@ -339,7 +339,7 @@ function KazaxbudMaterialEditorModal({ item, index, content, onClose, onRefresh 
           <aside className="grid content-start gap-3">
             <Card className="bg-zinc-950">
               <CardContent className="grid aspect-square place-items-center p-4 text-center">
-                <div className="grid gap-3 justify-items-center text-zinc-400"><AppIcon name="materials" size={36} /><strong className="text-zinc-100">{draft.photo || 'visual class'}</strong><small>{draft.slug || 'slug'}</small></div>
+                <div className="grid gap-3 justify-items-center text-zinc-400">{draft.imageUrl ? <img className="h-full max-h-44 w-full rounded object-cover" src={draft.imageUrl} alt={draft.title || 'Материал'} /> : <AppIcon name="materials" size={36} />}<strong className="text-zinc-100">{draft.photo || 'visual class'}</strong><small>{draft.slug || 'slug'}</small></div>
               </CardContent>
             </Card>
             <Card className="bg-zinc-950"><CardContent className="grid gap-2 p-3 text-xs text-zinc-400"><strong className="text-sm text-zinc-100">{editing ? 'Редактирование' : 'Новый материал'}</strong><span>{draft.bullets.length} пунктов внутри карточки</span></CardContent></Card>
@@ -351,6 +351,7 @@ function KazaxbudMaterialEditorModal({ item, index, content, onClose, onRefresh 
               <SeoEditorField label="URL slug" value={draft.slug} onChange={(slug) => setDraft({ ...draft, slug })} />
               <SeoEditorField label="Индекс" value={draft.index} onChange={(nextIndex) => setDraft({ ...draft, index: nextIndex })} />
               <SeoEditorField label="Визуальный класс" value={draft.photo} onChange={(photo) => setDraft({ ...draft, photo })} />
+              <SeoEditorField label="Cloudflare R2 imageUrl" value={draft.imageUrl || ''} onChange={(imageUrl) => setDraft({ ...draft, imageUrl })} />
               <SeoEditorField label="Описание" value={draft.text} onChange={(text) => setDraft({ ...draft, text })} multiline textareaClassName="min-h-[190px]" />
               <SeoEditorField label="Пункты внутри карточки, каждый с новой строки" value={draft.bullets.join('\n')} onChange={(bullets) => setDraft({ ...draft, bullets: splitLines(bullets) })} multiline textareaClassName="min-h-[190px]" />
             </CardContent>
@@ -1288,7 +1289,17 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
   const [visionBusy, setVisionBusy] = useState(false);
   const [visionMessage, setVisionMessage] = useState<string | null>(null);
   const [visionDrafts, setVisionDrafts] = useState<MaterialCategory[]>([]);
+  const [visionPreviewUrl, setVisionPreviewUrl] = useState<string | null>(null);
   const content = props.almabuildContent;
+  useEffect(() => {
+    if (!visionFile) {
+      setVisionPreviewUrl(null);
+      return undefined;
+    }
+    const url = URL.createObjectURL(visionFile);
+    setVisionPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [visionFile]);
   if (!content) return <section className="ops-panel"><PanelTitle title="Материалы Kazaxbud" icon="materials" action="контент не загружен" /><p className="empty-state">Нажмите «Обновить», чтобы загрузить контент сайта.</p></section>;
   const loadedContent = content;
   const needle = query.trim().toLowerCase();
@@ -1328,6 +1339,7 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
       await saveAlmabuildContent({ ...loadedContent, materialCategories: [...loadedContent.materialCategories, ...nextMaterials] });
       setVisionDrafts([]);
       setVisionFile(null);
+      setVisionPreviewUrl(null);
       setVisionMessage('Материалы добавлены и доступны сайту Kazaxbud.');
       await props.onRefresh();
     } catch (error) {
@@ -1342,7 +1354,7 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
       <CardHeader><CardTitle>Gemini Vision: материалы по фото</CardTitle></CardHeader>
       <CardContent className="grid gap-4">
         <div className="grid gap-3 xl:grid-cols-[minmax(220px,320px)_180px_minmax(0,1fr)_220px]">
-          <label className="grid gap-2 text-sm font-semibold text-zinc-400"><span>Фото материала</span><input type="file" accept="image/*" onChange={(event) => setVisionFile(event.target.files?.[0] || null)} /></label>
+          <label className="grid gap-2 text-sm font-semibold text-zinc-400"><span>Фото материала</span><input type="file" accept="image/*" onChange={(event) => setVisionFile(event.target.files?.[0] || null)} />{visionPreviewUrl ? <img className="h-28 w-full rounded border border-zinc-800 object-cover" src={visionPreviewUrl} alt="Фото для Gemini Vision" /> : <span className="grid h-28 place-items-center rounded border border-dashed border-zinc-800 text-xs text-zinc-500">Gemini увидит выбранное фото</span>}</label>
           <div className="grid gap-2 text-sm font-semibold text-zinc-400"><span>Количество</span><div className="flex h-11 items-center gap-2"><button className="btn btn-quiet h-10 w-10 px-0" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value - 1))}>-</button><input className="h-10 w-16 rounded border border-zinc-800 bg-black text-center text-zinc-100" type="number" min={1} max={12} value={visionCount} onChange={(event) => setVisionCount(clampMaterialCount(Number(event.target.value) || 1))} /><button className="btn btn-quiet h-10 w-10 px-0" type="button" onClick={() => setVisionCount((value) => clampMaterialCount(value + 1))}>+</button></div></div>
           <SeoEditorField label="Задача для Gemini" value={visionInstruction} onChange={setVisionInstruction} multiline textareaClassName="min-h-20" />
           <Button className="min-h-20 bg-orange-500 text-black hover:bg-orange-400" type="button" onClick={() => void runVision()} disabled={visionBusy}><AppIcon name="sparkles" />{visionBusy ? 'Gemini смотрит фото...' : 'Создать по фото'}</Button>
@@ -1350,12 +1362,12 @@ function MaterialsTable({ props }: { props: OperationsPageProps }) {
         <EditorMessage value={visionMessage} />
         {visionDrafts.length ? <div className="grid gap-3">
           <div className="flex items-center justify-between gap-3"><strong className="text-sm text-zinc-100">Предпросмотр: {visionDrafts.length}</strong><Button type="button" onClick={() => void saveVisionDrafts()} disabled={visionBusy}><AppIcon name="check" />Добавить все на сайт</Button></div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{visionDrafts.map((item, index) => <article key={`${item.slug}-${index}`} className="rounded border border-zinc-800 bg-black p-3"><div className="mb-2 flex items-start justify-between gap-2"><strong className="text-zinc-100">{item.title}</strong><code className="text-xs text-zinc-500">{item.index}</code></div><p className="text-sm text-zinc-400">{item.text}</p><small className="mt-2 block text-zinc-500">{item.slug} · {item.photo}</small></article>)}</div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{visionDrafts.map((item, index) => <article key={`${item.slug}-${index}`} className="rounded border border-zinc-800 bg-black p-3">{item.imageUrl ? <img className="mb-3 h-28 w-full rounded object-cover" src={item.imageUrl} alt={item.title} /> : null}<div className="mb-2 flex items-start justify-between gap-2"><strong className="text-zinc-100">{item.title}</strong><code className="text-xs text-zinc-500">{item.index}</code></div><p className="text-sm text-zinc-400">{item.text}</p><small className="mt-2 block text-zinc-500">{item.slug} · {item.photo}</small>{item.imageUrl ? <small className="mt-1 block truncate text-emerald-400">R2: {item.imageUrl}</small> : null}</article>)}</div>
         </div> : null}
       </CardContent>
     </Card>
     <div className="catalog-stats-row"><article><span>Всего материалов</span><strong>{content.materialCategories.length}</strong></article><article><span>С описанием</span><strong>{content.materialCategories.filter((item) => item.text).length}</strong></article><article><span>С пунктами</span><strong>{content.materialCategories.filter((item) => item.bullets.length).length}</strong></article><article><span>Визуальных классов</span><strong>{new Set(content.materialCategories.map((item) => item.photo).filter(Boolean)).size}</strong></article><article><span>Показано</span><strong>{rows.length}</strong></article></div>
-    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Вид</th><th>Название</th><th>Slug</th><th>Индекс</th><th>Пункты</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{rows.map(({ item, index }) => <tr key={`${item.slug}-${index}`}><td><span className="catalog-product-thumb empty"><AppIcon name="materials" size={18} /></span></td><td><strong>{item.title}</strong><small>{item.text}</small></td><td><code>{item.slug}</code></td><td><code>{item.index}</code></td><td>{item.bullets.length}</td><td><StatusPill tone={item.title && item.slug && item.text ? 'good' : 'warning'} label={item.title && item.slug && item.text ? 'готово' : 'проверить'} /></td><td><button className="table-action" type="button" onClick={() => setEditingIndex(index)}>Редактировать</button></td></tr>)}</tbody></table></div>
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Вид</th><th>Название</th><th>Slug</th><th>Индекс</th><th>Пункты</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{rows.map(({ item, index }) => <tr key={`${item.slug}-${index}`}><td>{item.imageUrl ? <img className="catalog-product-thumb" src={item.imageUrl} alt={item.title} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="materials" size={18} /></span>}</td><td><strong>{item.title}</strong><small>{item.text}</small>{item.imageUrl ? <small>R2 фото сохранено</small> : null}</td><td><code>{item.slug}</code></td><td><code>{item.index}</code></td><td>{item.bullets.length}</td><td><StatusPill tone={item.title && item.slug && item.text ? 'good' : 'warning'} label={item.title && item.slug && item.text ? 'готово' : 'проверить'} /></td><td><button className="table-action" type="button" onClick={() => setEditingIndex(index)}>Редактировать</button></td></tr>)}</tbody></table></div>
     {content.materialCategories.length === 0 ? <p className="empty-state">Материалы не загружены. Добавьте первый материал.</p> : null}
     {creating ? <KazaxbudMaterialEditorModal content={content} onClose={() => setCreating(false)} onRefresh={props.onRefresh} /> : null}
     {editingIndex !== null ? <KazaxbudMaterialEditorModal item={content.materialCategories[editingIndex]} index={editingIndex} content={content} onClose={() => setEditingIndex(null)} onRefresh={props.onRefresh} /> : null}

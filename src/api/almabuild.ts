@@ -9,6 +9,7 @@ export type MaterialCategory = {
   text: string;
   bullets: string[];
   photo: string;
+  imageUrl?: string;
 };
 
 export type Product = {
