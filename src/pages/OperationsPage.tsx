@@ -351,23 +351,25 @@ function KazaxbudMaterialEditorModal({ item, index, content, onClose, onRefresh,
               <SeoEditorField label="URL slug" value={draft.slug} onChange={(slug) => setDraft({ ...draft, slug })} />
               <SeoEditorField label="Индекс" value={draft.index} onChange={(nextIndex) => setDraft({ ...draft, index: nextIndex })} />
               <SeoEditorField label="Визуальный класс" value={draft.photo} onChange={(photo) => setDraft({ ...draft, photo })} />
-              <SeoEditorField label="Cloudflare R2 imageUrl" value={draft.imageUrl || ''} onChange={(imageUrl) => setDraft({ ...draft, imageUrl })} />
-              <SeoEditorField label="Детальное фото detailImageUrl" value={draft.detailImageUrl || ''} onChange={(detailImageUrl) => setDraft({ ...draft, detailImageUrl })} />
-              <SeoEditorField label="Цена" value={draft.price || ''} onChange={(price) => setDraft({ ...draft, price })} />
-              <SeoEditorField label="Категория в базе" value={draft.categorySlug || ''} onChange={(categorySlug) => setDraft({ ...draft, categorySlug })} />
-              <SeoEditorField label="Единица измерения" value={draft.unit || ''} onChange={(unit) => setDraft({ ...draft, unit })} />
-              <SeoEditorField label="Наличие" value={draft.availability || ''} onChange={(availability) => setDraft({ ...draft, availability })} />
-              <SeoEditorField label="Город" value={draft.city || 'Алматы'} onChange={(city) => setDraft({ ...draft, city })} />
-              <SeoEditorField label="Поставщик" value={draft.supplier || ''} onChange={(supplier) => setDraft({ ...draft, supplier })} />
-              <SeoEditorField label="Цена закупки" value={draft.purchasePrice || ''} onChange={(purchasePrice) => setDraft({ ...draft, purchasePrice })} />
-              <SeoEditorField label="Валюта закупки" value={draft.purchaseCurrency || 'KZT'} onChange={(purchaseCurrency) => setDraft({ ...draft, purchaseCurrency })} />
-              <SeoEditorField label="Цена продажи" value={draft.salePrice || ''} onChange={(salePrice) => setDraft({ ...draft, salePrice })} />
-              <SeoEditorField label="Валюта продажи" value={draft.saleCurrency || 'KZT'} onChange={(saleCurrency) => setDraft({ ...draft, saleCurrency })} />
-              <SeoEditorField label="Маржа %" value={draft.marginPercent || ''} onChange={(marginPercent) => setDraft({ ...draft, marginPercent })} />
-              <SeoEditorField label="Статус" value={draft.status || 'draft'} onChange={(status) => setDraft({ ...draft, status })} />
-              <SeoEditorField label="Языки" value={(draft.languages || ['RU']).join(', ')} onChange={(languages) => setDraft({ ...draft, languages: languages.split(',').map((item) => item.trim()).filter(Boolean) })} />
-              <SeoEditorField label="SEO title" value={draft.seoTitle || ''} onChange={(seoTitle) => setDraft({ ...draft, seoTitle })} />
-              <SeoEditorField label="SEO description" value={draft.seoDescription || ''} onChange={(seoDescription) => setDraft({ ...draft, seoDescription })} multiline textareaClassName="min-h-[110px]" />
+              {editing || !visionPanel ? <>
+                <SeoEditorField label="Cloudflare R2 imageUrl" value={draft.imageUrl || ''} onChange={(imageUrl) => setDraft({ ...draft, imageUrl })} />
+                <SeoEditorField label="Детальное фото detailImageUrl" value={draft.detailImageUrl || ''} onChange={(detailImageUrl) => setDraft({ ...draft, detailImageUrl })} />
+                <SeoEditorField label="Цена" value={draft.price || ''} onChange={(price) => setDraft({ ...draft, price })} />
+                <SeoEditorField label="Категория в базе" value={draft.categorySlug || ''} onChange={(categorySlug) => setDraft({ ...draft, categorySlug })} />
+                <SeoEditorField label="Единица измерения" value={draft.unit || ''} onChange={(unit) => setDraft({ ...draft, unit })} />
+                <SeoEditorField label="Наличие" value={draft.availability || ''} onChange={(availability) => setDraft({ ...draft, availability })} />
+                <SeoEditorField label="Город" value={draft.city || 'Алматы'} onChange={(city) => setDraft({ ...draft, city })} />
+                <SeoEditorField label="Поставщик" value={draft.supplier || ''} onChange={(supplier) => setDraft({ ...draft, supplier })} />
+                <SeoEditorField label="Цена закупки" value={draft.purchasePrice || ''} onChange={(purchasePrice) => setDraft({ ...draft, purchasePrice })} />
+                <SeoEditorField label="Валюта закупки" value={draft.purchaseCurrency || 'KZT'} onChange={(purchaseCurrency) => setDraft({ ...draft, purchaseCurrency })} />
+                <SeoEditorField label="Цена продажи" value={draft.salePrice || ''} onChange={(salePrice) => setDraft({ ...draft, salePrice })} />
+                <SeoEditorField label="Валюта продажи" value={draft.saleCurrency || 'KZT'} onChange={(saleCurrency) => setDraft({ ...draft, saleCurrency })} />
+                <SeoEditorField label="Маржа %" value={draft.marginPercent || ''} onChange={(marginPercent) => setDraft({ ...draft, marginPercent })} />
+                <SeoEditorField label="Статус" value={draft.status || 'draft'} onChange={(status) => setDraft({ ...draft, status })} />
+                <SeoEditorField label="Языки" value={(draft.languages || ['RU']).join(', ')} onChange={(languages) => setDraft({ ...draft, languages: languages.split(',').map((item) => item.trim()).filter(Boolean) })} />
+                <SeoEditorField label="SEO title" value={draft.seoTitle || ''} onChange={(seoTitle) => setDraft({ ...draft, seoTitle })} />
+                <SeoEditorField label="SEO description" value={draft.seoDescription || ''} onChange={(seoDescription) => setDraft({ ...draft, seoDescription })} multiline textareaClassName="min-h-[110px]" />
+              </> : null}
               <SeoEditorField label="Описание" value={draft.text} onChange={(text) => setDraft({ ...draft, text })} multiline textareaClassName="min-h-[190px]" />
               <SeoEditorField label="Пункты внутри карточки, каждый с новой строки" value={draft.bullets.join('\n')} onChange={(bullets) => setDraft({ ...draft, bullets: splitLines(bullets) })} multiline textareaClassName="min-h-[190px]" />
             </CardContent>
