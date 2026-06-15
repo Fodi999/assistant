@@ -680,3 +680,26 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   .catalog-toolbar,
   .catalog-stats-row { grid-template-columns: 1fr; }
 }
+
+
+.catalog-product-thumb {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0d0d10;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+}
+.catalog-product-thumb.empty {
+  border-style: dashed;
+  background: rgba(255,255,255,.025);
+}
+.catalog-stats-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 980px) {
+  .catalog-stats-row { grid-template-columns: 1fr; }
+}

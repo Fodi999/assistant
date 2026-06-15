@@ -380,6 +380,7 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
   const visibleRows = filtered.slice(0, limit);
   const publishedCount = props.products.filter((product) => product.is_published).length;
   const seoReadyCount = props.products.filter((product) => product.seo_title && product.seo_description).length;
+  const imageReadyCount = props.products.filter((product) => Boolean(product.image_url)).length;
 
   return <section className="ops-panel catalog-browser">
     <PanelTitle title="Каталог Dima" icon="catalog" action={`${visibleRows.length} из ${filtered.length} / всего ${props.products.length}`} />
@@ -393,12 +394,13 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
       <article><span>Всего из backend</span><strong>{props.products.length}</strong></article>
       <article><span>Опубликовано</span><strong>{publishedCount}</strong></article>
       <article><span>SEO готово</span><strong>{seoReadyCount}</strong></article>
+      <article><span>С фото</span><strong>{imageReadyCount}</strong></article>
       <article><span>Категорий</span><strong>{props.categories.length}</strong></article>
     </div>
-    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Название</th><th>Категория</th><th>Slug / SKU</th><th>Тип</th><th>Питание</th><th>SEO</th><th>Статус</th></tr></thead><tbody>{visibleRows.map((product) => {
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Фото</th><th>Название</th><th>Категория</th><th>Slug / SKU</th><th>Тип</th><th>Питание</th><th>SEO</th><th>Статус</th></tr></thead><tbody>{visibleRows.map((product) => {
       const category = categoriesById.get(product.category_id);
       const nutritionReady = product.calories_per_100g != null || product.protein_per_100g != null || product.carbs_per_100g != null || product.fat_per_100g != null;
-      return <tr key={product.id}><td><strong>{productDisplayName(product)}</strong><small>{product.name_en}</small></td><td>{categoryDisplayName(category)}</td><td><code>{product.slug || product.id.slice(0, 8)}</code></td><td>{product.product_type || 'other'}</td><td><StatusPill tone={nutritionReady ? 'good' : 'warning'} label={nutritionReady ? 'есть' : 'пусто'} /></td><td><StatusPill tone={product.seo_title && product.seo_description ? 'good' : 'warning'} label={product.seo_title && product.seo_description ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={product.is_published ? 'good' : 'neutral'} label={product.is_published ? 'опубликовано' : 'черновик'} /></td></tr>;
+      return <tr key={product.id}><td>{product.image_url ? <img className="catalog-product-thumb" src={product.image_url} alt={productDisplayName(product)} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="package" size={18} /></span>}</td><td><strong>{productDisplayName(product)}</strong><small>{product.name_en}</small></td><td>{categoryDisplayName(category)}</td><td><code>{product.slug || product.id.slice(0, 8)}</code></td><td>{product.product_type || 'other'}</td><td><StatusPill tone={nutritionReady ? 'good' : 'warning'} label={nutritionReady ? 'есть' : 'пусто'} /></td><td><StatusPill tone={product.seo_title && product.seo_description ? 'good' : 'warning'} label={product.seo_title && product.seo_description ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={product.is_published ? 'good' : 'neutral'} label={product.is_published ? 'опубликовано' : 'черновик'} /></td></tr>;
     })}</tbody></table></div>
     {filtered.length > visibleRows.length ? <p className="page-muted">Показано {visibleRows.length}. Увеличьте лимит, чтобы увидеть остальные {filtered.length - visibleRows.length}.</p> : null}
     {props.products.length === 0 ? <p className="empty-state">Backend не вернул товары. Нажмите «Обновить» или проверьте авторизацию/API.</p> : null}
