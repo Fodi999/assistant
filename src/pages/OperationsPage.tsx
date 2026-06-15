@@ -3,6 +3,7 @@ import * as echarts from 'echarts';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import type { AppPage, ManagedSite } from '../components/Sidebar';
 import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
+import { aiCreateProductDraft, aiGenerateProductImage, updateAdminProduct, type CreateAdminProductRequest } from '../api/catalog';
 import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
 import { aiCreateArticleDraft, updateArticle } from '../api/cms';
 import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../types/admin';
@@ -355,10 +356,188 @@ function categoryDisplayName(category?: AdminCategory) {
   return category?.name_ru || category?.name_pl || category?.name_en || category?.id || 'Без категории';
 }
 
+
+type CatalogEditDraft = Partial<CreateAdminProductRequest>;
+
+function productToCatalogEditDraft(product: AdminProduct): CatalogEditDraft {
+  return {
+    name_en: product.name_en || '',
+    name_ru: product.name_ru || '',
+    name_pl: product.name_pl || '',
+    name_uk: product.name_uk || '',
+    unit: product.unit as CreateAdminProductRequest['unit'],
+    product_type: product.product_type || '',
+    description: product.description || product.description_en || '',
+    description_en: product.description_en || product.description || '',
+    description_ru: product.description_ru || '',
+    description_pl: product.description_pl || '',
+    description_uk: product.description_uk || '',
+    image_url: product.image_url || undefined,
+    calories_per_100g: product.calories_per_100g ?? undefined,
+    protein_per_100g: product.protein_per_100g ?? undefined,
+    fat_per_100g: product.fat_per_100g ?? undefined,
+    carbs_per_100g: product.carbs_per_100g ?? undefined,
+    fiber_per_100g: product.fiber_per_100g ?? undefined,
+    sugar_per_100g: product.sugar_per_100g ?? undefined,
+    density_g_per_ml: product.density_g_per_ml ?? undefined,
+    typical_portion_g: product.typical_portion_g ?? undefined,
+    shelf_life_days: product.shelf_life_days ?? undefined,
+    seasons: product.seasons || [],
+    seo_title: product.seo_title || '',
+    seo_description: product.seo_description || '',
+    seo_h1: product.seo_h1 || ''
+  };
+}
+
+function draftFromGeminiResponse(current: CatalogEditDraft, response: Awaited<ReturnType<typeof aiCreateProductDraft>>): CatalogEditDraft {
+  const draft = response.draft;
+  return {
+    ...current,
+    name_en: draft.names.en.value || current.name_en,
+    name_ru: draft.names.ru.value || current.name_ru,
+    name_pl: draft.names.pl.value || current.name_pl,
+    name_uk: draft.names.uk.value || current.name_uk,
+    unit: draft.unit.value as CreateAdminProductRequest['unit'] || current.unit,
+    product_type: draft.product_type.value || current.product_type,
+    description: draft.description_en.value || current.description,
+    description_en: draft.description_en.value || current.description_en,
+    description_ru: draft.description_ru.value || current.description_ru,
+    description_pl: draft.description_pl.value || current.description_pl,
+    description_uk: draft.description_uk.value || current.description_uk,
+    calories_per_100g: draft.nutrition.calories_per_100g.value ?? current.calories_per_100g,
+    protein_per_100g: draft.nutrition.protein_per_100g.value ?? current.protein_per_100g,
+    fat_per_100g: draft.nutrition.fat_per_100g.value ?? current.fat_per_100g,
+    carbs_per_100g: draft.nutrition.carbs_per_100g.value ?? current.carbs_per_100g,
+    fiber_per_100g: draft.nutrition.fiber_per_100g.value ?? current.fiber_per_100g,
+    sugar_per_100g: draft.nutrition.sugar_per_100g.value ?? current.sugar_per_100g,
+    density_g_per_ml: draft.nutrition.density_g_per_ml.value ?? current.density_g_per_ml,
+    typical_portion_g: draft.nutrition.typical_portion_g.value ?? current.typical_portion_g,
+    shelf_life_days: draft.nutrition.shelf_life_days.value ?? current.shelf_life_days,
+    seasons: draft.seasons.value || current.seasons,
+    seo_title: draft.seo.seo_title.value || current.seo_title,
+    seo_description: draft.seo.seo_description.value || current.seo_description,
+    seo_h1: draft.seo.seo_h1.value || current.seo_h1
+  };
+}
+
+function CatalogProductEditor({ product, category, onClose, onSaved }: { product: AdminProduct; category?: AdminCategory; onClose: () => void; onSaved: () => Promise<void> | void }) {
+  const [draft, setDraft] = useState<CatalogEditDraft>(() => productToCatalogEditDraft(product));
+  const [instruction, setInstruction] = useState('Улучши карточку продукта: короткие названия, SEO title/description, 4 языка, nutrition без фантазий, стиль полезный для food каталога.');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function setText(field: keyof CatalogEditDraft, value: string) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function setNumber(field: keyof CatalogEditDraft, value: string) {
+    setDraft((current) => ({ ...current, [field]: value === '' ? undefined : Number(value) }));
+  }
+
+  async function runGeminiEdit() {
+    setBusy('gemini'); setMessage(null);
+    try {
+      const prompt = [
+        instruction,
+        'Текущий продукт JSON:',
+        JSON.stringify({ slug: product.slug, category: categoryDisplayName(category), ...draft }, null, 2),
+        'Верни улучшенный продукт через существующий формат AI draft.'
+      ].join('\n\n');
+      const response = await aiCreateProductDraft(prompt);
+      setDraft((current) => draftFromGeminiResponse(current, response));
+      setMessage(`Gemini обновил черновик. Уверенность ${Math.round(response.draft.confidence * 100)}%. Проверь и нажми Сохранить.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Gemini не смог обновить продукт');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function generateImage() {
+    setBusy('image'); setMessage(null);
+    try {
+      const name = String(draft.name_ru || draft.name_en || productDisplayName(product));
+      const description = String(draft.description_ru || draft.description_en || draft.seo_description || '');
+      const image = await aiGenerateProductImage(name, description, true);
+      setDraft((current) => ({ ...current, image_url: image.image_url }));
+      setMessage('Фото создано. Нажми Сохранить, чтобы привязать его к продукту.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Не удалось сгенерировать фото');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function save() {
+    setBusy('save'); setMessage(null);
+    try {
+      await updateAdminProduct(product.id, draft);
+      await Promise.resolve(onSaved());
+      setMessage('Продукт сохранён в backend.');
+      onClose();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Не удалось сохранить продукт');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return <div className="catalog-edit-overlay" role="presentation" onMouseDown={onClose}>
+    <section className="catalog-edit-modal" role="dialog" aria-label="Редактирование продукта" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="catalog-edit-head">
+        <div>
+          <p className="eyebrow">Gemini product editor</p>
+          <h3>{productDisplayName(product)}</h3>
+          <span>{categoryDisplayName(category)} · {product.slug || product.id}</span>
+        </div>
+        <button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button>
+      </div>
+
+      <div className="catalog-edit-body">
+        <aside className="catalog-edit-photo">
+          {draft.image_url ? <img src={draft.image_url} alt={productDisplayName(product)} /> : <span><AppIcon name="package" size={28} /></span>}
+          <button className="btn btn-quiet" type="button" onClick={() => void generateImage()} disabled={Boolean(busy)}>{busy === 'image' ? 'Gemini рисует...' : 'Сгенерировать фото'}</button>
+        </aside>
+
+        <div className="catalog-edit-form">
+          <GeminiBar instruction={instruction} busy={busy === 'gemini'} onChange={setInstruction} onRun={() => void runGeminiEdit()} />
+          <div className="editor-grid">
+            <EditorField label="Название RU" value={String(draft.name_ru || '')} onChange={(value) => setText('name_ru', value)} />
+            <EditorField label="Название EN" value={String(draft.name_en || '')} onChange={(value) => setText('name_en', value)} />
+            <EditorField label="Название PL" value={String(draft.name_pl || '')} onChange={(value) => setText('name_pl', value)} />
+            <EditorField label="Название UK" value={String(draft.name_uk || '')} onChange={(value) => setText('name_uk', value)} />
+            <EditorField label="Тип продукта" value={String(draft.product_type || '')} onChange={(value) => setText('product_type', value)} />
+            <EditorField label="Единица" value={String(draft.unit || '')} onChange={(value) => setText('unit', value)} />
+            <EditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} />
+            <EditorField label="SEO H1" value={String(draft.seo_h1 || '')} onChange={(value) => setText('seo_h1', value)} />
+            <EditorField label="Описание RU" value={String(draft.description_ru || '')} onChange={(value) => setText('description_ru', value)} multiline />
+            <EditorField label="Описание EN" value={String(draft.description_en || '')} onChange={(value) => setText('description_en', value)} multiline />
+            <EditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline />
+            <EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline />
+          </div>
+
+          <div className="catalog-nutrition-grid">
+            {([
+              ['calories_per_100g', 'kcal'], ['protein_per_100g', 'Белки'], ['fat_per_100g', 'Жиры'], ['carbs_per_100g', 'Углеводы'], ['fiber_per_100g', 'Клетчатка'], ['sugar_per_100g', 'Сахар']
+            ] as Array<[keyof CatalogEditDraft, string]>).map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={draft[field] as number ?? ''} onChange={(event) => setNumber(field, event.target.value)} /></label>)}
+          </div>
+        </div>
+      </div>
+
+      <div className="catalog-edit-actions">
+        <EditorMessage value={message} />
+        <button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button>
+        <button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Сохраняем...' : 'Сохранить продукт'}</button>
+      </div>
+    </section>
+  </div>;
+}
+
 function CatalogTable({ props }: { props: OperationsPageProps }) {
   const [query, setQuery] = useState('');
   const [categoryId, setCategoryId] = useState('all');
   const [limit, setLimit] = useState(50);
+  const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
 
   if (props.activeSite === 'almabuild') {
     const rows = props.almabuildContent?.products ?? [];
@@ -397,13 +576,14 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
       <article><span>С фото</span><strong>{imageReadyCount}</strong></article>
       <article><span>Категорий</span><strong>{props.categories.length}</strong></article>
     </div>
-    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Фото</th><th>Название</th><th>Категория</th><th>Slug / SKU</th><th>Тип</th><th>Питание</th><th>SEO</th><th>Статус</th></tr></thead><tbody>{visibleRows.map((product) => {
+    <div className="table-scroll"><table className="ops-table"><thead><tr><th>Фото</th><th>Название</th><th>Категория</th><th>Slug / SKU</th><th>Тип</th><th>Питание</th><th>SEO</th><th>Статус</th><th>Действие</th></tr></thead><tbody>{visibleRows.map((product) => {
       const category = categoriesById.get(product.category_id);
       const nutritionReady = product.calories_per_100g != null || product.protein_per_100g != null || product.carbs_per_100g != null || product.fat_per_100g != null;
-      return <tr key={product.id}><td>{product.image_url ? <img className="catalog-product-thumb" src={product.image_url} alt={productDisplayName(product)} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="package" size={18} /></span>}</td><td><strong>{productDisplayName(product)}</strong><small>{product.name_en}</small></td><td>{categoryDisplayName(category)}</td><td><code>{product.slug || product.id.slice(0, 8)}</code></td><td>{product.product_type || 'other'}</td><td><StatusPill tone={nutritionReady ? 'good' : 'warning'} label={nutritionReady ? 'есть' : 'пусто'} /></td><td><StatusPill tone={product.seo_title && product.seo_description ? 'good' : 'warning'} label={product.seo_title && product.seo_description ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={product.is_published ? 'good' : 'neutral'} label={product.is_published ? 'опубликовано' : 'черновик'} /></td></tr>;
+      return <tr key={product.id}><td>{product.image_url ? <img className="catalog-product-thumb" src={product.image_url} alt={productDisplayName(product)} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="package" size={18} /></span>}</td><td><strong>{productDisplayName(product)}</strong><small>{product.name_en}</small></td><td>{categoryDisplayName(category)}</td><td><code>{product.slug || product.id.slice(0, 8)}</code></td><td>{product.product_type || 'other'}</td><td><StatusPill tone={nutritionReady ? 'good' : 'warning'} label={nutritionReady ? 'есть' : 'пусто'} /></td><td><StatusPill tone={product.seo_title && product.seo_description ? 'good' : 'warning'} label={product.seo_title && product.seo_description ? 'готово' : 'не заполнено'} /></td><td><StatusPill tone={product.is_published ? 'good' : 'neutral'} label={product.is_published ? 'опубликовано' : 'черновик'} /></td><td><button className="table-action" type="button" onClick={() => setEditingProduct(product)}>Редактировать</button></td></tr>;
     })}</tbody></table></div>
     {filtered.length > visibleRows.length ? <p className="page-muted">Показано {visibleRows.length}. Увеличьте лимит, чтобы увидеть остальные {filtered.length - visibleRows.length}.</p> : null}
     {props.products.length === 0 ? <p className="empty-state">Backend не вернул товары. Нажмите «Обновить» или проверьте авторизацию/API.</p> : null}
+    {editingProduct ? <CatalogProductEditor product={editingProduct} category={categoriesById.get(editingProduct.category_id)} onClose={() => setEditingProduct(null)} onSaved={props.onRefresh} /> : null}
   </section>;
 }
 
