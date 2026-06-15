@@ -312,7 +312,8 @@ function AlmabuildEditor({ props, mode }: { props: OperationsPageProps; mode: 'm
     if (mode === 'projects') await saveAlmabuildDraft({ ...current, projects: [...current.projects, { title: 'Новый проект', meta: 'Тип · площадь · срок', photo: 'photo-building' }] }, props.onRefresh, setMessage);
   }
   const title = mode === 'materials' ? 'Карточки материалов Kazaxbud' : mode === 'products' ? 'Товарные карточки Kazaxbud' : mode === 'kits' ? 'Комплекты Kazaxbud' : 'Проектные карточки Kazaxbud';
-  return <section className="ops-panel"><PanelTitle title={title} icon="cms" action="редактируется через Gemini и backend Kazaxbud" /><div className="editor-toolbar"><button className="btn btn-primary" type="button" onClick={addItem}>Добавить</button><EditorMessage value={message} /></div><div className="editor-list">{mode === 'materials' && content.materialCategories.map((item, index) => <MaterialCardEditor key={item.slug + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'products' && content.products.map((item, index) => <ProductCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'kits' && content.kits.map((item, index) => <KitCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'projects' && content.projects.map((item, index) => <ProjectCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}</div></section>;
+  const addLabel = mode === 'materials' ? 'Добавить материал' : mode === 'products' ? 'Добавить товар' : mode === 'kits' ? 'Добавить комплект' : 'Добавить проект';
+  return <section className="ops-panel"><PanelTitle title={title} icon="cms" action="редактируется через Gemini и backend Kazaxbud" /><div className="editor-toolbar"><button className="btn btn-primary" type="button" onClick={addItem}>{addLabel}</button><EditorMessage value={message} /></div><div className="editor-list">{mode === 'materials' && content.materialCategories.map((item, index) => <MaterialCardEditor key={item.slug + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'products' && content.products.map((item, index) => <ProductCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'kits' && content.kits.map((item, index) => <KitCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}{mode === 'projects' && content.projects.map((item, index) => <ProjectCardEditor key={item.title + index} item={item} index={index} content={content} onRefresh={props.onRefresh} />)}</div></section>;
 }
 
 function DimaArticleEditor({ article, onRefresh }: { article: CmsArticle; onRefresh: () => void }) {
@@ -628,11 +629,6 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
   const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
 
-  if (props.activeSite === 'almabuild') {
-    const rows = props.almabuildContent?.products ?? [];
-    return <section className="ops-panel"><PanelTitle title="Товары Kazaxbud" icon="catalog" action="из /almabuild/content" /><table className="ops-table"><thead><tr><th>Название</th><th>Категория</th><th>Slug</th><th>Характеристики</th><th>Статус</th></tr></thead><tbody>{rows.map((product) => <tr key={product.title}><td>{product.title}</td><td>{product.category}</td><td>{product.categorySlug}</td><td>{product.spec}</td><td><StatusPill tone="good" label="опубликовано" /></td></tr>)}</tbody></table></section>;
-  }
-
   const categoriesById = new Map(props.categories.map((category) => [category.id, category]));
   const needle = query.trim().toLowerCase();
   const filtered = props.products.filter((product) => {
@@ -679,11 +675,7 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
 }
 
 function MaterialsTable({ props }: { props: OperationsPageProps }) {
-  if (props.activeSite === 'almabuild') {
-    const rows = props.almabuildContent?.materialCategories ?? [];
-    return <section className="ops-panel"><PanelTitle title="Категории материалов Kazaxbud" icon="materials" action="блок сайта: материалы" /><table className="ops-table"><thead><tr><th>Название</th><th>Slug</th><th>Индекс</th><th>Пункты</th><th>Статус</th></tr></thead><tbody>{rows.map((category) => <tr key={category.slug}><td>{category.title}</td><td>{category.slug}</td><td>{category.index}</td><td>{category.bullets.length}</td><td><StatusPill tone="good" label="на сайте" /></td></tr>)}</tbody></table></section>;
-  }
-  return <CatalogTable props={props} />;
+  return <AlmabuildEditor props={props} mode="materials" />;
 }
 
 function GenericCards({ data, icon, items }: { data: SiteDataset; icon: AppIconName; items: string[] }) {
@@ -833,8 +825,8 @@ function ModuleContent({ props, data }: { props: OperationsPageProps; data: Site
   if (props.page === 'overview') return <Overview props={props} data={data} />;
   if (props.page === 'sites') return <SiteSettings data={data} />;
   if (props.page === 'leads') return <LeadsCrm data={data} />;
-  if (props.page === 'catalog') return props.activeSite === 'almabuild' ? <AlmabuildEditor props={props} mode="products" /> : <CatalogTable props={props} />;
-  if (props.page === 'materials') return props.activeSite === 'almabuild' ? <AlmabuildEditor props={props} mode="materials" /> : <MaterialsTable props={props} />;
+  if (props.page === 'catalog') return <CatalogTable props={props} />;
+  if (props.page === 'materials') return <MaterialsTable props={props} />;
   if (props.page === 'suppliers') return <GenericCards data={data} icon="suppliers" items={props.activeSite === 'almabuild' ? ['Партнер Knauf Алматы', 'Электрика Trade KZ', 'Плитка Market Almaty'] : ['Консалтинг-партнер', 'Хостинг-провайдер', 'Контент-подрядчик']} />;
   if (props.page === 'projects') return props.activeSite === 'almabuild' ? <AlmabuildEditor props={props} mode="projects" /> : <DimaPagesEditor props={props} />;
   if (props.page === 'seo') return props.activeSite === 'almabuild' ? <AlmabuildEditor props={props} mode="kits" /> : <DimaPagesEditor props={props} />;
@@ -846,6 +838,7 @@ function ModuleContent({ props, data }: { props: OperationsPageProps; data: Site
 }
 
 export function OperationsPage(props: OperationsPageProps) {
-  const data = dataset(props);
-  return <section className="ops-page" key={props.activeSite + '-' + props.page}><PageHeader props={props} data={data} />{props.error ? <p className="ops-alert"><AppIcon name="shield" />{props.error}</p> : null}<ModuleContent props={props} data={data} /></section>;
+  const pageSite: ManagedSite = props.page === 'catalog' ? 'dima' : props.page === 'materials' ? 'almabuild' : props.activeSite;
+  const data = dataset({ ...props, activeSite: pageSite });
+  return <section className="ops-page" key={pageSite + '-' + props.page}><PageHeader props={props} data={data} />{props.error ? <p className="ops-alert"><AppIcon name="shield" />{props.error}</p> : null}<ModuleContent props={props} data={data} /></section>;
 }
