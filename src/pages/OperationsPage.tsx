@@ -3,7 +3,7 @@ import * as echarts from 'echarts';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import type { AppPage, ManagedSite } from '../components/Sidebar';
 import { aiEditAlmabuildItem, saveAlmabuildContent, type AlmabuildContent, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
-import { aiCreateProductDraft, aiGenerateProductImage, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
+import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
 import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
 import { aiCreateArticleDraft, updateArticle } from '../api/cms';
 import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../types/admin';
@@ -533,11 +533,100 @@ function CatalogProductEditor({ product, category, onClose, onSaved }: { product
   </div>;
 }
 
+function CatalogNewProductEditor({ categories, onClose, onSaved }: { categories: AdminCategory[]; onClose: () => void; onSaved: () => Promise<void> | void }) {
+  const [source, setSource] = useState('Новый продукт для food-каталога: название, категория, вкус, использование, питание на 100 г.');
+  const [draft, setDraft] = useState<CatalogEditDraft>({ unit: 'kilogram', product_type: '', seasons: [] });
+  const [profile, setProfile] = useState<AiExtendedProductProfile>({});
+  const [tab, setTab] = useState<CatalogEditTab>('basic');
+  const [categoryId, setCategoryId] = useState(categories[0]?.id || '');
+  const [instruction, setInstruction] = useState('Создай полную карточку нового продукта как на публичной странице: 4 языка, SEO, nutrition, витамины, минералы, кулинарный профиль, диеты и health profile. Не выдумывай медицинские гарантии.');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>('Опиши продукт и нажми «Текст и профиль».');
+
+  function setText(field: keyof CatalogEditDraft, value: string) { setDraft((current) => ({ ...current, [field]: value })); }
+  function setNumber(field: keyof CatalogEditDraft, value: string) { setDraft((current) => ({ ...current, [field]: value === '' ? undefined : Number(value) })); }
+  function profileValue(section: keyof AiExtendedProductProfile, field: string): unknown { return profile[section]?.[field]; }
+  function setProfileValue(section: keyof AiExtendedProductProfile, field: string, value: string | number | boolean | null | string[]) { setProfile((current) => ({ ...current, [section]: { ...(current[section] || {}), [field]: value } })); }
+  function setProfileNumber(section: keyof AiExtendedProductProfile, field: string, value: string) { setProfileValue(section, field, value === '' ? null : Number(value)); }
+
+  async function runGeminiCreate() {
+    setBusy('gemini'); setMessage(null);
+    try {
+      const category = categories.find((item) => item.id === categoryId);
+      const response = await aiCreateProductDraft([instruction, 'Категория:', categoryDisplayName(category), 'Описание нового продукта:', source, 'Текущий черновик:', JSON.stringify({ draft, profile }, null, 2)].join('\n\n'));
+      setDraft((current) => draftFromGeminiResponse(current, response));
+      setProfile((current) => ({ ...current, ...response.draft.extended }));
+      setMessage(`Gemini создал черновик. Уверенность ${Math.round(response.draft.confidence * 100)}%. Проверь вкладки и сохрани.`);
+    } catch (err) { setMessage(err instanceof Error ? err.message : 'Gemini не смог создать черновик'); }
+    finally { setBusy(null); }
+  }
+
+  async function generateImage() {
+    setBusy('image'); setMessage(null);
+    try {
+      const name = String(draft.name_ru || draft.name_en || draft.name_pl || source);
+      const description = String(draft.description_ru || draft.description_en || draft.seo_description || source);
+      const image = await aiGenerateProductImage(name, description, true);
+      setDraft((current) => ({ ...current, image_url: image.image_url }));
+      setMessage('Фото создано. Нажми «Создать продукт», чтобы сохранить его в backend.');
+    } catch (err) { setMessage(err instanceof Error ? err.message : 'Не удалось сгенерировать фото'); }
+    finally { setBusy(null); }
+  }
+
+  async function save() {
+    setBusy('save'); setMessage(null);
+    try {
+      const nameInput = String(draft.name_en || draft.name_ru || draft.name_pl || source).trim();
+      if (!nameInput) throw new Error('Введите описание или название продукта.');
+      const created = await createAdminProduct({ ...draft, name_input: nameInput, category_id: categoryId || undefined, auto_translate: false });
+      await saveExtendedProductProfile(created.id, profile);
+      await Promise.resolve(onSaved());
+      setMessage('Новый продукт создан и сохранён в backend.');
+      onClose();
+    } catch (err) { setMessage(err instanceof Error ? err.message : 'Не удалось создать продукт'); }
+    finally { setBusy(null); }
+  }
+
+  const tabs: Array<[CatalogEditTab, string]> = [['basic', 'Основное'], ['content', '4 языка'], ['nutrition', 'Макросы'], ['vitamins', 'Витамины'], ['minerals', 'Минералы'], ['culinary', 'Кулинария'], ['health', 'Health'], ['states', 'Состояния']];
+  const displayName = String(draft.name_ru || draft.name_en || 'Новый продукт');
+
+  return <div className="catalog-edit-overlay compact" role="presentation" onMouseDown={onClose}>
+    <section className="catalog-edit-modal compact" role="dialog" aria-label="Создание продукта" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="catalog-edit-head"><div><p className="eyebrow">Gemini product creator</p><h3>{displayName}</h3><span>{categoryDisplayName(categories.find((item) => item.id === categoryId))} · новый продукт</span></div><button className="btn btn-quiet" type="button" onClick={onClose}>Закрыть</button></div>
+      <nav className="catalog-edit-tabs">{tabs.map(([id, label]) => <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
+      <section className="catalog-generation-panel">
+        <label><span>Что создать</span><textarea value={source} onChange={(event) => setSource(event.target.value)} /></label>
+        <label><span>Задача для Gemini</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
+        <div className="catalog-generation-actions">
+          <button className="btn btn-primary" type="button" onClick={() => void runGeminiCreate()} disabled={Boolean(busy)}><AppIcon name="sparkles" />{busy === 'gemini' ? 'Генерируем текст...' : 'Текст и профиль'}<small>{CATALOG_TEXT_MODEL}</small></button>
+          <button className="btn btn-quiet" type="button" onClick={() => void generateImage()} disabled={Boolean(busy)}><AppIcon name="package" />{busy === 'image' ? 'Генерируем фото...' : 'Фото'}<small>{CATALOG_IMAGE_MODEL}</small></button>
+          <button className="btn btn-quiet" type="button" disabled><AppIcon name="refresh" />Состояния<small>после создания</small></button>
+        </div>
+      </section>
+      <div className="catalog-edit-body compact">
+        <aside className="catalog-edit-photo compact">{draft.image_url ? <img src={draft.image_url} alt={displayName} /> : <span><AppIcon name="package" size={28} /></span>}<small>Фото: {CATALOG_IMAGE_MODEL}</small></aside>
+        <div className="catalog-edit-form">
+          {tab === 'basic' ? <div className="editor-grid"><label><span>Категория</span><select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Авто / без категории</option>{categories.map((category) => <option key={category.id} value={category.id}>{categoryDisplayName(category)}</option>)}</select></label><EditorField label="Название RU" value={String(draft.name_ru || '')} onChange={(value) => setText('name_ru', value)} /><EditorField label="Название EN" value={String(draft.name_en || '')} onChange={(value) => setText('name_en', value)} /><EditorField label="Название PL" value={String(draft.name_pl || '')} onChange={(value) => setText('name_pl', value)} /><EditorField label="Название UK" value={String(draft.name_uk || '')} onChange={(value) => setText('name_uk', value)} /><EditorField label="Тип продукта" value={String(draft.product_type || '')} onChange={(value) => setText('product_type', value)} /><EditorField label="Единица" value={String(draft.unit || '')} onChange={(value) => setText('unit', value)} /><EditorField label="Image URL" value={String(draft.image_url || '')} onChange={(value) => setText('image_url', value)} multiline /></div> : null}
+          {tab === 'content' ? <div className="editor-grid"><EditorField label="Описание RU" value={String(draft.description_ru || '')} onChange={(value) => setText('description_ru', value)} multiline /><EditorField label="Описание EN" value={String(draft.description_en || '')} onChange={(value) => setText('description_en', value)} multiline /><EditorField label="Описание PL" value={String(draft.description_pl || '')} onChange={(value) => setText('description_pl', value)} multiline /><EditorField label="Описание UK" value={String(draft.description_uk || '')} onChange={(value) => setText('description_uk', value)} multiline /><EditorField label="SEO title" value={String(draft.seo_title || '')} onChange={(value) => setText('seo_title', value)} /><EditorField label="SEO H1" value={String(draft.seo_h1 || '')} onChange={(value) => setText('seo_h1', value)} /><EditorField label="SEO description" value={String(draft.seo_description || '')} onChange={(value) => setText('seo_description', value)} multiline /></div> : null}
+          {tab === 'nutrition' ? <div className="catalog-nutrition-grid">{([['calories_per_100g', 'Kalorie/kcal'], ['protein_per_100g', 'Białko'], ['fat_per_100g', 'Tłuszcz'], ['carbs_per_100g', 'Węglowodany'], ['fiber_per_100g', 'Błonnik'], ['sugar_per_100g', 'Cukier'], ['density_g_per_ml', 'Gęstość'], ['typical_portion_g', 'Porcja'], ['shelf_life_days', 'Trwałość'], ['starch_g', 'Starch'], ['water_g', 'Water'], ['alcohol_g', 'Alcohol']] as Array<[string, string]>).map(([field, label]) => field in draft ? <label key={field}><span>{label}</span><input type="number" step="any" value={draft[field as keyof CatalogEditDraft] as number ?? ''} onChange={(event) => setNumber(field as keyof CatalogEditDraft, event.target.value)} /></label> : <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('macros', field) as number ?? ''} onChange={(event) => setProfileNumber('macros', field, event.target.value)} /></label>)}</div> : null}
+          {tab === 'vitamins' ? <div className="catalog-nutrition-grid">{CATALOG_VITAMINS.map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('vitamins', field) as number ?? ''} onChange={(event) => setProfileNumber('vitamins', field, event.target.value)} /></label>)}</div> : null}
+          {tab === 'minerals' ? <div className="catalog-nutrition-grid">{CATALOG_MINERALS.map(([field, label]) => <label key={field}><span>{label}</span><input type="number" step="any" value={profileValue('minerals', field) as number ?? ''} onChange={(event) => setProfileNumber('minerals', field, event.target.value)} /></label>)}</div> : null}
+          {tab === 'culinary' ? <div className="editor-grid"><div className="catalog-nutrition-grid span-2">{(['sweetness', 'acidity', 'bitterness', 'umami', 'aroma'] as const).map((field) => <label key={field}><span>{field}</span><input type="number" step="any" value={profileValue('culinary', field) as number ?? ''} onChange={(event) => setProfileNumber('culinary', field, event.target.value)} /></label>)}{(['glycemic_index', 'glycemic_load', 'ph', 'smoke_point', 'water_activity'] as const).map((field) => <label key={field}><span>{field}</span><input type="number" step="any" value={profileValue('food_properties', field) as number ?? ''} onChange={(event) => setProfileNumber('food_properties', field, event.target.value)} /></label>)}</div><EditorField label="Texture" value={String(profileValue('culinary', 'texture') || '')} onChange={(value) => setProfileValue('culinary', 'texture', value)} multiline /><EditorField label="Processing notes PL" value={String(profileValue('processing_effects', 'processing_notes_pl') || '')} onChange={(value) => setProfileValue('processing_effects', 'processing_notes_pl', value)} multiline /></div> : null}
+          {tab === 'health' ? <div className="editor-grid"><div className="toggle-grid span-2">{CATALOG_DIETS.map(([field, label]) => <label className="editor-check" key={field}><input type="checkbox" checked={Boolean(profileValue('diet_flags', field))} onChange={(event) => setProfileValue('diet_flags', field, event.target.checked)} />{label}</label>)}</div>{(['en', 'ru', 'pl', 'uk'] as const).flatMap((lang) => [<EditorField key={`bio-${lang}`} label={`Bioactive ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `bioactive_compounds_${lang}`))} onChange={(value) => setProfileValue('health_profile', `bioactive_compounds_${lang}`, csvToArray(value))} multiline />, <EditorField key={`eff-${lang}`} label={`Health effects ${lang.toUpperCase()}`} value={arrayToCsv(profileValue('health_profile', `health_effects_${lang}`))} onChange={(value) => setProfileValue('health_profile', `health_effects_${lang}`, csvToArray(value))} multiline />])}<EditorField label="Food role" value={String(profileValue('health_profile', 'food_role') || '')} onChange={(value) => setProfileValue('health_profile', 'food_role', value)} /></div> : null}
+          {tab === 'states' ? <div className="catalog-states-list"><article><strong>Состояния появятся после создания</strong><span>Сначала нужен ID продукта в backend.</span><p>После сохранения открой продукт через «Редактировать» и нажми «Состояния».</p></article></div> : null}
+        </div>
+      </div>
+      <div className="catalog-edit-actions"><EditorMessage value={message} /><button className="btn btn-quiet" type="button" onClick={onClose}>Отмена</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={Boolean(busy)}><AppIcon name="check" />{busy === 'save' ? 'Создаём...' : 'Создать продукт'}</button></div>
+    </section>
+  </div>;
+}
+
 function CatalogTable({ props }: { props: OperationsPageProps }) {
   const [query, setQuery] = useState('');
   const [categoryId, setCategoryId] = useState('all');
   const [limit, setLimit] = useState(50);
   const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
+  const [creatingProduct, setCreatingProduct] = useState(false);
 
   if (props.activeSite === 'almabuild') {
     const rows = props.almabuildContent?.products ?? [];
@@ -567,6 +656,7 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
       <label><span>Поиск</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Название, slug, тип, категория" /></label>
       <label><span>Категория</span><select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="all">Все категории</option>{props.categories.map((category) => <option key={category.id} value={category.id}>{categoryDisplayName(category)}</option>)}</select></label>
       <label><span>Показать</span><select value={String(limit)} onChange={(event) => setLimit(Number(event.target.value))}><option value="50">50 товаров</option><option value="100">100 товаров</option><option value="250">250 товаров</option><option value="99999">Все товары</option></select></label>
+      <button className="btn btn-primary" type="button" onClick={() => setCreatingProduct(true)}><AppIcon name="sparkles" />Создать продукт</button>
       <button className="btn btn-quiet" type="button" onClick={props.onRefresh} disabled={props.loading}><AppIcon name="refresh" />Обновить из backend</button>
     </div>
     <div className="catalog-stats-row">
@@ -583,6 +673,7 @@ function CatalogTable({ props }: { props: OperationsPageProps }) {
     })}</tbody></table></div>
     {filtered.length > visibleRows.length ? <p className="page-muted">Показано {visibleRows.length}. Увеличьте лимит, чтобы увидеть остальные {filtered.length - visibleRows.length}.</p> : null}
     {props.products.length === 0 ? <p className="empty-state">Backend не вернул товары. Нажмите «Обновить» или проверьте авторизацию/API.</p> : null}
+    {creatingProduct ? <CatalogNewProductEditor categories={props.categories} onClose={() => setCreatingProduct(false)} onSaved={props.onRefresh} /> : null}
     {editingProduct ? <CatalogProductEditor product={editingProduct} category={categoriesById.get(editingProduct.category_id)} onClose={() => setEditingProduct(null)} onSaved={props.onRefresh} /> : null}
   </section>;
 }

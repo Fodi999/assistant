@@ -80,6 +80,7 @@ export interface AiCreateDraftResponse {
 
 export interface CreateAdminProductRequest {
   name_input: string;
+  category_id?: string;
   name_en?: string;
   name_ru?: string;
   name_pl?: string;
