@@ -15,6 +15,7 @@ import { contentArticles, siteLabel } from '../lib/mockData';
 import type { CmsArticle, ContentArticle, ContentType, PublishStatus, SiteKey } from '../types/admin';
 import { AppIcon } from '../components/AppIcon';
 import { contentTypeLabels, publishStatusLabels } from '../lib/labels';
+import { revalidateSite } from '../api/revalidate';
 
 type Language = 'ru' | 'pl' | 'en' | 'uk';
 
@@ -325,10 +326,16 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setBusyLabel('Сохраняем...');
     setMessage(undefined);
     try {
+      const previousSlug = nextDraft.id ? apiArticles.find((article) => article.id === nextDraft.id)?.slug : undefined;
+      let saved: CmsArticle;
       if (nextDraft.id) {
-        await updateArticle(nextDraft.id, payloadFromDraft(nextDraft, images));
+        saved = await updateArticle(nextDraft.id, payloadFromDraft(nextDraft, images));
       } else {
-        await createArticle(payloadFromDraft(nextDraft, images));
+        saved = await createArticle(payloadFromDraft(nextDraft, images));
+      }
+      await revalidateSite({ type: 'article', slug: saved.slug || nextDraft.slug });
+      if (previousSlug && previousSlug !== saved.slug) {
+        await revalidateSite({ type: 'article', slug: previousSlug });
       }
       await refresh();
       setEditorOpen(false);
@@ -526,6 +533,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setMessage(undefined);
     try {
       await deleteArticle(draft.id);
+      await revalidateSite({ type: 'article', slug: draft.slug });
       await refresh();
       setEditorOpen(false);
     } catch (error) {
