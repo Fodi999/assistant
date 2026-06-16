@@ -274,6 +274,14 @@ impl From<GalleryRow> for GalleryPublicItem {
     }
 }
 
+fn is_public_reference_url(url: &str) -> bool {
+    let value = url.trim();
+    if value.len() > 2048 || value.chars().any(char::is_whitespace) {
+        return false;
+    }
+    value.starts_with("https://") || value.starts_with("http://")
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateGalleryRequest {
     pub image_url: String,
@@ -1301,13 +1309,13 @@ STORE PRODUCT RULES:
         if title.is_empty() {
             return Err(AppError::validation("Article title cannot be empty"));
         }
-        if reference_urls.len() > 2
+        if reference_urls.len() > 4
             || reference_urls
                 .iter()
-                .any(|url| !self.r2_client.is_public_url(url))
+                .any(|url| !is_public_reference_url(url))
         {
             return Err(AppError::validation(
-                "Reference images must be uploaded to the configured R2 storage",
+                "Reference images must be public http(s) URLs",
             ));
         }
         let default_prompt = match index {

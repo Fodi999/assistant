@@ -515,7 +515,7 @@ STRICTLY EXCLUDE:
         reference_urls: &[String],
     ) -> Result<String, AppError> {
         let mut parts = vec![serde_json::json!({"text": prompt})];
-        for reference_url in reference_urls.iter().take(2) {
+        for reference_url in reference_urls.iter().take(4) {
             let response = self
                 .http_client
                 .get(reference_url)
