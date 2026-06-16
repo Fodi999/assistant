@@ -7,7 +7,7 @@ import { AboutPage } from './pages/AboutPage';
 import { AffiliatePage } from './pages/AffiliatePage';
 import { AiStudioPage } from './pages/AiStudioPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
-import { ConstructionPage } from './pages/ConstructionPage';
+import { AlmabuildPage } from './pages/AlmabuildPage';
 import { ContentPage } from './pages/ContentPage';
 import { CulinaryPage } from './pages/CulinaryPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -87,7 +87,7 @@ export function App() {
       case 'affiliate': return <AffiliatePage activeSite={activeSite} />;
       case 'content': return <ContentPage activeSite={activeSite} />;
       case 'ai-studio': return <AiStudioPage activeSite={activeSite} />;
-      case 'construction': return <ConstructionPage />;
+      case 'construction': return <AlmabuildPage />;
       case 'culinary': return <CulinaryPage />;
       case 'leads': return <LeadsPage activeSite={activeSite} />;
       case 'suppliers': return <SuppliersPage />;

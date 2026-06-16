@@ -37,8 +37,8 @@ export const siteConfigs: SiteConfig[] = [
     primaryLanguage: 'ru',
     languages: ['ru', 'kk', 'en', 'pl'],
     status: 'active',
-    apiStatus: 'limited',
-    revalidateStatus: 'queued',
+    apiStatus: 'online',
+    revalidateStatus: 'ready',
     defaultCurrency: 'KZT',
     region: 'Алматы'
   }

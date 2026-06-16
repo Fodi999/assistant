@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 
-export const almabuildSiteUrl = String(import.meta.env.VITE_ALMABUILD_SITE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+export const almabuildSiteUrl = String(import.meta.env.VITE_ALMABUILD_SITE_URL || 'https://kazaxbud.pages.dev').replace(/\/+$/, '');
 
 export type MaterialCategory = {
   index: string;
