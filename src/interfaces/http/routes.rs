@@ -1377,26 +1377,21 @@ pub fn create_router(
         .route(
             "/article-categories",
             get(admin_cms::list_article_categories),
+        )
+        // AI generation routes are lightweight HTTP handlers; the model calls are
+        // controlled by Gemini configuration, not by the heavy-admin route flag.
+        .route(
+            "/articles/ai/draft",
+            post(admin_cms::create_ai_article_draft),
+        )
+        .route(
+            "/articles/ai/images",
+            post(admin_cms::generate_ai_article_image),
+        )
+        .route(
+            "/shop-products/ai/draft",
+            post(admin_cms::create_ai_shop_product_draft),
         );
-
-    let admin_cms_routes = if heavy_admin_enabled {
-        admin_cms_routes
-            // Knowledge Articles
-            .route(
-                "/articles/ai/draft",
-                post(admin_cms::create_ai_article_draft),
-            )
-            .route(
-                "/articles/ai/images",
-                post(admin_cms::generate_ai_article_image),
-            )
-            .route(
-                "/shop-products/ai/draft",
-                post(admin_cms::create_ai_shop_product_draft),
-            )
-    } else {
-        admin_cms_routes
-    };
 
     let admin_cms_routes = admin_cms_routes
         .layer(middleware::from_fn_with_state(
