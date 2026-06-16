@@ -206,8 +206,11 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
   const [referenceUrlInput, setReferenceUrlInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState('');
   const [imageBusy, setImageBusy] = useState(false);
+  const [imageBusyLabel, setImageBusyLabel] = useState('');
   const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceBusyLabel, setReferenceBusyLabel] = useState('');
   const [message, setMessage] = useState<string | undefined>();
   const rows = useMemo(() => items.filter((item) => (site === 'all' || item.site === site) && (type === 'all' || item.type === type)), [items, site, type]);
   const articleImages = useMemo(() => new Map(apiArticles.map((article) => [article.id, article.image_url || ''])), [apiArticles]);
@@ -272,6 +275,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       return;
     }
     setBusy(true);
+    setBusyLabel('Gemini пишет...');
     setMessage(undefined);
     try {
       const result = await aiCreateArticleDraft(topic, 4500, 3);
@@ -305,6 +309,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'AI не вернул черновик.');
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   };
 
@@ -317,6 +322,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     const nextDraft = { ...draft, slug: draft.slug || slugify(title) };
     setDraft(nextDraft);
     setBusy(true);
+    setBusyLabel('Сохраняем...');
     setMessage(undefined);
     try {
       if (nextDraft.id) {
@@ -330,6 +336,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'Не удалось сохранить материал.');
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   };
 
@@ -340,6 +347,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       return;
     }
     setImageBusy(true);
+    setImageBusyLabel('Загружаем фото...');
     setMessage(undefined);
     try {
       const url = await uploadCmsReference(file);
@@ -350,6 +358,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'Не удалось загрузить фото.');
     } finally {
       setImageBusy(false);
+      setImageBusyLabel('');
     }
   };
 
@@ -360,6 +369,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       return;
     }
     setImageBusy(true);
+    setImageBusyLabel(`Gemini фото ${selectedImage + 1}...`);
     setMessage(undefined);
     try {
       const result = await aiGenerateArticleImage(title, aiImagePrompt || undefined, selectedImage, false, referenceUrls, 'flash', 'editorial', { photoScenarios: [] });
@@ -370,6 +380,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'AI не создал фото.');
     } finally {
       setImageBusy(false);
+      setImageBusyLabel('');
     }
   };
 
@@ -380,6 +391,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       return;
     }
     setImageBusy(true);
+    setImageBusyLabel(`Gemini 1/${ARTICLE_IMAGE_COUNT}...`);
     setMessage(undefined);
     try {
       const next: string[] = [];
@@ -389,6 +401,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
           : `${aiImagePrompt || title}. Step ${index}: detailed supporting article photo, no text, realistic food editorial.`;
         const result = await aiGenerateArticleImage(title, prompt, index, false, referenceUrls, 'flash', 'editorial', { photoScenarios: [] });
         next.push(result.image_url);
+        setImageBusyLabel(`Gemini ${Math.min(index + 2, ARTICLE_IMAGE_COUNT)}/${ARTICLE_IMAGE_COUNT}...`);
         setImages([...next, ...Array(ARTICLE_IMAGE_COUNT - next.length).fill('')]);
       }
       patchDraft({ image_url: next[0] || '' });
@@ -398,6 +411,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'AI не создал 4 фото.');
     } finally {
       setImageBusy(false);
+      setImageBusyLabel('');
     }
   };
 
@@ -415,6 +429,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     setImages((current) => [...current, '']);
     setSelectedImage(index);
     setImageBusy(true);
+    setImageBusyLabel(`Gemini + фото ${index + 1}...`);
     setMessage(undefined);
     try {
       const prompt = `${aiImagePrompt || title}. Additional gallery photo ${index + 1}, realistic editorial food image, no text.`;
@@ -427,6 +442,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'AI не создал дополнительное фото.');
     } finally {
       setImageBusy(false);
+      setImageBusyLabel('');
     }
   };
 
@@ -444,6 +460,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       return;
     }
     setReferenceBusy(true);
+    setReferenceBusyLabel('Загружаем референсы...');
     setMessage(undefined);
     try {
       const uploaded: string[] = [];
@@ -457,6 +474,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'Не удалось загрузить референсы.');
     } finally {
       setReferenceBusy(false);
+      setReferenceBusyLabel('');
     }
   };
 
@@ -504,6 +522,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const removeDraft = async () => {
     if (!draft.id) return;
     setBusy(true);
+    setBusyLabel('Удаляем...');
     setMessage(undefined);
     try {
       await deleteArticle(draft.id);
@@ -513,6 +532,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
       setMessage(error instanceof Error ? error.message : 'Не удалось удалить материал.');
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   };
 
@@ -537,13 +557,13 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
               <div><p className="eyebrow">{draft.id ? 'Редактирование' : 'Новый материал'}</p><h2>{draft.id ? draft.title_ru || draft.slug : 'AI контент'}</h2></div>
               <div className="editor-actions">
                 <button className="btn btn-quiet" type="button" onClick={() => setEditorOpen(false)}>Закрыть</button>
-                <button className="btn btn-primary" type="button" disabled={busy} onClick={saveDraft}>Сохранить</button>
+                <button className="btn btn-primary" type="button" disabled={busy} onClick={saveDraft}>{busyLabel || 'Сохранить'}</button>
               </div>
             </div>
 
             <div className="gemini-bar">
               <label><span>Тема для AI</span><textarea value={aiTopic} onChange={(event) => setAiTopic(event.target.value)} placeholder="Например: Лучшие ножи для рыбы: обзор, сравнение, affiliate блоки и SEO" /></label>
-              <button className="btn btn-ai" type="button" disabled={busy} onClick={generateAi}><AppIcon name="bot" />AI черновик</button>
+              <button className="btn btn-ai" type="button" disabled={busy} onClick={generateAi}><AppIcon name="bot" />{busyLabel || 'AI черновик'}</button>
             </div>
 
             <div className="editor-grid">
@@ -566,16 +586,16 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
                 <section className="content-reference-panel">
                   <div className="panel-title compact"><span><AppIcon name="external" />Референсы для AI</span><small>{referenceUrls.length}/{ARTICLE_REFERENCE_MAX}</small></div>
                   <div className="content-reference-actions">
-                    <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" multiple disabled={referenceBusy || referenceUrls.length >= ARTICLE_REFERENCE_MAX} onChange={(event) => void addReferenceFiles(event.target.files)} />Загрузить с ПК</label>
+                    <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" multiple disabled={referenceBusy || referenceUrls.length >= ARTICLE_REFERENCE_MAX} onChange={(event) => void addReferenceFiles(event.target.files)} />{referenceBusyLabel || 'Загрузить с ПК'}</label>
                     <div className="content-reference-url"><input value={referenceUrlInput} onChange={(event) => setReferenceUrlInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addReferenceUrl(); }} placeholder="https://... фото-референс" /><button className="btn btn-quiet" type="button" disabled={referenceUrls.length >= ARTICLE_REFERENCE_MAX} onClick={addReferenceUrl}>URL</button></div>
                   </div>
                   {referenceUrls.length ? <div className="content-reference-strip">{referenceUrls.map((url, index) => <div key={`${url}-${index}`} className="content-reference-thumb"><img src={url} alt={`Референс ${index + 1}`} /><button type="button" onClick={() => removeReferenceUrl(index)}>×</button></div>)}</div> : <p className="editor-message">AI будет генерировать без визуального референса.</p>}
                 </section>
                 <div className="editor-actions">
-                  <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)} />Загрузить</label>
-                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhoto}><AppIcon name="bot" />AI фото</button>
-                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhotoSeries}><AppIcon name="bot" />AI 4 фото</button>
-                  <button className="btn btn-ai" type="button" disabled={imageBusy || images.length >= ARTICLE_IMAGE_MAX} onClick={generateAdditionalPhoto}><AppIcon name="bot" />AI + фото</button>
+                  <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" disabled={imageBusy} onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)} />{imageBusyLabel === 'Загружаем фото...' ? imageBusyLabel : 'Загрузить'}</label>
+                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhoto}><AppIcon name="bot" />{imageBusyLabel.startsWith('Gemini фото') ? imageBusyLabel : 'AI фото'}</button>
+                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhotoSeries}><AppIcon name="bot" />{imageBusyLabel.startsWith('Gemini ') && imageBusyLabel.includes('/') ? imageBusyLabel : 'AI 4 фото'}</button>
+                  <button className="btn btn-ai" type="button" disabled={imageBusy || images.length >= ARTICLE_IMAGE_MAX} onClick={generateAdditionalPhoto}><AppIcon name="bot" />{imageBusyLabel.startsWith('Gemini +') ? imageBusyLabel : 'AI + фото'}</button>
                   <button className="btn btn-quiet" type="button" disabled={imageBusy || !images[selectedImage]} onClick={() => setFullscreenImage(selectedImage)}>На весь экран</button>
                   <button className="btn btn-quiet" type="button" disabled={imageBusy || (!images[selectedImage] && images.length <= ARTICLE_IMAGE_COUNT)} onClick={removeSelectedImage}>Убрать</button>
                 </div>
@@ -595,9 +615,9 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
 
             {message ? <p className="editor-message">{message}</p> : null}
             <div className="editor-actions">
-              {draft.id ? <button className="btn btn-danger" type="button" disabled={busy} onClick={removeDraft}>Удалить</button> : null}
+              {draft.id ? <button className="btn btn-danger" type="button" disabled={busy} onClick={removeDraft}>{busyLabel === 'Удаляем...' ? busyLabel : 'Удалить'}</button> : null}
               <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => patchDraft({ slug: slugify(draft.title_ru || draft.title_pl || draft.title_en || draft.title_uk) })}>Сделать slug</button>
-              <button className="btn btn-primary" type="button" disabled={busy} onClick={saveDraft}>Сохранить</button>
+              <button className="btn btn-primary" type="button" disabled={busy} onClick={saveDraft}>{busyLabel || 'Сохранить'}</button>
             </div>
           </div>
           {fullscreenImage !== null ? (
