@@ -70,6 +70,7 @@ export type Kit = {
 };
 
 export type Project = {
+  slug?: string;
   title: string;
   titleRu?: string;
   titleKk?: string;
@@ -78,6 +79,22 @@ export type Project = {
   metaRu?: string;
   metaKk?: string;
   metaEn?: string;
+  seoTitle?: string;
+  seoTitleRu?: string;
+  seoTitleKk?: string;
+  seoTitleEn?: string;
+  seoDescription?: string;
+  seoDescriptionRu?: string;
+  seoDescriptionKk?: string;
+  seoDescriptionEn?: string;
+  pageTitle?: string;
+  pageTitleRu?: string;
+  pageTitleKk?: string;
+  pageTitleEn?: string;
+  pageText?: string;
+  pageTextRu?: string;
+  pageTextKk?: string;
+  pageTextEn?: string;
   photo: string;
   imageUrls?: string[];
 };

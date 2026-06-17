@@ -17,7 +17,7 @@ import { AppIcon } from '../../components/AppIcon';
 import type { AlmabuildSection } from '../../types/admin';
 
 type AlmabuildLanguage = 'ru' | 'kk' | 'en';
-type LocalizedStringKey = 'title' | 'text' | 'category' | 'spec' | 'meta';
+type LocalizedStringKey = 'title' | 'text' | 'category' | 'spec' | 'meta' | 'seoTitle' | 'seoDescription' | 'pageTitle' | 'pageText';
 type LocalizedListKey = 'bullets' | 'items';
 const PROJECT_IMAGE_COUNT = 4;
 const PROJECT_IMAGE_MAX = 12;
@@ -41,6 +41,25 @@ function splitList(value: string) {
 
 function joinList(value: string[]) {
   return value.join('\n');
+}
+
+const slugTranslit: Record<string, string> = {
+  а: 'a', ә: 'a', б: 'b', в: 'v', г: 'g', ғ: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+  и: 'i', й: 'y', к: 'k', қ: 'k', л: 'l', м: 'm', н: 'n', ң: 'n', о: 'o', ө: 'o', п: 'p',
+  р: 'r', с: 's', т: 't', у: 'u', ұ: 'u', ү: 'u', ф: 'f', х: 'h', һ: 'h', ц: 'ts', ч: 'ch',
+  ш: 'sh', щ: 'sch', ы: 'y', і: 'i', э: 'e', ю: 'yu', я: 'ya', ь: '', ъ: ''
+};
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .split('')
+    .map((char) => slugTranslit[char] ?? char)
+    .join('')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 88);
 }
 
 function langSuffix(lang: AlmabuildLanguage) {
@@ -104,8 +123,13 @@ function kitTemplate(): Kit {
 
 function projectTemplate(): Project {
   return {
+    slug: '',
     title: '',
     meta: '',
+    seoTitle: '',
+    seoDescription: '',
+    pageTitle: '',
+    pageText: '',
     photo: ''
   };
 }
@@ -334,7 +358,15 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
   }
 
   function saveProjectDraft() {
-    const nextProject = projectWithImages(projectDraft, projectImages);
+    const projectTitle = localizedString(projectDraft, 'title', activeLang) || projectDraft.title || projectAiTopic;
+    const nextProject = projectWithImages({
+      ...projectDraft,
+      slug: projectDraft.slug || slugify(projectTitle),
+      seoTitle: projectDraft.seoTitle || localizedString(projectDraft, 'seoTitle', 'ru') || `${projectTitle} | ALMABUILD PRO`,
+      seoDescription: projectDraft.seoDescription || localizedString(projectDraft, 'seoDescription', 'ru') || localizedString(projectDraft, 'meta', 'ru') || projectDraft.meta,
+      pageTitle: projectDraft.pageTitle || localizedString(projectDraft, 'pageTitle', 'ru') || projectTitle,
+      pageText: projectDraft.pageText || localizedString(projectDraft, 'pageText', 'ru') || localizedString(projectDraft, 'meta', 'ru') || projectDraft.meta
+    }, projectImages);
     setProjectDraft(nextProject);
     setContent((current) => {
       if (editingProjectIndex === null) {
@@ -372,12 +404,24 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     setProjectBusyLabel('Gemini пишет...');
     setMessage(null);
     try {
-      const result = await aiEditAlmabuildItem<Project>('project', instruction, projectDraft);
+      const result = await aiEditAlmabuildItem<Project>('project', [
+        instruction,
+        '',
+        'Создай полноценную SEO-карточку проекта для строительного сайта в Алматы.',
+        'Обязательно заполни: slug латиницей через дефис, seoTitle, seoDescription, pageTitle, pageText.',
+        'pageText сделай 2-4 абзаца: задача объекта, материалы/работы, сроки/контроль, выгода для клиента.',
+        'title/meta оставь короткими для карточки на главной.'
+      ].join('\n'), projectDraft);
       setProjectDraft((current) => ({
         ...current,
         ...result,
+        slug: result.slug || current.slug || slugify(localizedString(result, 'title', activeLang) || result.title || instruction),
         ...patchLocalizedString(result, 'title', activeLang, localizedString(result, 'title', activeLang) || result.title || localizedString(current, 'title', activeLang)),
-        ...patchLocalizedString(result, 'meta', activeLang, localizedString(result, 'meta', activeLang) || result.meta || localizedString(current, 'meta', activeLang))
+        ...patchLocalizedString(result, 'meta', activeLang, localizedString(result, 'meta', activeLang) || result.meta || localizedString(current, 'meta', activeLang)),
+        ...patchLocalizedString(result, 'seoTitle', activeLang, localizedString(result, 'seoTitle', activeLang) || result.seoTitle || localizedString(current, 'seoTitle', activeLang)),
+        ...patchLocalizedString(result, 'seoDescription', activeLang, localizedString(result, 'seoDescription', activeLang) || result.seoDescription || localizedString(current, 'seoDescription', activeLang)),
+        ...patchLocalizedString(result, 'pageTitle', activeLang, localizedString(result, 'pageTitle', activeLang) || result.pageTitle || localizedString(current, 'pageTitle', activeLang)),
+        ...patchLocalizedString(result, 'pageText', activeLang, localizedString(result, 'pageText', activeLang) || result.pageText || localizedString(current, 'pageText', activeLang))
       }));
       setProjectPhotoPrompt(`Commercial construction case photo: ${result.title || instruction}. ${result.meta || ''}. Finished interior, realistic architectural lighting, no people`);
       setMessage('Gemini подготовил текст проекта. Проверь и нажми «Сохранить».');
@@ -674,6 +718,10 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
                 <input value={localizedString(projectDraft, 'title', activeLang)} placeholder={projectDraft.title || 'BUTIK KZ'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'title', activeLang, event.target.value))} />
               </label>
               <label className="editor-field">
+                <span>URL slug</span>
+                <input value={projectDraft.slug || ''} onChange={(event) => patchProjectDraft({ slug: slugify(event.target.value) })} placeholder="butik-kz-commercial-fitout" />
+              </label>
+              <label className="editor-field">
                 <span>Фото URL {selectedProjectImage + 1}</span>
                 <input value={projectImages[selectedProjectImage] || ''} onChange={(event) => setProjectImageAt(selectedProjectImage, event.target.value)} placeholder="https://..." />
               </label>
@@ -682,6 +730,27 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
             <label className="editor-field">
               <span>Описание проекта {activeLang.toUpperCase()}</span>
               <textarea value={localizedString(projectDraft, 'meta', activeLang)} placeholder={projectDraft.meta || 'Магазин одежды · 320 м² · 28 дней'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'meta', activeLang, event.target.value))} />
+            </label>
+
+            <div className="editor-grid">
+              <label className="editor-field">
+                <span>SEO title {activeLang.toUpperCase()}</span>
+                <input value={localizedString(projectDraft, 'seoTitle', activeLang)} placeholder={projectDraft.seoTitle || 'Отделка магазина под ключ в Алматы'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'seoTitle', activeLang, event.target.value))} />
+              </label>
+              <label className="editor-field">
+                <span>Заголовок страницы {activeLang.toUpperCase()}</span>
+                <input value={localizedString(projectDraft, 'pageTitle', activeLang)} placeholder={projectDraft.pageTitle || localizedString(projectDraft, 'title', activeLang)} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'pageTitle', activeLang, event.target.value))} />
+              </label>
+            </div>
+
+            <label className="editor-field">
+              <span>SEO description {activeLang.toUpperCase()}</span>
+              <textarea value={localizedString(projectDraft, 'seoDescription', activeLang)} placeholder={projectDraft.seoDescription || 'Кейс коммерческой отделки: материалы, сроки, комплектация и контроль работ в Алматы.'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'seoDescription', activeLang, event.target.value))} />
+            </label>
+
+            <label className="editor-field">
+              <span>Текст SEO-страницы {activeLang.toUpperCase()}</span>
+              <textarea className="content-body-editor almabuild-page-text-editor" value={localizedString(projectDraft, 'pageText', activeLang)} placeholder={projectDraft.pageText || 'Опишите задачу объекта, материалы, этапы работ, сроки и пользу для клиента.'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'pageText', activeLang, event.target.value))} />
             </label>
 
             <section className="content-photo-panel almabuild-project-photo-panel">
@@ -719,10 +788,12 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
               <span>Как это читается на сайте</span>
               <strong>{localizedString(projectDraft, 'title', activeLang) || projectDraft.title || 'Название проекта'}</strong>
               <p>{localizedString(projectDraft, 'meta', activeLang) || projectDraft.meta || 'Формат · площадь · срок'}</p>
+              <p>{projectDraft.slug ? `/projects/${projectDraft.slug}` : 'URL появится после AI или заполнения slug'}</p>
             </div>
 
             <div className="editor-actions">
               <button className="btn btn-danger" type="button" onClick={deleteProjectDraft}>{editingProjectIndex === null ? 'Отменить' : 'Удалить'}</button>
+              <button className="btn btn-secondary" type="button" onClick={() => patchProjectDraft({ slug: slugify(localizedString(projectDraft, 'pageTitle', activeLang) || localizedString(projectDraft, 'title', activeLang) || projectAiTopic) })}>Сделать URL</button>
               <button className="btn btn-primary" type="button" onClick={saveProjectDraft}>Сохранить</button>
             </div>
           </div>
