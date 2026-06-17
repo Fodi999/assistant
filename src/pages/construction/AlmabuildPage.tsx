@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Boxes, ExternalLink, FolderTree, Layers, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { ExternalLink, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import {
   almabuildSiteUrl,
   getAlmabuildContent,
@@ -10,6 +10,7 @@ import {
   type Product,
   type Project
 } from '../../api/almabuild';
+import type { AlmabuildSection } from '../../types/admin';
 
 type AlmabuildLanguage = 'ru' | 'kk' | 'en';
 type LocalizedStringKey = 'title' | 'text' | 'category' | 'spec' | 'meta';
@@ -139,18 +140,26 @@ function Field({
   );
 }
 
-function SiteMap() {
+function StaticSectionNotice({ title, text }: { title: string; text: string }) {
   return (
-    <div className="almabuild-map">
-      <a href="#almabuild-categories"><FolderTree size={16} />Категории → блок «Материалы» и фильтр каталога</a>
-      <a href="#almabuild-products"><Boxes size={16} />Товары → карточки «Сопутствующие товары» и каталог</a>
-      <a href="#almabuild-kits"><Layers size={16} />Комплекты → блок «Готовые наборы под объект»</a>
-      <a href="#almabuild-projects"><ExternalLink size={16} />Проекты → блок «Коммерческие пространства»</a>
-    </div>
+    <article className="almabuild-panel">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">Раздел сайта</span>
+          <h2>{title}</h2>
+          <p className="section-note">{text}</p>
+        </div>
+      </div>
+      <div className="site-preview">
+        <span>Следующий шаг</span>
+        <strong>Подключить этот блок к backend-контенту</strong>
+        <p>Сейчас этот раздел хранится в коде публичного сайта Kazaxbud. Материалы, каталог, проекты и смета уже редактируются из CMS.</p>
+      </div>
+    </article>
   );
 }
 
-export function AlmabuildPage() {
+export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSection }) {
   const [content, setContent] = useState<AlmabuildContent>(emptyContent);
   const [activeLang, setActiveLang] = useState<AlmabuildLanguage>('ru');
   const [loading, setLoading] = useState(true);
@@ -245,19 +254,22 @@ export function AlmabuildPage() {
 
       <LanguageTabs active={activeLang} onChange={setActiveLang} />
 
-      <SiteMap />
+      <div className="almabuild-section-workspace">
+          <div className="metrics-grid">
+            {stats.map((item) => (
+              <article className="metric-card" key={item.label}>
+                <span className="metric-label">{item.label}</span>
+                <strong className="metric-value">{item.value}</strong>
+                <p className="metric-note">{item.note}</p>
+              </article>
+            ))}
+          </div>
 
-      <div className="metrics-grid">
-        {stats.map((item) => (
-          <article className="metric-card" key={item.label}>
-            <span className="metric-label">{item.label}</span>
-            <strong className="metric-value">{item.value}</strong>
-            <p className="metric-note">{item.note}</p>
-          </article>
-        ))}
-      </div>
+      {activeSection === 'services' ? (
+        <StaticSectionNotice title="Услуги" text="Верхний раздел сайта: услуги, подход и оффер. Пока это статический блок публичного сайта, вынесли его в боковую панель, чтобы структура редактирования совпадала с сайтом." />
+      ) : null}
 
-      <article className="almabuild-panel" id="almabuild-categories">
+      {activeSection === 'materials' ? <article className="almabuild-panel" id="almabuild-categories">
         <div className="section-head">
           <div>
             <span className="eyebrow">Блок сайта: «Материалы для коммерческой отделки»</span>
@@ -292,9 +304,9 @@ export function AlmabuildPage() {
             </article>
           ))}
         </div>
-      </article>
+      </article> : null}
 
-      <article className="almabuild-panel" id="almabuild-products">
+      {activeSection === 'catalog' ? <article className="almabuild-panel" id="almabuild-products">
         <div className="section-head">
           <div>
             <span className="eyebrow">Блок сайта: «Сопутствующие товары» + страница каталога</span>
@@ -321,9 +333,9 @@ export function AlmabuildPage() {
             </article>
           ))}
         </div>
-      </article>
+      </article> : null}
 
-      <div className="almabuild-grid">
+      {activeSection === 'estimate' ? (
         <article className="almabuild-panel" id="almabuild-kits">
           <div className="section-head">
             <div>
@@ -346,7 +358,9 @@ export function AlmabuildPage() {
             ))}
           </div>
         </article>
+      ) : null}
 
+      {activeSection === 'projects' ? (
         <article className="almabuild-panel" id="almabuild-projects">
           <div className="section-head">
             <div>
@@ -369,6 +383,11 @@ export function AlmabuildPage() {
             ))}
           </div>
         </article>
+      ) : null}
+
+      {activeSection === 'contact' ? (
+        <StaticSectionNotice title="Контакты" text="Форма заявки уже отправляет лиды в backend. Тексты контактов и телефон пока статические на публичном сайте; теперь у раздела есть отдельное место в редакторе." />
+      ) : null}
       </div>
     </section>
   );

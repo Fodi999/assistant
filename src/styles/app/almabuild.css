@@ -148,6 +148,12 @@
   border-color: rgba(96,113,149,.55);
 }
 
+.almabuild-section-workspace {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
 .almabuild-panel {
   display: grid;
   gap: 14px;

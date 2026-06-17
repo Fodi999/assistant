@@ -176,6 +176,7 @@ export interface ShopProduct extends ShopProductDraft {
 }
 
 export type SiteKey = 'culinary' | 'construction';
+export type AlmabuildSection = 'services' | 'materials' | 'catalog' | 'projects' | 'estimate' | 'contact';
 export type LanguageCode = 'ru' | 'pl' | 'en' | 'kk';
 export type CurrencyCode = 'PLN' | 'KZT' | 'EUR' | 'USD';
 export type AffiliateNetwork = 'amazon' | 'allegro' | 'ceneo' | 'awin' | 'custom';

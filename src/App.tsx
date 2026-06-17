@@ -17,7 +17,7 @@ import { SettingsPage } from './pages/shared/SettingsPage';
 import { SitesPage } from './pages/shared/SitesPage';
 import { SuppliersPage } from './pages/shared/SuppliersPage';
 import { UsersPage } from './pages/shared/UsersPage';
-import type { SiteKey } from './types/admin';
+import type { AlmabuildSection, SiteKey } from './types/admin';
 
 type PageBySite = Record<SiteKey, AppPage>;
 
@@ -27,6 +27,7 @@ export function App() {
     culinary: defaultPageForSite('culinary'),
     construction: defaultPageForSite('construction')
   });
+  const [constructionSection, setConstructionSection] = useState<AlmabuildSection>('materials');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true');
   const activePage = normalizeSitePage(activeSite, pageBySite[activeSite]);
   const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'anonymous'>('checking');
@@ -45,6 +46,11 @@ export function App() {
       [site]: normalizeSitePage(site, current[site] || defaultPageForSite(site))
     }));
     setActiveSite(site);
+  }
+
+  function navigateConstructionSection(section: AlmabuildSection) {
+    setConstructionSection(section);
+    setPageBySite((current) => ({ ...current, construction: 'construction' }));
   }
 
   function toggleSidebar() {
@@ -94,7 +100,7 @@ export function App() {
       case 'affiliate': return <AffiliatePage activeSite={activeSite} />;
       case 'content': return <ContentPage activeSite={activeSite} />;
       case 'ai-studio': return <AiStudioPage activeSite={activeSite} />;
-      case 'construction': return <AlmabuildPage />;
+      case 'construction': return <AlmabuildPage activeSection={constructionSection} />;
       case 'culinary': return <CulinaryPage />;
       case 'leads': return <LeadsPage activeSite={activeSite} />;
       case 'suppliers': return <SuppliersPage />;
@@ -111,7 +117,16 @@ export function App() {
 
   return (
     <div className={'admin-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
-      <Sidebar activeSite={activeSite} activePage={activePage} collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} onSiteChange={changeSite} onNavigate={navigate} />
+      <Sidebar
+        activeSite={activeSite}
+        activePage={activePage}
+        activeConstructionSection={constructionSection}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
+        onSiteChange={changeSite}
+        onNavigate={navigate}
+        onConstructionSectionChange={navigateConstructionSection}
+      />
       <div className="content-shell">
         <Topbar activeSite={activeSite} activePage={activePage} connectionState={dataError ? 'limited' : 'online'} onSiteChange={changeSite} onNavigate={navigate} onLogout={logout} />
         <main className="page-content">{renderPage()}</main>

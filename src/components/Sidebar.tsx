@@ -1,7 +1,7 @@
 import { AppIcon, type AppIconName } from './AppIcon';
 import { siteConfigs } from '../lib/mockData';
 import { apiStatusLabels, revalidateStatusLabels } from '../lib/labels';
-import type { SiteKey } from '../types/admin';
+import type { AlmabuildSection, SiteKey } from '../types/admin';
 
 export type AppPage =
   | 'dashboard'
@@ -32,11 +32,22 @@ type NavItem = { page: AppPage; label: string; icon: AppIconName; shortcut: stri
 interface SidebarProps {
   activeSite: SiteKey;
   activePage: AppPage;
+  activeConstructionSection: AlmabuildSection;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onSiteChange: (site: SiteKey) => void;
   onNavigate: (page: AppPage) => void;
+  onConstructionSectionChange: (section: AlmabuildSection) => void;
 }
+
+const constructionSiteSections: Array<{ key: AlmabuildSection; label: string; note: string }> = [
+  { key: 'services', label: 'Услуги', note: 'Верхний блок' },
+  { key: 'materials', label: 'Материалы', note: 'Категории' },
+  { key: 'projects', label: 'Проекты', note: 'Кейсы' },
+  { key: 'estimate', label: 'Смета', note: 'Комплекты' },
+  { key: 'contact', label: 'Контакты', note: 'Заявки' },
+  { key: 'catalog', label: 'Каталог', note: 'Товары' }
+];
 
 const SITE_NAV_ITEMS: Record<SiteKey, NavItem[]> = {
   culinary: [
@@ -90,7 +101,16 @@ export function normalizeSitePage(site: ManagedSite, page: AppPage): AppPage {
   return defaultPageForSite(site);
 }
 
-export function Sidebar({ activeSite, activePage, collapsed, onToggleCollapse, onSiteChange, onNavigate }: SidebarProps) {
+export function Sidebar({
+  activeSite,
+  activePage,
+  activeConstructionSection,
+  collapsed,
+  onToggleCollapse,
+  onSiteChange,
+  onNavigate,
+  onConstructionSectionChange
+}: SidebarProps) {
   const visibleNavItems = getSiteNavItems(activeSite);
   const activeConfig = siteConfigs.find((site) => site.key === activeSite) ?? siteConfigs[0];
   const sectionLabel = activeSite === 'construction' ? 'Разделы строительного сайта' : 'Разделы кулинарного сайта';
@@ -122,11 +142,28 @@ export function Sidebar({ activeSite, activePage, collapsed, onToggleCollapse, o
       <nav className="sidebar-nav" aria-label="Основная навигация">
         <p className="sidebar-section-label">{sectionLabel}</p>
         {visibleNavItems.map((item) => (
-          <button key={item.page} className={'sidebar-link' + (activePage === item.page ? ' active' : '')} type="button" title={item.label} onClick={() => onNavigate(item.page)}>
-            <AppIcon name={item.icon} />
-            <span>{item.label}</span>
-            <kbd>{item.shortcut}</kbd>
-          </button>
+          <div key={item.page} className="sidebar-nav-group">
+            <button className={'sidebar-link' + (activePage === item.page ? ' active' : '')} type="button" title={item.label} onClick={() => onNavigate(item.page)}>
+              <AppIcon name={item.icon} />
+              <span>{item.label}</span>
+              <kbd>{item.shortcut}</kbd>
+            </button>
+            {activeSite === 'construction' && item.page === 'construction' && !collapsed ? (
+              <div className="sidebar-subnav" aria-label="Разделы Kazaxbud">
+                {constructionSiteSections.map((section) => (
+                  <button
+                    key={section.key}
+                    className={activePage === 'construction' && activeConstructionSection === section.key ? 'active' : ''}
+                    type="button"
+                    onClick={() => onConstructionSectionChange(section.key)}
+                  >
+                    <span>{section.label}</span>
+                    <small>{section.note}</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ))}
       </nav>
 
