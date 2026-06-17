@@ -566,6 +566,7 @@ pub async fn admin_ai_edit(
 - Сохрани все поля схемы.
 - slug/categorySlug/photo оставляй стабильными, если администратор явно не просит изменить.
 - bullets/items должны быть массивом коротких пунктов.
+- Для project: meta до 80 символов на язык, seoDescription до 170 символов на язык, pageText до 700 символов на язык. Не пиши длинные статьи в этом JSON.
 "#,
         kind = req.kind,
         schema = schema,
@@ -573,11 +574,31 @@ pub async fn admin_ai_edit(
         value = req.value
     );
 
+    let max_tokens = if req.kind == "project" { 12_000 } else { 4_000 };
     let raw = llm
-        .groq_raw_request_with_model(&prompt, 4000, "gemini-3.1-pro-preview")
+        .groq_raw_request_with_model(&prompt, max_tokens, "gemini-3.1-pro-preview")
         .await?;
-    let value: Value = serde_json::from_str(strip_json_fence(&raw))
-        .map_err(|e| AppError::internal(format!("Gemini вернул не JSON: {e}")))?;
+    let value: Value = match serde_json::from_str(strip_json_fence(&raw)) {
+        Ok(value) => value,
+        Err(first_error) if req.kind == "project" => {
+            tracing::warn!(
+                error = %first_error,
+                "Gemini returned invalid project JSON; retrying with larger budget"
+            );
+            let retry_prompt = format!(
+                "{prompt}\n\nВАЖНО: предыдущий ответ был обрезан. Верни только полный валидный JSON одним объектом. Укороти pageText до 450 символов на язык, без markdown."
+            );
+            let retry_raw = llm
+                .groq_raw_request_with_model(&retry_prompt, 16_000, "gemini-3.1-pro-preview")
+                .await?;
+            serde_json::from_str(strip_json_fence(&retry_raw)).map_err(|retry_error| {
+                AppError::internal(format!(
+                    "Gemini вернул не JSON после повтора: {retry_error}; первая ошибка: {first_error}"
+                ))
+            })?
+        }
+        Err(error) => return Err(AppError::internal(format!("Gemini вернул не JSON: {error}"))),
+    };
     Ok(Json(validate_ai_value(&req.kind, value)?))
 }
 
