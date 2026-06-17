@@ -23,8 +23,26 @@ pub struct MaterialCategory {
     pub index: String,
     pub slug: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_en: Option<String>,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_en: Option<String>,
     pub bullets: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bullets_ru: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bullets_kk: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bullets_en: Vec<String>,
     pub photo: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
@@ -67,22 +85,70 @@ pub struct MaterialCategory {
 pub struct Product {
     pub category_slug: String,
     pub category: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_en: Option<String>,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_en: Option<String>,
     pub spec: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec_en: Option<String>,
     pub photo: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kit {
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_en: Option<String>,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_en: Option<String>,
     pub items: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items_ru: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items_kk: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items_en: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_en: Option<String>,
     pub meta: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta_en: Option<String>,
     pub photo: String,
 }
 
@@ -146,27 +212,27 @@ fn non_empty(value: &str) -> Option<String> {
 fn default_content() -> AlmabuildContent {
     AlmabuildContent {
         material_categories: vec![
-            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], photo: "material-drywall".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
-            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], photo: "material-mixes".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
-            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], photo: "material-flooring".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
-            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], photo: "material-electric".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
-            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], photo: "material-ceiling".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
-            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], photo: "material-osb".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:1]".into(), slug: "gipsokarton-profili".into(), title: "Гипсокартон и профили".into(), title_ru: None, title_kk: None, title_en: None, text: "Листы ГКЛ, направляющие и стоечные профили, подвесы, крепёж и комплектующие для перегородок и потолков.".into(), text_ru: None, text_kk: None, text_en: None, bullets: vec!["Листы ГКЛ".into(), "Профили и направляющие".into(), "Подвесы и крепёж".into(), "Комплектующие".into()], bullets_ru: vec![], bullets_kk: vec![], bullets_en: vec![], photo: "material-drywall".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:2]".into(), slug: "sukhie-smesi".into(), title: "Сухие смеси".into(), title_ru: None, title_kk: None, title_en: None, text: "Штукатурка, шпаклёвка, наливные полы, плиточный клей, грунтовки и расходные материалы.".into(), text_ru: None, text_kk: None, text_en: None, bullets: vec!["Штукатурки и шпаклёвки".into(), "Плиточный клей".into(), "Наливные полы".into(), "Грунтовки и добавки".into()], bullets_ru: vec![], bullets_kk: vec![], bullets_en: vec![], photo: "material-mixes".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:3]".into(), slug: "poly-plitka".into(), title: "Полы и плитка".into(), title_ru: None, title_kk: None, title_en: None, text: "Керамогранит, плитка, кварцвинил, ламинат, плинтусы, затирка и материалы для укладки.".into(), text_ru: None, text_kk: None, text_en: None, bullets: vec!["Керамогранит и плитка".into(), "Кварцвинил и ламинат".into(), "Плинтусы и пороги".into(), "Затирки и клеи".into()], bullets_ru: vec![], bullets_kk: vec![], bullets_en: vec![], photo: "material-flooring".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:4]".into(), slug: "elektrika-osveshchenie".into(), title: "Электрика и освещение".into(), title_ru: None, title_kk: None, title_en: None, text: "Кабель, автоматы, розетки, трековое освещение, светильники и LED-решения для магазинов.".into(), text_ru: None, text_kk: None, text_en: None, bullets: vec!["Кабель и провода".into(), "Автоматы и щиты".into(), "Розетки и выключатели".into(), "Светильники и LED-решения".into()], bullets_ru: vec![], bullets_kk: vec![], bullets_en: vec![], photo: "material-electric".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:5]".into(), slug: "potolochnye-sistemy".into(), title: "Потолочные системы".into(), title_ru: None, title_kk: None, title_en: None, text: "Армстронг, грильято, гипсокартонные потолки, подвесные системы и комплектующие.".into(), text_ru: None, text_kk: None, text_en: None, bullets: vec!["Армстронг и грильято".into(), "Гипсокартонные потолки".into(), "Подвесные системы".into(), "Комплектующие".into()], bullets_ru: vec![], bullets_kk: vec![], bullets_en: vec![], photo: "material-ceiling".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
+            MaterialCategory { index: "[0:6]".into(), slug: "osb-fanera-uteplitel".into(), title: "OSB, фанера и утеплитель".into(), title_ru: None, title_kk: None, title_en: None, text: "OSB, фанера, минеральная вата, гидроизоляция, мембраны и теплоизоляционные материалы.".into(), text_ru: None, text_kk: None, text_en: None, bullets: vec!["OSB и фанера".into(), "Минеральная вата".into(), "Гидроизоляция".into(), "Мембраны и плёнки".into()], bullets_ru: vec![], bullets_kk: vec![], bullets_en: vec![], photo: "material-osb".into(), image_url: None, detail_image_url: None, price: None, category_slug: None, unit: None, availability: None, city: Some("Алматы".into()), supplier: None, purchase_price: None, purchase_currency: Some("KZT".into()), sale_price: None, sale_currency: Some("KZT".into()), margin_percent: None, status: Some("published".into()), languages: vec!["RU".into()], seo_title: None, seo_description: None },
         ],
         products: vec![
-            Product { category_slug: "gipsokarton-profili".into(), category: "ГКЛ".into(), title: "ГКЛ 12.5 мм стандартный".into(), spec: "2500x1200 мм · стены и потолки".into(), photo: "photo-plans".into() },
-            Product { category_slug: "gipsokarton-profili".into(), category: "ГКЛ".into(), title: "ГКЛ влагостойкий 12.5 мм".into(), spec: "Для влажных зон и аптек".into(), photo: "photo-plans".into() },
-            Product { category_slug: "gipsokarton-profili".into(), category: "Профили".into(), title: "Профиль стоечный CW".into(), spec: "50/75/100 мм · перегородки".into(), photo: "photo-building".into() },
-            Product { category_slug: "sukhie-smesi".into(), category: "Сухие смеси".into(), title: "Плиточный клей усиленный".into(), spec: "Для керамогранита и плитки".into(), photo: "photo-retail".into() },
+            Product { category_slug: "gipsokarton-profili".into(), category: "ГКЛ".into(), category_ru: None, category_kk: None, category_en: None, title: "ГКЛ 12.5 мм стандартный".into(), title_ru: None, title_kk: None, title_en: None, spec: "2500x1200 мм · стены и потолки".into(), spec_ru: None, spec_kk: None, spec_en: None, photo: "photo-plans".into() },
+            Product { category_slug: "gipsokarton-profili".into(), category: "ГКЛ".into(), category_ru: None, category_kk: None, category_en: None, title: "ГКЛ влагостойкий 12.5 мм".into(), title_ru: None, title_kk: None, title_en: None, spec: "Для влажных зон и аптек".into(), spec_ru: None, spec_kk: None, spec_en: None, photo: "photo-plans".into() },
+            Product { category_slug: "gipsokarton-profili".into(), category: "Профили".into(), category_ru: None, category_kk: None, category_en: None, title: "Профиль стоечный CW".into(), title_ru: None, title_kk: None, title_en: None, spec: "50/75/100 мм · перегородки".into(), spec_ru: None, spec_kk: None, spec_en: None, photo: "photo-building".into() },
+            Product { category_slug: "sukhie-smesi".into(), category: "Сухие смеси".into(), category_ru: None, category_kk: None, category_en: None, title: "Плиточный клей усиленный".into(), title_ru: None, title_kk: None, title_en: None, spec: "Для керамогранита и плитки".into(), spec_ru: None, spec_kk: None, spec_en: None, photo: "photo-retail".into() },
         ],
         kits: vec![
-            Kit { title: "Комплект для перегородок".into(), text: "Каркас, листы, крепёж и расходники.".into(), items: vec!["ГКЛ".into(), "CW/UW профили".into(), "Подвесы и саморезы".into()] },
-            Kit { title: "Комплект для потолка".into(), text: "Система под монтаж потолков.".into(), items: vec!["Профили".into(), "Подвесы".into(), "Плиты / ГКЛ".into()] },
+            Kit { title: "Комплект для перегородок".into(), title_ru: None, title_kk: None, title_en: None, text: "Каркас, листы, крепёж и расходники.".into(), text_ru: None, text_kk: None, text_en: None, items: vec!["ГКЛ".into(), "CW/UW профили".into(), "Подвесы и саморезы".into()], items_ru: vec![], items_kk: vec![], items_en: vec![] },
+            Kit { title: "Комплект для потолка".into(), title_ru: None, title_kk: None, title_en: None, text: "Система под монтаж потолков.".into(), text_ru: None, text_kk: None, text_en: None, items: vec!["Профили".into(), "Подвесы".into(), "Плиты / ГКЛ".into()], items_ru: vec![], items_kk: vec![], items_en: vec![] },
         ],
         projects: vec![
-            Project { title: "BUTIK KZ".into(), meta: "Магазин одежды · 320 м² · 28 дней".into(), photo: "photo-retail".into() },
-            Project { title: "Green Mart".into(), meta: "Супермаркет · 1250 м² · 45 дней".into(), photo: "photo-office".into() },
-            Project { title: "Europharma".into(), meta: "Аптека · 110 м² · 18 дней".into(), photo: "photo-building".into() },
+            Project { title: "BUTIK KZ".into(), title_ru: None, title_kk: None, title_en: None, meta: "Магазин одежды · 320 м² · 28 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-retail".into() },
+            Project { title: "Green Mart".into(), title_ru: None, title_kk: None, title_en: None, meta: "Супермаркет · 1250 м² · 45 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-office".into() },
+            Project { title: "Europharma".into(), title_ru: None, title_kk: None, title_en: None, meta: "Аптека · 110 м² · 18 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-building".into() },
         ],
     }
 }
