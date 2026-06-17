@@ -108,7 +108,9 @@ pub struct Product {
     pub photo: String,
 }
 
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Kit {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -134,6 +136,7 @@ pub struct Kit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -150,6 +153,8 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta_en: Option<String>,
     pub photo: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_urls: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,9 +235,9 @@ fn default_content() -> AlmabuildContent {
             Kit { title: "Комплект для потолка".into(), title_ru: None, title_kk: None, title_en: None, text: "Система под монтаж потолков.".into(), text_ru: None, text_kk: None, text_en: None, items: vec!["Профили".into(), "Подвесы".into(), "Плиты / ГКЛ".into()], items_ru: vec![], items_kk: vec![], items_en: vec![] },
         ],
         projects: vec![
-            Project { title: "BUTIK KZ".into(), title_ru: None, title_kk: None, title_en: None, meta: "Магазин одежды · 320 м² · 28 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-retail".into() },
-            Project { title: "Green Mart".into(), title_ru: None, title_kk: None, title_en: None, meta: "Супермаркет · 1250 м² · 45 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-office".into() },
-            Project { title: "Europharma".into(), title_ru: None, title_kk: None, title_en: None, meta: "Аптека · 110 м² · 18 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-building".into() },
+            Project { title: "BUTIK KZ".into(), title_ru: None, title_kk: None, title_en: None, meta: "Магазин одежды · 320 м² · 28 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-retail".into(), image_urls: Vec::new() },
+            Project { title: "Green Mart".into(), title_ru: None, title_kk: None, title_en: None, meta: "Супермаркет · 1250 м² · 45 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-office".into(), image_urls: Vec::new() },
+            Project { title: "Europharma".into(), title_ru: None, title_kk: None, title_en: None, meta: "Аптека · 110 м² · 18 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-building".into(), image_urls: Vec::new() },
         ],
     }
 }
