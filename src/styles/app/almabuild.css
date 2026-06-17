@@ -317,6 +317,21 @@
   min-height: 92px;
 }
 
+.almabuild-project-photo-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 420px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.almabuild-project-photo-panel .content-photo-preview {
+  min-height: 260px;
+}
+
+.almabuild-project-photo-panel .content-photo-tools {
+  min-width: 0;
+}
+
 @media (max-width: 1300px) {
   .almabuild-map,
   .almabuild-card-list.compact,
@@ -335,6 +350,7 @@
   .almabuild-map,
   .almabuild-card-list.compact,
   .almabuild-grid,
+  .almabuild-project-photo-panel,
   .almabuild-form-grid.categories,
   .almabuild-form-grid.products {
     grid-template-columns: minmax(0, 1fr);

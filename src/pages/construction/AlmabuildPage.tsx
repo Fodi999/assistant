@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { generateAiImage } from '../../api/ai';
 import {
+  aiEditAlmabuildItem,
   almabuildSiteUrl,
   getAlmabuildContent,
   saveAlmabuildContent,
@@ -10,6 +12,8 @@ import {
   type Product,
   type Project
 } from '../../api/almabuild';
+import { uploadCmsReference } from '../../api/cms';
+import { AppIcon } from '../../components/AppIcon';
 import type { AlmabuildSection } from '../../types/admin';
 
 type AlmabuildLanguage = 'ru' | 'kk' | 'en';
@@ -104,6 +108,10 @@ function projectTemplate(): Project {
   };
 }
 
+function isImageUrl(value?: string) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
 function LanguageTabs({ active, onChange }: { active: AlmabuildLanguage; onChange: (lang: AlmabuildLanguage) => void }) {
   return (
     <div className="almabuild-language-tabs" aria-label="Язык редактирования">
@@ -165,6 +173,12 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
   const [projectDraft, setProjectDraft] = useState<Project>(() => projectTemplate());
   const [editingProjectIndex, setEditingProjectIndex] = useState<number | null>(null);
+  const [projectAiTopic, setProjectAiTopic] = useState('');
+  const [projectPhotoPrompt, setProjectPhotoPrompt] = useState('');
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectBusyLabel, setProjectBusyLabel] = useState('');
+  const [projectImageBusy, setProjectImageBusy] = useState(false);
+  const [projectImageBusyLabel, setProjectImageBusyLabel] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -235,15 +249,21 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
   }
 
   function openNewProject() {
-    setProjectDraft(projectTemplate());
+    const draft = projectTemplate();
+    setProjectDraft(draft);
     setEditingProjectIndex(null);
+    setProjectAiTopic('');
+    setProjectPhotoPrompt('Real commercial renovation project photo, finished interior, construction materials, architectural editorial lighting, no people');
     setProjectEditorOpen(true);
     setMessage(null);
   }
 
   function openEditProject(index: number) {
-    setProjectDraft({ ...content.projects[index] });
+    const draft = { ...content.projects[index] };
+    setProjectDraft(draft);
     setEditingProjectIndex(index);
+    setProjectAiTopic(localizedString(draft, 'title', activeLang) || draft.title);
+    setProjectPhotoPrompt(`Commercial construction case photo: ${localizedString(draft, 'title', activeLang) || draft.title}. ${localizedString(draft, 'meta', activeLang) || draft.meta}. Finished interior, realistic architectural lighting, no people`);
     setProjectEditorOpen(true);
     setMessage(null);
   }
@@ -277,6 +297,82 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     }));
     setProjectEditorOpen(false);
     setMessage('Проект удален из черновика CMS. Нажми «Опубликовать», чтобы сохранить удаление в backend.');
+  }
+
+  async function generateProjectDraft() {
+    const instruction = projectAiTopic.trim() || localizedString(projectDraft, 'title', activeLang) || projectDraft.title;
+    if (!instruction) {
+      setMessage('Напиши тему для AI проекта.');
+      return;
+    }
+    setProjectBusy(true);
+    setProjectBusyLabel('Gemini пишет...');
+    setMessage(null);
+    try {
+      const result = await aiEditAlmabuildItem<Project>('project', instruction, projectDraft);
+      setProjectDraft((current) => ({
+        ...current,
+        ...result,
+        ...patchLocalizedString(result, 'title', activeLang, localizedString(result, 'title', activeLang) || result.title || localizedString(current, 'title', activeLang)),
+        ...patchLocalizedString(result, 'meta', activeLang, localizedString(result, 'meta', activeLang) || result.meta || localizedString(current, 'meta', activeLang))
+      }));
+      setProjectPhotoPrompt(`Commercial construction case photo: ${result.title || instruction}. ${result.meta || ''}. Finished interior, realistic architectural lighting, no people`);
+      setMessage('Gemini подготовил текст проекта. Проверь и нажми «Сохранить».');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Gemini не создал проект.');
+    } finally {
+      setProjectBusy(false);
+      setProjectBusyLabel('');
+    }
+  }
+
+  async function uploadProjectPhoto(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setMessage('Файл должен быть изображением.');
+      return;
+    }
+    setProjectImageBusy(true);
+    setProjectImageBusyLabel('Загружаем фото...');
+    setMessage(null);
+    try {
+      const url = await uploadCmsReference(file);
+      patchProjectDraft({ photo: url });
+      setMessage('Фото загружено в R2 и добавлено в проект.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить фото проекта.');
+    } finally {
+      setProjectImageBusy(false);
+      setProjectImageBusyLabel('');
+    }
+  }
+
+  async function generateProjectPhoto() {
+    const title = localizedString(projectDraft, 'title', activeLang) || projectDraft.title || projectAiTopic;
+    if (!title.trim()) {
+      setMessage('Нужна тема или название проекта для генерации фото.');
+      return;
+    }
+    setProjectImageBusy(true);
+    setProjectImageBusyLabel('Gemini фото...');
+    setMessage(null);
+    try {
+      const result = await generateAiImage({
+        site: 'construction',
+        title,
+        description: localizedString(projectDraft, 'meta', activeLang) || projectDraft.meta,
+        scene: projectPhotoPrompt || `Commercial construction project photo: ${title}, finished interior, realistic architectural lighting, no people`,
+        imageType: 'construction'
+      });
+      if (!result.imageUrl) throw new Error('Backend не вернул URL фото.');
+      patchProjectDraft({ photo: result.imageUrl });
+      setMessage('AI фото проекта создано.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'AI не создал фото проекта.');
+    } finally {
+      setProjectImageBusy(false);
+      setProjectImageBusyLabel('');
+    }
   }
 
   return (
@@ -425,7 +521,7 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
                   <tr key={`${project.title}-${index}`}>
                     <td><strong>{localizedString(project, 'title', activeLang) || project.title || 'Без названия'}</strong><small>Проект #{index + 1}</small></td>
                     <td>{localizedString(project, 'meta', activeLang) || project.meta || 'Нет описания'}</td>
-                    <td><code>{project.photo || 'photo-project'}</code></td>
+                    <td>{isImageUrl(project.photo) ? <img className="catalog-product-thumb" src={project.photo} alt={project.title || 'Проект'} loading="lazy" /> : <code>{project.photo || 'photo-project'}</code>}</td>
                     <td>{['ru', 'kk', 'en'].filter((lang) => localizedString(project, 'title', lang as AlmabuildLanguage)).map((lang) => lang.toUpperCase()).join(' / ') || 'RU'}</td>
                     <td><button className="table-action" type="button" onClick={() => openEditProject(index)}>Редактировать</button></td>
                   </tr>
@@ -456,6 +552,14 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
               </div>
             </div>
 
+            <div className="gemini-bar">
+              <label>
+                <span>Тема для AI</span>
+                <textarea value={projectAiTopic} onChange={(event) => setProjectAiTopic(event.target.value)} placeholder="Например: шоурум плитки 180 м² в Алматы, быстрый ремонт, материалы под ключ" />
+              </label>
+              <button className="btn btn-ai" type="button" disabled={projectBusy} onClick={() => void generateProjectDraft()}><AppIcon name="bot" />{projectBusyLabel || 'AI черновик'}</button>
+            </div>
+
             <div className="analytics-mode-switcher content-lang-tabs">
               {almabuildLanguages.map((language) => (
                 <button key={language.key} className={activeLang === language.key ? 'analytics-mode-button active' : 'analytics-mode-button'} type="button" onClick={() => setActiveLang(language.key)}>
@@ -470,8 +574,8 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
                 <input value={localizedString(projectDraft, 'title', activeLang)} placeholder={projectDraft.title || 'BUTIK KZ'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'title', activeLang, event.target.value))} />
               </label>
               <label className="editor-field">
-                <span>Визуальный класс</span>
-                <input value={projectDraft.photo} onChange={(event) => patchProjectDraft({ photo: event.target.value })} placeholder="photo-retail" />
+                <span>Фото URL или визуальный класс</span>
+                <input value={projectDraft.photo} onChange={(event) => patchProjectDraft({ photo: event.target.value })} placeholder="https://... или photo-retail" />
               </label>
             </div>
 
@@ -479,6 +583,26 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
               <span>Описание проекта {activeLang.toUpperCase()}</span>
               <textarea value={localizedString(projectDraft, 'meta', activeLang)} placeholder={projectDraft.meta || 'Магазин одежды · 320 м² · 28 дней'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'meta', activeLang, event.target.value))} />
             </label>
+
+            <section className="almabuild-project-photo-panel">
+              <button className="content-photo-preview" type="button">
+                {isImageUrl(projectDraft.photo) ? <img src={projectDraft.photo} alt={localizedString(projectDraft, 'title', activeLang) || projectDraft.title || 'Фото проекта'} /> : <span><AppIcon name="cms" size={34} />{projectDraft.photo || 'Фото проекта не выбрано'}</span>}
+              </button>
+              <div className="content-photo-tools">
+                <label className="editor-field">
+                  <span>Промпт фото</span>
+                  <textarea value={projectPhotoPrompt} onChange={(event) => setProjectPhotoPrompt(event.target.value)} placeholder="Commercial construction project photo, finished retail interior, premium materials, no people" />
+                </label>
+                <div className="editor-actions">
+                  <label className="btn btn-secondary">
+                    <input className="visually-hidden" type="file" accept="image/*" disabled={projectImageBusy} onChange={(event) => void uploadProjectPhoto(event.target.files?.[0] ?? null)} />
+                    {projectImageBusyLabel === 'Загружаем фото...' ? projectImageBusyLabel : 'Загрузить'}
+                  </label>
+                  <button className="btn btn-ai" type="button" disabled={projectImageBusy} onClick={() => void generateProjectPhoto()}><AppIcon name="bot" />{projectImageBusyLabel === 'Gemini фото...' ? projectImageBusyLabel : 'AI фото'}</button>
+                  <button className="btn btn-quiet" type="button" disabled={projectImageBusy || !projectDraft.photo} onClick={() => patchProjectDraft({ photo: '' })}>Убрать</button>
+                </div>
+              </div>
+            </section>
 
             <div className="site-preview">
               <span>Как это читается на сайте</span>
