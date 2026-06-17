@@ -489,6 +489,77 @@ STRICTLY EXCLUDE:
         .await
     }
 
+    /// Generate a construction project / commercial fit-out image with optional visual references.
+    pub async fn generate_construction_project_image(
+        &self,
+        project_title: &str,
+        description: &str,
+        scene: &str,
+        variant: usize,
+        enhanced: bool,
+        reference_urls: &[String],
+    ) -> Result<String, AppError> {
+        let role = match variant {
+            0 => "hero image: wide finished commercial interior based on the references",
+            1 => "alternate angle: entrance, facade or main retail zone based on the references",
+            2 => "detail angle: ceiling, lighting, shelves, wall finish and material quality",
+            3 => "wide gallery angle: complete shop fit-out, clean architectural composition",
+            _ => "additional gallery angle: realistic commercial renovation detail",
+        };
+        let reference_contract = if reference_urls.is_empty() {
+            r#"REFERENCE STATUS:
+- No visual reference was supplied. Build a realistic commercial fit-out image from the project description only."#
+        } else {
+            r#"REFERENCE CONTRACT — HIGHEST PRIORITY:
+- Use the uploaded reference photos as the exact design brief for the commercial space.
+- Preserve the recognizable layout, storefront/interior geometry, shelving rhythm, ceiling lighting, color palette, material finishes and premium retail atmosphere from the references.
+- Generate a polished finished-project photo, not a different imaginary store.
+- You may improve sharpness, lighting, cleanliness and professional architectural composition.
+- Do not add people, workers, clutter, construction mess, random products, random signage or extra brands.
+- Do not invent a new logo or readable text. If signage is visible in the reference, preserve only its placement, glow and general visual identity without creating new text artifacts.
+- Each variant should be a different believable camera angle of the same place."#
+        };
+        let prompt = format!(
+            r#"Create a photorealistic architectural case-study image for ALMABUILD / KAZAXBUD.
+Project: {project_title}
+Project facts: {description}
+Image role: {role}
+Admin scene direction: {scene}
+
+{reference_contract}
+
+STYLE STANDARD:
+- premium commercial retail interior / mall store fit-out photography
+- realistic architectural lighting, clean materials, precise perspective and straight verticals
+- show finished renovation quality: ceiling, lighting, floor, wall finishes, shelves, counter, facade or entrance when relevant
+- landscape composition suitable for a construction portfolio SEO page
+- high detail, natural lens, no exaggerated CGI look
+
+STRICTLY EXCLUDE:
+- people, faces, bodies, workers, safety helmets
+- watermarks, UI, captions, distorted readable text, random brand logos
+- impossible lighting, duplicated shelves, warped architecture, clutter, dirty construction stage"#,
+            project_title = project_title,
+            description = description,
+            role = role,
+            scene = scene,
+            reference_contract = reference_contract,
+        );
+        let model = if enhanced {
+            &self.recipe_hero_image_model
+        } else {
+            &self.recipe_image_model
+        };
+        self.generate_image_from_prompt_with_references(
+            &prompt,
+            project_title,
+            "construction project",
+            model,
+            reference_urls,
+        )
+        .await
+    }
+
     async fn generate_image_from_prompt(
         &self,
         prompt: &str,

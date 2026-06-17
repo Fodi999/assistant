@@ -66,6 +66,12 @@ pub struct AiImageRequest {
     pub description: Option<String>,
     pub scene: Option<String>,
     pub image_type: Option<String>,
+    #[serde(default)]
+    pub reference_urls: Vec<String>,
+    #[serde(default)]
+    pub variant: Option<usize>,
+    #[serde(default)]
+    pub enhanced: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -423,7 +429,14 @@ pub async fn generate_image(
     let scene = req.scene.as_deref().unwrap_or("commercial editorial image");
     let image_type = req.image_type.as_deref().unwrap_or("auto");
     let base64 = if req.site == "construction" || image_type == "construction" {
-        llm.generate_material_scene_image(title, req.description.as_deref().unwrap_or(""), scene)
+        llm.generate_construction_project_image(
+            title,
+            req.description.as_deref().unwrap_or(""),
+            scene,
+            req.variant.unwrap_or(0),
+            req.enhanced.unwrap_or(false),
+            &req.reference_urls,
+        )
             .await?
     } else if image_type == "article" || image_type == "review" {
         llm.generate_blog_article_image(

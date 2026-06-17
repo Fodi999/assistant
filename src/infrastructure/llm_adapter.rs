@@ -346,6 +346,39 @@ impl LlmAdapter {
         Ok(base64)
     }
 
+    pub async fn generate_construction_project_image(
+        &self,
+        project_title: &str,
+        description: &str,
+        scene: &str,
+        variant: usize,
+        enhanced: bool,
+        reference_urls: &[String],
+    ) -> Result<String, AppError> {
+        let start = Instant::now();
+        let base64 = timeout(
+            Duration::from_secs(if enhanced { 125 } else { 75 }),
+            self.gemini_service.generate_construction_project_image(
+                project_title,
+                description,
+                scene,
+                variant,
+                enhanced,
+                reference_urls,
+            ),
+        )
+        .await
+        .map_err(|_| {
+            AppError::internal("LLM Timeout: construction project image generation took too long")
+        })??;
+        self.log_usage(
+            "generate_construction_project_image",
+            start.elapsed().as_millis() as i32,
+        )
+        .await;
+        Ok(base64)
+    }
+
     /// Raw AI request — no cache, no rule engine.
     /// Used for one-off admin operations like AI autofill.
     pub async fn groq_raw_request(
