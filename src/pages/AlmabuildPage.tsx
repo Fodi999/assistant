@@ -11,6 +11,16 @@ import {
   type Project
 } from '../api/almabuild';
 
+type AlmabuildLanguage = 'ru' | 'kk' | 'en';
+type LocalizedStringKey = 'title' | 'text' | 'category' | 'spec' | 'meta';
+type LocalizedListKey = 'bullets' | 'items';
+
+const almabuildLanguages: Array<{ key: AlmabuildLanguage; label: string; name: string }> = [
+  { key: 'ru', label: 'RU', name: 'Русский' },
+  { key: 'kk', label: 'KZ', name: 'Қазақша' },
+  { key: 'en', label: 'EN', name: 'English' }
+];
+
 const emptyContent: AlmabuildContent = {
   materialCategories: [],
   products: [],
@@ -24,6 +34,36 @@ function splitList(value: string) {
 
 function joinList(value: string[]) {
   return value.join('\n');
+}
+
+function langSuffix(lang: AlmabuildLanguage) {
+  if (lang === 'kk') return 'Kk';
+  if (lang === 'en') return 'En';
+  return 'Ru';
+}
+
+function localizedString<T extends Record<string, unknown>>(item: T, key: LocalizedStringKey, lang: AlmabuildLanguage): string {
+  const localized = item[`${key}${langSuffix(lang)}`] as string | undefined;
+  if (localized) return localized;
+  return lang === 'ru' ? String(item[key] || '') : '';
+}
+
+function localizedList<T extends Record<string, unknown>>(item: T, key: LocalizedListKey, lang: AlmabuildLanguage): string[] {
+  const localized = item[`${key}${langSuffix(lang)}`] as string[] | undefined;
+  if (Array.isArray(localized) && localized.length) return localized;
+  return lang === 'ru' && Array.isArray(item[key]) ? item[key] as string[] : [];
+}
+
+function patchLocalizedString<T extends Record<string, unknown>>(item: T, key: LocalizedStringKey, lang: AlmabuildLanguage, value: string): Partial<T> {
+  const patch = { [`${key}${langSuffix(lang)}`]: value } as Partial<T>;
+  if (lang === 'ru') return { ...patch, [key]: value } as Partial<T>;
+  return patch;
+}
+
+function patchLocalizedList<T extends Record<string, unknown>>(item: T, key: LocalizedListKey, lang: AlmabuildLanguage, value: string[]): Partial<T> {
+  const patch = { [`${key}${langSuffix(lang)}`]: value } as Partial<T>;
+  if (lang === 'ru') return { ...patch, [key]: value } as Partial<T>;
+  return patch;
 }
 
 function categoryTemplate(index: number): MaterialCategory {
@@ -63,6 +103,22 @@ function projectTemplate(): Project {
   };
 }
 
+function LanguageTabs({ active, onChange }: { active: AlmabuildLanguage; onChange: (lang: AlmabuildLanguage) => void }) {
+  return (
+    <div className="almabuild-language-tabs" aria-label="Язык редактирования">
+      <span>Язык редактирования</span>
+      <div>
+        {almabuildLanguages.map((lang) => (
+          <button key={lang.key} className={active === lang.key ? 'active' : ''} type="button" onClick={() => onChange(lang.key)}>
+            {lang.label}
+            <small>{lang.name}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Field({
   label,
   help,
@@ -96,6 +152,7 @@ function SiteMap() {
 
 export function AlmabuildPage() {
   const [content, setContent] = useState<AlmabuildContent>(emptyContent);
+  const [activeLang, setActiveLang] = useState<AlmabuildLanguage>('ru');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -186,6 +243,8 @@ export function AlmabuildPage() {
       {message && <p className="almabuild-alert">{message}</p>}
       {error && <p className="almabuild-alert error">{error}</p>}
 
+      <LanguageTabs active={activeLang} onChange={setActiveLang} />
+
       <SiteMap />
 
       <div className="metrics-grid">
@@ -213,22 +272,22 @@ export function AlmabuildPage() {
               <div className="edit-card-head">
                 <div>
                   <span>Категория на сайте #{index + 1}</span>
-                  <h3>{category.title || 'Без названия'}</h3>
+                  <h3>{localizedString(category, 'title', activeLang) || category.title || 'Без названия'}</h3>
                 </div>
                 <button className="icon-danger" type="button" aria-label="Удалить категорию" onClick={() => setContent((current) => ({ ...current, materialCategories: current.materialCategories.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={17} /></button>
               </div>
               <div className="almabuild-form-grid categories">
-                <Field label="Название карточки" help="Крупный заголовок в блоке «Материалы» и название фильтра в каталоге."><input value={category.title} onChange={(event) => updateCategory(index, { title: event.target.value })} /></Field>
+                <Field label={`Название карточки ${activeLang.toUpperCase()}`} help="Крупный заголовок в блоке «Материалы» и название фильтра в каталоге."><input value={localizedString(category, 'title', activeLang)} placeholder={category.title} onChange={(event) => updateCategory(index, patchLocalizedString(category, 'title', activeLang, event.target.value))} /></Field>
                 <Field label="URL slug" help="Адрес категории: /catalog/slug. Лучше латиница без пробелов."><input value={category.slug} onChange={(event) => updateCategory(index, { slug: event.target.value })} /></Field>
                 <Field label="Номер" help="Маленький индекс на карточке, например [0:1]."><input value={category.index} onChange={(event) => updateCategory(index, { index: event.target.value })} /></Field>
                 <Field label="Визуальный класс" help="Технический ключ фоновой картинки/стиля."><input value={category.photo} onChange={(event) => updateCategory(index, { photo: event.target.value })} /></Field>
-                <Field label="Описание карточки" help="Текст под названием категории на главной." wide><textarea value={category.text} onChange={(event) => updateCategory(index, { text: event.target.value })} /></Field>
-                <Field label="Список внутри категории" help="Показывается в деталях/админке: каждый пункт с новой строки." wide><textarea value={joinList(category.bullets)} onChange={(event) => updateCategory(index, { bullets: splitList(event.target.value) })} /></Field>
+                <Field label={`Описание карточки ${activeLang.toUpperCase()}`} help="Текст под названием категории на главной." wide><textarea value={localizedString(category, 'text', activeLang)} placeholder={category.text} onChange={(event) => updateCategory(index, patchLocalizedString(category, 'text', activeLang, event.target.value))} /></Field>
+                <Field label={`Список внутри категории ${activeLang.toUpperCase()}`} help="Показывается в деталях/админке: каждый пункт с новой строки." wide><textarea value={joinList(localizedList(category, 'bullets', activeLang))} placeholder={joinList(category.bullets)} onChange={(event) => updateCategory(index, patchLocalizedList(category, 'bullets', activeLang, splitList(event.target.value)))} /></Field>
               </div>
               <div className="site-preview">
                 <span>Как это читается на сайте</span>
-                <strong>{category.index} · {category.title}</strong>
-                <p>{category.text}</p>
+                <strong>{category.index} · {localizedString(category, 'title', activeLang) || category.title}</strong>
+                <p>{localizedString(category, 'text', activeLang) || category.text}</p>
               </div>
             </article>
           ))}
@@ -248,17 +307,17 @@ export function AlmabuildPage() {
           {content.products.map((product, index) => (
             <article className="almabuild-edit-card product" key={product.title + '-' + index}>
               <div className="edit-card-head">
-                <div><span>Карточка товара #{index + 1}</span><h3>{product.title || 'Без названия'}</h3></div>
+                <div><span>Карточка товара #{index + 1}</span><h3>{localizedString(product, 'title', activeLang) || product.title || 'Без названия'}</h3></div>
                 <button className="icon-danger" type="button" aria-label="Удалить товар" onClick={() => setContent((current) => ({ ...current, products: current.products.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={17} /></button>
               </div>
               <div className="almabuild-form-grid products">
-                <Field label="Название товара" help="Главный текст на карточке товара."><input value={product.title} onChange={(event) => updateProduct(index, { title: event.target.value })} /></Field>
-                <Field label="Метка категории" help="Короткая подпись над названием: ГКЛ, Профили, Свет."><input value={product.category} onChange={(event) => updateProduct(index, { category: event.target.value })} /></Field>
+                <Field label={`Название товара ${activeLang.toUpperCase()}`} help="Главный текст на карточке товара."><input value={localizedString(product, 'title', activeLang)} placeholder={product.title} onChange={(event) => updateProduct(index, patchLocalizedString(product, 'title', activeLang, event.target.value))} /></Field>
+                <Field label={`Метка категории ${activeLang.toUpperCase()}`} help="Короткая подпись над названием: ГКЛ, Профили, Свет."><input value={localizedString(product, 'category', activeLang)} placeholder={product.category} onChange={(event) => updateProduct(index, patchLocalizedString(product, 'category', activeLang, event.target.value))} /></Field>
                 <Field label="Раздел каталога" help="Определяет, в каком фильтре каталога появится товар."><select value={product.categorySlug} onChange={(event) => updateProduct(index, { categorySlug: event.target.value })}>{content.materialCategories.map((category) => <option key={category.slug} value={category.slug}>{category.title}</option>)}</select></Field>
-                <Field label="Характеристики" help="Краткий размер, класс или назначение."><input value={product.spec} onChange={(event) => updateProduct(index, { spec: event.target.value })} /></Field>
+                <Field label={`Характеристики ${activeLang.toUpperCase()}`} help="Краткий размер, класс или назначение."><input value={localizedString(product, 'spec', activeLang)} placeholder={product.spec} onChange={(event) => updateProduct(index, patchLocalizedString(product, 'spec', activeLang, event.target.value))} /></Field>
                 <Field label="Визуальный класс" help="Технический ключ оформления карточки."><input value={product.photo} onChange={(event) => updateProduct(index, { photo: event.target.value })} /></Field>
               </div>
-              <div className="site-preview small"><span>Карточка</span><strong>{product.category}</strong><p>{product.title} · {product.spec}</p></div>
+              <div className="site-preview small"><span>Карточка</span><strong>{localizedString(product, 'category', activeLang) || product.category}</strong><p>{localizedString(product, 'title', activeLang) || product.title} · {localizedString(product, 'spec', activeLang) || product.spec}</p></div>
             </article>
           ))}
         </div>
@@ -277,11 +336,11 @@ export function AlmabuildPage() {
           <div className="almabuild-card-list">
             {content.kits.map((kit, index) => (
               <article className="almabuild-edit-card" key={kit.title + '-' + index}>
-                <div className="edit-card-head"><div><span>Комплект #{index + 1}</span><h3>{kit.title || 'Без названия'}</h3></div><button className="icon-danger" type="button" aria-label="Удалить комплект" onClick={() => setContent((current) => ({ ...current, kits: current.kits.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={17} /></button></div>
+                <div className="edit-card-head"><div><span>Комплект #{index + 1}</span><h3>{localizedString(kit, 'title', activeLang) || kit.title || 'Без названия'}</h3></div><button className="icon-danger" type="button" aria-label="Удалить комплект" onClick={() => setContent((current) => ({ ...current, kits: current.kits.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={17} /></button></div>
                 <div className="almabuild-form-grid one">
-                  <Field label="Название комплекта" help="Заголовок карточки в блоке комплектов."><input value={kit.title} onChange={(event) => updateKit(index, { title: event.target.value })} /></Field>
-                  <Field label="Описание" help="Одна строка под названием комплекта."><textarea value={kit.text} onChange={(event) => updateKit(index, { text: event.target.value })} /></Field>
-                  <Field label="Состав комплекта" help="Каждый пункт с новой строки, показывается списком."><textarea value={joinList(kit.items)} onChange={(event) => updateKit(index, { items: splitList(event.target.value) })} /></Field>
+                  <Field label={`Название комплекта ${activeLang.toUpperCase()}`} help="Заголовок карточки в блоке комплектов."><input value={localizedString(kit, 'title', activeLang)} placeholder={kit.title} onChange={(event) => updateKit(index, patchLocalizedString(kit, 'title', activeLang, event.target.value))} /></Field>
+                  <Field label={`Описание ${activeLang.toUpperCase()}`} help="Одна строка под названием комплекта."><textarea value={localizedString(kit, 'text', activeLang)} placeholder={kit.text} onChange={(event) => updateKit(index, patchLocalizedString(kit, 'text', activeLang, event.target.value))} /></Field>
+                  <Field label={`Состав комплекта ${activeLang.toUpperCase()}`} help="Каждый пункт с новой строки, показывается списком."><textarea value={joinList(localizedList(kit, 'items', activeLang))} placeholder={joinList(kit.items)} onChange={(event) => updateKit(index, patchLocalizedList(kit, 'items', activeLang, splitList(event.target.value)))} /></Field>
                 </div>
               </article>
             ))}
@@ -300,10 +359,10 @@ export function AlmabuildPage() {
           <div className="almabuild-card-list">
             {content.projects.map((project, index) => (
               <article className="almabuild-edit-card" key={project.title + '-' + index}>
-                <div className="edit-card-head"><div><span>Проект #{index + 1}</span><h3>{project.title || 'Без названия'}</h3></div><button className="icon-danger" type="button" aria-label="Удалить проект" onClick={() => setContent((current) => ({ ...current, projects: current.projects.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={17} /></button></div>
+                <div className="edit-card-head"><div><span>Проект #{index + 1}</span><h3>{localizedString(project, 'title', activeLang) || project.title || 'Без названия'}</h3></div><button className="icon-danger" type="button" aria-label="Удалить проект" onClick={() => setContent((current) => ({ ...current, projects: current.projects.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={17} /></button></div>
                 <div className="almabuild-form-grid one">
-                  <Field label="Название проекта" help="Крупный заголовок карточки проекта."><input value={project.title} onChange={(event) => updateProject(index, { title: event.target.value })} /></Field>
-                  <Field label="Описание проекта" help="Например: Магазин одежды · 320 м² · 28 дней."><textarea value={project.meta} onChange={(event) => updateProject(index, { meta: event.target.value })} /></Field>
+                  <Field label={`Название проекта ${activeLang.toUpperCase()}`} help="Крупный заголовок карточки проекта."><input value={localizedString(project, 'title', activeLang)} placeholder={project.title} onChange={(event) => updateProject(index, patchLocalizedString(project, 'title', activeLang, event.target.value))} /></Field>
+                  <Field label={`Описание проекта ${activeLang.toUpperCase()}`} help="Например: Магазин одежды · 320 м² · 28 дней."><textarea value={localizedString(project, 'meta', activeLang)} placeholder={project.meta} onChange={(event) => updateProject(index, patchLocalizedString(project, 'meta', activeLang, event.target.value))} /></Field>
                   <Field label="Визуальный класс" help="Технический ключ оформления карточки."><input value={project.photo} onChange={(event) => updateProject(index, { photo: event.target.value })} /></Field>
                 </div>
               </article>

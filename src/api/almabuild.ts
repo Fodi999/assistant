@@ -6,8 +6,17 @@ export type MaterialCategory = {
   index: string;
   slug: string;
   title: string;
+  titleRu?: string;
+  titleKk?: string;
+  titleEn?: string;
   text: string;
+  textRu?: string;
+  textKk?: string;
+  textEn?: string;
   bullets: string[];
+  bulletsRu?: string[];
+  bulletsKk?: string[];
+  bulletsEn?: string[];
   photo: string;
   imageUrl?: string;
   detailImageUrl?: string;
@@ -31,20 +40,44 @@ export type MaterialCategory = {
 export type Product = {
   categorySlug: string;
   category: string;
+  categoryRu?: string;
+  categoryKk?: string;
+  categoryEn?: string;
   title: string;
+  titleRu?: string;
+  titleKk?: string;
+  titleEn?: string;
   spec: string;
+  specRu?: string;
+  specKk?: string;
+  specEn?: string;
   photo: string;
 };
 
 export type Kit = {
   title: string;
+  titleRu?: string;
+  titleKk?: string;
+  titleEn?: string;
   text: string;
+  textRu?: string;
+  textKk?: string;
+  textEn?: string;
   items: string[];
+  itemsRu?: string[];
+  itemsKk?: string[];
+  itemsEn?: string[];
 };
 
 export type Project = {
   title: string;
+  titleRu?: string;
+  titleKk?: string;
+  titleEn?: string;
   meta: string;
+  metaRu?: string;
+  metaKk?: string;
+  metaEn?: string;
   photo: string;
 };
 
