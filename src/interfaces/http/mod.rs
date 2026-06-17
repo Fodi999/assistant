@@ -20,6 +20,7 @@ pub mod copilot; // 🆕 Copilot — главный LLM Brain (POST /api/copilot
 pub mod dish;
 pub mod error;
 pub mod health;
+pub mod icons_site;
 pub mod inventory;
 pub mod laboratory; // 🆕 Food-tech Laboratory HTTP handlers
 pub mod menu_engineering;

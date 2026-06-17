@@ -35,6 +35,7 @@ use crate::interfaces::http::{
     admin_states,
     admin_users,
     almabuild,
+    icons_site,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{
@@ -430,6 +431,28 @@ pub fn create_router(
         .layer(Extension(Arc::clone(&llm_adapter)))
         .layer(Extension(r2_client.clone()))
         .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
+        .with_state(pool.clone());
+
+    let admin_icons_site_routes = Router::new().route(
+        "/content",
+        get(icons_site::admin_get_content).put(icons_site::admin_put_content),
+    );
+
+    let admin_icons_site_routes = admin_icons_site_routes
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1416,6 +1439,21 @@ pub fn create_router(
         .route("/almabuild/leads", post(almabuild::public_create_lead))
         .with_state(pool_for_public.clone());
 
+    let public_icons_site_router = Router::new()
+        .route("/api/content", get(icons_site::public_content))
+        .route("/api/icons", get(icons_site::public_icons))
+        .route("/api/icons/:slug", get(icons_site::public_icon))
+        .route("/api/prayers", get(icons_site::public_prayers))
+        .route("/api/prayers/:slug", get(icons_site::public_prayer))
+        .route("/api/gospel/today", get(icons_site::public_gospel_today))
+        .route("/api/gospel/:date", get(icons_site::public_gospel_today))
+        .route("/api/saints", get(icons_site::public_saints))
+        .route("/api/saints/:slug", get(icons_site::public_saint))
+        .route("/api/churches", get(icons_site::public_churches))
+        .route("/api/qr/:qr_id", get(icons_site::public_qr))
+        .route("/api/pages/:slug", get(icons_site::public_seo_page))
+        .with_state(pool_for_public.clone());
+
     let public_cms_router = Router::new()
         .route("/about", get(public_cms::get_about))
         .route("/expertise", get(public_cms::list_expertise))
@@ -1444,6 +1482,7 @@ pub fn create_router(
         .merge(public_catalog_router) // 🆕 ChefOS: GET /catalog/categories | /catalog/ingredients (no auth, ?lang=xx)
         .merge(public_catalog_detail_router) // 🆕 ChefOS: GET /catalog/ingredients/:slug (full nutrition detail)
         .merge(public_almabuild_router)
+        .merge(public_icons_site_router)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
@@ -1522,6 +1561,7 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/almabuild", admin_almabuild_routes)
+        .nest("/api/admin/icons-site", admin_icons_site_routes)
         .nest("/api/admin/ai", admin_ai_routes)
         .nest("/api/admin", admin_panel_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
@@ -1604,8 +1644,12 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
         "https://dima-fomin.pl",
         "https://www.dima-fomin.pl",
         "https://kazaxbud.pages.dev",
+        "https://svet-ikony.pages.dev",
+        "https://ikona.link",
+        "https://www.ikona.link",
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:3002",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "tauri://localhost",
@@ -1634,6 +1678,9 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
             "http://tauri.localhost",
             "https://dima-fomin.pl",
             "https://www.dima-fomin.pl",
+            "https://svet-ikony.pages.dev",
+            "https://ikona.link",
+            "https://www.ikona.link",
         ]
         .iter()
         .filter_map(|o| o.parse().ok())
