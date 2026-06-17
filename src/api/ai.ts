@@ -25,6 +25,9 @@ export interface AiImageRequest {
   description?: string;
   scene?: string;
   imageType?: 'auto' | 'construction' | 'article' | 'review' | 'product';
+  referenceUrls?: string[];
+  variant?: number;
+  enhanced?: boolean;
 }
 
 export interface AiImageResult {

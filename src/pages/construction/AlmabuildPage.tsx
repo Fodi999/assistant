@@ -21,6 +21,7 @@ type LocalizedStringKey = 'title' | 'text' | 'category' | 'spec' | 'meta' | 'seo
 type LocalizedListKey = 'bullets' | 'items';
 const PROJECT_IMAGE_COUNT = 4;
 const PROJECT_IMAGE_MAX = 12;
+const PROJECT_REFERENCE_MAX = 4;
 
 const almabuildLanguages: Array<{ key: AlmabuildLanguage; label: string; name: string }> = [
   { key: 'ru', label: 'RU', name: 'Русский' },
@@ -224,6 +225,10 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
   const [editingProjectIndex, setEditingProjectIndex] = useState<number | null>(null);
   const [projectAiTopic, setProjectAiTopic] = useState('');
   const [projectPhotoPrompt, setProjectPhotoPrompt] = useState('');
+  const [projectReferenceUrls, setProjectReferenceUrls] = useState<string[]>([]);
+  const [projectReferenceUrlInput, setProjectReferenceUrlInput] = useState('');
+  const [projectReferenceBusy, setProjectReferenceBusy] = useState(false);
+  const [projectReferenceBusyLabel, setProjectReferenceBusyLabel] = useState('');
   const [projectBusy, setProjectBusy] = useState(false);
   const [projectBusyLabel, setProjectBusyLabel] = useState('');
   const [projectImageBusy, setProjectImageBusy] = useState(false);
@@ -306,6 +311,8 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     setEditingProjectIndex(null);
     setProjectAiTopic('');
     setProjectPhotoPrompt('Real commercial renovation project photo, finished interior, construction materials, architectural editorial lighting, no people');
+    setProjectReferenceUrls([]);
+    setProjectReferenceUrlInput('');
     setProjectEditorOpen(true);
     setMessage(null);
   }
@@ -319,6 +326,8 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     setEditingProjectIndex(index);
     setProjectAiTopic(localizedString(draft, 'title', activeLang) || draft.title);
     setProjectPhotoPrompt(`Commercial construction case photo: ${localizedString(draft, 'title', activeLang) || draft.title}. ${localizedString(draft, 'meta', activeLang) || draft.meta}. Finished interior, realistic architectural lighting, no people`);
+    setProjectReferenceUrls([]);
+    setProjectReferenceUrlInput('');
     setProjectEditorOpen(true);
     setMessage(null);
   }
@@ -409,6 +418,8 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
         '',
         'Создай полноценную SEO-карточку проекта для строительного сайта в Алматы.',
         'Обязательно заполни: slug латиницей через дефис, seoTitle, seoDescription, pageTitle, pageText.',
+        'Обязательно переведи и заполни ВСЕ языки: titleRu/titleKk/titleEn, metaRu/metaKk/metaEn, seoTitleRu/seoTitleKk/seoTitleEn, seoDescriptionRu/seoDescriptionKk/seoDescriptionEn, pageTitleRu/pageTitleKk/pageTitleEn, pageTextRu/pageTextKk/pageTextEn.',
+        'RU пиши по-русски, KZ пиши на казахском языке, EN пиши по-английски. Не оставляй KZ/EN русским текстом.',
         'pageText сделай 2-4 абзаца: задача объекта, материалы/работы, сроки/контроль, выгода для клиента.',
         'title/meta оставь короткими для карточки на главной.'
       ].join('\n'), projectDraft);
@@ -454,6 +465,51 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     }
   }
 
+  async function addProjectReferenceFiles(files: FileList | null) {
+    if (!files) return;
+    const slots = PROJECT_REFERENCE_MAX - projectReferenceUrls.length;
+    const selected = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, slots);
+    if (!selected.length) {
+      setMessage(`Можно добавить максимум ${PROJECT_REFERENCE_MAX} референса.`);
+      return;
+    }
+    setProjectReferenceBusy(true);
+    setProjectReferenceBusyLabel('Загружаем референсы...');
+    setMessage(null);
+    try {
+      const uploaded: string[] = [];
+      for (const file of selected) {
+        if (file.size > 10 * 1024 * 1024) throw new Error('Каждый референс должен быть меньше 10 MB');
+        uploaded.push(await uploadCmsReference(file));
+      }
+      setProjectReferenceUrls((current) => [...current, ...uploaded].slice(0, PROJECT_REFERENCE_MAX));
+      setMessage(`Добавлено референсов: ${uploaded.length}. Gemini будет учитывать их при генерации.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить референсы проекта.');
+    } finally {
+      setProjectReferenceBusy(false);
+      setProjectReferenceBusyLabel('');
+    }
+  }
+
+  function addProjectReferenceUrl() {
+    const url = projectReferenceUrlInput.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      setMessage('URL референса должен начинаться с http:// или https://');
+      return;
+    }
+    setProjectReferenceUrls((current) => {
+      if (current.includes(url)) return current;
+      return [...current, url].slice(0, PROJECT_REFERENCE_MAX);
+    });
+    setProjectReferenceUrlInput('');
+  }
+
+  function removeProjectReferenceUrl(index: number) {
+    setProjectReferenceUrls((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
   async function generateProjectPhoto() {
     const title = localizedString(projectDraft, 'title', activeLang) || projectDraft.title || projectAiTopic;
     if (!title.trim()) {
@@ -469,13 +525,55 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
         title,
         description: localizedString(projectDraft, 'meta', activeLang) || projectDraft.meta,
         scene: projectPhotoPrompt || `Commercial construction project photo: ${title}, finished interior, realistic architectural lighting, no people`,
-        imageType: 'construction'
+        imageType: 'construction',
+        referenceUrls: projectReferenceUrls,
+        variant: selectedProjectImage
       });
       if (!result.imageUrl) throw new Error('Backend не вернул URL фото.');
       setProjectImageAt(selectedProjectImage, result.imageUrl);
       setMessage(`AI фото проекта ${selectedProjectImage + 1} создано.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'AI не создал фото проекта.');
+    } finally {
+      setProjectImageBusy(false);
+      setProjectImageBusyLabel('');
+    }
+  }
+
+  async function generateProjectPhotoSeries() {
+    const title = localizedString(projectDraft, 'title', activeLang) || projectDraft.title || projectAiTopic;
+    if (!title.trim()) {
+      setMessage('Нужна тема или название проекта для генерации фото.');
+      return;
+    }
+    setProjectImageBusy(true);
+    setProjectImageBusyLabel(`Gemini 1/${PROJECT_IMAGE_COUNT}...`);
+    setMessage(null);
+    try {
+      const next: string[] = [];
+      for (let index = 0; index < PROJECT_IMAGE_COUNT; index += 1) {
+        const scene = index === 0
+          ? projectPhotoPrompt || `Commercial construction case hero photo: ${title}, finished interior, realistic architectural lighting, no people`
+          : `${projectPhotoPrompt || title}. Gallery variant ${index + 1}: different angle, material details, lighting and fit-out quality, no people`;
+        const result = await generateAiImage({
+          site: 'construction',
+          title,
+          description: localizedString(projectDraft, 'meta', activeLang) || projectDraft.meta,
+          scene,
+          imageType: 'construction',
+          referenceUrls: projectReferenceUrls,
+          variant: index
+        });
+        if (!result.imageUrl) throw new Error('Backend не вернул URL фото.');
+        next.push(result.imageUrl);
+        setProjectImageBusyLabel(`Gemini ${Math.min(index + 2, PROJECT_IMAGE_COUNT)}/${PROJECT_IMAGE_COUNT}...`);
+        setProjectImages([...next, ...Array(PROJECT_IMAGE_COUNT - next.length).fill('')]);
+      }
+      setProjectDraft((draft) => projectWithImages(draft, next));
+      setSelectedProjectImage(0);
+      setMessage(projectReferenceUrls.length ? 'AI создал 4 фото по референсам.' : 'AI создал 4 фото без визуальных референсов.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'AI не создал серию фото проекта.');
     } finally {
       setProjectImageBusy(false);
       setProjectImageBusyLabel('');
@@ -504,7 +602,9 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
         title,
         description: localizedString(projectDraft, 'meta', activeLang) || projectDraft.meta,
         scene: `${projectPhotoPrompt || title}. Additional gallery photo ${index + 1}, finished commercial renovation, construction details, no people`,
-        imageType: 'construction'
+        imageType: 'construction',
+        referenceUrls: projectReferenceUrls,
+        variant: index
       });
       if (!result.imageUrl) throw new Error('Backend не вернул URL фото.');
       setProjectImageAt(index, result.imageUrl);
@@ -771,12 +871,27 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
                   <span>Промпт фото</span>
                   <textarea value={projectPhotoPrompt} onChange={(event) => setProjectPhotoPrompt(event.target.value)} placeholder="Commercial construction project photo, finished retail interior, premium materials, no people" />
                 </label>
+                <section className="content-reference-panel">
+                  <div className="panel-title compact"><span><AppIcon name="external" />Референсы для AI</span><small>{projectReferenceUrls.length}/{PROJECT_REFERENCE_MAX}</small></div>
+                  <div className="content-reference-actions">
+                    <label className="btn btn-secondary">
+                      <input className="visually-hidden" type="file" accept="image/*" multiple disabled={projectReferenceBusy || projectReferenceUrls.length >= PROJECT_REFERENCE_MAX} onChange={(event) => void addProjectReferenceFiles(event.target.files)} />
+                      {projectReferenceBusyLabel || 'Загрузить с ПК'}
+                    </label>
+                    <div className="content-reference-url">
+                      <input value={projectReferenceUrlInput} onChange={(event) => setProjectReferenceUrlInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addProjectReferenceUrl(); }} placeholder="https://... фото-референс" />
+                      <button className="btn btn-quiet" type="button" disabled={projectReferenceUrls.length >= PROJECT_REFERENCE_MAX} onClick={addProjectReferenceUrl}>URL</button>
+                    </div>
+                  </div>
+                  {projectReferenceUrls.length ? <div className="content-reference-strip">{projectReferenceUrls.map((url, index) => <div key={`${url}-${index}`} className="content-reference-thumb"><img src={url} alt={`Референс проекта ${index + 1}`} /><button type="button" onClick={() => removeProjectReferenceUrl(index)}>×</button></div>)}</div> : <p className="editor-message">AI будет генерировать без визуального референса.</p>}
+                </section>
                 <div className="editor-actions">
                   <label className="btn btn-secondary">
                     <input className="visually-hidden" type="file" accept="image/*" disabled={projectImageBusy} onChange={(event) => void uploadProjectPhoto(event.target.files?.[0] ?? null)} />
                     {projectImageBusyLabel === 'Загружаем фото...' ? projectImageBusyLabel : 'Загрузить'}
                   </label>
                   <button className="btn btn-ai" type="button" disabled={projectImageBusy} onClick={() => void generateProjectPhoto()}><AppIcon name="bot" />{projectImageBusyLabel === 'Gemini фото...' ? projectImageBusyLabel : 'AI фото'}</button>
+                  <button className="btn btn-ai" type="button" disabled={projectImageBusy} onClick={() => void generateProjectPhotoSeries()}><AppIcon name="bot" />{projectImageBusyLabel.startsWith('Gemini ') && projectImageBusyLabel.includes('/') ? projectImageBusyLabel : 'AI 4 фото'}</button>
                   <button className="btn btn-ai" type="button" disabled={projectImageBusy || projectImages.length >= PROJECT_IMAGE_MAX} onClick={() => void generateAdditionalProjectPhoto()}><AppIcon name="bot" />{projectImageBusyLabel.startsWith('Gemini +') ? projectImageBusyLabel : 'AI + фото'}</button>
                   <button className="btn btn-quiet" type="button" disabled={projectImageBusy || !projectImages[selectedProjectImage]} onClick={() => setFullscreenProjectImage(selectedProjectImage)}>На весь экран</button>
                   <button className="btn btn-quiet" type="button" disabled={projectImageBusy || (!projectImages[selectedProjectImage] && projectImages.length <= PROJECT_IMAGE_COUNT)} onClick={removeSelectedProjectImage}>Убрать</button>
