@@ -162,6 +162,9 @@ function StaticSectionNotice({ title, text }: { title: string; text: string }) {
 export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSection }) {
   const [content, setContent] = useState<AlmabuildContent>(emptyContent);
   const [activeLang, setActiveLang] = useState<AlmabuildLanguage>('ru');
+  const [projectEditorOpen, setProjectEditorOpen] = useState(false);
+  const [projectDraft, setProjectDraft] = useState<Project>(() => projectTemplate());
+  const [editingProjectIndex, setEditingProjectIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -206,6 +209,10 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     void loadContent();
   }, []);
 
+  useEffect(() => {
+    if (activeSection !== 'projects') setProjectEditorOpen(false);
+  }, [activeSection]);
+
   function updateCategory(index: number, patch: Partial<MaterialCategory>) {
     setContent((current) => ({
       ...current,
@@ -227,11 +234,49 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     }));
   }
 
-  function updateProject(index: number, patch: Partial<Project>) {
+  function openNewProject() {
+    setProjectDraft(projectTemplate());
+    setEditingProjectIndex(null);
+    setProjectEditorOpen(true);
+    setMessage(null);
+  }
+
+  function openEditProject(index: number) {
+    setProjectDraft({ ...content.projects[index] });
+    setEditingProjectIndex(index);
+    setProjectEditorOpen(true);
+    setMessage(null);
+  }
+
+  function patchProjectDraft(patch: Partial<Project>) {
+    setProjectDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function saveProjectDraft() {
+    setContent((current) => {
+      if (editingProjectIndex === null) {
+        return { ...current, projects: [projectDraft, ...current.projects] };
+      }
+      return {
+        ...current,
+        projects: current.projects.map((item, index) => index === editingProjectIndex ? projectDraft : item)
+      };
+    });
+    setProjectEditorOpen(false);
+    setMessage('Проект сохранен в черновике CMS. Нажми «Опубликовать», чтобы отправить изменения в backend.');
+  }
+
+  function deleteProjectDraft() {
+    if (editingProjectIndex === null) {
+      setProjectEditorOpen(false);
+      return;
+    }
     setContent((current) => ({
       ...current,
-      projects: current.projects.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item)
+      projects: current.projects.filter((_, index) => index !== editingProjectIndex)
     }));
+    setProjectEditorOpen(false);
+    setMessage('Проект удален из черновика CMS. Нажми «Опубликовать», чтобы сохранить удаление в backend.');
   }
 
   return (
@@ -366,22 +411,29 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
             <div>
               <span className="eyebrow">Блок сайта: «Коммерческие пространства»</span>
               <h2>Проекты</h2>
-              <p className="section-note">Кейсы на главной: название объекта, формат, площадь и сроки.</p>
+              <p className="section-note">Кейсы на главной: название объекта, формат, площадь и сроки. Редактирование открывается отдельно, как в блогах кулинарного сайта.</p>
             </div>
-            <button className="btn btn-quiet" type="button" onClick={() => setContent((current) => ({ ...current, projects: [projectTemplate(), ...current.projects] }))}><Plus size={16} />Добавить</button>
+            <button className="btn btn-primary" type="button" onClick={openNewProject}><Plus size={16} />Новый проект</button>
           </div>
-          <div className="almabuild-card-list">
-            {content.projects.map((project, index) => (
-              <article className="almabuild-edit-card" key={project.title + '-' + index}>
-                <div className="edit-card-head"><div><span>Проект #{index + 1}</span><h3>{localizedString(project, 'title', activeLang) || project.title || 'Без названия'}</h3></div><button className="icon-danger" type="button" aria-label="Удалить проект" onClick={() => setContent((current) => ({ ...current, projects: current.projects.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={17} /></button></div>
-                <div className="almabuild-form-grid one">
-                  <Field label={`Название проекта ${activeLang.toUpperCase()}`} help="Крупный заголовок карточки проекта."><input value={localizedString(project, 'title', activeLang)} placeholder={project.title} onChange={(event) => updateProject(index, patchLocalizedString(project, 'title', activeLang, event.target.value))} /></Field>
-                  <Field label={`Описание проекта ${activeLang.toUpperCase()}`} help="Например: Магазин одежды · 320 м² · 28 дней."><textarea value={localizedString(project, 'meta', activeLang)} placeholder={project.meta} onChange={(event) => updateProject(index, patchLocalizedString(project, 'meta', activeLang, event.target.value))} /></Field>
-                  <Field label="Визуальный класс" help="Технический ключ оформления карточки."><input value={project.photo} onChange={(event) => updateProject(index, { photo: event.target.value })} /></Field>
-                </div>
-              </article>
-            ))}
-          </div>
+          <section className="ops-panel almabuild-project-list">
+            <table className="ops-table">
+              <thead>
+                <tr><th>Проект</th><th>Описание</th><th>Визуал</th><th>Языки</th><th /></tr>
+              </thead>
+              <tbody>
+                {content.projects.map((project, index) => (
+                  <tr key={`${project.title}-${index}`}>
+                    <td><strong>{localizedString(project, 'title', activeLang) || project.title || 'Без названия'}</strong><small>Проект #{index + 1}</small></td>
+                    <td>{localizedString(project, 'meta', activeLang) || project.meta || 'Нет описания'}</td>
+                    <td><code>{project.photo || 'photo-project'}</code></td>
+                    <td>{['ru', 'kk', 'en'].filter((lang) => localizedString(project, 'title', lang as AlmabuildLanguage)).map((lang) => lang.toUpperCase()).join(' / ') || 'RU'}</td>
+                    <td><button className="table-action" type="button" onClick={() => openEditProject(index)}>Редактировать</button></td>
+                  </tr>
+                ))}
+                {!content.projects.length ? <tr><td colSpan={5}>Проектов пока нет. Нажми «Новый проект», чтобы добавить первый кейс.</td></tr> : null}
+              </tbody>
+            </table>
+          </section>
         </article>
       ) : null}
 
@@ -389,6 +441,58 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
         <StaticSectionNotice title="Контакты" text="Форма заявки уже отправляет лиды в backend. Тексты контактов и телефон пока статические на публичном сайте; теперь у раздела есть отдельное место в редакторе." />
       ) : null}
       </div>
+
+      {projectEditorOpen ? (
+        <div className="modal-overlay">
+          <div className="editor-modal almabuild-project-modal">
+            <div className="editor-modal-head">
+              <div>
+                <p className="eyebrow">{editingProjectIndex === null ? 'Новый проект' : 'Редактирование проекта'}</p>
+                <h2>{localizedString(projectDraft, 'title', activeLang) || projectDraft.title || 'Коммерческий проект'}</h2>
+              </div>
+              <div className="editor-actions">
+                <button className="btn btn-quiet" type="button" onClick={() => setProjectEditorOpen(false)}>Закрыть</button>
+                <button className="btn btn-primary" type="button" onClick={saveProjectDraft}>Сохранить</button>
+              </div>
+            </div>
+
+            <div className="analytics-mode-switcher content-lang-tabs">
+              {almabuildLanguages.map((language) => (
+                <button key={language.key} className={activeLang === language.key ? 'analytics-mode-button active' : 'analytics-mode-button'} type="button" onClick={() => setActiveLang(language.key)}>
+                  {language.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="editor-grid">
+              <label className="editor-field">
+                <span>Название проекта {activeLang.toUpperCase()}</span>
+                <input value={localizedString(projectDraft, 'title', activeLang)} placeholder={projectDraft.title || 'BUTIK KZ'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'title', activeLang, event.target.value))} />
+              </label>
+              <label className="editor-field">
+                <span>Визуальный класс</span>
+                <input value={projectDraft.photo} onChange={(event) => patchProjectDraft({ photo: event.target.value })} placeholder="photo-retail" />
+              </label>
+            </div>
+
+            <label className="editor-field">
+              <span>Описание проекта {activeLang.toUpperCase()}</span>
+              <textarea value={localizedString(projectDraft, 'meta', activeLang)} placeholder={projectDraft.meta || 'Магазин одежды · 320 м² · 28 дней'} onChange={(event) => patchProjectDraft(patchLocalizedString(projectDraft, 'meta', activeLang, event.target.value))} />
+            </label>
+
+            <div className="site-preview">
+              <span>Как это читается на сайте</span>
+              <strong>{localizedString(projectDraft, 'title', activeLang) || projectDraft.title || 'Название проекта'}</strong>
+              <p>{localizedString(projectDraft, 'meta', activeLang) || projectDraft.meta || 'Формат · площадь · срок'}</p>
+            </div>
+
+            <div className="editor-actions">
+              <button className="btn btn-danger" type="button" onClick={deleteProjectDraft}>{editingProjectIndex === null ? 'Отменить' : 'Удалить'}</button>
+              <button className="btn btn-primary" type="button" onClick={saveProjectDraft}>Сохранить</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
