@@ -79,6 +79,7 @@ export type Project = {
   metaKk?: string;
   metaEn?: string;
   photo: string;
+  imageUrls?: string[];
 };
 
 export type AlmabuildContent = {
