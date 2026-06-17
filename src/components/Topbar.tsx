@@ -4,7 +4,7 @@ import { apiStatusLabels } from '../lib/labels';
 import type { SiteKey } from '../types/admin';
 import { AppIcon } from './AppIcon';
 import { SiteSwitcher } from './SiteSwitcher';
-import type { AppPage } from './Sidebar';
+import { pageAllowedForSite, type AppPage } from './Sidebar';
 
 interface TopbarProps {
   activeSite: SiteKey;
@@ -39,13 +39,15 @@ const PAGE_LABELS: Record<AppPage, string> = {
   about: 'О системе'
 };
 
-const COMMANDS: Array<{ page: AppPage; title: string; hint: string }> = [
-  { page: 'affiliate', title: 'Создать партнерский товар', hint: 'Amazon / Allegro / Ceneo / Awin / своя сеть' },
+const COMMANDS: Array<{ page: AppPage; title: string; hint: string; site?: SiteKey }> = [
+  { page: 'content', title: 'Новая статья CU', hint: 'статья / обзор / подборка / фото', site: 'culinary' },
+  { page: 'culinary', title: 'Ингредиенты CU', hint: 'каталог ингредиентов и кулинарные данные', site: 'culinary' },
+  { page: 'construction', title: 'Редактировать Kazaxbud', hint: 'материалы / товары / комплекты / проекты', site: 'construction' },
+  { page: 'suppliers', title: 'Поставщики CO', hint: 'Алматы, контакты, условия, маржа', site: 'construction' },
+  { page: 'affiliate', title: 'Affiliate / поставки', hint: 'партнерские товары выбранного сайта' },
   { page: 'ai-studio', title: 'Создать через AI', hint: 'описание, SEO, slug, фото-промт' },
-  { page: 'content', title: 'Новая статья или обзор', hint: 'статья / обзор / подборка' },
-  { page: 'construction', title: 'Открыть калькулятор ремонта', hint: 'Алматы, KZT, маржа' },
   { page: 'leads', title: 'Посмотреть заявки', hint: 'новые / в работе / смета / выиграно / потеряно' },
-  { page: 'analytics', title: 'Партнерская аналитика', hint: 'CTR, EPC, доход' }
+  { page: 'analytics', title: 'Аналитика сайта', hint: 'GA4, клики, доход, конверсии' }
 ];
 
 export function Topbar({ activeSite, activePage, connectionState, onSiteChange, onNavigate, onLogout }: TopbarProps) {
@@ -54,9 +56,10 @@ export function Topbar({ activeSite, activePage, connectionState, onSiteChange, 
   const site = siteConfigs.find((item) => item.key === activeSite) ?? siteConfigs[0];
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return COMMANDS;
-    return COMMANDS.filter((command) => (command.title + ' ' + command.hint).toLowerCase().includes(needle));
-  }, [query]);
+    const siteCommands = COMMANDS.filter((command) => (!command.site || command.site === activeSite) && pageAllowedForSite(activeSite, command.page));
+    if (!needle) return siteCommands;
+    return siteCommands.filter((command) => (command.title + ' ' + command.hint).toLowerCase().includes(needle));
+  }, [activeSite, query]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {

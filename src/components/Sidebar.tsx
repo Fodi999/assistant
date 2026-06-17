@@ -27,6 +27,7 @@ export type AppPage =
   | 'about';
 
 export type ManagedSite = SiteKey | 'almabuild' | 'dima';
+type NavItem = { page: AppPage; label: string; icon: AppIconName; shortcut: string };
 
 interface SidebarProps {
   activeSite: SiteKey;
@@ -37,35 +38,62 @@ interface SidebarProps {
   onNavigate: (page: AppPage) => void;
 }
 
-const NAV_ITEMS: Array<{ page: AppPage; label: string; icon: AppIconName; shortcut: string; site?: SiteKey }> = [
-  { page: 'dashboard', label: 'Панель', icon: 'dashboard', shortcut: '1' },
-  { page: 'sites', label: 'Сайты', icon: 'globe', shortcut: '2' },
-  { page: 'affiliate', label: 'Партнерка', icon: 'shop', shortcut: '3' },
-  { page: 'content', label: 'Контент', icon: 'cms', shortcut: '4' },
-  { page: 'ai-studio', label: 'AI-студия', icon: 'bot', shortcut: '5' },
-  { page: 'construction', label: 'Стройка', icon: 'building', shortcut: '6', site: 'construction' },
-  { page: 'culinary', label: 'Кулинария', icon: 'catalog', shortcut: '7', site: 'culinary' },
-  { page: 'leads', label: 'Заявки', icon: 'leads', shortcut: '8' },
-  { page: 'suppliers', label: 'Поставщики', icon: 'suppliers', shortcut: '9' },
-  { page: 'analytics', label: 'Аналитика', icon: 'analytics', shortcut: 'A' },
-  { page: 'users', label: 'Пользователи', icon: 'users', shortcut: 'U' },
-  { page: 'settings', label: 'Настройки', icon: 'settings', shortcut: 'S' },
-  { page: 'about', label: 'О системе', icon: 'shield', shortcut: '?' }
-];
+const SITE_NAV_ITEMS: Record<SiteKey, NavItem[]> = {
+  culinary: [
+    { page: 'dashboard', label: 'Панель CU', icon: 'dashboard', shortcut: '1' },
+    { page: 'sites', label: 'Сайт dima-fomin.pl', icon: 'globe', shortcut: '2' },
+    { page: 'affiliate', label: 'Affiliate товары', icon: 'shop', shortcut: '3' },
+    { page: 'content', label: 'Статьи и обзоры', icon: 'cms', shortcut: '4' },
+    { page: 'ai-studio', label: 'AI для кулинарии', icon: 'bot', shortcut: '5' },
+    { page: 'culinary', label: 'Ингредиенты', icon: 'catalog', shortcut: '6' },
+    { page: 'leads', label: 'Заявки CU', icon: 'leads', shortcut: '7' },
+    { page: 'analytics', label: 'Аналитика CU', icon: 'analytics', shortcut: 'A' },
+    { page: 'users', label: 'Пользователи', icon: 'users', shortcut: 'U' },
+    { page: 'settings', label: 'Настройки CU', icon: 'settings', shortcut: 'S' },
+    { page: 'about', label: 'О системе', icon: 'shield', shortcut: '?' }
+  ],
+  construction: [
+    { page: 'dashboard', label: 'Панель CO', icon: 'dashboard', shortcut: '1' },
+    { page: 'sites', label: 'Сайт kazaxbud', icon: 'globe', shortcut: '2' },
+    { page: 'construction', label: 'Kazaxbud CMS', icon: 'building', shortcut: '3' },
+    { page: 'affiliate', label: 'Поставки / affiliate', icon: 'shop', shortcut: '4' },
+    { page: 'ai-studio', label: 'AI для стройки', icon: 'bot', shortcut: '5' },
+    { page: 'leads', label: 'Заявки CO', icon: 'leads', shortcut: '6' },
+    { page: 'suppliers', label: 'Поставщики', icon: 'suppliers', shortcut: '7' },
+    { page: 'analytics', label: 'Аналитика CO', icon: 'analytics', shortcut: 'A' },
+    { page: 'users', label: 'Пользователи', icon: 'users', shortcut: 'U' },
+    { page: 'settings', label: 'Настройки CO', icon: 'settings', shortcut: 'S' },
+    { page: 'about', label: 'О системе', icon: 'shield', shortcut: '?' }
+  ]
+};
+
+const defaultSitePages: Record<SiteKey, AppPage> = {
+  culinary: 'content',
+  construction: 'construction'
+};
+
+export function getSiteNavItems(site: ManagedSite): NavItem[] {
+  if (site === 'construction' || site === 'almabuild') return SITE_NAV_ITEMS.construction;
+  return SITE_NAV_ITEMS.culinary;
+}
+
+export function defaultPageForSite(site: ManagedSite): AppPage {
+  return site === 'construction' || site === 'almabuild' ? defaultSitePages.construction : defaultSitePages.culinary;
+}
 
 export function pageAllowedForSite(site: ManagedSite, page: AppPage) {
-  const item = NAV_ITEMS.find((nav) => nav.page === page);
-  return !item?.site || item.site === site;
+  return getSiteNavItems(site).some((item) => item.page === page);
 }
 
 export function normalizeSitePage(site: ManagedSite, page: AppPage): AppPage {
   if (pageAllowedForSite(site, page)) return page;
-  return site === 'construction' ? 'construction' : 'culinary';
+  return defaultPageForSite(site);
 }
 
 export function Sidebar({ activeSite, activePage, collapsed, onToggleCollapse, onSiteChange, onNavigate }: SidebarProps) {
-  const visibleNavItems = NAV_ITEMS.filter((item) => !item.site || item.site === activeSite);
+  const visibleNavItems = getSiteNavItems(activeSite);
   const activeConfig = siteConfigs.find((site) => site.key === activeSite) ?? siteConfigs[0];
+  const sectionLabel = activeSite === 'construction' ? 'Разделы строительного сайта' : 'Разделы кулинарного сайта';
 
   return (
     <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
@@ -92,7 +120,7 @@ export function Sidebar({ activeSite, activePage, collapsed, onToggleCollapse, o
       </div>
 
       <nav className="sidebar-nav" aria-label="Основная навигация">
-        <p className="sidebar-section-label">Разделы</p>
+        <p className="sidebar-section-label">{sectionLabel}</p>
         {visibleNavItems.map((item) => (
           <button key={item.page} className={'sidebar-link' + (activePage === item.page ? ' active' : '')} type="button" title={item.label} onClick={() => onNavigate(item.page)}>
             <AppIcon name={item.icon} />

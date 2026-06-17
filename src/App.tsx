@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { adminLogin, adminLogout, verifyAdminToken } from './api/auth';
 import { bootstrapAdminToken, getAdminToken } from './api/client';
-import { normalizeSitePage, Sidebar, type AppPage } from './components/Sidebar';
+import { defaultPageForSite, normalizeSitePage, Sidebar, type AppPage } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { AboutPage } from './pages/AboutPage';
 import { AffiliatePage } from './pages/AffiliatePage';
@@ -23,7 +23,10 @@ type PageBySite = Record<SiteKey, AppPage>;
 
 export function App() {
   const [activeSite, setActiveSite] = useState<SiteKey>('construction');
-  const [pageBySite, setPageBySite] = useState<PageBySite>({ culinary: 'dashboard', construction: 'dashboard' });
+  const [pageBySite, setPageBySite] = useState<PageBySite>({
+    culinary: defaultPageForSite('culinary'),
+    construction: defaultPageForSite('construction')
+  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true');
   const activePage = normalizeSitePage(activeSite, pageBySite[activeSite]);
   const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'anonymous'>('checking');
@@ -36,7 +39,11 @@ export function App() {
   }
 
   function changeSite(site: SiteKey) {
-    setPageBySite((current) => ({ ...current, [site]: normalizeSitePage(site, current[site]) }));
+    setPageBySite((current) => ({
+      ...current,
+      [activeSite]: normalizeSitePage(activeSite, current[activeSite]),
+      [site]: normalizeSitePage(site, current[site] || defaultPageForSite(site))
+    }));
     setActiveSite(site);
   }
 
