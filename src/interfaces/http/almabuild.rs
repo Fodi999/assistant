@@ -138,6 +138,8 @@ pub struct Kit {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub slug: String,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_ru: Option<String>,
@@ -152,6 +154,38 @@ pub struct Project {
     pub meta_kk: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta_en: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_title_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_title_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_title_en: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_description_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_description_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seo_description_en: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_title_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_title_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_title_en: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_text_ru: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_text_kk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_text_en: Option<String>,
     pub photo: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_urls: Vec<String>,
@@ -235,9 +269,9 @@ fn default_content() -> AlmabuildContent {
             Kit { title: "Комплект для потолка".into(), title_ru: None, title_kk: None, title_en: None, text: "Система под монтаж потолков.".into(), text_ru: None, text_kk: None, text_en: None, items: vec!["Профили".into(), "Подвесы".into(), "Плиты / ГКЛ".into()], items_ru: vec![], items_kk: vec![], items_en: vec![] },
         ],
         projects: vec![
-            Project { title: "BUTIK KZ".into(), title_ru: None, title_kk: None, title_en: None, meta: "Магазин одежды · 320 м² · 28 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-retail".into(), image_urls: Vec::new() },
-            Project { title: "Green Mart".into(), title_ru: None, title_kk: None, title_en: None, meta: "Супермаркет · 1250 м² · 45 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-office".into(), image_urls: Vec::new() },
-            Project { title: "Europharma".into(), title_ru: None, title_kk: None, title_en: None, meta: "Аптека · 110 м² · 18 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-building".into(), image_urls: Vec::new() },
+            Project { slug: "".into(), title: "BUTIK KZ".into(), title_ru: None, title_kk: None, title_en: None, meta: "Магазин одежды · 320 м² · 28 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-retail".into(), seo_title: None, seo_title_ru: None, seo_title_kk: None, seo_title_en: None, seo_description: None, seo_description_ru: None, seo_description_kk: None, seo_description_en: None, page_title: None, page_title_ru: None, page_title_kk: None, page_title_en: None, page_text: None, page_text_ru: None, page_text_kk: None, page_text_en: None, image_urls: Vec::new() },
+            Project { slug: "".into(), title: "Green Mart".into(), title_ru: None, title_kk: None, title_en: None, meta: "Супермаркет · 1250 м² · 45 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-office".into(), seo_title: None, seo_title_ru: None, seo_title_kk: None, seo_title_en: None, seo_description: None, seo_description_ru: None, seo_description_kk: None, seo_description_en: None, page_title: None, page_title_ru: None, page_title_kk: None, page_title_en: None, page_text: None, page_text_ru: None, page_text_kk: None, page_text_en: None, image_urls: Vec::new() },
+            Project { slug: "".into(), title: "Europharma".into(), title_ru: None, title_kk: None, title_en: None, meta: "Аптека · 110 м² · 18 дней".into(), meta_ru: None, meta_kk: None, meta_en: None, photo: "photo-building".into(), seo_title: None, seo_title_ru: None, seo_title_kk: None, seo_title_en: None, seo_description: None, seo_description_ru: None, seo_description_kk: None, seo_description_en: None, page_title: None, page_title_ru: None, page_title_kk: None, page_title_en: None, page_text: None, page_text_ru: None, page_text_kk: None, page_text_en: None, image_urls: Vec::new() },
         ],
     }
 }
@@ -462,7 +496,7 @@ fn almabuild_schema(kind: &str) -> &'static str {
             r#"{"categorySlug":"slug","category":"Категория","title":"Название","spec":"Характеристики","photo":"photo-class"}"#
         }
         "kit" => r#"{"title":"Название","text":"Описание","items":["Позиция"]}"#,
-        "project" => r#"{"title":"Название","meta":"Тип · площадь · срок","photo":"photo-class"}"#,
+        "project" => r#"{"slug":"latin-slug","title":"Название","meta":"Тип · площадь · срок","seoTitle":"SEO title","seoDescription":"SEO description","pageTitle":"Заголовок SEO-страницы","pageText":"Текст SEO-страницы","photo":"photo-class","imageUrls":[]}"#,
         _ => r#"{}"#,
     }
 }
