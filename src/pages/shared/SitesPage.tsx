@@ -1,7 +1,7 @@
-import { siteConfigs } from '../lib/mockData';
-import { AppIcon } from '../components/AppIcon';
-import { DataSourceBadge } from '../components/DataSourceBadge';
-import { apiStatusLabels, revalidateStatusLabels, siteNames } from '../lib/labels';
+import { siteConfigs } from '../../lib/mockData';
+import { AppIcon } from '../../components/AppIcon';
+import { DataSourceBadge } from '../../components/DataSourceBadge';
+import { apiStatusLabels, revalidateStatusLabels, siteNames } from '../../lib/labels';
 
 export function SitesPage() {
   return (

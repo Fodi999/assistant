@@ -1,7 +1,7 @@
-import { affiliateProducts, contentArticles } from '../lib/mockData';
-import { AppIcon } from '../components/AppIcon';
-import { DataSourceBadge } from '../components/DataSourceBadge';
-import { contentTypeLabels, publishStatusLabels } from '../lib/labels';
+import { affiliateProducts, contentArticles } from '../../lib/mockData';
+import { AppIcon } from '../../components/AppIcon';
+import { DataSourceBadge } from '../../components/DataSourceBadge';
+import { contentTypeLabels, publishStatusLabels } from '../../lib/labels';
 
 export function CulinaryPage() {
   const products = affiliateProducts.filter((item) => item.site === 'culinary');

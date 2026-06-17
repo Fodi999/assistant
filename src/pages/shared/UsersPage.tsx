@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { listAdminUsers } from '../api/admin';
-import { AppIcon } from '../components/AppIcon';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import type { AdminUser } from '../types/admin';
+import { listAdminUsers } from '../../api/admin';
+import { AppIcon } from '../../components/AppIcon';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import type { AdminUser } from '../../types/admin';
 
 const mockUsers: AdminUser[] = [
   {

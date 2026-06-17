@@ -9,7 +9,7 @@ import {
   type MaterialCategory,
   type Product,
   type Project
-} from '../api/almabuild';
+} from '../../api/almabuild';
 
 type AlmabuildLanguage = 'ru' | 'kk' | 'en';
 type LocalizedStringKey = 'title' | 'text' | 'category' | 'spec' | 'meta';

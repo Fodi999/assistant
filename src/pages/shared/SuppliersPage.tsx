@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { listSuppliersWithSource } from '../api/suppliers';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import { suppliers } from '../lib/mockData';
-import { AppIcon } from '../components/AppIcon';
-import { supplierTypeLabels } from '../lib/labels';
+import { listSuppliersWithSource } from '../../api/suppliers';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import { suppliers } from '../../lib/mockData';
+import { AppIcon } from '../../components/AppIcon';
+import { supplierTypeLabels } from '../../lib/labels';
 
 export function SuppliersPage() {
   const [rows, setRows] = useState(suppliers);

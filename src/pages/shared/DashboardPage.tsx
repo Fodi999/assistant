@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getSiteDashboardMetrics } from '../api/admin';
-import { dashboardMetrics, siteConfigs } from '../lib/mockData';
-import type { SiteDashboardMetrics, SiteKey } from '../types/admin';
-import { AppIcon } from '../components/AppIcon';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import { LeadStatusBadge } from '../components/LeadStatusBadge';
-import { priorityLabels, publishStatusLabels, seoStatusLabels } from '../lib/labels';
+import { getSiteDashboardMetrics } from '../../api/admin';
+import { dashboardMetrics, siteConfigs } from '../../lib/mockData';
+import type { SiteDashboardMetrics, SiteKey } from '../../types/admin';
+import { AppIcon } from '../../components/AppIcon';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import { LeadStatusBadge } from '../../components/LeadStatusBadge';
+import { priorityLabels, publishStatusLabels, seoStatusLabels } from '../../lib/labels';
 
 export function DashboardPage({ activeSite }: { activeSite: SiteKey }) {
   const mockMetrics = dashboardMetrics.find((item) => item.site === activeSite) ?? dashboardMetrics[0];

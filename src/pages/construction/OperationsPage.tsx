@@ -1,19 +1,19 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import * as echarts from 'echarts';
-import { AppIcon, type AppIconName } from '../components/AppIcon';
-import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Input } from '../components/ui/input';
-import { ScrollArea } from '../components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Textarea } from '../components/ui/textarea';
-import type { AppPage, ManagedSite } from '../components/Sidebar';
-import { aiEditAlmabuildItem, generateAlmabuildMaterialsFromPhoto, saveAlmabuildContent, type AlmabuildContent, type AlmabuildLead, type Kit, type MaterialCategory, type Product, type Project } from '../api/almabuild';
-import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../api/catalog';
-import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../api/localAdmin';
-import { aiCreateArticleDraft, aiGenerateArticleImage, createArticle, updateArticle } from '../api/cms';
-import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../types/admin';
-import type { AnalyticsOverview, AnalyticsRealtime, SearchConsoleBundle } from '../api/analytics';
+import { AppIcon, type AppIconName } from '../../components/AppIcon';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Input } from '../../components/ui/input';
+import { ScrollArea } from '../../components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { Textarea } from '../../components/ui/textarea';
+import type { AppPage, ManagedSite } from '../../components/Sidebar';
+import { aiEditAlmabuildItem, generateAlmabuildMaterialsFromPhoto, saveAlmabuildContent, type AlmabuildContent, type AlmabuildLead, type Kit, type MaterialCategory, type Product, type Project } from '../../api/almabuild';
+import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../../api/catalog';
+import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../../api/localAdmin';
+import { aiCreateArticleDraft, aiGenerateArticleImage, createArticle, updateArticle } from '../../api/cms';
+import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../../types/admin';
+import type { AnalyticsOverview, AnalyticsRealtime, SearchConsoleBundle } from '../../api/analytics';
 
 interface OperationsPageProps {
   page: AppPage;

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, deleteAdminProduct, deleteProductStates, generateProductStates, getProductDataQuality, listProductStates, publishAdminProduct, saveExtendedProductProfile, unpublishAdminProduct, updateAdminProduct, updateProductState, type AiCreateDraftResponse, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState, type ProductDataQuality } from '../api/catalog';
-import { revalidateSite } from '../api/revalidate';
-import { AiPhotoGallery } from '../components/AiPhotoGallery';
-import type { AdminCategory, AdminProduct } from '../types/admin';
+import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, deleteAdminProduct, deleteProductStates, generateProductStates, getProductDataQuality, listProductStates, publishAdminProduct, saveExtendedProductProfile, unpublishAdminProduct, updateAdminProduct, updateProductState, type AiCreateDraftResponse, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState, type ProductDataQuality } from '../../api/catalog';
+import { revalidateSite } from '../../api/revalidate';
+import { AiPhotoGallery } from '../../components/AiPhotoGallery';
+import type { AdminCategory, AdminProduct } from '../../types/admin';
 
 type CatalogLang = 'ru' | 'en' | 'pl' | 'uk';
 type DraftForm = Omit<CreateAdminProductRequest, 'name_input' | 'auto_translate'>;

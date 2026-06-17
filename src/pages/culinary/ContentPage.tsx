@@ -9,13 +9,13 @@ import {
   updateArticle,
   uploadCmsReference,
   type CmsArticleCategory
-} from '../api/cms';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import { contentArticles, siteLabel } from '../lib/mockData';
-import type { CmsArticle, ContentArticle, ContentType, PublishStatus, SiteKey } from '../types/admin';
-import { AppIcon } from '../components/AppIcon';
-import { contentTypeLabels, publishStatusLabels } from '../lib/labels';
-import { revalidateSite } from '../api/revalidate';
+} from '../../api/cms';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import { contentArticles, siteLabel } from '../../lib/mockData';
+import type { CmsArticle, ContentArticle, ContentType, PublishStatus, SiteKey } from '../../types/admin';
+import { AppIcon } from '../../components/AppIcon';
+import { contentTypeLabels, publishStatusLabels } from '../../lib/labels';
+import { revalidateSite } from '../../api/revalidate';
 
 type Language = 'ru' | 'pl' | 'en' | 'uk';
 

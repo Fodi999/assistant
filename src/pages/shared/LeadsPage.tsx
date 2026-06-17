@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { listLeadsWithSource } from '../api/leads';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import { LeadStatusBadge } from '../components/LeadStatusBadge';
-import { leads } from '../lib/mockData';
-import type { LeadStatus, SiteKey } from '../types/admin';
-import { AppIcon } from '../components/AppIcon';
-import { siteNames } from '../lib/labels';
+import { listLeadsWithSource } from '../../api/leads';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import { LeadStatusBadge } from '../../components/LeadStatusBadge';
+import { leads } from '../../lib/mockData';
+import type { LeadStatus, SiteKey } from '../../types/admin';
+import { AppIcon } from '../../components/AppIcon';
+import { siteNames } from '../../lib/labels';
 
 export function LeadsPage({ activeSite }: { activeSite: SiteKey }) {
   const [site, setSite] = useState<SiteKey | 'all'>(activeSite);

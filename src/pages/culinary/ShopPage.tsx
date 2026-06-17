@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { aiCreateShopProductDraft, createShopProduct, deleteShopProduct, generateShopProductImage, updateShopProductStatus, uploadShopReference } from '../api/shop';
-import { revalidateSite } from '../api/revalidate';
-import { AiPhotoGallery } from '../components/AiPhotoGallery';
-import { AiReferenceUpload, type AiReferenceImage } from '../components/AiReferenceUpload';
-import type { ShopProduct, ShopProductDraft } from '../types/admin';
+import { aiCreateShopProductDraft, createShopProduct, deleteShopProduct, generateShopProductImage, updateShopProductStatus, uploadShopReference } from '../../api/shop';
+import { revalidateSite } from '../../api/revalidate';
+import { AiPhotoGallery } from '../../components/AiPhotoGallery';
+import { AiReferenceUpload, type AiReferenceImage } from '../../components/AiReferenceUpload';
+import type { ShopProduct, ShopProductDraft } from '../../types/admin';
 
 type ShopLang = 'ru' | 'en' | 'pl' | 'uk';
 

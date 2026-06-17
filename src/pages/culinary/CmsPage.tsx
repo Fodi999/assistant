@@ -10,11 +10,11 @@ import {
   type AiArticleDraft,
   type CmsArticleCategory,
   type CmsImageScaleSettings
-} from '../api/cms';
-import { revalidateSite } from '../api/revalidate';
-import type { CmsArticle } from '../types/admin';
-import { AiPhotoGallery } from '../components/AiPhotoGallery';
-import { AiReferenceUpload, type AiReferenceImage } from '../components/AiReferenceUpload';
+} from '../../api/cms';
+import { revalidateSite } from '../../api/revalidate';
+import type { CmsArticle } from '../../types/admin';
+import { AiPhotoGallery } from '../../components/AiPhotoGallery';
+import { AiReferenceUpload, type AiReferenceImage } from '../../components/AiReferenceUpload';
 
 type ArticleLang = 'ru' | 'en' | 'pl' | 'uk';
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { AiGenerationPanel } from '../components/AiGenerationPanel';
-import type { LanguageCode, SiteKey } from '../types/admin';
-import { AppIcon } from '../components/AppIcon';
+import { AiGenerationPanel } from '../../components/AiGenerationPanel';
+import type { LanguageCode, SiteKey } from '../../types/admin';
+import { AppIcon } from '../../components/AppIcon';
 
 export function AiStudioPage({ activeSite }: { activeSite: SiteKey }) {
   const [site, setSite] = useState<SiteKey>(activeSite);

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { listAffiliateProductsWithSource } from '../api/affiliate';
-import { AffiliateProductEditor } from '../components/AffiliateProductEditor';
-import { AffiliateOfferCards } from '../components/AffiliateOfferCards';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import { LanguageChips } from '../components/LanguageChips';
-import { affiliateProducts } from '../lib/mockData';
-import type { AffiliateNetwork, AffiliateProduct, LanguageCode, PublishStatus, SiteKey } from '../types/admin';
-import { AppIcon } from '../components/AppIcon';
-import { publishStatusLabels, siteNames } from '../lib/labels';
+import { listAffiliateProductsWithSource } from '../../api/affiliate';
+import { AffiliateProductEditor } from '../../components/AffiliateProductEditor';
+import { AffiliateOfferCards } from '../../components/AffiliateOfferCards';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import { LanguageChips } from '../../components/LanguageChips';
+import { affiliateProducts } from '../../lib/mockData';
+import type { AffiliateNetwork, AffiliateProduct, LanguageCode, PublishStatus, SiteKey } from '../../types/admin';
+import { AppIcon } from '../../components/AppIcon';
+import { publishStatusLabels, siteNames } from '../../lib/labels';
 
 export function AffiliatePage({ activeSite }: { activeSite: SiteKey }) {
   const [siteFilter, setSiteFilter] = useState<SiteKey | 'all'>(activeSite);

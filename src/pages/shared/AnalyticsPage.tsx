@@ -8,14 +8,14 @@ import {
   type AnalyticsOverview,
   type AnalyticsRealtime,
   type SearchConsoleBundle
-} from '../api/analytics';
-import { listAffiliateProductsWithSource } from '../api/affiliate';
-import { dashboardMetrics } from '../lib/mockData';
-import type { AffiliateProduct, SiteKey } from '../types/admin';
-import { AppIcon } from '../components/AppIcon';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import { siteNames } from '../lib/labels';
-import { cn } from '../lib/utils';
+} from '../../api/analytics';
+import { listAffiliateProductsWithSource } from '../../api/affiliate';
+import { dashboardMetrics } from '../../lib/mockData';
+import type { AffiliateProduct, SiteKey } from '../../types/admin';
+import { AppIcon } from '../../components/AppIcon';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import { siteNames } from '../../lib/labels';
+import { cn } from '../../lib/utils';
 
 type ChartMode = 'traffic' | 'revenue' | 'search';
 type Period = 7 | 28 | 90;

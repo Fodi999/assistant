@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
-import { listBundles, listMaterials } from '../api/construction';
-import { listLeadsWithSource } from '../api/leads';
-import { listSuppliersWithSource } from '../api/suppliers';
-import { BundleEditor } from '../components/BundleEditor';
-import { ConstructionCalculatorEditor } from '../components/ConstructionCalculatorEditor';
-import { DataSourceBadge, type DataSource } from '../components/DataSourceBadge';
-import { LeadStatusBadge } from '../components/LeadStatusBadge';
-import { constructionBundles, constructionMaterials, leads, suppliers } from '../lib/mockData';
-import { AppIcon } from '../components/AppIcon';
-import { supplierTypeLabels } from '../lib/labels';
-import type { ConstructionBundle, ConstructionMaterial, Lead, Supplier } from '../types/admin';
+import { listBundles, listMaterials } from '../../api/construction';
+import { listLeadsWithSource } from '../../api/leads';
+import { listSuppliersWithSource } from '../../api/suppliers';
+import { BundleEditor } from '../../components/BundleEditor';
+import { ConstructionCalculatorEditor } from '../../components/ConstructionCalculatorEditor';
+import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
+import { LeadStatusBadge } from '../../components/LeadStatusBadge';
+import { constructionBundles, constructionMaterials, leads, suppliers } from '../../lib/mockData';
+import { AppIcon } from '../../components/AppIcon';
+import { supplierTypeLabels } from '../../lib/labels';
+import type { ConstructionBundle, ConstructionMaterial, Lead, Supplier } from '../../types/admin';
 
 type Tab = 'materials' | 'calculator' | 'bundles' | 'suppliers' | 'leads';
 

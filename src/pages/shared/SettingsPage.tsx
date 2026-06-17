@@ -1,5 +1,5 @@
-import { siteConfigs } from '../lib/mockData';
-import { AppIcon } from '../components/AppIcon';
+import { siteConfigs } from '../../lib/mockData';
+import { AppIcon } from '../../components/AppIcon';
 
 export function SettingsPage() {
   return (

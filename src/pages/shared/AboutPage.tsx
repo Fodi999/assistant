@@ -1,4 +1,4 @@
-import { AppIcon } from '../components/AppIcon';
+import { AppIcon } from '../../components/AppIcon';
 
 export function AboutPage() {
   return (
