@@ -156,6 +156,70 @@ pub struct ChurchPage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CalendarHero {
+    pub year: String,
+    pub title: String,
+    pub month_title: String,
+    pub prev_label: String,
+    pub prev_href: String,
+    pub next_label: String,
+    pub next_href: String,
+    pub feature_title: String,
+    pub feature_note: String,
+    pub feature_date: String,
+    pub feature_href: String,
+    pub icon_day_title: String,
+    pub icon_day_icon_slug: String,
+    pub icon_day_date: String,
+    pub icon_day_prayer_slug: String,
+    pub info_primary: String,
+    pub info_secondary: String,
+    pub today_date: String,
+    pub today_gospel: String,
+    pub today_prayer_title: String,
+    pub today_href: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarDay {
+    pub id: String,
+    pub day: String,
+    pub label: String,
+    pub note: String,
+    pub kind: String,
+    #[serde(default)]
+    pub image_url: String,
+    pub icon_slug: String,
+    pub prayer_slug: String,
+    pub gospel_slug: String,
+    pub detail_href: String,
+    pub current: bool,
+    pub feast: bool,
+    pub text_only: bool,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarServiceCard {
+    pub id: String,
+    pub index: String,
+    pub title: String,
+    pub description: String,
+    pub href: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarContent {
+    pub hero: CalendarHero,
+    pub days: Vec<CalendarDay>,
+    pub services: Vec<CalendarServiceCard>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Dashboard {
     pub published_pages: i64,
     pub icons: i64,
@@ -176,11 +240,84 @@ pub struct IconsSiteContent {
     pub pages: Vec<SeoPage>,
     pub qr_pages: Vec<QrPage>,
     pub churches: Vec<ChurchPage>,
+    #[serde(default = "default_calendar")]
+    pub calendar: CalendarContent,
     pub dashboard: Dashboard,
 }
 
 fn now() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+fn default_calendar() -> CalendarContent {
+    let day = |day: &str, label: &str, note: &str, kind: &str, icon_slug: &str, current: bool, feast: bool, text_only: bool, description: &str| CalendarDay {
+        id: format!("calendar-jan-{day}"),
+        day: day.into(),
+        label: label.into(),
+        note: note.into(),
+        kind: kind.into(),
+        image_url: String::new(),
+        icon_slug: icon_slug.into(),
+        prayer_slug: "molitva-kazanskoy-ikone".into(),
+        gospel_slug: "today".into(),
+        detail_href: if icon_slug.is_empty() { "/icons".into() } else { format!("/icons/{icon_slug}") },
+        current,
+        feast,
+        text_only,
+        description: description.into(),
+    };
+
+    CalendarContent {
+        hero: CalendarHero {
+            year: "2026".into(),
+            title: "Свет Иконы".into(),
+            month_title: "Январь 2026".into(),
+            prev_label: "← Декабрь".into(),
+            prev_href: "#".into(),
+            next_label: "Февраль →".into(),
+            next_href: "#".into(),
+            feature_title: "Святитель Василий Великий".into(),
+            feature_note: "Память святого".into(),
+            feature_date: "14 января (ст. ст.)".into(),
+            feature_href: "/saints/nikolay-chudotvorets".into(),
+            icon_day_title: "Икона святителя Николая Чудотворца".into(),
+            icon_day_icon_slug: "nikolay-chudotvorets".into(),
+            icon_day_date: "14 января 2026".into(),
+            icon_day_prayer_slug: "molitva-kazanskoy-ikone".into(),
+            info_primary: "Сегодняшний праздник".into(),
+            info_secondary: "Важный день".into(),
+            today_date: "14 января 2026".into(),
+            today_gospel: "Мф. 5:14-16".into(),
+            today_prayer_title: "Молитва перед Казанской иконой Божией Матери".into(),
+            today_href: "/gospel".into(),
+        },
+        days: vec![
+            day("01", "Обрезание Господне", "Праздник", "feast", "kazan-icon", true, false, false, "Память события и начало годового молитвенного круга."),
+            day("02", "", "", "quiet", "", false, false, true, ""),
+            day("03", "Икона Божией Матери «Казанская»", "Праздничная икона", "feast", "kazan-icon", false, true, false, "Молитва о семье, мире и укреплении в вере."),
+            day("04", "Святитель Николай Чудотворец", "Память святого", "feast", "nikolay-chudotvorets", false, false, false, "Почитание святого, помощника в пути и нужде."),
+            day("05", "", "", "quiet", "", false, false, true, ""),
+            day("06", "Крещение Господне", "Праздник", "feast", "kazan-icon", true, false, false, "Воспоминание Богоявления и освящения вод."),
+            day("07", "Рождество Христово", "Празднество", "fast", "nikolay-chudotvorets", false, true, false, "Праздничное чтение и домашняя молитва."),
+            day("08", "", "", "quiet", "", false, false, true, ""),
+            day("09", "Блаженная Матрона Московская", "Память святой", "prayer", "kazan-icon", false, false, false, "Молитва о помощи в житейских обстоятельствах."),
+            day("10", "", "", "quiet", "", false, false, true, ""),
+            day("11", "Великомученик Пантелеимон", "Память святого", "prayer", "nikolay-chudotvorets", false, false, false, "Молитвенное обращение о болящих."),
+            day("12", "", "", "quiet", "", false, false, true, ""),
+            day("13", "Собор Предтечи и Крестителя Господня Иоанна", "Память святого", "feast", "nikolay-chudotvorets", false, false, false, "День молитвенного почитания Предтечи."),
+            day("14", "Святитель Василий Великий", "Память святого", "feast", "nikolay-chudotvorets", true, false, false, "Память святителя и учителя Церкви."),
+            day("15", "", "", "quiet", "", false, false, true, ""),
+            day("16", "Икона Божией Матери «Умиление»", "Праздничная икона", "feast", "kazan-icon", false, false, false, "Молитва о мире сердца и покаянии."),
+            day("17", "", "", "quiet", "", false, false, true, ""),
+            day("18", "Неделя 32-я по Пятидесятнице", "Евангельское чтение", "gospel", "kazan-icon", false, false, false, "Чтение напоминает о тихом свидетельстве веры через добрые дела."),
+        ],
+        services: vec![
+            CalendarServiceCard { id: "service-prayers".into(), index: "01".into(), title: "Молитвы на каждый день".into(), description: "Краткое правило и молитвы перед иконой.".into(), href: "/prayers".into() },
+            CalendarServiceCard { id: "service-gospel".into(), index: "02".into(), title: "Евангелие дня".into(), description: "Чтение, ссылка и спокойное объяснение.".into(), href: "/gospel".into() },
+            CalendarServiceCard { id: "service-feasts".into(), index: "03".into(), title: "Праздники и посты".into(), description: "Церковные даты, важные дни и отметки.".into(), href: "/p/pravoslavnaya-ikona-s-qr-kodom".into() },
+            CalendarServiceCard { id: "service-icons".into(), index: "04".into(), title: "Иконы святых".into(), description: "История образов, жития и QR-страницы.".into(), href: "/icons".into() },
+        ],
+    }
 }
 
 fn default_content() -> IconsSiteContent {
@@ -196,6 +333,7 @@ fn default_content() -> IconsSiteContent {
         pages: vec![],
         qr_pages: vec![QrPage { id: "qr-home-001".into(), qr_id: "home-001".into(), icon_id: "icon-kazan".into(), slug: "home-001".into(), title: "Домашняя Казанская икона".into(), owner_name: Some("Семейная икона".into()), location: Some("Домашний киот".into()), custom_prayer: Some("Помяни, Господи, нашу семью и помоги нам жить в мире.".into()), active: true, scan_count: 128, created_at: now.clone(), updated_at: now.clone() }],
         churches: vec![],
+        calendar: default_calendar(),
         dashboard: Dashboard { published_pages: 12, icons: 2, prayers: 1, qr_pages: 1, qr_scans: 128, latest_pages: vec![], seo: vec![] },
     }
 }
