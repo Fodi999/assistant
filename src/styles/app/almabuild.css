@@ -1,0 +1,288 @@
+.almabuild-page {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.almabuild-hero,
+.almabuild-panel,
+.almabuild-edit-card,
+.site-preview {
+  border: 4px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.almabuild-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 16px;
+  align-items: start;
+  padding: 18px;
+}
+
+.almabuild-hero h2,
+.almabuild-panel h2,
+.almabuild-edit-card h3 {
+  margin: 0;
+}
+
+.almabuild-hero p,
+.section-note,
+.site-preview p,
+.almabuild-field small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.almabuild-actions,
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.almabuild-actions {
+  justify-content: flex-end;
+}
+
+.almabuild-actions .btn {
+  min-width: 132px;
+}
+
+.almabuild-alert {
+  border: 1px solid rgba(34,197,94,.38);
+  border-radius: var(--radius);
+  background: rgba(34,197,94,.08);
+  color: #bbf7d0;
+  padding: 10px 12px;
+  font-weight: 850;
+}
+
+.almabuild-alert.error {
+  border-color: rgba(239,68,68,.44);
+  background: rgba(127,29,29,.24);
+  color: #fecaca;
+}
+
+.almabuild-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.almabuild-map a {
+  min-height: 58px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.almabuild-map a:hover {
+  color: var(--text);
+  border-color: rgba(96,113,149,.55);
+}
+
+.almabuild-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.section-head > div {
+  min-width: min(520px, 100%);
+  display: grid;
+  gap: 5px;
+}
+
+.almabuild-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.almabuild-card-list.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.almabuild-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.almabuild-edit-card {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  background: #111114;
+  min-width: 0;
+}
+
+.edit-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 10px;
+  align-items: start;
+}
+
+.edit-card-head span {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 5px;
+}
+
+.edit-card-head h3 {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.icon-danger {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(239,68,68,.38);
+  border-radius: var(--radius);
+  background: rgba(127,29,29,.26);
+  color: #fecaca;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.almabuild-form-grid {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.almabuild-form-grid.categories {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.almabuild-form-grid.products {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.almabuild-form-grid.one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.almabuild-field {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+
+.almabuild-field.wide {
+  grid-column: 1 / -1;
+}
+
+.almabuild-field > span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.almabuild-field input,
+.almabuild-field select,
+.almabuild-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #09090b;
+  color: var(--text);
+  padding: 10px 11px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.almabuild-field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.almabuild-field input:focus,
+.almabuild-field select:focus,
+.almabuild-field textarea:focus {
+  outline: none;
+  border-color: rgba(123,140,175,.82);
+  box-shadow: 0 0 0 2px rgba(123,140,175,.14);
+}
+
+.site-preview {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: rgba(96,113,149,.1);
+  border-width: 2px;
+}
+
+.site-preview span {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.site-preview strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.site-preview.small {
+  min-height: 92px;
+}
+
+@media (max-width: 1300px) {
+  .almabuild-map,
+  .almabuild-card-list.compact,
+  .almabuild-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .almabuild-form-grid.categories,
+  .almabuild-form-grid.products {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .almabuild-hero,
+  .almabuild-map,
+  .almabuild-card-list.compact,
+  .almabuild-grid,
+  .almabuild-form-grid.categories,
+  .almabuild-form-grid.products {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .almabuild-actions {
+    justify-content: stretch;
+  }
+
+  .almabuild-actions .btn {
+    width: 100%;
+  }
+}
