@@ -139,6 +139,38 @@ fn generation_prompt(req: &AiGenerationRequest, route_kind: &str) -> String {
     let generation_type = req.generation_type.as_str();
     let tone = req.tone.as_deref().unwrap_or("seo");
 
+    if req.site == "icons" {
+        return format!(
+            r#"Ты православный редактор, факт-чекер и SEO ассистент админ-панели "Свет Иконы".
+Сайт: {business_model}
+Язык результата: {language}
+Тип генерации: {generation_type}
+Endpoint: {route_kind}
+Тон: {tone}
+
+Контекст администратора:
+{context}
+
+Верни ТОЛЬКО JSON без markdown:
+{{
+  "title": "точное церковное или редакционное название страницы",
+  "description": "полноценный православный материал 4500-7000 знаков с разделами: Краткое описание, Полное описание, История образа, В чем помогает, Как молиться, Молитва перед иконой, Евангельская связка, SEO title, SEO description",
+  "slug": "latin-url-slug",
+  "photoPrompt": "English prompt for faithful Orthodox icon restoration/generation from reference: preserve subject, composition, colors, halo/riza, sacred icon style; no photorealistic people, no church interior scene, no typography, no watermark",
+  "qualityScore": 0,
+  "suggestions": ["какие факты сверить перед публикацией", "что добавить: молитва, источник, дата памяти, QR"]
+}}
+
+Правила:
+- Пиши как православный справочник и музейный каталог: спокойно, точно, благоговейно.
+- Не делай короткую карточку. Нужен длинный текст страницы: история, смысл, о чем молятся, как молиться, молитва.
+- Не выдумывай явления, даты, чудеса, авторство и канонические детали. Если данных нет, пиши осторожно и предложи проверить источник.
+- Молитва должна быть перед конкретным образом/святым, без обещаний гарантированного результата и без суеверий.
+- Для икон объясняй, что молитва обращена к Господу, Богородице или святому, а не к материалу изображения.
+- Slug только латиницей lower-case через дефис."#,
+        );
+    }
+
     format!(
         r#"Ты контент-редактор и performance SEO ассистент админ-панели.
 Сайт и модель заработка: {business_model}
@@ -318,11 +350,56 @@ pub async fn vision_from_photo(
         .ok();
     let business_model = if site == "construction" {
         "строительный сайт: affiliate + калькулятор + заявки + поставщики + комплекты материалов/работ"
+    } else if site == "icons" {
+        "православный сайт Свет Иконы: каталог икон, молитвы, святые, календарь, QR-страницы и SEO"
     } else {
         "кулинарный сайт: affiliate + статьи + обзоры"
     };
-    let prompt = format!(
-        r#"Ты Gemini Vision для админ-панели коммерческих сайтов.
+    let prompt = if site == "icons" {
+        format!(
+            r#"Ты Gemini Vision для православной админ-панели "Свет Иконы".
+Модель сайта: {business_model}
+Язык результата: {language}
+Инструкция администратора: {instruction}
+
+Проанализируй загруженное фото как православную икону, церковный образ или фрагмент святого изображения.
+Определи, если можно без выдумки:
+- кто изображен или какой праздник/сюжет;
+- тип иконографии, композицию, жесты, нимбы, ризы, цвета, фон, надписи, состояние изображения;
+- категорию: Богородичные, Господские, Святые, Праздничные, Ангелы, Другое;
+- основу для SEO-страницы, истории, духовного смысла и молитвы.
+
+Верни ТОЛЬКО JSON без markdown:
+{{
+  "title": "точное название образа или осторожное рабочее название",
+  "description": "подробный материал 2500-4500 знаков с разделами: Краткое описание, История образа, В чем помогает, Как молиться, Молитва перед иконой",
+  "category": "категория",
+  "slug": "latin-url-slug",
+  "priceHint": "",
+  "materials": [],
+  "affiliateProducts": [],
+  "articleIdeas": [{{"title":"идея православной страницы", "type":"icon|prayer|calendar"}}],
+  "seoTitle": "SEO title",
+  "seoDescription": "SEO description",
+  "suggestions": ["что проверить: название, дата памяти, источник молитвы, качество изображения"]
+}}
+
+Правила:
+- Не превращай икону в интерьерную фотографию с candles/church. Главный объект — сам образ и его иконография.
+- Не выдумывай имя святого, если не уверен; лучше укажи осторожность в suggestions.
+- Молитва должна быть благоговейной и конкретной к изображенному Господу, Богородице или святому.
+- Slug только латиницей."#,
+            business_model = business_model,
+            language = language,
+            instruction = if instruction.trim().is_empty() {
+                "Создай заготовку православной страницы по фото."
+            } else {
+                instruction.trim()
+            }
+        )
+    } else {
+        format!(
+            r#"Ты Gemini Vision для админ-панели коммерческих сайтов.
 Модель сайта: {business_model}
 Язык результата: {language}
 Инструкция администратора: {instruction}
@@ -348,14 +425,15 @@ pub async fn vision_from_photo(
 - Если это кухонный товар или еда, дай affiliate/обзор/статья.
 - Не придумывай бренд, цену, сертификаты и точные характеристики, если они не видны.
 - Slug только латиницей."#,
-        business_model = business_model,
-        language = language,
-        instruction = if instruction.trim().is_empty() {
-            "Создай заготовки для админки по фото."
-        } else {
-            instruction.trim()
-        }
-    );
+            business_model = business_model,
+            language = language,
+            instruction = if instruction.trim().is_empty() {
+                "Создай заготовки для админки по фото."
+            } else {
+                instruction.trim()
+            }
+        )
+    };
     let raw = llm.analyze_image_json(&prompt, &image, &mime_type).await?;
     let parsed: Value = serde_json::from_str(strip_json_fence(&raw))
         .map_err(|e| AppError::internal(format!("Gemini Vision returned invalid JSON: {e}")))?;
@@ -431,7 +509,35 @@ pub async fn generate_image(
     }
     let scene = req.scene.as_deref().unwrap_or("commercial editorial image");
     let image_type = req.image_type.as_deref().unwrap_or("auto");
-    let base64 = if req.site == "construction" || image_type == "construction" {
+    let base64 = if req.site == "icons" {
+        let icon_scene = format!(
+            r#"Orthodox icon generation/restoration task.
+Title: {title}
+Scene/instruction: {scene}
+Description: {description}
+Reference URLs: {refs}
+
+Use the reference image as strict iconographic source when provided. Preserve the same saint/feast, gestures, composition, colors, halo, riza, face proportions, border and sacred icon style. Improve clarity and detail only. Do not create a photorealistic church/candle scene. Do not add readable text, logos or watermarks."#,
+            title = title,
+            scene = scene,
+            description = req.description.as_deref().unwrap_or(""),
+            refs = if req.reference_urls.is_empty() {
+                "none".to_string()
+            } else {
+                req.reference_urls.join(", ")
+            }
+        );
+        llm.generate_blog_article_image(
+            title,
+            &icon_scene,
+            1,
+            false,
+            &req.reference_urls,
+            "orthodox-icon-restoration",
+            "faithful iconographic scale",
+        )
+        .await?
+    } else if req.site == "construction" || image_type == "construction" {
         llm.generate_construction_project_image(
             title,
             req.description.as_deref().unwrap_or(""),
@@ -440,7 +546,7 @@ pub async fn generate_image(
             req.enhanced.unwrap_or(false),
             &req.reference_urls,
         )
-            .await?
+        .await?
     } else if image_type == "article" || image_type == "review" {
         llm.generate_blog_article_image(
             title,
