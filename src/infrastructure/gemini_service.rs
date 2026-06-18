@@ -391,6 +391,58 @@ Visual requirements:
         scene_preset: &str,
         scale_direction: &str,
     ) -> Result<String, AppError> {
+        if scene_preset == "orthodox-icon-restoration" {
+            let reference_contract = if reference_urls.is_empty() {
+                r#"REFERENCE STATUS:
+- No visual reference was supplied. Create a traditional Orthodox icon based only on the subject and instruction."#
+            } else {
+                r#"REFERENCE ICON CONTRACT — HIGHEST PRIORITY:
+- Treat the uploaded reference image as the exact iconographic source, not as loose inspiration.
+- Preserve the same saint or feast, figures, gestures, composition, halos, garments, riza, colors, border proportions and sacred icon style.
+- Improve clarity, crop, light balance, color depth and fine detail only.
+- Do not create a new church interior, candle scene, realistic photograph, modern portrait or unrelated icon.
+- Do not add readable inscriptions, logos, watermarks or UI."#
+            };
+            let prompt = format!(
+                r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
+
+Create a faithful Orthodox icon image for "{article_title}".
+Admin instruction: {scene}
+Scale and style: {scale_direction}
+
+{reference_contract}
+
+STYLE STANDARD:
+- traditional Orthodox iconography, flat sacred perspective, egg tempera and gold leaf feel
+- reverent museum-quality restoration, high detail, clear composition
+- cream/gold/deep natural pigments, calm liturgical mood
+- image suitable for a Orthodox icon catalog page
+
+STRICTLY EXCLUDE:
+- photorealistic people, church interior photo as main subject, random candles, stock-photo look
+- readable text, captions, logos, watermarks, UI
+- distorted faces, extra hands, invented figures, changed subject"#,
+                article_title = article_title,
+                scene = scene,
+                scale_direction = scale_direction,
+                reference_contract = reference_contract,
+            );
+            let model = if enhanced {
+                &self.recipe_hero_image_model
+            } else {
+                &self.recipe_image_model
+            };
+            return self
+                .generate_image_from_prompt_with_references(
+                    &prompt,
+                    article_title,
+                    "orthodox icon",
+                    model,
+                    reference_urls,
+                )
+                .await;
+        }
+
         let commerce_product_mode = scene_preset == "delivery-product"
             || (!reference_urls.is_empty() && scene_preset != "cooking-process");
         let role = match (commerce_product_mode, variant) {

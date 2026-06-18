@@ -154,7 +154,7 @@ Endpoint: {route_kind}
 Верни ТОЛЬКО JSON без markdown:
 {{
   "title": "точное церковное или редакционное название страницы",
-  "description": "полноценный православный материал 4500-7000 знаков с разделами: Краткое описание, Полное описание, История образа, В чем помогает, Как молиться, Молитва перед иконой, Евангельская связка, SEO title, SEO description",
+  "description": "полноценный православный материал 3000-4500 знаков с разделами: Краткое описание, Полное описание, История образа, В чем помогает, Как молиться, Молитва перед иконой, Евангельская связка, SEO title, SEO description",
   "slug": "latin-url-slug",
   "photoPrompt": "English prompt for faithful Orthodox icon restoration/generation from reference: preserve subject, composition, colors, halo/riza, sacred icon style; no photorealistic people, no church interior scene, no typography, no watermark",
   "qualityScore": 0,
@@ -163,7 +163,7 @@ Endpoint: {route_kind}
 
 Правила:
 - Пиши как православный справочник и музейный каталог: спокойно, точно, благоговейно.
-- Не делай короткую карточку. Нужен длинный текст страницы: история, смысл, о чем молятся, как молиться, молитва.
+- Не делай короткую карточку. Нужен подробный текст страницы: история, смысл, о чем молятся, как молиться, молитва.
 - Не выдумывай явления, даты, чудеса, авторство и канонические детали. Если данных нет, пиши осторожно и предложи проверить источник.
 - Молитва должна быть перед конкретным образом/святым, без обещаний гарантированного результата и без суеверий.
 - Для икон объясняй, что молитва обращена к Господу, Богородице или святому, а не к материалу изображения.
@@ -208,8 +208,9 @@ async fn generate_ai(
     route_kind: &str,
 ) -> Result<Json<AiGenerationResult>, AppError> {
     let prompt = generation_prompt(&req, route_kind);
+    let max_tokens = if req.site == "icons" { 9000 } else { 4500 };
     let raw = llm
-        .groq_raw_request_with_model(&prompt, 4500, "gemini-3.1-pro-preview")
+        .groq_raw_request_with_model(&prompt, max_tokens, "gemini-3.1-pro-preview")
         .await?;
     let parsed: Value = serde_json::from_str(strip_json_fence(&raw))
         .map_err(|e| AppError::internal(format!("Gemini returned invalid JSON: {e}")))?;
@@ -511,16 +512,22 @@ pub async fn generate_image(
     let image_type = req.image_type.as_deref().unwrap_or("auto");
     let base64 = if req.site == "icons" {
         let icon_scene = format!(
-            r#"Orthodox icon generation/restoration task.
-Title: {title}
-Scene/instruction: {scene}
-Description: {description}
+            r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions or article text.
+
+Orthodox icon restoration/generation task.
+Subject: {title}
+Instruction: {scene}
 Reference URLs: {refs}
 
-Use the reference image as strict iconographic source when provided. Preserve the same saint/feast, gestures, composition, colors, halo, riza, face proportions, border and sacred icon style. Improve clarity and detail only. Do not create a photorealistic church/candle scene. Do not add readable text, logos or watermarks."#,
+If a reference image is attached, use it as the strict iconographic source:
+- preserve the same saint or feast, figures, gestures, composition, halos, riza, colors, border proportions and sacred icon style;
+- improve only clarity, crop, light, color and fine detail;
+- do not redesign the image and do not replace it with a church interior, candle photo or realistic people.
+
+Visual style: traditional Orthodox icon, flat sacred iconography, egg tempera and gold leaf feel, reverent museum-quality restoration, high detail.
+Forbidden: readable text, logos, watermarks, UI, photorealistic human portrait, random church scene, random candles as the main subject."#,
             title = title,
             scene = scene,
-            description = req.description.as_deref().unwrap_or(""),
             refs = if req.reference_urls.is_empty() {
                 "none".to_string()
             } else {
