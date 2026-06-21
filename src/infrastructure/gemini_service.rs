@@ -448,26 +448,23 @@ STRICTLY EXCLUDE:
                 .unwrap_or_else(|_| "gemini-3.1-flash-image".to_string());
             let reference_contract = if reference_urls.is_empty() {
                 r#"REFERENCE STATUS:
-- No visual reference was supplied. Create an interactive Orthodox prayer icon product mockup based on the subject and instruction."#
+- No visual reference was supplied. Create a realistic premium product mockup based on the admin instruction."#
             } else if reference_urls.len() == 1 {
-                r#"REFERENCE PRODUCT MOCKUP CONTRACT — HIGHEST PRIORITY:
-- Reference Image 1 is the product mockup template: wooden frame, lighting, QR module, phone, button, composition and product style.
-- Keep the product/mockup structure from Reference Image 1.
-- If no second sacred artwork reference was supplied, use the article subject from the admin instruction as the framed icon content."#
+                r#"REFERENCE CONTRACT:
+- Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
+- Keep the product/mockup structure from Reference 1."#
             } else {
-                r#"REFERENCE PRODUCT MOCKUP CONTRACT — HIGHEST PRIORITY:
-- Use Reference Image 1 ONLY as the product mockup template: wooden frame, lighting, QR module, phone, button, composition and product style.
-- Use Reference Image 2 as the EXACT sacred icon artwork that must be placed inside the wooden frame.
-- Sacred artwork to insert: Reference Image 2.
-- Do NOT generate a new Virgin Mary icon.
-- Do NOT change the sacred image, replace the icon content, reinterpret the religious artwork, or invent another saint or scene.
-- Preserve Reference Image 2's original composition, figures, colors and text as much as possible.
-- Only adapt the perspective, crop and lighting so it fits naturally inside the product frame."#
+                r#"REFERENCE CONTRACT:
+- Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
+- Place Reference 2 inside the framed artwork area.
+- Keep Reference 2 visually recognizable and preserve its composition, colors and details.
+- Adjust only perspective, crop and lighting so it fits naturally inside the frame.
+- Keep all product elements from Reference 1 unchanged."#
             };
             let prompt = format!(
                 r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
 
-Create a premium interactive Orthodox icon product mockup for "{article_title}".
+Create a product mockup using the provided references.
 Admin instruction: {scene}
 Scale and style: {scale_direction}
 
@@ -480,15 +477,24 @@ PRODUCT DETAILS TO INCLUDE WHEN APPROPRIATE:
 - optional phone/audio prayer presentation if it is requested by the admin instruction
 - clean catalog composition, realistic object proportions, high detail, 4K-quality look
 
-STRICTLY EXCLUDE:
-- readable new inscriptions, captions, logos, watermarks or UI
-- unrelated church interiors, random candles, photorealistic live people
-- changed sacred subject, invented figures, distorted faces or hands
-- redrawn or reinterpreted religious artwork when Reference Image 2 is supplied"#,
-                article_title = article_title,
+Avoid adding readable new text, logos, watermarks, UI captions or marketing text.
+Output: realistic premium product photo."#,
                 scene = scene,
                 scale_direction = scale_direction,
                 reference_contract = reference_contract,
+            );
+            let fallback_prompt = format!(
+                r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
+
+Replace only the artwork inside the wooden icon frame with Reference 2.
+Keep everything else from Reference 1: frame, QR module, button, phone, lighting and composition.
+Do not redraw the inserted artwork.
+Preserve Reference 2 composition and details.
+Fit Reference 2 naturally into the frame with correct perspective and light.
+
+Admin instruction: {scene}
+Output: realistic premium product photo."#,
+                scene = scene,
             );
             let result = self
                 .generate_image_from_prompt_with_references(
@@ -507,7 +513,7 @@ STRICTLY EXCLUDE:
                 );
                 return self
                     .generate_image_from_prompt_with_references(
-                        &prompt,
+                        &fallback_prompt,
                         article_title,
                         "orthodox icon product mockup fallback",
                         "gemini-2.5-flash-image",

@@ -514,29 +514,20 @@ pub async fn generate_image(
         let icon_scene = format!(
             r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions or article text.
 
-Orthodox interactive icon product mockup task.
-Subject: {title}
-Instruction: {scene}
+Product mockup task.
 Reference URLs: {refs}
 
 Reference contract:
-- Use Reference Image 1 ONLY as the product mockup template: wooden frame, lighting, QR module, phone, button, composition and product style.
-- Use Reference Image 2 as the EXACT sacred icon artwork that must be placed inside the wooden frame.
-- Sacred artwork to insert: Reference Image 2, "{title}".
+- Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
+- Place Reference 2 inside the framed artwork area.
 
-Hard rules:
-- Replace only the artwork inside the wooden icon frame with Reference Image 2.
-- Keep everything else from Reference Image 1: frame, QR module, phone, button, lighting and composition.
-- Do NOT redraw or reinterpret the sacred artwork.
-- Do NOT generate a new Virgin Mary icon.
-- Do NOT change the sacred image, replace the icon content, or invent another saint or scene.
-- Preserve Reference Image 2's original composition, figures, colors and text as much as possible.
-- Only adapt the perspective, crop and lighting so it fits naturally inside the product frame.
-- Do not add readable new inscriptions, logos, watermarks, UI captions, or marketing text.
+Instructions:
+- Keep Reference 2 visually recognizable and preserve its composition, colors and details.
+- Adjust only perspective, crop and lighting so it fits naturally inside the frame.
+- Keep all product elements from Reference 1 unchanged.
+- Avoid adding readable new text, logos, watermarks, UI captions or marketing text.
 
-Visual style: realistic product photo mockup, luxury Orthodox interactive icon, warm light, high detail, clean catalog composition."#,
-            title = title,
-            scene = scene,
+Output: realistic premium product photo."#,
             refs = if req.reference_urls.is_empty() {
                 "none".to_string()
             } else {
