@@ -443,6 +443,54 @@ STRICTLY EXCLUDE:
                 .await;
         }
 
+        if scene_preset == "orthodox-icon-product-mockup" {
+            let reference_contract = if reference_urls.is_empty() {
+                r#"REFERENCE STATUS:
+- No visual reference was supplied. Create an interactive Orthodox prayer icon product mockup based on the subject and instruction."#
+            } else {
+                r#"REFERENCE PRODUCT MOCKUP CONTRACT — HIGHEST PRIORITY:
+- Reference 1 is the original sacred icon artwork. It must become the visible icon inside the product frame/mockup.
+- If other references show a product mockup, wood frame, QR module, phone/audio interface, stand, lighting, or camera angle, use those only as product-format references.
+- If a product/mockup reference contains a different sacred artwork, replace that artwork with Reference 1.
+- Preserve Reference 1's saint or feast, figures, gestures, composition, halos, clothing colors, border proportions and sacred icon style.
+- Do not replace Reference 1 with a generic Mother of God, another saint, church interior, candle photo, or realistic people."#
+            };
+            let prompt = format!(
+                r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
+
+Create a premium Orthodox interactive prayer icon product mockup for "{article_title}".
+Admin instruction: {scene}
+Scale and style: {scale_direction}
+
+{reference_contract}
+
+PRODUCT DETAILS TO INCLUDE WHEN APPROPRIATE:
+- carved or wooden standing icon frame
+- warm edge light or soft product lighting
+- QR module or QR plate near the icon
+- optional phone/audio prayer presentation if it is requested by the admin instruction
+- clean catalog composition, realistic object proportions, high detail, 4K-quality look
+
+STRICTLY EXCLUDE:
+- readable new inscriptions, captions, logos, watermarks or UI
+- unrelated church interiors, random candles, photorealistic live people
+- changed sacred subject, invented figures, distorted faces or hands"#,
+                article_title = article_title,
+                scene = scene,
+                scale_direction = scale_direction,
+                reference_contract = reference_contract,
+            );
+            return self
+                .generate_image_from_prompt_with_references(
+                    &prompt,
+                    article_title,
+                    "orthodox icon product mockup",
+                    &self.recipe_image_model,
+                    reference_urls,
+                )
+                .await;
+        }
+
         let commerce_product_mode = scene_preset == "delivery-product"
             || (!reference_urls.is_empty() && scene_preset != "cooking-process");
         let role = match (commerce_product_mode, variant) {
