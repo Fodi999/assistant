@@ -449,18 +449,25 @@ STRICTLY EXCLUDE:
             let reference_contract = if reference_urls.is_empty() {
                 r#"REFERENCE STATUS:
 - No visual reference was supplied. Create an interactive Orthodox prayer icon product mockup based on the subject and instruction."#
+            } else if reference_urls.len() == 1 {
+                r#"REFERENCE PRODUCT MOCKUP CONTRACT — HIGHEST PRIORITY:
+- Reference Image 1 is the product mockup template: wooden frame, lighting, QR module, phone, button, composition and product style.
+- Keep the product/mockup structure from Reference Image 1.
+- If no second sacred artwork reference was supplied, use the article subject from the admin instruction as the framed icon content."#
             } else {
                 r#"REFERENCE PRODUCT MOCKUP CONTRACT — HIGHEST PRIORITY:
-- Reference 1 is the original sacred icon artwork. It must become the visible icon inside the product frame/mockup.
-- If other references show a product mockup, wood frame, QR module, phone/audio interface, stand, lighting, or camera angle, use those only as product-format references.
-- If a product/mockup reference contains a different sacred artwork, replace that artwork with Reference 1.
-- Preserve Reference 1's saint or feast, figures, gestures, composition, halos, clothing colors, border proportions and sacred icon style.
-- Do not replace Reference 1 with a generic Mother of God, another saint, church interior, candle photo, or realistic people."#
+- Use Reference Image 1 ONLY as the product mockup template: wooden frame, lighting, QR module, phone, button, composition and product style.
+- Use Reference Image 2 as the EXACT sacred icon artwork that must be placed inside the wooden frame.
+- Sacred artwork to insert: Reference Image 2.
+- Do NOT generate a new Virgin Mary icon.
+- Do NOT change the sacred image, replace the icon content, reinterpret the religious artwork, or invent another saint or scene.
+- Preserve Reference Image 2's original composition, figures, colors and text as much as possible.
+- Only adapt the perspective, crop and lighting so it fits naturally inside the product frame."#
             };
             let prompt = format!(
                 r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
 
-Create a premium Orthodox interactive prayer icon product mockup for "{article_title}".
+Create a premium interactive Orthodox icon product mockup for "{article_title}".
 Admin instruction: {scene}
 Scale and style: {scale_direction}
 
@@ -476,7 +483,8 @@ PRODUCT DETAILS TO INCLUDE WHEN APPROPRIATE:
 STRICTLY EXCLUDE:
 - readable new inscriptions, captions, logos, watermarks or UI
 - unrelated church interiors, random candles, photorealistic live people
-- changed sacred subject, invented figures, distorted faces or hands"#,
+- changed sacred subject, invented figures, distorted faces or hands
+- redrawn or reinterpreted religious artwork when Reference Image 2 is supplied"#,
                 article_title = article_title,
                 scene = scene,
                 scale_direction = scale_direction,

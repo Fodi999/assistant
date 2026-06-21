@@ -520,17 +520,21 @@ Instruction: {scene}
 Reference URLs: {refs}
 
 Reference contract:
-- Reference 1 is the original sacred icon artwork. It must become the visible icon inside the product frame/mockup.
-- If other references show a product mockup, wood frame, QR module, phone/audio interface, stand, lighting, or camera angle, use those only as product-format references.
-- If a product/mockup reference contains a different sacred artwork, replace that artwork with Reference 1.
+- Use Reference Image 1 ONLY as the product mockup template: wooden frame, lighting, QR module, phone, button, composition and product style.
+- Use Reference Image 2 as the EXACT sacred icon artwork that must be placed inside the wooden frame.
+- Sacred artwork to insert: Reference Image 2, "{title}".
 
 Hard rules:
-- Preserve Reference 1's saint or feast, figures, gestures, composition, halos, clothing colors, border proportions and sacred icon style.
-- Preserve useful product details from mockup references: carved/wood frame, stand, QR module, phone/audio presentation, warm catalog lighting.
-- Do not replace Reference 1 with a generic Mother of God, another saint, church interior, candle photo, or realistic people.
+- Replace only the artwork inside the wooden icon frame with Reference Image 2.
+- Keep everything else from Reference Image 1: frame, QR module, phone, button, lighting and composition.
+- Do NOT redraw or reinterpret the sacred artwork.
+- Do NOT generate a new Virgin Mary icon.
+- Do NOT change the sacred image, replace the icon content, or invent another saint or scene.
+- Preserve Reference Image 2's original composition, figures, colors and text as much as possible.
+- Only adapt the perspective, crop and lighting so it fits naturally inside the product frame.
 - Do not add readable new inscriptions, logos, watermarks, UI captions, or marketing text.
 
-Visual style: premium Orthodox icon catalog/product photo, realistic interactive prayer icon object, faithful sacred artwork inserted into the frame, museum-quality details, clean crop."#,
+Visual style: realistic product photo mockup, luxury Orthodox interactive icon, warm light, high detail, clean catalog composition."#,
             title = title,
             scene = scene,
             refs = if req.reference_urls.is_empty() {
