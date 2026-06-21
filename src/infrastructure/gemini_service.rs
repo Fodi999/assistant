@@ -444,6 +444,8 @@ STRICTLY EXCLUDE:
         }
 
         if scene_preset == "orthodox-icon-product-mockup" {
+            let icon_mockup_model = std::env::var("GEMINI_ICON_MOCKUP_IMAGE_MODEL")
+                .unwrap_or_else(|_| "gemini-2.5-flash-image".to_string());
             let reference_contract = if reference_urls.is_empty() {
                 r#"REFERENCE STATUS:
 - No visual reference was supplied. Create an interactive Orthodox prayer icon product mockup based on the subject and instruction."#
@@ -485,7 +487,7 @@ STRICTLY EXCLUDE:
                     &prompt,
                     article_title,
                     "orthodox icon product mockup",
-                    &self.recipe_image_model,
+                    &icon_mockup_model,
                     reference_urls,
                 )
                 .await;
@@ -777,14 +779,20 @@ STRICTLY EXCLUDE:
             .and_then(|parts| {
                 parts.iter().find_map(|p| {
                     p.pointer("/inlineData/data")
+                        .or_else(|| p.pointer("/inline_data/data"))
                         .and_then(|d| d.as_str())
                         .map(|s| s.to_string())
                 })
             })
             .ok_or_else(|| {
+                let response_preview: String = json.to_string().chars().take(1200).collect();
                 tracing::error!(
-                    "❌ No image data in Gemini response: {:?}",
-                    json.pointer("/candidates/0/content/parts")
+                    "❌ No image data in Gemini response: model={}, finish={:?}, prompt_feedback={:?}, parts={:?}, response_preview={}",
+                    model,
+                    json.pointer("/candidates/0/finishReason"),
+                    json.pointer("/promptFeedback"),
+                    json.pointer("/candidates/0/content/parts"),
+                    response_preview
                 );
                 AppError::internal("No image data in Gemini response")
             })?;
