@@ -514,18 +514,23 @@ pub async fn generate_image(
         let icon_scene = format!(
             r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions or article text.
 
-Orthodox icon restoration/generation task.
+Orthodox interactive icon product mockup task.
 Subject: {title}
 Instruction: {scene}
 Reference URLs: {refs}
 
-If a reference image is attached, use it as the strict iconographic source:
-- preserve the same saint or feast, figures, gestures, composition, halos, riza, colors, border proportions and sacred icon style;
-- improve only clarity, crop, light, color and fine detail;
-- do not redesign the image and do not replace it with a church interior, candle photo or realistic people.
+Reference contract:
+- Reference 1 is the original sacred icon artwork. It must become the visible icon inside the product frame/mockup.
+- If other references show a product mockup, wood frame, QR module, phone/audio interface, stand, lighting, or camera angle, use those only as product-format references.
+- If a product/mockup reference contains a different sacred artwork, replace that artwork with Reference 1.
 
-Visual style: traditional Orthodox icon, flat sacred iconography, egg tempera and gold leaf feel, reverent museum-quality restoration, high detail.
-Forbidden: readable text, logos, watermarks, UI, photorealistic human portrait, random church scene, random candles as the main subject."#,
+Hard rules:
+- Preserve Reference 1's saint or feast, figures, gestures, composition, halos, clothing colors, border proportions and sacred icon style.
+- Preserve useful product details from mockup references: carved/wood frame, stand, QR module, phone/audio presentation, warm catalog lighting.
+- Do not replace Reference 1 with a generic Mother of God, another saint, church interior, candle photo, or realistic people.
+- Do not add readable new inscriptions, logos, watermarks, UI captions, or marketing text.
+
+Visual style: premium Orthodox icon catalog/product photo, realistic interactive prayer icon object, faithful sacred artwork inserted into the frame, museum-quality details, clean crop."#,
             title = title,
             scene = scene,
             refs = if req.reference_urls.is_empty() {
@@ -538,9 +543,9 @@ Forbidden: readable text, logos, watermarks, UI, photorealistic human portrait, 
             title,
             &icon_scene,
             1,
-            false,
+            req.enhanced.unwrap_or(false),
             &req.reference_urls,
-            "orthodox-icon-restoration",
+            "orthodox-icon-product-mockup",
             "faithful iconographic scale",
         )
         .await?
