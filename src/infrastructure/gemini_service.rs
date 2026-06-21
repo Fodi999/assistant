@@ -445,7 +445,7 @@ STRICTLY EXCLUDE:
 
         if scene_preset == "orthodox-icon-product-mockup" {
             let icon_mockup_model = std::env::var("GEMINI_ICON_MOCKUP_IMAGE_MODEL")
-                .unwrap_or_else(|_| "gemini-2.5-flash-image".to_string());
+                .unwrap_or_else(|_| "gemini-3.1-flash-image".to_string());
             let reference_contract = if reference_urls.is_empty() {
                 r#"REFERENCE STATUS:
 - No visual reference was supplied. Create an interactive Orthodox prayer icon product mockup based on the subject and instruction."#
@@ -482,7 +482,7 @@ STRICTLY EXCLUDE:
                 scale_direction = scale_direction,
                 reference_contract = reference_contract,
             );
-            return self
+            let result = self
                 .generate_image_from_prompt_with_references(
                     &prompt,
                     article_title,
@@ -491,6 +491,24 @@ STRICTLY EXCLUDE:
                     reference_urls,
                 )
                 .await;
+
+            if result.is_err() && icon_mockup_model != "gemini-2.5-flash-image" {
+                tracing::warn!(
+                    "⚠️ Icon mockup generation failed with {}; retrying with gemini-2.5-flash-image",
+                    icon_mockup_model
+                );
+                return self
+                    .generate_image_from_prompt_with_references(
+                        &prompt,
+                        article_title,
+                        "orthodox icon product mockup fallback",
+                        "gemini-2.5-flash-image",
+                        reference_urls,
+                    )
+                    .await;
+            }
+
+            return result;
         }
 
         let commerce_product_mode = scene_preset == "delivery-product"
