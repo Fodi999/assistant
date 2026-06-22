@@ -489,7 +489,7 @@ fn sync_fixed_feasts_with_calendar(calendar: &mut CalendarContent, icons: &[Icon
             label: rule.label.into(),
             note: rule.note.into(),
             kind: rule.kind.into(),
-            image_url: icon.image_url.clone(),
+            image_url: String::new(),
             icon_slug: icon_slug.into(),
             prayer_slug: icon_slug.into(),
             gospel_slug: "today".into(),
