@@ -730,9 +730,27 @@ STRICTLY EXCLUDE:
                 }
             }));
         }
+        let mut generation_config = serde_json::json!({
+            "responseModalities": ["IMAGE", "TEXT"]
+        });
+        if image_kind.contains("product mockup") {
+            let mut image_config = serde_json::json!({
+                "aspectRatio": "16:9"
+            });
+            if model.contains("gemini-3.1") || model.contains("gemini-3-pro") {
+                image_config["imageSize"] = serde_json::json!("4K");
+                generation_config["thinkingConfig"] = serde_json::json!({
+                    "thinkingLevel": "High"
+                });
+            }
+            generation_config["responseFormat"] = serde_json::json!({
+                "image": image_config
+            });
+        }
+
         let body = serde_json::json!({
             "contents": [{"parts": parts}],
-            "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
+            "generationConfig": generation_config
         });
 
         let url = format!(

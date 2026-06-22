@@ -37,10 +37,11 @@ PRODUCT DETAILS TO INCLUDE WHEN APPROPRIATE:
 - warm edge light or soft product lighting
 - QR module or QR plate near the icon
 - optional phone/audio prayer presentation if it is requested by the admin instruction
-- clean catalog composition, realistic object proportions, high detail, 4K-quality look
+- clean catalog composition, realistic object proportions, photorealistic material texture, high detail, 4K-quality look
+- natural camera optics, realistic depth of field, believable shadows and reflections, no CGI/plastic look
 
 Avoid adding readable new text, logos, watermarks, UI captions or marketing text.
-Output: realistic premium product photo."#,
+Output: photorealistic premium 4K product photo."#,
         scene = scene,
         scale_direction = scale_direction,
         reference_contract = reference_contract,
@@ -60,7 +61,7 @@ Preserve Reference 2 composition and details.
 Fit Reference 2 naturally into the frame with correct perspective and light.
 
 Admin instruction: {scene}
-Output: realistic premium product photo."#,
+Output: photorealistic premium product photo."#,
         scene = scene,
     )
 }
