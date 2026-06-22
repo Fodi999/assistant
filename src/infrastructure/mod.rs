@@ -4,6 +4,7 @@ pub mod config;
 pub mod gemini; // 🆕 New vertical-slice Gemini adapters
 pub mod gemini_service; // 🆕 Google Gemini AI (replaces Groq for generation)
 pub mod groq_service; // Legacy — types re-exported by gemini_service
+pub mod icon_image_prompts;
 pub mod ingredient_cache; // 🆕 In-memory ingredient catalog for Sous-Chef (0 SQL)
 pub mod llm_adapter;
 pub mod persistence;
