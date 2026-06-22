@@ -80,6 +80,8 @@ pub struct AiImageResult {
     pub id: String,
     pub image_url: String,
     pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
 }
 
 fn now() -> String {
@@ -510,7 +512,7 @@ pub async fn generate_image(
     }
     let scene = req.scene.as_deref().unwrap_or("commercial editorial image");
     let image_type = req.image_type.as_deref().unwrap_or("auto");
-    let base64 = if req.site == "icons" {
+    let (base64, image_model) = if req.site == "icons" {
         let icon_scene = format!(
             r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions or article text.
 
@@ -534,44 +536,52 @@ Output: realistic premium product photo."#,
                 req.reference_urls.join(", ")
             }
         );
-        llm.generate_blog_article_image(
-            title,
-            &icon_scene,
-            1,
-            req.enhanced.unwrap_or(false),
-            &req.reference_urls,
-            "orthodox-icon-product-mockup",
-            "faithful iconographic scale",
-        )
-        .await?
+        let (base64, model) = llm
+            .generate_icon_product_mockup_image(
+                title,
+                &icon_scene,
+                &req.reference_urls,
+                "faithful iconographic scale",
+            )
+            .await?;
+        (base64, Some(model))
     } else if req.site == "construction" || image_type == "construction" {
-        llm.generate_construction_project_image(
-            title,
-            req.description.as_deref().unwrap_or(""),
-            scene,
-            req.variant.unwrap_or(0),
-            req.enhanced.unwrap_or(false),
-            &req.reference_urls,
+        (
+            llm.generate_construction_project_image(
+                title,
+                req.description.as_deref().unwrap_or(""),
+                scene,
+                req.variant.unwrap_or(0),
+                req.enhanced.unwrap_or(false),
+                &req.reference_urls,
+            )
+            .await?,
+            None,
         )
-        .await?
     } else if image_type == "article" || image_type == "review" {
-        llm.generate_blog_article_image(
-            title,
-            scene,
-            1,
-            false,
-            &[],
-            "product-editorial",
-            "normal realistic scale",
+        (
+            llm.generate_blog_article_image(
+                title,
+                scene,
+                1,
+                false,
+                &[],
+                "product-editorial",
+                "normal realistic scale",
+            )
+            .await?,
+            None,
         )
-        .await?
     } else {
-        llm.generate_catalog_product_image(
-            &format!("admin-ai-{}", slugify(title)),
-            title,
-            req.description.as_deref(),
+        (
+            llm.generate_catalog_product_image(
+                &format!("admin-ai-{}", slugify(title)),
+                title,
+                req.description.as_deref(),
+            )
+            .await?,
+            None,
         )
-        .await?
     };
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(base64)
@@ -589,5 +599,6 @@ Output: realistic premium product photo."#,
         id: Uuid::new_v4().to_string(),
         image_url,
         prompt: scene.to_string(),
+        image_model,
     }))
 }

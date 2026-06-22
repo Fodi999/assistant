@@ -444,85 +444,15 @@ STRICTLY EXCLUDE:
         }
 
         if scene_preset == "orthodox-icon-product-mockup" {
-            let icon_mockup_model = std::env::var("GEMINI_ICON_MOCKUP_IMAGE_MODEL")
-                .unwrap_or_else(|_| "gemini-3.1-flash-image".to_string());
-            let reference_contract = if reference_urls.is_empty() {
-                r#"REFERENCE STATUS:
-- No visual reference was supplied. Create a realistic premium product mockup based on the admin instruction."#
-            } else if reference_urls.len() == 1 {
-                r#"REFERENCE CONTRACT:
-- Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
-- Keep the product/mockup structure from Reference 1."#
-            } else {
-                r#"REFERENCE CONTRACT:
-- Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
-- Place Reference 2 inside the framed artwork area.
-- Keep Reference 2 visually recognizable and preserve its composition, colors and details.
-- Adjust only perspective, crop and lighting so it fits naturally inside the frame.
-- Keep all product elements from Reference 1 unchanged."#
-            };
-            let prompt = format!(
-                r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
-
-Create a product mockup using the provided references.
-Admin instruction: {scene}
-Scale and style: {scale_direction}
-
-{reference_contract}
-
-PRODUCT DETAILS TO INCLUDE WHEN APPROPRIATE:
-- carved or wooden standing icon frame
-- warm edge light or soft product lighting
-- QR module or QR plate near the icon
-- optional phone/audio prayer presentation if it is requested by the admin instruction
-- clean catalog composition, realistic object proportions, high detail, 4K-quality look
-
-Avoid adding readable new text, logos, watermarks, UI captions or marketing text.
-Output: realistic premium product photo."#,
-                scene = scene,
-                scale_direction = scale_direction,
-                reference_contract = reference_contract,
-            );
-            let fallback_prompt = format!(
-                r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
-
-Replace only the artwork inside the wooden icon frame with Reference 2.
-Keep everything else from Reference 1: frame, QR module, button, phone, lighting and composition.
-Do not redraw the inserted artwork.
-Preserve Reference 2 composition and details.
-Fit Reference 2 naturally into the frame with correct perspective and light.
-
-Admin instruction: {scene}
-Output: realistic premium product photo."#,
-                scene = scene,
-            );
-            let result = self
-                .generate_image_from_prompt_with_references(
-                    &prompt,
+            return self
+                .generate_icon_product_mockup_image(
                     article_title,
-                    "orthodox icon product mockup",
-                    &icon_mockup_model,
+                    scene,
+                    scale_direction,
                     reference_urls,
                 )
-                .await;
-
-            if result.is_err() && icon_mockup_model != "gemini-2.5-flash-image" {
-                tracing::warn!(
-                    "⚠️ Icon mockup generation failed with {}; retrying with gemini-2.5-flash-image",
-                    icon_mockup_model
-                );
-                return self
-                    .generate_image_from_prompt_with_references(
-                        &fallback_prompt,
-                        article_title,
-                        "orthodox icon product mockup fallback",
-                        "gemini-2.5-flash-image",
-                        reference_urls,
-                    )
-                    .await;
-            }
-
-            return result;
+                .await
+                .map(|(base64, _model)| base64);
         }
 
         let commerce_product_mode = scene_preset == "delivery-product"
@@ -621,6 +551,95 @@ STRICTLY EXCLUDE:
             reference_urls,
         )
         .await
+    }
+
+    pub async fn generate_icon_product_mockup_image(
+        &self,
+        article_title: &str,
+        scene: &str,
+        scale_direction: &str,
+        reference_urls: &[String],
+    ) -> Result<(String, String), AppError> {
+        let icon_mockup_model = std::env::var("GEMINI_ICON_MOCKUP_IMAGE_MODEL")
+            .unwrap_or_else(|_| "gemini-3.1-flash-image".to_string());
+        let reference_contract = if reference_urls.is_empty() {
+            r#"REFERENCE STATUS:
+- No visual reference was supplied. Create a realistic premium product mockup based on the admin instruction."#
+        } else if reference_urls.len() == 1 {
+            r#"REFERENCE CONTRACT:
+- Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
+- Keep the product/mockup structure from Reference 1."#
+        } else {
+            r#"REFERENCE CONTRACT:
+- Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
+- Place Reference 2 inside the framed artwork area.
+- Keep Reference 2 visually recognizable and preserve its composition, colors and details.
+- Adjust only perspective, crop and lighting so it fits naturally inside the frame.
+- Keep all product elements from Reference 1 unchanged."#
+        };
+        let prompt = format!(
+            r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
+
+Create a product mockup using the provided references.
+Admin instruction: {scene}
+Scale and style: {scale_direction}
+
+{reference_contract}
+
+PRODUCT DETAILS TO INCLUDE WHEN APPROPRIATE:
+- carved or wooden standing icon frame
+- warm edge light or soft product lighting
+- QR module or QR plate near the icon
+- optional phone/audio prayer presentation if it is requested by the admin instruction
+- clean catalog composition, realistic object proportions, high detail, 4K-quality look
+
+Avoid adding readable new text, logos, watermarks, UI captions or marketing text.
+Output: realistic premium product photo."#,
+            scene = scene,
+            scale_direction = scale_direction,
+            reference_contract = reference_contract,
+        );
+        let fallback_prompt = format!(
+            r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions, explanations or article text.
+
+Replace only the artwork inside the wooden icon frame with Reference 2.
+Keep everything else from Reference 1: frame, QR module, button, phone, lighting and composition.
+Do not redraw the inserted artwork.
+Preserve Reference 2 composition and details.
+Fit Reference 2 naturally into the frame with correct perspective and light.
+
+Admin instruction: {scene}
+Output: realistic premium product photo."#,
+            scene = scene,
+        );
+        let result = self
+            .generate_image_from_prompt_with_references(
+                &prompt,
+                article_title,
+                "orthodox icon product mockup",
+                &icon_mockup_model,
+                reference_urls,
+            )
+            .await;
+
+        if result.is_err() && icon_mockup_model != "gemini-2.5-flash-image" {
+            tracing::warn!(
+                "⚠️ Icon mockup generation failed with {}; retrying with gemini-2.5-flash-image",
+                icon_mockup_model
+            );
+            let base64 = self
+                .generate_image_from_prompt_with_references(
+                    &fallback_prompt,
+                    article_title,
+                    "orthodox icon product mockup fallback",
+                    "gemini-2.5-flash-image",
+                    reference_urls,
+                )
+                .await?;
+            return Ok((base64, "gemini-2.5-flash-image".to_string()));
+        }
+
+        result.map(|base64| (base64, icon_mockup_model))
     }
 
     /// Generate a construction project / commercial fit-out image with optional visual references.

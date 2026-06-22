@@ -322,6 +322,35 @@ impl LlmAdapter {
         Ok(base64)
     }
 
+    pub async fn generate_icon_product_mockup_image(
+        &self,
+        article_title: &str,
+        scene: &str,
+        reference_urls: &[String],
+        scale_direction: &str,
+    ) -> Result<(String, String), AppError> {
+        let start = Instant::now();
+        let result = timeout(
+            Duration::from_secs(65),
+            self.gemini_service.generate_icon_product_mockup_image(
+                article_title,
+                scene,
+                scale_direction,
+                reference_urls,
+            ),
+        )
+        .await
+        .map_err(|_| {
+            AppError::internal("LLM Timeout: icon mockup image generation took too long")
+        })??;
+        self.log_usage(
+            "generate_icon_product_mockup_image",
+            start.elapsed().as_millis() as i32,
+        )
+        .await;
+        Ok(result)
+    }
+
     pub async fn generate_material_scene_image(
         &self,
         material_title: &str,
