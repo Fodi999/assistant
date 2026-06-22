@@ -294,7 +294,7 @@ fn default_calendar() -> CalendarContent {
             today_href: "/gospel".into(),
         },
         days: vec![
-            day("01", "Обрезание Господне", "Праздник", "feast", "kazan-icon", true, false, false, "Память события и начало годового молитвенного круга."),
+            day("01", "", "", "quiet", "", false, false, true, ""),
             day("02", "", "", "quiet", "", false, false, true, ""),
             day("03", "Икона Божией Матери «Казанская»", "Праздничная икона", "feast", "kazan-icon", false, true, false, "Молитва о семье, мире и укреплении в вере."),
             day("04", "Святитель Николай Чудотворец", "Память святого", "feast", "nikolay-chudotvorets", false, false, false, "Почитание святого, помощника в пути и нужде."),
@@ -307,7 +307,7 @@ fn default_calendar() -> CalendarContent {
             day("11", "Великомученик Пантелеимон", "Память святого", "prayer", "nikolay-chudotvorets", false, false, false, "Молитвенное обращение о болящих."),
             day("12", "", "", "quiet", "", false, false, true, ""),
             day("13", "Собор Предтечи и Крестителя Господня Иоанна", "Память святого", "feast", "nikolay-chudotvorets", false, false, false, "День молитвенного почитания Предтечи."),
-            day("14", "Святитель Василий Великий", "Память святого", "feast", "nikolay-chudotvorets", true, false, false, "Память святителя и учителя Церкви."),
+            day("14", "Обрезание Господне", "Господский праздник", "feast", "obrezanie-gospodne", true, true, false, "Праздник Обрезания Господня: 1 января по церковному юлианскому календарю, 14 января по гражданскому календарю."),
             day("15", "", "", "quiet", "", false, false, true, ""),
             day("16", "Икона Божией Матери «Умиление»", "Праздничная икона", "feast", "kazan-icon", false, false, false, "Молитва о мире сердца и покаянии."),
             day("17", "", "", "quiet", "", false, false, true, ""),
@@ -338,6 +338,181 @@ fn default_content() -> IconsSiteContent {
         calendar: default_calendar(),
         dashboard: Dashboard { published_pages: 12, icons: 2, prayers: 1, qr_pages: 1, qr_scans: 128, latest_pages: vec![], seo: vec![] },
     }
+}
+
+struct FixedCalendarRule {
+    day: &'static str,
+    label: &'static str,
+    note: &'static str,
+    kind: &'static str,
+    feast: bool,
+    priority: i32,
+    aliases: &'static [&'static str],
+    description: &'static str,
+}
+
+const FIXED_CALENDAR_RULES: &[FixedCalendarRule] = &[
+    FixedCalendarRule {
+        day: "14",
+        label: "Обрезание Господне",
+        note: "Господский праздник",
+        kind: "feast",
+        feast: true,
+        priority: 100,
+        aliases: &["обрезание господне", "обрезанию господню", "circumcision of our lord"],
+        description: "Праздник Обрезания Господня: 1 января по церковному юлианскому календарю, 14 января по гражданскому календарю. Источник: OCA Feasts & Saints; православный календарь 1/14 января.",
+    },
+    FixedCalendarRule {
+        day: "07",
+        label: "Рождество Христово",
+        note: "Двунадесятый праздник",
+        kind: "feast",
+        feast: true,
+        priority: 100,
+        aliases: &["рождество христово", "рождеству христову", "nativity of christ"],
+        description: "Рождество Христово: 25 декабря по юлианскому календарю, 7 января по гражданскому календарю.",
+    },
+    FixedCalendarRule {
+        day: "19",
+        label: "Крещение Господне",
+        note: "Богоявление",
+        kind: "feast",
+        feast: true,
+        priority: 100,
+        aliases: &["крещение господне", "богоявление", "theophany", "baptism of the lord"],
+        description: "Крещение Господне, или Богоявление: 6 января по юлианскому календарю, 19 января по гражданскому календарю.",
+    },
+    FixedCalendarRule {
+        day: "20",
+        label: "Собор Предтечи и Крестителя Господня Иоанна",
+        note: "Память святого",
+        kind: "feast",
+        feast: false,
+        priority: 60,
+        aliases: &["собор предтечи", "собор иоанна предтечи", "john the baptist synaxis"],
+        description: "Собор Иоанна Предтечи: 7 января по юлианскому календарю, 20 января по гражданскому календарю.",
+    },
+    FixedCalendarRule {
+        day: "14",
+        label: "Святитель Василий Великий",
+        note: "Память святого",
+        kind: "feast",
+        feast: false,
+        priority: 50,
+        aliases: &["василий великий", "святитель василий", "basil the great"],
+        description: "Память святителя Василия Великого совершается 1 января по юлианскому календарю, 14 января по гражданскому календарю.",
+    },
+];
+
+fn normalize_lookup_text(value: &str) -> String {
+    value
+        .to_lowercase()
+        .replace('ё', "е")
+        .chars()
+        .map(|ch| if ch.is_alphanumeric() { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn calendar_rule_for_text(value: &str) -> Option<&'static FixedCalendarRule> {
+    let haystack = normalize_lookup_text(value);
+    FIXED_CALENDAR_RULES
+        .iter()
+        .find(|rule| rule.aliases.iter().any(|alias| haystack.contains(&normalize_lookup_text(alias))))
+}
+
+fn calendar_rule_for_icon(icon: &IconPage) -> Option<&'static FixedCalendarRule> {
+    calendar_rule_for_text(&[
+        icon.title.as_str(),
+        icon.slug.as_str(),
+        icon.category.as_str(),
+        icon.saint_name.as_str(),
+        icon.short_description.as_str(),
+        icon.full_description.as_str(),
+        icon.seo_title.as_deref().unwrap_or_default(),
+        icon.seo_description.as_deref().unwrap_or_default(),
+        icon.seo_keywords.as_deref().unwrap_or_default(),
+    ].join(" "))
+}
+
+fn empty_calendar_day(day: &str) -> CalendarDay {
+    CalendarDay {
+        id: format!("calendar-jan-{day}"),
+        day: day.to_string(),
+        label: String::new(),
+        note: String::new(),
+        kind: "quiet".into(),
+        image_url: String::new(),
+        icon_slug: String::new(),
+        prayer_slug: String::new(),
+        gospel_slug: "today".into(),
+        detail_href: "/icons".into(),
+        current: false,
+        feast: false,
+        text_only: true,
+        description: String::new(),
+    }
+}
+
+fn sync_fixed_feasts_with_calendar(calendar: &mut CalendarContent, icons: &[IconPage]) {
+    for icon in icons {
+        let Some(rule) = calendar_rule_for_icon(icon) else {
+            continue;
+        };
+
+        let icon_slug = if icon.slug.is_empty() { icon.id.as_str() } else { icon.slug.as_str() };
+        let target_index = calendar.days.iter().position(|day| day.day == rule.day);
+        if let Some(index) = target_index {
+            if let Some(current_rule) = calendar_rule_for_text(&calendar.days[index].label) {
+                if current_rule.priority > rule.priority {
+                    continue;
+                }
+            }
+        }
+
+        for day in &mut calendar.days {
+            let same_icon = day.icon_slug == icon_slug || day.detail_href == format!("/icons/{icon_slug}");
+            let same_rule_wrong_day = day.day != rule.day
+                && rule.aliases.iter().any(|alias| normalize_lookup_text(&day.label).contains(&normalize_lookup_text(alias)));
+            if same_icon || same_rule_wrong_day {
+                let current = day.current;
+                *day = empty_calendar_day(&day.day);
+                day.current = current;
+            }
+        }
+
+        let next_day = CalendarDay {
+            id: format!("calendar-jan-{}", rule.day),
+            day: rule.day.into(),
+            label: rule.label.into(),
+            note: rule.note.into(),
+            kind: rule.kind.into(),
+            image_url: icon.image_url.clone(),
+            icon_slug: icon_slug.into(),
+            prayer_slug: icon_slug.into(),
+            gospel_slug: "today".into(),
+            detail_href: format!("/icons/{icon_slug}"),
+            current: target_index.map(|index| calendar.days[index].current).unwrap_or(false),
+            feast: rule.feast,
+            text_only: false,
+            description: rule.description.into(),
+        };
+
+        if let Some(index) = calendar.days.iter().position(|day| day.day == rule.day) {
+            calendar.days[index] = next_day;
+        } else {
+            calendar.days.push(next_day);
+        }
+    }
+
+    calendar.days.sort_by_key(|day| day.day.parse::<u8>().unwrap_or(0));
+}
+
+fn normalize_content_before_save(mut content: IconsSiteContent) -> IconsSiteContent {
+    sync_fixed_feasts_with_calendar(&mut content.calendar, &content.icons);
+    content
 }
 
 async fn load_content(pool: &PgPool) -> Result<IconsSiteContent, StatusCode> {
@@ -432,6 +607,7 @@ pub async fn admin_get_content(State(pool): State<PgPool>) -> Result<impl IntoRe
 }
 
 pub async fn admin_put_content(State(pool): State<PgPool>, Json(content): Json<IconsSiteContent>) -> Result<impl IntoResponse, StatusCode> {
+    let content = normalize_content_before_save(content);
     save_content(&pool, &content).await?;
     Ok(Json(content))
 }
