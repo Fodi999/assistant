@@ -513,11 +513,22 @@ pub async fn generate_image(
     let scene = req.scene.as_deref().unwrap_or("commercial editorial image");
     let image_type = req.image_type.as_deref().unwrap_or("auto");
     let (base64, image_model) = if req.site == "icons" {
+        let selected_photo_instruction = if req.reference_urls.len() == 1 {
+            format!(
+                r#"
+Selected photo regeneration instruction:
+{scene}
+"#
+            )
+        } else {
+            String::new()
+        };
         let icon_scene = format!(
             r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions or article text.
 
 Product mockup task.
 Reference URLs: {refs}
+{selected_photo_instruction}
 
 Reference contract:
 - Use Reference 1 as the product mockup template: wooden frame, warm light, QR module, button, phone, camera angle and background.
@@ -534,7 +545,8 @@ Output: realistic premium product photo."#,
                 "none".to_string()
             } else {
                 req.reference_urls.join(", ")
-            }
+            },
+            selected_photo_instruction = selected_photo_instruction
         );
         let (base64, model) = llm
             .generate_icon_product_mockup_image(
