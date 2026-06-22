@@ -733,12 +733,9 @@ STRICTLY EXCLUDE:
         let mut generation_config = serde_json::json!({
             "responseModalities": ["IMAGE", "TEXT"]
         });
-        if image_kind.contains("product mockup") && (model.contains("gemini-3.1") || model.contains("gemini-3-pro")) {
-            generation_config["responseFormat"] = serde_json::json!({
-                "image": {
-                    "imageSize": "4K"
-                }
-            });
+        if image_kind.contains("product mockup")
+            && (model.contains("gemini-3.1") || model.contains("gemini-3-pro"))
+        {
             generation_config["thinkingConfig"] = serde_json::json!({
                 "thinkingLevel": "High"
             });
