@@ -36,6 +36,8 @@ pub struct IconPage {
     pub seo_description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seo_keywords: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -348,8 +350,8 @@ fn default_content() -> IconsSiteContent {
     let now = now();
     IconsSiteContent {
         icons: vec![
-            IconPage { id: "icon-kazan".into(), slug: "kazan-icon".into(), title: "Казанская икона Божией Матери".into(), short_description: "Перед Казанской иконой молятся о помощи семье, мире и укреплении в вере.".into(), full_description: "Казанская икона Божией Матери почитается как образ материнского заступничества и духовной поддержки.".into(), image_url: "/images/kazan-icon.svg".into(), image_urls: vec![], qr_code_url: "/images/qr-code.svg".into(), category: "Богородичные".into(), saint_name: "Пресвятая Богородица".into(), prayer_text: "Пресвятая Богородице, помоги нам обратиться к Богу с миром, покаянием и надеждой.".into(), gospel_text: "Евангелие дня представлено для внимательного чтения и размышления.".into(), life_text: "Почитание образа связано с молитвенной традицией Церкви.".into(), history_text: "История Казанского образа напоминает о бережном отношении к святыне и молитве.".into(), status: "published".into(), seo_title: Some("Казанская икона Божией Матери: молитва и история образа".into()), seo_description: Some("Молитва, история и духовные материалы к Казанской иконе Божией Матери.".into()), seo_keywords: Some("Казанская икона, молитва, Богородица".into()), created_at: now.clone(), updated_at: now.clone() },
-            IconPage { id: "icon-nikolay".into(), slug: "nikolay-chudotvorets".into(), title: "Икона святителя Николая Чудотворца".into(), short_description: "Перед образом святителя Николая молятся о помощи в пути, семье и трудных обстоятельствах.".into(), full_description: "Страница собирает молитву, краткое житие, историю почитания и материалы для духовной поддержки.".into(), image_url: "/images/nikolay-icon.svg".into(), image_urls: vec![], qr_code_url: "/images/qr-code.svg".into(), category: "Святые".into(), saint_name: "Святитель Николай".into(), prayer_text: "Святителю отче Николае, моли Бога о нас и помоги укрепиться в добрых делах.".into(), gospel_text: "Чтение дня помогает соединить молитву у иконы с евангельским словом.".into(), life_text: "Святитель Николай известен милосердием и верностью Христу.".into(), history_text: "Почитание святителя Николая распространено во всем православном мире.".into(), status: "published".into(), seo_title: Some("Икона Николая Чудотворца: молитва, житие и помощь в чтении".into()), seo_description: Some("Православная страница иконы святителя Николая с молитвой, житием и QR-доступом.".into()), seo_keywords: None, created_at: now.clone(), updated_at: now.clone() },
+            IconPage { id: "icon-kazan".into(), slug: "kazan-icon".into(), title: "Казанская икона Божией Матери".into(), short_description: "Перед Казанской иконой молятся о помощи семье, мире и укреплении в вере.".into(), full_description: "Казанская икона Божией Матери почитается как образ материнского заступничества и духовной поддержки.".into(), image_url: "/images/kazan-icon.svg".into(), image_urls: vec![], qr_code_url: "/images/qr-code.svg".into(), category: "Богородичные".into(), saint_name: "Пресвятая Богородица".into(), prayer_text: "Пресвятая Богородице, помоги нам обратиться к Богу с миром, покаянием и надеждой.".into(), gospel_text: "Евангелие дня представлено для внимательного чтения и размышления.".into(), life_text: "Почитание образа связано с молитвенной традицией Церкви.".into(), history_text: "История Казанского образа напоминает о бережном отношении к святыне и молитве.".into(), status: "published".into(), seo_title: Some("Казанская икона Божией Матери: молитва и история образа".into()), seo_description: Some("Молитва, история и духовные материалы к Казанской иконе Божией Матери.".into()), seo_keywords: Some("Казанская икона, молитва, Богородица".into()), calendar_date: None, created_at: now.clone(), updated_at: now.clone() },
+            IconPage { id: "icon-nikolay".into(), slug: "nikolay-chudotvorets".into(), title: "Икона святителя Николая Чудотворца".into(), short_description: "Перед образом святителя Николая молятся о помощи в пути, семье и трудных обстоятельствах.".into(), full_description: "Страница собирает молитву, краткое житие, историю почитания и материалы для духовной поддержки.".into(), image_url: "/images/nikolay-icon.svg".into(), image_urls: vec![], qr_code_url: "/images/qr-code.svg".into(), category: "Святые".into(), saint_name: "Святитель Николай".into(), prayer_text: "Святителю отче Николае, моли Бога о нас и помоги укрепиться в добрых делах.".into(), gospel_text: "Чтение дня помогает соединить молитву у иконы с евангельским словом.".into(), life_text: "Святитель Николай известен милосердием и верностью Христу.".into(), history_text: "Почитание святителя Николая распространено во всем православном мире.".into(), status: "published".into(), seo_title: Some("Икона Николая Чудотворца: молитва, житие и помощь в чтении".into()), seo_description: Some("Православная страница иконы святителя Николая с молитвой, житием и QR-доступом.".into()), seo_keywords: None, calendar_date: None, created_at: now.clone(), updated_at: now.clone() },
         ],
         prayers: vec![PrayerPage { id: "prayer-kazan".into(), slug: "molitva-kazanskoy-ikone".into(), title: "Молитва перед Казанской иконой Божией Матери".into(), text: "Пресвятая Богородице, помоги нам обратиться к Богу с миром, покаянием и надеждой.".into(), category: "Богородичные молитвы".into(), related_icon: Some("kazan-icon".into()), status: "published".into(), seo_title: Some("Молитва перед Казанской иконой Божией Матери".into()), seo_description: Some("Текст молитвы перед Казанской иконой и спокойное объяснение для чтения.".into()) }],
         gospel: vec![GospelReading { id: "gospel-today".into(), date: chrono::Utc::now().date_naive().to_string(), title: "Евангелие дня".into(), reference: "Мф. 5:14-16".into(), text: "Вы свет мира. Не может укрыться город, стоящий на верху горы.".into(), explanation: "Чтение напоминает о тихом свидетельстве веры через добрые дела.".into(), status: "published".into(), seo_title: Some("Евангелие дня: чтение и краткое толкование".into()), seo_description: Some("Евангельское чтение дня с кратким объяснением.".into()) }],
@@ -578,6 +580,55 @@ fn saint_calendar_day(saint: &SaintPage, gregorian: NaiveDate, current: bool) ->
     }
 }
 
+fn icon_calendar_day(icon: &IconPage, gregorian: NaiveDate, current: bool) -> CalendarDay {
+    let icon_slug = if icon.slug.is_empty() {
+        icon.id.as_str()
+    } else {
+        icon.slug.as_str()
+    };
+    let julian = gregorian_to_julian(gregorian);
+    let description = if !icon.short_description.trim().is_empty() {
+        icon.short_description.clone()
+    } else if let Some(seo_description) = icon.seo_description.as_deref() {
+        seo_description.to_string()
+    } else {
+        icon.full_description.clone()
+    };
+    let kind = if normalize_lookup_text(&icon.category).contains("молит") {
+        "prayer"
+    } else {
+        "feast"
+    };
+
+    CalendarDay {
+        id: format!(
+            "calendar-icon-{}-{}",
+            icon_slug,
+            gregorian.format("%Y-%m-%d")
+        ),
+        day: format!("{:02}", gregorian.day()),
+        gregorian_date: format_gregorian_date(gregorian),
+        julian_day: format!("{:02}", julian.day()),
+        julian_date: format_julian_date(julian),
+        label: icon.title.clone(),
+        note: if icon.saint_name.trim().is_empty() {
+            icon.category.clone()
+        } else {
+            icon.saint_name.clone()
+        },
+        kind: kind.into(),
+        image_url: icon.image_url.clone(),
+        icon_slug: icon_slug.into(),
+        prayer_slug: icon_slug.into(),
+        gospel_slug: "today".into(),
+        detail_href: format!("/icons/{icon_slug}"),
+        current,
+        feast: false,
+        text_only: false,
+        description,
+    }
+}
+
 fn merge_calendar_days(
     mut existing: Vec<CalendarDay>,
     incoming: Vec<CalendarDay>,
@@ -661,7 +712,38 @@ fn prepare_content_for_public(
         today,
     );
     overlay_saved_calendar_days(&mut content.calendar, &saved_days);
+    overlay_icon_calendar_days(
+        &mut content.calendar,
+        &content.icons,
+        selected_year,
+        selected_month,
+        today,
+    );
     content
+}
+
+fn overlay_icon_calendar_days(
+    calendar: &mut CalendarContent,
+    icons: &[IconPage],
+    year: i32,
+    month: u32,
+    today: NaiveDate,
+) {
+    for icon in icons {
+        let Some(calendar_date) = icon.calendar_date.as_deref() else {
+            continue;
+        };
+        let Ok(gregorian) = NaiveDate::parse_from_str(calendar_date.trim(), "%Y-%m-%d") else {
+            continue;
+        };
+        if gregorian.year() == year && gregorian.month() == month {
+            put_calendar_day(
+                calendar,
+                icon_calendar_day(icon, gregorian, gregorian == today),
+                120,
+            );
+        }
+    }
 }
 
 fn rebuild_calendar(
