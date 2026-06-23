@@ -512,7 +512,22 @@ pub async fn generate_image(
     }
     let scene = req.scene.as_deref().unwrap_or("commercial editorial image");
     let image_type = req.image_type.as_deref().unwrap_or("auto");
-    let (base64, image_model) = if image_type == "calendar" {
+    let request_context = format!(
+        "{} {} {}",
+        req.site,
+        req.description.as_deref().unwrap_or(""),
+        scene
+    )
+    .to_lowercase();
+    let is_calendar_day_image = image_type == "calendar"
+        || (req.site == "icons"
+            && (request_context.contains("calendar day")
+                || request_context.contains("church calendar")
+                || request_context.contains("julian date")
+                || request_context.contains("julian calendar")
+                || request_context.contains("церковный календар")
+                || request_context.contains("юлианск")));
+    let (base64, image_model) = if is_calendar_day_image {
         (
             llm.generate_calendar_day_image(title, req.description.as_deref().unwrap_or(""), scene)
                 .await?,
