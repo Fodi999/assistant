@@ -512,7 +512,13 @@ pub async fn generate_image(
     }
     let scene = req.scene.as_deref().unwrap_or("commercial editorial image");
     let image_type = req.image_type.as_deref().unwrap_or("auto");
-    let (base64, image_model) = if req.site == "icons" {
+    let (base64, image_model) = if image_type == "calendar" {
+        (
+            llm.generate_calendar_day_image(title, req.description.as_deref().unwrap_or(""), scene)
+                .await?,
+            None,
+        )
+    } else if req.site == "icons" {
         let selected_photo_instruction = if req.reference_urls.len() == 1 {
             format!(
                 r#"

@@ -375,6 +375,30 @@ impl LlmAdapter {
         Ok(base64)
     }
 
+    pub async fn generate_calendar_day_image(
+        &self,
+        day_title: &str,
+        day_text: &str,
+        scene: &str,
+    ) -> Result<String, AppError> {
+        let start = Instant::now();
+        let base64 = timeout(
+            Duration::from_secs(65),
+            self.gemini_service
+                .generate_calendar_day_image(day_title, day_text, scene),
+        )
+        .await
+        .map_err(|_| {
+            AppError::internal("LLM Timeout: calendar day image generation took too long")
+        })??;
+        self.log_usage(
+            "generate_calendar_day_image",
+            start.elapsed().as_millis() as i32,
+        )
+        .await;
+        Ok(base64)
+    }
+
     pub async fn generate_construction_project_image(
         &self,
         project_title: &str,

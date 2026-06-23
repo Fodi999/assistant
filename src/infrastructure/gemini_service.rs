@@ -383,6 +383,46 @@ Visual requirements:
         .await
     }
 
+    pub async fn generate_calendar_day_image(
+        &self,
+        day_title: &str,
+        day_text: &str,
+        scene: &str,
+    ) -> Result<String, AppError> {
+        let prompt = format!(
+            r#"Generate ONE IMAGE ONLY. Do not write JSON, markdown, captions or article text.
+
+Create a standalone Orthodox church calendar illustration for "{day_title}".
+Verified day note: {day_text}
+Admin direction: {scene}
+
+CALENDAR IMAGE CONTRACT:
+- This is a calendar-day illustration, not an icon product photo and not a shop mockup.
+- If the day has a confirmed saint, martyr, feast or biblical event, show a reverent editorial illustration of that subject.
+- If the day is ordinary or not confirmed, show a simple Orthodox church day: open prayer book, candle, soft church light, calm interior detail.
+- Keep the image respectful, quiet, suitable for one calendar cell.
+- Use natural liturgical colors, clear subject, balanced composition, high detail.
+
+STRICTLY EXCLUDE:
+- QR code, button, phone, app screen, product stand, label plate, price tag, packaging or ecommerce display.
+- Wooden framed product mockup, tabletop sales photo, souvenir icon, catalog product view.
+- Readable text, captions, typography, logos, watermarks, UI.
+- Invented Theotokos feast or specific saint when the day note says it is not confirmed.
+- Distorted faces, extra hands, comic style, stock-photo cliche."#,
+            day_title = day_title,
+            day_text = day_text,
+            scene = scene,
+        );
+
+        self.generate_image_from_prompt(
+            &prompt,
+            day_title,
+            "orthodox calendar day",
+            &self.recipe_image_model,
+        )
+        .await
+    }
+
     /// Generate one editorial image variant for a CMS article.
     pub async fn generate_blog_article_image(
         &self,
