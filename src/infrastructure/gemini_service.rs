@@ -399,13 +399,14 @@ Admin direction: {scene}
 CALENDAR IMAGE CONTRACT:
 - This is a calendar-day illustration, not an icon product photo and not a shop mockup.
 - If the day has a confirmed saint, martyr, feast or biblical event, show a reverent editorial illustration of that subject.
-- If the day is ordinary or not confirmed, show a simple Orthodox church day: open prayer book, candle, soft church light, calm interior detail.
-- Keep the image respectful, quiet, suitable for one calendar cell.
+- If the day is ordinary or not confirmed, show a simple centered Orthodox-style sacred image with soft church light and no invented saint.
+- Keep the image respectful, quiet, suitable for one calendar cell, with the main sacred image fully visible in frame.
 - Use natural liturgical colors, clear subject, balanced composition, high detail.
 
 STRICTLY EXCLUDE:
 - QR code, button, phone, app screen, product stand, label plate, price tag, packaging or ecommerce display.
 - Wooden framed product mockup, tabletop sales photo, souvenir icon, catalog product view.
+- Open book, candle as main subject, table still life, cropped face, cut-off halo or partial body.
 - Readable text, captions, typography, logos, watermarks, UI.
 - Invented Theotokos feast or specific saint when the day note says it is not confirmed.
 - Distorted faces, extra hands, comic style, stock-photo cliche."#,
