@@ -1137,5 +1137,5 @@ pub async fn admin_put_content(
     let existing = load_content(&pool).await.ok();
     let content = normalize_content_before_save_with_existing(content, existing);
     save_content(&pool, &content).await?;
-    Ok(Json(content))
+    Ok(Json(prepare_content_for_public(content, None, None)))
 }
