@@ -1,9 +1,10 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
+use chrono::{Datelike, Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -187,6 +188,12 @@ pub struct CalendarHero {
 pub struct CalendarDay {
     pub id: String,
     pub day: String,
+    #[serde(default)]
+    pub gregorian_date: String,
+    #[serde(default)]
+    pub julian_day: String,
+    #[serde(default)]
+    pub julian_date: String,
     pub label: String,
     pub note: String,
     pub kind: String,
@@ -252,9 +259,20 @@ fn now() -> String {
 }
 
 fn default_calendar() -> CalendarContent {
-    let day = |day: &str, label: &str, note: &str, kind: &str, icon_slug: &str, current: bool, feast: bool, text_only: bool, description: &str| CalendarDay {
+    let day = |day: &str,
+               label: &str,
+               note: &str,
+               kind: &str,
+               icon_slug: &str,
+               current: bool,
+               feast: bool,
+               text_only: bool,
+               description: &str| CalendarDay {
         id: format!("calendar-jan-{day}"),
         day: day.into(),
+        gregorian_date: String::new(),
+        julian_day: String::new(),
+        julian_date: String::new(),
         label: label.into(),
         note: note.into(),
         kind: kind.into(),
@@ -262,7 +280,11 @@ fn default_calendar() -> CalendarContent {
         icon_slug: icon_slug.into(),
         prayer_slug: "molitva-kazanskoy-ikone".into(),
         gospel_slug: "today".into(),
-        detail_href: if icon_slug.is_empty() { "/icons".into() } else { format!("/icons/{icon_slug}") },
+        detail_href: if icon_slug.is_empty() {
+            "/icons".into()
+        } else {
+            format!("/icons/{icon_slug}")
+        },
         current,
         feast,
         text_only,
@@ -341,7 +363,8 @@ fn default_content() -> IconsSiteContent {
 }
 
 struct FixedCalendarRule {
-    day: &'static str,
+    julian_month: u32,
+    julian_day: u32,
     label: &'static str,
     note: &'static str,
     kind: &'static str,
@@ -353,7 +376,8 @@ struct FixedCalendarRule {
 
 const FIXED_CALENDAR_RULES: &[FixedCalendarRule] = &[
     FixedCalendarRule {
-        day: "14",
+        julian_month: 1,
+        julian_day: 1,
         label: "Обрезание Господне",
         note: "Господский праздник",
         kind: "feast",
@@ -363,7 +387,8 @@ const FIXED_CALENDAR_RULES: &[FixedCalendarRule] = &[
         description: "Праздник Обрезания Господня: 1 января по церковному юлианскому календарю, 14 января по гражданскому календарю. Источник: OCA Feasts & Saints; православный календарь 1/14 января.",
     },
     FixedCalendarRule {
-        day: "07",
+        julian_month: 12,
+        julian_day: 25,
         label: "Рождество Христово",
         note: "Двунадесятый праздник",
         kind: "feast",
@@ -373,7 +398,8 @@ const FIXED_CALENDAR_RULES: &[FixedCalendarRule] = &[
         description: "Рождество Христово: 25 декабря по юлианскому календарю, 7 января по гражданскому календарю.",
     },
     FixedCalendarRule {
-        day: "19",
+        julian_month: 1,
+        julian_day: 6,
         label: "Крещение Господне",
         note: "Богоявление",
         kind: "feast",
@@ -383,7 +409,8 @@ const FIXED_CALENDAR_RULES: &[FixedCalendarRule] = &[
         description: "Крещение Господне, или Богоявление: 6 января по юлианскому календарю, 19 января по гражданскому календарю.",
     },
     FixedCalendarRule {
-        day: "20",
+        julian_month: 1,
+        julian_day: 7,
         label: "Собор Предтечи и Крестителя Господня Иоанна",
         note: "Память святого",
         kind: "feast",
@@ -393,7 +420,8 @@ const FIXED_CALENDAR_RULES: &[FixedCalendarRule] = &[
         description: "Собор Иоанна Предтечи: 7 января по юлианскому календарю, 20 января по гражданскому календарю.",
     },
     FixedCalendarRule {
-        day: "14",
+        julian_month: 1,
+        julian_day: 1,
         label: "Святитель Василий Великий",
         note: "Память святого",
         kind: "feast",
@@ -403,6 +431,12 @@ const FIXED_CALENDAR_RULES: &[FixedCalendarRule] = &[
         description: "Память святителя Василия Великого совершается 1 января по юлианскому календарю, 14 января по гражданскому календарю.",
     },
 ];
+
+#[derive(Debug, Deserialize)]
+pub struct CalendarQuery {
+    pub year: Option<i32>,
+    pub month: Option<u32>,
+}
 
 fn normalize_lookup_text(value: &str) -> String {
     value
@@ -418,29 +452,48 @@ fn normalize_lookup_text(value: &str) -> String {
 
 fn calendar_rule_for_text(value: &str) -> Option<&'static FixedCalendarRule> {
     let haystack = normalize_lookup_text(value);
-    FIXED_CALENDAR_RULES
-        .iter()
-        .find(|rule| rule.aliases.iter().any(|alias| haystack.contains(&normalize_lookup_text(alias))))
+    FIXED_CALENDAR_RULES.iter().find(|rule| {
+        rule.aliases
+            .iter()
+            .any(|alias| haystack.contains(&normalize_lookup_text(alias)))
+    })
 }
 
 fn calendar_rule_for_icon(icon: &IconPage) -> Option<&'static FixedCalendarRule> {
-    calendar_rule_for_text(&[
-        icon.title.as_str(),
-        icon.slug.as_str(),
-        icon.category.as_str(),
-        icon.saint_name.as_str(),
-        icon.short_description.as_str(),
-        icon.full_description.as_str(),
-        icon.seo_title.as_deref().unwrap_or_default(),
-        icon.seo_description.as_deref().unwrap_or_default(),
-        icon.seo_keywords.as_deref().unwrap_or_default(),
-    ].join(" "))
+    calendar_rule_for_text(
+        &[
+            icon.title.as_str(),
+            icon.slug.as_str(),
+            icon.category.as_str(),
+            icon.saint_name.as_str(),
+            icon.short_description.as_str(),
+            icon.full_description.as_str(),
+            icon.seo_title.as_deref().unwrap_or_default(),
+            icon.seo_description.as_deref().unwrap_or_default(),
+            icon.seo_keywords.as_deref().unwrap_or_default(),
+        ]
+        .join(" "),
+    )
 }
 
-fn empty_calendar_day(day: &str) -> CalendarDay {
+fn empty_calendar_day(day: u32, year: i32, month: u32, current: bool) -> CalendarDay {
+    let gregorian = NaiveDate::from_ymd_opt(year, month, day);
+    let julian = gregorian.map(gregorian_to_julian);
+    let gregorian_date = gregorian.map(format_gregorian_date).unwrap_or_default();
+    let julian_day = julian
+        .map(|date| format!("{:02}", date.day()))
+        .unwrap_or_default();
+    let julian_date = julian.map(format_julian_date).unwrap_or_default();
+    let description = julian
+        .map(|date| format!("{} по юлианскому календарю.", format_julian_date(date)))
+        .unwrap_or_default();
+
     CalendarDay {
-        id: format!("calendar-jan-{day}"),
-        day: day.to_string(),
+        id: format!("calendar-{year}-{month:02}-{day:02}"),
+        day: format!("{day:02}"),
+        gregorian_date,
+        julian_day,
+        julian_date,
         label: String::new(),
         note: String::new(),
         kind: "quiet".into(),
@@ -449,70 +502,340 @@ fn empty_calendar_day(day: &str) -> CalendarDay {
         prayer_slug: String::new(),
         gospel_slug: "today".into(),
         detail_href: "/icons".into(),
-        current: false,
+        current,
         feast: false,
         text_only: true,
-        description: String::new(),
+        description,
+    }
+}
+
+fn fixed_calendar_day(
+    rule: &'static FixedCalendarRule,
+    gregorian: NaiveDate,
+    current: bool,
+    icon_slug: Option<&str>,
+) -> CalendarDay {
+    let icon_slug = icon_slug.unwrap_or_default();
+    let julian = gregorian_to_julian(gregorian);
+    CalendarDay {
+        id: format!("calendar-{}", gregorian.format("%Y-%m-%d")),
+        day: format!("{:02}", gregorian.day()),
+        gregorian_date: format_gregorian_date(gregorian),
+        julian_day: format!("{:02}", julian.day()),
+        julian_date: format_julian_date(julian),
+        label: rule.label.into(),
+        note: rule.note.into(),
+        kind: rule.kind.into(),
+        image_url: String::new(),
+        icon_slug: icon_slug.into(),
+        prayer_slug: icon_slug.into(),
+        gospel_slug: "today".into(),
+        detail_href: if icon_slug.is_empty() {
+            "/icons".into()
+        } else {
+            format!("/icons/{icon_slug}")
+        },
+        current,
+        feast: rule.feast,
+        text_only: false,
+        description: rule.description.into(),
+    }
+}
+
+fn saint_calendar_day(saint: &SaintPage, gregorian: NaiveDate, current: bool) -> CalendarDay {
+    let icon_slug = saint
+        .related_icons
+        .first()
+        .map(String::as_str)
+        .unwrap_or_default();
+    let julian = gregorian_to_julian(gregorian);
+    CalendarDay {
+        id: format!(
+            "calendar-saint-{}-{}",
+            saint.slug,
+            gregorian.format("%Y-%m-%d")
+        ),
+        day: format!("{:02}", gregorian.day()),
+        gregorian_date: format_gregorian_date(gregorian),
+        julian_day: format!("{:02}", julian.day()),
+        julian_date: format_julian_date(julian),
+        label: saint.name.clone(),
+        note: "Память святого".into(),
+        kind: "feast".into(),
+        image_url: saint.image_url.clone(),
+        icon_slug: icon_slug.into(),
+        prayer_slug: saint.prayers.first().cloned().unwrap_or_default(),
+        gospel_slug: "today".into(),
+        detail_href: format!("/saints/{}", saint.slug),
+        current,
+        feast: false,
+        text_only: false,
+        description: format!(
+            "{}: {}",
+            format_julian_date(julian),
+            saint.short_description
+        ),
     }
 }
 
 fn sync_fixed_feasts_with_calendar(calendar: &mut CalendarContent, icons: &[IconPage]) {
-    for icon in icons {
-        let Some(rule) = calendar_rule_for_icon(icon) else {
-            continue;
-        };
-
-        let icon_slug = if icon.slug.is_empty() { icon.id.as_str() } else { icon.slug.as_str() };
-        let target_index = calendar.days.iter().position(|day| day.day == rule.day);
-        if let Some(index) = target_index {
-            if let Some(current_rule) = calendar_rule_for_text(&calendar.days[index].label) {
-                if current_rule.priority > rule.priority {
-                    continue;
-                }
-            }
-        }
-
-        for day in &mut calendar.days {
-            let same_icon = day.icon_slug == icon_slug || day.detail_href == format!("/icons/{icon_slug}");
-            let same_rule_wrong_day = day.day != rule.day
-                && rule.aliases.iter().any(|alias| normalize_lookup_text(&day.label).contains(&normalize_lookup_text(alias)));
-            if same_icon || same_rule_wrong_day {
-                let current = day.current;
-                *day = empty_calendar_day(&day.day);
-                day.current = current;
-            }
-        }
-
-        let next_day = CalendarDay {
-            id: format!("calendar-jan-{}", rule.day),
-            day: rule.day.into(),
-            label: rule.label.into(),
-            note: rule.note.into(),
-            kind: rule.kind.into(),
-            image_url: String::new(),
-            icon_slug: icon_slug.into(),
-            prayer_slug: icon_slug.into(),
-            gospel_slug: "today".into(),
-            detail_href: format!("/icons/{icon_slug}"),
-            current: target_index.map(|index| calendar.days[index].current).unwrap_or(false),
-            feast: rule.feast,
-            text_only: false,
-            description: rule.description.into(),
-        };
-
-        if let Some(index) = calendar.days.iter().position(|day| day.day == rule.day) {
-            calendar.days[index] = next_day;
-        } else {
-            calendar.days.push(next_day);
-        }
-    }
-
-    calendar.days.sort_by_key(|day| day.day.parse::<u8>().unwrap_or(0));
+    let today = chrono::Local::now().date_naive();
+    let selected_year = today.year();
+    let selected_month = today.month();
+    rebuild_calendar(calendar, icons, &[], selected_year, selected_month, today);
 }
 
 fn normalize_content_before_save(mut content: IconsSiteContent) -> IconsSiteContent {
     sync_fixed_feasts_with_calendar(&mut content.calendar, &content.icons);
     content
+}
+
+fn prepare_content_for_public(
+    mut content: IconsSiteContent,
+    year: Option<i32>,
+    month: Option<u32>,
+) -> IconsSiteContent {
+    let today = chrono::Local::now().date_naive();
+    let selected_year = year
+        .filter(|year| (1900..=2099).contains(year))
+        .unwrap_or(today.year());
+    let selected_month = month
+        .filter(|month| (1..=12).contains(month))
+        .unwrap_or(today.month());
+    rebuild_calendar(
+        &mut content.calendar,
+        &content.icons,
+        &content.saints,
+        selected_year,
+        selected_month,
+        today,
+    );
+    content
+}
+
+fn rebuild_calendar(
+    calendar: &mut CalendarContent,
+    icons: &[IconPage],
+    saints: &[SaintPage],
+    year: i32,
+    month: u32,
+    today: NaiveDate,
+) {
+    let days_in_month = days_in_gregorian_month(year, month);
+    calendar.days = (1..=days_in_month)
+        .map(|day| {
+            empty_calendar_day(
+                day,
+                year,
+                month,
+                today.year() == year && today.month() == month && today.day() == day,
+            )
+        })
+        .collect();
+
+    for rule in FIXED_CALENDAR_RULES {
+        let Some(gregorian) =
+            julian_dates_for_gregorian_year(year, rule.julian_month, rule.julian_day)
+                .into_iter()
+                .find(|date| date.year() == year && date.month() == month)
+        else {
+            continue;
+        };
+
+        let icon_slug = icons
+            .iter()
+            .find(|icon| {
+                calendar_rule_for_icon(icon).is_some_and(|icon_rule| std::ptr::eq(icon_rule, rule))
+            })
+            .map(|icon| {
+                if icon.slug.is_empty() {
+                    icon.id.as_str()
+                } else {
+                    icon.slug.as_str()
+                }
+            });
+        put_calendar_day(
+            calendar,
+            fixed_calendar_day(rule, gregorian, gregorian == today, icon_slug),
+            rule.priority,
+        );
+    }
+
+    for saint in saints {
+        let Some((julian_day, julian_month)) = parse_day_month(&saint.feast_day) else {
+            continue;
+        };
+        for gregorian in julian_dates_for_gregorian_year(year, julian_month, julian_day) {
+            if gregorian.year() == year && gregorian.month() == month {
+                put_calendar_day(
+                    calendar,
+                    saint_calendar_day(saint, gregorian, gregorian == today),
+                    40,
+                );
+            }
+        }
+    }
+
+    let today_julian = gregorian_to_julian(today);
+    let selected_today = format!(
+        "{} / {} по гражданскому календарю",
+        format_julian_date(today_julian),
+        format_gregorian_date(today)
+    );
+
+    calendar.hero.year = year.to_string();
+    calendar.hero.month_title = format!("{} {}", month_name_nominative(month), year);
+    calendar.hero.prev_label = "Предыдущий год".into();
+    calendar.hero.prev_href = format!("?year={}", year - 1);
+    calendar.hero.next_label = "Следующий год".into();
+    calendar.hero.next_href = format!("?year={}", year + 1);
+    calendar.hero.today_date = selected_today;
+    calendar.hero.info_primary = "Юлианский календарь".into();
+    calendar.hero.info_secondary = "Даты показаны по старому стилю с гражданской привязкой.".into();
+
+    if let Some(current_day) = calendar
+        .days
+        .iter()
+        .find(|day| day.current && !day.text_only)
+        .cloned()
+        .or_else(|| calendar.days.iter().find(|day| !day.text_only).cloned())
+    {
+        calendar.hero.feature_title = current_day.label.clone();
+        calendar.hero.feature_note = current_day.note.clone();
+        calendar.hero.feature_date = current_day.description.clone();
+        calendar.hero.feature_href = current_day.detail_href.clone();
+        calendar.hero.icon_day_title = current_day.label;
+        calendar.hero.icon_day_icon_slug = current_day.icon_slug;
+        calendar.hero.icon_day_date = calendar.hero.today_date.clone();
+        calendar.hero.icon_day_prayer_slug = current_day.prayer_slug;
+    }
+}
+
+fn put_calendar_day(calendar: &mut CalendarContent, next_day: CalendarDay, priority: i32) {
+    if let Some(index) = calendar.days.iter().position(|day| day.day == next_day.day) {
+        let existing_priority = calendar_rule_for_text(&calendar.days[index].label)
+            .map(|rule| rule.priority)
+            .unwrap_or(if calendar.days[index].text_only {
+                0
+            } else {
+                40
+            });
+        if existing_priority <= priority {
+            calendar.days[index] = next_day;
+        }
+    }
+}
+
+fn julian_to_gregorian(year: i32, month: u32, day: u32) -> Option<NaiveDate> {
+    let approximate = NaiveDate::from_ymd_opt(year, month, day)?;
+    Some(approximate + Duration::days(julian_offset_days(approximate)))
+}
+
+fn julian_dates_for_gregorian_year(year: i32, month: u32, day: u32) -> Vec<NaiveDate> {
+    [year - 1, year, year + 1]
+        .into_iter()
+        .filter_map(|julian_year| julian_to_gregorian(julian_year, month, day))
+        .collect()
+}
+
+fn gregorian_to_julian(date: NaiveDate) -> NaiveDate {
+    date - Duration::days(julian_offset_days(date))
+}
+
+fn julian_offset_days(date: NaiveDate) -> i64 {
+    let mut year = date.year();
+    if date.month() <= 2 {
+        year -= 1;
+    }
+    (year / 100 - year / 400 - 2) as i64
+}
+
+fn days_in_gregorian_month(year: i32, month: u32) -> u32 {
+    let next = if month == 12 {
+        NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1)
+    }
+    .expect("valid month");
+    (next - Duration::days(1)).day()
+}
+
+fn parse_day_month(value: &str) -> Option<(u32, u32)> {
+    let normalized = normalize_lookup_text(value);
+    let mut day = None;
+    for token in normalized.split_whitespace() {
+        if let Ok(parsed) = token.parse::<u32>() {
+            day = Some(parsed);
+            break;
+        }
+    }
+    let month = MONTHS_GENITIVE
+        .iter()
+        .position(|month| normalized.contains(month))
+        .map(|index| index as u32 + 1)?;
+    day.map(|day| (day, month))
+}
+
+const MONTHS_NOMINATIVE: [&str; 12] = [
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
+];
+
+const MONTHS_GENITIVE: [&str; 12] = [
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+];
+
+fn month_name_nominative(month: u32) -> &'static str {
+    MONTHS_NOMINATIVE
+        .get(month.saturating_sub(1) as usize)
+        .copied()
+        .unwrap_or("Месяц")
+}
+
+fn month_name_genitive(month: u32) -> &'static str {
+    MONTHS_GENITIVE
+        .get(month.saturating_sub(1) as usize)
+        .copied()
+        .unwrap_or("месяца")
+}
+
+fn format_julian_date(date: NaiveDate) -> String {
+    format!(
+        "{} {} {} (ст. ст.)",
+        date.day(),
+        month_name_genitive(date.month()),
+        date.year()
+    )
+}
+
+fn format_gregorian_date(date: NaiveDate) -> String {
+    format!(
+        "{} {} {}",
+        date.day(),
+        month_name_genitive(date.month()),
+        date.year()
+    )
 }
 
 async fn load_content(pool: &PgPool) -> Result<IconsSiteContent, StatusCode> {
@@ -555,58 +878,129 @@ async fn save_content(pool: &PgPool, content: &IconsSiteContent) -> Result<(), S
     Ok(())
 }
 
-pub async fn public_content(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    Ok(Json(load_content(&pool).await?))
+pub async fn public_content(
+    Query(query): Query<CalendarQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    Ok(Json(prepare_content_for_public(
+        load_content(&pool).await?,
+        query.year,
+        query.month,
+    )))
 }
 
 pub async fn public_icons(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
     Ok(Json(load_content(&pool).await?.icons))
 }
 
-pub async fn public_icon(Path(slug): Path<String>, State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    load_content(&pool).await?.icons.into_iter().find(|item| item.slug == slug).map(Json).ok_or(StatusCode::NOT_FOUND)
+pub async fn public_icon(
+    Path(slug): Path<String>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    load_content(&pool)
+        .await?
+        .icons
+        .into_iter()
+        .find(|item| item.slug == slug)
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 pub async fn public_prayers(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
     Ok(Json(load_content(&pool).await?.prayers))
 }
 
-pub async fn public_prayer(Path(slug): Path<String>, State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    load_content(&pool).await?.prayers.into_iter().find(|item| item.slug == slug).map(Json).ok_or(StatusCode::NOT_FOUND)
+pub async fn public_prayer(
+    Path(slug): Path<String>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    load_content(&pool)
+        .await?
+        .prayers
+        .into_iter()
+        .find(|item| item.slug == slug)
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
-pub async fn public_gospel_today(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    Ok(Json(load_content(&pool).await?.gospel.into_iter().next().unwrap_or_else(|| {
-        let mut content = default_content();
-        content.gospel.remove(0)
-    })))
+pub async fn public_gospel_today(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    Ok(Json(
+        load_content(&pool)
+            .await?
+            .gospel
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| {
+                let mut content = default_content();
+                content.gospel.remove(0)
+            }),
+    ))
 }
 
 pub async fn public_saints(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
     Ok(Json(load_content(&pool).await?.saints))
 }
 
-pub async fn public_saint(Path(slug): Path<String>, State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    load_content(&pool).await?.saints.into_iter().find(|item| item.slug == slug).map(Json).ok_or(StatusCode::NOT_FOUND)
+pub async fn public_saint(
+    Path(slug): Path<String>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    load_content(&pool)
+        .await?
+        .saints
+        .into_iter()
+        .find(|item| item.slug == slug)
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 pub async fn public_churches(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
     Ok(Json(load_content(&pool).await?.churches))
 }
 
-pub async fn public_qr(Path(qr_id): Path<String>, State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    load_content(&pool).await?.qr_pages.into_iter().find(|item| item.qr_id == qr_id).map(Json).ok_or(StatusCode::NOT_FOUND)
+pub async fn public_qr(
+    Path(qr_id): Path<String>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    load_content(&pool)
+        .await?
+        .qr_pages
+        .into_iter()
+        .find(|item| item.qr_id == qr_id)
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
-pub async fn public_seo_page(Path(slug): Path<String>, State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    load_content(&pool).await?.pages.into_iter().find(|item| item.slug == slug).map(Json).ok_or(StatusCode::NOT_FOUND)
+pub async fn public_seo_page(
+    Path(slug): Path<String>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    load_content(&pool)
+        .await?
+        .pages
+        .into_iter()
+        .find(|item| item.slug == slug)
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
-pub async fn admin_get_content(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
-    Ok(Json(load_content(&pool).await?))
+pub async fn admin_get_content(
+    Query(query): Query<CalendarQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    Ok(Json(prepare_content_for_public(
+        load_content(&pool).await?,
+        query.year,
+        query.month,
+    )))
 }
 
-pub async fn admin_put_content(State(pool): State<PgPool>, Json(content): Json<IconsSiteContent>) -> Result<impl IntoResponse, StatusCode> {
+pub async fn admin_put_content(
+    State(pool): State<PgPool>,
+    Json(content): Json<IconsSiteContent>,
+) -> Result<impl IntoResponse, StatusCode> {
     let content = normalize_content_before_save(content);
     save_content(&pool, &content).await?;
     Ok(Json(content))
