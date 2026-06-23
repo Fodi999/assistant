@@ -578,15 +578,64 @@ fn saint_calendar_day(saint: &SaintPage, gregorian: NaiveDate, current: bool) ->
     }
 }
 
-fn sync_fixed_feasts_with_calendar(calendar: &mut CalendarContent, icons: &[IconPage]) {
-    let today = chrono::Local::now().date_naive();
-    let selected_year = today.year();
-    let selected_month = today.month();
-    rebuild_calendar(calendar, icons, &[], selected_year, selected_month, today);
+fn merge_calendar_days(
+    mut existing: Vec<CalendarDay>,
+    incoming: Vec<CalendarDay>,
+) -> Vec<CalendarDay> {
+    for next_day in incoming {
+        if let Some(index) = existing
+            .iter()
+            .position(|day| calendar_day_key(day) == calendar_day_key(&next_day))
+        {
+            existing[index] = next_day;
+        } else {
+            existing.push(next_day);
+        }
+    }
+    existing.sort_by(|a, b| calendar_day_key(a).cmp(&calendar_day_key(b)));
+    existing
 }
 
-fn normalize_content_before_save(mut content: IconsSiteContent) -> IconsSiteContent {
-    sync_fixed_feasts_with_calendar(&mut content.calendar, &content.icons);
+fn calendar_day_key(day: &CalendarDay) -> String {
+    if !day.gregorian_date.trim().is_empty() {
+        return day.gregorian_date.clone();
+    }
+    day.id.clone()
+}
+
+fn overlay_saved_calendar_days(calendar: &mut CalendarContent, saved_days: &[CalendarDay]) {
+    for saved_day in saved_days {
+        let Some(index) = calendar
+            .days
+            .iter()
+            .position(|day| calendar_day_key(day) == calendar_day_key(saved_day))
+        else {
+            continue;
+        };
+
+        let mut merged = calendar.days[index].clone();
+        merged.label = saved_day.label.clone();
+        merged.note = saved_day.note.clone();
+        merged.kind = saved_day.kind.clone();
+        merged.image_url = saved_day.image_url.clone();
+        merged.icon_slug = saved_day.icon_slug.clone();
+        merged.prayer_slug = saved_day.prayer_slug.clone();
+        merged.gospel_slug = saved_day.gospel_slug.clone();
+        merged.detail_href = saved_day.detail_href.clone();
+        merged.feast = saved_day.feast;
+        merged.text_only = saved_day.text_only;
+        merged.description = saved_day.description.clone();
+        calendar.days[index] = merged;
+    }
+}
+
+fn normalize_content_before_save_with_existing(
+    mut content: IconsSiteContent,
+    existing: Option<IconsSiteContent>,
+) -> IconsSiteContent {
+    if let Some(existing) = existing {
+        content.calendar.days = merge_calendar_days(existing.calendar.days, content.calendar.days);
+    }
     content
 }
 
@@ -596,6 +645,7 @@ fn prepare_content_for_public(
     month: Option<u32>,
 ) -> IconsSiteContent {
     let today = chrono::Local::now().date_naive();
+    let saved_days = content.calendar.days.clone();
     let selected_year = year
         .filter(|year| (1900..=2099).contains(year))
         .unwrap_or(today.year());
@@ -610,6 +660,7 @@ fn prepare_content_for_public(
         selected_month,
         today,
     );
+    overlay_saved_calendar_days(&mut content.calendar, &saved_days);
     content
 }
 
@@ -1001,7 +1052,8 @@ pub async fn admin_put_content(
     State(pool): State<PgPool>,
     Json(content): Json<IconsSiteContent>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let content = normalize_content_before_save(content);
+    let existing = load_content(&pool).await.ok();
+    let content = normalize_content_before_save_with_existing(content, existing);
     save_content(&pool, &content).await?;
     Ok(Json(content))
 }
