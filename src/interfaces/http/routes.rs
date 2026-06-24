@@ -1645,6 +1645,7 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
         "https://www.dima-fomin.pl",
         "https://kazaxbud.pages.dev",
         "https://svet-ikony.pages.dev",
+        "https://svet-ikony.fodi85999.workers.dev",
         "https://ikona.link",
         "https://www.ikona.link",
         "http://localhost:3000",
@@ -1679,6 +1680,7 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
             "https://dima-fomin.pl",
             "https://www.dima-fomin.pl",
             "https://svet-ikony.pages.dev",
+            "https://svet-ikony.fodi85999.workers.dev",
             "https://ikona.link",
             "https://www.ikona.link",
         ]
