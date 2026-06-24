@@ -654,65 +654,6 @@ fn calendar_day_key(day: &CalendarDay) -> String {
     day.id.clone()
 }
 
-fn icon_slug_from_detail_href(href: &str) -> Option<&str> {
-    href.strip_prefix("/icons/")
-        .and_then(|slug| slug.split('/').next())
-        .filter(|slug| !slug.trim().is_empty())
-}
-
-fn saved_day_is_managed_by_icon_date(saved_day: &CalendarDay, icons: &[IconPage]) -> bool {
-    let icon_slug = if !saved_day.icon_slug.trim().is_empty() {
-        Some(saved_day.icon_slug.as_str())
-    } else {
-        icon_slug_from_detail_href(&saved_day.detail_href)
-    };
-
-    let Some(icon_slug) = icon_slug else {
-        return false;
-    };
-
-    icons.iter().any(|icon| {
-        icon.calendar_date
-            .as_deref()
-            .is_some_and(|date| !date.trim().is_empty())
-            && (icon.slug == icon_slug || icon.id == icon_slug)
-    })
-}
-
-fn overlay_saved_calendar_days(
-    calendar: &mut CalendarContent,
-    saved_days: &[CalendarDay],
-    icons: &[IconPage],
-) {
-    for saved_day in saved_days {
-        if saved_day_is_managed_by_icon_date(saved_day, icons) {
-            continue;
-        }
-
-        let Some(index) = calendar
-            .days
-            .iter()
-            .position(|day| calendar_day_key(day) == calendar_day_key(saved_day))
-        else {
-            continue;
-        };
-
-        let mut merged = calendar.days[index].clone();
-        merged.label = saved_day.label.clone();
-        merged.note = saved_day.note.clone();
-        merged.kind = saved_day.kind.clone();
-        merged.image_url = saved_day.image_url.clone();
-        merged.icon_slug = saved_day.icon_slug.clone();
-        merged.prayer_slug = saved_day.prayer_slug.clone();
-        merged.gospel_slug = saved_day.gospel_slug.clone();
-        merged.detail_href = saved_day.detail_href.clone();
-        merged.feast = saved_day.feast;
-        merged.text_only = saved_day.text_only;
-        merged.description = saved_day.description.clone();
-        calendar.days[index] = merged;
-    }
-}
-
 fn normalize_content_before_save_with_existing(
     mut content: IconsSiteContent,
     existing: Option<IconsSiteContent>,
@@ -729,7 +670,6 @@ fn prepare_content_for_public(
     month: Option<u32>,
 ) -> IconsSiteContent {
     let today = chrono::Local::now().date_naive();
-    let saved_days = content.calendar.days.clone();
     let selected_year = year
         .filter(|year| (1900..=2099).contains(year))
         .unwrap_or(today.year());
@@ -744,7 +684,6 @@ fn prepare_content_for_public(
         selected_month,
         today,
     );
-    overlay_saved_calendar_days(&mut content.calendar, &saved_days, &content.icons);
     overlay_icon_calendar_days(
         &mut content.calendar,
         &content.icons,
