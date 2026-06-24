@@ -108,7 +108,6 @@ pub struct Product {
     pub photo: String,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Kit {
@@ -496,7 +495,9 @@ fn almabuild_schema(kind: &str) -> &'static str {
             r#"{"categorySlug":"slug","category":"Категория","title":"Название","spec":"Характеристики","photo":"photo-class"}"#
         }
         "kit" => r#"{"title":"Название","text":"Описание","items":["Позиция"]}"#,
-        "project" => r#"{"slug":"latin-slug","title":"Название RU","titleRu":"Название RU","titleKk":"Қазақша атауы","titleEn":"English title","meta":"Тип · площадь · срок RU","metaRu":"Тип · площадь · срок RU","metaKk":"Қазақша қысқа сипаттама","metaEn":"English short meta","seoTitle":"SEO title RU","seoTitleRu":"SEO title RU","seoTitleKk":"SEO title KZ","seoTitleEn":"SEO title EN","seoDescription":"SEO description RU","seoDescriptionRu":"SEO description RU","seoDescriptionKk":"SEO description KZ","seoDescriptionEn":"SEO description EN","pageTitle":"Заголовок SEO-страницы RU","pageTitleRu":"Заголовок SEO-страницы RU","pageTitleKk":"SEO бет тақырыбы KZ","pageTitleEn":"SEO page title EN","pageText":"Текст SEO-страницы RU","pageTextRu":"Текст SEO-страницы RU","pageTextKk":"SEO бет мәтіні KZ","pageTextEn":"SEO page text EN","photo":"photo-class","imageUrls":[]}"#,
+        "project" => {
+            r#"{"slug":"latin-slug","title":"Название RU","titleRu":"Название RU","titleKk":"Қазақша атауы","titleEn":"English title","meta":"Тип · площадь · срок RU","metaRu":"Тип · площадь · срок RU","metaKk":"Қазақша қысқа сипаттама","metaEn":"English short meta","seoTitle":"SEO title RU","seoTitleRu":"SEO title RU","seoTitleKk":"SEO title KZ","seoTitleEn":"SEO title EN","seoDescription":"SEO description RU","seoDescriptionRu":"SEO description RU","seoDescriptionKk":"SEO description KZ","seoDescriptionEn":"SEO description EN","pageTitle":"Заголовок SEO-страницы RU","pageTitleRu":"Заголовок SEO-страницы RU","pageTitleKk":"SEO бет тақырыбы KZ","pageTitleEn":"SEO page title EN","pageText":"Текст SEO-страницы RU","pageTextRu":"Текст SEO-страницы RU","pageTextKk":"SEO бет мәтіні KZ","pageTextEn":"SEO page text EN","photo":"photo-class","imageUrls":[]}"#
+        }
         _ => r#"{}"#,
     }
 }
@@ -597,7 +598,11 @@ pub async fn admin_ai_edit(
                 ))
             })?
         }
-        Err(error) => return Err(AppError::internal(format!("Gemini вернул не JSON: {error}"))),
+        Err(error) => {
+            return Err(AppError::internal(format!(
+                "Gemini вернул не JSON: {error}"
+            )))
+        }
     };
     Ok(Json(validate_ai_value(&req.kind, value)?))
 }

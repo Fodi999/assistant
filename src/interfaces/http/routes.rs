@@ -35,7 +35,6 @@ use crate::interfaces::http::{
     admin_states,
     admin_users,
     almabuild,
-    icons_site,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
     catalog::{
@@ -44,6 +43,7 @@ use crate::interfaces::http::{
     },
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     dish::{create_dish, list_dishes, recalculate_all_costs},
+    icons_site,
     inventory::{
         add_product, delete_product, get_alerts, get_dashboard, get_health, get_loss_report,
         list_products, process_expirations, update_product,
