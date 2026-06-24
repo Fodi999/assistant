@@ -654,8 +654,41 @@ fn calendar_day_key(day: &CalendarDay) -> String {
     day.id.clone()
 }
 
-fn overlay_saved_calendar_days(calendar: &mut CalendarContent, saved_days: &[CalendarDay]) {
+fn icon_slug_from_detail_href(href: &str) -> Option<&str> {
+    href.strip_prefix("/icons/")
+        .and_then(|slug| slug.split('/').next())
+        .filter(|slug| !slug.trim().is_empty())
+}
+
+fn saved_day_is_managed_by_icon_date(saved_day: &CalendarDay, icons: &[IconPage]) -> bool {
+    let icon_slug = if !saved_day.icon_slug.trim().is_empty() {
+        Some(saved_day.icon_slug.as_str())
+    } else {
+        icon_slug_from_detail_href(&saved_day.detail_href)
+    };
+
+    let Some(icon_slug) = icon_slug else {
+        return false;
+    };
+
+    icons.iter().any(|icon| {
+        icon.calendar_date
+            .as_deref()
+            .is_some_and(|date| !date.trim().is_empty())
+            && (icon.slug == icon_slug || icon.id == icon_slug)
+    })
+}
+
+fn overlay_saved_calendar_days(
+    calendar: &mut CalendarContent,
+    saved_days: &[CalendarDay],
+    icons: &[IconPage],
+) {
     for saved_day in saved_days {
+        if saved_day_is_managed_by_icon_date(saved_day, icons) {
+            continue;
+        }
+
         let Some(index) = calendar
             .days
             .iter()
@@ -711,7 +744,7 @@ fn prepare_content_for_public(
         selected_month,
         today,
     );
-    overlay_saved_calendar_days(&mut content.calendar, &saved_days);
+    overlay_saved_calendar_days(&mut content.calendar, &saved_days, &content.icons);
     overlay_icon_calendar_days(
         &mut content.calendar,
         &content.icons,
