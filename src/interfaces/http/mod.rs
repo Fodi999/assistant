@@ -32,6 +32,7 @@ pub mod recipe_ai_insights; // AI insights for recipes
 pub mod recipe_v2; // V2 with translations
 pub mod report;
 pub mod routes;
+pub mod site_context;
 pub mod smart; // 🆕 SmartService — POST /api/smart/ingredient
 pub mod smart_parse; // 🆕 SmartParse — POST /api/smart/parse
 pub mod tenant_ingredient;

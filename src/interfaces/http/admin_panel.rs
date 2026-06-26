@@ -10,6 +10,9 @@ use sqlx::{PgPool, Row};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+use super::site_context::{
+    canonical_site_key, resolve_site_id, SiteQuery, CONSTRUCTION_SITE_ID, KITCHEN_SITE_ID,
+};
 use crate::{domain::AdminClaims, shared::AppError};
 
 type LocalizedText = BTreeMap<String, String>;
@@ -57,11 +60,6 @@ fn slugify(value: &str) -> String {
     } else {
         slug
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SiteQuery {
-    pub site: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,7 +145,7 @@ fn affiliate_from_row(
         id: row.try_get::<Uuid, _>("id").unwrap().to_string(),
         site: row
             .try_get("site")
-            .unwrap_or_else(|_| "culinary".to_string()),
+            .unwrap_or_else(|_| "kitchen".to_string()),
         title: localized_from_value(row.try_get("title").ok(), &fallback_title),
         slug: fallback_title,
         category: row.try_get("category").unwrap_or_default(),
@@ -218,7 +216,7 @@ pub async fn list_affiliate_products(
     Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<AffiliateProductDto>>, AppError> {
-    let rows = if let Some(site) = query.site.filter(|site| site != "all") {
+    let rows = if query.site.as_deref() == Some("all") && query.site_id.is_none() {
         sqlx::query(
             r#"
             SELECT id, site, title, slug, category, network, merchant, affiliate_url, image_url,
@@ -227,14 +225,13 @@ pub async fn list_affiliate_products(
                    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
                    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
             FROM admin_affiliate_products
-            WHERE site = $1
             ORDER BY updated_at DESC
             "#,
         )
-        .bind(site)
         .fetch_all(&pool)
         .await?
     } else {
+        let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
         sqlx::query(
             r#"
             SELECT id, site, title, slug, category, network, merchant, affiliate_url, image_url,
@@ -243,9 +240,11 @@ pub async fn list_affiliate_products(
                    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
                    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
             FROM admin_affiliate_products
+            WHERE site_id = $1 OR is_global = true
             ORDER BY updated_at DESC
             "#,
         )
+        .bind(site_id)
         .fetch_all(&pool)
         .await?
     };
@@ -262,8 +261,10 @@ pub async fn list_affiliate_products(
 pub async fn get_affiliate_product(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
 ) -> Result<Json<AffiliateProductDto>, AppError> {
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
     let row = sqlx::query(
         r#"
         SELECT id, site, title, slug, category, network, merchant, affiliate_url, image_url,
@@ -272,10 +273,11 @@ pub async fn get_affiliate_product(
                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
                to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
         FROM admin_affiliate_products
-        WHERE id = $1
+        WHERE id = $1 AND (site_id = $2 OR is_global = true)
         "#,
     )
     .bind(id)
+    .bind(site_id)
     .fetch_optional(&pool)
     .await?
     .ok_or_else(|| AppError::not_found("Affiliate product not found"))?;
@@ -285,9 +287,12 @@ pub async fn get_affiliate_product(
 
 pub async fn create_affiliate_product(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
     Json(payload): Json<AffiliateProductPayload>,
 ) -> Result<(StatusCode, Json<AffiliateProductDto>), AppError> {
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let site_key = canonical_site_key(site_id);
     let title = payload
         .title
         .unwrap_or_else(|| default_text("Новый партнерский товар"));
@@ -303,11 +308,11 @@ pub async fn create_affiliate_product(
     let row = sqlx::query(
         r#"
         INSERT INTO admin_affiliate_products (
-            site, title, slug, category, network, merchant, affiliate_url, image_url,
+            site_id, site, title, slug, category, network, merchant, affiliate_url, image_url,
             detail_image_url, price, currency, commission_percent, cookie_days, status,
             languages, seo_title, seo_description
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
         RETURNING id, site, title, slug, category, network, merchant, affiliate_url, image_url,
                   detail_image_url, price, currency, commission_percent, cookie_days, status,
                   languages, seo_title, seo_description,
@@ -315,7 +320,8 @@ pub async fn create_affiliate_product(
                   to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
         "#,
     )
-    .bind(payload.site.unwrap_or_else(|| "culinary".to_string()))
+    .bind(site_id)
+    .bind(site_key)
     .bind(json!(title))
     .bind(slug)
     .bind(payload.category.unwrap_or_default())
@@ -342,18 +348,22 @@ pub async fn create_affiliate_product(
 pub async fn update_affiliate_product(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
     Json(payload): Json<AffiliateProductPayload>,
 ) -> Result<Json<AffiliateProductDto>, AppError> {
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let site_key = canonical_site_key(site_id);
     let current = sqlx::query(
         r#"
         SELECT id, site, title, slug, category, network, merchant, affiliate_url, image_url,
                detail_image_url, price, currency, commission_percent, cookie_days, status,
                languages, seo_title, seo_description
-        FROM admin_affiliate_products WHERE id = $1
+        FROM admin_affiliate_products WHERE id = $1 AND site_id = $2
         "#,
     )
     .bind(id)
+    .bind(site_id)
     .fetch_optional(&pool)
     .await?
     .ok_or_else(|| AppError::not_found("Affiliate product not found"))?;
@@ -378,7 +388,7 @@ pub async fn update_affiliate_product(
             affiliate_url = $8, image_url = $9, detail_image_url = $10, price = $11,
             currency = $12, commission_percent = $13, cookie_days = $14, status = $15,
             languages = $16, seo_title = $17, seo_description = $18, updated_at = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND site_id = $19
         RETURNING id, site, title, slug, category, network, merchant, affiliate_url, image_url,
                   detail_image_url, price, currency, commission_percent, cookie_days, status,
                   languages, seo_title, seo_description,
@@ -387,7 +397,7 @@ pub async fn update_affiliate_product(
         "#,
     )
     .bind(id)
-    .bind(payload.site.unwrap_or_else(|| current.try_get("site").unwrap_or_else(|_| "culinary".to_string())))
+    .bind(site_key)
     .bind(title)
     .bind(payload.slug.unwrap_or_else(|| current.try_get("slug").unwrap_or_default()))
     .bind(payload.category.unwrap_or_else(|| current.try_get("category").unwrap_or_default()))
@@ -404,6 +414,7 @@ pub async fn update_affiliate_product(
     .bind(payload.languages.unwrap_or_else(|| current.try_get("languages").unwrap_or_else(|_| vec!["ru".to_string()])))
     .bind(payload.seo_title.map(|value| json!(value)).or_else(|| current.try_get("seo_title").ok().flatten()))
     .bind(payload.seo_description.map(|value| json!(value)).or_else(|| current.try_get("seo_description").ok().flatten()))
+    .bind(site_id)
     .fetch_one(&pool)
     .await?;
     let offers = offers_for(&pool, id).await?;
@@ -413,10 +424,13 @@ pub async fn update_affiliate_product(
 pub async fn delete_affiliate_product(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
 ) -> Result<StatusCode, AppError> {
-    sqlx::query("DELETE FROM admin_affiliate_products WHERE id = $1")
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    sqlx::query("DELETE FROM admin_affiliate_products WHERE id = $1 AND site_id = $2")
         .bind(id)
+        .bind(site_id)
         .execute(&pool)
         .await?;
     Ok(StatusCode::NO_CONTENT)
@@ -519,7 +533,7 @@ fn article_from_row(row: sqlx::postgres::PgRow, article_type: &str) -> ContentAr
 
     ContentArticleDto {
         id: row.try_get::<Uuid, _>("id").unwrap().to_string(),
-        site: "culinary".to_string(),
+        site: "kitchen".to_string(),
         article_type: article_type.to_string(),
         title,
         slug: row.try_get("slug").unwrap_or_default(),
@@ -571,7 +585,8 @@ pub async fn list_culinary_products(
     list_affiliate_products(
         claims,
         Query(SiteQuery {
-            site: Some("culinary".to_string()),
+            site_id: Some(KITCHEN_SITE_ID),
+            site: Some("kitchen".to_string()),
         }),
         State(pool),
     )
@@ -861,11 +876,14 @@ pub struct SupplierPayload {
 
 pub async fn list_suppliers(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<SupplierDto>>, AppError> {
+    let site_id = resolve_site_id(&query, CONSTRUCTION_SITE_ID);
     let rows = sqlx::query(
-        "SELECT id, name, country, city, categories, contact, website, commission_terms, supplier_type FROM admin_suppliers ORDER BY updated_at DESC",
+        "SELECT id, name, country, city, categories, contact, website, commission_terms, supplier_type FROM admin_suppliers WHERE site_id = $1 OR is_global = true ORDER BY updated_at DESC",
     )
+    .bind(site_id)
     .fetch_all(&pool)
     .await?;
     Ok(Json(rows.into_iter().map(supplier_from_row).collect()))
@@ -873,16 +891,19 @@ pub async fn list_suppliers(
 
 pub async fn create_supplier(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
     Json(payload): Json<SupplierPayload>,
 ) -> Result<(StatusCode, Json<SupplierDto>), AppError> {
+    let site_id = resolve_site_id(&query, CONSTRUCTION_SITE_ID);
     let row = sqlx::query(
         r#"
-        INSERT INTO admin_suppliers (name, country, city, categories, contact, website, commission_terms, supplier_type)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        INSERT INTO admin_suppliers (site_id, name, country, city, categories, contact, website, commission_terms, supplier_type)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         RETURNING id, name, country, city, categories, contact, website, commission_terms, supplier_type
         "#,
     )
+    .bind(site_id)
     .bind(payload.name.unwrap_or_else(|| "Новый поставщик".to_string()))
     .bind(payload.country.unwrap_or_default())
     .bind(payload.city)
@@ -899,13 +920,16 @@ pub async fn create_supplier(
 pub async fn update_supplier(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
     Json(payload): Json<SupplierPayload>,
 ) -> Result<Json<SupplierDto>, AppError> {
+    let site_id = resolve_site_id(&query, CONSTRUCTION_SITE_ID);
     let current = sqlx::query(
-        "SELECT id, name, country, city, categories, contact, website, commission_terms, supplier_type FROM admin_suppliers WHERE id = $1",
+        "SELECT id, name, country, city, categories, contact, website, commission_terms, supplier_type FROM admin_suppliers WHERE id = $1 AND site_id = $2",
     )
     .bind(id)
+    .bind(site_id)
     .fetch_optional(&pool)
     .await?
     .ok_or_else(|| AppError::not_found("Supplier not found"))?;
@@ -913,7 +937,7 @@ pub async fn update_supplier(
         r#"
         UPDATE admin_suppliers SET name = $2, country = $3, city = $4, categories = $5,
             contact = $6, website = $7, commission_terms = $8, supplier_type = $9, updated_at = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND site_id = $10
         RETURNING id, name, country, city, categories, contact, website, commission_terms, supplier_type
         "#,
     )
@@ -926,6 +950,7 @@ pub async fn update_supplier(
     .bind(payload.website.or_else(|| current.try_get("website").ok().flatten()))
     .bind(payload.commission_terms.or_else(|| current.try_get("commission_terms").ok().flatten()))
     .bind(payload.supplier_type.unwrap_or_else(|| current.try_get("supplier_type").unwrap_or_else(|_| "local_supplier".to_string())))
+    .bind(site_id)
     .fetch_one(&pool)
     .await?;
     Ok(Json(supplier_from_row(row)))
@@ -963,7 +988,8 @@ fn lead_from_row(row: sqlx::postgres::PgRow) -> LeadDto {
             .as_str()
         {
             "almabuild" | "construction" => "construction".to_string(),
-            _ => "culinary".to_string(),
+            "icons" | "church" => "church".to_string(),
+            _ => "kitchen".to_string(),
         },
         category: row.try_get::<String, _>("category").unwrap_or_default(),
         city: row.try_get("city").ok().flatten(),
@@ -982,25 +1008,19 @@ pub async fn list_leads(
     Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<LeadDto>>, AppError> {
-    let site = query.site.map(|site| {
-        if site == "construction" {
-            "almabuild".to_string()
-        } else {
-            site
-        }
-    });
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
     let rows = sqlx::query(
         r#"
         SELECT id, site, name, phone, object_type, area, comment, items, status,
                potential_value, currency, category, city, contact,
                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
         FROM site_leads
-        WHERE $1::text IS NULL OR site = $1
+        WHERE site_id = $1 OR is_global = true
         ORDER BY created_at DESC
         LIMIT 500
         "#,
     )
-    .bind(site)
+    .bind(site_id)
     .fetch_all(&pool)
     .await?;
     Ok(Json(rows.into_iter().map(lead_from_row).collect()))
@@ -1014,13 +1034,15 @@ pub struct UpdateLeadStatusRequest {
 pub async fn update_lead_status(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
     Json(payload): Json<UpdateLeadStatusRequest>,
 ) -> Result<Json<LeadDto>, AppError> {
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
     let row = sqlx::query(
         r#"
         UPDATE site_leads SET status = $2
-        WHERE id = $1
+        WHERE id = $1 AND site_id = $3
         RETURNING id, site, name, phone, object_type, area, comment, items, status,
                   potential_value, currency, category, city, contact,
                   to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
@@ -1028,6 +1050,7 @@ pub async fn update_lead_status(
     )
     .bind(id)
     .bind(payload.status)
+    .bind(site_id)
     .fetch_optional(&pool)
     .await?
     .ok_or_else(|| AppError::not_found("Lead not found"))?;
@@ -1057,30 +1080,29 @@ pub async fn dashboard_metrics(
     Query(query): Query<SiteQuery>,
     State(pool): State<PgPool>,
 ) -> Result<Json<SiteDashboardMetricsDto>, AppError> {
-    let site = query.site.unwrap_or_else(|| "culinary".to_string());
-    let db_site = if site == "construction" {
-        "almabuild"
-    } else {
-        site.as_str()
-    };
-    let products: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM admin_affiliate_products WHERE site = $1")
-            .bind(&site)
-            .fetch_one(&pool)
-            .await?;
-    let published_products: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_affiliate_products WHERE site = $1 AND status IN ('active', 'published')")
-        .bind(&site)
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let site = canonical_site_key(site_id).to_string();
+    let products: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM admin_affiliate_products WHERE site_id = $1 OR is_global = true",
+    )
+    .bind(site_id)
+    .fetch_one(&pool)
+    .await?;
+    let published_products: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_affiliate_products WHERE (site_id = $1 OR is_global = true) AND status IN ('active', 'published')")
+        .bind(site_id)
         .fetch_one(&pool)
         .await?;
-    let leads_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM site_leads WHERE site = $1")
-        .bind(db_site)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(0);
-    let revenue: Option<Decimal> = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(potential_value), 0) FROM site_leads WHERE site = $1",
+    let leads_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM site_leads WHERE site_id = $1 OR is_global = true",
     )
-    .bind(db_site)
+    .bind(site_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+    let revenue: Option<Decimal> = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(potential_value), 0) FROM site_leads WHERE site_id = $1 OR is_global = true",
+    )
+    .bind(site_id)
     .fetch_one(&pool)
     .await
     .ok();
@@ -1090,12 +1112,12 @@ pub async fn dashboard_metrics(
                potential_value, currency, category, city, contact,
                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
         FROM site_leads
-        WHERE site = $1
+        WHERE site_id = $1 OR is_global = true
         ORDER BY created_at DESC
         LIMIT 5
         "#,
     )
-    .bind(db_site)
+    .bind(site_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -1103,8 +1125,8 @@ pub async fn dashboard_metrics(
         .into_iter()
         .map(lead_from_row)
         .collect::<Vec<_>>();
-    let product_rows = sqlx::query("SELECT id, title, slug, price, currency FROM admin_affiliate_products WHERE site = $1 ORDER BY updated_at DESC LIMIT 5")
-        .bind(&site)
+    let product_rows = sqlx::query("SELECT id, title, slug, price, currency FROM admin_affiliate_products WHERE site_id = $1 OR is_global = true ORDER BY updated_at DESC LIMIT 5")
+        .bind(site_id)
         .fetch_all(&pool)
         .await?;
     let top_products = product_rows

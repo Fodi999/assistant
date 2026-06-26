@@ -794,6 +794,10 @@ impl CmsService {
         }
     }
 
+    fn default_site_id() -> Uuid {
+        Uuid::from_u128(0x00000000000000000000000000000103)
+    }
+
     // ── ABOUT PAGE ────────────────────────────────────────────────────────────
 
     pub async fn get_about(&self) -> AppResult<AboutPageRow> {
@@ -1387,18 +1391,29 @@ STORE PRODUCT RULES:
 
     /// Admin: list all articles (including drafts)
     pub async fn list_articles_admin(&self, category: Option<&str>) -> AppResult<Vec<ArticleRow>> {
+        self.list_articles_admin_for_site(Self::default_site_id(), category)
+            .await
+    }
+
+    pub async fn list_articles_admin_for_site(
+        &self,
+        site_id: Uuid,
+        category: Option<&str>,
+    ) -> AppResult<Vec<ArticleRow>> {
         match category.filter(|s| !s.is_empty()) {
             Some(cat) => sqlx::query_as(
-                "SELECT * FROM knowledge_articles WHERE category = $1 ORDER BY order_index ASC, created_at DESC",
+                "SELECT * FROM knowledge_articles WHERE (site_id = $1 OR is_global = true) AND category = $2 ORDER BY order_index ASC, created_at DESC",
             )
+            .bind(site_id)
             .bind(cat)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| { tracing::error!("list_articles_admin: {e}"); AppError::internal("DB error") }),
 
             None => sqlx::query_as(
-                "SELECT * FROM knowledge_articles ORDER BY order_index ASC, created_at DESC",
+                "SELECT * FROM knowledge_articles WHERE site_id = $1 OR is_global = true ORDER BY order_index ASC, created_at DESC",
             )
+            .bind(site_id)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| { tracing::error!("list_articles_admin: {e}"); AppError::internal("DB error") }),
@@ -1426,14 +1441,35 @@ STORE PRODUCT RULES:
 
     /// Admin: get article by id (any status)
     pub async fn get_article_by_id(&self, id: Uuid) -> AppResult<ArticleRow> {
-        sqlx::query_as("SELECT * FROM knowledge_articles WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| AppError::not_found("Article not found"))
+        self.get_article_by_id_for_site(id, Self::default_site_id())
+            .await
+    }
+
+    pub async fn get_article_by_id_for_site(
+        &self,
+        id: Uuid,
+        site_id: Uuid,
+    ) -> AppResult<ArticleRow> {
+        sqlx::query_as(
+            "SELECT * FROM knowledge_articles WHERE id = $1 AND (site_id = $2 OR is_global = true)",
+        )
+        .bind(id)
+        .bind(site_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Article not found"))
     }
 
     pub async fn create_article(&self, req: CreateArticleRequest) -> AppResult<ArticleRow> {
+        self.create_article_for_site(req, Self::default_site_id())
+            .await
+    }
+
+    pub async fn create_article_for_site(
+        &self,
+        req: CreateArticleRequest,
+        site_id: Uuid,
+    ) -> AppResult<ArticleRow> {
         // Auto-generate slug from title_en if not provided
         let slug = match req.slug.as_deref() {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -1442,15 +1478,16 @@ STORE PRODUCT RULES:
 
         sqlx::query_as(
             r#"INSERT INTO knowledge_articles
-               (slug, category, title_en, title_pl, title_ru, title_uk,
+               (site_id, slug, category, title_en, title_pl, title_ru, title_uk,
                 content_en, content_pl, content_ru, content_uk,
                 image_url, author_name, author_avatar_url, author_avatar_position, seo_title, seo_description,
                 seo_title_en, seo_title_ru, seo_title_pl, seo_title_uk,
                 seo_description_en, seo_description_ru, seo_description_pl, seo_description_uk,
                 published, published_at, order_index)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25, CASE WHEN $25 THEN NOW() ELSE NULL END, $26)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26, CASE WHEN $26 THEN NOW() ELSE NULL END, $27)
                RETURNING *"#,
         )
+        .bind(site_id)
         .bind(&slug)
         .bind(req.category.unwrap_or_default())
         .bind(&req.title_en)
@@ -1521,7 +1558,18 @@ STORE PRODUCT RULES:
     }
 
     pub async fn list_shop_products(&self) -> AppResult<Vec<ShopProductRow>> {
-        sqlx::query_as("SELECT * FROM shop_products ORDER BY updated_at DESC")
+        self.list_shop_products_for_site(Self::default_site_id())
+            .await
+    }
+
+    pub async fn list_shop_products_for_site(
+        &self,
+        site_id: Uuid,
+    ) -> AppResult<Vec<ShopProductRow>> {
+        sqlx::query_as(
+            "SELECT * FROM shop_products WHERE site_id = $1 OR is_global = true ORDER BY updated_at DESC",
+        )
+            .bind(site_id)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| {
@@ -1555,22 +1603,39 @@ STORE PRODUCT RULES:
         id: Uuid,
         status: &str,
     ) -> AppResult<ShopProductRow> {
+        self.update_shop_product_status_for_site(id, Self::default_site_id(), status)
+            .await
+    }
+
+    pub async fn update_shop_product_status_for_site(
+        &self,
+        id: Uuid,
+        site_id: Uuid,
+        status: &str,
+    ) -> AppResult<ShopProductRow> {
         if !matches!(status, "draft" | "active" | "archived") {
             return Err(AppError::validation("Invalid shop product status"));
         }
         sqlx::query_as(
-            "UPDATE shop_products SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
+            "UPDATE shop_products SET status = $1, updated_at = NOW() WHERE id = $2 AND site_id = $3 RETURNING *",
         )
         .bind(status)
         .bind(id)
+        .bind(site_id)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::not_found("Shop product not found"))
     }
 
     pub async fn delete_shop_product(&self, id: Uuid) -> AppResult<()> {
-        let result = sqlx::query("DELETE FROM shop_products WHERE id = $1")
+        self.delete_shop_product_for_site(id, Self::default_site_id())
+            .await
+    }
+
+    pub async fn delete_shop_product_for_site(&self, id: Uuid, site_id: Uuid) -> AppResult<()> {
+        let result = sqlx::query("DELETE FROM shop_products WHERE id = $1 AND site_id = $2")
             .bind(id)
+            .bind(site_id)
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
@@ -1583,6 +1648,15 @@ STORE PRODUCT RULES:
         &self,
         req: CreateShopProductRequest,
     ) -> AppResult<ShopProductRow> {
+        self.create_shop_product_for_site(req, Self::default_site_id())
+            .await
+    }
+
+    pub async fn create_shop_product_for_site(
+        &self,
+        req: CreateShopProductRequest,
+        site_id: Uuid,
+    ) -> AppResult<ShopProductRow> {
         let slug = req
             .slug
             .filter(|value| !value.trim().is_empty())
@@ -1593,7 +1667,7 @@ STORE PRODUCT RULES:
         }
         sqlx::query_as(
             r#"INSERT INTO shop_products (
-                slug, sku, category, name_en, name_ru, name_pl, name_uk,
+                site_id, slug, sku, category, name_en, name_ru, name_pl, name_uk,
                 short_description_en, short_description_ru, short_description_pl, short_description_uk,
                 description_en, description_ru, description_pl, description_uk,
                 seo_title_en, seo_title_ru, seo_title_pl, seo_title_uk,
@@ -1601,9 +1675,10 @@ STORE PRODUCT RULES:
                 selling_points, image_urls, price_cents, currency, stock_quantity, status
             ) VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-                $20,$21,$22,$23,$24,$25,$26,$27,$28,$29
+                $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
             ) RETURNING *"#,
         )
+        .bind(site_id)
         .bind(slug)
         .bind(req.sku.filter(|value| !value.trim().is_empty()))
         .bind(req.category.unwrap_or_else(|| "other".to_string()))
@@ -1646,7 +1721,17 @@ STORE PRODUCT RULES:
         id: Uuid,
         req: UpdateArticleRequest,
     ) -> AppResult<ArticleRow> {
-        let cur = self.get_article_by_id(id).await?;
+        self.update_article_for_site(id, Self::default_site_id(), req)
+            .await
+    }
+
+    pub async fn update_article_for_site(
+        &self,
+        id: Uuid,
+        site_id: Uuid,
+        req: UpdateArticleRequest,
+    ) -> AppResult<ArticleRow> {
+        let cur = self.get_article_by_id_for_site(id, site_id).await?;
 
         sqlx::query_as(
             r#"UPDATE knowledge_articles SET
@@ -1663,7 +1748,7 @@ STORE PRODUCT RULES:
                  ELSE published_at
                END,
                order_index=$26, updated_at=NOW()
-               WHERE id=$27 RETURNING *"#,
+               WHERE id=$27 AND site_id=$28 RETURNING *"#,
         )
         .bind(req.slug.unwrap_or(cur.slug))
         .bind(req.category.unwrap_or(cur.category))
@@ -1695,6 +1780,7 @@ STORE PRODUCT RULES:
         .bind(req.published.unwrap_or(cur.published))
         .bind(req.order_index.unwrap_or(cur.order_index))
         .bind(id)
+        .bind(site_id)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -1704,8 +1790,14 @@ STORE PRODUCT RULES:
     }
 
     pub async fn delete_article(&self, id: Uuid) -> AppResult<()> {
-        let r = sqlx::query("DELETE FROM knowledge_articles WHERE id = $1")
+        self.delete_article_for_site(id, Self::default_site_id())
+            .await
+    }
+
+    pub async fn delete_article_for_site(&self, id: Uuid, site_id: Uuid) -> AppResult<()> {
+        let r = sqlx::query("DELETE FROM knowledge_articles WHERE id = $1 AND site_id = $2")
             .bind(id)
+            .bind(site_id)
             .execute(&self.pool)
             .await?;
         if r.rows_affected() == 0 {

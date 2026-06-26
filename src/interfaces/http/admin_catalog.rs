@@ -5,12 +5,14 @@ use crate::application::{
 use crate::domain::AdminClaims;
 use crate::shared::AppError;
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     Json,
 };
 use serde::Serialize;
 use uuid::Uuid;
+
+use super::site_context::{resolve_site_id, SiteQuery, KITCHEN_SITE_ID};
 
 /// Image URL Response
 #[derive(Debug, Serialize)]
@@ -41,9 +43,11 @@ pub async fn ai_generate_product_image(
 /// List all products
 pub async fn list_products(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(service): State<AdminCatalogService>,
 ) -> Result<Json<Vec<ProductResponse>>, AppError> {
-    let products = service.list_products().await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let products = service.list_products_for_site(site_id).await?;
     Ok(Json(products))
 }
 
@@ -51,19 +55,23 @@ pub async fn list_products(
 pub async fn get_product(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(service): State<AdminCatalogService>,
 ) -> Result<Json<ProductResponse>, AppError> {
-    let product = service.get_product_by_id(id).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let product = service.get_product_by_id_for_site(id, site_id).await?;
     Ok(Json(product))
 }
 
 /// Create new product
 pub async fn create_product(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(service): State<AdminCatalogService>,
     Json(req): Json<CreateProductRequest>,
 ) -> Result<(StatusCode, Json<ProductResponse>), AppError> {
-    let product = service.create_product(req).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let product = service.create_product_for_site(req, site_id).await?;
     Ok((StatusCode::CREATED, Json(product)))
 }
 
@@ -71,10 +79,12 @@ pub async fn create_product(
 pub async fn update_product(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(service): State<AdminCatalogService>,
     Json(req): Json<UpdateProductRequest>,
 ) -> Result<Json<ProductResponse>, AppError> {
-    let product = service.update_product(id, req).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let product = service.update_product_for_site(id, site_id, req).await?;
     Ok(Json(product))
 }
 
@@ -82,9 +92,11 @@ pub async fn update_product(
 pub async fn delete_product(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(service): State<AdminCatalogService>,
 ) -> Result<StatusCode, AppError> {
-    service.delete_product(id).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    service.delete_product_for_site(id, site_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

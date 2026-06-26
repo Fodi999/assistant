@@ -15,11 +15,15 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::site_context::{resolve_site_id, SiteQuery, KITCHEN_SITE_ID};
+
 // ── QUERY PARAMS ──────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct ArticleFilterQuery {
     pub category: Option<String>,
+    pub site_id: Option<Uuid>,
+    pub site: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -230,18 +234,22 @@ pub async fn create_ai_shop_product_draft(
 
 pub async fn list_shop_products(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_shop_products().await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let rows = svc.list_shop_products_for_site(site_id).await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 
 pub async fn create_shop_product(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
     Json(req): Json<CreateShopProductRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let row = svc.create_shop_product(req).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let row = svc.create_shop_product_for_site(req, site_id).await?;
     Ok((
         StatusCode::CREATED,
         Json(serde_json::to_value(row).unwrap()),
@@ -251,19 +259,25 @@ pub async fn create_shop_product(
 pub async fn update_shop_product_status(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
     Json(req): Json<UpdateShopProductStatusRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let row = svc.update_shop_product_status(id, &req.status).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let row = svc
+        .update_shop_product_status_for_site(id, site_id, &req.status)
+        .await?;
     Ok(Json(serde_json::to_value(row).unwrap()))
 }
 
 pub async fn delete_shop_product(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
 ) -> Result<StatusCode, AppError> {
-    svc.delete_shop_product(id).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    svc.delete_shop_product_for_site(id, site_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -272,25 +286,36 @@ pub async fn list_articles(
     Query(q): Query<ArticleFilterQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_articles_admin(q.category.as_deref()).await?;
+    let site_query = SiteQuery {
+        site_id: q.site_id,
+        site: q.site,
+    };
+    let site_id = resolve_site_id(&site_query, KITCHEN_SITE_ID);
+    let rows = svc
+        .list_articles_admin_for_site(site_id, q.category.as_deref())
+        .await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 
 pub async fn get_article(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let row = svc.get_article_by_id(id).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let row = svc.get_article_by_id_for_site(id, site_id).await?;
     Ok(Json(serde_json::to_value(row).unwrap()))
 }
 
 pub async fn create_article(
     _claims: AdminClaims,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
     Json(req): Json<CreateArticleRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let row = svc.create_article(req).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let row = svc.create_article_for_site(req, site_id).await?;
     Ok((
         StatusCode::CREATED,
         Json(serde_json::to_value(row).unwrap()),
@@ -300,19 +325,23 @@ pub async fn create_article(
 pub async fn update_article(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
     Json(req): Json<UpdateArticleRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let row = svc.update_article(id, req).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let row = svc.update_article_for_site(id, site_id, req).await?;
     Ok(Json(serde_json::to_value(row).unwrap()))
 }
 
 pub async fn delete_article(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
 ) -> Result<StatusCode, AppError> {
-    svc.delete_article(id).await?;
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    svc.delete_article_for_site(id, site_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

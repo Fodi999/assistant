@@ -375,6 +375,10 @@ impl AdminCatalogService {
         }
     }
 
+    fn default_site_id() -> Uuid {
+        Uuid::from_u128(0x00000000000000000000000000000103)
+    }
+
     /// Create new product - OPTIMIZED UNIFIED ARCHITECTURE
     ///
     /// Pipeline (OPTIMIZED - one AI call instead of 3):
@@ -386,6 +390,15 @@ impl AdminCatalogService {
     /// Performance: 3x faster (~700ms instead of ~1800ms)
     /// Cost: 1/3 of the original ($0.001 instead of $0.003)
     pub async fn create_product(&self, req: CreateProductRequest) -> AppResult<ProductResponse> {
+        self.create_product_for_site(req, Self::default_site_id())
+            .await
+    }
+
+    pub async fn create_product_for_site(
+        &self,
+        req: CreateProductRequest,
+        site_id: Uuid,
+    ) -> AppResult<ProductResponse> {
         tracing::info!("🚀 Starting optimized product creation pipeline");
 
         let name_input = req.name_input.trim();
@@ -457,9 +470,10 @@ impl AdminCatalogService {
         // 🔍 ШАГ 2: ПРОВЕРКА ДУБЛИКАТОВ (case-insensitive on canonical name)
         // ==========================================
         let exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE LOWER(name_en) = LOWER($1) AND COALESCE(is_active, true) = true)"
+            "SELECT EXISTS(SELECT 1 FROM catalog_ingredients WHERE site_id = $2 AND LOWER(name_en) = LOWER($1) AND COALESCE(is_active, true) = true)"
         )
         .bind(&name_en)
+        .bind(site_id)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -616,7 +630,7 @@ impl AdminCatalogService {
         let product = sqlx::query_as::<_, ProductResponse>(
             r#"
             INSERT INTO catalog_ingredients (
-                id, name_en, name_pl, name_uk, name_ru,
+                id, site_id, name_en, name_pl, name_uk, name_ru,
                 category_id, default_unit, description, product_type, image_url,
                 description_en, description_pl, description_ru, description_uk,
                 calories_per_100g, protein_per_100g, fat_per_100g, carbs_per_100g,
@@ -627,8 +641,8 @@ impl AdminCatalogService {
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9,
                 $10, $11, $12, $13, $14, $15, $16, $17,
-                $18, $19, $20, $21, $22, $23, $24::text[]::season_type[],
-                $25, $26, $27
+                $18, $19, $20, $21, $22, $23, $24, $25::text[]::season_type[],
+                $26, $27, $28
             )
             RETURNING
                 id, slug, name_en, name_pl, name_uk, name_ru,
@@ -649,6 +663,7 @@ impl AdminCatalogService {
             "#,
         )
         .bind(id)
+        .bind(site_id)
         .bind(&name_en)
         .bind(&name_pl)
         .bind(&name_uk)
@@ -779,6 +794,15 @@ impl AdminCatalogService {
 
     /// Get product by ID
     pub async fn get_product_by_id(&self, id: Uuid) -> AppResult<ProductResponse> {
+        self.get_product_by_id_for_site(id, Self::default_site_id())
+            .await
+    }
+
+    pub async fn get_product_by_id_for_site(
+        &self,
+        id: Uuid,
+        site_id: Uuid,
+    ) -> AppResult<ProductResponse> {
         let product = sqlx::query_as::<_, ProductResponse>(
             r#"SELECT id, slug, name_en, name_pl, name_uk, name_ru,
                       category_id, default_unit as unit, description, image_url,
@@ -796,9 +820,10 @@ impl AdminCatalogService {
                       seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
                       COALESCE(is_published, false) as is_published, published_at::text
                FROM catalog_ingredients
-               WHERE id = $1 AND is_active = true"#
+               WHERE id = $1 AND (site_id = $2 OR is_global = true) AND is_active = true"#
         )
         .bind(id)
+        .bind(site_id)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::not_found("Product not found OR deleted"))?;
@@ -808,6 +833,10 @@ impl AdminCatalogService {
 
     /// List all products in the catalog
     pub async fn list_products(&self) -> AppResult<Vec<ProductResponse>> {
+        self.list_products_for_site(Self::default_site_id()).await
+    }
+
+    pub async fn list_products_for_site(&self, site_id: Uuid) -> AppResult<Vec<ProductResponse>> {
         let products = sqlx::query_as::<_, ProductResponse>(
             r#"SELECT id, slug, name_en, name_pl, name_uk, name_ru,
                       category_id, default_unit as unit, description, image_url,
@@ -825,9 +854,10 @@ impl AdminCatalogService {
                       seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
                       COALESCE(is_published, false) as is_published, published_at::text
                FROM catalog_ingredients
-               WHERE is_active = true
+               WHERE (site_id = $1 OR is_global = true) AND is_active = true
                ORDER BY name_en ASC"#
         )
+        .bind(site_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -838,6 +868,16 @@ impl AdminCatalogService {
     pub async fn update_product(
         &self,
         id: Uuid,
+        req: UpdateProductRequest,
+    ) -> AppResult<ProductResponse> {
+        self.update_product_for_site(id, Self::default_site_id(), req)
+            .await
+    }
+
+    pub async fn update_product_for_site(
+        &self,
+        id: Uuid,
+        site_id: Uuid,
         req: UpdateProductRequest,
     ) -> AppResult<ProductResponse> {
         validate_optional_short_product_name("name_en", &req.name_en)?;
@@ -865,9 +905,10 @@ impl AdminCatalogService {
                       seo_title, seo_description, seo_h1, canonical_url, og_title, og_description, og_image,
                       COALESCE(is_published, false) as is_published, published_at::text
                FROM catalog_ingredients
-               WHERE id = $1 AND is_active = true FOR UPDATE"#
+               WHERE id = $1 AND site_id = $2 AND is_active = true FOR UPDATE"#
         )
         .bind(id)
+        .bind(site_id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::not_found("Product not found"))?;
@@ -1153,7 +1194,7 @@ impl AdminCatalogService {
                 og_title = COALESCE($38, og_title),
                 og_description = COALESCE($39, og_description),
                 og_image = COALESCE($40, og_image)
-            WHERE id = $27
+            WHERE id = $27 AND site_id = $41
             RETURNING id, slug, name_en, name_pl, name_uk, name_ru,
                       category_id, default_unit as unit, description, image_url,
                       description_en, description_pl, description_ru, description_uk,
@@ -1211,6 +1252,7 @@ impl AdminCatalogService {
         .bind(&req.og_title)        // $38
         .bind(&req.og_description)  // $39
         .bind(&req.og_image)        // $40
+        .bind(site_id)              // $41
         .fetch_one(&mut *tx)
         .await?;
 
@@ -1409,15 +1451,21 @@ impl AdminCatalogService {
 
     /// Delete product
     pub async fn delete_product(&self, id: Uuid) -> AppResult<()> {
+        self.delete_product_for_site(id, Self::default_site_id())
+            .await
+    }
+
+    pub async fn delete_product_for_site(&self, id: Uuid, site_id: Uuid) -> AppResult<()> {
         // Fetch product before delete — need slug + published status for revalidation
-        let product = self.get_product_by_id(id).await.ok();
+        let product = self.get_product_by_id_for_site(id, site_id).await.ok();
 
         // Soft delete - mark as inactive instead of deleting
         // This preserves relationships with inventory and other tables
         let result = sqlx::query(
-            "UPDATE catalog_ingredients SET is_active = false WHERE id = $1 AND is_active = true",
+            "UPDATE catalog_ingredients SET is_active = false WHERE id = $1 AND site_id = $2 AND is_active = true",
         )
         .bind(id)
+        .bind(site_id)
         .execute(&self.pool)
         .await
         .map_err(|e| {
