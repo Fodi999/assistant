@@ -10,7 +10,12 @@ pub async fn version() -> (StatusCode, Json<Value>) {
         "GIT_COMMIT_SHA",
         "SOURCE_COMMIT",
     ])
-    .unwrap_or_else(|| env!("BUILD_GIT_SHA").to_string());
+    .unwrap_or_else(|| {
+        option_env!("BUILD_GIT_SHA")
+            .unwrap_or("unknown")
+            .to_string()
+    });
+    let build_time_unix = option_env!("BUILD_TIME_UNIX").unwrap_or("unknown");
 
     (
         StatusCode::OK,
@@ -20,7 +25,7 @@ pub async fn version() -> (StatusCode, Json<Value>) {
             "service": env!("CARGO_PKG_NAME"),
             "version": env!("CARGO_PKG_VERSION"),
             "commit": commit,
-            "build_time_unix": env!("BUILD_TIME_UNIX"),
+            "build_time_unix": build_time_unix,
             "deployment_id": std::env::var("KOYEB_DEPLOYMENT_ID").ok(),
             "koyeb_app": std::env::var("KOYEB_APP_NAME").ok(),
             "koyeb_service": std::env::var("KOYEB_SERVICE_NAME").ok(),

@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy dependency files first for caching
 COPY Cargo.toml Cargo.lock ./
+COPY build.rs ./
 
 # Copy source code and migrations
 COPY src ./src
