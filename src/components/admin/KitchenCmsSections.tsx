@@ -392,9 +392,17 @@ export function KitchenCmsSections() {
             <div className="admin-form-grid">
               <label><span>Title {lang.toUpperCase()}</span><input value={localized(about, 'title', lang)} onChange={(event) => setAbout(patchLocalized(about, 'title', lang, event.target.value))} /><FieldError message={errors.aboutTitle} /></label>
               <label><span>Content {lang.toUpperCase()}</span><textarea value={localized(about, 'content', lang)} onChange={(event) => setAbout(patchLocalized(about, 'content', lang, event.target.value))} /></label>
-              <label><span>Image URL</span><input value={about.image_url || ''} onChange={(event) => setAbout({ ...about, image_url: event.target.value })} /><FieldError message={errors.aboutImage} /></label>
+              <div className="kitchen-about-photo-field">
+                {about.image_url ? <img src={about.image_url} alt="" /> : <span>Photo</span>}
+                <div>
+                  <label><span>Image URL</span><input value={about.image_url || ''} onChange={(event) => setAbout({ ...about, image_url: event.target.value })} /><FieldError message={errors.aboutImage} /></label>
+                  <div className="admin-panel-actions">
+                    <label className="admin-btn secondary"><input className="visually-hidden" type="file" accept="image/*" disabled={Boolean(busy)} onChange={(event) => void uploadAbout(event.target.files?.[0] ?? null)} /><AppIcon name="image" /><span>{busy === 'about-photo' ? 'Uploading' : 'Upload photo from PC'}</span></label>
+                    <ActionButton icon="refresh" disabled={Boolean(busy) || !about.image_url} onClick={() => setAbout({ ...about, image_url: '' })}>Remove photo</ActionButton>
+                  </div>
+                </div>
+              </div>
               <div className="admin-panel-actions">
-                <label className="admin-btn secondary"><input className="visually-hidden" type="file" accept="image/*" disabled={Boolean(busy)} onChange={(event) => void uploadAbout(event.target.files?.[0] ?? null)} /><AppIcon name="image" /><span>{busy === 'about-photo' ? 'Uploading' : 'Upload photo'}</span></label>
                 <ActionButton tone="primary" icon="save" disabled={Boolean(busy)} onClick={() => void saveAbout()}>{busy === 'about' ? 'Saving' : 'Save About'}</ActionButton>
               </div>
             </div>
