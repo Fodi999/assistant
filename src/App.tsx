@@ -25,7 +25,6 @@ import { ShopPage } from './pages/admin/ShopPage';
 import { SuppliersPage } from './pages/admin/SuppliersPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { LoginPage } from './pages/admin/LoginPage';
-import { IconsPage } from './pages/icons/IconsPage';
 import { DashboardPage } from './pages/shared/DashboardPage';
 
 type PageBySite = Record<ActiveSiteId, AppPage>;
@@ -42,11 +41,11 @@ export function App() {
   const [pageBySite, setPageBySite] = useState<PageBySite>(defaultPageBySite);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true');
   const activeSite = activeSiteIdToLegacyKey(activeSiteId);
-  const activePage = pageBySite[activeSiteId] ?? 'dashboard';
+  const activePage = normalizePageForSite(pageBySite[activeSiteId] ?? 'dashboard', activeSiteId);
   const [dataError] = useState<string | null>(null);
 
   function navigate(page: AppPage) {
-    setPageBySite((current) => ({ ...current, [activeSiteId]: page }));
+    setPageBySite((current) => ({ ...current, [activeSiteId]: normalizePageForSite(page, activeSiteId) }));
   }
 
   function changeSite(siteId: ActiveSiteId) {
@@ -72,9 +71,9 @@ export function App() {
         ? <ChurchContentPage />
         : <AdminPlaceholder page="Church Content" icon="calendar" description="Church content editor is available only for the church site." />;
       case 'icons': return activeSiteId === 'church'
-        ? <IconsPage activeSection="icons" />
-        : <AdminPlaceholder page="Icons" icon="qr" description="Icons editor is available only for the church site." />;
-      case 'calendar': return <CalendarPage />;
+        ? <ChurchContentPage />
+        : <AdminPlaceholder page="Icons" icon="qr" description="Legacy icons editor is hidden. Use the site-specific content editor." />;
+      case 'calendar': return activeSiteId === 'church' ? <ChurchContentPage /> : <CalendarPage />;
       case 'leads': return <LeadsPage />;
       case 'catalog': return <CatalogPage />;
       case 'shop': return <ShopPage />;
@@ -107,6 +106,12 @@ export function App() {
       {renderPage()}
     </AdminLayout>
   );
+}
+
+function normalizePageForSite(page: AppPage, siteId: ActiveSiteId): AppPage {
+  if (siteId === 'church' && (page === 'icons' || page === 'calendar')) return 'church-content';
+  if (siteId !== 'church' && page === 'church-content') return 'dashboard';
+  return page;
 }
 
 function SitesOverview() {

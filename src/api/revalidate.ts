@@ -1,4 +1,4 @@
-type RevalidateType = 'article' | 'ingredient' | 'shop' | 'about' | 'gallery' | 'all';
+type RevalidateType = 'article' | 'ingredient' | 'shop' | 'about' | 'gallery' | 'experience' | 'expertise' | 'all';
 
 type RevalidatePayload = {
   type?: RevalidateType;

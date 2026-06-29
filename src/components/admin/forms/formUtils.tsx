@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import type { LocalizedAdminTextDto } from '../../../types/adminApi';
 
-export type LangTab = 'uk' | 'ru' | 'en';
+export type LangTab = 'uk' | 'ru' | 'pl' | 'en';
 
 export const langTabs: Array<{ id: LangTab; label: string }> = [
   { id: 'uk', label: 'UK' },
   { id: 'ru', label: 'RU' },
+  { id: 'pl', label: 'PL' },
   { id: 'en', label: 'EN' }
 ];
 
@@ -44,7 +45,7 @@ export function csv(value: string): string[] {
 }
 
 export function firstText(value?: LocalizedAdminTextDto): string {
-  return value?.uk || value?.ru || value?.en || '';
+  return value?.uk || value?.ru || value?.pl || value?.en || '';
 }
 
 export function FieldError({ message }: { message?: string }) {

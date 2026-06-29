@@ -16,7 +16,7 @@ import {
 } from '../../services/admin/sitePublishingService';
 import type { SiteId } from '../../types/admin';
 import type { LocalizedAdminTextDto } from '../../types/adminApi';
-import { FieldError, LanguageTabs, isValidSlug, isValidUrl, useLangTab, type FormErrors } from './forms/formUtils';
+import { FieldError, LanguageTabs, isValidSlug, isValidUrl, useLangTab, type FormErrors, type LangTab } from './forms/formUtils';
 
 const pageLabels: Record<SitePageKey, string> = {
   home: 'Home page',
@@ -28,19 +28,19 @@ const sectionLabels: Record<SiteSectionKey, string> = {
   products: 'Products sections'
 };
 
-function localized(value: LocalizedAdminTextDto, lang: 'uk' | 'ru' | 'en') {
-  return value[lang] || value.uk || value.ru || value.en || '';
+function localized(value: LocalizedAdminTextDto, lang: LangTab) {
+  return value[lang] || value.uk || value.ru || value.pl || value.en || '';
 }
 
-function setLocalized(value: LocalizedAdminTextDto, lang: 'uk' | 'ru' | 'en', nextValue: string): LocalizedAdminTextDto {
+function setLocalized(value: LocalizedAdminTextDto, lang: LangTab, nextValue: string): LocalizedAdminTextDto {
   return { ...value, [lang]: nextValue };
 }
 
-function itemsToText(items: LocalizedAdminTextDto[], lang: 'uk' | 'ru' | 'en') {
+function itemsToText(items: LocalizedAdminTextDto[], lang: LangTab) {
   return items.map((item) => localized(item, lang)).join('\n');
 }
 
-function textToItems(value: string, lang: 'uk' | 'ru' | 'en', current: LocalizedAdminTextDto[]) {
+function textToItems(value: string, lang: LangTab, current: LocalizedAdminTextDto[]) {
   return value.split('\n').map((line, index) => setLocalized(current[index] || {}, lang, line)).filter((item) => localized(item, lang).trim());
 }
 

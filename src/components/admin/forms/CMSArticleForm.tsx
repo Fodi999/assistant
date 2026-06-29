@@ -4,10 +4,10 @@ import type { CreateCMSPageDto, LocalizedAdminTextDto } from '../../../types/adm
 import { FieldError, LanguageTabs, firstText, isValidSlug, isValidUrl, optionalInteger, useLangTab, type FormErrors } from './formUtils';
 
 type BackendArticle = {
-  slug?: string | null; category?: string | null; title_uk?: string | null; title_ru?: string | null; title_en?: string | null;
-  content_uk?: string | null; content_ru?: string | null; content_en?: string | null; image_url?: string | null; author_name?: string | null;
-  seo_title_uk?: string | null; seo_title_ru?: string | null; seo_title_en?: string | null;
-  seo_description_uk?: string | null; seo_description_ru?: string | null; seo_description_en?: string | null;
+  slug?: string | null; category?: string | null; title_uk?: string | null; title_ru?: string | null; title_pl?: string | null; title_en?: string | null;
+  content_uk?: string | null; content_ru?: string | null; content_pl?: string | null; content_en?: string | null; image_url?: string | null; author_name?: string | null;
+  seo_title_uk?: string | null; seo_title_ru?: string | null; seo_title_pl?: string | null; seo_title_en?: string | null;
+  seo_description_uk?: string | null; seo_description_ru?: string | null; seo_description_pl?: string | null; seo_description_en?: string | null;
   published?: boolean; order_index?: number | null;
 };
 
@@ -27,10 +27,10 @@ type CMSFormState = {
 function initialState(row?: AdminResourceRow | null): CMSFormState {
   const backend = (row?.backend || {}) as BackendArticle;
   return {
-    title: { uk: backend.title_uk || '', ru: backend.title_ru || row?.title || '', en: backend.title_en || '' },
-    content: { uk: backend.content_uk || '', ru: backend.content_ru || '', en: backend.content_en || '' },
-    seoTitle: { uk: backend.seo_title_uk || '', ru: backend.seo_title_ru || '', en: backend.seo_title_en || '' },
-    seoDescription: { uk: backend.seo_description_uk || '', ru: backend.seo_description_ru || '', en: backend.seo_description_en || '' },
+    title: { uk: backend.title_uk || '', ru: backend.title_ru || row?.title || '', pl: backend.title_pl || '', en: backend.title_en || '' },
+    content: { uk: backend.content_uk || '', ru: backend.content_ru || '', pl: backend.content_pl || '', en: backend.content_en || '' },
+    seoTitle: { uk: backend.seo_title_uk || '', ru: backend.seo_title_ru || '', pl: backend.seo_title_pl || '', en: backend.seo_title_en || '' },
+    seoDescription: { uk: backend.seo_description_uk || '', ru: backend.seo_description_ru || '', pl: backend.seo_description_pl || '', en: backend.seo_description_en || '' },
     slug: backend.slug || row?.slug || '',
     category: backend.category || row?.type || '',
     imageUrl: backend.image_url || '',

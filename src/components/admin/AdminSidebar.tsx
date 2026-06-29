@@ -63,9 +63,12 @@ type AdminSidebarProps = {
 
 export function AdminSidebar({ activePage, collapsed, onNavigate, onSiteChange, onToggleCollapse }: AdminSidebarProps) {
   const { activeSite } = useActiveSite();
-  const visibleItems = adminNavItems.filter((item) => (
-    (item.page !== 'icons' && item.page !== 'church-content') || activeSite.id === 'church'
-  ));
+  const visibleItems = adminNavItems.filter((item) => {
+    if (item.page === 'church-content') return activeSite.id === 'church';
+    if (item.page === 'icons') return false;
+    if (item.page === 'calendar') return activeSite.id !== 'church';
+    return true;
+  });
 
   return (
     <aside className={'admin-sidebar' + (collapsed ? ' collapsed' : '')} data-site-accent={activeSite.accent}>

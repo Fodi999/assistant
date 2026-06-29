@@ -83,6 +83,44 @@ export interface GalleryItem {
   updated_at?: string | number[];
 }
 
+export interface GalleryCategory {
+  id: string;
+  slug: string;
+  title_en: string;
+  title_pl: string;
+  title_ru: string;
+  title_uk: string;
+  order_index: number;
+}
+
+export interface ExpertiseItem {
+  id: string;
+  icon: string;
+  title_en: string;
+  title_pl: string;
+  title_ru: string;
+  title_uk: string;
+  order_index: number;
+  created_at?: string | number[];
+  updated_at?: string | number[];
+}
+
+export interface ExperienceItem {
+  id: string;
+  restaurant: string;
+  country: string;
+  position: string;
+  start_year: number | null;
+  end_year: number | null;
+  description_en: string;
+  description_pl: string;
+  description_ru: string;
+  description_uk: string;
+  order_index: number;
+  created_at?: string | number[];
+  updated_at?: string | number[];
+}
+
 export function getAboutPage(): Promise<AboutPageContent> {
   return apiFetch<AboutPageContent>('/api/admin/cms/about');
 }
@@ -100,6 +138,10 @@ export async function uploadAboutPhoto(file: File): Promise<string> {
 
 export function listGallery(): Promise<GalleryItem[]> {
   return apiFetch<GalleryItem[]>('/api/admin/cms/gallery');
+}
+
+export function listGalleryCategories(): Promise<GalleryCategory[]> {
+  return apiFetch<GalleryCategory[]>('/api/admin/cms/gallery-categories');
 }
 
 export function createGalleryItem(payload: Partial<GalleryItem> & Pick<GalleryItem, 'image_url'>): Promise<GalleryItem> {
@@ -122,6 +164,50 @@ export function deleteGalleryItem(id: string): Promise<void> {
 
 export async function uploadGalleryPhoto(file: File): Promise<string> {
   return uploadCmsReference(file);
+}
+
+export function listExpertise(): Promise<ExpertiseItem[]> {
+  return apiFetch<ExpertiseItem[]>('/api/admin/cms/expertise');
+}
+
+export function createExpertise(payload: Omit<ExpertiseItem, 'id' | 'created_at' | 'updated_at'>): Promise<ExpertiseItem> {
+  return apiFetch<ExpertiseItem>('/api/admin/cms/expertise', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateExpertise(id: string, payload: Partial<ExpertiseItem>): Promise<ExpertiseItem> {
+  return apiFetch<ExpertiseItem>(`/api/admin/cms/expertise/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteExpertise(id: string): Promise<void> {
+  return apiFetch<void>(`/api/admin/cms/expertise/${id}`, { method: 'DELETE' });
+}
+
+export function listExperience(): Promise<ExperienceItem[]> {
+  return apiFetch<ExperienceItem[]>('/api/admin/cms/experience');
+}
+
+export function createExperience(payload: Omit<ExperienceItem, 'id' | 'created_at' | 'updated_at'>): Promise<ExperienceItem> {
+  return apiFetch<ExperienceItem>('/api/admin/cms/experience', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateExperience(id: string, payload: Partial<ExperienceItem>): Promise<ExperienceItem> {
+  return apiFetch<ExperienceItem>(`/api/admin/cms/experience/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteExperience(id: string): Promise<void> {
+  return apiFetch<void>(`/api/admin/cms/experience/${id}`, { method: 'DELETE' });
 }
 
 export function listArticles(): Promise<CmsArticle[]> {

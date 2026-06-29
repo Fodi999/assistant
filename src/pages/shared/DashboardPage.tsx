@@ -71,6 +71,10 @@ export function DashboardPage({ activeSite, onNavigate }: DashboardPageProps) {
     ];
   }, [activeSiteMeta.id, apiError, apiMetrics, sites.length]);
 
+  function quickActionPage(page: AppPage) {
+    return activeSiteMeta.id === 'church' && page === 'calendar' ? 'church-content' : page;
+  }
+
   return (
     <section className="admin-dashboard-page">
       <div className="admin-page-hero">
@@ -93,10 +97,10 @@ export function DashboardPage({ activeSite, onNavigate }: DashboardPageProps) {
           </div>
           <div className="admin-quick-grid">
             {quickActions.map((action) => (
-              <button key={action.label} className="admin-quick-action" type="button" onClick={() => onNavigate?.(action.page)}>
+              <button key={action.label} className="admin-quick-action" type="button" onClick={() => onNavigate?.(quickActionPage(action.page))}>
                 <AppIcon name={action.icon} />
                 <span>{action.label}</span>
-                <small>{adminPageLabels[action.page]}</small>
+                <small>{adminPageLabels[quickActionPage(action.page)]}</small>
               </button>
             ))}
           </div>

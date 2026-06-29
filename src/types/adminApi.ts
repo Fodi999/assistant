@@ -18,6 +18,7 @@ type AdminResourceUpdateDto = Partial<Omit<AdminResourceBaseDto, 'siteId'>> & {
 export type LocalizedAdminTextDto = {
   uk?: string;
   ru?: string;
+  pl?: string;
   en?: string;
 };
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActionButton } from '../../components/admin/ActionButton';
 import { AdminDrawer } from '../../components/admin/AdminDrawer';
 import { CMSArticleForm } from '../../components/admin/forms/CMSArticleForm';
+import { KitchenCmsSections } from '../../components/admin/KitchenCmsSections';
 import { SitePagesEditor } from '../../components/admin/SitePagesEditor';
 import { useAdminToast } from '../../components/admin/useAdminToast';
 import { useActiveSite } from '../../lib/useActiveSite';
@@ -119,7 +120,7 @@ export function CMSPage() {
         onEdit={openEdit}
         onDelete={deleteArticle}
       />
-      <SitePagesEditor />
+      {activeSiteId === 'kitchen' ? <KitchenCmsSections /> : <SitePagesEditor />}
       <AdminDrawer
         open={drawerOpen}
         title={drawerMode === 'edit' ? 'Редактировать статью' : 'Добавить статью'}

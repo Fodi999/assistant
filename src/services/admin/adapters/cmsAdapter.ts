@@ -18,14 +18,17 @@ type BackendArticle = {
   published_at?: string | null;
   content_en?: string | null;
   content_ru?: string | null;
+  content_pl?: string | null;
   content_uk?: string | null;
   image_url?: string | null;
   author_name?: string | null;
   seo_title_en?: string | null;
   seo_title_ru?: string | null;
+  seo_title_pl?: string | null;
   seo_title_uk?: string | null;
   seo_description_en?: string | null;
   seo_description_ru?: string | null;
+  seo_description_pl?: string | null;
   seo_description_uk?: string | null;
   order_index?: number | null;
 };
@@ -60,19 +63,23 @@ export const cmsAdapter = {
     return clean({
       title_en: title,
       title_ru: payload.localizedTitle?.ru,
+      title_pl: payload.localizedTitle?.pl,
       title_uk: payload.localizedTitle?.uk,
       slug: payload.slug,
       category: payload.type,
       content_en: payload.contentLocalized?.en || payload.content,
       content_ru: payload.contentLocalized?.ru,
+      content_pl: payload.contentLocalized?.pl,
       content_uk: payload.contentLocalized?.uk,
       image_url: payload.imageUrl,
       author_name: payload.authorName,
       seo_title_en: payload.seoTitle?.en,
       seo_title_ru: payload.seoTitle?.ru,
+      seo_title_pl: payload.seoTitle?.pl,
       seo_title_uk: payload.seoTitle?.uk,
       seo_description_en: payload.seoDescription?.en,
       seo_description_ru: payload.seoDescription?.ru,
+      seo_description_pl: payload.seoDescription?.pl,
       seo_description_uk: payload.seoDescription?.uk,
       published: payload.status === 'published' || payload.status === 'active',
       order_index: payload.orderIndex
@@ -83,19 +90,23 @@ export const cmsAdapter = {
     return clean({
       title_en: payload.localizedTitle?.en || payload.title?.trim(),
       title_ru: payload.localizedTitle?.ru,
+      title_pl: payload.localizedTitle?.pl,
       title_uk: payload.localizedTitle?.uk,
       slug: payload.slug,
       category: payload.type,
       content_en: payload.contentLocalized?.en || payload.content,
       content_ru: payload.contentLocalized?.ru,
+      content_pl: payload.contentLocalized?.pl,
       content_uk: payload.contentLocalized?.uk,
       image_url: payload.imageUrl,
       author_name: payload.authorName,
       seo_title_en: payload.seoTitle?.en,
       seo_title_ru: payload.seoTitle?.ru,
+      seo_title_pl: payload.seoTitle?.pl,
       seo_title_uk: payload.seoTitle?.uk,
       seo_description_en: payload.seoDescription?.en,
       seo_description_ru: payload.seoDescription?.ru,
+      seo_description_pl: payload.seoDescription?.pl,
       seo_description_uk: payload.seoDescription?.uk,
       published: payload.status ? payload.status === 'published' || payload.status === 'active' : undefined,
       order_index: payload.orderIndex

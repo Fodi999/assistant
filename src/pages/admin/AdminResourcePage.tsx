@@ -120,6 +120,7 @@ export function AdminResourcePage({ title, eyebrow, description, icon, actionLab
 
 function getColumns({ capabilities, onEdit, onDelete, onChangeStatus }: Pick<AdminResourcePageProps, 'capabilities' | 'onEdit' | 'onDelete' | 'onChangeStatus'>) {
   const columns: Array<DataTableColumn<AdminResourceRow>> = [
+    { key: 'image', header: 'Photo', render: (row: AdminResourceRow) => <ResourceThumb row={row} /> },
     { key: 'title', header: 'Name', render: (row: AdminResourceRow) => <strong>{row.title}</strong> },
     { key: 'type', header: 'Type', render: (row: AdminResourceRow) => row.type },
     { key: 'status', header: 'Status', render: (row: AdminResourceRow) => <StatusBadge status={row.status as ResourceStatus} /> },
@@ -148,4 +149,15 @@ function getColumns({ capabilities, onEdit, onDelete, onChangeStatus }: Pick<Adm
   }
 
   return columns;
+}
+
+function ResourceThumb({ row }: { row: AdminResourceRow }) {
+  const backend = row.backend as { image_url?: string | null; imageUrl?: string | null } | undefined;
+  const imageUrl = backend?.image_url || backend?.imageUrl || '';
+
+  if (!imageUrl) {
+    return <span className="admin-row-thumb empty">-</span>;
+  }
+
+  return <img className="admin-row-thumb" src={imageUrl} alt="" loading="lazy" />;
 }
