@@ -212,7 +212,7 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
       index,
       [referenceUrl],
       false,
-      { photoScenarios: ['white-background', 'catalog-card', 'detail-shot'], scaleReference: 'none' }
+      { photoScenarios: ['white-background'], scaleReference: 'none' }
     );
     return result.image_url;
   }

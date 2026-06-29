@@ -31,8 +31,29 @@ export function deleteShopProduct(id: string): Promise<void> {
   return apiFetch<void>(`/api/admin/cms/shop-products/${id}`, { method: 'DELETE' });
 }
 
+function shopImagePrompt(title: string, prompt: string | undefined, index: number): string {
+  const shot = [
+    'hero 3/4 view on a clean matte slate plate',
+    'top view on a clean white ceramic plate',
+    'close-up macro detail of neat cut surfaces and toppings',
+    'premium menu catalog angle with soft natural shadows'
+  ][index] || 'premium clean product catalog photo';
+
+  return [
+    `Product: ${title}.`,
+    prompt || '',
+    `Shot: ${shot}.`,
+    'Use the uploaded reference image as the source of truth.',
+    'Preserve the exact sushi roll identity, ingredients, roll count, cut shape, proportions and topping placement from the reference.',
+    'Make the rolls straight, symmetrical, cleanly cut, appetizing and realistic.',
+    'No delivery box, no plastic container, no packaging, no cardboard, no hands, no chopsticks, no extra sauce cup unless it is clearly present in the reference.',
+    'No distorted rolls, no melted rice, no duplicated ingredients, no broken geometry, no extra text, no logos.',
+    'High-resolution professional food photography, natural color, sharp focus, premium Dima Fomin catalog style.'
+  ].filter(Boolean).join('\n');
+}
+
 export function generateShopProductImage(title: string, prompt: string | undefined, index: number, referenceUrls: string[], enhanced: boolean, scale: CmsImageScaleSettings): Promise<{ image_url: string }> {
-  return aiGenerateArticleImage(title, prompt, index, enhanced, referenceUrls, enhanced ? 'pro' : 'flash', 'delivery-product', scale);
+  return aiGenerateArticleImage(title, shopImagePrompt(title, prompt, index), index, enhanced, referenceUrls, enhanced ? 'pro' : 'flash', 'product-white', scale);
 }
 
 export { uploadCmsReference as uploadShopReference };
