@@ -191,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let admin_nutrition_service = AdminNutritionService::new(repositories.pool.clone());
 
     // Create AnalyticsService (Google OAuth + GA4 Data API)
-    let analytics_service = AnalyticsService::from_env();
+    let analytics_service = AnalyticsService::from_env_with_pool(repositories.pool.clone());
 
     // Create TenantIngredientService
     let tenant_ingredient_service =

@@ -34,6 +34,7 @@ use crate::interfaces::http::{
     admin_search_console,
     admin_states,
     admin_users,
+    admin_version,
     almabuild,
     assistant::{get_state, send_command},
     auth::{login_handler, refresh_handler, register_handler},
@@ -574,6 +575,10 @@ pub fn create_router(
     let admin_analytics_routes = Router::new()
         .route("/overview", get(admin_analytics::overview))
         .route("/realtime", get(admin_analytics::realtime))
+        .route(
+            "/connection",
+            get(admin_analytics::connection).patch(admin_analytics::update_connection),
+        )
         .route("/oauth/url", get(admin_analytics::oauth_url))
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
@@ -1010,8 +1015,9 @@ pub fn create_router(
         })
         .layer(jwt_middleware.clone());
 
-    // Health check endpoint (no auth, no middleware)
+    // Health check and build version endpoints (no auth, no middleware)
     let health_route = Router::new().route("/health", get(|| async { "OK" }));
+    let version_route = Router::new().route("/api/admin/version", get(admin_version::version));
 
     // ── Public router (no auth, no JWT) ──────────────────────────────────────
     // Old chef-reference aliases kept for backward compatibility
@@ -1541,6 +1547,7 @@ pub fn create_router(
     let mut router = Router::new()
         .merge(sitemap_router)
         .merge(health_route)
+        .merge(version_route)
         .merge(chef_reference_routes)
         // 🆕 Static file serving for Laboratory v2 uploads (no auth).
         // Files written by `LocalStorageAdapter("./uploads", "/static")`

@@ -3,6 +3,9 @@ use chrono::{Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::{PgPool, Row};
+use time::OffsetDateTime;
+use uuid::Uuid;
 
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
@@ -11,6 +14,7 @@ const GOOGLE_SCOPES: &str = "https://www.googleapis.com/auth/analytics.readonly 
 #[derive(Clone)]
 pub struct AnalyticsService {
     client: Client,
+    pool: Option<PgPool>,
     client_id: Option<String>,
     client_secret: Option<String>,
     redirect_uri: Option<String>,
@@ -25,15 +29,39 @@ pub struct AnalyticsOAuthUrl {
     pub url: String,
     pub redirect_uri: String,
     pub scope: String,
+    pub site_id: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AnalyticsOAuthToken {
+    pub site_id: String,
     pub refresh_token: Option<String>,
     pub access_token: Option<String>,
     pub expires_in: Option<i64>,
     pub scope: Option<String>,
     pub token_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnalyticsConnectionStatus {
+    pub site_id: String,
+    pub status: String,
+    pub google_property_id: Option<String>,
+    pub connected_at: Option<OffsetDateTime>,
+    pub has_refresh_token: bool,
+    pub connection_id: Option<String>,
+    pub source: String,
+}
+
+#[derive(Debug, Clone)]
+struct SiteAnalyticsConfig {
+    site_id: Uuid,
+    google_property_id: Option<String>,
+    refresh_token: Option<String>,
+    connected_at: Option<OffsetDateTime>,
+    status: String,
+    connection_id: Option<String>,
+    source: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -167,8 +195,17 @@ struct TokenResponse {
 
 impl AnalyticsService {
     pub fn from_env() -> Self {
+        Self::from_env_inner(None)
+    }
+
+    pub fn from_env_with_pool(pool: PgPool) -> Self {
+        Self::from_env_inner(Some(pool))
+    }
+
+    fn from_env_inner(pool: Option<PgPool>) -> Self {
         Self {
             client: Client::new(),
+            pool,
             client_id: first_non_empty_env(&["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLIENT_ID"]),
             client_secret: first_non_empty_env(&[
                 "GOOGLE_OAUTH_CLIENT_SECRET",
@@ -191,12 +228,13 @@ impl AnalyticsService {
     }
 
     pub fn oauth_url(&self) -> AppResult<AnalyticsOAuthUrl> {
+        self.oauth_url_for_site(default_analytics_site_id())
+    }
+
+    pub fn oauth_url_for_site(&self, site_id: Uuid) -> AppResult<AnalyticsOAuthUrl> {
         let client_id = self.required_client_id()?;
         let redirect_uri = self.required_redirect_uri()?;
-        let state = self
-            .oauth_state
-            .clone()
-            .unwrap_or_else(|| "ga4-admin-oauth".to_string());
+        let state = self.oauth_state_for_site(site_id);
 
         let url = format!(
             "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&state={}",
@@ -211,6 +249,7 @@ impl AnalyticsService {
             url,
             redirect_uri,
             scope: GOOGLE_SCOPES.to_string(),
+            site_id: site_id.to_string(),
         })
     }
 
@@ -219,11 +258,7 @@ impl AnalyticsService {
         code: &str,
         state: Option<&str>,
     ) -> AppResult<AnalyticsOAuthToken> {
-        if let Some(expected) = self.oauth_state.as_deref() {
-            if state != Some(expected) {
-                return Err(AppError::authorization("Invalid Google OAuth state"));
-            }
-        }
+        let site_id = self.site_id_from_oauth_state(state)?;
 
         let client_id = self.required_client_id()?;
         let client_secret = self.required_client_secret()?;
@@ -259,7 +294,13 @@ impl AnalyticsService {
             )));
         }
 
+        let refresh_token = token.refresh_token.clone();
+        if let Some(refresh_token) = refresh_token.as_deref() {
+            self.save_site_refresh_token(site_id, refresh_token).await?;
+        }
+
         Ok(AnalyticsOAuthToken {
+            site_id: site_id.to_string(),
             refresh_token: token.refresh_token,
             access_token: token.access_token,
             expires_in: token.expires_in,
@@ -269,8 +310,30 @@ impl AnalyticsService {
     }
 
     pub async fn overview(&self, days: u16) -> AppResult<AnalyticsOverview> {
-        let property_id = self.required_property_id()?;
-        let access_token = self.access_token().await?;
+        self.overview_for_site(default_analytics_site_id(), days)
+            .await
+    }
+
+    pub async fn overview_for_site(
+        &self,
+        site_id: Uuid,
+        days: u16,
+    ) -> AppResult<AnalyticsOverview> {
+        let config = self.site_analytics_config(site_id).await?;
+        let Some(property_id) = config.google_property_id.clone() else {
+            return Ok(empty_analytics_overview(false, None, days));
+        };
+        let Some(refresh_token) = config.refresh_token.clone() else {
+            return Ok(empty_analytics_overview(false, Some(property_id), days));
+        };
+        let access_token = match self.access_token_for_refresh_token(&refresh_token).await {
+            Ok(access_token) => access_token,
+            Err(error) => {
+                self.mark_site_connection_status(site_id, analytics_error_status(&error))
+                    .await?;
+                return Err(error);
+            }
+        };
         let days = days.clamp(1, 365);
         let date_range = format!("{days}daysAgo");
 
@@ -412,8 +475,25 @@ impl AnalyticsService {
     }
 
     pub async fn realtime(&self) -> AppResult<AnalyticsRealtime> {
-        let property_id = self.required_property_id()?;
-        let access_token = self.access_token().await?;
+        self.realtime_for_site(default_analytics_site_id()).await
+    }
+
+    pub async fn realtime_for_site(&self, site_id: Uuid) -> AppResult<AnalyticsRealtime> {
+        let config = self.site_analytics_config(site_id).await?;
+        let Some(property_id) = config.google_property_id.clone() else {
+            return Ok(empty_analytics_realtime(false, None));
+        };
+        let Some(refresh_token) = config.refresh_token.clone() else {
+            return Ok(empty_analytics_realtime(false, Some(property_id)));
+        };
+        let access_token = match self.access_token_for_refresh_token(&refresh_token).await {
+            Ok(access_token) => access_token,
+            Err(error) => {
+                self.mark_site_connection_status(site_id, analytics_error_status(&error))
+                    .await?;
+                return Err(error);
+            }
+        };
 
         let active = self
             .run_realtime_report(
@@ -579,6 +659,184 @@ impl AnalyticsService {
         Ok(parse_search_console_daily_rows(&report))
     }
 
+    pub async fn connection_status(&self, site_id: Uuid) -> AppResult<AnalyticsConnectionStatus> {
+        let config = self.site_analytics_config(site_id).await?;
+        Ok(config.status_response())
+    }
+
+    pub async fn update_connection_property_id(
+        &self,
+        site_id: Uuid,
+        google_property_id: Option<String>,
+    ) -> AppResult<AnalyticsConnectionStatus> {
+        let Some(pool) = &self.pool else {
+            return Err(AppError::validation(
+                "Analytics database config is not available",
+            ));
+        };
+
+        let google_property_id = google_property_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+
+        sqlx::query(
+            r#"
+            INSERT INTO site_analytics_connections
+                (site_id, google_property_id, status, updated_at)
+            VALUES ($1, $2, 'not_connected', NOW())
+            ON CONFLICT (site_id) DO UPDATE
+            SET google_property_id = EXCLUDED.google_property_id,
+                status = CASE
+                    WHEN site_analytics_connections.refresh_token IS NULL OR site_analytics_connections.refresh_token = '' THEN 'not_connected'
+                    WHEN EXCLUDED.google_property_id IS NULL OR EXCLUDED.google_property_id = '' THEN 'error'
+                    ELSE 'connected'
+                END,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(site_id)
+        .bind(google_property_id)
+        .execute(pool)
+        .await?;
+
+        self.connection_status(site_id).await
+    }
+
+    async fn site_analytics_config(&self, site_id: Uuid) -> AppResult<SiteAnalyticsConfig> {
+        let row = if let Some(pool) = &self.pool {
+            sqlx::query(
+                r#"
+                SELECT site_id, google_property_id, refresh_token, connection_id, connected_at, status
+                FROM site_analytics_connections
+                WHERE site_id = $1
+                "#,
+            )
+            .bind(site_id)
+            .fetch_optional(pool)
+            .await?
+        } else {
+            None
+        };
+
+        let legacy_property_id = self.legacy_property_id_for_site(site_id);
+        let legacy_refresh_token = self.legacy_refresh_token_for_site(site_id);
+
+        let mut config = if let Some(row) = row {
+            let google_property_id =
+                non_empty(row.try_get::<Option<String>, _>("google_property_id")?)
+                    .or(legacy_property_id);
+            let refresh_token = non_empty(row.try_get::<Option<String>, _>("refresh_token")?)
+                .or(legacy_refresh_token);
+            let status = row
+                .try_get::<String, _>("status")
+                .unwrap_or_else(|_| "not_connected".to_string());
+
+            SiteAnalyticsConfig {
+                site_id,
+                google_property_id,
+                refresh_token,
+                connected_at: row.try_get("connected_at").ok(),
+                status,
+                connection_id: non_empty(row.try_get::<Option<String>, _>("connection_id")?),
+                source: "database".to_string(),
+            }
+        } else {
+            SiteAnalyticsConfig {
+                site_id,
+                google_property_id: legacy_property_id,
+                refresh_token: legacy_refresh_token,
+                connected_at: None,
+                status: "not_connected".to_string(),
+                connection_id: None,
+                source: "missing".to_string(),
+            }
+        };
+
+        if config.source != "database"
+            && config.google_property_id.is_some()
+            && config.refresh_token.is_some()
+        {
+            config.status = "connected".to_string();
+            config.source = "legacy_env".to_string();
+        } else if config.status == "not_connected"
+            && config.google_property_id.is_some()
+            && config.refresh_token.is_some()
+        {
+            config.status = "connected".to_string();
+        }
+
+        Ok(config)
+    }
+
+    async fn save_site_refresh_token(&self, site_id: Uuid, refresh_token: &str) -> AppResult<()> {
+        let Some(pool) = &self.pool else {
+            return Ok(());
+        };
+
+        let property_id = self
+            .site_analytics_config(site_id)
+            .await
+            .ok()
+            .and_then(|config| config.google_property_id)
+            .or_else(|| self.legacy_property_id_for_site(site_id));
+        let connection_id = Uuid::new_v4().to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO site_analytics_connections
+                (site_id, google_property_id, refresh_token, connection_id, connected_at, status, updated_at)
+            VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                NOW(),
+                CASE WHEN $2 IS NULL OR $2 = '' THEN 'error' ELSE 'connected' END,
+                NOW()
+            )
+            ON CONFLICT (site_id) DO UPDATE
+            SET google_property_id = COALESCE(EXCLUDED.google_property_id, site_analytics_connections.google_property_id),
+                refresh_token = EXCLUDED.refresh_token,
+                connection_id = EXCLUDED.connection_id,
+                connected_at = EXCLUDED.connected_at,
+                status = CASE
+                    WHEN COALESCE(EXCLUDED.google_property_id, site_analytics_connections.google_property_id) IS NULL
+                        OR COALESCE(EXCLUDED.google_property_id, site_analytics_connections.google_property_id) = '' THEN 'error'
+                    ELSE 'connected'
+                END,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(site_id)
+        .bind(property_id)
+        .bind(refresh_token)
+        .bind(connection_id)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn mark_site_connection_status(&self, site_id: Uuid, status: &str) -> AppResult<()> {
+        let Some(pool) = &self.pool else {
+            return Ok(());
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE site_analytics_connections
+            SET status = $2, updated_at = NOW()
+            WHERE site_id = $1
+            "#,
+        )
+        .bind(site_id)
+        .bind(status)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
     async fn search_console_dimension(
         &self,
         site_url: Option<String>,
@@ -602,12 +860,17 @@ impl AnalyticsService {
     }
 
     async fn access_token(&self) -> AppResult<String> {
-        let client_id = self.required_client_id()?;
-        let client_secret = self.required_client_secret()?;
         let refresh_token = self
             .refresh_token
             .as_deref()
             .ok_or_else(|| AppError::validation("GOOGLE_REFRESH_TOKEN is not configured"))?;
+
+        self.access_token_for_refresh_token(refresh_token).await
+    }
+
+    async fn access_token_for_refresh_token(&self, refresh_token: &str) -> AppResult<String> {
+        let client_id = self.required_client_id()?;
+        let client_secret = self.required_client_secret()?;
 
         let response = self
             .client
@@ -799,10 +1062,51 @@ impl AnalyticsService {
             .ok_or_else(|| AppError::validation("GOOGLE_OAUTH_REDIRECT_URI is not configured"))
     }
 
-    fn required_property_id(&self) -> AppResult<String> {
-        self.property_id
+    fn legacy_property_id_for_site(&self, site_id: Uuid) -> Option<String> {
+        if site_id == default_analytics_site_id() {
+            self.property_id.clone()
+        } else {
+            None
+        }
+    }
+
+    fn legacy_refresh_token_for_site(&self, site_id: Uuid) -> Option<String> {
+        if site_id == default_analytics_site_id() {
+            self.refresh_token.clone()
+        } else {
+            None
+        }
+    }
+
+    fn oauth_state_base(&self) -> String {
+        self.oauth_state
             .clone()
-            .ok_or_else(|| AppError::validation("GA4_PROPERTY_ID is not configured"))
+            .unwrap_or_else(|| "ga4-admin-oauth".to_string())
+    }
+
+    fn oauth_state_for_site(&self, site_id: Uuid) -> String {
+        format!("{}:{site_id}", self.oauth_state_base())
+    }
+
+    fn site_id_from_oauth_state(&self, state: Option<&str>) -> AppResult<Uuid> {
+        let Some(state) = state else {
+            return Err(AppError::authorization("Invalid Google OAuth state"));
+        };
+        let base = self.oauth_state_base();
+
+        if state == base {
+            return Ok(default_analytics_site_id());
+        }
+
+        let Some((provided_base, site_id)) = state.rsplit_once(':') else {
+            return Err(AppError::authorization("Invalid Google OAuth state"));
+        };
+
+        if provided_base != base {
+            return Err(AppError::authorization("Invalid Google OAuth state"));
+        }
+
+        Uuid::parse_str(site_id).map_err(|_| AppError::authorization("Invalid Google OAuth state"))
     }
 
     fn required_search_console_site_url(&self, site_url: Option<String>) -> AppResult<String> {
@@ -814,6 +1118,80 @@ impl AnalyticsService {
                     "SEARCH_CONSOLE_SITE_URL is not configured; call /api/admin/search-console/sites first",
                 )
             })
+    }
+}
+
+impl SiteAnalyticsConfig {
+    fn status_response(&self) -> AnalyticsConnectionStatus {
+        AnalyticsConnectionStatus {
+            site_id: self.site_id.to_string(),
+            status: self.status.clone(),
+            google_property_id: self.google_property_id.clone(),
+            connected_at: self.connected_at,
+            has_refresh_token: self.refresh_token.is_some(),
+            connection_id: self.connection_id.clone(),
+            source: self.source.clone(),
+        }
+    }
+}
+
+fn default_analytics_site_id() -> Uuid {
+    Uuid::from_u128(0x00000000000000000000000000000103)
+}
+
+fn empty_analytics_overview(
+    configured: bool,
+    property_id: Option<String>,
+    days: u16,
+) -> AnalyticsOverview {
+    let days = days.clamp(1, 365);
+
+    AnalyticsOverview {
+        configured,
+        property_id,
+        date_range: format!("last_{days}_days"),
+        active_users: 0.0,
+        sessions: 0.0,
+        page_views: 0.0,
+        conversions: 0.0,
+        total_revenue: 0.0,
+        engagement_rate: 0.0,
+        average_session_duration: 0.0,
+        events: Vec::new(),
+        daily: Vec::new(),
+        top_pages: Vec::new(),
+        countries: Vec::new(),
+        cities: Vec::new(),
+        regions: Vec::new(),
+        languages: Vec::new(),
+        devices: Vec::new(),
+        traffic_sources: Vec::new(),
+    }
+}
+
+fn empty_analytics_realtime(configured: bool, property_id: Option<String>) -> AnalyticsRealtime {
+    AnalyticsRealtime {
+        configured,
+        property_id,
+        active_users: 0.0,
+        pages: Vec::new(),
+        events: Vec::new(),
+    }
+}
+
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.trim().is_empty())
+}
+
+fn analytics_error_status(error: &AppError) -> &'static str {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("expired")
+        || message.contains("revoked")
+        || message.contains("invalid_grant")
+    {
+        "expired"
+    } else {
+        "error"
     }
 }
 

@@ -9,6 +9,7 @@ pub mod admin_panel;
 pub mod admin_search_console;
 pub mod admin_states; // Ingredient processing states (AI Sous Chef)
 pub mod admin_users;
+pub mod admin_version;
 pub mod almabuild;
 pub mod assistant;
 pub mod auth;
