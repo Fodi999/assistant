@@ -21,6 +21,10 @@ type ShopFormState = {
 const GEMINI_REFERENCE_MAX_BYTES = 10 * 1024 * 1024;
 const GEMINI_REFERENCE_TARGET_BYTES = 9 * 1024 * 1024;
 
+function cleanImageUrls(urls: string[] | undefined) {
+  return (urls || []).filter(isValidUrl);
+}
+
 function initialState(row?: AdminResourceRow | null, initialCategory = ''): ShopFormState {
   const backend = (row?.backend || {}) as BackendShop;
   return {
@@ -32,9 +36,9 @@ function initialState(row?: AdminResourceRow | null, initialCategory = ''): Shop
     slug: backend.slug || row?.slug || '',
     sku: backend.sku || '',
     category: backend.category || row?.type || initialCategory,
-    imageUrls: backend.image_urls?.join(', ') || '',
+    imageUrls: cleanImageUrls(backend.image_urls).join(', '),
     sellingPoints: backend.selling_points?.join(', ') || '',
-    price: backend.price_cents ? String(backend.price_cents / 100) : '',
+    price: typeof backend.price_cents === 'number' ? String(backend.price_cents / 100) : '',
     currency: backend.currency || 'PLN',
     stockQuantity: backend.stock_quantity?.toString() || (row ? '0' : '1'),
     status: (backend.status as ResourceStatus) || row?.status || 'active'
@@ -256,7 +260,7 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
       const prompts = await ensureImagePrompts(titleForImage);
       const url = await generateOnePhoto(index, referenceUrl, prompts);
       setGeneratedPhotoUrls((current) => {
-        const base = current.length ? current : images.slice(0, 4);
+        const base = current.length ? current : cleanImageUrls(images).slice(0, 4);
         const next = Array.from({ length: 4 }, (_, itemIndex) => base[itemIndex] || '');
         next[index] = url;
         setForm((formCurrent) => ({ ...formCurrent, imageUrls: next.filter(Boolean).join(', ') }));
@@ -281,7 +285,7 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
       const preparedFile = await prepareReferenceImage(file);
       const url = await uploadShopReference(preparedFile);
       setForm((current) => {
-        const nextImages = [url, ...csv(current.imageUrls).filter((image) => image !== url)];
+        const nextImages = [url, ...cleanImageUrls(csv(current.imageUrls)).filter((image) => image !== url)];
         return { ...current, imageUrls: nextImages.join(', ') };
       });
       setOriginalReferenceUrl(url);
@@ -333,9 +337,9 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
         slug: form.slug.trim() || undefined,
         sku: form.sku.trim() || undefined,
         type: form.category.trim() || undefined,
-        imageUrls: csv(form.imageUrls),
+        imageUrls: cleanImageUrls(csv(form.imageUrls)),
         sellingPoints: csv(form.sellingPoints),
-        priceCents: form.price ? Math.round(Number(form.price) * 100) : undefined,
+        priceCents: form.price.trim() ? Math.round(Number(form.price) * 100) : undefined,
         currency: form.currency.trim() || undefined,
         stockQuantity: optionalInteger(form.stockQuantity),
         status: form.status
