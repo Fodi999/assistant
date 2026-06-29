@@ -784,6 +784,12 @@ pub async fn apply_import(
         }
     }
 
+    for page in content.pages.iter() {
+        if !page.slug.trim().is_empty() && !page.content.trim().is_empty() {
+            upsert_article_from_legacy_page(&pool, site_id, page).await?;
+        }
+    }
+
     Ok(Json(preview))
 }
 
@@ -801,6 +807,52 @@ pub async fn public_calendar_day(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     public_calendar_by_date(&pool, &date, preview_allowed(&query)).await
+}
+
+pub async fn public_calendar_month(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let today = chrono::Utc::now().date_naive();
+    let year = query.year.unwrap_or_else(|| today.year());
+    let month = query.month.unwrap_or_else(|| today.month());
+    let include_drafts = preview_allowed(&query);
+    let rows: Vec<ChurchCalendarDayDto> = sqlx::query_as(
+        r#"SELECT id, site_id, date_old_style::text AS date_old_style,
+                  date_new_style::text AS date_new_style, calendar_type, title, day_type,
+                  description, rank, status, is_global,
+                  created_at::text AS created_at, updated_at::text AS updated_at
+           FROM church_calendar_days
+           WHERE (site_id = $1 OR is_global = true)
+             AND EXTRACT(YEAR FROM COALESCE(date_new_style, date_old_style)) = $2::int
+             AND EXTRACT(MONTH FROM COALESCE(date_new_style, date_old_style)) = $3::int
+             AND ($4::bool OR status = 'published')
+           ORDER BY COALESCE(date_new_style, date_old_style), rank DESC, title ASC"#,
+    )
+    .bind(CHURCH_SITE_ID)
+    .bind(year)
+    .bind(month as i32)
+    .bind(include_drafts)
+    .fetch_all(&pool)
+    .await
+    .map_err(db_error)?;
+
+    let mut pages = Vec::with_capacity(rows.len());
+    for calendar_day in rows {
+        let icons = list_public_icons(&pool, calendar_day.id, include_drafts).await?;
+        let prayers =
+            list_public_prayers(&pool, Some(calendar_day.id), None, include_drafts).await?;
+        let articles =
+            list_public_articles(&pool, Some(calendar_day.id), None, include_drafts).await?;
+        pages.push(PublicChurchContentPage {
+            calendar_day,
+            icons,
+            prayers,
+            articles,
+        });
+    }
+
+    Ok(Json(pages))
 }
 
 pub async fn public_icon_by_slug(
@@ -1031,6 +1083,23 @@ fn build_import_preview(content: &IconsSiteContent) -> ChurchImportPreview {
         }
     }
 
+    for page in content.pages.iter() {
+        let label = if page.title.trim().is_empty() {
+            page.id.as_str()
+        } else {
+            page.title.as_str()
+        };
+        if page.slug.trim().is_empty() {
+            errors.push(format!("{label}: SEO-страница без slug"));
+            continue;
+        }
+        if page.content.trim().is_empty() {
+            warnings.push(format!("{label}: SEO-страница без текста"));
+            continue;
+        }
+        articles += 1;
+    }
+
     ChurchImportPreview {
         calendar_days,
         icons,
@@ -1210,6 +1279,39 @@ async fn upsert_article_from_icon(
     .bind(icon.seo_title.as_deref().unwrap_or_default())
     .bind(icon.seo_description.as_deref().unwrap_or_default())
     .bind(status_or_draft(&icon.status))
+    .fetch_one(pool)
+    .await
+    .map_err(db_error)
+}
+
+async fn upsert_article_from_legacy_page(
+    pool: &PgPool,
+    site_id: Uuid,
+    page: &super::icons_site::SeoPage,
+) -> Result<Uuid, StatusCode> {
+    sqlx::query_scalar(
+        r#"INSERT INTO church_articles
+           (site_id, icon_id, calendar_day_id, title, slug, content, language,
+            seo_title, seo_description, status, is_global)
+           VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7, $8, false)
+           ON CONFLICT (site_id, slug, language)
+           DO UPDATE SET
+              title = EXCLUDED.title,
+              content = EXCLUDED.content,
+              seo_title = EXCLUDED.seo_title,
+              seo_description = EXCLUDED.seo_description,
+              status = EXCLUDED.status,
+              updated_at = NOW()
+           RETURNING id"#,
+    )
+    .bind(site_id)
+    .bind(first_non_empty(&[&page.title, &page.h1]))
+    .bind(page.slug.trim())
+    .bind(page.content.trim())
+    .bind(first_non_empty(&[&page.language, "uk"]))
+    .bind(page.seo_title.as_deref().unwrap_or_default())
+    .bind(page.seo_description.as_deref().unwrap_or_default())
+    .bind(status_or_draft(&page.status))
     .fetch_one(pool)
     .await
     .map_err(db_error)

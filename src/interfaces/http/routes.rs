@@ -1522,6 +1522,10 @@ pub fn create_router(
 
     let public_church_content_router = Router::new()
         .route(
+            "/api/church/calendar",
+            get(church_content::public_calendar_month),
+        )
+        .route(
             "/api/church/calendar/today",
             get(church_content::public_calendar_today),
         )
