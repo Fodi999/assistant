@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import { AppIcon } from '../../components/AppIcon';
-import type { CalendarDay, IconPage, IconsLang, IconTranslation, QrPage } from '../../api/iconsSite';
+import type { CalendarDay, IconPage, IconsLang, IconTranslation, QrPage, SeoPage, SeoPageTranslation } from '../../api/iconsSite';
 import type { IconsSection } from '../../types/admin';
 import type { EditorFieldsView, IconsItem, IconTextPatch, IconTextScopeKey, IconTextTabKey } from './iconsEditorTypes';
 import { absolutePublicUrl, qrBackendPath, qrPreviewPath } from './iconsUrlUtils';
@@ -23,6 +23,14 @@ const MONTHS = [
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 type CalendarCell = { key: string; dayNumber?: string; item?: CalendarDay };
 type IconTextFieldKey = keyof Pick<IconPage, 'title' | 'shortDescription' | 'fullDescription' | 'category' | 'saintName' | 'prayerText' | 'gospelText' | 'lifeText' | 'historyText'>;
+type IconSeoFieldKey = keyof Pick<IconPage, 'seoTitle' | 'seoDescription' | 'seoKeywords'>;
+type SeoPageFieldKey = keyof Pick<SeoPage, 'title' | 'h1' | 'content' | 'targetKeyword' | 'blocks' | 'seoTitle' | 'seoDescription'>;
+
+const editorLanguages: Array<{ key: IconsLang; label: string }> = [
+  { key: 'uk', label: 'UK' },
+  { key: 'ru', label: 'RU' },
+  { key: 'en', label: 'EN' }
+];
 
 function lines(value: string) {
   return value.split('\n').map((item) => item.trim()).filter(Boolean);
@@ -80,6 +88,50 @@ function localizedIconPatch(item: IconPage, language: IconsLang, patch: Partial<
       [language]: {
         ...(item.translations?.[language] ?? {}),
         ...patch
+      }
+    }
+  };
+}
+
+function localizedIconSeoValue(item: IconPage, language: IconsLang, key: IconSeoFieldKey) {
+  if (language === 'ru') return String(item[key] || '');
+  return String(item.translations?.[language]?.[key] || '');
+}
+
+function localizedIconSeoPatch(item: IconPage, language: IconsLang, patch: Partial<Record<IconSeoFieldKey, string>>): IconTextPatch {
+  if (language === 'ru') return patch;
+  return {
+    translations: {
+      ...(item.translations ?? {}),
+      [language]: {
+        ...(item.translations?.[language] ?? {}),
+        ...patch
+      }
+    }
+  };
+}
+
+function localizedSeoPageValue(item: SeoPage, language: IconsLang, key: SeoPageFieldKey) {
+  if (language === 'ru') {
+    const value = item[key];
+    return Array.isArray(value) ? value.join('\n') : String(value || '');
+  }
+  const value = item.translations?.[language]?.[key as keyof SeoPageTranslation];
+  return Array.isArray(value) ? value.join('\n') : String(value || '');
+}
+
+function localizedSeoPagePatch(item: SeoPage, language: IconsLang, patch: Partial<Record<SeoPageFieldKey, string>>): Record<string, string | string[] | SeoPage['translations'] | undefined> {
+  const normalizedPatch = {
+    ...patch,
+    blocks: patch.blocks ? lines(patch.blocks) : undefined
+  };
+  if (language === 'ru') return normalizedPatch;
+  return {
+    translations: {
+      ...(item.translations ?? {}),
+      [language]: {
+        ...(item.translations?.[language] ?? {}),
+        ...normalizedPatch
       }
     }
   };
@@ -246,11 +298,6 @@ export function IconTextTabs(props: {
     { key: 'ru', label: 'RU' },
     { key: 'en', label: 'EN' }
   ];
-  const scopes: Array<{ key: IconTextScopeKey; label: string }> = [
-    { key: 'icon', label: 'Икона' },
-    { key: 'saints', label: 'Святые' },
-    { key: 'church', label: 'Храм' }
-  ];
   const tabs: Array<{ key: IconTextTabKey; label: string }> = [
     { key: 'description', label: 'Описание' },
     { key: 'prayer', label: 'Молитва' },
@@ -267,34 +314,34 @@ export function IconTextTabs(props: {
       ? ['Название храма', 'Кому посвящён', 'Страна / город', 'Адрес', 'Google Maps ссылка', 'Расписание богослужений', 'Телефон / сайт', 'Краткое описание', 'Святыни / иконы / мощи', 'Фото храма']
       : ['Краткое описание изображения', 'Символы на иконе', 'Alt для фото', 'Prompt для генерации', 'Источник изображения'];
   const mainDescriptionFields = ['Полное описание', 'Смысл праздника', 'Что важно знать', 'Для кого эта молитва/страница', 'Не писать'];
-  const prayerFields = ['Тропарь', 'Кондак', 'Величание', 'Краткая молитва', 'Молитва своими словами', 'Язык', 'Источник текста'];
+  const prayerFields = ['Основной текст молитвы', 'Короткая молитва', 'Источник / примечание'];
   const gospelFields = ['Апостольское чтение', 'Евангельское чтение', 'Цитата дня', 'Объяснение простыми словами', 'Связь с событием', 'Источник'];
   const lifeFields = ['Краткое житие', 'Подробное житие', 'Главные события жизни', 'Духовный смысл', 'Где почитается', 'Источники'];
   const historyFields = ['История праздника', 'Дата по старому стилю', 'Дата по новому стилю', 'Разные календарные традиции', 'Почему бывает путаница', 'Проверенные источники', 'Дата проверена', 'Календарный стиль', 'Найденное событие', 'Уверенность', 'Предупреждение'];
-  const activeScopeLabel = scopes.find((scope) => scope.key === props.activeScope)?.label || 'Раздел';
   const activeTabLabel = tabs.find((tab) => tab.key === props.activeTab)?.label || 'Текст';
   const textValue = (key: IconTextFieldKey) => localizedIconValue(props.item, props.activeLanguage, key);
   const patchText = (patch: Partial<Record<IconTextFieldKey, string>>) => props.patch(localizedIconPatch(props.item, props.activeLanguage, patch));
 
   return (
     <EditorSection title="Тексты материала" note="Переключайте блоки и редактируйте только нужный текст.">
-      <div className="editor-language-tabs" role="tablist" aria-label="Язык материала">
-        {languages.map((language) => (
-          <button key={language.key} className={props.activeLanguage === language.key ? 'active' : ''} type="button" onClick={() => props.onLanguageChange(language.key)}>
-            {language.label}
-          </button>
-        ))}
+      <div className="editor-text-selector">
+        <label>
+          <span>Язык</span>
+          <select value={props.activeLanguage} onChange={(event) => props.onLanguageChange(event.target.value as IconsLang)}>
+            {languages.map((language) => <option key={language.key} value={language.key}>{language.label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Блок</span>
+          <select value={props.activeTab} onChange={(event) => props.onTabChange(event.target.value as IconTextTabKey)}>
+            {tabs.map((tab) => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
+          </select>
+        </label>
       </div>
 
-      <div className="editor-subtabs editor-combined-tabs" role="tablist" aria-label="Раздел сайта и текстовые блоки">
-        {scopes.map((scope) => (
-          <button key={scope.key} className={'scope-tab ' + (props.activeScope === scope.key ? 'active' : '')} type="button" onClick={() => props.onScopeChange(scope.key)}>
-            {scope.label}
-          </button>
-        ))}
-        <i aria-hidden="true" />
+      <div className="editor-text-block-tabs" role="tablist" aria-label="Быстрый выбор текстового блока">
         {tabs.map((tab) => (
-          <button key={tab.key} className={'text-tab ' + (props.activeTab === tab.key ? 'active' : '')} type="button" onClick={() => props.onTabChange(tab.key)}>
+          <button key={tab.key} type="button" className={props.activeTab === tab.key ? 'active' : ''} onClick={() => props.onTabChange(tab.key)}>
             {tab.label}
           </button>
         ))}
@@ -302,8 +349,8 @@ export function IconTextTabs(props: {
 
       <div className="editor-text-ai-bar">
         <div>
-          <strong>{activeScopeLabel} / {activeTabLabel}</strong>
-          <small>Gemini перепроверит источники и заполнит поля сразу на UK/RU/EN. RU сохраняется в основные поля, UK/EN — в translations.</small>
+          <strong>{activeTabLabel}</strong>
+          <small>Заполняйте только нужный блок. Gemini может подготовить этот блок сразу на UK/RU/EN.</small>
         </div>
         {props.onGenerate ? (
           <div className="editor-text-ai-actions">
@@ -324,6 +371,10 @@ export function IconTextTabs(props: {
       <div className="editor-subtab-panel">
         {props.activeTab === 'description' ? (
           <>
+            <div className="editor-fill-guide">
+              <strong>Что заполнить сначала</strong>
+              <span>Название, категория, краткое описание и полный смысл материала. UK заполняется первым; RU и EN нужны для локализованных страниц.</span>
+            </div>
             <div className="settings-matrix">
               <Field label={isChurch ? 'Название материала для храмов' : 'Название иконы / события'} value={textValue('title')} onChange={(value) => patchText({ title: value })} />
               <Field label={isSaints ? 'Главный святой / праздник' : isChurch ? 'Категория / направление' : 'Святой / праздник'} value={textValue('saintName')} onChange={(value) => patchText({ saintName: value })} />
@@ -342,7 +393,15 @@ export function IconTextTabs(props: {
             />
           </>
         ) : null}
-        {props.activeTab === 'prayer' ? <StructuredFields value={textValue('prayerText')} fallbackFirst={textValue('prayerText')} fields={prayerFields} onChange={(value) => patchText({ prayerText: value })} /> : null}
+        {props.activeTab === 'prayer' ? (
+          <>
+            <div className="editor-fill-guide">
+              <strong>Молитва на странице</strong>
+              <span>Достаточно основного текста молитвы. Короткую молитву и источник заполняйте только если они есть.</span>
+            </div>
+            <StructuredFields value={textValue('prayerText')} fallbackFirst={textValue('prayerText')} fields={prayerFields} onChange={(value) => patchText({ prayerText: value })} />
+          </>
+        ) : null}
         {props.activeTab === 'gospel' ? <StructuredFields value={textValue('gospelText')} fallbackFirst={textValue('gospelText')} fields={gospelFields} onChange={(value) => patchText({ gospelText: value })} /> : null}
         {props.activeTab === 'life' ? <StructuredFields value={textValue('lifeText')} fallbackFirst={textValue('lifeText')} fields={lifeFields} onChange={(value) => patchText({ lifeText: value })} /> : null}
         {props.activeTab === 'history' ? <StructuredFields value={textValue('historyText')} fallbackFirst={textValue('historyText')} fields={historyFields} onChange={(value) => patchText({ historyText: value })} /> : null}
@@ -351,10 +410,134 @@ export function IconTextTabs(props: {
   );
 }
 
+function LocalizedIconSeoEditor(props: {
+  item: IconPage;
+  patch: (patch: IconTextPatch) => void;
+}) {
+  const [language, setLanguage] = useState<IconsLang>('uk');
+  const seoTitle = localizedIconSeoValue(props.item, language, 'seoTitle');
+  const seoDescription = localizedIconSeoValue(props.item, language, 'seoDescription');
+  const seoKeywords = localizedIconSeoValue(props.item, language, 'seoKeywords');
+  const patchSeo = (patch: Partial<Record<IconSeoFieldKey, string>>) => props.patch(localizedIconSeoPatch(props.item, language, patch));
+
+  return (
+    <EditorSection title="SEO / локали" note="UK показывается первым. RU хранится в основных полях, UK/EN — в translations.">
+      <div className="localized-seo-editor">
+        <div>
+          <div className="editor-language-tabs" role="tablist" aria-label="SEO language">
+            {editorLanguages.map((item) => (
+              <button key={item.key} type="button" className={language === item.key ? 'active' : ''} onClick={() => setLanguage(item.key)}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="settings-matrix">
+            <Field label={`SEO title ${language.toUpperCase()}`} value={seoTitle} onChange={(value) => patchSeo({ seoTitle: value })} />
+            <Field label={`SEO keywords ${language.toUpperCase()}`} value={seoKeywords} onChange={(value) => patchSeo({ seoKeywords: value })} />
+          </div>
+          <TextField label={`SEO description ${language.toUpperCase()}`} value={seoDescription} onChange={(value) => patchSeo({ seoDescription: value })} />
+        </div>
+        <SeoPreview
+          slug={`/icons/${props.item.slug || props.item.id}`}
+          title={seoTitle || props.item.title}
+          description={seoDescription || props.item.shortDescription}
+          keyword={seoKeywords || props.item.category}
+        />
+      </div>
+    </EditorSection>
+  );
+}
+
+function SeoPageFields(props: {
+  item: SeoPage;
+  patch: (patch: Record<string, string | boolean | string[] | SeoPage['translations'] | undefined>) => void;
+  view: EditorFieldsView;
+}) {
+  const [language, setLanguage] = useState<IconsLang>('uk');
+  const value = (key: SeoPageFieldKey) => localizedSeoPageValue(props.item, language, key);
+  const patchLocalized = (patch: Partial<Record<SeoPageFieldKey, string>>) => props.patch(localizedSeoPagePatch(props.item, language, patch));
+
+  return (
+    <>
+      <div className="editor-language-tabs" role="tablist" aria-label="SEO page language">
+        {editorLanguages.map((item) => (
+          <button key={item.key} type="button" className={language === item.key ? 'active' : ''} onClick={() => setLanguage(item.key)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {props.view === 'all' || props.view === 'main' ? (
+        <EditorSection title="SEO page setup" note="Создание страницы сразу с UK/RU/EN контентом, slug остается общим для всех локалей.">
+          <div className="settings-matrix">
+            <Field label={`Title ${language.toUpperCase()}`} value={value('title')} onChange={(next) => patchLocalized({ title: next })} />
+            <Field label="URL slug" value={props.item.slug} onChange={(next) => props.patch({ slug: next })} />
+            <Field label={`H1 ${language.toUpperCase()}`} value={value('h1')} onChange={(next) => patchLocalized({ h1: next })} />
+            <Field label={`Target keyword ${language.toUpperCase()}`} value={value('targetKeyword')} onChange={(next) => patchLocalized({ targetKeyword: next })} />
+            <Field label="Page type" value={props.item.pageType} onChange={(next) => props.patch({ pageType: next })} />
+            <Field label="City / region" value={props.item.city || ''} onChange={(next) => props.patch({ city: next })} />
+            <Field label="Image URL" value={props.item.imageUrl || ''} onChange={(next) => props.patch({ imageUrl: next })} />
+            <SelectField label="Status" value={props.item.status} options={['draft', 'published']} onChange={(next) => props.patch({ status: next })} />
+          </div>
+        </EditorSection>
+      ) : null}
+
+      {props.view === 'all' || props.view === 'texts' ? (
+        <EditorSection title="Page content" note="Структурный контент для современной SEO-страницы: интент, доверие, FAQ и внутренние ссылки.">
+          <TextField label={`Content ${language.toUpperCase()}`} value={value('content')} onChange={(next) => patchLocalized({ content: next })} />
+          <TextField label={`Blocks / FAQ ${language.toUpperCase()}`} value={value('blocks')} onChange={(next) => patchLocalized({ blocks: next })} />
+        </EditorSection>
+      ) : null}
+
+      {props.view === 'all' || props.view === 'seo' ? (
+        <EditorSection title="SEO preview" note="Проверка сниппета, длины и локализированного поискового интента.">
+          <div className="localized-seo-editor">
+            <div>
+              <div className="settings-matrix">
+                <Field label={`SEO title ${language.toUpperCase()}`} value={value('seoTitle')} onChange={(next) => patchLocalized({ seoTitle: next })} />
+              </div>
+              <TextField label={`SEO description ${language.toUpperCase()}`} value={value('seoDescription')} onChange={(next) => patchLocalized({ seoDescription: next })} />
+            </div>
+            <SeoPreview
+              slug={`/${language}/${props.item.slug || props.item.id}`}
+              title={value('seoTitle') || value('title')}
+              description={value('seoDescription') || value('content')}
+              keyword={value('targetKeyword')}
+            />
+          </div>
+        </EditorSection>
+      ) : null}
+    </>
+  );
+}
+
+function SeoPreview(props: { slug: string; title: string; description: string; keyword?: string }) {
+  const titleLength = props.title.trim().length;
+  const descriptionLength = props.description.trim().length;
+
+  return (
+    <aside className="seo-preview-card">
+      <small>Search preview</small>
+      <span>{props.slug}</span>
+      <strong>{props.title || 'SEO title'}</strong>
+      <p>{props.description || 'SEO description'}</p>
+      <div className="seo-checklist">
+        <SeoCheck ok={titleLength >= 35 && titleLength <= 65} label={`Title ${titleLength}/65`} />
+        <SeoCheck ok={descriptionLength >= 120 && descriptionLength <= 165} label={`Description ${descriptionLength}/165`} />
+        <SeoCheck ok={Boolean(props.keyword?.trim())} label="Search intent" />
+      </div>
+    </aside>
+  );
+}
+
+function SeoCheck({ ok, label }: { ok: boolean; label: string }) {
+  return <span className={ok ? 'ok' : 'warn'}><i />{label}</span>;
+}
+
 export function EditorFields(props: {
   section: IconsSection;
   item: IconsItem;
-  patch: (patch: Record<string, string | number | boolean | string[] | undefined>) => void;
+  patch: (patch: Record<string, string | number | boolean | string[] | undefined | IconPage['translations'] | SeoPage['translations']>) => void;
   view?: EditorFieldsView;
 }) {
   const { item, patch, view = 'all' } = props;
@@ -389,10 +572,10 @@ export function EditorFields(props: {
         {view === 'all' || view === 'main' ? <div className="editor-section-grid">
           <EditorSection title="Основное" note="Название, адрес страницы и тип материала. Это видно в заголовке и карточках сайта.">
             <div className="settings-matrix">
-              <Field label="Название" value={item.title} onChange={(value) => patch({ title: value })} />
-              <Field label="URL slug" value={item.slug} onChange={(value) => patch({ slug: value })} />
-              <Field label="Категория" value={item.category} onChange={(value) => patch({ category: value })} />
-              <Field label="Святой / праздник" value={item.saintName} onChange={(value) => patch({ saintName: value })} />
+              <Field label="Название на сайте" value={item.title} onChange={(value) => patch({ title: value })} required />
+              <Field label="URL slug" value={item.slug} onChange={(value) => patch({ slug: value })} required />
+              <Field label="Категория для каталога" value={item.category} onChange={(value) => patch({ category: value })} />
+              <Field label="Святой / праздник / сюжет" value={item.saintName} onChange={(value) => patch({ saintName: value })} />
               <SelectField label="Статус" value={item.status} options={['draft', 'published']} onChange={(value) => patch({ status: value })} />
             </div>
           </EditorSection>
@@ -417,15 +600,13 @@ export function EditorFields(props: {
           <TextField label="История образа" value={item.historyText} onChange={(value) => patch({ historyText: value })} />
         </EditorSection> : null}
 
-        {view === 'all' || view === 'seo' ? <EditorSection title="SEO" note="Эти поля нужны для Google и превью страницы. На самой странице посетитель обычно их не видит.">
-          <div className="settings-matrix">
-            <Field label="SEO title" value={item.seoTitle || ''} onChange={(value) => patch({ seoTitle: value })} />
-            <Field label="SEO keywords" value={item.seoKeywords || ''} onChange={(value) => patch({ seoKeywords: value })} />
-          </div>
-          <TextField label="SEO description" value={item.seoDescription || ''} onChange={(value) => patch({ seoDescription: value })} />
-        </EditorSection> : null}
+        {view === 'all' || view === 'seo' ? <LocalizedIconSeoEditor item={item} patch={patch} /> : null}
       </>
     );
+  }
+
+  if (props.section === 'seo' && 'content' in item) {
+    return <SeoPageFields item={item} patch={patch} view={view} />;
   }
 
   if ('reference' in item) {
@@ -610,14 +791,110 @@ export function EditorSection(props: { title: string; note?: string; children: R
   );
 }
 
-function Field(props: { label: string; value: string; onChange: (value: string) => void; readOnly?: boolean }) {
-  return <label className="editor-field"><span>{props.label}</span><input value={props.value} readOnly={props.readOnly} onChange={(event) => props.onChange(event.target.value)} /></label>;
+function Field(props: { label: string; value: string; onChange: (value: string) => void; readOnly?: boolean; placeholder?: string; hint?: string; required?: boolean }) {
+  const required = props.required ?? inferredRequired(props.label);
+  const missing = required && !props.value.trim() && !props.readOnly;
+  return (
+    <label className={'editor-field' + (missing ? ' missing' : '')}>
+      <span>{props.label}{required ? <b>*</b> : null}</span>
+      <input
+        value={props.value}
+        readOnly={props.readOnly}
+        placeholder={props.placeholder ?? fieldPlaceholder(props.label)}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+      <small className="editor-field-hint">{missing ? 'Нужно заполнить перед публикацией.' : props.hint ?? fieldHint(props.label, props.value)}</small>
+    </label>
+  );
 }
 
-function TextField(props: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="editor-field"><span>{props.label}</span><textarea value={props.value} onChange={(event) => props.onChange(event.target.value)} /></label>;
+function TextField(props: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; hint?: string; required?: boolean }) {
+  const required = props.required ?? inferredRequired(props.label);
+  const missing = required && !props.value.trim();
+  const recommended = recommendedTextLength(props.label);
+  return (
+    <label className={'editor-field' + (missing ? ' missing' : '')}>
+      <span>{props.label}{required ? <b>*</b> : null}</span>
+      <textarea
+        value={props.value}
+        placeholder={props.placeholder ?? fieldPlaceholder(props.label)}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+      <small className="editor-field-hint">
+        {missing ? 'Нужно заполнить перед публикацией.' : props.hint ?? fieldHint(props.label, props.value)}
+        {recommended ? <em>{props.value.trim().length}/{recommended}</em> : null}
+      </small>
+    </label>
+  );
 }
 
 export function SelectField(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
-  return <label className="editor-field"><span>{props.label}</span><select value={props.value} onChange={(event) => props.onChange(event.target.value)}>{props.options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
+  return (
+    <label className="editor-field">
+      <span>{props.label}</span>
+      <select value={props.value} onChange={(event) => props.onChange(event.target.value)}>{props.options.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+      <small className="editor-field-hint">{fieldHint(props.label, props.value)}</small>
+    </label>
+  );
+}
+
+function inferredRequired(label: string) {
+  return [
+    'Название',
+    'Название иконы',
+    'URL slug',
+    'Краткое описание',
+    'Полное описание',
+    'SEO title',
+    'SEO description',
+    'Фото URL',
+    'Image URL',
+    'Title',
+    'H1'
+  ].some((needle) => label.toLowerCase().includes(needle.toLowerCase()));
+}
+
+function recommendedTextLength(label: string) {
+  const normalized = label.toLowerCase();
+  if (normalized.includes('seo description')) return 165;
+  if (normalized.includes('seo title')) return 65;
+  if (normalized.includes('краткое описание')) return 260;
+  if (normalized.includes('полное описание') || normalized.includes('content')) return 900;
+  return 0;
+}
+
+function fieldPlaceholder(label: string) {
+  const normalized = label.toLowerCase();
+  if (normalized.includes('url slug')) return 'naprimer-kazanskaya-ikona';
+  if (normalized.includes('название') || normalized.includes('title')) return 'Например: Икона святителя Николая Чудотворца';
+  if (normalized.includes('категория')) return 'Например: Богородичные иконы / Святые / Праздники';
+  if (normalized.includes('святой') || normalized.includes('праздник')) return 'Например: святитель Николай / Рождество Христово';
+  if (normalized.includes('seo title')) return 'Короткий заголовок для Google, 35-65 символов';
+  if (normalized.includes('seo description')) return 'Описание страницы для поиска, 120-165 символов';
+  if (normalized.includes('image') || normalized.includes('фото')) return 'https://...';
+  if (normalized.includes('alt')) return 'Опишите, что видно на изображении без SEO-переспама';
+  if (normalized.includes('prompt')) return 'Кратко: стиль, композиция, что сохранить, чего не добавлять';
+  if (normalized.includes('молитва')) return 'Текст молитвы или тропаря, без служебных комментариев';
+  if (normalized.includes('евангел')) return 'Чтение, ссылка и короткое объяснение смысла';
+  return 'Заполните поле';
+}
+
+function fieldHint(label: string, value: string) {
+  const normalized = label.toLowerCase();
+  if (normalized.includes('url slug')) return 'Только латиница, цифры и дефисы. Используется в адресе страницы.';
+  if (normalized.includes('название') || normalized.includes('title')) return 'Видно в карточке, заголовке страницы и админке.';
+  if (normalized.includes('категория')) return 'Помогает группировать иконы и фильтровать материалы.';
+  if (normalized.includes('святой') || normalized.includes('праздник')) return 'Можно оставить пустым, если это общий образ или пейзаж.';
+  if (normalized.includes('статус')) return value === 'published' ? 'Материал виден на сайте после сохранения.' : 'Черновик можно спокойно дополнять.';
+  if (normalized.includes('seo title')) return 'Лучше 35-65 символов: название + интент поиска.';
+  if (normalized.includes('seo description')) return 'Лучше 120-165 символов: что человек найдет на странице.';
+  if (normalized.includes('keywords')) return '3-6 фраз через запятую, без повторов.';
+  if (normalized.includes('краткое описание')) return '1-2 предложения для карточки и первого экрана.';
+  if (normalized.includes('полное описание') || normalized.includes('content')) return 'Основной текст страницы: смысл, история, польза для читателя.';
+  if (normalized.includes('alt')) return 'Для доступности и изображений: что изображено, без длинных ключевых слов.';
+  if (normalized.includes('prompt')) return 'Для AI-фото: что сохранить, какой стиль, что запрещено.';
+  if (normalized.includes('источник')) return 'Укажите источник или пометку “проверить”, если факт не подтвержден.';
+  if (normalized.includes('молитва')) return 'Чистый текст молитвы, который увидит посетитель.';
+  if (normalized.includes('евангел')) return 'Чтение и простое объяснение связи с образом или праздником.';
+  return 'Заполните понятно для редактора и посетителя сайта.';
 }

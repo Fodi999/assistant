@@ -13,15 +13,19 @@ import { DataTable } from './components/admin/DataTable';
 import { EmptyState } from './components/admin/EmptyState';
 import { StatusBadge } from './components/admin/StatusBadge';
 import { AnalyticsPage } from './pages/admin/AnalyticsPage';
+import { CalendarPage } from './pages/admin/CalendarPage';
+import { ChurchContentPage } from './pages/admin/ChurchContentPage';
 import { CatalogPage } from './pages/admin/CatalogPage';
 import { CMSPage } from './pages/admin/CMSPage';
 import { LeadsPage } from './pages/admin/LeadsPage';
+import { MediaPage } from './pages/admin/MediaPage';
 import { OrdersPage } from './pages/admin/OrdersPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
 import { ShopPage } from './pages/admin/ShopPage';
 import { SuppliersPage } from './pages/admin/SuppliersPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { LoginPage } from './pages/admin/LoginPage';
+import { IconsPage } from './pages/icons/IconsPage';
 import { DashboardPage } from './pages/shared/DashboardPage';
 
 type PageBySite = Record<ActiveSiteId, AppPage>;
@@ -64,13 +68,19 @@ export function App() {
       case 'dashboard': return <DashboardPage activeSite={activeSite} onNavigate={navigate} />;
       case 'sites': return <SitesOverview />;
       case 'cms': return <CMSPage />;
-      case 'calendar': return <AdminPlaceholder page="Calendar" icon="calendar" description="Calendar is ready for site-specific events and content scheduling." />;
+      case 'church-content': return activeSiteId === 'church'
+        ? <ChurchContentPage />
+        : <AdminPlaceholder page="Church Content" icon="calendar" description="Church content editor is available only for the church site." />;
+      case 'icons': return activeSiteId === 'church'
+        ? <IconsPage activeSection="icons" />
+        : <AdminPlaceholder page="Icons" icon="qr" description="Icons editor is available only for the church site." />;
+      case 'calendar': return <CalendarPage />;
       case 'leads': return <LeadsPage />;
       case 'catalog': return <CatalogPage />;
       case 'shop': return <ShopPage />;
       case 'orders': return <OrdersPage />;
       case 'suppliers': return <SuppliersPage />;
-      case 'media': return <AdminPlaceholder page="Media" icon="image" description="Медиа-библиотека будет подключена к storage позже. Сейчас это единый раздел для будущих загрузок." />;
+      case 'media': return <MediaPage />;
       case 'translations': return <AdminPlaceholder page="Translations" icon="globe" description="Единая панель переводов готова как раздел навигации; backend-интеграция будет следующим этапом." />;
       case 'analytics': return <AnalyticsPage />;
       case 'users': return <UsersPage />;
@@ -128,7 +138,7 @@ function SitesOverview() {
   );
 }
 
-function AdminPlaceholder({ page, icon, description }: { page: string; icon: 'calendar' | 'catalog' | 'image' | 'globe' | 'bot'; description: string }) {
+function AdminPlaceholder({ page, icon, description }: { page: string; icon: 'calendar' | 'catalog' | 'image' | 'globe' | 'bot' | 'qr'; description: string }) {
   return (
     <section className="admin-dashboard-page">
       <div className="admin-page-hero">

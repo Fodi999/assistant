@@ -538,6 +538,357 @@ function getItemSubline(section: IconsSection, item: IconsItem) {
   return '';
 }
 
+function iconReadiness(icon: IconPage) {
+  const checks = [
+    Boolean(icon.title.trim()),
+    Boolean(icon.slug.trim()),
+    Boolean(icon.imageUrl.trim()),
+    Boolean(icon.shortDescription.trim()),
+    Boolean(icon.fullDescription.trim()),
+    Boolean(icon.prayerText.trim()),
+    Boolean(icon.seoTitle?.trim()),
+    Boolean(icon.seoDescription?.trim()),
+    Boolean(icon.qrCodeUrl?.trim()),
+    Boolean(icon.calendarDate?.trim())
+  ];
+  const complete = checks.filter(Boolean).length;
+  return {
+    complete,
+    total: checks.length,
+    percent: Math.round((complete / checks.length) * 100)
+  };
+}
+
+function iconMissingFields(icon: IconPage) {
+  const checks: Array<[string, unknown]> = [
+    ['photo', icon.imageUrl],
+    ['description', icon.shortDescription && icon.fullDescription],
+    ['prayer', icon.prayerText],
+    ['SEO', icon.seoTitle && icon.seoDescription],
+    ['QR', icon.qrCodeUrl],
+    ['calendar', icon.calendarDate]
+  ];
+  return checks.filter(([, value]) => !value).map(([label]) => label);
+}
+
+type BackendIconAudit = {
+  score: number;
+  total: number;
+  ok: boolean;
+  message: string;
+  missing: string[];
+  warnings: string[];
+  checkedAt: string;
+  source: 'backend-rulebot';
+};
+
+function IconEditorOverview(props: {
+  item: IconPage;
+  image: string;
+  onPatch: (patch: Record<string, string | boolean | undefined>) => void;
+  backendAudit?: BackendIconAudit;
+  backendChecking?: boolean;
+  onBackendCheck: () => void;
+}) {
+  const readiness = iconReadiness(props.item);
+  const missing = iconMissingFields(props.item);
+  const backendAudit = props.backendAudit;
+
+  return (
+    <section className="icon-editor-overview">
+      <div className="icon-editor-cover">
+        {props.image ? <img src={props.image} alt={props.item.title} /> : <span><AppIcon name="image" />Добавить фото</span>}
+      </div>
+      <div className="icon-editor-summary">
+        <div className="icon-editor-title-row">
+          <span className={'status-pill ' + statusClass(props.item.status)}><i />{props.item.status === 'published' ? 'опубликовано' : 'черновик'}</span>
+          <strong>{props.item.title || 'Новая икона'}</strong>
+        </div>
+        <span className="icon-editor-slug">/icons/{props.item.slug || props.item.id}</span>
+        <p>{props.item.shortDescription || props.item.seoDescription || 'Добавьте краткое описание, SEO, фото и дату календаря перед публикацией.'}</p>
+        <div className="icon-readiness large">
+          <span style={{ width: `${readiness.percent}%` }} />
+        </div>
+        <div className="icon-editor-missing">
+          <strong>local {readiness.complete}/{readiness.total}</strong>
+          <span>{missing.length ? `Нужно: ${missing.join(', ')}` : 'Локально заполнено'}</span>
+          {backendAudit ? (
+            <span className={backendAudit.ok ? 'backend-ok' : 'backend-warn'}>
+              backend {backendAudit.score}/{backendAudit.total}: {backendAudit.message}
+            </span>
+          ) : (
+            <span className="backend-warn">backend: нужна проверка RuleBot</span>
+          )}
+        </div>
+        {backendAudit && (backendAudit.missing.length || backendAudit.warnings.length) ? (
+          <div className="icon-backend-audit-list">
+            {[...backendAudit.missing, ...backendAudit.warnings].slice(0, 4).map((item) => <span key={item}>{item}</span>)}
+          </div>
+        ) : null}
+      </div>
+      <div className="icon-editor-status-actions">
+        <button className="table-action" type="button" onClick={props.onBackendCheck} disabled={props.backendChecking}>
+          {props.backendChecking ? 'Проверяет...' : 'Проверить ботом'}
+        </button>
+        <button
+          className={props.item.status === 'published' ? 'table-action danger' : 'table-action publish'}
+          type="button"
+          onClick={() => props.onPatch({ status: props.item.status === 'published' ? 'draft' : 'published' })}
+        >
+          {props.item.status === 'published' ? 'В черновик' : 'Опубликовать'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function SiteSectionVisualPreview({ section, content, items }: { section: IconsSection; content: IconsSiteContent; items: IconsItem[] }) {
+  if (section === 'prayers') {
+    const prayers = items.filter(isPrayerPage);
+    const heroImage = prayers
+      .map((prayer) => prayer.relatedIcon ? content.icons.find((item) => item.slug === prayer.relatedIcon)?.imageUrl : '')
+      .find(Boolean);
+    return (
+      <section className="site-preview-panel">
+        <SitePreviewHeader title="Молитвы" path="/uk/prayers" note="Так блок молитв будет выглядеть на сайте: карточки собираются из текстов икон." />
+        <div className="site-preview-hero" style={heroImage ? { backgroundImage: `linear-gradient(180deg, rgba(20,24,31,.18), rgba(8,10,14,.94)), url("${heroImage}")` } : undefined}>
+          <p>Молитви</p>
+          <h3>Молитви перед іконами та на кожен день</h3>
+          <span>Короткий вступ, список молитв и переход к связанному образу.</span>
+        </div>
+        <div className="site-prayer-grid">
+          {prayers.slice(0, 6).map((prayer) => {
+            const icon = prayer.relatedIcon ? content.icons.find((item) => item.slug === prayer.relatedIcon) : undefined;
+            return (
+              <article className="site-prayer-card" key={prayer.id}>
+                {icon?.imageUrl ? <img src={icon.imageUrl} alt={prayer.title} loading="lazy" /> : <span><AppIcon name="sparkles" /></span>}
+                <div>
+                  <small>{prayer.category || 'Молитва'}</small>
+                  <strong>{prayer.title}</strong>
+                  <p>{compactText(prayer.text || prayer.seoDescription || 'Текст молитвы появится здесь.', 210)}</p>
+                  <em>/prayers/{prayer.slug}</em>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
+  if (section === 'saints') {
+    const saints = items.filter(isSaintPage);
+    return (
+      <section className="site-preview-panel">
+        <SitePreviewHeader title="Святые" path="/uk/saints" note="Карточки житий, дни памяти и связанные иконы." />
+        <div className="site-card-grid-preview">
+          {saints.slice(0, 6).map((saint) => (
+            <article className="site-saint-card" key={saint.id}>
+              {saint.imageUrl ? <img src={saint.imageUrl} alt={saint.name} loading="lazy" /> : <span><AppIcon name="globe" /></span>}
+              <small>{saint.feastDay || 'День памяти'}</small>
+              <strong>{saint.name}</strong>
+              <p>{compactText(saint.shortDescription || saint.biography, 170)}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (section === 'gospel') {
+    const reading = items.find(isGospelReading) ?? content.gospel[0];
+    return (
+      <section className="site-preview-panel">
+        <SitePreviewHeader title="Евангелие" path="/uk/gospel" note="Страница чтения дня: ссылка, текст и краткое объяснение." />
+        <article className="site-gospel-preview">
+          <small>{reading?.date || 'Дата'} · {reading?.reference || 'Место чтения'}</small>
+          <h3>{reading?.title || 'Евангелие дня'}</h3>
+          <blockquote>{reading?.text || 'Текст чтения появится здесь.'}</blockquote>
+          <p>{reading?.explanation || 'Краткое объяснение будет показано под чтением.'}</p>
+        </article>
+      </section>
+    );
+  }
+
+  if (section === 'seo') {
+    const pages = items.filter(isSeoPage);
+    return (
+      <section className="site-preview-panel">
+        <SitePreviewHeader title="SEO-страницы" path="/uk/p/:slug" note="Лендинги под поисковые запросы: hero, H1, контентные блоки и SEO snippet." />
+        <div className="site-seo-grid">
+          {pages.slice(0, 4).map((page) => (
+            <article className="site-seo-card" key={page.id}>
+              {page.imageUrl ? <img src={page.imageUrl} alt={page.title} loading="lazy" /> : null}
+              <small>{page.targetKeyword || page.pageType}</small>
+              <h3>{page.h1 || page.title}</h3>
+              <p>{compactText(page.content || page.seoDescription || 'Текст страницы будет здесь.', 220)}</p>
+              <em>/p/{page.slug}</em>
+            </article>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (section === 'qr') {
+    const qrPages = items.filter(isQrPage);
+    return (
+      <section className="site-preview-panel">
+        <SitePreviewHeader title="QR-страницы" path="/uk/qr/:id" note="Публичная страница после скана QR: молитва, ссылка на икону, владелец и место." />
+        <div className="site-qr-grid">
+          {qrPages.slice(0, 4).map((page) => (
+            <article className="site-qr-card" key={page.id}>
+              <QrCodePreview item={page} />
+              <strong>{page.title}</strong>
+              <p>{compactText(page.customPrayer || 'Особая молитва появится здесь.', 160)}</p>
+              <small>{page.ownerName || 'Страница иконы'} · {page.location || 'QR'}</small>
+            </article>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (section === 'churches') {
+    const churches = items.filter(isChurchPage);
+    return (
+      <section className="site-preview-panel">
+        <SitePreviewHeader title="Храмы" path="/uk/churches" note="Партнерские страницы храмов: адрес, описание, расписание и связанные иконы." />
+        <div className="site-church-grid">
+          {churches.slice(0, 4).map((church) => (
+            <article className="site-church-card" key={church.id}>
+              <small>{church.city}</small>
+              <h3>{church.title}</h3>
+              <p>{compactText(church.description, 190)}</p>
+              <span>{church.address}</span>
+              <em>{church.schedule}</em>
+            </article>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return null;
+}
+
+function SitePreviewHeader({ title, path, note }: { title: string; path: string; note: string }) {
+  return (
+    <div className="site-preview-head">
+      <div>
+        <small>Предпросмотр сайта</small>
+        <strong>{title}</strong>
+        <span>{note}</span>
+      </div>
+      <code>{path}</code>
+    </div>
+  );
+}
+
+function isPrayerPage(item: IconsItem): item is PrayerPage {
+  return 'relatedIcon' in item && 'text' in item;
+}
+
+function isSaintPage(item: IconsItem): item is SaintPage {
+  return 'biography' in item;
+}
+
+function isGospelReading(item: IconsItem): item is GospelReading {
+  return 'reference' in item;
+}
+
+function isSeoPage(item: IconsItem): item is SeoPage {
+  return 'content' in item && 'pageType' in item;
+}
+
+function isQrPage(item: IconsItem): item is QrPage {
+  return 'qrId' in item;
+}
+
+function isChurchPage(item: IconsItem): item is ChurchPage {
+  return 'address' in item;
+}
+
+function buildIconBackendAuditPrompt(icon: IconPage) {
+  return `Ты backend RuleBot / главный оркестратор для CRM сайта православных икон.
+Проверь материал и верни ТОЛЬКО JSON без markdown.
+
+Схема ответа:
+{
+  "score": 0-10,
+  "total": 10,
+  "ok": true|false,
+  "message": "короткий итог",
+  "missing": ["что обязательно заполнить"],
+  "warnings": ["что желательно исправить"]
+}
+
+10 обязательных проверок:
+1. title заполнен и понятен посетителю
+2. slug заполнен и выглядит как URL slug
+3. imageUrl заполнен
+4. shortDescription заполнен
+5. fullDescription заполнен и не выглядит шаблонным
+6. prayerText заполнен
+7. seoTitle заполнен
+8. seoDescription заполнен
+9. qrCodeUrl заполнен
+10. calendarDate заполнен, если материал должен попадать в календарь
+
+Важно:
+- Не ставь 10/10, если есть пустые обязательные поля.
+- Если изображение не является канонической иконой, но материал честно описан как христианский пейзаж/иллюстрация, это warning, не missing.
+- Проверяй украинскую, русскую и английскую локали в translations, если они есть.
+- Не исправляй текст, только оцени готовность.
+
+Материал:
+${JSON.stringify(icon, null, 2)}`;
+}
+
+function parseBackendIconAudit(result: AiGenerationResult, icon: IconPage): BackendIconAudit {
+  const raw = [result.description, result.suggestions.join('\n'), result.title].filter(Boolean).join('\n');
+  const jsonText = raw.match(/\{[\s\S]*\}/)?.[0] || '';
+  try {
+    const parsed = JSON.parse(jsonText) as Partial<BackendIconAudit>;
+    const total = clampAuditNumber(parsed.total, 10);
+    const score = Math.min(total, clampAuditNumber(parsed.score, 0));
+    return {
+      score,
+      total,
+      ok: Boolean(parsed.ok ?? score >= total),
+      message: String(parsed.message || (score >= total ? 'Материал готов' : 'Есть незаполненные поля')),
+      missing: Array.isArray(parsed.missing) ? parsed.missing.map(String).filter(Boolean) : [],
+      warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map(String).filter(Boolean) : [],
+      checkedAt: new Date().toISOString(),
+      source: 'backend-rulebot'
+    };
+  } catch {
+    const fallback = buildLocalBackendAuditFallback(icon, 'Backend вернул ответ без строгого JSON.');
+    const qualityScore = typeof result.qualityScore === 'number' ? Math.round(result.qualityScore / 10) : fallback.score;
+    return { ...fallback, score: Math.min(10, Math.max(0, qualityScore)) };
+  }
+}
+
+function buildLocalBackendAuditFallback(icon: IconPage, message: string): BackendIconAudit {
+  const readiness = iconReadiness(icon);
+  const missing = iconMissingFields(icon);
+  return {
+    score: readiness.complete,
+    total: readiness.total,
+    ok: readiness.complete >= readiness.total && missing.length === 0,
+    message,
+    missing,
+    warnings: missing.length ? [] : ['Backend RuleBot не вернул строгий JSON, показана локальная оценка.'],
+    checkedAt: new Date().toISOString(),
+    source: 'backend-rulebot'
+  };
+}
+
+function clampAuditNumber(value: unknown, fallback: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : fallback;
+}
+
 function iconPageDraft(title: string, description: string) {
   const source = description.trim();
   const intro = source || `${title}: молитва, история образа и духовные материалы для спокойного чтения.`;
@@ -611,7 +962,7 @@ const iconDescriptionFields = ['Краткое описание изображе
 const saintsDescriptionFields = ['Главные святые дня', 'Кратко кто это', 'Годы / век', 'Чем известен', 'Память по календарю', 'Источники'];
 const churchDescriptionFields = ['Название храма', 'Кому посвящён', 'Страна / город', 'Адрес', 'Google Maps ссылка', 'Расписание богослужений', 'Телефон / сайт', 'Краткое описание', 'Святыни / иконы / мощи', 'Фото храма'];
 const mainDescriptionFields = ['Полное описание', 'Смысл праздника', 'Что важно знать', 'Для кого эта молитва/страница', 'Не писать'];
-const prayerFields = ['Тропарь', 'Кондак', 'Величание', 'Краткая молитва', 'Молитва своими словами', 'Язык', 'Источник текста'];
+const prayerFields = ['Основной текст молитвы', 'Короткая молитва', 'Источник / примечание'];
 const gospelFields = ['Апостольское чтение', 'Евангельское чтение', 'Цитата дня', 'Объяснение простыми словами', 'Связь с событием', 'Источник'];
 const lifeFields = ['Краткое житие', 'Подробное житие', 'Главные события жизни', 'Духовный смысл', 'Где почитается', 'Источники'];
 const historyFields = ['История праздника', 'Дата по старому стилю', 'Дата по новому стилю', 'Разные календарные традиции', 'Почему бывает путаница', 'Проверенные источники', 'Дата проверена', 'Календарный стиль', 'Найденное событие', 'Уверенность', 'Предупреждение'];
@@ -746,13 +1097,9 @@ function buildIconEditorialPrompt(item: IconsItem | undefined, prompt: string) {
 **Не писать:**
 
 Молитва:
-**Тропарь:**
-**Кондак:**
-**Величание:**
-**Краткая молитва:**
-**Молитва своими словами:**
-**Язык:**
-**Источник текста:**
+**Основной текст молитвы:**
+**Короткая молитва:**
+**Источник / примечание:**
 
 Евангелие:
 **Апостольское чтение:**
@@ -1044,7 +1391,8 @@ function makeNewItem(section: IconsSection) {
   };
 }
 
-export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSection }) {
+export function IconsPage({ activeSection: initialSection = 'icons' }: { activeSection?: IconsSection }) {
+  const [activeSection, setActiveSection] = useState<IconsSection>(initialSection);
   const [content, setContent] = useState<IconsSiteContent>(emptyContent);
   const [editingId, setEditingId] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
@@ -1064,7 +1412,7 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
   const [selectedIconImage, setSelectedIconImage] = useState(0);
   const [activeEditorTab, setActiveEditorTab] = useState<EditorTabKey>('main');
   const [activeIconTextScope, setActiveIconTextScope] = useState<IconTextScopeKey>('icon');
-  const [activeIconTextLanguage, setActiveIconTextLanguage] = useState<IconsLang>('ru');
+  const [activeIconTextLanguage, setActiveIconTextLanguage] = useState<IconsLang>('uk');
   const [activeIconTextTab, setActiveIconTextTab] = useState<IconTextTabKey>('description');
   const [activeCalendarYear, setActiveCalendarYear] = useState(initialCalendarYear);
   const [activeCalendarMonth, setActiveCalendarMonth] = useState(initialCalendarMonth);
@@ -1073,11 +1421,38 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
   const [fullscreenIconImage, setFullscreenIconImage] = useState<number | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [resourceQuery, setResourceQuery] = useState('');
+  const [resourceStatus, setResourceStatus] = useState<'all' | 'draft' | 'published'>('all');
+  const [backendAudits, setBackendAudits] = useState<Record<string, BackendIconAudit>>({});
+  const [backendAuditLoadingId, setBackendAuditLoadingId] = useState('');
   const pendingItemPatchesRef = useRef<Record<string, PendingItemPatch>>({});
 
   const items = useMemo(() => getSectionItems(content, activeSection), [activeSection, content]);
+  const visibleItems = useMemo(() => {
+    const query = resourceQuery.trim().toLowerCase();
+    return items.filter((item) => {
+      const matchesQuery = !query || [
+        getItemTitle(item),
+        getItemSubline(activeSection, item),
+        'category' in item ? item.category : '',
+        'saintName' in item ? item.saintName : '',
+        'seoDescription' in item ? item.seoDescription || '' : ''
+      ].some((value) => value.toLowerCase().includes(query));
+      const matchesStatus = resourceStatus === 'all' || !('status' in item) || item.status === resourceStatus;
+      return matchesQuery && matchesStatus;
+    });
+  }, [activeSection, items, resourceQuery, resourceStatus]);
+  const iconStats = useMemo(() => {
+    const icons = content.icons;
+    return {
+      total: icons.length,
+      published: icons.filter((item) => item.status === 'published').length,
+      draft: icons.filter((item) => item.status === 'draft').length,
+      ready: icons.filter((item) => iconReadiness(item).percent >= 80).length
+    };
+  }, [content.icons]);
   const activeSectionMeta = sections.find((section) => section.key === activeSection) ?? sections[0];
-  const sectionIsEditable = activeSection === 'icons';
+  const sectionIsEditable = activeSection === 'icons' || activeSection === 'seo';
   const editing = items.find((item) => getItemId(item) === editingId) ?? items[0];
   const editingImages = iconImages(editing);
   const editorTabs = useMemo(() => {
@@ -1092,6 +1467,10 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
     tabs.push({ key: 'publish', label: 'Публикация', icon: 'deploy' });
     return tabs;
   }, [editing]);
+
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     void loadContent({ year: activeCalendarYear, month: activeCalendarMonth });
@@ -1215,11 +1594,33 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
     return next;
   }
 
+  function openMaterialEditor(item: IconsItem, tab: EditorTabKey = 'main') {
+    setEditingId(getItemId(item));
+    setActiveEditorTab(tab);
+    setEditorOpen(true);
+  }
+
+  function createMaterial() {
+    const item = addItem(undefined, { openEditor: false });
+    setActiveEditorTab('main');
+    setActiveIconTextLanguage('uk');
+    setActiveIconTextScope('icon');
+    setActiveIconTextTab('description');
+    setEditingId(getItemId(item));
+    setEditorOpen(true);
+  }
+
   function addCalendarDay(month: string, day: string) {
     const item = addItem({ month, day, id: `calendar-${month}-${day}-${Date.now()}` } as Partial<IconsItem>);
     setActiveCalendarMonth(month);
     setEditingId(getItemId(item));
     setEditorOpen(true);
+  }
+
+  function switchSection(section: IconsSection) {
+    setActiveSection(section);
+    setEditorOpen(false);
+    setEditingId('');
   }
 
   function changeCalendarMonth(month: string) {
@@ -1266,7 +1667,7 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
     if (activeSection === 'icons' && 'qrCodeUrl' in item) {
       const draft = iconPageDraft(title, description);
       const structuredDescription = structuredSectionsFromText(description, ['Краткое описание изображения', 'Символы на иконе', 'Alt для фото', 'Prompt для генерации', 'Источник изображения', 'Полное описание', 'Смысл праздника', 'Что важно знать', 'Для кого эта молитва/страница', 'Не писать']);
-      const structuredPrayer = structuredSectionsFromText(description, ['Тропарь', 'Кондак', 'Величание', 'Краткая молитва', 'Молитва своими словами', 'Язык', 'Источник текста']);
+      const structuredPrayer = structuredSectionsFromText(description, prayerFields);
       const structuredGospel = structuredSectionsFromText(description, ['Апостольское чтение', 'Евангельское чтение', 'Цитата дня', 'Объяснение простыми словами', 'Связь с событием', 'Источник']);
       const structuredLife = structuredSectionsFromText(description, ['Краткое житие', 'Подробное житие', 'Главные события жизни', 'Духовный смысл', 'Где почитается', 'Источники']);
       const structuredHistory = structuredSectionsFromText(description, ['История праздника', 'Дата по старому стилю', 'Дата по новому стилю', 'Разные календарные традиции', 'Почему бывает путаница', 'Проверенные источники', 'Дата проверена', 'Календарный стиль', 'Найденное событие', 'Уверенность', 'Предупреждение']);
@@ -1448,6 +1849,32 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
       setError(aiError instanceof Error ? aiError.message : 'Gemini не смог создать материал');
     } finally {
       setAiCreateLoading(false);
+    }
+  }
+
+  async function runBackendIconAudit(item: IconPage) {
+    setBackendAuditLoadingId(item.id);
+    setError('');
+    try {
+      const result = await generateSeo({
+        site: 'icons',
+        language: 'ru',
+        type: 'seo',
+        tone: 'expert',
+        keywords: ['rulebot', 'icons-readiness', item.slug || item.id, '10/10'],
+        sourceText: buildIconBackendAuditPrompt(item)
+      });
+      const audit = parseBackendIconAudit(result, item);
+      setBackendAudits((current) => ({ ...current, [item.id]: audit }));
+      setMessage(audit.ok
+        ? 'Backend RuleBot подтвердил 10/10: материал готов к публикации.'
+        : `Backend RuleBot: ${audit.score}/${audit.total}. Нужно исправить: ${audit.missing.slice(0, 3).join(', ') || audit.warnings.slice(0, 3).join(', ')}`);
+    } catch (auditError) {
+      const fallback = buildLocalBackendAuditFallback(item, auditError instanceof Error ? auditError.message : 'Backend audit failed');
+      setBackendAudits((current) => ({ ...current, [item.id]: fallback }));
+      setError(fallback.message);
+    } finally {
+      setBackendAuditLoadingId('');
     }
   }
 
@@ -1795,6 +2222,21 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
 
       {error ? <p className="almabuild-alert error">{error}</p> : null}
 
+      <nav className="icons-section-switcher" aria-label="Svet Ikony content sections">
+        {sections.map((section) => (
+          <button
+            key={section.key}
+            type="button"
+            className={activeSection === section.key ? 'active' : ''}
+            onClick={() => switchSection(section.key)}
+          >
+            <AppIcon name={section.icon} />
+            <span>{section.label}</span>
+            <small>{section.note}</small>
+          </button>
+        ))}
+      </nav>
+
       {activeSection === 'calendar' ? (
         <CalendarMonthCards
           year={activeCalendarYear}
@@ -1803,22 +2245,106 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
           onYearChange={changeCalendarYear}
           onMonthChange={changeCalendarMonth}
         />
+      ) : activeSection === 'icons' ? (
+        <section className="ops-panel icons-workbench">
+          <div className="icons-workbench-head">
+            <div>
+              <span><AppIcon name="cms" />Иконы</span>
+              <strong>{iconStats.total} материалов</strong>
+            </div>
+            <div className="icons-workbench-stats">
+              <span><i />{iconStats.published} опубликовано</span>
+              <span><i />{iconStats.draft} черновиков</span>
+              <span><i />{iconStats.ready} почти готово</span>
+            </div>
+          </div>
+
+          <div className="icons-workbench-toolbar">
+            <label className="icons-search-field">
+              <AppIcon name="search" />
+              <input value={resourceQuery} onChange={(event) => setResourceQuery(event.target.value)} placeholder="Поиск по названию, slug, святому или SEO" />
+            </label>
+            <label className="icons-filter-field">
+              <span>Статус</span>
+              <select value={resourceStatus} onChange={(event) => setResourceStatus(event.target.value as typeof resourceStatus)}>
+                <option value="all">Все</option>
+                <option value="draft">Черновики</option>
+                <option value="published">Опубликовано</option>
+              </select>
+            </label>
+            <button className="btn btn-primary" type="button" onClick={createMaterial}>
+              <AppIcon name="cms" />Новая икона
+            </button>
+            <button className="btn btn-ai" type="button" onClick={createWithGemini} disabled={aiCreateLoading}>
+              <AppIcon name="bot" />{aiCreateLoading ? 'Gemini...' : 'AI draft'}
+            </button>
+          </div>
+
+          <div className="icons-card-grid">
+            {visibleItems.map((item) => {
+              if (!('qrCodeUrl' in item)) return null;
+              const readiness = iconReadiness(item);
+              const missing = iconMissingFields(item);
+              const image = getItemPreviewImage(item);
+              return (
+                <article className="icon-resource-card" key={item.id}>
+                  <button className="icon-resource-image" type="button" onClick={() => openMaterialEditor(item, image ? 'photo-ai' : 'main')}>
+                    {image ? <img src={image} alt={item.title} loading="lazy" /> : <span><AppIcon name="image" />Добавить фото</span>}
+                  </button>
+                  <div className="icon-resource-body">
+                    <div className="icon-resource-title">
+                      <span className={'status-pill ' + statusClass(item.status)}><i />{item.status === 'published' ? 'опубликовано' : 'черновик'}</span>
+                      <strong>{item.title}</strong>
+                      <small>/icons/{item.slug || item.id}</small>
+                    </div>
+                    <p>{item.shortDescription || item.seoDescription || 'Добавьте краткое описание, чтобы карточка была понятна на сайте.'}</p>
+                    <div className="icon-readiness">
+                      <span style={{ width: `${readiness.percent}%` }} />
+                    </div>
+                    <div className="icon-resource-meta">
+                      <span>{readiness.complete}/{readiness.total} готово</span>
+                      <span>{item.category || 'без категории'}</span>
+                      <span>{item.calendarDate || 'без даты'}</span>
+                    </div>
+                    {missing.length ? <small className="icon-missing">Нужно: {missing.join(', ')}</small> : <small className="icon-missing done">Материал готов к публикации</small>}
+                    <div className="icon-card-actions">
+                      <button className="table-action" type="button" onClick={() => openMaterialEditor(item, 'main')}>Основное</button>
+                      <button className="table-action" type="button" onClick={() => openMaterialEditor(item, 'texts')}>Тексты</button>
+                      <button className="table-action" type="button" onClick={() => openMaterialEditor(item, 'seo')}>SEO</button>
+                      <button className="table-action" type="button" onClick={() => openMaterialEditor(item, 'photo-ai')}>Фото</button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {!visibleItems.length ? (
+            <div className="icons-empty-state">
+              <AppIcon name="cms" />
+              <strong>Иконы не найдены</strong>
+              <span>Сбросьте фильтры или создайте новую икону.</span>
+              <button className="btn btn-primary" type="button" onClick={createMaterial}>Новая икона</button>
+            </div>
+          ) : null}
+        </section>
       ) : (
         <section className="ops-panel icons-materials-panel">
           <div className="panel-title">
             <span><AppIcon name={activeSectionMeta.icon} />{activeSectionMeta.label}</span>
-            {sectionIsEditable ? <button className="table-action" type="button" onClick={() => addItem()}>+ Добавить</button> : <small>Просмотр: данные собираются из редактора «Иконы»</small>}
+            {sectionIsEditable ? <button className="table-action" type="button" onClick={createMaterial}>+ Добавить</button> : <small>Просмотр: данные собираются из редактора «Иконы»</small>}
           </div>
+          <SiteSectionVisualPreview section={activeSection} content={content} items={visibleItems} />
           <div className="table-scroll">
             <table className="ops-table">
               <thead><tr><th>Фото</th><th>Материал</th><th>Тип</th><th>Статус</th><th /></tr></thead>
-              <tbody>{items.map((item) => (
+              <tbody>{visibleItems.map((item) => (
                 <tr key={getItemId(item)}>
                   <td>{getItemPreviewImage(item) ? <img className="icons-material-thumb" src={getItemPreviewImage(item)} alt={getItemTitle(item)} loading="lazy" /> : <span className="icons-material-thumb empty"><AppIcon name="image" size={18} /></span>}</td>
                   <td><strong>{getItemTitle(item)}</strong><small>{getItemSubline(activeSection, item)}</small></td>
                   <td>{activeSection}</td>
                   <td>{'status' in item ? <span className={'status-pill ' + statusClass(item.status)}><i />{item.status === 'published' ? 'опубликовано' : 'черновик'}</span> : <span className="status-pill good"><i />активно</span>}</td>
-                  <td>{sectionIsEditable ? <button className="table-action" type="button" onClick={() => { setEditingId(getItemId(item)); setEditorOpen(true); }}>Редактировать</button> : <span className="page-muted">из икон</span>}</td>
+                  <td>{sectionIsEditable ? <button className="table-action" type="button" onClick={() => openMaterialEditor(item)}>Редактировать</button> : <span className="page-muted">из икон</span>}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -1844,6 +2370,17 @@ export function IconsPage({ activeSection = 'icons' }: { activeSection?: IconsSe
                 <button className="btn btn-primary" type="button" onClick={saveContent} disabled={saving}><AppIcon name="save" />{saving ? 'Сохранение...' : 'Сохранить'}</button>
               </div>
             </div>
+
+            {'qrCodeUrl' in editing ? (
+              <IconEditorOverview
+                item={editing}
+                image={getItemPreviewImage(editing)}
+                onPatch={patchEditing}
+                backendAudit={backendAudits[editing.id]}
+                backendChecking={backendAuditLoadingId === editing.id}
+                onBackendCheck={() => void runBackendIconAudit(editing)}
+              />
+            ) : null}
 
             <nav className="editor-tabbar" aria-label="Разделы редактора">
               {editorTabs.map((tab) => (

@@ -82,6 +82,16 @@ export interface SaintPage {
   seoDescription?: string;
 }
 
+export interface SeoPageTranslation {
+  title?: string;
+  h1?: string;
+  content?: string;
+  targetKeyword?: string;
+  blocks?: string[];
+  seoTitle?: string;
+  seoDescription?: string;
+}
+
 export interface SeoPage {
   id: string;
   slug: string;
@@ -99,6 +109,7 @@ export interface SeoPage {
   city?: string;
   seoTitle?: string;
   seoDescription?: string;
+  translations?: Partial<Record<IconsLang, SeoPageTranslation>>;
 }
 
 export interface QrPage {

@@ -87,6 +87,13 @@ export function CMSArticleForm({ formId, row, disabled, onSubmit }: { formId: st
       <label><span>Image URL</span><input disabled={disabled} value={form.imageUrl} onChange={(event) => setForm((current) => ({ ...current, imageUrl: event.target.value }))} /><FieldError message={errors.imageUrl} /></label>
       <label><span>Author</span><input disabled={disabled} value={form.authorName} onChange={(event) => setForm((current) => ({ ...current, authorName: event.target.value }))} /></label>
       <label><span>Order index</span><input disabled={disabled} value={form.orderIndex} onChange={(event) => setForm((current) => ({ ...current, orderIndex: event.target.value }))} /><FieldError message={errors.orderIndex} /></label>
+      <article className="publishing-preview cms-article-preview">
+        {form.imageUrl && isValidUrl(form.imageUrl) ? <img src={form.imageUrl} alt="" /> : null}
+        <p>{form.status} / {form.category || 'Article'} / {form.slug || 'no-slug'}</p>
+        <h3>{form.title[lang] || title || 'Untitled article'}</h3>
+        <span>{form.content[lang] || 'No content for this language yet.'}</span>
+        <small>{form.seoTitle[lang] || 'No SEO title'}</small>
+      </article>
     </form>
   );
 }

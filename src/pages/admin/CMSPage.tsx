@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActionButton } from '../../components/admin/ActionButton';
 import { AdminDrawer } from '../../components/admin/AdminDrawer';
 import { CMSArticleForm } from '../../components/admin/forms/CMSArticleForm';
+import { SitePagesEditor } from '../../components/admin/SitePagesEditor';
 import { useAdminToast } from '../../components/admin/useAdminToast';
 import { useActiveSite } from '../../lib/useActiveSite';
 import { cmsService, listCMSPages } from '../../services/admin/cmsService';
@@ -84,6 +85,24 @@ export function CMSPage() {
     }
   }
 
+  async function changePublishStatus(status: 'draft' | 'published') {
+    if (!editingRow) return;
+    setSaving(true);
+    setFormError(null);
+    try {
+      await cmsService.update(editingRow.id, { siteId: activeSiteId as SiteId, status });
+      toast.success(status === 'published' ? 'Статья опубликована.' : 'Статья снята с публикации.');
+      await refreshRows();
+      closeDrawer();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось изменить статус публикации.';
+      setFormError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <>
       <AdminResourcePage
@@ -100,6 +119,7 @@ export function CMSPage() {
         onEdit={openEdit}
         onDelete={deleteArticle}
       />
+      <SitePagesEditor />
       <AdminDrawer
         open={drawerOpen}
         title={drawerMode === 'edit' ? 'Редактировать статью' : 'Добавить статью'}
@@ -109,6 +129,11 @@ export function CMSPage() {
           <>
             {formError ? <p className="form-error">{formError}</p> : null}
             <ActionButton onClick={closeDrawer} disabled={saving}>Отмена</ActionButton>
+            {editingRow ? (
+              editingRow.status === 'published'
+                ? <ActionButton icon="refresh" onClick={() => void changePublishStatus('draft')} disabled={saving}>Unpublish</ActionButton>
+                : <ActionButton icon="deploy" onClick={() => void changePublishStatus('published')} disabled={saving}>Publish</ActionButton>
+            ) : null}
             <ActionButton tone="primary" icon="save" type="submit" form="cms-article-form" disabled={saving}>{saving ? 'Сохраняем' : 'Сохранить'}</ActionButton>
           </>
         )}

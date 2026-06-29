@@ -7,6 +7,8 @@ export type AppPage =
   | 'dashboard'
   | 'sites'
   | 'cms'
+  | 'church-content'
+  | 'icons'
   | 'calendar'
   | 'leads'
   | 'catalog'
@@ -30,6 +32,8 @@ export const adminNavItems: AdminNavItem[] = [
   { page: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { page: 'sites', label: 'Sites', icon: 'globe' },
   { page: 'cms', label: 'CMS', icon: 'cms' },
+  { page: 'church-content', label: 'Church Content', icon: 'calendar' },
+  { page: 'icons', label: 'Icons', icon: 'qr' },
   { page: 'calendar', label: 'Calendar', icon: 'calendar' },
   { page: 'leads', label: 'Leads', icon: 'leads' },
   { page: 'catalog', label: 'Catalog', icon: 'catalog' },
@@ -59,6 +63,9 @@ type AdminSidebarProps = {
 
 export function AdminSidebar({ activePage, collapsed, onNavigate, onSiteChange, onToggleCollapse }: AdminSidebarProps) {
   const { activeSite } = useActiveSite();
+  const visibleItems = adminNavItems.filter((item) => (
+    (item.page !== 'icons' && item.page !== 'church-content') || activeSite.id === 'church'
+  ));
 
   return (
     <aside className={'admin-sidebar' + (collapsed ? ' collapsed' : '')} data-site-accent={activeSite.accent}>
@@ -73,7 +80,7 @@ export function AdminSidebar({ activePage, collapsed, onNavigate, onSiteChange, 
       <SiteSwitcher collapsed={collapsed} onSiteChange={onSiteChange} />
 
       <nav className="admin-sidebar-nav" aria-label="CRM navigation">
-        {adminNavItems.map((item) => (
+        {visibleItems.map((item) => (
           <button
             key={item.page}
             className={'admin-sidebar-link' + (activePage === item.page ? ' active' : '')}
