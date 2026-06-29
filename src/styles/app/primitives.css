@@ -2040,6 +2040,10 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.kitchen-admin-list.text-only article.with-actions {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
 .kitchen-admin-list article.active {
   border-color: color-mix(in srgb, var(--site-accent) 58%, transparent);
   background: color-mix(in srgb, var(--site-accent) 12%, transparent);
@@ -2074,6 +2078,21 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
 
 .kitchen-admin-list small {
   color: var(--crm-faint);
+}
+
+.kitchen-admin-list .table-action {
+  min-width: 78px;
+}
+
+.kitchen-admin-list label.table-action {
+  cursor: pointer;
+}
+
+.kitchen-admin-list label.table-action.disabled,
+.kitchen-admin-list label.table-action:has(input:disabled) {
+  opacity: .58;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .kitchen-expertise-thumb,
@@ -2142,6 +2161,10 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   }
 
   .kitchen-expertise-photo-field {
+    grid-template-columns: 1fr;
+  }
+
+  .kitchen-admin-list.text-only article.with-actions {
     grid-template-columns: 1fr;
   }
 }

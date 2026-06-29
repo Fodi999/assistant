@@ -283,6 +283,30 @@ export function KitchenCmsSections() {
     }
   }
 
+  async function uploadExpertiseIconForItem(file: File | null, item: ExpertiseItem) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setMessage('Файл должен быть изображением.');
+      return;
+    }
+    setBusy(`expertise-photo-${item.id}`);
+    setMessage(null);
+    try {
+      const url = await uploadGalleryPhoto(file);
+      const payload = { ...item, icon: url };
+      const { id, created_at, updated_at, ...expertisePayload } = payload;
+      const saved = await updateExpertise(item.id, expertisePayload);
+      await revalidateSite({ type: 'expertise' });
+      setExpertise((current) => current.map((row) => row.id === saved.id ? saved : row));
+      if (expertiseDraft?.id === saved.id) setExpertiseDraft(saved);
+      setMessage('Фото expertise загружено и сохранено.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить фото expertise.');
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function removeExpertise(item: ExpertiseItem) {
     if (!window.confirm(`Удалить expertise "${item.title_ru || item.title_en}"?`)) return;
     setBusy(`expertise-${item.id}`);
@@ -445,8 +469,13 @@ export function KitchenCmsSections() {
       <AdminPanel title="Expertise" icon="sparkles" meta={`${expertise.length} items`}>
         <div className="kitchen-admin-list text-only">
           {expertise.map((item) => (
-            <article className={expertiseDraft?.id === item.id ? 'active' : ''} key={item.id}>
+            <article className={`${expertiseDraft?.id === item.id ? 'active ' : ''}with-actions`.trim()} key={item.id}>
               <button type="button" onClick={() => setExpertiseDraft(item)}><strong>{isImageUrl(item.icon) ? <img className="kitchen-expertise-thumb" src={item.icon} alt="" loading="lazy" /> : <span className="kitchen-expertise-emoji">{item.icon}</span>} {localized(item, 'title', lang)}</strong><small>#{item.order_index}</small></button>
+              <button className="table-action" type="button" disabled={Boolean(busy)} onClick={() => setExpertiseDraft(item)}>Edit</button>
+              <label className={`table-action ${busy === `expertise-photo-${item.id}` ? 'disabled' : ''}`.trim()}>
+                <input className="visually-hidden" type="file" accept="image/*" disabled={Boolean(busy)} onChange={(event) => void uploadExpertiseIconForItem(event.target.files?.[0] ?? null, item)} />
+                {busy === `expertise-photo-${item.id}` ? 'Photo...' : 'Photo'}
+              </label>
               <button className="table-action danger" type="button" disabled={Boolean(busy)} onClick={() => void removeExpertise(item)}>Delete</button>
             </article>
           ))}
