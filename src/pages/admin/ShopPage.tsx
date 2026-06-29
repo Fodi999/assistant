@@ -43,8 +43,19 @@ type ShopBackend = {
   stock_quantity?: number;
 };
 
+function validImageUrl(value: string | undefined) {
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? value : '';
+  } catch {
+    return '';
+  }
+}
+
 function productImage(row: AdminResourceRow) {
-  return ((row.backend || {}) as ShopBackend).image_urls?.[0] || '';
+  const imageUrls = ((row.backend || {}) as ShopBackend).image_urls || [];
+  return imageUrls.map(validImageUrl).find(Boolean) || '';
 }
 
 function productPrice(row: AdminResourceRow) {

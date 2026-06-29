@@ -43,6 +43,17 @@ function clean<T extends Record<string, unknown>>(payload: T): Partial<T> {
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== '')) as Partial<T>;
 }
 
+function cleanImageUrls(urls: string[] | undefined) {
+  return (urls || []).filter((url) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  });
+}
+
 function toBackendShopPayload(payload: CreateShopProductDto | UpdateShopProductDto) {
   const title = payload.name?.en || payload.name?.uk || payload.name?.ru || payload.name?.pl || payload.title?.trim() || payload.slug || 'Untitled product';
   return clean({
@@ -70,7 +81,7 @@ function toBackendShopPayload(payload: CreateShopProductDto | UpdateShopProductD
     seo_description_pl: payload.seoDescription?.pl,
     seo_description_uk: payload.seoDescription?.uk,
     selling_points: payload.sellingPoints,
-    image_urls: payload.imageUrls,
+    image_urls: cleanImageUrls(payload.imageUrls),
     price_cents: payload.priceCents,
     currency: payload.currency,
     stock_quantity: payload.stockQuantity,
