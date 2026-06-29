@@ -13,7 +13,22 @@ import { AdminResourcePage } from './AdminResourcePage';
 
 type DrawerMode = 'create' | 'edit';
 
-const defaultShopCategories = ['kitchen-tools', 'ingredients', 'tableware', 'beverages', 'delivery-food', 'equipment', 'other'];
+const defaultShopCategories = [
+  'sushi-rolls',
+  'sushi-sets',
+  'nigiri',
+  'gunkan',
+  'sashimi',
+  'soups',
+  'salads',
+  'snacks',
+  'sauces',
+  'beverages',
+  'desserts',
+  'kitchen-tools',
+  'tableware',
+  'other'
+];
 
 type ShopBackend = {
   name_ru?: string;

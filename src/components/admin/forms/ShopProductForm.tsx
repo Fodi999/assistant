@@ -41,6 +41,39 @@ function initialState(row?: AdminResourceRow | null, initialCategory = ''): Shop
   };
 }
 
+function inferShopCategory(draft: Awaited<ReturnType<typeof aiCreateShopProductDraft>>, currentCategory = ''): string {
+  if (currentCategory && currentCategory !== 'delivery-food') return currentCategory;
+  const text = [
+    draft.category,
+    draft.name_en,
+    draft.name_ru,
+    draft.name_pl,
+    draft.name_uk,
+    draft.short_description_en,
+    draft.short_description_ru,
+    draft.short_description_pl,
+    draft.short_description_uk,
+    draft.description_en,
+    draft.description_ru,
+    draft.description_pl,
+    draft.description_uk
+  ].join(' ').toLowerCase();
+
+  if (/(roll|ролл|рол|maki|uramaki|futomaki|hosomaki|california|philadelphia|tokyo roll)/.test(text)) return 'sushi-rolls';
+  if (/(set|сет|zestaw|combo|assorted|ассорти|набор)/.test(text)) return 'sushi-sets';
+  if (/nigiri|нигири/.test(text)) return 'nigiri';
+  if (/gunkan|гункан/.test(text)) return 'gunkan';
+  if (/sashimi|сашими/.test(text)) return 'sashimi';
+  if (/(soup|суп|zupa|ramen|miso)/.test(text)) return 'soups';
+  if (/(salad|салат|sałat)/.test(text)) return 'salads';
+  if (/(snack|закуск|starter|appetizer|tempura|темпура)/.test(text)) return 'snacks';
+  if (/(sauce|соус|sos|wasabi|васаби|ginger|имбир)/.test(text)) return 'sauces';
+  if (/(drink|напит|napój|cola|water|вода|tea|чай|coffee|кофе)/.test(text)) return 'beverages';
+  if (/(dessert|десерт|mochi|моти|sweet|сладк)/.test(text)) return 'desserts';
+  if (draft.category && draft.category !== 'delivery-food') return draft.category;
+  return 'sushi-rolls';
+}
+
 function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -122,7 +155,7 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
       seoTitle: { uk: draft.seo_title_uk, ru: draft.seo_title_ru, pl: draft.seo_title_pl, en: draft.seo_title_en },
       seoDescription: { uk: draft.seo_description_uk, ru: draft.seo_description_ru, pl: draft.seo_description_pl, en: draft.seo_description_en },
       slug: current.slug || draft.slug,
-      category: current.category || draft.category,
+      category: inferShopCategory(draft, current.category),
       sellingPoints: draft.selling_points?.join(', ') || current.sellingPoints
     }));
     setImagePrompts(draft.image_prompts || []);
