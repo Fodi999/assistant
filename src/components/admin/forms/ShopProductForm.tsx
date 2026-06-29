@@ -18,6 +18,9 @@ type ShopFormState = {
   slug: string; sku: string; category: string; imageUrls: string; sellingPoints: string; price: string; currency: string; stockQuantity: string; status: ResourceStatus;
 };
 
+const GEMINI_REFERENCE_MAX_BYTES = 10 * 1024 * 1024;
+const GEMINI_REFERENCE_TARGET_BYTES = 9 * 1024 * 1024;
+
 function initialState(row?: AdminResourceRow | null, initialCategory = ''): ShopFormState {
   const backend = (row?.backend || {}) as BackendShop;
   return {
@@ -38,6 +41,58 @@ function initialState(row?: AdminResourceRow | null, initialCategory = ''): Shop
   };
 }
 
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Не удалось подготовить фото для Gemini.'));
+    }, 'image/jpeg', quality);
+  });
+}
+
+async function prepareReferenceImage(file: File): Promise<File> {
+  if (file.size < GEMINI_REFERENCE_TARGET_BYTES) return file;
+
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas недоступен.');
+
+    let scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
+    let quality = .84;
+    let lastBlob: Blob | null = null;
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await canvasToBlob(canvas, quality);
+      lastBlob = blob;
+      if (blob.size < GEMINI_REFERENCE_TARGET_BYTES) {
+        return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+      }
+      if (quality > .62) quality -= .08;
+      else {
+        scale *= .82;
+        quality = .82;
+      }
+    }
+
+    if (lastBlob && lastBlob.size < GEMINI_REFERENCE_MAX_BYTES) {
+      return new File([lastBlob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+    }
+  } catch {
+    throw new Error('Фото больше 10 MB. Не удалось автоматически сжать файл, попробуйте JPG/PNG меньшего размера.');
+  } finally {
+    bitmap?.close();
+  }
+
+  throw new Error('Reference image must be smaller than 10 MB. Фото слишком большое даже после сжатия.');
+}
+
 export function ShopProductForm({ formId, row, disabled, editMode, initialCategory, categories = [], onSubmit }: { formId: string; row?: AdminResourceRow | null; disabled?: boolean; editMode?: boolean; initialCategory?: string; categories?: string[]; onSubmit: (payload: CreateShopProductDto) => void }) {
   const [lang, setLang] = useLangTab();
   const [form, setForm] = useState<ShopFormState>(() => initialState(row, initialCategory));
@@ -46,11 +101,15 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
+  const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
   const [imagePrompts, setImagePrompts] = useState<string[]>([]);
+  const [originalReferenceUrl, setOriginalReferenceUrl] = useState('');
+  const [generatedPhotoUrls, setGeneratedPhotoUrls] = useState<string[]>([]);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const title = useMemo(() => firstText(form.name), [form.name]);
   const images = useMemo(() => csv(form.imageUrls), [form.imageUrls]);
   const firstImage = images[0];
+  const generatedPreviewImages = generatedPhotoUrls.length ? generatedPhotoUrls : (images.length > 1 || !originalReferenceUrl ? images.slice(0, 4) : []);
 
   function mergeDraftText(draft: Awaited<ReturnType<typeof aiCreateShopProductDraft>>) {
     setForm((current) => ({
@@ -101,8 +160,30 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
     }
   }
 
+  async function ensureImagePrompts(titleForImage: string) {
+    if (imagePrompts.length) return imagePrompts;
+    const draft = await aiCreateShopProductDraft(productBrief() || titleForImage, 4);
+    const prompts = draft.image_prompts || [];
+    setImagePrompts(prompts);
+    mergeDraftText(draft);
+    return prompts;
+  }
+
+  async function generateOnePhoto(index: number, referenceUrl: string, prompts: string[]) {
+    const titleForImage = form.name.en || form.name.ru || form.name.pl || form.name.uk || title || 'Shop product';
+    const result = await generateShopProductImage(
+      titleForImage,
+      prompts[index],
+      index,
+      [referenceUrl],
+      false,
+      { photoScenarios: ['white-background', 'catalog-card', 'detail-shot'], scaleReference: 'none' }
+    );
+    return result.image_url;
+  }
+
   async function generatePhotosWithGemini() {
-    const referenceUrl = firstImage;
+    const referenceUrl = originalReferenceUrl || firstImage;
     if (!referenceUrl) {
       setErrors((current) => ({ ...current, imageUrls: 'Сначала загрузите настоящее фото товара с ПК.' }));
       return;
@@ -111,25 +192,12 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
     setImageBusy(true);
     setAiMessage(null);
     try {
-      let prompts = imagePrompts;
-      if (!prompts.length) {
-        const draft = await aiCreateShopProductDraft(productBrief() || titleForImage, 4);
-        prompts = draft.image_prompts || [];
-        setImagePrompts(prompts);
-        mergeDraftText(draft);
-      }
-
+      const prompts = await ensureImagePrompts(titleForImage);
       const generated: string[] = [];
       for (let index = 0; index < 4; index += 1) {
-        const result = await generateShopProductImage(
-          titleForImage,
-          prompts[index],
-          index,
-          [referenceUrl],
-          false,
-          { photoScenarios: ['white-background', 'catalog-card', 'detail-shot'], scaleReference: 'none' }
-        );
-        generated.push(result.image_url);
+        const url = await generateOnePhoto(index, referenceUrl, prompts);
+        generated.push(url);
+        setGeneratedPhotoUrls([...generated]);
         setForm((current) => ({ ...current, imageUrls: generated.join(', ') }));
       }
       setAiMessage('Gemini создал 4 фото товара от загруженного оригинала.');
@@ -137,6 +205,33 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
       setErrors((current) => ({ ...current, imageUrls: error instanceof Error ? error.message : 'Не удалось сгенерировать фото товара.' }));
     } finally {
       setImageBusy(false);
+    }
+  }
+
+  async function regeneratePhoto(index: number) {
+    const referenceUrl = originalReferenceUrl || firstImage;
+    if (!referenceUrl) {
+      setErrors((current) => ({ ...current, imageUrls: 'Для перегенерации нужен оригинал. Загрузите настоящее фото товара.' }));
+      return;
+    }
+    const titleForImage = form.name.en || form.name.ru || form.name.pl || form.name.uk || title || 'Shop product';
+    setRegeneratingIndex(index);
+    setAiMessage(null);
+    try {
+      const prompts = await ensureImagePrompts(titleForImage);
+      const url = await generateOnePhoto(index, referenceUrl, prompts);
+      setGeneratedPhotoUrls((current) => {
+        const base = current.length ? current : images.slice(0, 4);
+        const next = Array.from({ length: 4 }, (_, itemIndex) => base[itemIndex] || '');
+        next[index] = url;
+        setForm((formCurrent) => ({ ...formCurrent, imageUrls: next.filter(Boolean).join(', ') }));
+        return next.filter(Boolean);
+      });
+      setAiMessage(`Фото #${index + 1} перегенерировано.`);
+    } catch (error) {
+      setErrors((current) => ({ ...current, imageUrls: error instanceof Error ? error.message : 'Не удалось перегенерировать фото.' }));
+    } finally {
+      setRegeneratingIndex(null);
     }
   }
 
@@ -148,11 +243,14 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
       return rest;
     });
     try {
-      const url = await uploadShopReference(file);
+      const preparedFile = await prepareReferenceImage(file);
+      const url = await uploadShopReference(preparedFile);
       setForm((current) => {
         const nextImages = [url, ...csv(current.imageUrls).filter((image) => image !== url)];
         return { ...current, imageUrls: nextImages.join(', ') };
       });
+      setOriginalReferenceUrl(url);
+      setGeneratedPhotoUrls([]);
       setAiMessage('Оригинальное фото загружено. Теперь можно сгенерировать 4 каталожных фото через Gemini.');
     } catch (error) {
       setErrors((current) => ({ ...current, imageUrls: error instanceof Error ? error.message : 'Не удалось загрузить фото.' }));
@@ -218,6 +316,21 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
         </div>
         {errors.ai ? <FieldError message={errors.ai} /> : null}
         {aiMessage ? <p className="admin-soft-alert">{aiMessage}</p> : null}
+        {generatedPreviewImages.length ? (
+          <div className="shop-generated-preview">
+            {Array.from({ length: 4 }, (_, index) => {
+              const url = generatedPreviewImages[index];
+              return (
+                <article key={index}>
+                  {url ? <img src={url} alt={`Generated product ${index + 1}`} /> : <span>#{index + 1}</span>}
+                  <button type="button" className="table-action" disabled={disabled || imageBusy || regeneratingIndex !== null} onClick={() => void regeneratePhoto(index)}>
+                    {regeneratingIndex === index ? 'Generating...' : 'Regenerate'}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
       </section>
       <LanguageTabs active={lang} onChange={setLang} />
       <label><span>Name {lang.toUpperCase()}</span><input disabled={disabled} value={form.name[lang] || ''} onChange={(event) => setForm((current) => ({ ...current, name: { ...current.name, [lang]: event.target.value } }))} /><FieldError message={errors.name} /></label>
