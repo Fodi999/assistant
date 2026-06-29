@@ -985,6 +985,52 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   gap: 10px;
 }
 
+.shop-ai-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--site-accent) 36%, var(--crm-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--site-accent) 9%, rgba(255,255,255,.02));
+  padding: 12px;
+}
+
+.shop-ai-panel h3 {
+  margin: 3px 0 0;
+  color: var(--crm-text);
+  font-size: 18px;
+}
+
+.shop-ai-panel p {
+  margin: 6px 0 0;
+  color: var(--crm-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shop-ai-panel textarea {
+  min-height: 104px;
+}
+
+.shop-ai-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.shop-ai-actions .admin-btn {
+  min-height: 42px;
+  justify-content: center;
+}
+
+.shop-ai-actions label.admin-btn {
+  cursor: pointer;
+}
+
+.shop-ai-actions label.admin-btn.disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
 .shop-product-photo-field {
   grid-column: 1 / -1;
   display: grid;
@@ -2365,6 +2411,10 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   }
 
   .shop-product-photo-field {
+    grid-template-columns: 1fr;
+  }
+
+  .shop-ai-actions {
     grid-template-columns: 1fr;
   }
 

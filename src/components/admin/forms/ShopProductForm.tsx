@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { uploadShopReference } from '../../../api/shop';
+import { aiCreateShopProductDraft, generateShopProductImage, uploadShopReference } from '../../../api/shop';
 import type { AdminResourceRow, ResourceStatus } from '../../../types/admin';
 import type { CreateShopProductDto, LocalizedAdminTextDto } from '../../../types/adminApi';
 import { FieldError, LanguageTabs, csv, firstText, isValidSlug, isValidUrl, optionalInteger, useLangTab, type FormErrors } from './formUtils';
@@ -43,9 +43,102 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
   const [form, setForm] = useState<ShopFormState>(() => initialState(row, initialCategory));
   const [errors, setErrors] = useState<FormErrors>({});
   const [uploading, setUploading] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imagePrompts, setImagePrompts] = useState<string[]>([]);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
   const title = useMemo(() => firstText(form.name), [form.name]);
   const images = useMemo(() => csv(form.imageUrls), [form.imageUrls]);
   const firstImage = images[0];
+
+  function mergeDraftText(draft: Awaited<ReturnType<typeof aiCreateShopProductDraft>>) {
+    setForm((current) => ({
+      ...current,
+      name: { uk: draft.name_uk, ru: draft.name_ru, pl: draft.name_pl, en: draft.name_en },
+      shortDescription: { uk: draft.short_description_uk, ru: draft.short_description_ru, pl: draft.short_description_pl, en: draft.short_description_en },
+      description: { uk: draft.description_uk, ru: draft.description_ru, pl: draft.description_pl, en: draft.description_en },
+      seoTitle: { uk: draft.seo_title_uk, ru: draft.seo_title_ru, pl: draft.seo_title_pl, en: draft.seo_title_en },
+      seoDescription: { uk: draft.seo_description_uk, ru: draft.seo_description_ru, pl: draft.seo_description_pl, en: draft.seo_description_en },
+      slug: current.slug || draft.slug,
+      category: current.category || draft.category,
+      sellingPoints: draft.selling_points?.join(', ') || current.sellingPoints
+    }));
+    setImagePrompts(draft.image_prompts || []);
+  }
+
+  function productBrief() {
+    return [
+      aiPrompt.trim(),
+      title ? `Название: ${title}` : '',
+      form.category ? `Категория: ${form.category}` : '',
+      form.sku ? `SKU: ${form.sku}` : '',
+      form.shortDescription.ru || form.shortDescription.en ? `Описание: ${form.shortDescription.ru || form.shortDescription.en}` : ''
+    ].filter(Boolean).join('\n');
+  }
+
+  async function generateTextWithGemini() {
+    const brief = productBrief();
+    if (!brief) {
+      setErrors((current) => ({ ...current, ai: 'Опишите товар или загрузите название перед Gemini.' }));
+      return;
+    }
+    setAiBusy(true);
+    setAiMessage(null);
+    setErrors((current) => {
+      const { ai: _ai, ...rest } = current;
+      return rest;
+    });
+    try {
+      const draft = await aiCreateShopProductDraft(brief, 4);
+      mergeDraftText(draft);
+      setLang('ru');
+      setAiMessage('Gemini заполнил тексты на 4 языка и подготовил промпты для 4 фото.');
+    } catch (error) {
+      setErrors((current) => ({ ...current, ai: error instanceof Error ? error.message : 'Gemini не смог заполнить товар.' }));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  async function generatePhotosWithGemini() {
+    const referenceUrl = firstImage;
+    if (!referenceUrl) {
+      setErrors((current) => ({ ...current, imageUrls: 'Сначала загрузите настоящее фото товара с ПК.' }));
+      return;
+    }
+    const titleForImage = form.name.en || form.name.ru || form.name.pl || form.name.uk || title || 'Shop product';
+    setImageBusy(true);
+    setAiMessage(null);
+    try {
+      let prompts = imagePrompts;
+      if (!prompts.length) {
+        const draft = await aiCreateShopProductDraft(productBrief() || titleForImage, 4);
+        prompts = draft.image_prompts || [];
+        setImagePrompts(prompts);
+        mergeDraftText(draft);
+      }
+
+      const generated: string[] = [];
+      for (let index = 0; index < 4; index += 1) {
+        const result = await generateShopProductImage(
+          titleForImage,
+          prompts[index],
+          index,
+          [referenceUrl],
+          false,
+          { photoScenarios: ['white-background', 'catalog-card', 'detail-shot'], scaleReference: 'none' }
+        );
+        generated.push(result.image_url);
+        setForm((current) => ({ ...current, imageUrls: generated.join(', ') }));
+      }
+      setAiMessage('Gemini создал 4 фото товара от загруженного оригинала.');
+    } catch (error) {
+      setErrors((current) => ({ ...current, imageUrls: error instanceof Error ? error.message : 'Не удалось сгенерировать фото товара.' }));
+    } finally {
+      setImageBusy(false);
+    }
+  }
 
   async function uploadImage(file?: File) {
     if (!file) return;
@@ -60,6 +153,7 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
         const nextImages = [url, ...csv(current.imageUrls).filter((image) => image !== url)];
         return { ...current, imageUrls: nextImages.join(', ') };
       });
+      setAiMessage('Оригинальное фото загружено. Теперь можно сгенерировать 4 каталожных фото через Gemini.');
     } catch (error) {
       setErrors((current) => ({ ...current, imageUrls: error instanceof Error ? error.message : 'Не удалось загрузить фото.' }));
     } finally {
@@ -104,10 +198,33 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
       });
     }}>
       {editMode ? <p className="admin-soft-alert">Редактирование отправляет полный товар в backend. Если backend вернет ограничение, панель покажет точную ошибку.</p> : null}
+      <section className="shop-ai-panel">
+        <div>
+          <span className="eyebrow">Gemini catalog</span>
+          <h3>AI карточка товара</h3>
+          <p>Загрузите настоящее фото товара, опишите продукт коротко, затем заполните тексты и создайте 4 фото для витрины.</p>
+        </div>
+        <textarea disabled={disabled || aiBusy || imageBusy} value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} placeholder="Например: японский нож Santoku 18 см, сталь VG10, деревянная ручка, для домашней и профессиональной кухни" />
+        <div className="shop-ai-actions">
+          <label className={`admin-btn secondary ${disabled || uploading || aiBusy || imageBusy ? 'disabled' : ''}`}>
+            <input type="file" accept="image/*" disabled={disabled || uploading || aiBusy || imageBusy} onChange={(event) => {
+              void uploadImage(event.target.files?.[0]);
+              event.currentTarget.value = '';
+            }} hidden />
+            <span>{uploading ? 'Загружаем...' : 'Загрузить оригинал'}</span>
+          </label>
+          <button type="button" className="admin-btn secondary" disabled={disabled || aiBusy || imageBusy} onClick={() => void generateTextWithGemini()}><span>{aiBusy ? 'Gemini пишет...' : 'Заполнить текст Gemini'}</span></button>
+          <button type="button" className="admin-btn primary" disabled={disabled || aiBusy || imageBusy || !firstImage} onClick={() => void generatePhotosWithGemini()}><span>{imageBusy ? 'Генерируем 4 фото...' : '4 фото от оригинала'}</span></button>
+        </div>
+        {errors.ai ? <FieldError message={errors.ai} /> : null}
+        {aiMessage ? <p className="admin-soft-alert">{aiMessage}</p> : null}
+      </section>
       <LanguageTabs active={lang} onChange={setLang} />
       <label><span>Name {lang.toUpperCase()}</span><input disabled={disabled} value={form.name[lang] || ''} onChange={(event) => setForm((current) => ({ ...current, name: { ...current.name, [lang]: event.target.value } }))} /><FieldError message={errors.name} /></label>
       <label><span>Short description {lang.toUpperCase()}</span><input disabled={disabled} value={form.shortDescription[lang] || ''} onChange={(event) => setForm((current) => ({ ...current, shortDescription: { ...current.shortDescription, [lang]: event.target.value } }))} /></label>
       <label><span>Description {lang.toUpperCase()}</span><textarea disabled={disabled} value={form.description[lang] || ''} onChange={(event) => setForm((current) => ({ ...current, description: { ...current.description, [lang]: event.target.value } }))} /></label>
+      <label><span>SEO title {lang.toUpperCase()}</span><input disabled={disabled} value={form.seoTitle[lang] || ''} onChange={(event) => setForm((current) => ({ ...current, seoTitle: { ...current.seoTitle, [lang]: event.target.value } }))} /></label>
+      <label><span>SEO description {lang.toUpperCase()}</span><textarea disabled={disabled} value={form.seoDescription[lang] || ''} onChange={(event) => setForm((current) => ({ ...current, seoDescription: { ...current.seoDescription, [lang]: event.target.value } }))} /></label>
       <label><span>Slug</span><input disabled={disabled} value={form.slug} onChange={(event) => setForm((current) => ({ ...current, slug: event.target.value.toLowerCase() }))} /><FieldError message={errors.slug} /></label>
       <label><span>Category</span><input list="shop-category-options" disabled={disabled} value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} /><datalist id="shop-category-options">{categories.map((category) => <option value={category} key={category} />)}</datalist></label>
       <label><span>Status</span><select disabled={disabled} value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as ResourceStatus }))}><option value="draft">draft</option><option value="active">active</option><option value="published">published</option><option value="archived">archived</option></select></label>
