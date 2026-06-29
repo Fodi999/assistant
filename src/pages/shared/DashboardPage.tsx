@@ -1,85 +1,123 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getSiteDashboardMetrics } from '../../api/admin';
-import { dashboardMetrics, siteConfigs } from '../../lib/mockData';
+import { AppIcon, type AppIconName } from '../../components/AppIcon';
+import { adminPageLabels, type AppPage } from '../../components/admin/AdminSidebar';
+import { DataTable } from '../../components/admin/DataTable';
+import { EmptyState } from '../../components/admin/EmptyState';
+import { StatCard } from '../../components/admin/StatCard';
+import { StatusBadge } from '../../components/admin/StatusBadge';
+import { useActiveSite } from '../../components/admin/ActiveSiteContext';
 import type { SiteDashboardMetrics, SiteKey } from '../../types/admin';
-import { AppIcon } from '../../components/AppIcon';
-import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
-import { LeadStatusBadge } from '../../components/LeadStatusBadge';
-import { priorityLabels, publishStatusLabels, seoStatusLabels } from '../../lib/labels';
 
-export function DashboardPage({ activeSite }: { activeSite: SiteKey }) {
-  const mockMetrics = dashboardMetrics.find((item) => item.site === activeSite) ?? dashboardMetrics[0];
-  const site = siteConfigs.find((item) => item.key === activeSite) ?? siteConfigs[0];
-  const [source, setSource] = useState<DataSource>('mock');
-  const [sourceError, setSourceError] = useState<string | undefined>();
+type DashboardPageProps = {
+  activeSite: SiteKey;
+  onNavigate?: (page: AppPage) => void;
+};
+
+type ActivityRow = {
+  id: string;
+  title: string;
+  area: string;
+  time: string;
+  status: 'active' | 'draft' | 'warning' | 'new';
+};
+
+const mockActivities: ActivityRow[] = [
+  { id: 'a1', title: 'Обновлён черновик CMS-страницы', area: 'CMS', time: '10:20', status: 'draft' },
+  { id: 'a2', title: 'Новая заявка ожидает обработки', area: 'Leads', time: '09:45', status: 'new' },
+  { id: 'a3', title: 'Проверка переводов поставлена в очередь', area: 'Translations', time: 'Вчера', status: 'warning' },
+  { id: 'a4', title: 'Медиа-файлы готовы к публикации', area: 'Media', time: 'Вчера', status: 'active' }
+];
+
+const quickActions: Array<{ label: string; icon: AppIconName; page: AppPage }> = [
+  { label: 'Страница', icon: 'cms', page: 'cms' },
+  { label: 'Событие', icon: 'calendar', page: 'calendar' },
+  { label: 'Заявка', icon: 'leads', page: 'leads' },
+  { label: 'Медиа', icon: 'image', page: 'media' },
+  { label: 'Переводы', icon: 'globe', page: 'translations' }
+];
+
+export function DashboardPage({ activeSite, onNavigate }: DashboardPageProps) {
+  const { activeSite: activeSiteMeta, sites } = useActiveSite();
   const [apiMetrics, setApiMetrics] = useState<SiteDashboardMetrics | null>(null);
-  const metrics = useMemo(() => {
-    if (!apiMetrics) return mockMetrics;
-    return { ...mockMetrics, ...apiMetrics };
-  }, [apiMetrics, mockMetrics]);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
+    let alive = true;
     void getSiteDashboardMetrics(activeSite)
-      .then((nextMetrics) => {
-        setApiMetrics(nextMetrics);
-        setSource('api');
-        setSourceError(undefined);
+      .then((metrics) => {
+        if (!alive) return;
+        setApiMetrics(metrics);
+        setApiError(null);
       })
       .catch((error) => {
+        if (!alive) return;
         setApiMetrics(null);
-        setSource('mock');
-        setSourceError(error instanceof Error ? error.message : 'API недоступен');
+        setApiError(error instanceof Error ? error.message : 'API недоступен');
       });
+    return () => {
+      alive = false;
+    };
   }, [activeSite]);
-  const kpis = [
-    ['Посетители', metrics.visitors.toLocaleString('ru-RU'), 'трафик', 'analytics'],
-    ['Партнерские клики', metrics.affiliateClicks.toLocaleString('ru-RU'), 'переходы', 'external'],
-    ['Заявки', String(metrics.leads), 'CRM', 'leads'],
-    ['Прогноз дохода', `${metrics.revenueEstimate.toLocaleString('ru-RU')} ${metrics.currency}`, 'партнерка + заявки', 'trend'],
-    ['Опубликованные страницы', String(metrics.publishedPages), 'индекс контента', 'cms'],
-    ['AI-черновики', String(metrics.aiDrafts), 'к проверке', 'bot']
-  ] as const;
+
+  const kpis = useMemo(() => {
+    const cmsPages = apiMetrics?.publishedPages ?? (activeSiteMeta.id === 'church' ? 48 : activeSiteMeta.id === 'construction' ? 32 : 76);
+    const leadsToday = apiMetrics?.leads ?? (activeSiteMeta.id === 'construction' ? 6 : activeSiteMeta.id === 'kitchen' ? 3 : 2);
+    return [
+      { title: 'Сайты', value: sites.length, hint: 'active workspace', icon: 'globe' as const },
+      { title: 'Заявки', value: leadsToday, hint: 'today', icon: 'leads' as const },
+      { title: 'CMS', value: cmsPages, hint: 'pages', icon: 'cms' as const },
+      { title: 'API', value: apiError ? 'Mock' : 'Live', hint: apiError ? 'fallback data' : 'connected', icon: 'cloud' as const, tone: apiError ? 'warning' as const : 'good' as const }
+    ];
+  }, [activeSiteMeta.id, apiError, apiMetrics, sites.length]);
 
   return (
-    <section className="ops-page">
-      <div className="ops-header">
-        <div className="ops-header-icon"><AppIcon name="dashboard" /></div>
+    <section className="admin-dashboard-page">
+      <div className="admin-page-hero">
         <div>
-          <p className="eyebrow">{site.name} / {site.domain}</p>
-          <h2>Панель управления</h2>
-          <p>Трафик, партнерские переходы, заявки, доход, публикации и SEO-статус выбранного сайта.</p>
+          <p>Dashboard</p>
+          <h2>Overview</h2>
+          <span>{activeSiteMeta.id} / {activeSiteMeta.domain} / {activeSiteMeta.language}</span>
         </div>
-        <div className="ops-header-actions"><DataSourceBadge source={source} label="Сводка" /><span className={`status-pill ${metrics.seoStatus === 'good' ? 'good' : 'warning'}`}><i />SEO: {seoStatusLabels[metrics.seoStatus]}</span></div>
-      </div>
-      {sourceError ? <p className="ops-alert"><AppIcon name="terminal" />API не вернул сводку: {sourceError}. Показаны mock-данные.</p> : null}
-
-      <div className="kpi-grid six">
-        {kpis.map(([title, value, hint, icon]) => (
-          <article key={title} className="kpi-card">
-            <div className="kpi-card-head"><span><AppIcon name={icon} /></span><small>{hint}</small></div>
-            <p>{title}</p>
-            <strong>{value}</strong>
-            <div className="sparkline"><i /><i /><i /><i /><i /><i /></div>
-          </article>
-        ))}
+        <StatusBadge status={activeSiteMeta.status} />
       </div>
 
-      <div className="ops-grid two-two">
-        <section className="ops-panel">
-          <div className="panel-title"><span><AppIcon name="cms" />Лучшие страницы</span></div>
-          <table className="ops-table"><tbody>{metrics.topPages.map((page) => <tr key={page.path}><td><strong>{page.title}</strong><small>{page.path}</small></td><td>{page.visitors.toLocaleString('ru-RU')}</td><td>{page.ctr}% CTR</td></tr>)}</tbody></table>
+      <div className="admin-stat-grid">
+        {kpis.map((kpi) => <StatCard key={kpi.title} {...kpi} />)}
+      </div>
+
+      <div className="admin-dashboard-grid">
+        <section className="admin-panel-card">
+          <div className="admin-panel-title">
+            <span><AppIcon name="zap" />Быстрые действия</span>
+          </div>
+          <div className="admin-quick-grid">
+            {quickActions.map((action) => (
+              <button key={action.label} className="admin-quick-action" type="button" onClick={() => onNavigate?.(action.page)}>
+                <AppIcon name={action.icon} />
+                <span>{action.label}</span>
+                <small>{adminPageLabels[action.page]}</small>
+              </button>
+            ))}
+          </div>
         </section>
-        <section className="ops-panel">
-          <div className="panel-title"><span><AppIcon name="shop" />Лучшие партнерские товары</span></div>
-          <table className="ops-table"><tbody>{metrics.topProducts.map((product) => <tr key={product.productId}><td><strong>{product.title}</strong></td><td>{product.clicks} кликов</td><td>{product.revenue.toLocaleString('ru-RU')} {metrics.currency}</td></tr>)}</tbody></table>
-        </section>
-        <section className="ops-panel">
-          <div className="panel-title"><span><AppIcon name="leads" />Последние заявки</span></div>
-          <div className="mini-list static">{metrics.recentLeads.map((lead) => <div key={lead.id}><span><strong>{lead.clientName}</strong><small>{lead.category} / {lead.city}</small></span><LeadStatusBadge status={lead.status} /></div>)}</div>
-        </section>
-        <section className="ops-panel">
-          <div className="panel-title"><span><AppIcon name="seo" />SEO задачи</span></div>
-          <div className="mini-list static">{metrics.seoTasks.map((task) => <div key={task.title}><span><strong>{task.title}</strong><small>{priorityLabels[task.priority]}</small></span><span className="status-pill warning"><i />{publishStatusLabels[task.status]}</span></div>)}</div>
+
+        <section className="admin-panel-card">
+          <div className="admin-panel-title">
+            <span><AppIcon name="activity" />Последние действия</span>
+            <small>{apiMetrics ? 'live' : 'mock'}</small>
+          </div>
+          <DataTable
+            rows={mockActivities}
+            getRowKey={(row) => row.id}
+            empty={<EmptyState title="Действий пока нет" description="TODO: подключить журнал событий backend." />}
+            columns={[
+              { key: 'title', header: 'Action', render: (row) => <strong>{row.title}</strong> },
+              { key: 'area', header: 'Area', render: (row) => row.area },
+              { key: 'time', header: 'Time', render: (row) => row.time },
+              { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> }
+            ]}
+          />
         </section>
       </div>
     </section>

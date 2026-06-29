@@ -5,6 +5,7 @@ import {
   Bot,
   Boxes,
   Building2,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   CircleDot,
@@ -18,16 +19,23 @@ import {
   FolderKanban,
   Globe2,
   HardDrive,
+  Home,
+  Image,
+  Languages,
   LayoutDashboard,
   Megaphone,
+  Menu,
   Moon,
   Package,
+  QrCode,
   RefreshCw,
   Rocket,
+  Save,
   Search,
   Settings,
   ShieldCheck,
   ShoppingCart,
+  SlidersHorizontal,
   Sparkles,
   TerminalSquare,
   TrendingUp,
@@ -37,11 +45,12 @@ import {
 } from 'lucide-react';
 
 export type AppIconName =
-  | 'activity' | 'analytics' | 'bell' | 'bot' | 'box' | 'building' | 'catalog' | 'check'
+  | 'activity' | 'analytics' | 'bell' | 'bot' | 'box' | 'building' | 'calendar' | 'catalog' | 'check'
   | 'chevron-left' | 'circle' | 'cloud' | 'cms' | 'code' | 'command' | 'database'
   | 'dashboard' | 'deploy' | 'external' | 'factory' | 'folder' | 'globe' | 'hard-drive'
-  | 'leads' | 'materials' | 'moon' | 'package' | 'refresh' | 'search' | 'seo' | 'settings'
-  | 'shield' | 'shop' | 'sparkles' | 'suppliers' | 'terminal' | 'trend' | 'users' | 'zap';
+  | 'home' | 'image' | 'leads' | 'materials' | 'menu' | 'moon' | 'package' | 'qr' | 'refresh'
+  | 'save' | 'search' | 'seo' | 'settings' | 'shield' | 'shop' | 'sliders' | 'sparkles'
+  | 'suppliers' | 'terminal' | 'trend' | 'users' | 'zap';
 
 const ICONS: Record<AppIconName, typeof LayoutDashboard> = {
   activity: Activity,
@@ -50,6 +59,7 @@ const ICONS: Record<AppIconName, typeof LayoutDashboard> = {
   bot: Bot,
   box: Package,
   building: Building2,
+  calendar: CalendarDays,
   catalog: Boxes,
   check: CheckCircle2,
   'chevron-left': ChevronLeft,
@@ -66,16 +76,22 @@ const ICONS: Record<AppIconName, typeof LayoutDashboard> = {
   folder: FolderKanban,
   globe: Globe2,
   'hard-drive': HardDrive,
+  home: Home,
+  image: Image,
   leads: Users,
   materials: ShoppingCart,
+  menu: Menu,
   moon: Moon,
   package: Package,
+  qr: QrCode,
   refresh: RefreshCw,
+  save: Save,
   search: Search,
   seo: Megaphone,
   settings: Settings,
   shield: ShieldCheck,
   shop: ShoppingCart,
+  sliders: SlidersHorizontal,
   sparkles: Sparkles,
   suppliers: Building2,
   terminal: TerminalSquare,

@@ -1,56 +1,45 @@
 import { useEffect, useMemo, useState } from 'react';
-import { siteConfigs } from '../lib/mockData';
+import { siteConfigs } from '../lib/siteConfig';
 import { apiStatusLabels } from '../lib/labels';
 import type { SiteKey } from '../types/admin';
 import { AppIcon } from './AppIcon';
-import { SiteSwitcher } from './SiteSwitcher';
 import { pageAllowedForSite, type AppPage } from './Sidebar';
 
 interface TopbarProps {
   activeSite: SiteKey;
   activePage: AppPage;
   connectionState: 'online' | 'limited' | 'offline';
-  onSiteChange: (site: SiteKey) => void;
   onNavigate: (page: AppPage) => void;
   onLogout: () => void;
 }
 
 const PAGE_LABELS: Record<AppPage, string> = {
   dashboard: 'Панель',
-  overview: 'Обзор',
-  sites: 'Сайты',
   affiliate: 'Партнерка',
   content: 'Контент',
-  'ai-studio': 'AI-студия',
   construction: 'Стройка',
   culinary: 'Кулинария',
+  icons: 'Иконы',
   leads: 'Заявки',
-  catalog: 'Каталог',
-  materials: 'Материалы',
-  projects: 'Проекты',
-  seo: 'SEO',
   suppliers: 'Поставщики',
   analytics: 'Аналитика',
-  ai: 'AI',
-  usb: 'USB Key',
-  deployments: 'Деплои',
   users: 'Пользователи',
   settings: 'Настройки',
   about: 'О системе'
 };
 
 const COMMANDS: Array<{ page: AppPage; title: string; hint: string; site?: SiteKey }> = [
-  { page: 'content', title: 'Новая статья CU', hint: 'статья / обзор / подборка / фото', site: 'culinary' },
+  { page: 'content', title: 'Контент кулинарного сайта', hint: 'статьи / обзоры / подборки / фото', site: 'culinary' },
   { page: 'culinary', title: 'Ингредиенты CU', hint: 'каталог ингредиентов и кулинарные данные', site: 'culinary' },
-  { page: 'construction', title: 'Редактировать Kazaxbud', hint: 'материалы / товары / комплекты / проекты', site: 'construction' },
+  { page: 'content', title: 'Контент Kazaxbud', hint: 'материалы / товары / комплекты / проекты', site: 'construction' },
   { page: 'suppliers', title: 'Поставщики CO', hint: 'Алматы, контакты, условия, маржа', site: 'construction' },
+  { page: 'content', title: 'Контент сайта икон', hint: 'иконы / молитвы / святые / QR / SEO', site: 'icons' },
   { page: 'affiliate', title: 'Affiliate / поставки', hint: 'партнерские товары выбранного сайта' },
-  { page: 'ai-studio', title: 'Создать через AI', hint: 'описание, SEO, slug, фото-промт' },
   { page: 'leads', title: 'Посмотреть заявки', hint: 'новые / в работе / смета / выиграно / потеряно' },
   { page: 'analytics', title: 'Аналитика сайта', hint: 'GA4, клики, доход, конверсии' }
 ];
 
-export function Topbar({ activeSite, activePage, connectionState, onSiteChange, onNavigate, onLogout }: TopbarProps) {
+export function Topbar({ activeSite, activePage, connectionState, onNavigate, onLogout }: TopbarProps) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [query, setQuery] = useState('');
   const site = siteConfigs.find((item) => item.key === activeSite) ?? siteConfigs[0];
@@ -84,8 +73,6 @@ export function Topbar({ activeSite, activePage, connectionState, onSiteChange, 
         </div>
       </div>
 
-      <SiteSwitcher activeSite={activeSite} onSiteChange={onSiteChange} />
-
       <button className="command-search" type="button" onClick={() => setCommandOpen(true)}>
         <AppIcon name="search" />
         <span>Поиск по товарам, статьям, заявкам, поставщикам...</span>
@@ -93,7 +80,6 @@ export function Topbar({ activeSite, activePage, connectionState, onSiteChange, 
       </button>
 
       <div className="topbar-actions">
-        <button className="btn btn-quiet topbar-action-btn" type="button" onClick={() => onNavigate('ai-studio')}><AppIcon name="sparkles" /><span>Создать AI</span></button>
         <span className={'deploy-pill ' + connectionState}><i />Бэкенд: {apiStatusLabels[connectionState]}</span>
         <button className="topbar-icon" type="button" onClick={() => onNavigate('settings')} aria-label="Настройки"><AppIcon name="settings" /></button>
         <button className="profile-menu" type="button" onClick={onLogout}><span>ДА</span><strong>Дима Админ<small>Выйти</small></strong></button>

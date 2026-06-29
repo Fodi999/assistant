@@ -10,7 +10,7 @@ import {
   type SearchConsoleBundle
 } from '../../api/analytics';
 import { listAffiliateProductsWithSource } from '../../api/affiliate';
-import { dashboardMetrics } from '../../lib/mockData';
+import { siteConfigs } from '../../lib/siteConfig';
 import type { AffiliateProduct, SiteKey } from '../../types/admin';
 import { AppIcon } from '../../components/AppIcon';
 import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
@@ -72,39 +72,28 @@ function siteMatchesPath(activeSite: SiteKey, path: string): boolean {
   return !/almabuild|kazaxbud|stroi|remont|material|construction|build/i.test(path);
 }
 
-function buildMockSeries(seed: number, points = 14) {
-  return Array.from({ length: points }, (_, index) => {
-    const wave = Math.sin((index + 1) / 2) * 0.18 + 1;
-    const trend = 1 + index / (points * 5);
-    return Math.max(1, Math.round(seed * wave * trend));
-  });
-}
-
 function AnalyticsChart({
-  activeSite,
   mode,
   analytics,
   searchConsole
 }: {
-  activeSite: SiteKey;
   mode: ChartMode;
   analytics: AnalyticsOverview | null;
   searchConsole: SearchConsoleBundle | null;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const mock = dashboardMetrics.find((item) => item.site === activeSite) ?? dashboardMetrics[0];
   const daily = analytics?.daily?.slice(-30) ?? [];
   const searchDaily = searchConsole?.daily?.slice(-30) ?? [];
   const labels = useMemo(() => {
     const rows = mode === 'search' ? searchDaily : daily;
-    return rows.length ? rows.map((row) => dateLabel(row.date)) : Array.from({ length: 14 }, (_, index) => `${index + 1}`.padStart(2, '0'));
+    return rows.map((row) => dateLabel(row.date));
   }, [daily, mode, searchDaily]);
-  const pageViews = useMemo(() => daily.length ? daily.map((row) => row.page_views) : buildMockSeries(Math.max(12, Math.round(mock.affiliateClicks / 18))), [daily, mock.affiliateClicks]);
-  const activeUsers = useMemo(() => daily.length ? daily.map((row) => row.active_users) : buildMockSeries(Math.max(8, Math.round(mock.visitors / 240))), [daily, mock.visitors]);
-  const conversions = useMemo(() => daily.length ? daily.map((row) => row.conversions) : buildMockSeries(Math.max(2, mock.leads + 2)).map((value) => Math.max(0, Math.round(value / 8))), [daily, mock.leads]);
-  const revenue = useMemo(() => daily.length ? daily.map((row) => Math.round(row.total_revenue)) : buildMockSeries(Math.max(80, Math.round(mock.revenueEstimate / 28))), [daily, mock.revenueEstimate]);
-  const clicks = useMemo(() => searchDaily.length ? searchDaily.map((row) => row.clicks) : buildMockSeries(Math.max(8, Math.round(mock.affiliateClicks / 25))), [mock.affiliateClicks, searchDaily]);
-  const impressions = useMemo(() => searchDaily.length ? searchDaily.map((row) => row.impressions) : buildMockSeries(Math.max(80, Math.round(mock.visitors / 18))), [mock.visitors, searchDaily]);
+  const pageViews = useMemo(() => daily.map((row) => row.page_views), [daily]);
+  const activeUsers = useMemo(() => daily.map((row) => row.active_users), [daily]);
+  const conversions = useMemo(() => daily.map((row) => row.conversions), [daily]);
+  const revenue = useMemo(() => daily.map((row) => Math.round(row.total_revenue)), [daily]);
+  const clicks = useMemo(() => searchDaily.map((row) => row.clicks), [searchDaily]);
+  const impressions = useMemo(() => searchDaily.map((row) => row.impressions), [searchDaily]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -147,7 +136,7 @@ function AnalyticsChart({
       window.removeEventListener('resize', resize);
       chart.dispose();
     };
-  }, [activeSite, activeUsers, clicks, conversions, impressions, labels, mode, pageViews, revenue]);
+  }, [activeUsers, clicks, conversions, impressions, labels, mode, pageViews, revenue]);
 
   return <div className="analytics-chart" ref={ref} />;
 }
@@ -155,14 +144,14 @@ function AnalyticsChart({
 export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
   const [mode, setMode] = useState<ChartMode>('traffic');
   const [period, setPeriod] = useState<Period>(28);
-  const [source, setSource] = useState<DataSource>('mock');
+  const [source, setSource] = useState<DataSource>('unavailable');
   const [sourceError, setSourceError] = useState<string | undefined>();
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
   const [realtime, setRealtime] = useState<AnalyticsRealtime | null>(null);
   const [searchConsole, setSearchConsole] = useState<SearchConsoleBundle | null>(null);
   const [affiliateProducts, setAffiliateProducts] = useState<AffiliateProduct[]>([]);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
-  const mock = dashboardMetrics.find((item) => item.site === activeSite) ?? dashboardMetrics[0];
+  const site = siteConfigs.find((item) => item.key === activeSite) ?? siteConfigs[0];
   const filteredPages = useMemo(() => {
     const pages = analytics?.top_pages ?? [];
     const scoped = pages.filter((page) => siteMatchesPath(activeSite, page.path));
@@ -171,13 +160,13 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
   const topSearchPages = searchConsole?.pages ?? [];
   const searchQueries = searchConsole?.queries ?? [];
   const rows = [
-    ['GA4 пользователи', numberValue(analytics?.active_users ?? mock.visitors)],
+    ['GA4 пользователи', numberValue(analytics?.active_users)],
     ['GA4 сессии', numberValue(analytics?.sessions)],
-    ['GA4 просмотры', numberValue(analytics?.page_views ?? mock.affiliateClicks)],
+    ['GA4 просмотры', numberValue(analytics?.page_views)],
     ['Engagement', percentValue(analytics?.engagement_rate)],
     ['Средняя сессия', durationValue(analytics?.average_session_duration)],
-    ['Конверсии', numberValue(analytics?.conversions ?? mock.leads)],
-    ['Доход', moneyValue(analytics?.total_revenue ?? mock.revenueEstimate, mock.currency)],
+    ['Конверсии', numberValue(analytics?.conversions)],
+    ['Доход', moneyValue(analytics?.total_revenue, site.defaultCurrency)],
     ['GSC клики', numberValue(searchConsole?.overview?.clicks)],
     ['GSC показы', numberValue(searchConsole?.overview?.impressions)],
     ['GSC CTR', percentValue(searchConsole?.overview?.ctr)],
@@ -187,8 +176,8 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
   useEffect(() => {
     setOauthUrl(null);
     void Promise.allSettled([
-      getAnalyticsOverview(period),
-      getAnalyticsRealtime(),
+      getAnalyticsOverview(activeSite, period),
+      getAnalyticsRealtime(activeSite),
       getSearchConsoleBundle(period)
     ]).then(([overviewResult, realtimeResult, searchResult]) => {
       if (overviewResult.status === 'fulfilled') {
@@ -217,11 +206,11 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
         setSource('api');
         setSourceError(errors[0]);
       } else {
-        setSource('mock');
+        setSource('unavailable');
         setSourceError(errors[0] ?? 'Google Analytics API недоступен');
       }
     });
-  }, [period]);
+  }, [activeSite, period]);
 
   useEffect(() => {
     void listAffiliateProductsWithSource(activeSite).then((result) => setAffiliateProducts(result.data));
@@ -229,10 +218,10 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
 
   useEffect(() => {
     if (!sourceError || !/GOOGLE|GA4|OAuth|refresh_token|configured/i.test(sourceError)) return;
-    void getAnalyticsOAuthUrl()
+    void getAnalyticsOAuthUrl(activeSite)
       .then((result) => setOauthUrl(result.url))
       .catch(() => setOauthUrl(null));
-  }, [sourceError]);
+  }, [activeSite, sourceError]);
 
   return (
     <section className="ops-page">
@@ -283,7 +272,7 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
             ))}
           </div>
         </div>
-        <AnalyticsChart activeSite={activeSite} mode={mode} analytics={analytics} searchConsole={searchConsole} />
+        <AnalyticsChart mode={mode} analytics={analytics} searchConsole={searchConsole} />
       </section>
 
       <div className="ops-grid two-two">
@@ -314,7 +303,7 @@ export function AnalyticsPage({ activeSite }: { activeSite: SiteKey }) {
       <div className="ops-grid two-two">
         <section className="ops-panel">
           <div className="panel-title"><span><AppIcon name="external" />События GA4</span><small>eventCount / users / revenue</small></div>
-          <table className="ops-table"><tbody>{(analytics?.events ?? []).slice(0, 10).map((event) => <tr key={event.event_name}><td><strong>{event.event_name}</strong></td><td>{numberValue(event.count)}</td><td>{numberValue(event.users)}</td><td>{moneyValue(event.total_revenue, mock.currency)}</td></tr>)}</tbody></table>
+          <table className="ops-table"><tbody>{(analytics?.events ?? []).slice(0, 10).map((event) => <tr key={event.event_name}><td><strong>{event.event_name}</strong></td><td>{numberValue(event.count)}</td><td>{numberValue(event.users)}</td><td>{moneyValue(event.total_revenue, site.defaultCurrency)}</td></tr>)}</tbody></table>
         </section>
         <section className="ops-panel">
           <div className="panel-title"><span><AppIcon name="globe" />Источники трафика</span><small>users / sessions / views</small></div>

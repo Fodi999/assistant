@@ -8,6 +8,8 @@ export interface ApiErrorPayload {
   error?: string;
 }
 
+export type IconsSection = 'calendar' | 'icons' | 'prayers' | 'saints' | 'gospel' | 'qr' | 'seo' | 'churches';
+
 export interface CmsArticle {
   id: string;
   slug: string;
@@ -165,6 +167,13 @@ export interface ShopProductDraft {
 
 export interface ShopProduct extends ShopProductDraft {
   id: string;
+  siteId?: SiteId;
+  title?: string;
+  type?: string;
+  owner?: string;
+  updated?: string;
+  metric?: string;
+  language?: LanguageCode;
   sku: string | null;
   image_urls: string[];
   price_cents: number | null;
@@ -175,7 +184,9 @@ export interface ShopProduct extends ShopProductDraft {
   updated_at: string | number[];
 }
 
-export type SiteKey = 'culinary' | 'construction';
+export type SiteKey = 'culinary' | 'construction' | 'icons';
+export type SiteId = 'church' | 'construction' | 'kitchen';
+export type ResourceStatus = 'active' | 'published' | 'draft' | 'archived' | 'new' | 'warning' | 'neutral';
 export type AlmabuildSection = 'services' | 'materials' | 'catalog' | 'projects' | 'estimate' | 'contact';
 export type LanguageCode = 'ru' | 'pl' | 'en' | 'kk';
 export type CurrencyCode = 'PLN' | 'KZT' | 'EUR' | 'USD';
@@ -187,6 +198,54 @@ export type SupplierType = 'marketplace' | 'local_supplier' | 'manufacturer' | '
 export type AiGenerationType = 'product_description' | 'seo' | 'slug' | 'photo_prompt' | 'translation' | 'quality_check';
 
 export type LocalizedText = Record<LanguageCode, string>;
+
+export interface AdminResourceRow {
+  id: string;
+  siteId: SiteId;
+  title: string;
+  slug?: string;
+  type: string;
+  status: ResourceStatus;
+  owner: string;
+  updated: string;
+  updatedAt?: string;
+  metric: string;
+  language?: LanguageCode;
+  backend?: unknown;
+}
+
+export interface CatalogItem extends AdminResourceRow {
+  resource: 'catalog';
+}
+
+export interface CMSPageItem extends AdminResourceRow {
+  resource: 'cms';
+}
+
+export interface Order extends AdminResourceRow {
+  resource: 'orders';
+}
+
+export interface User extends AdminResourceRow {
+  resource: 'users';
+  email?: string;
+  role?: string;
+}
+
+export interface AnalyticsRow extends AdminResourceRow {
+  resource: 'analytics';
+}
+
+export interface SiteSettings {
+  siteId: SiteId;
+  name: string;
+  domain: string;
+  defaultLanguage: LanguageCode;
+  ga4Id: string;
+  searchConsoleProperty: string;
+  apiUrl: string;
+  status: ResourceStatus;
+}
 
 export interface SiteConfig {
   key: SiteKey;
@@ -301,6 +360,13 @@ export interface ConstructionBundle {
 
 export interface Lead {
   id: string;
+  siteId?: SiteId;
+  title?: string;
+  type?: string;
+  owner?: string;
+  updated?: string;
+  metric?: string;
+  language?: LanguageCode;
   clientName: string;
   contact: string;
   sourceSite: SiteKey;
@@ -315,6 +381,13 @@ export interface Lead {
 
 export interface Supplier {
   id: string;
+  siteId?: SiteId;
+  title?: string;
+  status?: ResourceStatus;
+  owner?: string;
+  updated?: string;
+  metric?: string;
+  language?: LanguageCode;
   name: string;
   country: string;
   city?: string;

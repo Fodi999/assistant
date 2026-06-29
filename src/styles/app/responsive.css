@@ -26,6 +26,7 @@
   .admin-shell,
   .admin-shell.sidebar-collapsed { grid-template-columns: 1fr; height: auto; }
   .sidebar { position: static; height: auto; grid-template-rows: auto; }
+  .sidebar-nav { padding-right: 0; }
   .content-shell { height: auto; }
   .topbar { grid-template-columns: 1fr; height: auto; padding: 14px; }
   .page-content { overflow: visible; padding: 14px; }
@@ -37,7 +38,7 @@
   .settings-matrix { grid-template-columns: 1fr; }
 }
 @media (max-width: 1360px) {
-  .new-topbar { grid-template-columns: minmax(190px, 250px) minmax(240px, 320px) minmax(180px, 1fr) max-content; }
+  .new-topbar { grid-template-columns: minmax(260px, 320px) minmax(200px, 1fr) max-content; }
   .kpi-grid.six { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
   .offer-card-grid { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
   .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -50,5 +51,140 @@
   .ai-studio.new,
   .total-strip {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1180px) {
+  .admin-header {
+    grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto;
+  }
+  .admin-command-button {
+    min-width: 42px;
+    width: 42px;
+    padding: 0;
+  }
+  .admin-command-button span,
+  .admin-command-button kbd,
+  .admin-profile-button strong {
+    display: none;
+  }
+  .admin-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-quick-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .admin-toolbar {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+  .admin-toolbar-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 920px) {
+  body { overflow: auto; }
+  .admin-crm-shell,
+  .admin-crm-shell.sidebar-collapsed {
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+  .admin-crm-shell.sidebar-collapsed .admin-sidebar {
+    display: none;
+  }
+  .admin-sidebar,
+  .admin-sidebar.collapsed {
+    height: auto;
+    min-height: 0;
+    grid-template-rows: auto;
+    justify-items: stretch;
+  }
+  .admin-sidebar.collapsed .admin-sidebar-brand > div:not(.admin-brand-mark),
+  .admin-sidebar.collapsed .admin-sidebar-label,
+  .admin-sidebar.collapsed .admin-site-copy,
+  .admin-sidebar.collapsed .admin-site-dot,
+  .admin-sidebar.collapsed .admin-sidebar-link span,
+  .admin-sidebar.collapsed .admin-sidebar-footer,
+  .admin-sidebar.collapsed .admin-sidebar-toggle span {
+    display: block;
+  }
+  .admin-sidebar.collapsed .admin-site-option,
+  .admin-sidebar.collapsed .admin-sidebar-link,
+  .admin-sidebar.collapsed .admin-sidebar-toggle {
+    width: 100%;
+  }
+  .admin-sidebar.collapsed .admin-sidebar-link {
+    grid-template-columns: 20px minmax(0, 1fr);
+    justify-items: start;
+    padding-inline: 10px;
+  }
+  .admin-sidebar.collapsed .admin-site-option {
+    grid-template-columns: 34px minmax(0, 1fr) 10px;
+    justify-items: stretch;
+    padding: 7px;
+  }
+  .admin-main-shell {
+    height: auto;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .admin-header {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    height: auto;
+  }
+  .admin-icon-button.admin-mobile-menu {
+    display: inline-flex;
+  }
+  .admin-header-meta {
+    grid-column: 1 / -1;
+  }
+  .admin-header-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .admin-page-content {
+    overflow: visible;
+  }
+  .admin-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-quick-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .admin-page-header-v2 {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+  .admin-page-header-meta,
+  .admin-page-header-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+  .admin-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-page-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-quick-action {
+    min-height: 58px;
+  }
+  .admin-quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-settings-card {
+    grid-template-columns: 1fr;
+  }
+  .admin-drawer {
+    width: 100vw;
   }
 }

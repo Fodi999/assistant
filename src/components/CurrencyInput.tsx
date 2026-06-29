@@ -1,4 +1,4 @@
-import { currencies } from '../lib/mockData';
+import { currencies } from '../lib/siteConfig';
 import type { CurrencyCode } from '../types/admin';
 
 interface CurrencyInputProps {

@@ -233,6 +233,7 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
   const [projectBusyLabel, setProjectBusyLabel] = useState('');
   const [projectImageBusy, setProjectImageBusy] = useState(false);
   const [projectImageBusyLabel, setProjectImageBusyLabel] = useState('');
+  const [projectPhotoGenerateCount, setProjectPhotoGenerateCount] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -619,6 +620,14 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
     }
   }
 
+  async function generateSelectedProjectPhotoCount() {
+    if (projectPhotoGenerateCount === PROJECT_IMAGE_COUNT) {
+      await generateProjectPhotoSeries();
+      return;
+    }
+    await generateProjectPhoto();
+  }
+
   return (
     <section className="almabuild-page">
       <header className="almabuild-hero" id="almabuild-overview">
@@ -890,9 +899,11 @@ export function AlmabuildPage({ activeSection }: { activeSection: AlmabuildSecti
                     <input className="visually-hidden" type="file" accept="image/*" disabled={projectImageBusy} onChange={(event) => void uploadProjectPhoto(event.target.files?.[0] ?? null)} />
                     {projectImageBusyLabel === 'Загружаем фото...' ? projectImageBusyLabel : 'Загрузить'}
                   </label>
-                  <button className="btn btn-ai" type="button" disabled={projectImageBusy} onClick={() => void generateProjectPhoto()}><AppIcon name="bot" />{projectImageBusyLabel === 'Gemini фото...' ? projectImageBusyLabel : 'AI фото'}</button>
-                  <button className="btn btn-ai" type="button" disabled={projectImageBusy} onClick={() => void generateProjectPhotoSeries()}><AppIcon name="bot" />{projectImageBusyLabel.startsWith('Gemini ') && projectImageBusyLabel.includes('/') ? projectImageBusyLabel : 'AI 4 фото'}</button>
-                  <button className="btn btn-ai" type="button" disabled={projectImageBusy || projectImages.length >= PROJECT_IMAGE_MAX} onClick={() => void generateAdditionalProjectPhoto()}><AppIcon name="bot" />{projectImageBusyLabel.startsWith('Gemini +') ? projectImageBusyLabel : 'AI + фото'}</button>
+                  <select className="btn btn-quiet" value={projectPhotoGenerateCount} onChange={(event) => setProjectPhotoGenerateCount(Number(event.target.value))}>
+                    <option value={1}>1 фото</option>
+                    <option value={PROJECT_IMAGE_COUNT}>4 фото</option>
+                  </select>
+                  <button className="btn btn-ai" type="button" disabled={projectImageBusy} onClick={() => void generateSelectedProjectPhotoCount()}><AppIcon name="bot" />{projectImageBusyLabel || 'AI фото'}</button>
                   <button className="btn btn-quiet" type="button" disabled={projectImageBusy || !projectImages[selectedProjectImage]} onClick={() => setFullscreenProjectImage(selectedProjectImage)}>На весь экран</button>
                   <button className="btn btn-quiet" type="button" disabled={projectImageBusy || (!projectImages[selectedProjectImage] && projectImages.length <= PROJECT_IMAGE_COUNT)} onClick={removeSelectedProjectImage}>Убрать</button>
                 </div>

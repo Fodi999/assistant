@@ -11,9 +11,10 @@ import {
   type CmsArticleCategory
 } from '../../api/cms';
 import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
-import { contentArticles, siteLabel } from '../../lib/mockData';
+import { siteLabel } from '../../lib/siteConfig';
 import type { CmsArticle, ContentArticle, ContentType, PublishStatus, SiteKey } from '../../types/admin';
 import { AppIcon } from '../../components/AppIcon';
+import { AdminPageHeader } from '../../components/admin/AdminLayout';
 import { contentTypeLabels, publishStatusLabels } from '../../lib/labels';
 import { revalidateSite } from '../../api/revalidate';
 
@@ -192,9 +193,9 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [site, setSite] = useState<SiteKey | 'all'>(activeSite);
   const [type, setType] = useState<ContentType | 'all'>('all');
   const [apiArticles, setApiArticles] = useState<CmsArticle[]>([]);
-  const [items, setItems] = useState<ContentArticle[]>(contentArticles);
+  const [items, setItems] = useState<ContentArticle[]>([]);
   const [categories, setCategories] = useState<CmsArticleCategory[]>([]);
-  const [source, setSource] = useState<DataSource>('mock');
+  const [source, setSource] = useState<DataSource>('unavailable');
   const [sourceError, setSourceError] = useState<string | undefined>();
   const [editorOpen, setEditorOpen] = useState(false);
   const [draft, setDraft] = useState<ArticleDraft>(() => draftFromArticle());
@@ -210,6 +211,7 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   const [busyLabel, setBusyLabel] = useState('');
   const [imageBusy, setImageBusy] = useState(false);
   const [imageBusyLabel, setImageBusyLabel] = useState('');
+  const [photoGenerateCount, setPhotoGenerateCount] = useState(1);
   const [referenceBusy, setReferenceBusy] = useState(false);
   const [referenceBusyLabel, setReferenceBusyLabel] = useState('');
   const [message, setMessage] = useState<string | undefined>();
@@ -227,8 +229,8 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   useEffect(() => {
     void refresh()
       .catch((error) => {
-        setItems(contentArticles);
-        setSource('mock');
+        setItems([]);
+        setSource('unavailable');
         setSourceError(error instanceof Error ? error.message : 'API недоступен');
       });
   }, []);
@@ -453,6 +455,14 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
     }
   };
 
+  const generateSelectedPhotoCount = async () => {
+    if (photoGenerateCount === 4) {
+      await generatePhotoSeries();
+      return;
+    }
+    await generatePhoto();
+  };
+
   const setImageAt = (index: number, url: string) => {
     setImages((current) => current.map((item, itemIndex) => itemIndex === index ? url : item));
     if (index === 0) patchDraft({ image_url: url });
@@ -552,12 +562,12 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
   return (
     <section className="ops-page">
       <Header title="Контент" subtitle="Статьи, обзоры, сравнения, подборки и связка с партнерскими товарами." icon="cms" source={source} onCreate={openNew} />
-      {sourceError ? <p className="ops-alert"><AppIcon name="terminal" />API не вернул контент: {sourceError}. Показаны mock-данные.</p> : null}
+      {sourceError ? <p className="ops-alert"><AppIcon name="terminal" />API не вернул контент: {sourceError}. Демо-данные отключены.</p> : null}
       <div className="filter-bar"><select value={site} onChange={(event) => setSite(event.target.value as SiteKey | 'all')}><option value="all">Все сайты</option><option value="culinary">Кулинарный</option><option value="construction">Строительный</option></select><select value={type} onChange={(event) => setType(event.target.value as ContentType | 'all')}><option value="all">Все типы</option><option value="article">статья</option><option value="review">обзор</option><option value="comparison">сравнение</option><option value="roundup">подборка</option><option value="recipe">рецепт</option></select></div>
       <section className="ops-panel"><table className="ops-table"><thead><tr><th>Фото</th><th>Материал</th><th>Сайт</th><th>Тип</th><th>Партнерские товары</th><th>Статус</th><th /></tr></thead><tbody>{rows.map((item) => {
         const imageUrl = articleImages.get(item.id);
         return <tr key={item.id}><td>{imageUrl ? <img className="catalog-product-thumb" src={imageUrl} alt={item.title.ru} loading="lazy" /> : <span className="catalog-product-thumb empty"><AppIcon name="cms" size={18} /></span>}</td><td><strong>{item.title.ru}</strong><small>{item.slug}</small><small>Фото: {articleImageCounts.get(item.id) ?? 0}/{Math.max(ARTICLE_IMAGE_COUNT, articleImageCounts.get(item.id) ?? 0)}</small></td><td>{siteLabel(item.site)}</td><td>{contentTypeLabels[item.type]}</td><td>{item.affiliateProductIds.join(', ') || 'нет'}</td><td><span className="status-pill info"><i />{publishStatusLabels[item.status as PublishStatus]}</span></td><td><button className="table-action" type="button" onClick={() => openEdit(item.id)}>Редактировать</button></td></tr>;
-      })}</tbody></table></section>
+      })}</tbody></table>{rows.length === 0 ? <p className="empty-state">Материалов из backend нет.</p> : null}</section>
       {editorOpen ? (
         <div className="modal-overlay">
           <div className="editor-modal content-editor-modal">
@@ -581,6 +591,17 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
               <label className="editor-check"><input type="checkbox" checked={draft.published} onChange={(event) => patchDraft({ published: event.target.checked })} />Опубликовано</label>
             </div>
 
+            <div className="analytics-mode-switcher content-lang-tabs">
+              {languages.map((language) => <button key={language.key} className={activeLang === language.key ? 'analytics-mode-button active' : 'analytics-mode-button'} type="button" onClick={() => setActiveLang(language.key)}>{language.label}</button>)}
+            </div>
+
+            <div className="editor-grid">
+              <label className="editor-field"><span>Заголовок {activeLang.toUpperCase()}</span><input value={String(draft[titleKey] ?? '')} onChange={(event) => patchDraft({ [titleKey]: event.target.value })} /></label>
+              <label className="editor-field"><span>SEO title {activeLang.toUpperCase()}</span><input value={String(draft[seoTitleKey] ?? '')} onChange={(event) => patchDraft({ [seoTitleKey]: event.target.value })} /></label>
+            </div>
+            <label className="editor-field"><span>SEO description {activeLang.toUpperCase()}</span><textarea value={String(draft[seoDescriptionKey] ?? '')} onChange={(event) => patchDraft({ [seoDescriptionKey]: event.target.value })} /></label>
+            <label className="editor-field"><span>Текст / Markdown {activeLang.toUpperCase()}</span><textarea className="content-body-editor" value={String(draft[contentKey] ?? '')} onChange={(event) => patchDraft({ [contentKey]: event.target.value })} /></label>
+
             <section className="content-photo-panel">
               <button className="content-photo-preview" type="button" onClick={() => images[selectedImage] ? setFullscreenImage(selectedImage) : undefined}>
                 {images[selectedImage] ? <img src={images[selectedImage]} alt={draft.title_ru || draft.slug || 'Фото материала'} onError={() => setMessage('Фото URL не загрузился в браузере. Проверь, что R2 public URL доступен без авторизации.')} /> : <span><AppIcon name="cms" size={34} />Фото {selectedImage + 1} не выбрано</span>}
@@ -601,25 +622,16 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
                 </section>
                 <div className="editor-actions">
                   <label className="btn btn-secondary"><input className="visually-hidden" type="file" accept="image/*" disabled={imageBusy} onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)} />{imageBusyLabel === 'Загружаем фото...' ? imageBusyLabel : 'Загрузить'}</label>
-                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhoto}><AppIcon name="bot" />{imageBusyLabel.startsWith('Gemini фото') ? imageBusyLabel : 'AI фото'}</button>
-                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={generatePhotoSeries}><AppIcon name="bot" />{imageBusyLabel.startsWith('Gemini ') && imageBusyLabel.includes('/') ? imageBusyLabel : 'AI 4 фото'}</button>
-                  <button className="btn btn-ai" type="button" disabled={imageBusy || images.length >= ARTICLE_IMAGE_MAX} onClick={generateAdditionalPhoto}><AppIcon name="bot" />{imageBusyLabel.startsWith('Gemini +') ? imageBusyLabel : 'AI + фото'}</button>
+                  <select className="btn btn-quiet" value={photoGenerateCount} onChange={(event) => setPhotoGenerateCount(Number(event.target.value))}>
+                    <option value={1}>1 фото</option>
+                    <option value={4}>4 фото</option>
+                  </select>
+                  <button className="btn btn-ai" type="button" disabled={imageBusy} onClick={() => void generateSelectedPhotoCount()}><AppIcon name="bot" />{imageBusyLabel || 'AI фото'}</button>
                   <button className="btn btn-quiet" type="button" disabled={imageBusy || !images[selectedImage]} onClick={() => setFullscreenImage(selectedImage)}>На весь экран</button>
                   <button className="btn btn-quiet" type="button" disabled={imageBusy || (!images[selectedImage] && images.length <= ARTICLE_IMAGE_COUNT)} onClick={removeSelectedImage}>Убрать</button>
                 </div>
               </div>
             </section>
-
-            <div className="analytics-mode-switcher content-lang-tabs">
-              {languages.map((language) => <button key={language.key} className={activeLang === language.key ? 'analytics-mode-button active' : 'analytics-mode-button'} type="button" onClick={() => setActiveLang(language.key)}>{language.label}</button>)}
-            </div>
-
-            <div className="editor-grid">
-              <label className="editor-field"><span>Заголовок {activeLang.toUpperCase()}</span><input value={String(draft[titleKey] ?? '')} onChange={(event) => patchDraft({ [titleKey]: event.target.value })} /></label>
-              <label className="editor-field"><span>SEO title {activeLang.toUpperCase()}</span><input value={String(draft[seoTitleKey] ?? '')} onChange={(event) => patchDraft({ [seoTitleKey]: event.target.value })} /></label>
-            </div>
-            <label className="editor-field"><span>SEO description {activeLang.toUpperCase()}</span><textarea value={String(draft[seoDescriptionKey] ?? '')} onChange={(event) => patchDraft({ [seoDescriptionKey]: event.target.value })} /></label>
-            <label className="editor-field"><span>Текст / Markdown {activeLang.toUpperCase()}</span><textarea className="content-body-editor" value={String(draft[contentKey] ?? '')} onChange={(event) => patchDraft({ [contentKey]: event.target.value })} /></label>
 
             {message ? <p className="editor-message">{message}</p> : null}
             <div className="editor-actions">
@@ -655,5 +667,5 @@ export function ContentPage({ activeSite }: { activeSite: SiteKey }) {
 }
 
 function Header({ title, subtitle, icon, source, onCreate }: { title: string; subtitle: string; icon: 'cms'; source: DataSource; onCreate: () => void }) {
-  return <div className="ops-header"><div className="ops-header-icon"><AppIcon name={icon} /></div><div><p className="eyebrow">Публикации</p><h2>{title}</h2><p>{subtitle}</p></div><div className="ops-header-actions"><button className="btn btn-ai" type="button" onClick={onCreate}><AppIcon name="bot" />Создать AI</button><button className="btn btn-primary" type="button" onClick={onCreate}>Новый</button><DataSourceBadge source={source} label="Контент" /></div></div>;
+  return <AdminPageHeader eyebrow="Публикации" title={title} subtitle={subtitle} icon={icon} actions={<><button className="btn btn-ai" type="button" onClick={onCreate}><AppIcon name="bot" />Создать AI</button><button className="btn btn-primary" type="button" onClick={onCreate}>Новый</button><DataSourceBadge source={source} label="Контент" /></>} />;
 }

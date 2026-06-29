@@ -1,43 +1,35 @@
 import { AppIcon, type AppIconName } from './AppIcon';
-import { siteConfigs } from '../lib/mockData';
+import { siteConfigs } from '../lib/siteConfig';
 import { apiStatusLabels, revalidateStatusLabels } from '../lib/labels';
-import type { AlmabuildSection, SiteKey } from '../types/admin';
+import type { AlmabuildSection, IconsSection, SiteKey } from '../types/admin';
 
 export type AppPage =
   | 'dashboard'
-  | 'overview'
-  | 'sites'
   | 'affiliate'
   | 'content'
-  | 'ai-studio'
   | 'construction'
   | 'culinary'
+  | 'icons'
   | 'leads'
-  | 'catalog'
-  | 'materials'
-  | 'projects'
-  | 'seo'
   | 'suppliers'
   | 'analytics'
-  | 'ai'
-  | 'usb'
-  | 'deployments'
   | 'users'
   | 'settings'
   | 'about';
 
-export type ManagedSite = SiteKey | 'almabuild' | 'dima';
 type NavItem = { page: AppPage; label: string; icon: AppIconName; shortcut: string };
 
 interface SidebarProps {
   activeSite: SiteKey;
   activePage: AppPage;
   activeConstructionSection: AlmabuildSection;
+  activeIconsSection: IconsSection;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onSiteChange: (site: SiteKey) => void;
   onNavigate: (page: AppPage) => void;
   onConstructionSectionChange: (section: AlmabuildSection) => void;
+  onIconsSectionChange: (section: IconsSection) => void;
 }
 
 const constructionSiteSections: Array<{ key: AlmabuildSection; label: string; note: string }> = [
@@ -49,15 +41,24 @@ const constructionSiteSections: Array<{ key: AlmabuildSection; label: string; no
   { key: 'catalog', label: 'Каталог', note: 'Товары' }
 ];
 
+const iconsSiteSections: Array<{ key: IconsSection; label: string; note: string; primary?: boolean }> = [
+  { key: 'icons', label: 'Иконы', note: 'главный редактор', primary: true },
+  { key: 'calendar', label: 'Календарь', note: 'заполнение по датам' },
+  { key: 'prayers', label: 'Молитвы', note: 'просмотр из икон' },
+  { key: 'saints', label: 'Святые', note: 'просмотр из икон' },
+  { key: 'gospel', label: 'Евангелие', note: 'просмотр из икон' },
+  { key: 'qr', label: 'QR-страницы', note: 'авто из икон' },
+  { key: 'seo', label: 'SEO-страницы', note: 'просмотр' },
+  { key: 'churches', label: 'Храмы', note: 'просмотр из икон' }
+];
+
 const SITE_NAV_ITEMS: Record<SiteKey, NavItem[]> = {
   culinary: [
     { page: 'dashboard', label: 'Панель CU', icon: 'dashboard', shortcut: '1' },
-    { page: 'sites', label: 'Сайт dima-fomin.pl', icon: 'globe', shortcut: '2' },
-    { page: 'affiliate', label: 'Affiliate товары', icon: 'shop', shortcut: '3' },
-    { page: 'content', label: 'Статьи и обзоры', icon: 'cms', shortcut: '4' },
-    { page: 'ai-studio', label: 'AI для кулинарии', icon: 'bot', shortcut: '5' },
-    { page: 'culinary', label: 'Ингредиенты', icon: 'catalog', shortcut: '6' },
-    { page: 'leads', label: 'Заявки CU', icon: 'leads', shortcut: '7' },
+    { page: 'affiliate', label: 'Affiliate товары', icon: 'shop', shortcut: '2' },
+    { page: 'content', label: 'Контент сайта', icon: 'cms', shortcut: '3' },
+    { page: 'culinary', label: 'Ингредиенты', icon: 'catalog', shortcut: '4' },
+    { page: 'leads', label: 'Заявки CU', icon: 'leads', shortcut: '5' },
     { page: 'analytics', label: 'Аналитика CU', icon: 'analytics', shortcut: 'A' },
     { page: 'users', label: 'Пользователи', icon: 'users', shortcut: 'U' },
     { page: 'settings', label: 'Настройки CU', icon: 'settings', shortcut: 'S' },
@@ -65,38 +66,48 @@ const SITE_NAV_ITEMS: Record<SiteKey, NavItem[]> = {
   ],
   construction: [
     { page: 'dashboard', label: 'Панель CO', icon: 'dashboard', shortcut: '1' },
-    { page: 'sites', label: 'Сайт kazaxbud', icon: 'globe', shortcut: '2' },
-    { page: 'construction', label: 'Kazaxbud CMS', icon: 'building', shortcut: '3' },
-    { page: 'affiliate', label: 'Поставки / affiliate', icon: 'shop', shortcut: '4' },
-    { page: 'ai-studio', label: 'AI для стройки', icon: 'bot', shortcut: '5' },
-    { page: 'leads', label: 'Заявки CO', icon: 'leads', shortcut: '6' },
-    { page: 'suppliers', label: 'Поставщики', icon: 'suppliers', shortcut: '7' },
+    { page: 'content', label: 'Контент сайта', icon: 'building', shortcut: '2' },
+    { page: 'affiliate', label: 'Поставки / affiliate', icon: 'shop', shortcut: '3' },
+    { page: 'leads', label: 'Заявки CO', icon: 'leads', shortcut: '4' },
+    { page: 'suppliers', label: 'Поставщики', icon: 'suppliers', shortcut: '5' },
     { page: 'analytics', label: 'Аналитика CO', icon: 'analytics', shortcut: 'A' },
     { page: 'users', label: 'Пользователи', icon: 'users', shortcut: 'U' },
     { page: 'settings', label: 'Настройки CO', icon: 'settings', shortcut: 'S' },
+    { page: 'about', label: 'О системе', icon: 'shield', shortcut: '?' }
+  ],
+  icons: [
+    { page: 'dashboard', label: 'Обзор IK', icon: 'dashboard', shortcut: '1' },
+    { page: 'content', label: 'Контент сайта', icon: 'cms', shortcut: '2' },
+    { page: 'analytics', label: 'Аналитика IK', icon: 'analytics', shortcut: 'A' },
+    { page: 'users', label: 'Пользователи', icon: 'users', shortcut: 'U' },
+    { page: 'settings', label: 'Настройки IK', icon: 'settings', shortcut: 'S' },
     { page: 'about', label: 'О системе', icon: 'shield', shortcut: '?' }
   ]
 };
 
 const defaultSitePages: Record<SiteKey, AppPage> = {
   culinary: 'content',
-  construction: 'construction'
+  construction: 'content',
+  icons: 'content'
 };
 
-export function getSiteNavItems(site: ManagedSite): NavItem[] {
-  if (site === 'construction' || site === 'almabuild') return SITE_NAV_ITEMS.construction;
+export function getSiteNavItems(site: SiteKey): NavItem[] {
+  if (site === 'construction') return SITE_NAV_ITEMS.construction;
+  if (site === 'icons') return SITE_NAV_ITEMS.icons;
   return SITE_NAV_ITEMS.culinary;
 }
 
-export function defaultPageForSite(site: ManagedSite): AppPage {
-  return site === 'construction' || site === 'almabuild' ? defaultSitePages.construction : defaultSitePages.culinary;
+export function defaultPageForSite(site: SiteKey): AppPage {
+  if (site === 'construction') return defaultSitePages.construction;
+  if (site === 'icons') return defaultSitePages.icons;
+  return defaultSitePages.culinary;
 }
 
-export function pageAllowedForSite(site: ManagedSite, page: AppPage) {
+export function pageAllowedForSite(site: SiteKey, page: AppPage) {
   return getSiteNavItems(site).some((item) => item.page === page);
 }
 
-export function normalizeSitePage(site: ManagedSite, page: AppPage): AppPage {
+export function normalizeSitePage(site: SiteKey, page: AppPage): AppPage {
   if (pageAllowedForSite(site, page)) return page;
   return defaultPageForSite(site);
 }
@@ -105,15 +116,17 @@ export function Sidebar({
   activeSite,
   activePage,
   activeConstructionSection,
+  activeIconsSection,
   collapsed,
   onToggleCollapse,
   onSiteChange,
   onNavigate,
-  onConstructionSectionChange
+  onConstructionSectionChange,
+  onIconsSectionChange
 }: SidebarProps) {
   const visibleNavItems = getSiteNavItems(activeSite);
   const activeConfig = siteConfigs.find((site) => site.key === activeSite) ?? siteConfigs[0];
-  const sectionLabel = activeSite === 'construction' ? 'Разделы строительного сайта' : 'Разделы кулинарного сайта';
+  const sectionLabel = activeSite === 'construction' ? 'Разделы строительного сайта' : activeSite === 'icons' ? 'Разделы сайта икон' : 'Разделы кулинарного сайта';
 
   return (
     <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
@@ -131,7 +144,7 @@ export function Sidebar({
           const active = site.key === activeSite;
           return (
             <button key={site.key} className={'site-switcher-option' + (active ? ' active' : '')} type="button" title={site.name} aria-current={active ? 'true' : undefined} onClick={() => onSiteChange(site.key)}>
-              <span className="site-switcher-mark">{site.key === 'culinary' ? 'CU' : 'CO'}</span>
+              <span className="site-switcher-mark">{site.key === 'culinary' ? 'CU' : site.key === 'construction' ? 'CO' : 'IK'}</span>
               <span><strong>{site.name}</strong><small>{site.domain}</small></span>
               <i className={'site-dot ' + (site.apiStatus === 'online' ? 'prod' : 'warning')} />
             </button>
@@ -148,14 +161,29 @@ export function Sidebar({
               <span>{item.label}</span>
               <kbd>{item.shortcut}</kbd>
             </button>
-            {activeSite === 'construction' && item.page === 'construction' && !collapsed ? (
+            {activeSite === 'construction' && item.page === 'content' && !collapsed ? (
               <div className="sidebar-subnav" aria-label="Разделы Kazaxbud">
                 {constructionSiteSections.map((section) => (
                   <button
                     key={section.key}
-                    className={activePage === 'construction' && activeConstructionSection === section.key ? 'active' : ''}
+                    className={activePage === 'content' && activeConstructionSection === section.key ? 'active' : ''}
                     type="button"
                     onClick={() => onConstructionSectionChange(section.key)}
+                  >
+                    <span>{section.label}</span>
+                    <small>{section.note}</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {activeSite === 'icons' && item.page === 'content' && !collapsed ? (
+              <div className="sidebar-subnav" aria-label="Разделы сайта икон">
+                {iconsSiteSections.map((section) => (
+                  <button
+                    key={section.key}
+                    className={(activePage === 'content' && activeIconsSection === section.key ? 'active' : '') + (section.primary ? ' primary-source' : '')}
+                    type="button"
+                    onClick={() => onIconsSectionChange(section.key)}
                   >
                     <span>{section.label}</span>
                     <small>{section.note}</small>

@@ -2,7 +2,8 @@
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: rgba(0,0,0,.64);
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(10px);
   display: grid;
   place-items: center;
   padding: 22px;
@@ -12,9 +13,11 @@
   width: min(1180px, calc(100vw - 44px));
   max-height: calc(100vh - 44px);
   overflow: auto;
-  border: 4px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  background: #101013;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012)),
+    #101215;
   box-shadow: var(--shadow);
   padding: 16px;
   display: grid;
@@ -22,10 +25,18 @@
 }
 
 .editor-modal-head {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 14px;
+  margin: -16px -16px 0;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: rgba(16,18,21,.94);
+  backdrop-filter: blur(10px);
 }
 
 .editor-modal-head h2 {
@@ -39,9 +50,9 @@
 }
 
 .ai-generation-panel {
-  border: 4px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  background: #202024;
+  background: var(--panel-elevated);
   padding: 12px;
   display: grid;
   gap: 12px;

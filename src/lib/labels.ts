@@ -2,7 +2,8 @@ import type { ContentType, LeadStatus, PublishStatus, SiteKey, SupplierType } fr
 
 export const siteNames: Record<SiteKey, string> = {
   culinary: 'Кулинарный',
-  construction: 'Строительный'
+  construction: 'Строительный',
+  icons: 'Иконы'
 };
 
 export const publishStatusLabels: Record<PublishStatus, string> = {

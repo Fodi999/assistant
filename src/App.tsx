@@ -1,56 +1,54 @@
-import { useEffect, useState } from 'react';
-import { adminLogin, adminLogout, verifyAdminToken } from './api/auth';
-import { bootstrapAdminToken, getAdminToken } from './api/client';
-import { defaultPageForSite, normalizeSitePage, Sidebar, type AppPage } from './components/Sidebar';
-import { Topbar } from './components/Topbar';
-import { AlmabuildPage } from './pages/construction/AlmabuildPage';
-import { ContentPage } from './pages/culinary/ContentPage';
-import { CulinaryPage } from './pages/culinary/CulinaryPage';
-import { AboutPage } from './pages/shared/AboutPage';
-import { AffiliatePage } from './pages/shared/AffiliatePage';
-import { AiStudioPage } from './pages/shared/AiStudioPage';
-import { AnalyticsPage } from './pages/shared/AnalyticsPage';
+import { useState } from 'react';
+import { useAdminAuth } from './components/admin/AuthContext';
+import { AdminLayout } from './components/admin/AdminLayout';
+import { type AppPage } from './components/admin/AdminSidebar';
+import {
+  ACTIVE_SITE_STORAGE_KEY,
+  activeSiteIdToLegacyKey,
+  getActiveSiteOptions,
+  normalizeActiveSiteId,
+  type ActiveSiteId
+} from './components/admin/ActiveSiteContext';
+import { DataTable } from './components/admin/DataTable';
+import { EmptyState } from './components/admin/EmptyState';
+import { StatusBadge } from './components/admin/StatusBadge';
+import { AnalyticsPage } from './pages/admin/AnalyticsPage';
+import { CatalogPage } from './pages/admin/CatalogPage';
+import { CMSPage } from './pages/admin/CMSPage';
+import { LeadsPage } from './pages/admin/LeadsPage';
+import { OrdersPage } from './pages/admin/OrdersPage';
+import { SettingsPage } from './pages/admin/SettingsPage';
+import { ShopPage } from './pages/admin/ShopPage';
+import { SuppliersPage } from './pages/admin/SuppliersPage';
+import { UsersPage } from './pages/admin/UsersPage';
+import { LoginPage } from './pages/admin/LoginPage';
 import { DashboardPage } from './pages/shared/DashboardPage';
-import { LeadsPage } from './pages/shared/LeadsPage';
-import { LoginPage } from './pages/shared/LoginPage';
-import { SettingsPage } from './pages/shared/SettingsPage';
-import { SitesPage } from './pages/shared/SitesPage';
-import { SuppliersPage } from './pages/shared/SuppliersPage';
-import { UsersPage } from './pages/shared/UsersPage';
-import type { AlmabuildSection, SiteKey } from './types/admin';
 
-type PageBySite = Record<SiteKey, AppPage>;
+type PageBySite = Record<ActiveSiteId, AppPage>;
+
+const defaultPageBySite: PageBySite = {
+  church: 'dashboard',
+  construction: 'dashboard',
+  kitchen: 'dashboard'
+};
 
 export function App() {
-  const [activeSite, setActiveSite] = useState<SiteKey>('construction');
-  const [pageBySite, setPageBySite] = useState<PageBySite>({
-    culinary: defaultPageForSite('culinary'),
-    construction: defaultPageForSite('construction')
-  });
-  const [constructionSection, setConstructionSection] = useState<AlmabuildSection>('materials');
+  const { authState, authError, loading, login, logout } = useAdminAuth();
+  const [activeSiteId, setActiveSiteId] = useState<ActiveSiteId>(() => normalizeActiveSiteId(localStorage.getItem(ACTIVE_SITE_STORAGE_KEY)));
+  const [pageBySite, setPageBySite] = useState<PageBySite>(defaultPageBySite);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true');
-  const activePage = normalizeSitePage(activeSite, pageBySite[activeSite]);
-  const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'anonymous'>('checking');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const activeSite = activeSiteIdToLegacyKey(activeSiteId);
+  const activePage = pageBySite[activeSiteId] ?? 'dashboard';
   const [dataError] = useState<string | null>(null);
 
   function navigate(page: AppPage) {
-    setPageBySite((current) => ({ ...current, [activeSite]: normalizeSitePage(activeSite, page) }));
+    setPageBySite((current) => ({ ...current, [activeSiteId]: page }));
   }
 
-  function changeSite(site: SiteKey) {
-    setPageBySite((current) => ({
-      ...current,
-      [activeSite]: normalizeSitePage(activeSite, current[activeSite]),
-      [site]: normalizeSitePage(site, current[site] || defaultPageForSite(site))
-    }));
-    setActiveSite(site);
-  }
-
-  function navigateConstructionSection(section: AlmabuildSection) {
-    setConstructionSection(section);
-    setPageBySite((current) => ({ ...current, construction: 'construction' }));
+  function changeSite(siteId: ActiveSiteId) {
+    localStorage.setItem(ACTIVE_SITE_STORAGE_KEY, siteId);
+    setPageBySite((current) => ({ ...defaultPageBySite, ...current }));
+    setActiveSiteId(siteId);
   }
 
   function toggleSidebar() {
@@ -61,54 +59,24 @@ export function App() {
     });
   }
 
-  useEffect(() => {
-    bootstrapAdminToken();
-    if (!getAdminToken()) {
-      setAuthState('anonymous');
-      return;
-    }
-    void verifyAdminToken().then((valid) => {
-      setAuthState(valid ? 'authenticated' : 'anonymous');
-    });
-  }, []);
-
-  async function login(email: string, password: string) {
-    setLoading(true);
-    setAuthError(null);
-    try {
-      await adminLogin(email, password);
-      const valid = await verifyAdminToken();
-      if (!valid) throw new Error('Backend не подтвердил admin token');
-      setAuthState('authenticated');
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Ошибка входа');
-      setAuthState('anonymous');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function logout() {
-    adminLogout();
-    setAuthState('anonymous');
-  }
-
   function renderPage() {
     switch (activePage) {
-      case 'dashboard': return <DashboardPage activeSite={activeSite} />;
-      case 'sites': return <SitesPage />;
-      case 'affiliate': return <AffiliatePage activeSite={activeSite} />;
-      case 'content': return <ContentPage activeSite={activeSite} />;
-      case 'ai-studio': return <AiStudioPage activeSite={activeSite} />;
-      case 'construction': return <AlmabuildPage activeSection={constructionSection} />;
-      case 'culinary': return <CulinaryPage />;
-      case 'leads': return <LeadsPage activeSite={activeSite} />;
+      case 'dashboard': return <DashboardPage activeSite={activeSite} onNavigate={navigate} />;
+      case 'sites': return <SitesOverview />;
+      case 'cms': return <CMSPage />;
+      case 'calendar': return <AdminPlaceholder page="Calendar" icon="calendar" description="Calendar is ready for site-specific events and content scheduling." />;
+      case 'leads': return <LeadsPage />;
+      case 'catalog': return <CatalogPage />;
+      case 'shop': return <ShopPage />;
+      case 'orders': return <OrdersPage />;
       case 'suppliers': return <SuppliersPage />;
-      case 'analytics': return <AnalyticsPage activeSite={activeSite} />;
+      case 'media': return <AdminPlaceholder page="Media" icon="image" description="Медиа-библиотека будет подключена к storage позже. Сейчас это единый раздел для будущих загрузок." />;
+      case 'translations': return <AdminPlaceholder page="Translations" icon="globe" description="Единая панель переводов готова как раздел навигации; backend-интеграция будет следующим этапом." />;
+      case 'analytics': return <AnalyticsPage />;
       case 'users': return <UsersPage />;
+      case 'ai-studio': return <AdminPlaceholder page="AI Studio" icon="bot" description="AI-инструменты оставлены в меню CRM и ждут подключения готовых сценариев." />;
       case 'settings': return <SettingsPage />;
-      case 'about': return <AboutPage />;
-      default: return <DashboardPage activeSite={activeSite} />;
+      default: return <DashboardPage activeSite={activeSite} onNavigate={navigate} />;
     }
   }
 
@@ -116,21 +84,65 @@ export function App() {
   if (authState === 'anonymous') return <LoginPage loading={loading} error={authError} onLogin={login} />;
 
   return (
-    <div className={'admin-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
-      <Sidebar
-        activeSite={activeSite}
-        activePage={activePage}
-        activeConstructionSection={constructionSection}
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={toggleSidebar}
-        onSiteChange={changeSite}
-        onNavigate={navigate}
-        onConstructionSectionChange={navigateConstructionSection}
-      />
-      <div className="content-shell">
-        <Topbar activeSite={activeSite} activePage={activePage} connectionState={dataError ? 'limited' : 'online'} onSiteChange={changeSite} onNavigate={navigate} onLogout={logout} />
-        <main className="page-content">{renderPage()}</main>
+    <AdminLayout
+      activePage={activePage}
+      activeSiteId={activeSiteId}
+      collapsed={sidebarCollapsed}
+      connectionState={dataError ? 'limited' : 'online'}
+      onNavigate={navigate}
+      onSiteChange={changeSite}
+      onToggleSidebar={toggleSidebar}
+      onLogout={logout}
+    >
+      {renderPage()}
+    </AdminLayout>
+  );
+}
+
+function SitesOverview() {
+  const rows = getActiveSiteOptions();
+
+  return (
+    <section className="admin-dashboard-page">
+      <div className="admin-page-hero">
+        <div>
+          <p>Sites</p>
+          <h2>Управление сайтами</h2>
+          <span>church, construction и kitchen в одном CRM-каркасе.</span>
+        </div>
       </div>
-    </div>
+
+      <DataTable
+        rows={rows}
+        getRowKey={(site) => site.id}
+        columns={[
+          { key: 'site', header: 'Site', render: (site) => <strong>{site.id}</strong> },
+          { key: 'name', header: 'Name', render: (site) => site.name },
+          { key: 'domain', header: 'Domain', render: (site) => site.domain },
+          { key: 'language', header: 'Language', render: (site) => site.language },
+          { key: 'status', header: 'Status', render: (site) => <StatusBadge status={site.status} /> },
+          { key: 'api', header: 'API', render: (site) => <StatusBadge status={site.apiStatus} /> }
+        ]}
+      />
+    </section>
+  );
+}
+
+function AdminPlaceholder({ page, icon, description }: { page: string; icon: 'calendar' | 'catalog' | 'image' | 'globe' | 'bot'; description: string }) {
+  return (
+    <section className="admin-dashboard-page">
+      <div className="admin-page-hero">
+        <div>
+          <p>{page}</p>
+          <h2>{page}</h2>
+          <span>{description}</span>
+        </div>
+      </div>
+      <EmptyState
+        icon={icon}
+        title="Раздел готов к подключению"
+        description="Пока используются аккуратные mock/empty состояния, чтобы не завязываться на неготовые backend endpoints."
+      />
+    </section>
   );
 }

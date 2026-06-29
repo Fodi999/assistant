@@ -1,4 +1,4 @@
-import { languages } from '../lib/mockData';
+import { languages } from '../lib/siteConfig';
 import type { LanguageCode } from '../types/admin';
 
 interface LanguageChipsProps {

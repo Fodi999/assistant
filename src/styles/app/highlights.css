@@ -34,7 +34,6 @@
   color: var(--text);
 }
 
-.ops-page > .ops-panel:last-child:nth-child(3),
 .ops-page > .settings-matrix + .ops-panel {
   background: #b9b8af;
   color: #1f1f22;

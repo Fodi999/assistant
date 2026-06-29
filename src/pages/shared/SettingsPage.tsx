@@ -1,4 +1,4 @@
-import { siteConfigs } from '../../lib/mockData';
+import { siteConfigs } from '../../lib/siteConfig';
 import { AppIcon } from '../../components/AppIcon';
 
 export function SettingsPage() {

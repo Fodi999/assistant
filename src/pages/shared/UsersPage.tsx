@@ -4,32 +4,9 @@ import { AppIcon } from '../../components/AppIcon';
 import { DataSourceBadge, type DataSource } from '../../components/DataSourceBadge';
 import type { AdminUser } from '../../types/admin';
 
-const mockUsers: AdminUser[] = [
-  {
-    id: 'local-admin',
-    email: 'admin@fodi.app',
-    name: 'Дима Админ',
-    restaurant_name: 'Админка',
-    language: 'ru',
-    created_at: new Date().toISOString(),
-    login_count: 1,
-    last_login_at: new Date().toISOString()
-  },
-  {
-    id: 'content-editor',
-    email: 'editor@example.local',
-    name: 'Контент-редактор',
-    restaurant_name: 'Контент',
-    language: 'ru',
-    created_at: new Date().toISOString(),
-    login_count: 0,
-    last_login_at: null
-  }
-];
-
 export function UsersPage() {
-  const [users, setUsers] = useState<AdminUser[]>(mockUsers);
-  const [source, setSource] = useState<DataSource>('mock');
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [source, setSource] = useState<DataSource>('unavailable');
   const [sourceError, setSourceError] = useState<string | undefined>();
 
   useEffect(() => {
@@ -40,8 +17,8 @@ export function UsersPage() {
         setSourceError(undefined);
       })
       .catch((error) => {
-        setUsers(mockUsers);
-        setSource('mock');
+        setUsers([]);
+        setSource('unavailable');
         setSourceError(error instanceof Error ? error.message : 'API недоступен');
       });
   }, []);
@@ -57,7 +34,7 @@ export function UsersPage() {
         </div>
         <div className="ops-header-actions"><DataSourceBadge source={source} label="Пользователи" /></div>
       </div>
-      {sourceError ? <p className="ops-alert"><AppIcon name="terminal" />API не вернул пользователей: {sourceError}. Показаны mock-данные.</p> : null}
+      {sourceError ? <p className="ops-alert"><AppIcon name="terminal" />API не вернул пользователей: {sourceError}. Демо-данные отключены.</p> : null}
       <section className="ops-panel">
         <table className="ops-table">
           <thead><tr><th>Пользователь</th><th>Ресторан / объект</th><th>Язык</th><th>Входы</th><th>Последний вход</th></tr></thead>
@@ -73,6 +50,7 @@ export function UsersPage() {
             ))}
           </tbody>
         </table>
+        {users.length === 0 ? <p className="empty-state">Пользователей из backend нет.</p> : null}
       </section>
     </section>
   );

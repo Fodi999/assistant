@@ -7,7 +7,6 @@ import { Input } from '../../components/ui/input';
 import { ScrollArea } from '../../components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Textarea } from '../../components/ui/textarea';
-import type { AppPage, ManagedSite } from '../../components/Sidebar';
 import { aiEditAlmabuildItem, generateAlmabuildMaterialsFromPhoto, saveAlmabuildContent, type AlmabuildContent, type AlmabuildLead, type Kit, type MaterialCategory, type Product, type Project } from '../../api/almabuild';
 import { aiCreateProductDraft, aiGenerateProductImage, createAdminProduct, generateProductStates, getAdminNutritionProduct, listProductStates, saveExtendedProductProfile, updateAdminProduct, type AiExtendedProductProfile, type CreateAdminProductRequest, type IngredientState } from '../../api/catalog';
 import { adminKeyAiHistoryList, adminKeyAiHistoryRead, adminKeyGeminiGenerateImagePrompt, adminKeyGeminiGenerateText, adminKeyGeminiSettingsStatus, adminKeyOpenFolder, adminKeyPromptList, adminKeyPromptRead, adminKeyPromptRender, findUsbKey, runAdminTool, type AdminToolOutput, type AiHistoryItem, type GeminiSettingsStatus, type PromptTemplateItem, type UsbKeyStatus } from '../../api/localAdmin';
@@ -15,9 +14,25 @@ import { aiCreateArticleDraft, aiGenerateArticleImage, createArticle, updateArti
 import type { AdminCategory, AdminProduct, AdminStats, AdminUser, CmsArticle, ShopProduct } from '../../types/admin';
 import type { AnalyticsOverview, AnalyticsRealtime, SearchConsoleBundle } from '../../api/analytics';
 
+type OperationsPageId =
+  | 'overview'
+  | 'sites'
+  | 'leads'
+  | 'catalog'
+  | 'materials'
+  | 'suppliers'
+  | 'projects'
+  | 'seo'
+  | 'analytics'
+  | 'ai'
+  | 'usb'
+  | 'deployments'
+  | 'settings';
+type OperationsManagedSite = 'almabuild' | 'dima';
+
 interface OperationsPageProps {
-  page: AppPage;
-  activeSite: ManagedSite;
+  page: OperationsPageId;
+  activeSite: OperationsManagedSite;
   stats: AdminStats | null;
   users: AdminUser[];
   products: AdminProduct[];
@@ -71,7 +86,7 @@ function isToday(value: string) {
     && date.getDate() === today.getDate();
 }
 
-const MODULE_META: Partial<Record<AppPage, { title: string; subtitle: string; icon: AppIconName }>> = {
+const MODULE_META: Partial<Record<OperationsPageId, { title: string; subtitle: string; icon: AppIconName }>> = {
   overview: { title: 'Панель управления', subtitle: 'Отдельная панель выбранного сайта без смешивания данных.', icon: 'dashboard' },
   sites: { title: 'Настройки сайта', subtitle: 'Домен, GitHub, Cloudflare Pages, API бэкенда и интеграции выбранного сайта.', icon: 'globe' },
   leads: { title: 'CRM заявок', subtitle: 'Заявки и воронка только выбранного сайта.', icon: 'leads' },
@@ -867,7 +882,7 @@ function NotConnectedPanel({ title, icon, endpoint, description }: { title: stri
     <PanelTitle title={title} icon={icon} action="API не подключён" />
     <div className="empty-state">
       <strong>{description}</strong>
-      <p>Чтобы здесь не было демо-данных, нужен backend endpoint: <code>{endpoint}</code></p>
+      <p>Для отображения данных нужен backend endpoint: <code>{endpoint}</code></p>
     </div>
   </section>;
 }

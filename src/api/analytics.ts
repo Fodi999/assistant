@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import type { SiteKey } from '../types/admin';
 
 export interface AnalyticsPageRow {
   path: string;
@@ -79,6 +80,7 @@ export interface AnalyticsOAuthUrl {
   url: string;
   redirect_uri: string;
   scope: string;
+  site_id: string;
 }
 
 export interface SearchConsoleSite {
@@ -120,16 +122,26 @@ export interface SearchConsoleBundle {
   daily: SearchConsoleDailyRow[];
 }
 
-export function getAnalyticsOverview(days = 30): Promise<AnalyticsOverview> {
-  return apiFetch<AnalyticsOverview>(`/api/admin/analytics/overview?days=${days}`);
+const siteUuidByKey: Record<SiteKey, string> = {
+  icons: '00000000-0000-0000-0000-000000000101',
+  construction: '00000000-0000-0000-0000-000000000102',
+  culinary: '00000000-0000-0000-0000-000000000103'
+};
+
+function siteParam(site: SiteKey): string {
+  return `site_id=${encodeURIComponent(siteUuidByKey[site])}`;
 }
 
-export function getAnalyticsRealtime(): Promise<AnalyticsRealtime> {
-  return apiFetch<AnalyticsRealtime>('/api/admin/analytics/realtime');
+export function getAnalyticsOverview(site: SiteKey, days = 30): Promise<AnalyticsOverview> {
+  return apiFetch<AnalyticsOverview>(`/api/admin/analytics/overview?days=${days}&${siteParam(site)}`);
 }
 
-export function getAnalyticsOAuthUrl(): Promise<AnalyticsOAuthUrl> {
-  return apiFetch<AnalyticsOAuthUrl>('/api/admin/analytics/oauth/url');
+export function getAnalyticsRealtime(site: SiteKey): Promise<AnalyticsRealtime> {
+  return apiFetch<AnalyticsRealtime>(`/api/admin/analytics/realtime?${siteParam(site)}`);
+}
+
+export function getAnalyticsOAuthUrl(site: SiteKey): Promise<AnalyticsOAuthUrl> {
+  return apiFetch<AnalyticsOAuthUrl>(`/api/admin/analytics/oauth/url?${siteParam(site)}`);
 }
 
 export async function getSearchConsoleBundle(days = 30): Promise<SearchConsoleBundle> {
