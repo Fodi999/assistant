@@ -256,6 +256,18 @@ pub async fn create_shop_product(
     ))
 }
 
+pub async fn update_shop_product(
+    _claims: AdminClaims,
+    Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
+    State(svc): State<CmsService>,
+    Json(req): Json<CreateShopProductRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
+    let row = svc.update_shop_product_for_site(id, req, site_id).await?;
+    Ok(Json(serde_json::to_value(row).unwrap()))
+}
+
 pub async fn update_shop_product_status(
     _claims: AdminClaims,
     Path(id): Path<Uuid>,

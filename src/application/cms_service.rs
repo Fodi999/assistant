@@ -1716,6 +1716,95 @@ STORE PRODUCT RULES:
         })
     }
 
+    pub async fn update_shop_product_for_site(
+        &self,
+        id: Uuid,
+        req: CreateShopProductRequest,
+        site_id: Uuid,
+    ) -> AppResult<ShopProductRow> {
+        let slug = req
+            .slug
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| slugify(&req.name_en));
+        let status = req.status.unwrap_or_else(|| "draft".to_string());
+        if !matches!(status.as_str(), "draft" | "active" | "archived") {
+            return Err(AppError::validation("Invalid shop product status"));
+        }
+        sqlx::query_as(
+            r#"UPDATE shop_products SET
+                slug = $1,
+                sku = $2,
+                category = $3,
+                name_en = $4,
+                name_ru = $5,
+                name_pl = $6,
+                name_uk = $7,
+                short_description_en = $8,
+                short_description_ru = $9,
+                short_description_pl = $10,
+                short_description_uk = $11,
+                description_en = $12,
+                description_ru = $13,
+                description_pl = $14,
+                description_uk = $15,
+                seo_title_en = $16,
+                seo_title_ru = $17,
+                seo_title_pl = $18,
+                seo_title_uk = $19,
+                seo_description_en = $20,
+                seo_description_ru = $21,
+                seo_description_pl = $22,
+                seo_description_uk = $23,
+                selling_points = $24,
+                image_urls = $25,
+                price_cents = $26,
+                currency = $27,
+                stock_quantity = $28,
+                status = $29,
+                updated_at = NOW()
+            WHERE id = $30 AND site_id = $31
+            RETURNING *"#,
+        )
+        .bind(slug)
+        .bind(req.sku.filter(|value| !value.trim().is_empty()))
+        .bind(req.category.unwrap_or_else(|| "other".to_string()))
+        .bind(req.name_en)
+        .bind(req.name_ru.unwrap_or_default())
+        .bind(req.name_pl.unwrap_or_default())
+        .bind(req.name_uk.unwrap_or_default())
+        .bind(req.short_description_en.unwrap_or_default())
+        .bind(req.short_description_ru.unwrap_or_default())
+        .bind(req.short_description_pl.unwrap_or_default())
+        .bind(req.short_description_uk.unwrap_or_default())
+        .bind(req.description_en.unwrap_or_default())
+        .bind(req.description_ru.unwrap_or_default())
+        .bind(req.description_pl.unwrap_or_default())
+        .bind(req.description_uk.unwrap_or_default())
+        .bind(req.seo_title_en.unwrap_or_default())
+        .bind(req.seo_title_ru.unwrap_or_default())
+        .bind(req.seo_title_pl.unwrap_or_default())
+        .bind(req.seo_title_uk.unwrap_or_default())
+        .bind(req.seo_description_en.unwrap_or_default())
+        .bind(req.seo_description_ru.unwrap_or_default())
+        .bind(req.seo_description_pl.unwrap_or_default())
+        .bind(req.seo_description_uk.unwrap_or_default())
+        .bind(req.selling_points)
+        .bind(req.image_urls)
+        .bind(req.price_cents)
+        .bind(req.currency.unwrap_or_else(|| "PLN".to_string()))
+        .bind(req.stock_quantity.unwrap_or(0).max(0))
+        .bind(status)
+        .bind(id)
+        .bind(site_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("update_shop_product: {e}");
+            AppError::internal("Failed to update shop product")
+        })?
+        .ok_or_else(|| AppError::not_found("Shop product not found"))
+    }
+
     pub async fn update_article(
         &self,
         id: Uuid,

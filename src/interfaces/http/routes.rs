@@ -1394,7 +1394,8 @@ pub fn create_router(
         )
         .route(
             "/shop-products/:id",
-            axum::routing::delete(admin_cms::delete_shop_product),
+            axum::routing::put(admin_cms::update_shop_product)
+                .delete(admin_cms::delete_shop_product),
         )
         // Image upload
         .route(
