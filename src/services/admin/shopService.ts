@@ -1,6 +1,11 @@
 import type { AdminResourceRow, SiteId } from '../../types/admin';
+import type { UpdateShopProductDto } from '../../types/adminApi';
+import { isApiMode } from '../../config/adminConfig';
+import { adminApiClient } from './adminApiClient';
+import { adminApiRoutes } from './adminApiRoutes';
 import { shopAdapter } from './adapters/shopAdapter';
 import { createAdminResourceService } from './resourceServiceFactory';
+import { updateMockResource } from './mockStore';
 
 export const shopService = createAdminResourceService<AdminResourceRow, 'shop'>('shop', undefined, shopAdapter);
 
@@ -12,4 +17,19 @@ export const remove = shopService.remove;
 
 export function listShopProducts(siteId: SiteId): Promise<AdminResourceRow[]> {
   return shopService.list(siteId);
+}
+
+export async function updateShopProduct(id: string, payload: UpdateShopProductDto): Promise<AdminResourceRow> {
+  if (isApiMode) {
+    const siteId = payload.siteId || 'kitchen';
+    const path = adminApiRoutes.shop.update(id, siteId);
+    if (!path) throw new Error('Endpoint не найден');
+    const response = await adminApiClient.put<unknown>(
+      path,
+      shopAdapter.toUpdate(payload)
+    );
+    return shopAdapter.fromBackend(response as never, siteId);
+  }
+
+  return updateMockResource('shop', id, payload);
 }

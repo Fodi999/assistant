@@ -10,6 +10,7 @@ type BackendShopProduct = {
   name_en?: string;
   name_ru?: string;
   name_pl?: string;
+  name_uk?: string;
   category?: string;
   sku?: string | null;
   status?: string;
@@ -18,18 +19,21 @@ type BackendShopProduct = {
   stock_quantity?: number;
   updated_at?: string;
   updatedAt?: string;
-  name_uk?: string;
   short_description_en?: string;
   short_description_ru?: string;
+  short_description_pl?: string;
   short_description_uk?: string;
   description_en?: string;
   description_ru?: string;
+  description_pl?: string;
   description_uk?: string;
   seo_title_en?: string;
   seo_title_ru?: string;
+  seo_title_pl?: string;
   seo_title_uk?: string;
   seo_description_en?: string;
   seo_description_ru?: string;
+  seo_description_pl?: string;
   seo_description_uk?: string;
   selling_points?: string[];
   image_urls?: string[];
@@ -37,6 +41,41 @@ type BackendShopProduct = {
 
 function clean<T extends Record<string, unknown>>(payload: T): Partial<T> {
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== '')) as Partial<T>;
+}
+
+function toBackendShopPayload(payload: CreateShopProductDto | UpdateShopProductDto) {
+  const title = payload.name?.en || payload.name?.uk || payload.name?.ru || payload.name?.pl || payload.title?.trim() || payload.slug || 'Untitled product';
+  return clean({
+    name_en: title,
+    name_ru: payload.name?.ru,
+    name_pl: payload.name?.pl,
+    name_uk: payload.name?.uk,
+    slug: payload.slug,
+    sku: payload.sku,
+    category: payload.type,
+    short_description_en: payload.shortDescription?.en,
+    short_description_ru: payload.shortDescription?.ru,
+    short_description_pl: payload.shortDescription?.pl,
+    short_description_uk: payload.shortDescription?.uk,
+    description_en: payload.description?.en,
+    description_ru: payload.description?.ru,
+    description_pl: payload.description?.pl,
+    description_uk: payload.description?.uk,
+    seo_title_en: payload.seoTitle?.en,
+    seo_title_ru: payload.seoTitle?.ru,
+    seo_title_pl: payload.seoTitle?.pl,
+    seo_title_uk: payload.seoTitle?.uk,
+    seo_description_en: payload.seoDescription?.en,
+    seo_description_ru: payload.seoDescription?.ru,
+    seo_description_pl: payload.seoDescription?.pl,
+    seo_description_uk: payload.seoDescription?.uk,
+    selling_points: payload.sellingPoints,
+    image_urls: payload.imageUrls,
+    price_cents: payload.priceCents,
+    currency: payload.currency,
+    stock_quantity: payload.stockQuantity,
+    status: payload.status
+  });
 }
 
 export const shopAdapter = {
@@ -60,38 +99,10 @@ export const shopAdapter = {
   },
 
   toCreate(payload: CreateShopProductDto) {
-    const title = payload.name?.en || payload.name?.uk || payload.name?.ru || payload.title?.trim() || payload.slug || 'Untitled product';
-    return clean({
-      name_en: title,
-      name_ru: payload.name?.ru,
-      name_uk: payload.name?.uk,
-      slug: payload.slug,
-      sku: payload.sku,
-      category: payload.type,
-      short_description_en: payload.shortDescription?.en,
-      short_description_ru: payload.shortDescription?.ru,
-      short_description_uk: payload.shortDescription?.uk,
-      description_en: payload.description?.en,
-      description_ru: payload.description?.ru,
-      description_uk: payload.description?.uk,
-      seo_title_en: payload.seoTitle?.en,
-      seo_title_ru: payload.seoTitle?.ru,
-      seo_title_uk: payload.seoTitle?.uk,
-      seo_description_en: payload.seoDescription?.en,
-      seo_description_ru: payload.seoDescription?.ru,
-      seo_description_uk: payload.seoDescription?.uk,
-      selling_points: payload.sellingPoints,
-      image_urls: payload.imageUrls,
-      price_cents: payload.priceCents,
-      currency: payload.currency,
-      stock_quantity: payload.stockQuantity,
-      status: payload.status
-    });
+    return toBackendShopPayload(payload);
   },
 
   toUpdate(payload: UpdateShopProductDto) {
-    return {
-      status: payload.status || 'draft'
-    };
+    return toBackendShopPayload(payload);
   }
 };

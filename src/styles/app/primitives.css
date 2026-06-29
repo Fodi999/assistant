@@ -985,6 +985,42 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   gap: 10px;
 }
 
+.shop-product-photo-field {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.02);
+  padding: 10px;
+}
+
+.shop-product-photo-field > img,
+.shop-product-photo-field > span {
+  width: 132px;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  background: rgba(0,0,0,.18);
+  object-fit: cover;
+}
+
+.shop-product-photo-field > span {
+  display: grid;
+  place-items: center;
+  color: var(--crm-muted);
+  font-weight: 900;
+}
+
+.shop-product-photo-field > div {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
 .admin-form-error {
   color: #fecaca;
   font-size: 11px;
@@ -2002,6 +2038,146 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
   font-size: 20px;
 }
 
+.shop-control-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.shop-control-panel .admin-section-heading p {
+  margin: 6px 0 0;
+  color: var(--crm-muted);
+}
+
+.shop-category-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.shop-category-strip button {
+  min-width: 150px;
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+  color: var(--crm-text);
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shop-category-strip button:hover {
+  border-color: color-mix(in srgb, var(--site-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--site-accent) 11%, rgba(255,255,255,.025));
+}
+
+.shop-category-strip strong,
+.shop-category-strip span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shop-category-strip strong {
+  font-size: 13px;
+}
+
+.shop-category-strip span {
+  margin-top: 4px;
+  color: var(--crm-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.shop-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shop-admin-card,
+.shop-admin-empty {
+  min-width: 0;
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.018);
+  padding: 10px;
+}
+
+.shop-admin-card {
+  display: grid;
+  gap: 10px;
+}
+
+.shop-admin-card > img,
+.shop-admin-card__empty {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  background: rgba(0,0,0,.2);
+  object-fit: cover;
+}
+
+.shop-admin-card__empty {
+  display: grid;
+  place-items: center;
+  color: var(--crm-muted);
+  font-weight: 900;
+}
+
+.shop-admin-card small,
+.shop-admin-card p,
+.shop-admin-card__meta,
+.shop-admin-summary {
+  color: var(--crm-muted);
+}
+
+.shop-admin-card h4 {
+  min-height: 42px;
+  margin: 4px 0;
+  overflow: hidden;
+  color: var(--crm-text);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.shop-admin-card__meta,
+.shop-admin-card__actions,
+.shop-admin-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shop-admin-card__meta,
+.shop-admin-summary {
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.shop-admin-card__actions .admin-btn {
+  min-height: 32px;
+}
+
+.shop-admin-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 18px;
+}
+
+.shop-admin-empty p {
+  margin: 0;
+  color: var(--crm-muted);
+}
+
 .kitchen-editor-grid,
 .kitchen-inline-editor {
   display: grid;
@@ -2184,6 +2360,19 @@ dt { color: var(--faint); } dd { margin: 0; overflow: hidden; text-overflow: ell
 }
 
 @media (max-width: 960px) {
+  .shop-admin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .shop-product-photo-field {
+    grid-template-columns: 1fr;
+  }
+
+  .shop-product-photo-field > img,
+  .shop-product-photo-field > span {
+    width: 100%;
+  }
+
   .kitchen-editor-grid,
   .kitchen-inline-editor,
   .kitchen-inline-editor.single {

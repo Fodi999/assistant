@@ -44,9 +44,9 @@ export const adminApiRoutes: Record<AdminResourceKey, AdminResourceRoutes> = {
   },
   shop: {
     list: (siteId) => withSite('/api/admin/cms/shop-products', siteId),
-    getById: () => null,
+    getById: (id, siteId) => withSite(`/api/admin/cms/shop-products/${encode(id)}`, siteId),
     create: (siteId) => withSite('/api/admin/cms/shop-products', siteId),
-    update: (id, siteId) => withSite(`/api/admin/cms/shop-products/${encode(id)}/status`, siteId),
+    update: (id, siteId) => withSite(`/api/admin/cms/shop-products/${encode(id)}`, siteId),
     remove: (id, siteId) => withSite(`/api/admin/cms/shop-products/${encode(id)}`, siteId)
   },
   orders: {

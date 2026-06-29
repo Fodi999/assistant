@@ -1,16 +1,42 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { revalidateSite } from '../../api/revalidate';
 import { ActionButton } from '../../components/admin/ActionButton';
 import { AdminDrawer } from '../../components/admin/AdminDrawer';
 import { ShopProductForm } from '../../components/admin/forms/ShopProductForm';
 import { useAdminToast } from '../../components/admin/useAdminToast';
 import { useActiveSite } from '../../lib/useActiveSite';
-import { listShopProducts, shopService } from '../../services/admin/shopService';
+import { listShopProducts, shopService, updateShopProduct } from '../../services/admin/shopService';
 import { resourceCapabilities } from '../../services/admin/resourceCapabilities';
 import type { AdminResourceRow, SiteId } from '../../types/admin';
 import type { CreateShopProductDto } from '../../types/adminApi';
 import { AdminResourcePage } from './AdminResourcePage';
 
 type DrawerMode = 'create' | 'edit';
+
+const defaultShopCategories = ['kitchen-tools', 'ingredients', 'tableware', 'beverages', 'delivery-food', 'equipment', 'other'];
+
+type ShopBackend = {
+  name_ru?: string;
+  name_pl?: string;
+  name_uk?: string;
+  name_en?: string;
+  category?: string;
+  sku?: string | null;
+  image_urls?: string[];
+  price_cents?: number | null;
+  currency?: string;
+  stock_quantity?: number;
+};
+
+function productImage(row: AdminResourceRow) {
+  return ((row.backend || {}) as ShopBackend).image_urls?.[0] || '';
+}
+
+function productPrice(row: AdminResourceRow) {
+  const product = (row.backend || {}) as ShopBackend;
+  if (typeof product.price_cents !== 'number') return row.metric || 'No price';
+  return `${(product.price_cents / 100).toFixed(2)} ${product.currency || 'PLN'}`;
+}
 
 export function ShopPage() {
   const { activeSiteId } = useActiveSite();
@@ -21,18 +47,45 @@ export function ShopPage() {
   const [editingRow, setEditingRow] = useState<AdminResourceRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [manualCategories, setManualCategories] = useState<string[]>(defaultShopCategories);
+  const [createCategory, setCreateCategory] = useState('');
 
   const loadRows = useCallback(async () => listShopProducts(activeSiteId as SiteId), [activeSiteId]);
 
   useEffect(() => setRows(null), [activeSiteId]);
 
+  const categories = useMemo(() => {
+    const fromRows = (rows || []).map((row) => row.type).filter(Boolean);
+    return Array.from(new Set([...manualCategories, ...fromRows])).sort((a, b) => a.localeCompare(b));
+  }, [manualCategories, rows]);
+
+  const categoryStats = useMemo(() => categories.map((category) => ({
+    category,
+    count: (rows || []).filter((row) => row.type === category).length
+  })), [categories, rows]);
+
+  const activeProducts = useMemo(() => (rows || []).filter((row) => row.status === 'active' || row.status === 'published'), [rows]);
+
+  function addCategory() {
+    const category = window.prompt('Новая категория товара (slug, например: sushi-tools)');
+    const normalized = category?.trim().toLowerCase();
+    if (!normalized) return;
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {
+      toast.error('Категория должна быть slug: lowercase, цифры и дефисы.');
+      return;
+    }
+    setManualCategories((current) => Array.from(new Set([...current, normalized])));
+    openCreate(normalized);
+  }
+
   async function refreshRows() {
     setRows(await listShopProducts(activeSiteId as SiteId));
   }
 
-  function openCreate() {
+  function openCreate(category = '') {
     setDrawerMode('create');
     setEditingRow(null);
+    setCreateCategory(category);
     setFormError(null);
     setDrawerOpen(true);
   }
@@ -40,6 +93,7 @@ export function ShopPage() {
   function openEdit(row: AdminResourceRow) {
     setDrawerMode('edit');
     setEditingRow(row);
+    setCreateCategory('');
     setFormError(null);
     setDrawerOpen(true);
   }
@@ -48,6 +102,7 @@ export function ShopPage() {
     if (saving) return;
     setDrawerOpen(false);
     setEditingRow(null);
+    setCreateCategory('');
     setFormError(null);
   }
 
@@ -56,10 +111,12 @@ export function ShopPage() {
     setFormError(null);
     try {
       if (drawerMode === 'edit' && editingRow) {
-        await shopService.update(editingRow.id, payload);
-        toast.success('Статус товара обновлен.');
+        const saved = await updateShopProduct(editingRow.id, { ...payload, siteId: activeSiteId as SiteId });
+        await revalidateSite({ type: 'shop', slug: saved.slug || payload.slug || editingRow.slug });
+        toast.success('Товар обновлен.');
       } else {
-        await shopService.create({ ...payload, siteId: activeSiteId as SiteId });
+        const saved = await shopService.create({ ...payload, siteId: activeSiteId as SiteId });
+        await revalidateSite({ type: 'shop', slug: saved.slug || payload.slug });
         toast.success('Товар создан.');
       }
       await refreshRows();
@@ -77,6 +134,7 @@ export function ShopPage() {
     if (!window.confirm(`Удалить "${row.title}"?`)) return;
     try {
       await shopService.remove(row.id, row.siteId as SiteId);
+      await revalidateSite({ type: 'shop', slug: row.slug });
       toast.success('Товар удален.');
       await refreshRows();
     } catch (error) {
@@ -96,14 +154,65 @@ export function ShopPage() {
         rowsOverride={rows}
         onRowsLoaded={setRows}
         capabilities={resourceCapabilities.shop}
-        onCreate={openCreate}
+        onCreate={() => openCreate()}
         onEdit={openEdit}
         onDelete={deleteProduct}
       />
+      <section className="admin-panel-card shop-control-panel">
+        <div className="admin-section-heading">
+          <div>
+            <span className="eyebrow">Storefront</span>
+            <h3>Категории и карточки товаров</h3>
+            <p>Категории сохраняются в поле товара. На сайте они появляются автоматически, когда товар опубликован.</p>
+          </div>
+          <ActionButton icon="sparkles" onClick={addCategory}>New category</ActionButton>
+        </div>
+        <div className="shop-category-strip">
+          {categoryStats.map((item) => (
+            <button key={item.category} type="button" onClick={() => {
+              openCreate(item.category);
+            }}>
+              <strong>{item.category}</strong>
+              <span>{item.count} products</span>
+            </button>
+          ))}
+        </div>
+        <div className="shop-admin-grid">
+          {(rows || []).slice(0, 12).map((row) => (
+            <article className="shop-admin-card" key={row.id}>
+              {productImage(row) ? <img src={productImage(row)} alt={row.title} /> : <span className="shop-admin-card__empty">Photo</span>}
+              <div>
+                <small>{row.type}</small>
+                <h4>{row.title}</h4>
+                <p>{productPrice(row)}</p>
+              </div>
+              <div className="shop-admin-card__meta">
+                <span>{row.status}</span>
+                <span>{((row.backend || {}) as ShopBackend).stock_quantity ?? 0} stock</span>
+              </div>
+              <div className="shop-admin-card__actions">
+                <ActionButton onClick={() => openEdit(row)}>Edit</ActionButton>
+                <ActionButton tone="danger" onClick={() => void deleteProduct(row)}>Delete</ActionButton>
+              </div>
+            </article>
+          ))}
+          {!rows?.length ? (
+            <article className="shop-admin-empty">
+              <strong>Добавьте первый товар</strong>
+              <p>Фото, цена, остаток, категория и статус active сразу создадут карточку на сайте.</p>
+              <ActionButton tone="primary" icon="shop" onClick={() => openCreate()}>Add product</ActionButton>
+            </article>
+          ) : null}
+        </div>
+        <div className="shop-admin-summary">
+          <span>{rows?.length || 0} total</span>
+          <span>{activeProducts.length} visible on site</span>
+        </div>
+      </section>
       <AdminDrawer
         open={drawerOpen}
         title={drawerMode === 'edit' ? 'Редактировать товар' : 'Добавить товар'}
-        description={drawerMode === 'edit' ? 'Backend поддерживает изменение статуса для shop products.' : 'Создание shop product через реальные CMS shop DTO.'}
+        description={drawerMode === 'edit' ? 'Редактирование карточки товара и витрины сайта.' : 'Создание shop product через реальные CMS shop DTO.'}
         onClose={closeDrawer}
         footer={(
           <>
@@ -113,7 +222,7 @@ export function ShopPage() {
           </>
         )}
       >
-        <ShopProductForm key={editingRow?.id || 'new'} formId="shop-product-form" row={editingRow} disabled={saving} editMode={drawerMode === 'edit'} onSubmit={saveProduct} />
+        <ShopProductForm key={editingRow?.id || createCategory || 'new'} formId="shop-product-form" row={editingRow} disabled={saving} editMode={drawerMode === 'edit'} initialCategory={createCategory} categories={categories} onSubmit={saveProduct} />
       </AdminDrawer>
     </>
   );
