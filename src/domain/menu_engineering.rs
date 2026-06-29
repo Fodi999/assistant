@@ -104,40 +104,40 @@ impl MenuCategory {
         use crate::shared::Language;
 
         match (self, language) {
-            (MenuCategory::Star, Language::En) => 
+            (MenuCategory::Star, Language::En) =>
                 "Excellent! Keep this dish, promote it, and maintain quality.".to_string(),
-            (MenuCategory::Star, Language::Pl) => 
+            (MenuCategory::Star, Language::Pl) =>
                 "Doskonale! Zachowaj to danie, promuj je i utrzymuj jakość.".to_string(),
-            (MenuCategory::Star, Language::Uk) => 
+            (MenuCategory::Star, Language::Uk) =>
                 "Чудово! Залиште цю страву, просувайте її та підтримуйте якість.".to_string(),
-            (MenuCategory::Star, Language::Ru) => 
+            (MenuCategory::Star, Language::Ru) =>
                 "Отлично! Сохраните это блюдо, продвигайте его и поддерживайте качество.".to_string(),
-                
-            (MenuCategory::Plowhorse, Language::En) => 
+
+            (MenuCategory::Plowhorse, Language::En) =>
                 "Popular but low profit. Consider increasing price or reducing costs.".to_string(),
-            (MenuCategory::Plowhorse, Language::Pl) => 
+            (MenuCategory::Plowhorse, Language::Pl) =>
                 "Popularne, ale niski zysk. Rozważ podniesienie ceny lub obniżenie kosztów.".to_string(),
-            (MenuCategory::Plowhorse, Language::Uk) => 
+            (MenuCategory::Plowhorse, Language::Uk) =>
                 "Популярна, але низький прибуток. Розгляньте підвищення ціни або зниження витрат.".to_string(),
-            (MenuCategory::Plowhorse, Language::Ru) => 
+            (MenuCategory::Plowhorse, Language::Ru) =>
                 "Популярно, но низкая прибыль. Рассмотрите повышение цены или снижение затрат.".to_string(),
-                
-            (MenuCategory::Puzzle, Language::En) => 
+
+            (MenuCategory::Puzzle, Language::En) =>
                 "High margin but low sales. Improve marketing or reposition this dish.".to_string(),
-            (MenuCategory::Puzzle, Language::Pl) => 
+            (MenuCategory::Puzzle, Language::Pl) =>
                 "Wysoka marża, ale niskie sprzedaże. Popraw marketing lub zmień pozycjonowanie.".to_string(),
-            (MenuCategory::Puzzle, Language::Uk) => 
+            (MenuCategory::Puzzle, Language::Uk) =>
                 "Висока маржа, але низькі продажі. Покращте маркетинг або репозиціонуйте страву.".to_string(),
-            (MenuCategory::Puzzle, Language::Ru) => 
+            (MenuCategory::Puzzle, Language::Ru) =>
                 "Высокая маржа, но низкие продажи. Улучшите маркетинг или репозиционируйте блюдо.".to_string(),
-                
-            (MenuCategory::Dog, Language::En) => 
+
+            (MenuCategory::Dog, Language::En) =>
                 "Low profit and low sales. Consider removing from menu or complete redesign.".to_string(),
-            (MenuCategory::Dog, Language::Pl) => 
+            (MenuCategory::Dog, Language::Pl) =>
                 "Niski zysk i niskie sprzedaże. Rozważ usunięcie z menu lub całkowite przeprojektowanie.".to_string(),
-            (MenuCategory::Dog, Language::Uk) => 
+            (MenuCategory::Dog, Language::Uk) =>
                 "Низький прибуток та низькі продажі. Розгляньте видалення з меню або повний редизайн.".to_string(),
-            (MenuCategory::Dog, Language::Ru) => 
+            (MenuCategory::Dog, Language::Ru) =>
                 "Низкая прибыль и низкие продажи. Рассмотрите удаление из меню или полный редизайн.".to_string(),
         }
     }
@@ -153,77 +153,77 @@ impl MenuCategory {
 
         match (bcg_category, abc_class, language) {
             // ⭐🥇 Star + A: Protect at all costs
-            (MenuCategory::Star, AbcClass::A, Language::En) => 
+            (MenuCategory::Star, AbcClass::A, Language::En) =>
                 "🎯 Core menu item! Protect quality, don't change price, ensure consistent availability.".to_string(),
-            (MenuCategory::Star, AbcClass::A, Language::Ru) => 
+            (MenuCategory::Star, AbcClass::A, Language::Ru) =>
                 "🎯 Основа меню! Защищайте качество, не меняйте цену, обеспечьте постоянную доступность.".to_string(),
-                
+
             // ⭐🥈 Star + B: Slight price increase opportunity
-            (MenuCategory::Star, AbcClass::B, Language::En) => 
+            (MenuCategory::Star, AbcClass::B, Language::En) =>
                 "💰 Strong performer. Consider slight price increase (+5-10%) to maximize profit.".to_string(),
-            (MenuCategory::Star, AbcClass::B, Language::Ru) => 
+            (MenuCategory::Star, AbcClass::B, Language::Ru) =>
                 "💰 Сильная позиция. Рассмотрите небольшое повышение цены (+5-10%) для максимизации прибыли.".to_string(),
-                
+
             // ⭐🥉 Star + C: Impossible (Stars are popular, C is low revenue)
-            (MenuCategory::Star, AbcClass::C, Language::En) => 
+            (MenuCategory::Star, AbcClass::C, Language::En) =>
                 "⚠️ Anomaly detected. High sales but low revenue - check portion size or pricing.".to_string(),
-            (MenuCategory::Star, AbcClass::C, Language::Ru) => 
+            (MenuCategory::Star, AbcClass::C, Language::Ru) =>
                 "⚠️ Аномалия. Высокие продажи, но низкая выручка - проверьте размер порции или цену.".to_string(),
-                
+
             // 🐴🥇 Plowhorse + A: Reduce portion or increase price
-            (MenuCategory::Plowhorse, AbcClass::A, Language::En) => 
+            (MenuCategory::Plowhorse, AbcClass::A, Language::En) =>
                 "⚖️ High volume, low margin. Reduce portion size by 10-15% OR increase price by 15-20%.".to_string(),
-            (MenuCategory::Plowhorse, AbcClass::A, Language::Ru) => 
+            (MenuCategory::Plowhorse, AbcClass::A, Language::Ru) =>
                 "⚖️ Большой объём, низкая маржа. Уменьшите порцию на 10-15% ИЛИ поднимите цену на 15-20%.".to_string(),
-                
+
             // 🐴🥈 Plowhorse + B: Optimize costs
-            (MenuCategory::Plowhorse, AbcClass::B, Language::En) => 
+            (MenuCategory::Plowhorse, AbcClass::B, Language::En) =>
                 "🔧 Popular but unprofitable. Optimize ingredient costs or find cheaper suppliers.".to_string(),
-            (MenuCategory::Plowhorse, AbcClass::B, Language::Ru) => 
+            (MenuCategory::Plowhorse, AbcClass::B, Language::Ru) =>
                 "🔧 Популярно, но неприбыльно. Оптимизируйте стоимость ингредиентов или найдите дешевле поставщиков.".to_string(),
-                
+
             // 🐴🥉 Plowhorse + C: Consider removal
-            (MenuCategory::Plowhorse, AbcClass::C, Language::En) => 
+            (MenuCategory::Plowhorse, AbcClass::C, Language::En) =>
                 "🚫 Low margin, low revenue. Strong candidate for menu removal.".to_string(),
-            (MenuCategory::Plowhorse, AbcClass::C, Language::Ru) => 
+            (MenuCategory::Plowhorse, AbcClass::C, Language::Ru) =>
                 "🚫 Низкая маржа, низкая выручка. Сильный кандидат на удаление из меню.".to_string(),
-                
+
             // ❓🥇 Puzzle + A: Aggressive promotion
-            (MenuCategory::Puzzle, AbcClass::A, Language::En) => 
+            (MenuCategory::Puzzle, AbcClass::A, Language::En) =>
                 "📣 High margin, needs visibility! Move to top of menu, add photo, create combo deals.".to_string(),
-            (MenuCategory::Puzzle, AbcClass::A, Language::Ru) => 
+            (MenuCategory::Puzzle, AbcClass::A, Language::Ru) =>
                 "📣 Высокая маржа, нужна видимость! Переместите в топ меню, добавьте фото, создайте комбо.".to_string(),
-                
+
             // ❓🥈 Puzzle + B: Marketing push
-            (MenuCategory::Puzzle, AbcClass::B, Language::En) => 
+            (MenuCategory::Puzzle, AbcClass::B, Language::En) =>
                 "📢 Profitable but underselling. Improve presentation, staff training, menu positioning.".to_string(),
-            (MenuCategory::Puzzle, AbcClass::B, Language::Ru) => 
+            (MenuCategory::Puzzle, AbcClass::B, Language::Ru) =>
                 "📢 Прибыльно, но недопродаётся. Улучшите подачу, обучите персонал, измените позицию в меню.".to_string(),
-                
+
             // ❓🥉 Puzzle + C: Promotion or removal
-            (MenuCategory::Puzzle, AbcClass::C, Language::En) => 
+            (MenuCategory::Puzzle, AbcClass::C, Language::En) =>
                 "🎲 High margin but very low sales. Run 2-week promotion, then remove if no improvement.".to_string(),
-            (MenuCategory::Puzzle, AbcClass::C, Language::Ru) => 
+            (MenuCategory::Puzzle, AbcClass::C, Language::Ru) =>
                 "🎲 Высокая маржа, но очень низкие продажи. Проведите 2-недельную акцию, затем удалите при отсутствии роста.".to_string(),
-                
+
             // 🐶🥇 Dog + A: Impossible (Dogs have low sales, A is high revenue)
-            (MenuCategory::Dog, AbcClass::A, Language::En) => 
+            (MenuCategory::Dog, AbcClass::A, Language::En) =>
                 "⚠️ Data anomaly. Low profit + low sales cannot generate high revenue.".to_string(),
-            (MenuCategory::Dog, AbcClass::A, Language::Ru) => 
+            (MenuCategory::Dog, AbcClass::A, Language::Ru) =>
                 "⚠️ Аномалия данных. Низкая прибыль + низкие продажи не могут давать высокую выручку.".to_string(),
-                
+
             // 🐶🥈 Dog + B: Remove immediately
-            (MenuCategory::Dog, AbcClass::B, Language::En) => 
+            (MenuCategory::Dog, AbcClass::B, Language::En) =>
                 "❌ Unprofitable and unpopular. Remove from menu this week.".to_string(),
-            (MenuCategory::Dog, AbcClass::B, Language::Ru) => 
+            (MenuCategory::Dog, AbcClass::B, Language::Ru) =>
                 "❌ Неприбыльно и непопулярно. Удалите из меню на этой неделе.".to_string(),
-                
+
             // 🐶🥉 Dog + C: Remove now
-            (MenuCategory::Dog, AbcClass::C, Language::En) => 
+            (MenuCategory::Dog, AbcClass::C, Language::En) =>
                 "🗑️ Complete failure. Remove from menu immediately and analyze why it failed.".to_string(),
-            (MenuCategory::Dog, AbcClass::C, Language::Ru) => 
+            (MenuCategory::Dog, AbcClass::C, Language::Ru) =>
                 "🗑️ Полный провал. Удалите из меню немедленно и проанализируйте причины неудачи.".to_string(),
-                
+
             // Fallback for other language combinations (using English template)
             _ => MenuCategory::combined_strategy(bcg_category, abc_class, Language::En),
         }
