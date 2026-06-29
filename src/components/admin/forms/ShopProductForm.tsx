@@ -105,6 +105,8 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
   const [imagePrompts, setImagePrompts] = useState<string[]>([]);
   const [originalReferenceUrl, setOriginalReferenceUrl] = useState('');
   const [generatedPhotoUrls, setGeneratedPhotoUrls] = useState<string[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState('');
+  const [lightboxZoom, setLightboxZoom] = useState(1);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const title = useMemo(() => firstText(form.name), [form.name]);
   const images = useMemo(() => csv(form.imageUrls), [form.imageUrls]);
@@ -259,6 +261,16 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
     }
   }
 
+  function openLightbox(url: string) {
+    setLightboxUrl(url);
+    setLightboxZoom(1);
+  }
+
+  function closeLightbox() {
+    setLightboxUrl('');
+    setLightboxZoom(1);
+  }
+
   function validate() {
     const next: FormErrors = {};
     if (!editMode && !form.name.en?.trim()) next.name = 'Backend требует английское название. Заполните EN.';
@@ -273,6 +285,7 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
   }
 
   return (
+    <>
     <form id={formId} className="admin-form-grid" onSubmit={(event) => {
       event.preventDefault();
       if (!validate()) return;
@@ -322,10 +335,13 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
               const url = generatedPreviewImages[index];
               return (
                 <article key={index}>
-                  {url ? <img src={url} alt={`Generated product ${index + 1}`} /> : <span>#{index + 1}</span>}
-                  <button type="button" className="table-action" disabled={disabled || imageBusy || regeneratingIndex !== null} onClick={() => void regeneratePhoto(index)}>
-                    {regeneratingIndex === index ? 'Generating...' : 'Regenerate'}
-                  </button>
+                  {url ? <button type="button" className="shop-generated-thumb" onClick={() => openLightbox(url)}><img src={url} alt={`Generated product ${index + 1}`} /><span>View</span></button> : <span>#{index + 1}</span>}
+                  <div className="shop-generated-actions">
+                    <button type="button" className="table-action" disabled={disabled || imageBusy || regeneratingIndex !== null} onClick={() => void regeneratePhoto(index)}>
+                      {regeneratingIndex === index ? '...' : 'Regen'}
+                    </button>
+                    {url ? <button type="button" className="table-action" onClick={() => openLightbox(url)}>Zoom</button> : null}
+                  </div>
                 </article>
               );
             })}
@@ -362,5 +378,21 @@ export function ShopProductForm({ formId, row, disabled, editMode, initialCatego
         <label><span>Stock</span><input disabled={disabled} value={form.stockQuantity} onChange={(event) => setForm((current) => ({ ...current, stockQuantity: event.target.value }))} /><FieldError message={errors.stockQuantity} /></label>
       </div>
     </form>
+    {lightboxUrl ? (
+      <div className="shop-photo-lightbox" role="dialog" aria-modal="true" aria-label="Product photo preview" onClick={closeLightbox}>
+        <div className="shop-photo-lightbox__toolbar" onClick={(event) => event.stopPropagation()}>
+          <strong>Photo preview</strong>
+          <span>{Math.round(lightboxZoom * 100)}%</span>
+          <button type="button" onClick={() => setLightboxZoom((current) => Math.max(.5, current - .25))}>-</button>
+          <button type="button" onClick={() => setLightboxZoom(1)}>100%</button>
+          <button type="button" onClick={() => setLightboxZoom((current) => Math.min(3, current + .25))}>+</button>
+          <button type="button" onClick={closeLightbox}>Close</button>
+        </div>
+        <div className="shop-photo-lightbox__stage" onClick={(event) => event.stopPropagation()}>
+          <img src={lightboxUrl} alt="Generated product fullscreen" style={{ transform: `scale(${lightboxZoom})` }} />
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
