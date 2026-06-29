@@ -5,7 +5,7 @@ import { AdminDrawer } from '../../components/admin/AdminDrawer';
 import { ShopProductForm } from '../../components/admin/forms/ShopProductForm';
 import { useAdminToast } from '../../components/admin/useAdminToast';
 import { useActiveSite } from '../../lib/useActiveSite';
-import { listShopProducts, shopService, updateShopProduct } from '../../services/admin/shopService';
+import { listShopProducts, shopService, updateShopProduct, updateShopProductStatus } from '../../services/admin/shopService';
 import { resourceCapabilities } from '../../services/admin/resourceCapabilities';
 import type { AdminResourceRow, SiteId } from '../../types/admin';
 import type { CreateShopProductDto } from '../../types/adminApi';
@@ -49,6 +49,7 @@ export function ShopPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [manualCategories, setManualCategories] = useState<string[]>(defaultShopCategories);
   const [createCategory, setCreateCategory] = useState('');
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const loadRows = useCallback(async () => listShopProducts(activeSiteId as SiteId), [activeSiteId]);
 
@@ -142,6 +143,20 @@ export function ShopPage() {
     }
   }
 
+  async function changeProductStatus(row: AdminResourceRow, status: 'active' | 'draft' | 'archived') {
+    setPublishingId(row.id);
+    try {
+      const saved = await updateShopProductStatus(row.id, row.siteId as SiteId, status);
+      await revalidateSite({ type: 'shop', slug: saved.slug || row.slug });
+      toast.success(status === 'active' ? 'Товар опубликован на сайте.' : 'Товар скрыт с сайта.');
+      await refreshRows();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Не удалось изменить статус товара.');
+    } finally {
+      setPublishingId(null);
+    }
+  }
+
   return (
     <>
       <AdminResourcePage
@@ -191,6 +206,13 @@ export function ShopPage() {
                 <span>{((row.backend || {}) as ShopBackend).stock_quantity ?? 0} stock</span>
               </div>
               <div className="shop-admin-card__actions">
+                {row.status === 'active' || row.status === 'published' ? (
+                  <ActionButton onClick={() => void changeProductStatus(row, 'draft')} disabled={publishingId === row.id}>Hide</ActionButton>
+                ) : (
+                  <ActionButton tone="primary" onClick={() => void changeProductStatus(row, 'active')} disabled={publishingId === row.id}>
+                    {publishingId === row.id ? 'Publishing' : 'Publish'}
+                  </ActionButton>
+                )}
                 <ActionButton onClick={() => openEdit(row)}>Edit</ActionButton>
                 <ActionButton tone="danger" onClick={() => void deleteProduct(row)}>Delete</ActionButton>
               </div>

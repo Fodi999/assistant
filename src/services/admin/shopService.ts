@@ -1,8 +1,8 @@
-import type { AdminResourceRow, SiteId } from '../../types/admin';
+import type { AdminResourceRow, ResourceStatus, SiteId } from '../../types/admin';
 import type { UpdateShopProductDto } from '../../types/adminApi';
 import { isApiMode } from '../../config/adminConfig';
 import { adminApiClient } from './adminApiClient';
-import { adminApiRoutes } from './adminApiRoutes';
+import { adminApiRoutes, adminShopProductStatusRoute } from './adminApiRoutes';
 import { shopAdapter } from './adapters/shopAdapter';
 import { createAdminResourceService } from './resourceServiceFactory';
 import { updateMockResource } from './mockStore';
@@ -32,4 +32,16 @@ export async function updateShopProduct(id: string, payload: UpdateShopProductDt
   }
 
   return updateMockResource('shop', id, payload);
+}
+
+export async function updateShopProductStatus(id: string, siteId: SiteId, status: ResourceStatus): Promise<AdminResourceRow> {
+  if (isApiMode) {
+    const response = await adminApiClient.put<unknown>(
+      adminShopProductStatusRoute(id, siteId),
+      { status }
+    );
+    return shopAdapter.fromBackend(response as never, siteId);
+  }
+
+  return updateMockResource('shop', id, { siteId, status });
 }

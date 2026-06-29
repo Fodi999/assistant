@@ -36,8 +36,8 @@ function initialState(row?: AdminResourceRow | null, initialCategory = ''): Shop
     sellingPoints: backend.selling_points?.join(', ') || '',
     price: backend.price_cents ? String(backend.price_cents / 100) : '',
     currency: backend.currency || 'PLN',
-    stockQuantity: backend.stock_quantity?.toString() || '0',
-    status: (backend.status as ResourceStatus) || row?.status || 'draft'
+    stockQuantity: backend.stock_quantity?.toString() || (row ? '0' : '1'),
+    status: (backend.status as ResourceStatus) || row?.status || 'active'
   };
 }
 

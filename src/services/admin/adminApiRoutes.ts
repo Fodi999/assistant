@@ -101,3 +101,4 @@ export const adminAnalyticsOAuthUrlRoute = (siteId: SiteId) => withSite('/api/ad
 export const adminAnalyticsRealtimeRoute = (siteId: SiteId) => withSite('/api/admin/analytics/realtime', siteId);
 export const adminDashboardRoute = (siteId: SiteId) => withSite('/api/admin/dashboard', siteId);
 export const adminStatsRoute = '/api/admin/stats';
+export const adminShopProductStatusRoute = (id: string, siteId: SiteId) => withSite(`/api/admin/cms/shop-products/${encode(id)}/status`, siteId);
