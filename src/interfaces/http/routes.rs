@@ -43,6 +43,7 @@ use crate::interfaces::http::{
         search_ingredients_public, CatalogState, PublicNutritionState,
     },
     chef_reference_public::{convert_units, fish_season, get_ingredient},
+    church_content,
     dish::{create_dish, list_dishes, recalculate_all_costs},
     icons_site,
     inventory::{
@@ -1439,6 +1440,65 @@ pub fn create_router(
         })
         .with_state(cms_service.clone());
 
+    let admin_church_content_routes = Router::new()
+        .route("/import/preview", get(church_content::preview_import))
+        .route("/import/apply", post(church_content::apply_import))
+        .route(
+            "/calendar-days",
+            get(church_content::list_calendar_days).post(church_content::create_calendar_day),
+        )
+        .route(
+            "/calendar-days/:id",
+            get(church_content::get_calendar_day)
+                .put(church_content::update_calendar_day)
+                .delete(church_content::delete_calendar_day),
+        )
+        .route(
+            "/icons",
+            get(church_content::list_icons).post(church_content::create_icon),
+        )
+        .route(
+            "/icons/:id",
+            get(church_content::get_icon)
+                .put(church_content::update_icon)
+                .delete(church_content::delete_icon),
+        )
+        .route(
+            "/prayers",
+            get(church_content::list_prayers).post(church_content::create_prayer),
+        )
+        .route(
+            "/prayers/:id",
+            get(church_content::get_prayer)
+                .put(church_content::update_prayer)
+                .delete(church_content::delete_prayer),
+        )
+        .route(
+            "/articles",
+            get(church_content::list_articles).post(church_content::create_article),
+        )
+        .route(
+            "/articles/:id",
+            get(church_content::get_article)
+                .put(church_content::update_article)
+                .delete(church_content::delete_article),
+        )
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
+        .with_state(pool_for_public.clone());
+
     // ── Public CMS routes (no auth) ───────────────────────────────────────────
     let public_almabuild_router = Router::new()
         .route("/almabuild/content", get(almabuild::public_content))
@@ -1458,6 +1518,30 @@ pub fn create_router(
         .route("/api/churches", get(icons_site::public_churches))
         .route("/api/qr/:qr_id", get(icons_site::public_qr))
         .route("/api/pages/:slug", get(icons_site::public_seo_page))
+        .with_state(pool_for_public.clone());
+
+    let public_church_content_router = Router::new()
+        .route(
+            "/api/church/calendar/today",
+            get(church_content::public_calendar_today),
+        )
+        .route(
+            "/api/church/calendar/:date",
+            get(church_content::public_calendar_day),
+        )
+        .route(
+            "/api/church/icons/:slug",
+            get(church_content::public_icon_by_slug),
+        )
+        .route(
+            "/api/church/prayers/:slug",
+            get(church_content::public_prayer_by_slug),
+        )
+        .route(
+            "/api/church/articles/:slug",
+            get(church_content::public_article_by_slug),
+        )
+        .route("/api/church/sitemap", get(church_content::public_sitemap))
         .with_state(pool_for_public.clone());
 
     let public_cms_router = Router::new()
@@ -1489,6 +1573,7 @@ pub fn create_router(
         .merge(public_catalog_detail_router) // 🆕 ChefOS: GET /catalog/ingredients/:slug (full nutrition detail)
         .merge(public_almabuild_router)
         .merge(public_icons_site_router)
+        .merge(public_church_content_router)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
@@ -1569,6 +1654,7 @@ pub fn create_router(
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/almabuild", admin_almabuild_routes)
         .nest("/api/admin/icons-site", admin_icons_site_routes)
+        .nest("/api/admin/church-content", admin_church_content_routes)
         .nest("/api/admin/ai", admin_ai_routes)
         .nest("/api/admin", admin_panel_routes)
         .nest("/api/admin/intent-pages", admin_intent_pages_routes)
