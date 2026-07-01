@@ -722,14 +722,18 @@ impl AnalyticsService {
         let legacy_refresh_token = self.legacy_refresh_token_for_site(site_id);
 
         let mut config = if let Some(row) = row {
-            let google_property_id =
-                non_empty(row.try_get::<Option<String>, _>("google_property_id")?)
-                    .or(legacy_property_id);
-            let refresh_token = non_empty(row.try_get::<Option<String>, _>("refresh_token")?)
-                .or(legacy_refresh_token);
+            let db_property_id = non_empty(row.try_get::<Option<String>, _>("google_property_id")?);
+            let db_refresh_token = non_empty(row.try_get::<Option<String>, _>("refresh_token")?);
+            let google_property_id = legacy_property_id.clone().or(db_property_id);
+            let refresh_token = legacy_refresh_token.clone().or(db_refresh_token);
             let status = row
                 .try_get::<String, _>("status")
                 .unwrap_or_else(|_| "not_connected".to_string());
+            let source = if legacy_property_id.is_some() || legacy_refresh_token.is_some() {
+                "env/database"
+            } else {
+                "database"
+            };
 
             SiteAnalyticsConfig {
                 site_id,
@@ -738,7 +742,7 @@ impl AnalyticsService {
                 connected_at: row.try_get("connected_at").ok(),
                 status,
                 connection_id: non_empty(row.try_get::<Option<String>, _>("connection_id")?),
-                source: "database".to_string(),
+                source: source.to_string(),
             }
         } else {
             SiteAnalyticsConfig {
