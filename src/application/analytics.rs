@@ -675,9 +675,7 @@ impl AnalyticsService {
             ));
         };
 
-        let google_property_id = google_property_id
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let google_property_id = normalize_google_property_id(google_property_id)?;
         let refresh_token = refresh_token
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
@@ -701,7 +699,7 @@ impl AnalyticsService {
                 NOW()
             )
             ON CONFLICT (site_id) DO UPDATE
-            SET google_property_id = EXCLUDED.google_property_id,
+            SET google_property_id = COALESCE(EXCLUDED.google_property_id, site_analytics_connections.google_property_id),
                 refresh_token = COALESCE(EXCLUDED.refresh_token, site_analytics_connections.refresh_token),
                 connection_id = COALESCE(EXCLUDED.connection_id, site_analytics_connections.connection_id),
                 connected_at = CASE
@@ -711,7 +709,8 @@ impl AnalyticsService {
                 status = CASE
                     WHEN COALESCE(EXCLUDED.refresh_token, site_analytics_connections.refresh_token) IS NULL
                         OR COALESCE(EXCLUDED.refresh_token, site_analytics_connections.refresh_token) = '' THEN 'not_connected'
-                    WHEN EXCLUDED.google_property_id IS NULL OR EXCLUDED.google_property_id = '' THEN 'error'
+                    WHEN COALESCE(EXCLUDED.google_property_id, site_analytics_connections.google_property_id) IS NULL
+                        OR COALESCE(EXCLUDED.google_property_id, site_analytics_connections.google_property_id) = '' THEN 'error'
                     ELSE 'connected'
                 END,
                 updated_at = NOW()
@@ -747,7 +746,9 @@ impl AnalyticsService {
         let legacy_refresh_token = self.legacy_refresh_token_for_site(site_id);
 
         let mut config = if let Some(row) = row {
-            let db_property_id = non_empty(row.try_get::<Option<String>, _>("google_property_id")?);
+            let db_property_id = valid_google_property_id(non_empty(
+                row.try_get::<Option<String>, _>("google_property_id")?,
+            ));
             let db_refresh_token = non_empty(row.try_get::<Option<String>, _>("refresh_token")?);
             let status = row
                 .try_get::<String, _>("status")
@@ -1107,7 +1108,7 @@ impl AnalyticsService {
 
     fn legacy_property_id_for_site(&self, site_id: Uuid) -> Option<String> {
         if site_id == default_analytics_site_id() {
-            self.property_id.clone()
+            valid_google_property_id(self.property_id.clone())
         } else {
             None
         }
@@ -1224,6 +1225,31 @@ fn empty_analytics_realtime(configured: bool, property_id: Option<String>) -> An
 
 fn non_empty(value: Option<String>) -> Option<String> {
     value.filter(|value| !value.trim().is_empty())
+}
+
+fn normalize_google_property_id(value: Option<String>) -> AppResult<Option<String>> {
+    let Some(value) = non_empty(value.map(|value| value.trim().to_string())) else {
+        return Ok(None);
+    };
+    let property_id = value.strip_prefix("properties/").unwrap_or(&value);
+    if property_id.chars().all(|ch| ch.is_ascii_digit()) {
+        return Ok(Some(property_id.to_string()));
+    }
+
+    Err(AppError::validation(
+        "Google Analytics property ID must be numeric, for example 540966831",
+    ))
+}
+
+fn valid_google_property_id(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        let property_id = trimmed.strip_prefix("properties/").unwrap_or(trimmed);
+        property_id
+            .chars()
+            .all(|ch| ch.is_ascii_digit())
+            .then(|| property_id.to_string())
+    })
 }
 
 fn analytics_error_status(error: &AppError) -> &'static str {
