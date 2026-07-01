@@ -279,18 +279,17 @@ impl AnalyticsService {
             .map_err(|e| AppError::internal(format!("Google OAuth request failed: {e}")))?;
 
         let status = response.status();
-        let token: TokenResponse = response
-            .json()
+        let body = response
+            .text()
             .await
+            .map_err(|e| AppError::internal(format!("Google OAuth response read failed: {e}")))?;
+        let token: TokenResponse = serde_json::from_str(&body)
             .map_err(|e| AppError::internal(format!("Google OAuth response parse failed: {e}")))?;
 
         if !status.is_success() {
             return Err(AppError::validation(format!(
                 "Google OAuth error: {}",
-                token
-                    .error_description
-                    .or(token.error)
-                    .unwrap_or_else(|| status.to_string())
+                google_token_error_message(status.as_u16(), &token)
             )));
         }
 
@@ -890,18 +889,17 @@ impl AnalyticsService {
             .map_err(|e| AppError::internal(format!("Google token refresh failed: {e}")))?;
 
         let status = response.status();
-        let token: TokenResponse = response
-            .json()
+        let body = response
+            .text()
             .await
+            .map_err(|e| AppError::internal(format!("Google token response read failed: {e}")))?;
+        let token: TokenResponse = serde_json::from_str(&body)
             .map_err(|e| AppError::internal(format!("Google token response parse failed: {e}")))?;
 
         if !status.is_success() {
             return Err(AppError::validation(format!(
                 "Google token refresh error: {}",
-                token
-                    .error_description
-                    .or(token.error)
-                    .unwrap_or_else(|| status.to_string())
+                google_token_error_message(status.as_u16(), &token)
             )));
         }
 
@@ -1196,6 +1194,17 @@ fn analytics_error_status(error: &AppError) -> &'static str {
         "expired"
     } else {
         "error"
+    }
+}
+
+fn google_token_error_message(status: u16, token: &TokenResponse) -> String {
+    match (token.error.as_deref(), token.error_description.as_deref()) {
+        (Some(error), Some(description)) if error != description => {
+            format!("{error}: {description}")
+        }
+        (Some(error), _) => error.to_string(),
+        (_, Some(description)) => description.to_string(),
+        _ => format!("HTTP {status}"),
     }
 }
 
