@@ -663,10 +663,11 @@ impl AnalyticsService {
         Ok(config.status_response())
     }
 
-    pub async fn update_connection_property_id(
+    pub async fn update_connection(
         &self,
         site_id: Uuid,
         google_property_id: Option<String>,
+        refresh_token: Option<String>,
     ) -> AppResult<AnalyticsConnectionStatus> {
         let Some(pool) = &self.pool else {
             return Err(AppError::validation(
@@ -677,16 +678,39 @@ impl AnalyticsService {
         let google_property_id = google_property_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let refresh_token = refresh_token
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let connection_id = refresh_token.as_ref().map(|_| Uuid::new_v4().to_string());
 
         sqlx::query(
             r#"
             INSERT INTO site_analytics_connections
-                (site_id, google_property_id, status, updated_at)
-            VALUES ($1, $2, 'not_connected', NOW())
+                (site_id, google_property_id, refresh_token, connection_id, connected_at, status, updated_at)
+            VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                CASE WHEN $3 IS NULL THEN NULL ELSE NOW() END,
+                CASE
+                    WHEN $3 IS NULL THEN 'not_connected'
+                    WHEN $2 IS NULL OR $2 = '' THEN 'error'
+                    ELSE 'connected'
+                END,
+                NOW()
+            )
             ON CONFLICT (site_id) DO UPDATE
             SET google_property_id = EXCLUDED.google_property_id,
+                refresh_token = COALESCE(EXCLUDED.refresh_token, site_analytics_connections.refresh_token),
+                connection_id = COALESCE(EXCLUDED.connection_id, site_analytics_connections.connection_id),
+                connected_at = CASE
+                    WHEN EXCLUDED.refresh_token IS NULL THEN site_analytics_connections.connected_at
+                    ELSE NOW()
+                END,
                 status = CASE
-                    WHEN site_analytics_connections.refresh_token IS NULL OR site_analytics_connections.refresh_token = '' THEN 'not_connected'
+                    WHEN COALESCE(EXCLUDED.refresh_token, site_analytics_connections.refresh_token) IS NULL
+                        OR COALESCE(EXCLUDED.refresh_token, site_analytics_connections.refresh_token) = '' THEN 'not_connected'
                     WHEN EXCLUDED.google_property_id IS NULL OR EXCLUDED.google_property_id = '' THEN 'error'
                     ELSE 'connected'
                 END,
@@ -695,6 +719,8 @@ impl AnalyticsService {
         )
         .bind(site_id)
         .bind(google_property_id)
+        .bind(refresh_token)
+        .bind(connection_id)
         .execute(pool)
         .await?;
 
@@ -723,13 +749,28 @@ impl AnalyticsService {
         let mut config = if let Some(row) = row {
             let db_property_id = non_empty(row.try_get::<Option<String>, _>("google_property_id")?);
             let db_refresh_token = non_empty(row.try_get::<Option<String>, _>("refresh_token")?);
-            let google_property_id = legacy_property_id.clone().or(db_property_id);
-            let refresh_token = legacy_refresh_token.clone().or(db_refresh_token);
             let status = row
                 .try_get::<String, _>("status")
                 .unwrap_or_else(|_| "not_connected".to_string());
-            let source = if legacy_property_id.is_some() || legacy_refresh_token.is_some() {
-                "env/database"
+            let has_db_config = db_property_id.is_some() || db_refresh_token.is_some();
+            let has_env_config = legacy_property_id.is_some() || legacy_refresh_token.is_some();
+            let prefer_env = status != "connected" && has_env_config;
+            let google_property_id = if prefer_env {
+                legacy_property_id.clone().or(db_property_id)
+            } else {
+                db_property_id.or_else(|| legacy_property_id.clone())
+            };
+            let refresh_token = if prefer_env {
+                legacy_refresh_token.clone().or(db_refresh_token)
+            } else {
+                db_refresh_token.or_else(|| legacy_refresh_token.clone())
+            };
+            let source = if prefer_env {
+                "legacy_env"
+            } else if has_db_config {
+                "database"
+            } else if has_env_config {
+                "legacy_env"
             } else {
                 "database"
             };

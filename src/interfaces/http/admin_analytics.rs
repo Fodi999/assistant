@@ -25,6 +25,7 @@ pub struct OverviewQuery {
 #[derive(Debug, Deserialize)]
 pub struct UpdateConnectionRequest {
     pub google_property_id: Option<String>,
+    pub refresh_token: Option<String>,
 }
 
 /// GET /auth/google
@@ -98,7 +99,7 @@ pub async fn update_connection(
     let site_id = resolve_site_id(&query, KITCHEN_SITE_ID);
     Ok(Json(
         service
-            .update_connection_property_id(site_id, req.google_property_id)
+            .update_connection(site_id, req.google_property_id, req.refresh_token)
             .await?,
     ))
 }
