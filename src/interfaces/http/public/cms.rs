@@ -1,4 +1,5 @@
 use crate::application::cms_service::{ArticleQuery, CmsService};
+use crate::interfaces::http::site_context::{resolve_site_id, SiteQuery, KITCHEN_SITE_ID};
 use crate::shared::AppError;
 use axum::{
     extract::{Path, Query, State},
@@ -68,27 +69,46 @@ pub async fn list_articles(
 
 pub async fn get_article(
     Path(slug): Path<String>,
+    Query(q): Query<ArticleQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let row = svc.get_article_by_slug(&slug).await?;
+    let row = svc
+        .get_article_by_slug_for_site(&slug, article_site_id(&q))
+        .await?;
     Ok(Json(serde_json::to_value(row).unwrap()))
 }
 
 // ── ONLINE SHOP ───────────────────────────────────────────────────────────────
 
 pub async fn list_shop_products(
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = svc.list_public_shop_products().await?;
+    let rows = svc
+        .list_public_shop_products_for_site(resolve_site_id(&query, KITCHEN_SITE_ID))
+        .await?;
     Ok(Json(serde_json::to_value(rows).unwrap()))
 }
 
 pub async fn get_shop_product(
     Path(slug): Path<String>,
+    Query(query): Query<SiteQuery>,
     State(svc): State<CmsService>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let row = svc.get_public_shop_product(&slug).await?;
+    let row = svc
+        .get_public_shop_product_for_site(&slug, resolve_site_id(&query, KITCHEN_SITE_ID))
+        .await?;
     Ok(Json(serde_json::to_value(row).unwrap()))
+}
+
+fn article_site_id(query: &ArticleQuery) -> uuid::Uuid {
+    resolve_site_id(
+        &SiteQuery {
+            site_id: query.site_id,
+            site: query.site.clone(),
+        },
+        KITCHEN_SITE_ID,
+    )
 }
 
 // ── SITEMAP ───────────────────────────────────────────────────────────────────

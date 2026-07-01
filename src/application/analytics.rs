@@ -218,7 +218,7 @@ impl AnalyticsService {
             oauth_state: non_empty_env("GA4_OAUTH_STATE")
                 .or_else(|| Some("ga4-admin-oauth".to_string())),
             property_id: non_empty_env("GA4_PROPERTY_ID"),
-            refresh_token: first_non_empty_env(&["GOOGLE_REFRESH_TOKEN", "GA4_REFRESH_TOKEN"]),
+            refresh_token: first_non_empty_env(&["GA4_REFRESH_TOKEN", "GOOGLE_REFRESH_TOKEN"]),
             search_console_site_url: first_non_empty_env(&[
                 "SEARCH_CONSOLE_SITE_URL",
                 "GSC_SITE_URL",
@@ -863,7 +863,7 @@ impl AnalyticsService {
         let refresh_token = self
             .refresh_token
             .as_deref()
-            .ok_or_else(|| AppError::validation("GOOGLE_REFRESH_TOKEN is not configured"))?;
+            .ok_or_else(|| AppError::validation("GA4_REFRESH_TOKEN is not configured"))?;
 
         self.access_token_for_refresh_token(refresh_token).await
     }

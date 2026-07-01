@@ -696,6 +696,8 @@ pub struct ArticleQuery {
     pub limit: Option<i64>,
     pub search: Option<String>,
     pub category: Option<String>,
+    pub site_id: Option<Uuid>,
+    pub site: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -796,6 +798,23 @@ impl CmsService {
 
     fn default_site_id() -> Uuid {
         Uuid::from_u128(0x00000000000000000000000000000103)
+    }
+
+    fn site_id_from_alias(value: &str) -> Option<Uuid> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "church" | "icons" => Some(Uuid::from_u128(0x00000000000000000000000000000101)),
+            "construction" | "almabuild" => {
+                Some(Uuid::from_u128(0x00000000000000000000000000000102))
+            }
+            "kitchen" | "culinary" | "blog" => Some(Self::default_site_id()),
+            _ => None,
+        }
+    }
+
+    fn site_id_from_query(site_id: Option<Uuid>, site: Option<&str>) -> Uuid {
+        site_id
+            .or_else(|| site.and_then(Self::site_id_from_alias))
+            .unwrap_or_else(Self::default_site_id)
     }
 
     // ── ABOUT PAGE ────────────────────────────────────────────────────────────
@@ -1422,21 +1441,45 @@ STORE PRODUCT RULES:
 
     /// Public: list only published articles
     pub async fn list_articles_public(&self) -> AppResult<Vec<ArticleRow>> {
+        self.list_articles_public_for_site(Self::default_site_id())
+            .await
+    }
+
+    pub async fn list_articles_public_for_site(&self, site_id: Uuid) -> AppResult<Vec<ArticleRow>> {
         sqlx::query_as(
-            "SELECT * FROM knowledge_articles WHERE published = true ORDER BY order_index ASC, created_at DESC",
+            "SELECT * FROM knowledge_articles
+             WHERE published = true AND (site_id = $1 OR is_global = true)
+             ORDER BY order_index ASC, created_at DESC",
         )
+        .bind(site_id)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| { tracing::error!("list_articles_public: {e}"); AppError::internal("DB error") })
+        .map_err(|e| {
+            tracing::error!("list_articles_public: {e}");
+            AppError::internal("DB error")
+        })
     }
 
     /// Public: get single article by slug (published only)
     pub async fn get_article_by_slug(&self, slug: &str) -> AppResult<ArticleRow> {
-        sqlx::query_as("SELECT * FROM knowledge_articles WHERE slug = $1 AND published = true")
-            .bind(slug)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| AppError::not_found("Article not found"))
+        self.get_article_by_slug_for_site(slug, Self::default_site_id())
+            .await
+    }
+
+    pub async fn get_article_by_slug_for_site(
+        &self,
+        slug: &str,
+        site_id: Uuid,
+    ) -> AppResult<ArticleRow> {
+        sqlx::query_as(
+            "SELECT * FROM knowledge_articles
+             WHERE slug = $1 AND published = true AND (site_id = $2 OR is_global = true)",
+        )
+        .bind(slug)
+        .bind(site_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Article not found"))
     }
 
     /// Admin: get article by id (any status)
@@ -1579,9 +1622,20 @@ STORE PRODUCT RULES:
     }
 
     pub async fn list_public_shop_products(&self) -> AppResult<Vec<ShopProductRow>> {
+        self.list_public_shop_products_for_site(Self::default_site_id())
+            .await
+    }
+
+    pub async fn list_public_shop_products_for_site(
+        &self,
+        site_id: Uuid,
+    ) -> AppResult<Vec<ShopProductRow>> {
         sqlx::query_as(
-            "SELECT * FROM shop_products WHERE status = 'active' ORDER BY updated_at DESC",
+            "SELECT * FROM shop_products
+             WHERE status = 'active' AND (site_id = $1 OR is_global = true)
+             ORDER BY updated_at DESC",
         )
+        .bind(site_id)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| {
@@ -1591,11 +1645,24 @@ STORE PRODUCT RULES:
     }
 
     pub async fn get_public_shop_product(&self, slug: &str) -> AppResult<ShopProductRow> {
-        sqlx::query_as("SELECT * FROM shop_products WHERE slug = $1 AND status = 'active'")
-            .bind(slug)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| AppError::not_found("Shop product not found"))
+        self.get_public_shop_product_for_site(slug, Self::default_site_id())
+            .await
+    }
+
+    pub async fn get_public_shop_product_for_site(
+        &self,
+        slug: &str,
+        site_id: Uuid,
+    ) -> AppResult<ShopProductRow> {
+        sqlx::query_as(
+            "SELECT * FROM shop_products
+             WHERE slug = $1 AND status = 'active' AND (site_id = $2 OR is_global = true)",
+        )
+        .bind(slug)
+        .bind(site_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Shop product not found"))
     }
 
     pub async fn update_shop_product_status(
@@ -1901,47 +1968,70 @@ STORE PRODUCT RULES:
         let page = q.page.unwrap_or(1).max(1);
         let limit = q.limit.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * limit;
+        let site_id = Self::site_id_from_query(q.site_id, q.site.as_deref());
 
         let category_filter = q.category.as_deref().filter(|s| !s.is_empty());
 
         let (total, rows) = if let Some(search) = q.search.as_deref().filter(|s| !s.is_empty()) {
             let pattern = format!("%{}%", search.to_lowercase());
 
-            let (count_sql, list_sql) = if let Some(cat) = category_filter {
-                (
-                    format!("SELECT COUNT(*) FROM knowledge_articles WHERE published = true AND category = '{cat}'
-                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
-                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
-                          OR LOWER(content_en) LIKE $1)"),
-                    format!("SELECT * FROM knowledge_articles WHERE published = true AND category = '{cat}'
-                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
-                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
-                          OR LOWER(content_en) LIKE $1)
-                     ORDER BY order_index ASC, created_at DESC LIMIT $2 OFFSET $3"),
+            let (total, rows) = if let Some(cat) = category_filter {
+                let total: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM knowledge_articles
+                     WHERE published = true AND (site_id = $2 OR is_global = true) AND category = $3
+                       AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                         OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                         OR LOWER(content_en) LIKE $1)",
                 )
-            } else {
-                (
-                    "SELECT COUNT(*) FROM knowledge_articles WHERE published = true
-                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
-                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
-                          OR LOWER(content_en) LIKE $1)"
-                        .to_string(),
-                    "SELECT * FROM knowledge_articles WHERE published = true
-                     AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
-                          OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
-                          OR LOWER(content_en) LIKE $1)
-                     ORDER BY order_index ASC, created_at DESC LIMIT $2 OFFSET $3"
-                        .to_string(),
-                )
-            };
-
-            let total: i64 = sqlx::query_scalar(&count_sql)
                 .bind(&pattern)
+                .bind(site_id)
+                .bind(cat)
                 .fetch_one(&self.pool)
                 .await
                 .unwrap_or(0);
-            let rows: Vec<ArticleRow> = sqlx::query_as(&list_sql)
+                let rows: Vec<ArticleRow> = sqlx::query_as(
+                    "SELECT * FROM knowledge_articles
+                     WHERE published = true AND (site_id = $2 OR is_global = true) AND category = $3
+                       AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                         OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                         OR LOWER(content_en) LIKE $1)
+                     ORDER BY order_index ASC, created_at DESC LIMIT $4 OFFSET $5",
+                )
                 .bind(&pattern)
+                .bind(site_id)
+                .bind(cat)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("list_articles_paged search/category: {e}");
+                    AppError::internal("DB error")
+                })?;
+                (total, rows)
+            } else {
+                let total: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM knowledge_articles
+                     WHERE published = true AND (site_id = $2 OR is_global = true)
+                       AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                         OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                         OR LOWER(content_en) LIKE $1)",
+                )
+                .bind(&pattern)
+                .bind(site_id)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap_or(0);
+                let rows: Vec<ArticleRow> = sqlx::query_as(
+                    "SELECT * FROM knowledge_articles
+                     WHERE published = true AND (site_id = $2 OR is_global = true)
+                       AND (LOWER(title_en) LIKE $1 OR LOWER(title_ru) LIKE $1
+                         OR LOWER(title_pl) LIKE $1 OR LOWER(title_uk) LIKE $1
+                         OR LOWER(content_en) LIKE $1)
+                     ORDER BY order_index ASC, created_at DESC LIMIT $3 OFFSET $4",
+                )
+                .bind(&pattern)
+                .bind(site_id)
                 .bind(limit)
                 .bind(offset)
                 .fetch_all(&self.pool)
@@ -1950,20 +2040,26 @@ STORE PRODUCT RULES:
                     tracing::error!("list_articles_paged search: {e}");
                     AppError::internal("DB error")
                 })?;
+                (total, rows)
+            };
             (total, rows)
         } else if let Some(cat) = category_filter {
             let total: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM knowledge_articles WHERE published = true AND category = $1",
+                "SELECT COUNT(*) FROM knowledge_articles
+                 WHERE published = true AND (site_id = $1 OR is_global = true) AND category = $2",
             )
+            .bind(site_id)
             .bind(cat)
             .fetch_one(&self.pool)
             .await
             .unwrap_or(0);
 
             let rows: Vec<ArticleRow> = sqlx::query_as(
-                "SELECT * FROM knowledge_articles WHERE published = true AND category = $1
-                 ORDER BY order_index ASC, created_at DESC LIMIT $2 OFFSET $3",
+                "SELECT * FROM knowledge_articles
+                 WHERE published = true AND (site_id = $1 OR is_global = true) AND category = $2
+                 ORDER BY order_index ASC, created_at DESC LIMIT $3 OFFSET $4",
             )
+            .bind(site_id)
             .bind(cat)
             .bind(limit)
             .bind(offset)
@@ -1977,16 +2073,20 @@ STORE PRODUCT RULES:
             (total, rows)
         } else {
             let total: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM knowledge_articles WHERE published = true",
+                "SELECT COUNT(*) FROM knowledge_articles
+                 WHERE published = true AND (site_id = $1 OR is_global = true)",
             )
+            .bind(site_id)
             .fetch_one(&self.pool)
             .await
             .unwrap_or(0);
 
             let rows: Vec<ArticleRow> = sqlx::query_as(
-                "SELECT * FROM knowledge_articles WHERE published = true
-                 ORDER BY order_index ASC, created_at DESC LIMIT $1 OFFSET $2",
+                "SELECT * FROM knowledge_articles
+                 WHERE published = true AND (site_id = $1 OR is_global = true)
+                 ORDER BY order_index ASC, created_at DESC LIMIT $2 OFFSET $3",
             )
+            .bind(site_id)
             .bind(limit)
             .bind(offset)
             .fetch_all(&self.pool)
