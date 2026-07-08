@@ -1773,6 +1773,8 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
     const REQUIRED_ORIGINS: &[&str] = &[
         "https://dima-fomin.pl",
         "https://www.dima-fomin.pl",
+        "https://czystetrojmiasto.pl",
+        "https://www.czystetrojmiasto.pl",
         "https://kazaxbud.pages.dev",
         "https://svet-ikony.pages.dev",
         "https://svet-ikony.fodi85999.workers.dev",

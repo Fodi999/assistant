@@ -349,7 +349,6 @@ pub async fn public_cleaning_content(
 ) -> Result<impl IntoResponse, StatusCode> {
     let content = load_site_content_value(&pool, CLEANING_SITE_KEY)
         .await?
-        .or(load_site_content_value(&pool, SITE_KEY).await?)
         .unwrap_or_else(|| serde_json::json!({}));
 
     Ok(Json(content))
@@ -360,7 +359,6 @@ pub async fn admin_get_cleaning_content(
 ) -> Result<impl IntoResponse, StatusCode> {
     let content = load_site_content_value(&pool, CLEANING_SITE_KEY)
         .await?
-        .or(load_site_content_value(&pool, SITE_KEY).await?)
         .unwrap_or_else(|| serde_json::json!({}));
 
     Ok(Json(content))

@@ -130,7 +130,7 @@ impl Config {
             cors: CorsConfig {
                 allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
                     .unwrap_or_else(|_| {
-                        "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://127.0.0.1:5173,https://kazaxbud.pages.dev,https://svet-ikony.fodi85999.workers.dev,https://b2b-saas-tau.vercel.app,https://dima-fomin.pl,https://www.dima-fomin.pl".to_string()
+                        "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://127.0.0.1:3001,http://127.0.0.1:5173,https://czystetrojmiasto.pl,https://www.czystetrojmiasto.pl,https://kazaxbud.pages.dev,https://svet-ikony.fodi85999.workers.dev,https://b2b-saas-tau.vercel.app,https://dima-fomin.pl,https://www.dima-fomin.pl".to_string()
                     })
                     .split(',')
                     .map(|s| s.trim().to_string())
