@@ -449,6 +449,29 @@ pub fn create_router(
         })
         .with_state(pool.clone());
 
+    let admin_cleaning_routes = Router::new()
+        .route(
+            "/content",
+            get(almabuild::admin_get_cleaning_content).put(almabuild::admin_put_cleaning_content),
+        )
+        .route("/leads", get(almabuild::admin_get_cleaning_leads))
+        .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_service.clone(),
+            require_super_admin,
+        ))
+        .layer({
+            let svc = admin_auth_service.clone();
+            middleware::from_fn(move |mut req: Request, next: Next| {
+                let svc = svc.clone();
+                async move {
+                    req.extensions_mut().insert(svc);
+                    next.run(req).await
+                }
+            })
+        })
+        .with_state(pool.clone());
+
     let admin_icons_site_routes = Router::new().route(
         "/content",
         get(icons_site::admin_get_content).put(icons_site::admin_put_content),
@@ -1502,6 +1525,14 @@ pub fn create_router(
 
     // ── Public CMS routes (no auth) ───────────────────────────────────────────
     let public_almabuild_router = Router::new()
+        .route(
+            "/trojmiasto-clean/content",
+            get(almabuild::public_cleaning_content),
+        )
+        .route(
+            "/trojmiasto-clean/leads",
+            post(almabuild::public_create_cleaning_lead),
+        )
         .route("/almabuild/content", get(almabuild::public_content))
         .route("/almabuild/leads", post(almabuild::public_create_lead))
         .with_state(pool_for_public.clone());
@@ -1658,6 +1689,7 @@ pub fn create_router(
         .nest("/api/admin/nutrition", admin_nutrition_routes)
         .nest("/api/admin/cms", admin_cms_routes)
         .nest("/api/admin/almabuild", admin_almabuild_routes)
+        .nest("/api/admin/trojmiasto-clean", admin_cleaning_routes)
         .nest("/api/admin/icons-site", admin_icons_site_routes)
         .nest("/api/admin/church-content", admin_church_content_routes)
         .nest("/api/admin/ai", admin_ai_routes)
@@ -1750,6 +1782,7 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
         "http://localhost:3001",
         "http://localhost:3002",
         "http://localhost:5173",
+        "http://127.0.0.1:3001",
         "http://127.0.0.1:5173",
         "tauri://localhost",
         "http://tauri.localhost",

@@ -16,6 +16,7 @@ use crate::{
 };
 
 const SITE_KEY: &str = "almabuild";
+const CLEANING_SITE_KEY: &str = "trojmiasto-clean";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -225,6 +226,16 @@ pub struct CreateLeadRequest {
     pub items: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCleaningLeadRequest {
+    pub name: Option<String>,
+    pub phone: String,
+    pub city: Option<String>,
+    pub service: Option<String>,
+    pub message: Option<String>,
+}
+
 fn clean_string(value: Option<String>) -> String {
     value.unwrap_or_default().trim().to_string()
 }
@@ -292,6 +303,80 @@ async fn load_content(pool: &PgPool) -> Result<AlmabuildContent, StatusCode> {
         }),
         None => Ok(default_content()),
     }
+}
+
+async fn load_site_content_value(
+    pool: &PgPool,
+    site_key: &str,
+) -> Result<Option<Value>, StatusCode> {
+    sqlx::query_scalar("SELECT content FROM site_content WHERE site = $1")
+        .bind(site_key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, site = site_key, "failed to load site content");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+}
+
+async fn save_site_content_value(
+    pool: &PgPool,
+    site_key: &str,
+    content: &Value,
+) -> Result<(), StatusCode> {
+    sqlx::query(
+        r#"
+        INSERT INTO site_content (site, content, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (site)
+        DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+        "#,
+    )
+    .bind(site_key)
+    .bind(content)
+    .execute(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, site = site_key, "failed to save site content");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(())
+}
+
+pub async fn public_cleaning_content(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let content = load_site_content_value(&pool, CLEANING_SITE_KEY)
+        .await?
+        .or(load_site_content_value(&pool, SITE_KEY).await?)
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    Ok(Json(content))
+}
+
+pub async fn admin_get_cleaning_content(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let content = load_site_content_value(&pool, CLEANING_SITE_KEY)
+        .await?
+        .or(load_site_content_value(&pool, SITE_KEY).await?)
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    Ok(Json(content))
+}
+
+pub async fn admin_put_cleaning_content(
+    State(pool): State<PgPool>,
+    Json(content): Json<Value>,
+) -> Result<impl IntoResponse, StatusCode> {
+    if !content.is_object() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    save_site_content_value(&pool, CLEANING_SITE_KEY, &content).await?;
+
+    Ok(Json(content))
 }
 
 pub async fn public_content(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
@@ -389,6 +474,47 @@ pub async fn public_create_lead(
     Ok((StatusCode::CREATED, Json(lead_from_row(row)?)))
 }
 
+pub async fn public_create_cleaning_lead(
+    State(pool): State<PgPool>,
+    Json(payload): Json<CreateCleaningLeadRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let phone = payload.phone.trim().to_string();
+    if phone.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let service = clean_string(payload.service);
+    let items = if service.is_empty() {
+        Vec::new()
+    } else {
+        vec![service.clone()]
+    };
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO site_leads (site, name, phone, object_type, area, comment, items)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+                  name, phone, object_type, area, comment, items
+        "#,
+    )
+    .bind(CLEANING_SITE_KEY)
+    .bind(clean_string(payload.name))
+    .bind(phone)
+    .bind(service)
+    .bind(clean_string(payload.city))
+    .bind(clean_string(payload.message))
+    .bind(items)
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "failed to create cleaning lead");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok((StatusCode::CREATED, Json(lead_from_row(row)?)))
+}
+
 pub async fn admin_get_leads(State(pool): State<PgPool>) -> Result<impl IntoResponse, StatusCode> {
     let rows = sqlx::query(
         r#"
@@ -405,6 +531,35 @@ pub async fn admin_get_leads(State(pool): State<PgPool>) -> Result<impl IntoResp
     .await
     .map_err(|error| {
         tracing::error!(%error, "failed to load almabuild leads");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let leads = rows
+        .into_iter()
+        .map(lead_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Json(leads))
+}
+
+pub async fn admin_get_cleaning_leads(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+               name, phone, object_type, area, comment, items
+        FROM site_leads
+        WHERE site = $1
+        ORDER BY created_at DESC
+        LIMIT 500
+        "#,
+    )
+    .bind(CLEANING_SITE_KEY)
+    .fetch_all(&pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "failed to load cleaning leads");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
