@@ -344,12 +344,21 @@ async fn save_site_content_value(
     Ok(())
 }
 
+fn cleaning_content_or_empty(content: Option<Value>) -> Value {
+    content
+        .filter(|value| {
+            value
+                .get("services")
+                .is_some_and(|services| services.is_array())
+        })
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
 pub async fn public_cleaning_content(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let content = load_site_content_value(&pool, CLEANING_SITE_KEY)
-        .await?
-        .unwrap_or_else(|| serde_json::json!({}));
+    let content =
+        cleaning_content_or_empty(load_site_content_value(&pool, CLEANING_SITE_KEY).await?);
 
     Ok(Json(content))
 }
@@ -357,9 +366,8 @@ pub async fn public_cleaning_content(
 pub async fn admin_get_cleaning_content(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let content = load_site_content_value(&pool, CLEANING_SITE_KEY)
-        .await?
-        .unwrap_or_else(|| serde_json::json!({}));
+    let content =
+        cleaning_content_or_empty(load_site_content_value(&pool, CLEANING_SITE_KEY).await?);
 
     Ok(Json(content))
 }
