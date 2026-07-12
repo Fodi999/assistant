@@ -1001,19 +1001,22 @@ pub async fn public_icon_by_slug(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let include_drafts = preview_allowed(&query);
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
     let icon: ChurchIconDto = sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
                   description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE slug = $1
+             AND language = $4
              AND (site_id = $2 OR is_global = true)
              AND ($3::bool OR status = 'published')
-           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END, language = 'uk' DESC
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END
            LIMIT 1"#,
     )
     .bind(slug)
     .bind(CHURCH_SITE_ID)
     .bind(include_drafts)
+    .bind(language)
     .fetch_optional(&pool)
     .await
     .map_err(db_error)?
@@ -1041,19 +1044,22 @@ pub async fn public_prayer_by_slug(
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
     let prayer: ChurchPrayerDto = sqlx::query_as(
         r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE slug = $1
+             AND language = $4
              AND (site_id = $2 OR is_global = true)
              AND ($3::bool OR status = 'published')
-           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END, language = 'uk' DESC
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END
            LIMIT 1"#,
     )
     .bind(slug)
     .bind(CHURCH_SITE_ID)
     .bind(preview_allowed(&query))
+    .bind(language)
     .fetch_optional(&pool)
     .await
     .map_err(db_error)?
@@ -1080,19 +1086,22 @@ pub async fn public_article_by_slug(
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
     let article: ChurchArticleDto = sqlx::query_as(
         r#"SELECT id, site_id, icon_id, calendar_day_id, title, slug, content, language,
                   seo_title, seo_description, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_articles
            WHERE slug = $1
+             AND language = $4
              AND (site_id = $2 OR is_global = true)
              AND ($3::bool OR status = 'published')
-           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END, language = 'uk' DESC
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END
            LIMIT 1"#,
     )
     .bind(slug)
     .bind(CHURCH_SITE_ID)
     .bind(preview_allowed(&query))
+    .bind(language)
     .fetch_optional(&pool)
     .await
     .map_err(db_error)?
