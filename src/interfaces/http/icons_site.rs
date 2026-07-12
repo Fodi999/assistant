@@ -156,6 +156,20 @@ pub struct ChurchPage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub donation_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maps_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phone_or_site: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dedication: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shrines: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priest_phone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seo_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seo_description: Option<String>,
