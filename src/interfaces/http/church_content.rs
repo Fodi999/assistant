@@ -938,7 +938,7 @@ pub async fn public_calendar_today(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let today = chrono::Utc::now().date_naive().to_string();
-    public_calendar_by_date(&pool, &today, preview_allowed(&query)).await
+    public_calendar_by_date(&pool, &today, query.language.as_deref(), preview_allowed(&query)).await
 }
 
 pub async fn public_calendar_day(
@@ -946,7 +946,7 @@ pub async fn public_calendar_day(
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    public_calendar_by_date(&pool, &date, preview_allowed(&query)).await
+    public_calendar_by_date(&pool, &date, query.language.as_deref(), preview_allowed(&query)).await
 }
 
 pub async fn public_calendar_month(
@@ -957,6 +957,7 @@ pub async fn public_calendar_month(
     let year = query.year.unwrap_or_else(|| today.year());
     let month = query.month.unwrap_or_else(|| today.month());
     let include_drafts = preview_allowed(&query);
+    let language = query.language.clone();
     let rows: Vec<ChurchCalendarDayDto> = sqlx::query_as(
         r#"SELECT id, site_id, date_old_style::text AS date_old_style,
                   date_new_style::text AS date_new_style, calendar_type, title, day_type,
@@ -979,11 +980,11 @@ pub async fn public_calendar_month(
 
     let mut pages = Vec::with_capacity(rows.len());
     for calendar_day in rows {
-        let icons = list_public_icons(&pool, calendar_day.id, include_drafts).await?;
+        let icons = list_public_icons(&pool, calendar_day.id, language.as_deref(), include_drafts).await?;
         let prayers =
-            list_public_prayers(&pool, Some(calendar_day.id), None, include_drafts).await?;
+            list_public_prayers(&pool, Some(calendar_day.id), None, language.as_deref(), include_drafts).await?;
         let articles =
-            list_public_articles(&pool, Some(calendar_day.id), None, include_drafts).await?;
+            list_public_articles(&pool, Some(calendar_day.id), None, language.as_deref(), include_drafts).await?;
         pages.push(PublicChurchContentPage {
             calendar_day,
             icons,
@@ -1027,9 +1028,9 @@ pub async fn public_icon_by_slug(
         None => None,
     };
     let prayers =
-        list_public_prayers(&pool, icon.calendar_day_id, Some(icon.id), include_drafts).await?;
+        list_public_prayers(&pool, icon.calendar_day_id, Some(icon.id), Some(&icon.language), include_drafts).await?;
     let articles =
-        list_public_articles(&pool, icon.calendar_day_id, Some(icon.id), include_drafts).await?;
+        list_public_articles(&pool, icon.calendar_day_id, Some(icon.id), Some(&icon.language), include_drafts).await?;
 
     Ok(Json(PublicChurchIconPage {
         icon,
@@ -1471,6 +1472,7 @@ async fn upsert_article_from_legacy_page(
 async fn public_calendar_by_date(
     pool: &PgPool,
     date: &str,
+    language: Option<&str>,
     include_drafts: bool,
 ) -> Result<impl IntoResponse, StatusCode> {
     let calendar_day: ChurchCalendarDayDto = sqlx::query_as(
@@ -1493,9 +1495,9 @@ async fn public_calendar_by_date(
     .map_err(db_error)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    let icons = list_public_icons(pool, calendar_day.id, include_drafts).await?;
-    let prayers = list_public_prayers(pool, Some(calendar_day.id), None, include_drafts).await?;
-    let articles = list_public_articles(pool, Some(calendar_day.id), None, include_drafts).await?;
+    let icons = list_public_icons(pool, calendar_day.id, language, include_drafts).await?;
+    let prayers = list_public_prayers(pool, Some(calendar_day.id), None, language, include_drafts).await?;
+    let articles = list_public_articles(pool, Some(calendar_day.id), None, language, include_drafts).await?;
 
     Ok(Json(PublicChurchContentPage {
         calendar_day,
@@ -1552,6 +1554,7 @@ async fn get_public_icon_row(
 async fn list_public_icons(
     pool: &PgPool,
     calendar_day_id: Uuid,
+    language: Option<&str>,
     include_drafts: bool,
 ) -> Result<Vec<ChurchIconDto>, StatusCode> {
     sqlx::query_as(
@@ -1561,11 +1564,13 @@ async fn list_public_icons(
            WHERE calendar_day_id = $1
              AND (site_id = $2 OR is_global = true)
              AND ($3::bool OR status = 'published')
+             AND ($4::text IS NULL OR language = $4)
            ORDER BY title ASC"#,
     )
     .bind(calendar_day_id)
     .bind(CHURCH_SITE_ID)
     .bind(include_drafts)
+    .bind(language)
     .fetch_all(pool)
     .await
     .map_err(db_error)
@@ -1575,6 +1580,7 @@ async fn list_public_prayers(
     pool: &PgPool,
     calendar_day_id: Option<Uuid>,
     icon_id: Option<Uuid>,
+    language: Option<&str>,
     include_drafts: bool,
 ) -> Result<Vec<ChurchPrayerDto>, StatusCode> {
     sqlx::query_as(
@@ -1585,12 +1591,14 @@ async fn list_public_prayers(
              AND ($2::uuid IS NULL OR icon_id = $2)
              AND (site_id = $3 OR is_global = true)
              AND ($4::bool OR status = 'published')
+             AND ($5::text IS NULL OR language = $5)
            ORDER BY prayer_type ASC, title ASC"#,
     )
     .bind(calendar_day_id)
     .bind(icon_id)
     .bind(CHURCH_SITE_ID)
     .bind(include_drafts)
+    .bind(language)
     .fetch_all(pool)
     .await
     .map_err(db_error)
@@ -1600,6 +1608,7 @@ async fn list_public_articles(
     pool: &PgPool,
     calendar_day_id: Option<Uuid>,
     icon_id: Option<Uuid>,
+    language: Option<&str>,
     include_drafts: bool,
 ) -> Result<Vec<ChurchArticleDto>, StatusCode> {
     sqlx::query_as(
@@ -1610,12 +1619,14 @@ async fn list_public_articles(
              AND ($2::uuid IS NULL OR icon_id = $2)
              AND (site_id = $3 OR is_global = true)
              AND ($4::bool OR status = 'published')
+             AND ($5::text IS NULL OR language = $5)
            ORDER BY title ASC"#,
     )
     .bind(calendar_day_id)
     .bind(icon_id)
     .bind(CHURCH_SITE_ID)
     .bind(include_drafts)
+    .bind(language)
     .fetch_all(pool)
     .await
     .map_err(db_error)
