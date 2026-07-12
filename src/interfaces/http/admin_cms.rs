@@ -386,6 +386,39 @@ pub async fn upload_article_reference(
     Ok(Json(serde_json::json!({ "url": url })))
 }
 
+pub async fn upload_prayer_audio(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::validation(format!("Invalid multipart data: {}", e)))?
+        .ok_or_else(|| AppError::validation("No audio file provided"))?;
+    let looks_like_mp3 = field
+        .file_name()
+        .map(|name| name.to_lowercase().ends_with(".mp3"))
+        .unwrap_or(false);
+    let content_type = field.content_type().map(str::to_string);
+    let content_type = match content_type {
+        Some(value) if !value.is_empty() && value != "application/octet-stream" => value,
+        _ if looks_like_mp3 => "audio/mpeg".to_string(),
+        _ => return Err(AppError::validation("Audio content type is missing")),
+    };
+    let bytes = field
+        .bytes()
+        .await
+        .map_err(|e| {
+            tracing::warn!("Failed to read prayer audio multipart field: {e}");
+            AppError::validation(
+                "Failed to read audio file. Make sure it is a valid MP3 smaller than 50 MB",
+            )
+        })?;
+    let url = svc.upload_prayer_audio(bytes, &content_type).await?;
+    Ok(Json(serde_json::json!({ "url": url })))
+}
+
 #[derive(Deserialize)]
 pub struct UploadQuery {
     pub folder: Option<String>,

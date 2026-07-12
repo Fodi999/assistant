@@ -2233,6 +2233,26 @@ STORE PRODUCT RULES:
             .await
     }
 
+    pub async fn upload_prayer_audio(
+        &self,
+        file_data: Bytes,
+        content_type: &str,
+    ) -> AppResult<String> {
+        match content_type {
+            "audio/mpeg" | "audio/mp3" => {}
+            _ => {
+                return Err(AppError::validation("Allowed audio type: mp3"));
+            }
+        }
+        if file_data.len() > 50 * 1024 * 1024 {
+            return Err(AppError::validation("MP3 file must be smaller than 50 MB"));
+        }
+        let key = format!("cms/prayer-audio/{}.mp3", Uuid::new_v4());
+        self.r2_client
+            .upload_image(&key, file_data, "audio/mpeg")
+            .await
+    }
+
     // ── GALLERY (updated with alt fields) ─────────────────────────────────────
 
     pub async fn create_gallery_v2(&self, req: CreateGalleryRequest) -> AppResult<GalleryRow> {

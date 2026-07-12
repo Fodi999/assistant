@@ -1426,6 +1426,11 @@ pub fn create_router(
             post(admin_cms::upload_article_reference)
                 .layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
         )
+        .route(
+            "/articles/ai/audio-upload",
+            post(admin_cms::upload_prayer_audio)
+                .layer(DefaultBodyLimit::max(55 * 1024 * 1024)),
+        )
         .route("/upload-url", get(admin_cms::get_upload_url))
         // Categories
         .route(
