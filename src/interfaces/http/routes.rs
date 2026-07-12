@@ -1468,6 +1468,10 @@ pub fn create_router(
         .route("/import/preview", get(church_content::preview_import))
         .route("/import/apply", post(church_content::apply_import))
         .route(
+            "/info",
+            get(church_content::get_church_info).put(church_content::put_church_info),
+        )
+        .route(
             "/calendar-days",
             get(church_content::list_calendar_days).post(church_content::create_calendar_day),
         )
@@ -1553,6 +1557,7 @@ pub fn create_router(
         .with_state(pool_for_public.clone());
 
     let public_church_content_router = Router::new()
+        .route("/api/church/info", get(church_content::public_church_info))
         .route(
             "/api/church/calendar",
             get(church_content::public_calendar_month),
