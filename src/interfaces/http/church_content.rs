@@ -119,6 +119,9 @@ pub struct ChurchPrayerDto {
     pub audio_url: String,
     pub qr_code_url: String,
     pub image_url: String,
+    pub source: String,
+    pub source_url: String,
+    pub note: String,
     pub language: String,
     pub prayer_type: String,
     pub status: String,
@@ -138,6 +141,9 @@ pub struct ChurchPrayerPayload {
     pub audio_url: Option<String>,
     pub qr_code_url: Option<String>,
     pub image_url: Option<String>,
+    pub source: Option<String>,
+    pub source_url: Option<String>,
+    pub note: Option<String>,
     pub language: Option<String>,
     pub prayer_type: Option<String>,
     pub status: Option<String>,
@@ -604,7 +610,7 @@ pub async fn list_prayers(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let rows: Vec<ChurchPrayerDto> = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE (site_id = $1 OR is_global = true)
@@ -630,7 +636,7 @@ pub async fn get_prayer(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let row: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE id = $1 AND (site_id = $2 OR is_global = true)"#,
@@ -655,9 +661,9 @@ pub async fn create_prayer(
 
     let row: ChurchPrayerDto = sqlx::query_as(
         r#"INSERT INTO church_prayers
-           (site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type, status, is_global)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type,
+           (site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, status, is_global)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                      status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(query.site_id())
@@ -669,6 +675,9 @@ pub async fn create_prayer(
     .bind(payload.audio_url.unwrap_or_default())
     .bind(payload.qr_code_url.unwrap_or_default())
     .bind(payload.image_url.unwrap_or_default())
+    .bind(payload.source.unwrap_or_default())
+    .bind(payload.source_url.unwrap_or_default())
+    .bind(payload.note.unwrap_or_default())
     .bind(payload.language.unwrap_or_else(|| "uk".into()))
     .bind(payload.prayer_type.unwrap_or_else(|| "prayer".into()))
     .bind(payload.status.unwrap_or_else(|| "draft".into()))
@@ -688,7 +697,7 @@ pub async fn update_prayer(
 ) -> Result<impl IntoResponse, StatusCode> {
     let site_id = query.site_id();
     let current: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers WHERE id = $1 AND site_id = $2"#,
     )
@@ -702,9 +711,10 @@ pub async fn update_prayer(
     let row: ChurchPrayerDto = sqlx::query_as(
         r#"UPDATE church_prayers SET
               icon_id = $1, calendar_day_id = $2, slug = $3, title = $4, text = $5,
-              audio_url = $6, qr_code_url = $7, image_url = $8, language = $9, prayer_type = $10, status = $11, is_global = $12
-           WHERE id = $13 AND site_id = $14
-           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type,
+              audio_url = $6, qr_code_url = $7, image_url = $8, source = $9, source_url = $10, note = $11,
+              language = $12, prayer_type = $13, status = $14, is_global = $15
+           WHERE id = $16 AND site_id = $17
+           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                      status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(payload.icon_id.or(current.icon_id))
@@ -715,6 +725,9 @@ pub async fn update_prayer(
     .bind(payload.audio_url.unwrap_or(current.audio_url))
     .bind(payload.qr_code_url.unwrap_or(current.qr_code_url))
     .bind(payload.image_url.unwrap_or(current.image_url))
+    .bind(payload.source.unwrap_or(current.source))
+    .bind(payload.source_url.unwrap_or(current.source_url))
+    .bind(payload.note.unwrap_or(current.note))
     .bind(payload.language.unwrap_or(current.language))
     .bind(payload.prayer_type.unwrap_or(current.prayer_type))
     .bind(payload.status.unwrap_or(current.status))
@@ -1029,7 +1042,7 @@ pub async fn public_prayer_by_slug(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let prayer: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE slug = $1
@@ -1556,7 +1569,7 @@ async fn list_public_prayers(
     include_drafts: bool,
 ) -> Result<Vec<ChurchPrayerDto>, StatusCode> {
     sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE ($1::uuid IS NULL OR calendar_day_id = $1)
