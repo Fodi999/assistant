@@ -1516,6 +1516,16 @@ pub fn create_router(
                 .put(church_content::update_article)
                 .delete(church_content::delete_article),
         )
+        .route(
+            "/gospel",
+            get(church_content::list_gospel).post(church_content::create_gospel),
+        )
+        .route(
+            "/gospel/:id",
+            get(church_content::get_gospel)
+                .put(church_content::update_gospel)
+                .delete(church_content::delete_gospel),
+        )
         .layer(middleware::from_fn_with_state(
             admin_auth_service.clone(),
             require_super_admin,
@@ -1586,6 +1596,10 @@ pub fn create_router(
         .route(
             "/api/church/articles/:slug",
             get(church_content::public_article_by_slug),
+        )
+        .route(
+            "/api/church/gospel/:slug",
+            get(church_content::public_gospel_by_slug),
         )
         .route("/api/church/sitemap", get(church_content::public_sitemap))
         .with_state(pool_for_public.clone());
