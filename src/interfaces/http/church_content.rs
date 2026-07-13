@@ -228,6 +228,7 @@ pub struct ChurchInfoDto {
     pub phone_or_site: String,
     pub priest_phone: String,
     pub image_url: String,
+    pub gallery_images: Vec<String>,
     pub translations: Value,
     pub status: String,
     pub created_at: String,
@@ -242,6 +243,7 @@ pub struct ChurchInfoPayload {
     pub phone_or_site: Option<String>,
     pub priest_phone: Option<String>,
     pub image_url: Option<String>,
+    pub gallery_images: Option<Vec<String>>,
     pub translations: Option<Value>,
     pub status: Option<String>,
 }
@@ -255,6 +257,7 @@ fn empty_church_info(site_id: Uuid) -> ChurchInfoDto {
         phone_or_site: String::new(),
         priest_phone: String::new(),
         image_url: String::new(),
+        gallery_images: Vec::new(),
         translations: Value::Object(Default::default()),
         status: "draft".into(),
         created_at: String::new(),
@@ -269,7 +272,7 @@ pub async fn get_church_info(
     let site_id = query.site_id();
     let row: Option<ChurchInfoDto> = sqlx::query_as(
         r#"SELECT id, site_id, address, maps_url, phone_or_site, priest_phone, image_url,
-                  translations, status, created_at::text AS created_at, updated_at::text AS updated_at
+                  gallery_images, translations, status, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_info WHERE site_id = $1"#,
     )
     .bind(site_id)
@@ -287,18 +290,19 @@ pub async fn put_church_info(
 ) -> Result<impl IntoResponse, StatusCode> {
     let site_id = query.site_id();
     let row: ChurchInfoDto = sqlx::query_as(
-        r#"INSERT INTO church_info (site_id, address, maps_url, phone_or_site, priest_phone, image_url, translations, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        r#"INSERT INTO church_info (site_id, address, maps_url, phone_or_site, priest_phone, image_url, gallery_images, translations, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            ON CONFLICT (site_id) DO UPDATE SET
               address = EXCLUDED.address,
               maps_url = EXCLUDED.maps_url,
               phone_or_site = EXCLUDED.phone_or_site,
               priest_phone = EXCLUDED.priest_phone,
               image_url = EXCLUDED.image_url,
+              gallery_images = EXCLUDED.gallery_images,
               translations = EXCLUDED.translations,
               status = EXCLUDED.status
            RETURNING id, site_id, address, maps_url, phone_or_site, priest_phone, image_url,
-                     translations, status, created_at::text AS created_at, updated_at::text AS updated_at"#,
+                     gallery_images, translations, status, created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(site_id)
     .bind(payload.address.unwrap_or_default())
@@ -306,6 +310,7 @@ pub async fn put_church_info(
     .bind(payload.phone_or_site.unwrap_or_default())
     .bind(payload.priest_phone.unwrap_or_default())
     .bind(payload.image_url.unwrap_or_default())
+    .bind(payload.gallery_images.unwrap_or_default())
     .bind(payload.translations.unwrap_or_else(|| Value::Object(Default::default())))
     .bind(payload.status.unwrap_or_else(|| "draft".into()))
     .fetch_one(&pool)
@@ -322,7 +327,7 @@ pub async fn public_church_info(
     let site_id = resolve_site_id(&query.site_query(), CHURCH_SITE_ID);
     let row: Option<ChurchInfoDto> = sqlx::query_as(
         r#"SELECT id, site_id, address, maps_url, phone_or_site, priest_phone, image_url,
-                  translations, status, created_at::text AS created_at, updated_at::text AS updated_at
+                  gallery_images, translations, status, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_info WHERE site_id = $1 AND status = 'published'"#,
     )
     .bind(site_id)
