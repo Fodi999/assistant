@@ -1276,6 +1276,30 @@ pub async fn public_prayer_by_slug(
     }))
 }
 
+pub async fn public_prayer_list(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
+    let prayers: Vec<ChurchPrayerDto> = sqlx::query_as(
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+                  status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+           FROM church_prayers
+           WHERE language = $3
+             AND (site_id = $1 OR is_global = true)
+             AND ($2::bool OR status = 'published')
+           ORDER BY created_at DESC"#,
+    )
+    .bind(CHURCH_SITE_ID)
+    .bind(preview_allowed(&query))
+    .bind(language)
+    .fetch_all(&pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok(Json(prayers))
+}
+
 pub async fn public_article_by_slug(
     Path(slug): Path<String>,
     Query(query): Query<ChurchContentQuery>,

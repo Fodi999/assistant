@@ -1589,6 +1589,7 @@ pub fn create_router(
             "/api/church/icons/:slug",
             get(church_content::public_icon_by_slug),
         )
+        .route("/api/church/prayers", get(church_content::public_prayer_list))
         .route(
             "/api/church/prayers/:slug",
             get(church_content::public_prayer_by_slug),
