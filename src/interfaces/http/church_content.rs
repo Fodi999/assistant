@@ -1313,6 +1313,30 @@ pub async fn public_article_by_slug(
     }))
 }
 
+pub async fn public_gospel_list(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
+    let readings: Vec<ChurchGospelDto> = sqlx::query_as(
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, reference, text, explanation,
+                  language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+           FROM church_gospel_readings
+           WHERE language = $3
+             AND (site_id = $1 OR is_global = true)
+             AND ($2::bool OR status = 'published')
+           ORDER BY reference ASC, title ASC"#,
+    )
+    .bind(CHURCH_SITE_ID)
+    .bind(preview_allowed(&query))
+    .bind(language)
+    .fetch_all(&pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok(Json(readings))
+}
+
 pub async fn public_gospel_by_slug(
     Path(slug): Path<String>,
     Query(query): Query<ChurchContentQuery>,

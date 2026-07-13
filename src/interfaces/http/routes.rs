@@ -1597,6 +1597,7 @@ pub fn create_router(
             "/api/church/articles/:slug",
             get(church_content::public_article_by_slug),
         )
+        .route("/api/church/gospel", get(church_content::public_gospel_list))
         .route(
             "/api/church/gospel/:slug",
             get(church_content::public_gospel_by_slug),
