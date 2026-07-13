@@ -1805,6 +1805,8 @@ fn build_strict_cors(allowed_origins: Vec<String>) -> CorsLayer {
         "https://svet-ikony.fodi85999.workers.dev",
         "https://ikona.link",
         "https://www.ikona.link",
+        "https://svetikony.com",
+        "https://www.svetikony.com",
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
