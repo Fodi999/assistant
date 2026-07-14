@@ -4,7 +4,7 @@ export type ChurchCalendarType = 'old_style' | 'new_style' | 'both';
 export type ChurchDayType = 'saint' | 'feast' | 'fasting' | 'memorial' | 'gospel' | 'quiet';
 export type ChurchLanguage = 'uk' | 'ru' | 'en';
 export type ChurchContentStatus = 'draft' | 'published' | 'archived';
-export type ChurchPrayerType = 'prayer' | 'akathist' | 'troparion' | 'kontakion';
+export type ChurchPrayerType = 'prayer' | 'akathist' | 'troparion' | 'kontakion' | 'velichanie' | 'modern';
 
 export interface ChurchCalendarDay {
   id: string;
@@ -33,6 +33,8 @@ export interface ChurchIcon {
   feastName: string;
   description: string;
   language: ChurchLanguage;
+  /** Backend-managed: language versions sharing a slug get the same group. */
+  translationGroupId?: string;
   status: ChurchContentStatus;
   isGlobal: boolean;
   createdAt: string;
@@ -47,8 +49,16 @@ export interface ChurchPrayer {
   slug: string;
   title: string;
   text: string;
+  audioUrl?: string | null;
+  qrCodeUrl?: string | null;
+  imageUrl?: string | null;
+  source?: string | null;
+  sourceUrl?: string | null;
+  note?: string | null;
   language: ChurchLanguage;
   prayerType: ChurchPrayerType;
+  /** Backend-managed: language versions sharing a slug get the same group. */
+  translationGroupId?: string;
   status: ChurchContentStatus;
   isGlobal: boolean;
   createdAt: string;
@@ -72,6 +82,82 @@ export interface ChurchArticle {
   updatedAt: string;
 }
 
+export interface ChurchGospel {
+  id: string;
+  siteId: string;
+  iconId?: string | null;
+  calendarDayId?: string | null;
+  slug: string;
+  title: string;
+  reference: string;
+  text: string;
+  explanation: string;
+  language: ChurchLanguage;
+  status: ChurchContentStatus;
+  isGlobal: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ChurchGospelPayload = Partial<Omit<ChurchGospel, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>>;
+
+export interface ChurchSaint {
+  id: string;
+  siteId: string;
+  iconId?: string | null;
+  calendarDayId?: string | null;
+  slug: string;
+  name: string;
+  shortDescription: string;
+  biography: string;
+  feastDay: string;
+  imageUrl: string;
+  language: ChurchLanguage;
+  /** Backend-managed: language versions sharing a slug get the same group. */
+  translationGroupId?: string;
+  status: ChurchContentStatus;
+  isGlobal: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ChurchSaintPayload = Partial<Omit<ChurchSaint, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>>;
+
+export interface ChurchInfoTranslation {
+  title: string;
+  description: string;
+  schedule: string;
+  dedication: string;
+  shrines: string;
+  priest: string;
+}
+
+export const emptyChurchInfoTranslation: ChurchInfoTranslation = {
+  title: '',
+  description: '',
+  schedule: '',
+  dedication: '',
+  shrines: '',
+  priest: ''
+};
+
+export interface ChurchInfo {
+  id: string;
+  siteId: string;
+  address: string;
+  mapsUrl: string;
+  phoneOrSite: string;
+  priestPhone: string;
+  imageUrl: string;
+  galleryImages: string[];
+  translations: Partial<Record<ChurchLanguage, ChurchInfoTranslation>>;
+  status: ChurchContentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ChurchInfoPayload = Partial<Omit<ChurchInfo, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>>;
+
 export type ChurchCalendarDayPayload = Partial<Omit<ChurchCalendarDay, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>>;
 export type ChurchIconPayload = Partial<Omit<ChurchIcon, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>>;
 export type ChurchPrayerPayload = Partial<Omit<ChurchPrayer, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>>;
@@ -82,6 +168,7 @@ export interface ChurchImportPreview {
   icons: number;
   prayers: number;
   articles: number;
+  gospel: number;
   errors: string[];
   warnings: string[];
 }
@@ -122,8 +209,24 @@ export const churchContentApi = {
   createArticle: (payload: ChurchArticlePayload, query?: ChurchQuery) => apiFetch<ChurchArticle>(`${basePath}/articles${queryString(query)}`, request('POST', payload)),
   updateArticle: (id: string, payload: ChurchArticlePayload, query?: ChurchQuery) => apiFetch<ChurchArticle>(`${basePath}/articles/${id}${queryString(query)}`, request('PUT', payload)),
   deleteArticle: (id: string, query?: ChurchQuery) => apiFetch<void>(`${basePath}/articles/${id}${queryString(query)}`, request('DELETE')),
+
+  listSaints: (query?: ChurchQuery) => apiFetch<ChurchSaint[]>(`${basePath}/saints${queryString(query)}`),
+  getSaint: (id: string, query?: ChurchQuery) => apiFetch<ChurchSaint>(`${basePath}/saints/${id}${queryString(query)}`),
+  createSaint: (payload: ChurchSaintPayload, query?: ChurchQuery) => apiFetch<ChurchSaint>(`${basePath}/saints${queryString(query)}`, request('POST', payload)),
+  updateSaint: (id: string, payload: ChurchSaintPayload, query?: ChurchQuery) => apiFetch<ChurchSaint>(`${basePath}/saints/${id}${queryString(query)}`, request('PUT', payload)),
+  deleteSaint: (id: string, query?: ChurchQuery) => apiFetch<void>(`${basePath}/saints/${id}${queryString(query)}`, request('DELETE')),
+
+  listGospel: (query?: ChurchQuery) => apiFetch<ChurchGospel[]>(`${basePath}/gospel${queryString(query)}`),
+  getGospel: (id: string, query?: ChurchQuery) => apiFetch<ChurchGospel>(`${basePath}/gospel/${id}${queryString(query)}`),
+  createGospel: (payload: ChurchGospelPayload, query?: ChurchQuery) => apiFetch<ChurchGospel>(`${basePath}/gospel${queryString(query)}`, request('POST', payload)),
+  updateGospel: (id: string, payload: ChurchGospelPayload, query?: ChurchQuery) => apiFetch<ChurchGospel>(`${basePath}/gospel/${id}${queryString(query)}`, request('PUT', payload)),
+  deleteGospel: (id: string, query?: ChurchQuery) => apiFetch<void>(`${basePath}/gospel/${id}${queryString(query)}`, request('DELETE')),
+
   previewImport: (query?: ChurchQuery) => apiFetch<ChurchImportPreview>(`${basePath}/import/preview${queryString(query)}`),
-  applyImport: (query?: ChurchQuery) => apiFetch<ChurchImportPreview>(`${basePath}/import/apply${queryString(query)}`, request('POST'))
+  applyImport: (query?: ChurchQuery) => apiFetch<ChurchImportPreview>(`${basePath}/import/apply${queryString(query)}`, request('POST')),
+
+  getInfo: (query?: ChurchQuery) => apiFetch<ChurchInfo>(`${basePath}/info${queryString(query)}`),
+  updateInfo: (payload: ChurchInfoPayload, query?: ChurchQuery) => apiFetch<ChurchInfo>(`${basePath}/info${queryString(query)}`, request('PUT', payload))
 };
 
 function queryString(query?: ChurchQuery) {
