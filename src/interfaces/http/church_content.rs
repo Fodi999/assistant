@@ -154,6 +154,43 @@ pub struct ChurchPrayerPayload {
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
+pub struct ChurchSaintDto {
+    pub id: Uuid,
+    pub site_id: Uuid,
+    pub icon_id: Option<Uuid>,
+    pub calendar_day_id: Option<Uuid>,
+    pub slug: String,
+    pub name: String,
+    pub short_description: String,
+    pub biography: String,
+    pub feast_day: String,
+    pub image_url: String,
+    pub language: String,
+    pub translation_group_id: Uuid,
+    pub status: String,
+    pub is_global: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChurchSaintPayload {
+    pub icon_id: Option<Uuid>,
+    pub calendar_day_id: Option<Uuid>,
+    pub slug: Option<String>,
+    pub name: Option<String>,
+    pub short_description: Option<String>,
+    pub biography: Option<String>,
+    pub feast_day: Option<String>,
+    pub image_url: Option<String>,
+    pub language: Option<String>,
+    pub status: Option<String>,
+    pub is_global: Option<bool>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct ChurchArticleDto {
     pub id: Uuid,
     pub site_id: Uuid,
@@ -392,6 +429,18 @@ pub struct PublicChurchPrayerPage {
     pub prayer: Option<ChurchPrayerDto>,
     pub icon: Option<ChurchIconDto>,
     pub calendar_day: Option<ChurchCalendarDayDto>,
+    pub translations: Vec<ChurchTranslationRef>,
+}
+
+/// Same contract as [`PublicChurchIconPage`]: `saint` is None when the
+/// requested language has no published record in the translation group.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicChurchSaintPage {
+    pub saint: Option<ChurchSaintDto>,
+    pub icon: Option<ChurchIconDto>,
+    pub calendar_day: Option<ChurchCalendarDayDto>,
+    pub prayers: Vec<ChurchPrayerDto>,
     pub translations: Vec<ChurchTranslationRef>,
 }
 
@@ -832,6 +881,151 @@ pub async fn delete_prayer(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     delete_owned(&pool, "church_prayers", id, query.site_id()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+const SAINT_COLUMNS: &str = "id, site_id, icon_id, calendar_day_id, slug, name, short_description, biography, feast_day, image_url, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at";
+
+pub async fn list_saints(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let sql = format!(
+        r#"SELECT {SAINT_COLUMNS}
+           FROM church_saints
+           WHERE (site_id = $1 OR is_global = true)
+             AND ($2::uuid IS NULL OR calendar_day_id = $2)
+             AND ($3::uuid IS NULL OR icon_id = $3)
+             AND ($4::text IS NULL OR language = $4)
+           ORDER BY name ASC, updated_at DESC"#
+    );
+    let rows: Vec<ChurchSaintDto> = sqlx::query_as(&sql)
+        .bind(query.site_id())
+        .bind(query.calendar_day_id)
+        .bind(query.icon_id)
+        .bind(query.language)
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok(Json(rows))
+}
+
+pub async fn get_saint(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let sql = format!(
+        r#"SELECT {SAINT_COLUMNS} FROM church_saints WHERE id = $1 AND (site_id = $2 OR is_global = true)"#
+    );
+    let row: ChurchSaintDto = sqlx::query_as(&sql)
+        .bind(id)
+        .bind(query.site_id())
+        .fetch_optional(&pool)
+        .await
+        .map_err(db_error)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(row))
+}
+
+pub async fn create_saint(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<ChurchSaintPayload>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let name = required(payload.name, "name")?;
+    let slug = optional_non_empty(payload.slug).unwrap_or_else(|| slugify(&name));
+
+    let sql = format!(
+        r#"INSERT INTO church_saints
+           (site_id, icon_id, calendar_day_id, slug, name, short_description, biography, feast_day, image_url, language, status, is_global, translation_group_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                   COALESCE(
+                       (SELECT translation_group_id FROM church_saints WHERE site_id = $1 AND slug = $4 LIMIT 1),
+                       gen_random_uuid()
+                   ))
+           RETURNING {SAINT_COLUMNS}"#
+    );
+    let row: ChurchSaintDto = sqlx::query_as(&sql)
+        .bind(query.site_id())
+        .bind(payload.icon_id)
+        .bind(payload.calendar_day_id)
+        .bind(slug)
+        .bind(name)
+        .bind(payload.short_description.unwrap_or_default())
+        .bind(payload.biography.unwrap_or_default())
+        .bind(payload.feast_day.unwrap_or_default())
+        .bind(payload.image_url.unwrap_or_default())
+        .bind(payload.language.unwrap_or_else(|| "uk".into()))
+        .bind(payload.status.unwrap_or_else(|| "draft".into()))
+        .bind(payload.is_global.unwrap_or(false))
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok((StatusCode::CREATED, Json(row)))
+}
+
+pub async fn update_saint(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<ChurchSaintPayload>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let site_id = query.site_id();
+    let current_sql = format!(
+        r#"SELECT {SAINT_COLUMNS} FROM church_saints WHERE id = $1 AND site_id = $2"#
+    );
+    let current: ChurchSaintDto = sqlx::query_as(&current_sql)
+        .bind(id)
+        .bind(site_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(db_error)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let sql = format!(
+        r#"UPDATE church_saints SET
+              icon_id = $1, calendar_day_id = $2, slug = $3, name = $4, short_description = $5,
+              biography = $6, feast_day = $7, image_url = $8, language = $9, status = $10, is_global = $11,
+              translation_group_id = COALESCE(
+                  (SELECT other.translation_group_id FROM church_saints other
+                   WHERE other.site_id = $13 AND other.slug = $3 AND other.id <> $12 LIMIT 1),
+                  church_saints.translation_group_id
+              ),
+              updated_at = NOW()
+           WHERE id = $12 AND site_id = $13
+           RETURNING {SAINT_COLUMNS}"#
+    );
+    let row: ChurchSaintDto = sqlx::query_as(&sql)
+        .bind(payload.icon_id.or(current.icon_id))
+        .bind(payload.calendar_day_id.or(current.calendar_day_id))
+        .bind(optional_non_empty(payload.slug).unwrap_or(current.slug))
+        .bind(optional_non_empty(payload.name).unwrap_or(current.name))
+        .bind(payload.short_description.unwrap_or(current.short_description))
+        .bind(payload.biography.unwrap_or(current.biography))
+        .bind(payload.feast_day.unwrap_or(current.feast_day))
+        .bind(payload.image_url.unwrap_or(current.image_url))
+        .bind(payload.language.unwrap_or(current.language))
+        .bind(payload.status.unwrap_or(current.status))
+        .bind(payload.is_global.unwrap_or(current.is_global))
+        .bind(id)
+        .bind(site_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok(Json(row))
+}
+
+pub async fn delete_saint(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    delete_owned(&pool, "church_saints", id, query.site_id()).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1426,6 +1620,112 @@ pub async fn public_prayer_list(
     Ok(Json(prayers))
 }
 
+pub async fn public_saint_list(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
+    let sql = format!(
+        r#"SELECT {SAINT_COLUMNS}
+           FROM church_saints
+           WHERE language = $3
+             AND (site_id = $1 OR is_global = true)
+             AND ($2::bool OR status = 'published')
+           ORDER BY name ASC"#
+    );
+    let saints: Vec<ChurchSaintDto> = sqlx::query_as(&sql)
+        .bind(CHURCH_SITE_ID)
+        .bind(preview_allowed(&query))
+        .bind(language)
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok(Json(saints))
+}
+
+pub async fn public_saint_by_slug(
+    Path(slug): Path<String>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
+    let include_drafts = preview_allowed(&query);
+
+    // The slug may belong to any language version; resolve the whole
+    // translation group so language switching never falls back silently.
+    let sql = format!(
+        r#"SELECT {SAINT_COLUMNS}
+           FROM church_saints
+           WHERE translation_group_id = (
+                     SELECT translation_group_id FROM church_saints
+                     WHERE slug = $1
+                       AND (site_id = $2 OR is_global = true)
+                       AND ($3::bool OR status = 'published')
+                     ORDER BY CASE WHEN language = $4 THEN 0 ELSE 1 END,
+                              CASE WHEN site_id = $2 THEN 0 ELSE 1 END
+                     LIMIT 1
+                 )
+             AND (site_id = $2 OR is_global = true)
+             AND ($3::bool OR status = 'published')
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END"#
+    );
+    let group: Vec<ChurchSaintDto> = sqlx::query_as(&sql)
+        .bind(&slug)
+        .bind(CHURCH_SITE_ID)
+        .bind(include_drafts)
+        .bind(&language)
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+
+    if group.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let mut translations: Vec<ChurchTranslationRef> = Vec::new();
+    for item in &group {
+        if !translations.iter().any(|t| t.language == item.language) {
+            translations.push(ChurchTranslationRef {
+                language: item.language.clone(),
+                slug: item.slug.clone(),
+                title: item.name.clone(),
+            });
+        }
+    }
+
+    let position = group.iter().position(|item| item.language == language);
+    let saint = position.map(|index| group.into_iter().nth(index).expect("position within group"));
+
+    let (icon, calendar_day, prayers) = match &saint {
+        Some(found) => {
+            let icon = match found.icon_id {
+                Some(icon_id) => get_public_icon_row(&pool, icon_id, include_drafts).await?,
+                None => None,
+            };
+            let calendar_day = match found.calendar_day_id {
+                Some(day_id) => get_public_calendar_row(&pool, day_id, include_drafts).await?,
+                None => None,
+            };
+            let prayers = if found.calendar_day_id.is_some() || found.icon_id.is_some() {
+                list_public_prayers(&pool, found.calendar_day_id, found.icon_id, Some(&found.language), include_drafts).await?
+            } else {
+                Vec::new()
+            };
+            (icon, calendar_day, prayers)
+        }
+        None => (None, None, Vec::new()),
+    };
+
+    Ok(Json(PublicChurchSaintPage {
+        saint,
+        icon,
+        calendar_day,
+        prayers,
+        translations,
+    }))
+}
+
 pub async fn public_article_by_slug(
     Path(slug): Path<String>,
     Query(query): Query<ChurchContentQuery>,
@@ -1557,6 +1857,10 @@ pub async fn public_sitemap(State(pool): State<PgPool>) -> Result<impl IntoRespo
            UNION ALL
            SELECT 'gospel'::text AS kind, slug, NULL::text AS date, updated_at::text AS updated_at
            FROM church_gospel_readings
+           WHERE status = 'published' AND (site_id = $1 OR is_global = true)
+           UNION ALL
+           SELECT 'saint'::text AS kind, slug, NULL::text AS date, updated_at::text AS updated_at
+           FROM church_saints
            WHERE status = 'published' AND (site_id = $1 OR is_global = true)
            ORDER BY kind ASC, updated_at DESC"#,
     )

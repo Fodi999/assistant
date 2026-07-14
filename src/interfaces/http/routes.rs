@@ -1507,6 +1507,16 @@ pub fn create_router(
                 .delete(church_content::delete_prayer),
         )
         .route(
+            "/saints",
+            get(church_content::list_saints).post(church_content::create_saint),
+        )
+        .route(
+            "/saints/:id",
+            get(church_content::get_saint)
+                .put(church_content::update_saint)
+                .delete(church_content::delete_saint),
+        )
+        .route(
             "/articles",
             get(church_content::list_articles).post(church_content::create_article),
         )
@@ -1594,6 +1604,11 @@ pub fn create_router(
         .route(
             "/api/church/prayers/:slug",
             get(church_content::public_prayer_by_slug),
+        )
+        .route("/api/church/saints", get(church_content::public_saint_list))
+        .route(
+            "/api/church/saints/:slug",
+            get(church_content::public_saint_by_slug),
         )
         .route(
             "/api/church/articles/:slug",
