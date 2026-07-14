@@ -412,11 +412,25 @@ pub async fn upload_prayer_audio(
         .map_err(|e| {
             tracing::warn!("Failed to read prayer audio multipart field: {e}");
             AppError::validation(
-                "Failed to read audio file. Make sure it is a valid MP3 smaller than 50 MB",
+                "Failed to read audio file. Make sure it is a valid MP3 smaller than 3 MB",
             )
         })?;
     let url = svc.upload_prayer_audio(bytes, &content_type).await?;
     Ok(Json(serde_json::json!({ "url": url })))
+}
+
+#[derive(Deserialize)]
+pub struct DeletePrayerAudioRequest {
+    pub url: String,
+}
+
+pub async fn delete_prayer_audio(
+    _claims: AdminClaims,
+    State(svc): State<CmsService>,
+    Json(req): Json<DeletePrayerAudioRequest>,
+) -> Result<StatusCode, AppError> {
+    svc.delete_prayer_audio(&req.url).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]

@@ -80,6 +80,13 @@ impl R2Client {
         url.starts_with(&format!("{}/", self.public_url_base.trim_end_matches('/')))
     }
 
+    pub fn public_key_from_url(&self, url: &str) -> Option<String> {
+        let base = self.public_url_base.trim_end_matches('/');
+        url.strip_prefix(&format!("{base}/"))
+            .map(|key| key.trim_start_matches('/').to_string())
+            .filter(|key| !key.is_empty())
+    }
+
     /// Upload image to R2
     /// Returns public URL
     pub async fn upload_image(

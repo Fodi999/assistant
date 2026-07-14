@@ -2244,13 +2244,26 @@ STORE PRODUCT RULES:
                 return Err(AppError::validation("Allowed audio type: mp3"));
             }
         }
-        if file_data.len() > 50 * 1024 * 1024 {
-            return Err(AppError::validation("MP3 file must be smaller than 50 MB"));
+        if file_data.len() > 3 * 1024 * 1024 {
+            return Err(AppError::validation("MP3 file must be smaller than 3 MB"));
         }
         let key = format!("cms/prayer-audio/{}.mp3", Uuid::new_v4());
         self.r2_client
             .upload_image(&key, file_data, "audio/mpeg")
             .await
+    }
+
+    pub async fn delete_prayer_audio(&self, audio_url: &str) -> AppResult<()> {
+        let key = self
+            .r2_client
+            .public_key_from_url(audio_url)
+            .ok_or_else(|| AppError::validation("Audio URL does not belong to this storage"))?;
+
+        if !key.starts_with("cms/prayer-audio/") || !key.ends_with(".mp3") {
+            return Err(AppError::validation("Only prayer MP3 files can be deleted"));
+        }
+
+        self.r2_client.delete_image(&key).await
     }
 
     // ── GALLERY (updated with alt fields) ─────────────────────────────────────
