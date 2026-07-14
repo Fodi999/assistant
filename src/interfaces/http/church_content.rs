@@ -85,6 +85,7 @@ pub struct ChurchIconDto {
     pub feast_name: String,
     pub description: String,
     pub language: String,
+    pub translation_group_id: Uuid,
     pub status: String,
     pub is_global: bool,
     pub created_at: String,
@@ -124,6 +125,7 @@ pub struct ChurchPrayerDto {
     pub note: String,
     pub language: String,
     pub prayer_type: String,
+    pub translation_group_id: Uuid,
     pub status: String,
     pub is_global: bool,
     pub created_at: String,
@@ -362,20 +364,35 @@ pub struct PublicChurchContentPage {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ChurchTranslationRef {
+    pub language: String,
+    pub slug: String,
+    pub title: String,
+}
+
+/// `icon` is None when the slug resolves to a translation group that has no
+/// published record in the requested language; `translations` then tells the
+/// client which languages are available instead of silently falling back.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicChurchIconPage {
-    pub icon: ChurchIconDto,
+    pub icon: Option<ChurchIconDto>,
     pub calendar_day: Option<ChurchCalendarDayDto>,
     pub prayers: Vec<ChurchPrayerDto>,
     pub articles: Vec<ChurchArticleDto>,
     pub gospel: Vec<ChurchGospelDto>,
+    pub translations: Vec<ChurchTranslationRef>,
 }
 
+/// Same contract as [`PublicChurchIconPage`]: `prayer` is None when the
+/// requested language has no published record in the translation group.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicChurchPrayerPage {
-    pub prayer: ChurchPrayerDto,
+    pub prayer: Option<ChurchPrayerDto>,
     pub icon: Option<ChurchIconDto>,
     pub calendar_day: Option<ChurchCalendarDayDto>,
+    pub translations: Vec<ChurchTranslationRef>,
 }
 
 #[derive(Debug, Serialize)]
@@ -551,7 +568,7 @@ pub async fn list_icons(
 ) -> Result<impl IntoResponse, StatusCode> {
     let rows: Vec<ChurchIconDto> = sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE (site_id = $1 OR is_global = true)
              AND ($2::uuid IS NULL OR calendar_day_id = $2)
@@ -587,10 +604,14 @@ pub async fn create_icon(
     let row: ChurchIconDto = sqlx::query_as(
         r#"INSERT INTO church_icons
            (site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-            description, language, status, is_global)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            description, language, status, is_global, translation_group_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                   COALESCE(
+                       (SELECT translation_group_id FROM church_icons WHERE site_id = $1 AND slug = $4 LIMIT 1),
+                       gen_random_uuid()
+                   ))
            RETURNING id, site_id, calendar_day_id, title, slug, image_url, saint_name,
-                     feast_name, description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
+                     feast_name, description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(query.site_id())
     .bind(payload.calendar_day_id)
@@ -622,10 +643,15 @@ pub async fn update_icon(
         r#"UPDATE church_icons SET
               calendar_day_id = $1, title = $2, slug = $3, image_url = $4,
               saint_name = $5, feast_name = $6, description = $7, language = $8,
-              status = $9, is_global = $10
+              status = $9, is_global = $10,
+              translation_group_id = COALESCE(
+                  (SELECT other.translation_group_id FROM church_icons other
+                   WHERE other.site_id = $12 AND other.slug = $3 AND other.id <> $11 LIMIT 1),
+                  church_icons.translation_group_id
+              )
            WHERE id = $11 AND site_id = $12
            RETURNING id, site_id, calendar_day_id, title, slug, image_url, saint_name,
-                     feast_name, description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
+                     feast_name, description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(payload.calendar_day_id.or(current.calendar_day_id))
     .bind(optional_non_empty(payload.title).unwrap_or(current.title))
@@ -660,7 +686,7 @@ pub async fn list_prayers(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let rows: Vec<ChurchPrayerDto> = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE (site_id = $1 OR is_global = true)
@@ -686,7 +712,7 @@ pub async fn get_prayer(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let row: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE id = $1 AND (site_id = $2 OR is_global = true)"#,
@@ -711,9 +737,13 @@ pub async fn create_prayer(
 
     let row: ChurchPrayerDto = sqlx::query_as(
         r#"INSERT INTO church_prayers
-           (site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, status, is_global)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+           (site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, status, is_global, translation_group_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                   COALESCE(
+                       (SELECT translation_group_id FROM church_prayers WHERE site_id = $1 AND slug = $4 LIMIT 1),
+                       gen_random_uuid()
+                   ))
+           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                      status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(query.site_id())
@@ -747,7 +777,7 @@ pub async fn update_prayer(
 ) -> Result<impl IntoResponse, StatusCode> {
     let site_id = query.site_id();
     let current: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers WHERE id = $1 AND site_id = $2"#,
     )
@@ -762,9 +792,14 @@ pub async fn update_prayer(
         r#"UPDATE church_prayers SET
               icon_id = $1, calendar_day_id = $2, slug = $3, title = $4, text = $5,
               audio_url = $6, qr_code_url = $7, image_url = $8, source = $9, source_url = $10, note = $11,
-              language = $12, prayer_type = $13, status = $14, is_global = $15
+              language = $12, prayer_type = $13, status = $14, is_global = $15,
+              translation_group_id = COALESCE(
+                  (SELECT other.translation_group_id FROM church_prayers other
+                   WHERE other.site_id = $17 AND other.slug = $3 AND other.id <> $16 LIMIT 1),
+                  church_prayers.translation_group_id
+              )
            WHERE id = $16 AND site_id = $17
-           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                      status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(payload.icon_id.or(current.icon_id))
@@ -1194,36 +1229,68 @@ pub async fn public_icon_by_slug(
 ) -> Result<impl IntoResponse, StatusCode> {
     let include_drafts = preview_allowed(&query);
     let language = query.language.clone().unwrap_or_else(|| "uk".into());
-    let icon: ChurchIconDto = sqlx::query_as(
+
+    // The slug may belong to any language version; resolve the whole
+    // translation group so language switching never falls back silently.
+    let group: Vec<ChurchIconDto> = sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
-           WHERE slug = $1
-             AND language = $4
+           WHERE translation_group_id = (
+                     SELECT translation_group_id FROM church_icons
+                     WHERE slug = $1
+                       AND (site_id = $2 OR is_global = true)
+                       AND ($3::bool OR status = 'published')
+                     ORDER BY CASE WHEN language = $4 THEN 0 ELSE 1 END,
+                              CASE WHEN site_id = $2 THEN 0 ELSE 1 END
+                     LIMIT 1
+                 )
              AND (site_id = $2 OR is_global = true)
              AND ($3::bool OR status = 'published')
-           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END
-           LIMIT 1"#,
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END"#,
     )
-    .bind(slug)
+    .bind(&slug)
     .bind(CHURCH_SITE_ID)
     .bind(include_drafts)
-    .bind(language)
-    .fetch_optional(&pool)
+    .bind(&language)
+    .fetch_all(&pool)
     .await
-    .map_err(db_error)?
-    .ok_or(StatusCode::NOT_FOUND)?;
+    .map_err(db_error)?;
 
-    let calendar_day = match icon.calendar_day_id {
-        Some(day_id) => get_public_calendar_row(&pool, day_id, include_drafts).await?,
-        None => None,
+    if group.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let mut translations: Vec<ChurchTranslationRef> = Vec::new();
+    for item in &group {
+        if !translations.iter().any(|t| t.language == item.language) {
+            translations.push(ChurchTranslationRef {
+                language: item.language.clone(),
+                slug: item.slug.clone(),
+                title: item.title.clone(),
+            });
+        }
+    }
+
+    let position = group.iter().position(|item| item.language == language);
+    let icon = position.map(|index| group.into_iter().nth(index).expect("position within group"));
+
+    let (calendar_day, prayers, articles, gospel) = match &icon {
+        Some(found) => {
+            let calendar_day = match found.calendar_day_id {
+                Some(day_id) => get_public_calendar_row(&pool, day_id, include_drafts).await?,
+                None => None,
+            };
+            let prayers =
+                list_public_prayers(&pool, found.calendar_day_id, Some(found.id), Some(&found.language), include_drafts).await?;
+            let articles =
+                list_public_articles(&pool, found.calendar_day_id, Some(found.id), Some(&found.language), include_drafts).await?;
+            let gospel =
+                list_public_gospel(&pool, found.calendar_day_id, Some(found.id), Some(&found.language), include_drafts).await?;
+            (calendar_day, prayers, articles, gospel)
+        }
+        None => (None, Vec::new(), Vec::new(), Vec::new()),
     };
-    let prayers =
-        list_public_prayers(&pool, icon.calendar_day_id, Some(icon.id), Some(&icon.language), include_drafts).await?;
-    let articles =
-        list_public_articles(&pool, icon.calendar_day_id, Some(icon.id), Some(&icon.language), include_drafts).await?;
-    let gospel =
-        list_public_gospel(&pool, icon.calendar_day_id, Some(icon.id), Some(&icon.language), include_drafts).await?;
 
     Ok(Json(PublicChurchIconPage {
         icon,
@@ -1231,7 +1298,32 @@ pub async fn public_icon_by_slug(
         prayers,
         articles,
         gospel,
+        translations,
     }))
+}
+
+pub async fn public_icon_list(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
+    let icons: Vec<ChurchIconDto> = sqlx::query_as(
+        r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
+                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+           FROM church_icons
+           WHERE language = $3
+             AND (site_id = $1 OR is_global = true)
+             AND ($2::bool OR status = 'published')
+           ORDER BY title ASC"#,
+    )
+    .bind(CHURCH_SITE_ID)
+    .bind(preview_allowed(&query))
+    .bind(language)
+    .fetch_all(&pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok(Json(icons))
 }
 
 pub async fn public_prayer_by_slug(
@@ -1240,39 +1332,73 @@ pub async fn public_prayer_by_slug(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let language = query.language.clone().unwrap_or_else(|| "uk".into());
-    let prayer: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+    let include_drafts = preview_allowed(&query);
+
+    // The slug may belong to any language version; resolve the whole
+    // translation group so language switching never falls back silently.
+    let group: Vec<ChurchPrayerDto> = sqlx::query_as(
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
-           WHERE slug = $1
-             AND language = $4
+           WHERE translation_group_id = (
+                     SELECT translation_group_id FROM church_prayers
+                     WHERE slug = $1
+                       AND (site_id = $2 OR is_global = true)
+                       AND ($3::bool OR status = 'published')
+                     ORDER BY CASE WHEN language = $4 THEN 0 ELSE 1 END,
+                              CASE WHEN site_id = $2 THEN 0 ELSE 1 END
+                     LIMIT 1
+                 )
              AND (site_id = $2 OR is_global = true)
              AND ($3::bool OR status = 'published')
-           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END
-           LIMIT 1"#,
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END"#,
     )
-    .bind(slug)
+    .bind(&slug)
     .bind(CHURCH_SITE_ID)
-    .bind(preview_allowed(&query))
-    .bind(language)
-    .fetch_optional(&pool)
+    .bind(include_drafts)
+    .bind(&language)
+    .fetch_all(&pool)
     .await
-    .map_err(db_error)?
-    .ok_or(StatusCode::NOT_FOUND)?;
+    .map_err(db_error)?;
 
-    let icon = match prayer.icon_id {
-        Some(icon_id) => get_public_icon_row(&pool, icon_id, preview_allowed(&query)).await?,
-        None => None,
-    };
-    let calendar_day = match prayer.calendar_day_id {
-        Some(day_id) => get_public_calendar_row(&pool, day_id, preview_allowed(&query)).await?,
-        None => None,
+    if group.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let mut translations: Vec<ChurchTranslationRef> = Vec::new();
+    for item in &group {
+        if !translations.iter().any(|t| t.language == item.language) {
+            translations.push(ChurchTranslationRef {
+                language: item.language.clone(),
+                slug: item.slug.clone(),
+                title: item.title.clone(),
+            });
+        }
+    }
+
+    let position = group.iter().position(|item| item.language == language);
+    let prayer = position.map(|index| group.into_iter().nth(index).expect("position within group"));
+
+    let (icon, calendar_day) = match &prayer {
+        Some(found) => {
+            let icon = match found.icon_id {
+                Some(icon_id) => get_public_icon_row(&pool, icon_id, include_drafts).await?,
+                None => None,
+            };
+            let calendar_day = match found.calendar_day_id {
+                Some(day_id) => get_public_calendar_row(&pool, day_id, include_drafts).await?,
+                None => None,
+            };
+            (icon, calendar_day)
+        }
+        None => (None, None),
     };
 
     Ok(Json(PublicChurchPrayerPage {
         prayer,
         icon,
         calendar_day,
+        translations,
     }))
 }
 
@@ -1282,7 +1408,7 @@ pub async fn public_prayer_list(
 ) -> Result<impl IntoResponse, StatusCode> {
     let language = query.language.clone().unwrap_or_else(|| "uk".into());
     let prayers: Vec<ChurchPrayerDto> = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE language = $3
@@ -1868,7 +1994,7 @@ async fn get_public_icon_row(
 ) -> Result<Option<ChurchIconDto>, StatusCode> {
     sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE id = $1
              AND (site_id = $2 OR is_global = true)
@@ -1890,7 +2016,7 @@ async fn list_public_icons(
 ) -> Result<Vec<ChurchIconDto>, StatusCode> {
     sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE calendar_day_id = $1
              AND (site_id = $2 OR is_global = true)
@@ -1915,7 +2041,7 @@ async fn list_public_prayers(
     include_drafts: bool,
 ) -> Result<Vec<ChurchPrayerDto>, StatusCode> {
     sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type,
+        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
                   status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_prayers
            WHERE ($1::uuid IS NULL OR calendar_day_id = $1)
@@ -2060,7 +2186,7 @@ async fn get_icon_row(
     };
     let sql = format!(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons WHERE {predicate}"#
     );
     sqlx::query_as::<_, ChurchIconDto>(&sql)

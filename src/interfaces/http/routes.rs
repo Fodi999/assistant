@@ -1585,6 +1585,7 @@ pub fn create_router(
             "/api/church/calendar/:date",
             get(church_content::public_calendar_day),
         )
+        .route("/api/church/icons", get(church_content::public_icon_list))
         .route(
             "/api/church/icons/:slug",
             get(church_content::public_icon_by_slug),
