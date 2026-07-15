@@ -191,6 +191,53 @@ pub struct ChurchSaintPayload {
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
+pub struct ChurchAlphabetLetterDto {
+    pub id: Uuid,
+    pub site_id: Uuid,
+    pub slug: String,
+    pub letter: String,
+    pub sort_order: i32,
+    pub name: String,
+    pub short_description: String,
+    pub full_text: String,
+    pub numeric_value: Option<i32>,
+    pub modern_equivalent: String,
+    pub color: String,
+    pub card_image_url: String,
+    pub main_image_url: String,
+    pub seo_title: String,
+    pub seo_description: String,
+    pub language: String,
+    pub translation_group_id: Uuid,
+    pub status: String,
+    pub is_global: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChurchAlphabetLetterPayload {
+    pub slug: Option<String>,
+    pub letter: Option<String>,
+    pub sort_order: Option<i32>,
+    pub name: Option<String>,
+    pub short_description: Option<String>,
+    pub full_text: Option<String>,
+    pub numeric_value: Option<i32>,
+    pub modern_equivalent: Option<String>,
+    pub color: Option<String>,
+    pub card_image_url: Option<String>,
+    pub main_image_url: Option<String>,
+    pub seo_title: Option<String>,
+    pub seo_description: Option<String>,
+    pub language: Option<String>,
+    pub status: Option<String>,
+    pub is_global: Option<bool>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct ChurchArticleDto {
     pub id: Uuid,
     pub site_id: Uuid,
@@ -441,6 +488,15 @@ pub struct PublicChurchSaintPage {
     pub icon: Option<ChurchIconDto>,
     pub calendar_day: Option<ChurchCalendarDayDto>,
     pub prayers: Vec<ChurchPrayerDto>,
+    pub translations: Vec<ChurchTranslationRef>,
+}
+
+/// Same contract as [`PublicChurchSaintPage`]: `letter` is None when the
+/// requested language has no published record in the translation group.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicChurchAlphabetPage {
+    pub letter: Option<ChurchAlphabetLetterDto>,
     pub translations: Vec<ChurchTranslationRef>,
 }
 
@@ -1027,6 +1083,265 @@ pub async fn delete_saint(
 ) -> Result<impl IntoResponse, StatusCode> {
     delete_owned(&pool, "church_saints", id, query.site_id()).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+const ALPHABET_COLUMNS: &str = "id, site_id, slug, letter, sort_order, name, short_description, full_text, numeric_value, modern_equivalent, color, card_image_url, main_image_url, seo_title, seo_description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at";
+
+pub async fn list_alphabet_letters(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let sql = format!(
+        r#"SELECT {ALPHABET_COLUMNS}
+           FROM church_alphabet_letters
+           WHERE (site_id = $1 OR is_global = true)
+             AND ($2::text IS NULL OR language = $2)
+           ORDER BY sort_order ASC, language ASC"#
+    );
+    let rows: Vec<ChurchAlphabetLetterDto> = sqlx::query_as(&sql)
+        .bind(query.site_id())
+        .bind(query.language)
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok(Json(rows))
+}
+
+pub async fn get_alphabet_letter(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let sql = format!(
+        r#"SELECT {ALPHABET_COLUMNS} FROM church_alphabet_letters WHERE id = $1 AND (site_id = $2 OR is_global = true)"#
+    );
+    let row: ChurchAlphabetLetterDto = sqlx::query_as(&sql)
+        .bind(id)
+        .bind(query.site_id())
+        .fetch_optional(&pool)
+        .await
+        .map_err(db_error)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(row))
+}
+
+pub async fn create_alphabet_letter(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<ChurchAlphabetLetterPayload>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let name = required(payload.name, "name")?;
+    let letter = required(payload.letter, "letter")?;
+    let slug = optional_non_empty(payload.slug).unwrap_or_else(|| slugify(&name));
+
+    let sql = format!(
+        r#"INSERT INTO church_alphabet_letters
+           (site_id, slug, letter, sort_order, name, short_description, full_text, numeric_value,
+            modern_equivalent, color, card_image_url, main_image_url, seo_title, seo_description,
+            language, status, is_global, translation_group_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                   COALESCE(
+                       (SELECT translation_group_id FROM church_alphabet_letters WHERE site_id = $1 AND slug = $2 LIMIT 1),
+                       gen_random_uuid()
+                   ))
+           RETURNING {ALPHABET_COLUMNS}"#
+    );
+    let row: ChurchAlphabetLetterDto = sqlx::query_as(&sql)
+        .bind(query.site_id())
+        .bind(slug)
+        .bind(letter)
+        .bind(payload.sort_order.unwrap_or(0))
+        .bind(name)
+        .bind(payload.short_description.unwrap_or_default())
+        .bind(payload.full_text.unwrap_or_default())
+        .bind(payload.numeric_value)
+        .bind(payload.modern_equivalent.unwrap_or_default())
+        .bind(payload.color.unwrap_or_default())
+        .bind(payload.card_image_url.unwrap_or_default())
+        .bind(payload.main_image_url.unwrap_or_default())
+        .bind(payload.seo_title.unwrap_or_default())
+        .bind(payload.seo_description.unwrap_or_default())
+        .bind(payload.language.unwrap_or_else(|| "uk".into()))
+        .bind(payload.status.unwrap_or_else(|| "draft".into()))
+        .bind(payload.is_global.unwrap_or(false))
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok((StatusCode::CREATED, Json(row)))
+}
+
+pub async fn update_alphabet_letter(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<ChurchAlphabetLetterPayload>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let site_id = query.site_id();
+    let current_sql = format!(
+        r#"SELECT {ALPHABET_COLUMNS} FROM church_alphabet_letters WHERE id = $1 AND site_id = $2"#
+    );
+    let current: ChurchAlphabetLetterDto = sqlx::query_as(&current_sql)
+        .bind(id)
+        .bind(site_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(db_error)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let sql = format!(
+        r#"UPDATE church_alphabet_letters SET
+              slug = $1, letter = $2, sort_order = $3, name = $4, short_description = $5,
+              full_text = $6, numeric_value = $7, modern_equivalent = $8, color = $9,
+              card_image_url = $10, main_image_url = $11, seo_title = $12, seo_description = $13,
+              language = $14, status = $15, is_global = $16,
+              translation_group_id = COALESCE(
+                  (SELECT other.translation_group_id FROM church_alphabet_letters other
+                   WHERE other.site_id = $18 AND other.slug = $1 AND other.id <> $17 LIMIT 1),
+                  church_alphabet_letters.translation_group_id
+              ),
+              updated_at = NOW()
+           WHERE id = $17 AND site_id = $18
+           RETURNING {ALPHABET_COLUMNS}"#
+    );
+    let row: ChurchAlphabetLetterDto = sqlx::query_as(&sql)
+        .bind(optional_non_empty(payload.slug).unwrap_or(current.slug))
+        .bind(optional_non_empty(payload.letter).unwrap_or(current.letter))
+        .bind(payload.sort_order.unwrap_or(current.sort_order))
+        .bind(optional_non_empty(payload.name).unwrap_or(current.name))
+        .bind(payload.short_description.unwrap_or(current.short_description))
+        .bind(payload.full_text.unwrap_or(current.full_text))
+        .bind(payload.numeric_value.or(current.numeric_value))
+        .bind(payload.modern_equivalent.unwrap_or(current.modern_equivalent))
+        .bind(payload.color.unwrap_or(current.color))
+        .bind(payload.card_image_url.unwrap_or(current.card_image_url))
+        .bind(payload.main_image_url.unwrap_or(current.main_image_url))
+        .bind(payload.seo_title.unwrap_or(current.seo_title))
+        .bind(payload.seo_description.unwrap_or(current.seo_description))
+        .bind(payload.language.unwrap_or(current.language))
+        .bind(payload.status.unwrap_or(current.status))
+        .bind(payload.is_global.unwrap_or(current.is_global))
+        .bind(id)
+        .bind(site_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok(Json(row))
+}
+
+pub async fn delete_alphabet_letter(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    delete_owned(&pool, "church_alphabet_letters", id, query.site_id()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Bulk reorder: body is an ordered list of `translation_group_id`s so all
+/// language rows of a letter move together (order is shared across languages).
+pub async fn reorder_alphabet_letters(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+    Json(ordered_group_ids): Json<Vec<Uuid>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let site_id = query.site_id();
+    for (index, group_id) in ordered_group_ids.iter().enumerate() {
+        sqlx::query(
+            "UPDATE church_alphabet_letters SET sort_order = $1
+             WHERE translation_group_id = $2 AND (site_id = $3 OR is_global = true)",
+        )
+        .bind(index as i32 + 1)
+        .bind(group_id)
+        .bind(site_id)
+        .execute(&pool)
+        .await
+        .map_err(db_error)?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn public_alphabet_list(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
+    let sql = format!(
+        r#"SELECT {ALPHABET_COLUMNS}
+           FROM church_alphabet_letters
+           WHERE language = $3
+             AND (site_id = $1 OR is_global = true)
+             AND ($2::bool OR status = 'published')
+           ORDER BY sort_order ASC"#
+    );
+    let letters: Vec<ChurchAlphabetLetterDto> = sqlx::query_as(&sql)
+        .bind(CHURCH_SITE_ID)
+        .bind(preview_allowed(&query))
+        .bind(language)
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+
+    Ok(Json(letters))
+}
+
+pub async fn public_alphabet_by_slug(
+    Path(slug): Path<String>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let language = query.language.clone().unwrap_or_else(|| "uk".into());
+    let include_drafts = preview_allowed(&query);
+
+    // The slug may belong to any language version; resolve the whole
+    // translation group so language switching never falls back silently.
+    let sql = format!(
+        r#"SELECT {ALPHABET_COLUMNS}
+           FROM church_alphabet_letters
+           WHERE translation_group_id = (
+                     SELECT translation_group_id FROM church_alphabet_letters
+                     WHERE slug = $1
+                       AND (site_id = $2 OR is_global = true)
+                       AND ($3::bool OR status = 'published')
+                     ORDER BY CASE WHEN language = $4 THEN 0 ELSE 1 END,
+                              CASE WHEN site_id = $2 THEN 0 ELSE 1 END
+                     LIMIT 1
+                 )
+             AND (site_id = $2 OR is_global = true)
+             AND ($3::bool OR status = 'published')
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END"#
+    );
+    let group: Vec<ChurchAlphabetLetterDto> = sqlx::query_as(&sql)
+        .bind(&slug)
+        .bind(CHURCH_SITE_ID)
+        .bind(include_drafts)
+        .bind(&language)
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+
+    if group.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let mut translations: Vec<ChurchTranslationRef> = Vec::new();
+    for item in &group {
+        if !translations.iter().any(|t| t.language == item.language) {
+            translations.push(ChurchTranslationRef {
+                language: item.language.clone(),
+                slug: item.slug.clone(),
+                title: item.name.clone(),
+            });
+        }
+    }
+
+    let position = group.iter().position(|item| item.language == language);
+    let letter = position.map(|index| group.into_iter().nth(index).expect("position within group"));
+
+    Ok(Json(PublicChurchAlphabetPage { letter, translations }))
 }
 
 pub async fn list_articles(

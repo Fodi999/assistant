@@ -1521,6 +1521,20 @@ pub fn create_router(
                 .delete(church_content::delete_saint),
         )
         .route(
+            "/alphabet",
+            get(church_content::list_alphabet_letters).post(church_content::create_alphabet_letter),
+        )
+        .route(
+            "/alphabet/reorder",
+            post(church_content::reorder_alphabet_letters),
+        )
+        .route(
+            "/alphabet/:id",
+            get(church_content::get_alphabet_letter)
+                .put(church_content::update_alphabet_letter)
+                .delete(church_content::delete_alphabet_letter),
+        )
+        .route(
             "/articles",
             get(church_content::list_articles).post(church_content::create_article),
         )
@@ -1613,6 +1627,14 @@ pub fn create_router(
         .route(
             "/api/church/saints/:slug",
             get(church_content::public_saint_by_slug),
+        )
+        .route(
+            "/api/church/alphabet",
+            get(church_content::public_alphabet_list),
+        )
+        .route(
+            "/api/church/alphabet/:slug",
+            get(church_content::public_alphabet_by_slug),
         )
         .route(
             "/api/church/articles/:slug",
