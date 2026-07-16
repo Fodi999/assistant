@@ -1502,6 +1502,16 @@ pub fn create_router(
                 .delete(church_content::delete_icon),
         )
         .route(
+            "/icon-product-categories",
+            get(church_orders::list_icon_product_categories).post(church_orders::create_icon_product_category),
+        )
+        .route(
+            "/icon-product-categories/:id",
+            get(church_orders::get_icon_product_category)
+                .put(church_orders::update_icon_product_category)
+                .delete(church_orders::delete_icon_product_category),
+        )
+        .route(
             "/icon-order-options",
             get(church_orders::list_icon_order_options).post(church_orders::create_icon_order_option),
         )
@@ -1686,6 +1696,10 @@ pub fn create_router(
         })
     };
     let public_icon_orders_router = Router::new()
+        .route(
+            "/api/church/icon-product-categories",
+            get(church_orders::public_icon_product_categories_list),
+        )
         .route(
             "/api/church/icon-order-options",
             get(church_orders::public_icon_order_options_list),

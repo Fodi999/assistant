@@ -16,7 +16,179 @@ use super::church_content::{
 };
 use super::site_context::CHURCH_SITE_ID;
 
-const OPTION_COLUMNS: &str = "id, site_id, slug, name_uk, name_ru, name_en, photo_url, price_cents, currency, is_active, sort_order, created_at::text AS created_at, updated_at::text AS updated_at";
+// ── Icon product categories ─────────────────────────────────────────────────
+
+const CATEGORY_COLUMNS: &str = "id, site_id, slug, name_uk, name_ru, name_en, description_uk, description_ru, description_en, image_url, is_active, sort_order, created_at::text AS created_at, updated_at::text AS updated_at";
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ChurchIconProductCategoryDto {
+    pub id: Uuid,
+    pub site_id: Uuid,
+    pub slug: String,
+    pub name_uk: String,
+    pub name_ru: String,
+    pub name_en: String,
+    pub description_uk: String,
+    pub description_ru: String,
+    pub description_en: String,
+    pub image_url: String,
+    pub is_active: bool,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChurchIconProductCategoryPayload {
+    pub slug: Option<String>,
+    pub name_uk: Option<String>,
+    pub name_ru: Option<String>,
+    pub name_en: Option<String>,
+    pub description_uk: Option<String>,
+    pub description_ru: Option<String>,
+    pub description_en: Option<String>,
+    pub image_url: Option<String>,
+    pub is_active: Option<bool>,
+    pub sort_order: Option<i32>,
+}
+
+pub async fn list_icon_product_categories(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let rows: Vec<ChurchIconProductCategoryDto> = sqlx::query_as(&format!(
+        "SELECT {CATEGORY_COLUMNS} FROM icon_product_categories WHERE site_id = $1 ORDER BY sort_order ASC, name_uk ASC"
+    ))
+    .bind(query.site_id())
+    .fetch_all(&pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok(Json(rows))
+}
+
+pub async fn get_icon_product_category(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let row: ChurchIconProductCategoryDto = sqlx::query_as(&format!(
+        "SELECT {CATEGORY_COLUMNS} FROM icon_product_categories WHERE id = $1 AND site_id = $2"
+    ))
+    .bind(id)
+    .bind(query.site_id())
+    .fetch_optional(&pool)
+    .await
+    .map_err(db_error)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(row))
+}
+
+pub async fn create_icon_product_category(
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<ChurchIconProductCategoryPayload>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let name_uk = required(payload.name_uk, "nameUk")?;
+    let slug = optional_non_empty(payload.slug).unwrap_or_else(|| slugify(&name_uk));
+
+    let row: ChurchIconProductCategoryDto = sqlx::query_as(&format!(
+        r#"INSERT INTO icon_product_categories
+           (site_id, slug, name_uk, name_ru, name_en, description_uk, description_ru, description_en, image_url, is_active, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING {CATEGORY_COLUMNS}"#
+    ))
+    .bind(query.site_id())
+    .bind(slug)
+    .bind(name_uk)
+    .bind(payload.name_ru.unwrap_or_default())
+    .bind(payload.name_en.unwrap_or_default())
+    .bind(payload.description_uk.unwrap_or_default())
+    .bind(payload.description_ru.unwrap_or_default())
+    .bind(payload.description_en.unwrap_or_default())
+    .bind(payload.image_url.unwrap_or_default())
+    .bind(payload.is_active.unwrap_or(true))
+    .bind(payload.sort_order.unwrap_or(0))
+    .fetch_one(&pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok((StatusCode::CREATED, Json(row)))
+}
+
+pub async fn update_icon_product_category(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<ChurchIconProductCategoryPayload>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let site_id = query.site_id();
+    let current: ChurchIconProductCategoryDto = sqlx::query_as(&format!(
+        "SELECT {CATEGORY_COLUMNS} FROM icon_product_categories WHERE id = $1 AND site_id = $2"
+    ))
+    .bind(id)
+    .bind(site_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(db_error)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    let row: ChurchIconProductCategoryDto = sqlx::query_as(&format!(
+        r#"UPDATE icon_product_categories SET
+              slug = $1, name_uk = $2, name_ru = $3, name_en = $4,
+              description_uk = $5, description_ru = $6, description_en = $7,
+              image_url = $8, is_active = $9, sort_order = $10
+           WHERE id = $11 AND site_id = $12
+           RETURNING {CATEGORY_COLUMNS}"#
+    ))
+    .bind(optional_non_empty(payload.slug).unwrap_or(current.slug))
+    .bind(optional_non_empty(payload.name_uk).unwrap_or(current.name_uk))
+    .bind(payload.name_ru.unwrap_or(current.name_ru))
+    .bind(payload.name_en.unwrap_or(current.name_en))
+    .bind(payload.description_uk.unwrap_or(current.description_uk))
+    .bind(payload.description_ru.unwrap_or(current.description_ru))
+    .bind(payload.description_en.unwrap_or(current.description_en))
+    .bind(payload.image_url.unwrap_or(current.image_url))
+    .bind(payload.is_active.unwrap_or(current.is_active))
+    .bind(payload.sort_order.unwrap_or(current.sort_order))
+    .bind(id)
+    .bind(site_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok(Json(row))
+}
+
+pub async fn delete_icon_product_category(
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChurchContentQuery>,
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    delete_owned(&pool, "icon_product_categories", id, query.site_id()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn public_icon_product_categories_list(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let rows: Vec<ChurchIconProductCategoryDto> = sqlx::query_as(&format!(
+        "SELECT {CATEGORY_COLUMNS} FROM icon_product_categories WHERE site_id = $1 AND is_active = true ORDER BY sort_order ASC"
+    ))
+    .bind(CHURCH_SITE_ID)
+    .fetch_all(&pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok(Json(rows))
+}
+
+// ── Icon order add-on options ───────────────────────────────────────────────
+
+const OPTION_COLUMNS: &str = "id, site_id, slug, name_uk, name_ru, name_en, description, category_id, photo_url, price_cents, currency, is_active, sort_order, created_at::text AS created_at, updated_at::text AS updated_at";
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +199,8 @@ pub struct ChurchIconOrderOptionDto {
     pub name_uk: String,
     pub name_ru: String,
     pub name_en: String,
+    pub description: String,
+    pub category_id: Option<Uuid>,
     pub photo_url: String,
     pub price_cents: i64,
     pub currency: String,
@@ -43,11 +217,27 @@ pub struct ChurchIconOrderOptionPayload {
     pub name_uk: Option<String>,
     pub name_ru: Option<String>,
     pub name_en: Option<String>,
+    pub description: Option<String>,
+    /// A plain `Option<Uuid>` can't tell "field omitted, leave as-is" apart
+    /// from "explicitly cleared" once the value is already `None` either way.
+    /// Convention: omitted = don't touch, "" = clear to uncategorized,
+    /// non-empty = the new category id.
+    pub category_id: Option<String>,
     pub photo_url: Option<String>,
     pub price_cents: Option<i64>,
     pub currency: Option<String>,
     pub is_active: Option<bool>,
     pub sort_order: Option<i32>,
+}
+
+/// Resolves the update-time `category_id` sentinel convention documented on
+/// [`ChurchIconOrderOptionPayload::category_id`] against the current value.
+fn resolve_category_id_update(payload_value: Option<String>, current: Option<Uuid>) -> Option<Uuid> {
+    match payload_value {
+        None => current,
+        Some(value) if value.trim().is_empty() => None,
+        Some(value) => Uuid::parse_str(value.trim()).ok().or(current),
+    }
 }
 
 pub async fn list_icon_order_options(
@@ -93,8 +283,8 @@ pub async fn create_icon_order_option(
 
     let row: ChurchIconOrderOptionDto = sqlx::query_as(&format!(
         r#"INSERT INTO icon_order_options
-           (site_id, slug, name_uk, name_ru, name_en, photo_url, price_cents, currency, is_active, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           (site_id, slug, name_uk, name_ru, name_en, description, category_id, photo_url, price_cents, currency, is_active, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            RETURNING {OPTION_COLUMNS}"#
     ))
     .bind(query.site_id())
@@ -102,6 +292,8 @@ pub async fn create_icon_order_option(
     .bind(name_uk)
     .bind(payload.name_ru.unwrap_or_default())
     .bind(payload.name_en.unwrap_or_default())
+    .bind(payload.description.unwrap_or_default())
+    .bind(resolve_category_id_update(payload.category_id, None))
     .bind(payload.photo_url.unwrap_or_default())
     .bind(payload.price_cents.unwrap_or(0))
     .bind(payload.currency.unwrap_or_else(|| "UAH".into()))
@@ -133,15 +325,17 @@ pub async fn update_icon_order_option(
 
     let row: ChurchIconOrderOptionDto = sqlx::query_as(&format!(
         r#"UPDATE icon_order_options SET
-              slug = $1, name_uk = $2, name_ru = $3, name_en = $4, photo_url = $5,
-              price_cents = $6, currency = $7, is_active = $8, sort_order = $9
-           WHERE id = $10 AND site_id = $11
+              slug = $1, name_uk = $2, name_ru = $3, name_en = $4, description = $5, category_id = $6,
+              photo_url = $7, price_cents = $8, currency = $9, is_active = $10, sort_order = $11
+           WHERE id = $12 AND site_id = $13
            RETURNING {OPTION_COLUMNS}"#
     ))
     .bind(optional_non_empty(payload.slug).unwrap_or(current.slug))
     .bind(optional_non_empty(payload.name_uk).unwrap_or(current.name_uk))
     .bind(payload.name_ru.unwrap_or(current.name_ru))
     .bind(payload.name_en.unwrap_or(current.name_en))
+    .bind(payload.description.unwrap_or(current.description))
+    .bind(resolve_category_id_update(payload.category_id, current.category_id))
     .bind(payload.photo_url.unwrap_or(current.photo_url))
     .bind(payload.price_cents.unwrap_or(current.price_cents))
     .bind(payload.currency.unwrap_or(current.currency))
