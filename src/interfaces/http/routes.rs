@@ -1502,6 +1502,17 @@ pub fn create_router(
                 .delete(church_content::delete_icon),
         )
         .route(
+            "/product-categories",
+            get(church_orders::list_icon_product_categories).post(church_orders::create_icon_product_category),
+        )
+        .route(
+            "/product-categories/:id",
+            get(church_orders::get_icon_product_category)
+                .put(church_orders::update_icon_product_category)
+                .delete(church_orders::delete_icon_product_category),
+        )
+        .route(
+            // Back-compat alias for the pre-rework path; same handlers.
             "/icon-product-categories",
             get(church_orders::list_icon_product_categories).post(church_orders::create_icon_product_category),
         )
@@ -1512,14 +1523,25 @@ pub fn create_router(
                 .delete(church_orders::delete_icon_product_category),
         )
         .route(
+            "/products",
+            get(church_orders::list_products).post(church_orders::create_product),
+        )
+        .route(
+            "/products/:id",
+            get(church_orders::get_product)
+                .put(church_orders::update_product)
+                .delete(church_orders::delete_product),
+        )
+        .route(
+            // Back-compat alias for the pre-rework path; same handlers.
             "/icon-order-options",
-            get(church_orders::list_icon_order_options).post(church_orders::create_icon_order_option),
+            get(church_orders::list_products).post(church_orders::create_product),
         )
         .route(
             "/icon-order-options/:id",
-            get(church_orders::get_icon_order_option)
-                .put(church_orders::update_icon_order_option)
-                .delete(church_orders::delete_icon_order_option),
+            get(church_orders::get_product)
+                .put(church_orders::update_product)
+                .delete(church_orders::delete_product),
         )
         .route(
             "/icon-orders",
@@ -1685,8 +1707,34 @@ pub fn create_router(
         .route("/api/church/sitemap", get(church_content::public_sitemap))
         .with_state(pool_for_public.clone());
 
-    // Icon-order submission is rate-limited per IP (5/min) since it's the
-    // first public write endpoint in this app with real spam exposure.
+    // Catalog reads (products/categories) are NOT rate-limited: a shop page
+    // legitimately fires many GETs per visit (search-as-you-type, category
+    // switching, related products). Only order *submission* is a spam target.
+    let public_products_router = Router::new()
+        .route(
+            "/api/church/product-categories",
+            get(church_orders::public_icon_product_categories_list),
+        )
+        .route(
+            "/api/church/icon-product-categories",
+            get(church_orders::public_icon_product_categories_list),
+        )
+        .route(
+            "/api/church/products",
+            get(church_orders::public_products_list),
+        )
+        .route(
+            "/api/church/products/:slug",
+            get(church_orders::public_product_by_slug),
+        )
+        .route(
+            "/api/church/icon-order-options",
+            get(church_orders::public_products_list),
+        )
+        .with_state(pool_for_public.clone());
+
+    // Order submission is rate-limited per IP (5/min) since it's a public
+    // write endpoint with real spam exposure.
     let icon_order_rate_limiter = build_rate_limiter_per_minute(5);
     let icon_order_rate_limit_middleware = {
         let limiter = icon_order_rate_limiter.clone();
@@ -1697,16 +1745,12 @@ pub fn create_router(
     };
     let public_icon_orders_router = Router::new()
         .route(
-            "/api/church/icon-product-categories",
-            get(church_orders::public_icon_product_categories_list),
-        )
-        .route(
-            "/api/church/icon-order-options",
-            get(church_orders::public_icon_order_options_list),
-        )
-        .route(
             "/api/church/icon-orders",
             post(church_orders::public_create_icon_order),
+        )
+        .route(
+            "/api/church/product-orders",
+            post(church_orders::public_create_product_order),
         )
         .layer(icon_order_rate_limit_middleware)
         .with_state(pool_for_public.clone());
@@ -1741,6 +1785,7 @@ pub fn create_router(
         .merge(public_almabuild_router)
         .merge(public_icons_site_router)
         .merge(public_church_content_router)
+        .merge(public_products_router)
         .merge(public_icon_orders_router)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
