@@ -119,6 +119,10 @@ pub struct ChurchIconPayload {
     pub consecration_available: Option<bool>,
 }
 
+const PRAYER_COLUMNS: &str = "id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id, \
+    status, is_global, visualizer_enabled, visualizer_image_url, particle_count_desktop, particle_count_mobile, particle_size, particle_color_mode, background_color, audio_reactivity, \
+    scene_timeline, subtitle_cues, created_at::text AS created_at, updated_at::text AS updated_at";
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct ChurchPrayerDto {
@@ -140,6 +144,19 @@ pub struct ChurchPrayerDto {
     pub translation_group_id: Uuid,
     pub status: String,
     pub is_global: bool,
+    /// "Prayer mode" immersive WebGL visualizer settings (see PrayerModeVisualizer on the frontend).
+    pub visualizer_enabled: bool,
+    /// Dedicated override image for the particle visualization; falls back to
+    /// `image_url` (and ultimately the linked icon's photo) when empty.
+    pub visualizer_image_url: String,
+    pub particle_count_desktop: i32,
+    pub particle_count_mobile: i32,
+    pub particle_size: f32,
+    pub particle_color_mode: String,
+    pub background_color: String,
+    pub audio_reactivity: f32,
+    pub scene_timeline: serde_json::Value,
+    pub subtitle_cues: serde_json::Value,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -162,6 +179,16 @@ pub struct ChurchPrayerPayload {
     pub prayer_type: Option<String>,
     pub status: Option<String>,
     pub is_global: Option<bool>,
+    pub visualizer_enabled: Option<bool>,
+    pub visualizer_image_url: Option<String>,
+    pub particle_count_desktop: Option<i32>,
+    pub particle_count_mobile: Option<i32>,
+    pub particle_size: Option<f32>,
+    pub particle_color_mode: Option<String>,
+    pub background_color: Option<String>,
+    pub audio_reactivity: Option<f32>,
+    pub scene_timeline: Option<serde_json::Value>,
+    pub subtitle_cues: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -824,16 +851,15 @@ pub async fn list_prayers(
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let rows: Vec<ChurchPrayerDto> = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                  status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+    let rows: Vec<ChurchPrayerDto> = sqlx::query_as(&format!(
+        r#"SELECT {PRAYER_COLUMNS}
            FROM church_prayers
            WHERE (site_id = $1 OR is_global = true)
              AND ($2::uuid IS NULL OR calendar_day_id = $2)
              AND ($3::uuid IS NULL OR icon_id = $3)
              AND ($4::text IS NULL OR language = $4)
-           ORDER BY prayer_type ASC, updated_at DESC"#,
-    )
+           ORDER BY prayer_type ASC, updated_at DESC"#
+    ))
     .bind(query.site_id())
     .bind(query.calendar_day_id)
     .bind(query.icon_id)
@@ -850,12 +876,11 @@ pub async fn get_prayer(
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let row: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                  status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+    let row: ChurchPrayerDto = sqlx::query_as(&format!(
+        r#"SELECT {PRAYER_COLUMNS}
            FROM church_prayers
-           WHERE id = $1 AND (site_id = $2 OR is_global = true)"#,
-    )
+           WHERE id = $1 AND (site_id = $2 OR is_global = true)"#
+    ))
     .bind(id)
     .bind(query.site_id())
     .fetch_optional(&pool)
@@ -874,17 +899,18 @@ pub async fn create_prayer(
     let title = required(payload.title, "title")?;
     let slug = optional_non_empty(payload.slug).unwrap_or_else(|| slugify(&title));
 
-    let row: ChurchPrayerDto = sqlx::query_as(
+    let row: ChurchPrayerDto = sqlx::query_as(&format!(
         r#"INSERT INTO church_prayers
-           (site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, status, is_global, translation_group_id)
+           (site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, status, is_global, translation_group_id,
+            visualizer_enabled, visualizer_image_url, particle_count_desktop, particle_count_mobile, particle_size, particle_color_mode, background_color, audio_reactivity, scene_timeline, subtitle_cues)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
                    COALESCE(
                        (SELECT translation_group_id FROM church_prayers WHERE site_id = $1 AND slug = $4 LIMIT 1),
                        gen_random_uuid()
-                   ))
-           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                     status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
-    )
+                   ),
+                   $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+           RETURNING {PRAYER_COLUMNS}"#
+    ))
     .bind(query.site_id())
     .bind(payload.icon_id)
     .bind(payload.calendar_day_id)
@@ -901,6 +927,16 @@ pub async fn create_prayer(
     .bind(payload.prayer_type.unwrap_or_else(|| "prayer".into()))
     .bind(payload.status.unwrap_or_else(|| "draft".into()))
     .bind(payload.is_global.unwrap_or(false))
+    .bind(payload.visualizer_enabled.unwrap_or(false))
+    .bind(payload.visualizer_image_url.unwrap_or_default())
+    .bind(payload.particle_count_desktop.unwrap_or(50_000))
+    .bind(payload.particle_count_mobile.unwrap_or(16_000))
+    .bind(payload.particle_size.unwrap_or(2.0))
+    .bind(payload.particle_color_mode.unwrap_or_else(|| "silver_gold".into()))
+    .bind(payload.background_color.unwrap_or_else(|| "#000000".into()))
+    .bind(payload.audio_reactivity.unwrap_or(0.5))
+    .bind(payload.scene_timeline.unwrap_or_else(default_scene_timeline))
+    .bind(payload.subtitle_cues.unwrap_or_else(|| serde_json::Value::Array(vec![])))
     .fetch_one(&pool)
     .await
     .map_err(db_error)?;
@@ -915,11 +951,9 @@ pub async fn update_prayer(
     Json(payload): Json<ChurchPrayerPayload>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let site_id = query.site_id();
-    let current: ChurchPrayerDto = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                  status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
-           FROM church_prayers WHERE id = $1 AND site_id = $2"#,
-    )
+    let current: ChurchPrayerDto = sqlx::query_as(&format!(
+        r#"SELECT {PRAYER_COLUMNS} FROM church_prayers WHERE id = $1 AND site_id = $2"#
+    ))
     .bind(id)
     .bind(site_id)
     .fetch_optional(&pool)
@@ -927,20 +961,22 @@ pub async fn update_prayer(
     .map_err(db_error)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    let row: ChurchPrayerDto = sqlx::query_as(
+    let row: ChurchPrayerDto = sqlx::query_as(&format!(
         r#"UPDATE church_prayers SET
               icon_id = $1, calendar_day_id = $2, slug = $3, title = $4, text = $5,
               audio_url = $6, qr_code_url = $7, image_url = $8, source = $9, source_url = $10, note = $11,
               language = $12, prayer_type = $13, status = $14, is_global = $15,
+              visualizer_enabled = $18, visualizer_image_url = $19, particle_count_desktop = $20,
+              particle_count_mobile = $21, particle_size = $22, particle_color_mode = $23,
+              background_color = $24, audio_reactivity = $25, scene_timeline = $26, subtitle_cues = $27,
               translation_group_id = COALESCE(
                   (SELECT other.translation_group_id FROM church_prayers other
                    WHERE other.site_id = $17 AND other.slug = $3 AND other.id <> $16 LIMIT 1),
                   church_prayers.translation_group_id
               )
            WHERE id = $16 AND site_id = $17
-           RETURNING id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                     status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
-    )
+           RETURNING {PRAYER_COLUMNS}"#
+    ))
     .bind(payload.icon_id.or(current.icon_id))
     .bind(payload.calendar_day_id.or(current.calendar_day_id))
     .bind(optional_non_empty(payload.slug).unwrap_or(current.slug))
@@ -958,11 +994,25 @@ pub async fn update_prayer(
     .bind(payload.is_global.unwrap_or(current.is_global))
     .bind(id)
     .bind(site_id)
+    .bind(payload.visualizer_enabled.unwrap_or(current.visualizer_enabled))
+    .bind(payload.visualizer_image_url.unwrap_or(current.visualizer_image_url))
+    .bind(payload.particle_count_desktop.unwrap_or(current.particle_count_desktop))
+    .bind(payload.particle_count_mobile.unwrap_or(current.particle_count_mobile))
+    .bind(payload.particle_size.unwrap_or(current.particle_size))
+    .bind(payload.particle_color_mode.unwrap_or(current.particle_color_mode))
+    .bind(payload.background_color.unwrap_or(current.background_color))
+    .bind(payload.audio_reactivity.unwrap_or(current.audio_reactivity))
+    .bind(payload.scene_timeline.unwrap_or(current.scene_timeline))
+    .bind(payload.subtitle_cues.unwrap_or(current.subtitle_cues))
     .fetch_one(&pool)
     .await
     .map_err(db_error)?;
 
     Ok(Json(row))
+}
+
+fn default_scene_timeline() -> serde_json::Value {
+    serde_json::json!({ "idle": 2000, "assemble": 2500, "reveal": 1500, "dissolve": 2000 })
 }
 
 pub async fn delete_prayer(
@@ -1883,9 +1933,8 @@ pub async fn public_prayer_by_slug(
 
     // The slug may belong to any language version; resolve the whole
     // translation group so language switching never falls back silently.
-    let group: Vec<ChurchPrayerDto> = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                  status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+    let group: Vec<ChurchPrayerDto> = sqlx::query_as(&format!(
+        r#"SELECT {PRAYER_COLUMNS}
            FROM church_prayers
            WHERE translation_group_id = (
                      SELECT translation_group_id FROM church_prayers
@@ -1898,8 +1947,8 @@ pub async fn public_prayer_by_slug(
                  )
              AND (site_id = $2 OR is_global = true)
              AND ($3::bool OR status = 'published')
-           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END"#,
-    )
+           ORDER BY CASE WHEN site_id = $2 THEN 0 ELSE 1 END"#
+    ))
     .bind(&slug)
     .bind(CHURCH_SITE_ID)
     .bind(include_drafts)
@@ -1954,15 +2003,14 @@ pub async fn public_prayer_list(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let language = query.language.clone().unwrap_or_else(|| "uk".into());
-    let prayers: Vec<ChurchPrayerDto> = sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                  status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+    let prayers: Vec<ChurchPrayerDto> = sqlx::query_as(&format!(
+        r#"SELECT {PRAYER_COLUMNS}
            FROM church_prayers
            WHERE language = $3
              AND (site_id = $1 OR is_global = true)
              AND ($2::bool OR status = 'published')
-           ORDER BY created_at DESC"#,
-    )
+           ORDER BY created_at DESC"#
+    ))
     .bind(CHURCH_SITE_ID)
     .bind(preview_allowed(&query))
     .bind(language)
@@ -2701,17 +2749,16 @@ async fn list_public_prayers(
     language: Option<&str>,
     include_drafts: bool,
 ) -> Result<Vec<ChurchPrayerDto>, StatusCode> {
-    sqlx::query_as(
-        r#"SELECT id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id,
-                  status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+    sqlx::query_as(&format!(
+        r#"SELECT {PRAYER_COLUMNS}
            FROM church_prayers
            WHERE ($1::uuid IS NULL OR calendar_day_id = $1)
              AND ($2::uuid IS NULL OR icon_id = $2)
              AND (site_id = $3 OR is_global = true)
              AND ($4::bool OR status = 'published')
              AND ($5::text IS NULL OR language = $5)
-           ORDER BY prayer_type ASC, title ASC"#,
-    )
+           ORDER BY prayer_type ASC, title ASC"#
+    ))
     .bind(calendar_day_id)
     .bind(icon_id)
     .bind(CHURCH_SITE_ID)
