@@ -44,6 +44,7 @@ use crate::interfaces::http::{
     },
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     church_content,
+    church_orders,
     dish::{create_dish, list_dishes, recalculate_all_costs},
     icons_site,
     inventory::{
@@ -1501,6 +1502,32 @@ pub fn create_router(
                 .delete(church_content::delete_icon),
         )
         .route(
+            "/icon-order-options",
+            get(church_orders::list_icon_order_options).post(church_orders::create_icon_order_option),
+        )
+        .route(
+            "/icon-order-options/:id",
+            get(church_orders::get_icon_order_option)
+                .put(church_orders::update_icon_order_option)
+                .delete(church_orders::delete_icon_order_option),
+        )
+        .route(
+            "/icon-orders",
+            get(church_orders::list_icon_orders),
+        )
+        .route(
+            "/icon-orders/unread-count",
+            get(church_orders::count_unread_icon_orders),
+        )
+        .route(
+            "/icon-orders/:id",
+            get(church_orders::get_icon_order).put(church_orders::update_icon_order),
+        )
+        .route(
+            "/icon-orders/:id/read",
+            axum::routing::put(church_orders::mark_icon_order_read),
+        )
+        .route(
             "/prayers",
             get(church_content::list_prayers).post(church_content::create_prayer),
         )
@@ -1648,6 +1675,28 @@ pub fn create_router(
         .route("/api/church/sitemap", get(church_content::public_sitemap))
         .with_state(pool_for_public.clone());
 
+    // Icon-order submission is rate-limited per IP (5/min) since it's the
+    // first public write endpoint in this app with real spam exposure.
+    let icon_order_rate_limiter = build_rate_limiter_per_minute(5);
+    let icon_order_rate_limit_middleware = {
+        let limiter = icon_order_rate_limiter.clone();
+        middleware::from_fn(move |req: Request, next: Next| {
+            let limiter = limiter.clone();
+            rate_limit_middleware(req, next, limiter)
+        })
+    };
+    let public_icon_orders_router = Router::new()
+        .route(
+            "/api/church/icon-order-options",
+            get(church_orders::public_icon_order_options_list),
+        )
+        .route(
+            "/api/church/icon-orders",
+            post(church_orders::public_create_icon_order),
+        )
+        .layer(icon_order_rate_limit_middleware)
+        .with_state(pool_for_public.clone());
+
     let public_cms_router = Router::new()
         .route("/about", get(public_cms::get_about))
         .route("/expertise", get(public_cms::list_expertise))
@@ -1678,6 +1727,7 @@ pub fn create_router(
         .merge(public_almabuild_router)
         .merge(public_icons_site_router)
         .merge(public_church_content_router)
+        .merge(public_icon_orders_router)
         .merge(public_cms_router)
         .merge(public_nutrition_router)
         .merge(public_seo_content_router) // 🆕 AI SEO content
@@ -1943,6 +1993,17 @@ fn build_rate_limiter(per_second: u32) -> Arc<IpRateLimiter> {
     tracing::info!(
         "🚦 Rate limiter initialized: {} req/sec per IP for auth endpoints",
         per_second
+    );
+    Arc::new(limiter)
+}
+
+fn build_rate_limiter_per_minute(per_minute: u32) -> Arc<IpRateLimiter> {
+    let quota =
+        Quota::per_minute(NonZeroU32::new(per_minute).unwrap_or(NonZeroU32::new(5).unwrap()));
+    let limiter = RateLimiter::dashmap(quota);
+    tracing::info!(
+        "🚦 Rate limiter initialized: {} req/min per IP for icon order submissions",
+        per_minute
     );
     Arc::new(limiter)
 }

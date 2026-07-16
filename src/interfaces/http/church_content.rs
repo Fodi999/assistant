@@ -35,7 +35,7 @@ impl ChurchContentQuery {
         }
     }
 
-    fn site_id(&self) -> Uuid {
+    pub(crate) fn site_id(&self) -> Uuid {
         resolve_site_id(&self.site_query(), CHURCH_SITE_ID)
     }
 }
@@ -88,6 +88,12 @@ pub struct ChurchIconDto {
     pub translation_group_id: Uuid,
     pub status: String,
     pub is_global: bool,
+    pub order_enabled: bool,
+    pub order_block_text: String,
+    pub production_time: String,
+    pub price_cents: Option<i64>,
+    pub currency: String,
+    pub consecration_available: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -105,6 +111,12 @@ pub struct ChurchIconPayload {
     pub language: Option<String>,
     pub status: Option<String>,
     pub is_global: Option<bool>,
+    pub order_enabled: Option<bool>,
+    pub order_block_text: Option<String>,
+    pub production_time: Option<String>,
+    pub price_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub consecration_available: Option<bool>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -673,7 +685,9 @@ pub async fn list_icons(
 ) -> Result<impl IntoResponse, StatusCode> {
     let rows: Vec<ChurchIconDto> = sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global,
+                  order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                  created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE (site_id = $1 OR is_global = true)
              AND ($2::uuid IS NULL OR calendar_day_id = $2)
@@ -709,14 +723,18 @@ pub async fn create_icon(
     let row: ChurchIconDto = sqlx::query_as(
         r#"INSERT INTO church_icons
            (site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-            description, language, status, is_global, translation_group_id)
+            description, language, status, is_global, translation_group_id,
+            order_enabled, order_block_text, production_time, price_cents, currency, consecration_available)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
                    COALESCE(
                        (SELECT translation_group_id FROM church_icons WHERE site_id = $1 AND slug = $4 LIMIT 1),
                        gen_random_uuid()
-                   ))
+                   ),
+                   $12, $13, $14, $15, $16, $17)
            RETURNING id, site_id, calendar_day_id, title, slug, image_url, saint_name,
-                     feast_name, description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
+                     feast_name, description, language, translation_group_id, status, is_global,
+                     order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                     created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(query.site_id())
     .bind(payload.calendar_day_id)
@@ -729,6 +747,12 @@ pub async fn create_icon(
     .bind(payload.language.unwrap_or_else(|| "uk".into()))
     .bind(payload.status.unwrap_or_else(|| "draft".into()))
     .bind(payload.is_global.unwrap_or(false))
+    .bind(payload.order_enabled.unwrap_or(false))
+    .bind(payload.order_block_text.unwrap_or_default())
+    .bind(payload.production_time.unwrap_or_default())
+    .bind(payload.price_cents)
+    .bind(payload.currency.unwrap_or_else(|| "UAH".into()))
+    .bind(payload.consecration_available.unwrap_or(false))
     .fetch_one(&pool)
     .await
     .map_err(db_error)?;
@@ -749,6 +773,8 @@ pub async fn update_icon(
               calendar_day_id = $1, title = $2, slug = $3, image_url = $4,
               saint_name = $5, feast_name = $6, description = $7, language = $8,
               status = $9, is_global = $10,
+              order_enabled = $13, order_block_text = $14, production_time = $15,
+              price_cents = $16, currency = $17, consecration_available = $18,
               translation_group_id = COALESCE(
                   (SELECT other.translation_group_id FROM church_icons other
                    WHERE other.site_id = $12 AND other.slug = $3 AND other.id <> $11 LIMIT 1),
@@ -756,7 +782,9 @@ pub async fn update_icon(
               )
            WHERE id = $11 AND site_id = $12
            RETURNING id, site_id, calendar_day_id, title, slug, image_url, saint_name,
-                     feast_name, description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at"#,
+                     feast_name, description, language, translation_group_id, status, is_global,
+                     order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                     created_at::text AS created_at, updated_at::text AS updated_at"#,
     )
     .bind(payload.calendar_day_id.or(current.calendar_day_id))
     .bind(optional_non_empty(payload.title).unwrap_or(current.title))
@@ -770,6 +798,12 @@ pub async fn update_icon(
     .bind(payload.is_global.unwrap_or(current.is_global))
     .bind(id)
     .bind(site_id)
+    .bind(payload.order_enabled.unwrap_or(current.order_enabled))
+    .bind(payload.order_block_text.unwrap_or(current.order_block_text))
+    .bind(payload.production_time.unwrap_or(current.production_time))
+    .bind(payload.price_cents.or(current.price_cents))
+    .bind(payload.currency.unwrap_or(current.currency))
+    .bind(payload.consecration_available.unwrap_or(current.consecration_available))
     .fetch_one(&pool)
     .await
     .map_err(db_error)?;
@@ -1743,7 +1777,9 @@ pub async fn public_icon_by_slug(
     // translation group so language switching never falls back silently.
     let group: Vec<ChurchIconDto> = sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global,
+                  order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                  created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE translation_group_id = (
                      SELECT translation_group_id FROM church_icons
@@ -1818,7 +1854,9 @@ pub async fn public_icon_list(
     let language = query.language.clone().unwrap_or_else(|| "uk".into());
     let icons: Vec<ChurchIconDto> = sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global,
+                  order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                  created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE language = $3
              AND (site_id = $1 OR is_global = true)
@@ -2606,14 +2644,16 @@ async fn get_public_calendar_row(
     .map_err(db_error)
 }
 
-async fn get_public_icon_row(
+pub(crate) async fn get_public_icon_row(
     pool: &PgPool,
     id: Uuid,
     include_drafts: bool,
 ) -> Result<Option<ChurchIconDto>, StatusCode> {
     sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global,
+                  order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                  created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE id = $1
              AND (site_id = $2 OR is_global = true)
@@ -2635,7 +2675,9 @@ async fn list_public_icons(
 ) -> Result<Vec<ChurchIconDto>, StatusCode> {
     sqlx::query_as(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global,
+                  order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                  created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons
            WHERE calendar_day_id = $1
              AND (site_id = $2 OR is_global = true)
@@ -2736,7 +2778,7 @@ async fn list_public_gospel(
     .map_err(db_error)
 }
 
-fn preview_allowed(query: &ChurchContentQuery) -> bool {
+pub(crate) fn preview_allowed(query: &ChurchContentQuery) -> bool {
     let Some(token) = std::env::var("CHURCH_PREVIEW_TOKEN")
         .ok()
         .map(|value| value.trim().to_string())
@@ -2771,7 +2813,7 @@ fn status_or_draft(status: &str) -> &str {
     }
 }
 
-fn slugify(value: &str) -> String {
+pub(crate) fn slugify(value: &str) -> String {
     let normalized = normalize_for_slug(value);
     if normalized.is_empty() {
         "prayer".into()
@@ -2805,7 +2847,9 @@ async fn get_icon_row(
     };
     let sql = format!(
         r#"SELECT id, site_id, calendar_day_id, title, slug, image_url, saint_name, feast_name,
-                  description, language, translation_group_id, status, is_global, created_at::text AS created_at, updated_at::text AS updated_at
+                  description, language, translation_group_id, status, is_global,
+                  order_enabled, order_block_text, production_time, price_cents, currency, consecration_available,
+                  created_at::text AS created_at, updated_at::text AS updated_at
            FROM church_icons WHERE {predicate}"#
     );
     sqlx::query_as::<_, ChurchIconDto>(&sql)
@@ -2817,7 +2861,7 @@ async fn get_icon_row(
         .ok_or(StatusCode::NOT_FOUND)
 }
 
-async fn delete_owned(
+pub(crate) async fn delete_owned(
     pool: &PgPool,
     table: &'static str,
     id: Uuid,
@@ -2838,17 +2882,17 @@ async fn delete_owned(
     }
 }
 
-fn required(value: Option<String>, _field: &'static str) -> Result<String, StatusCode> {
+pub(crate) fn required(value: Option<String>, _field: &'static str) -> Result<String, StatusCode> {
     optional_non_empty(value).ok_or(StatusCode::BAD_REQUEST)
 }
 
-fn optional_non_empty(value: Option<String>) -> Option<String> {
+pub(crate) fn optional_non_empty(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
 
-fn db_error(error: sqlx::Error) -> StatusCode {
+pub(crate) fn db_error(error: sqlx::Error) -> StatusCode {
     tracing::error!(%error, "church content database error");
     StatusCode::INTERNAL_SERVER_ERROR
 }
