@@ -28,7 +28,7 @@ use crate::infrastructure::R2Client;
 /// Bump whenever the sampling/encoding algorithm changes materially — forces
 /// a distinct R2 key (via the filename) and lets us tell "never processed"
 /// apart from "processed with an older algorithm" in the DB.
-pub const PROCESSING_VERSION: i32 = 1;
+pub const PROCESSING_VERSION: i32 = 2;
 
 const DESKTOP_TARGET_COUNT: usize = 72_000;
 const MOBILE_TARGET_COUNT: usize = 18_000;
@@ -406,7 +406,12 @@ fn color_for(mode: &str, luminance: f32, rand: f32) -> (f32, f32, f32) {
             }
         }
     };
-    let boost = 0.28 + luminance.min(0.72) * 0.42;
+    // Floor raised from 0.28 to 0.55 and ceiling from 0.58 to ~1.0 — the old
+    // range read as a dim, barely-visible haze once spread across tens of
+    // thousands of additively-blended points. PROCESSING_VERSION bumped
+    // alongside this so existing `ready` assets baked with the old, too-dim
+    // colors can be told apart and reprocessed.
+    let boost = 0.55 + luminance.min(0.85) * 0.55;
     (base.0 * boost, base.1 * boost, base.2 * boost)
 }
 
