@@ -6,14 +6,21 @@
 //! This module does that work exactly once per source image and produces
 //! ready-to-use binary particle maps for three device tiers, uploaded to R2.
 //!
-//! "Edge enhancement of face/eyes/halo/clothing" is implemented as generic
-//! Sobel-gradient contour emphasis, not semantic face/landmark detection —
-//! there is no ML model in this pipeline. In practice contours (face outline,
-//! eye sockets, the halo ring, clothing folds) are exactly the regions that
-//! score highest on a gradient magnitude map, so this reads as "detail is
-//! preserved, flat background is culled" without needing real recognition.
+//! "Face/eyes/hands/halo/silhouette/garment contour" prioritization is
+//! implemented as generic Sobel-gradient contour emphasis + local-contrast
+//! (texture) detection + a soft upper-center compositional prior (most icon
+//! portraits frame the face there) — not semantic face/hand landmark
+//! detection. There is no ML model in this pipeline. In practice this reads
+//! as "detail and the subject region are preserved, flat background is
+//! culled" without needing real recognition.
+//!
+//! Every particle also carries baked alpha, size, a coarse z-depth band, and
+//! a reveal-order value (silhouette → face-region → fine detail → color
+//! fill → highlights) — all computed once here from the same per-pixel
+//! signals, so the frontend never re-derives brightness, position, or
+//! timing; it only renders exactly what this module produced.
 
-use std::collections::HashSet;
+use std::cmp::Ordering;
 use std::io::Write;
 
 use bytes::Bytes;
@@ -28,18 +35,16 @@ use crate::infrastructure::R2Client;
 /// Bump whenever the sampling/encoding algorithm changes materially — forces
 /// a distinct R2 key (via the filename) and lets us tell "never processed"
 /// apart from "processed with an older algorithm" in the DB.
-pub const PROCESSING_VERSION: i32 = 2;
+pub const PROCESSING_VERSION: i32 = 3;
 
-const DESKTOP_TARGET_COUNT: usize = 72_000;
+const DESKTOP_TARGET_COUNT: usize = 64_000;
 const MOBILE_TARGET_COUNT: usize = 18_000;
 const LOW_POWER_TARGET_COUNT: usize = 8_000;
 
 const BINARY_MAGIC: &[u8; 4] = b"PVM1";
-const BINARY_FORMAT_VERSION: u16 = 1;
-
-const GOLD: (f32, f32, f32) = (0.87, 0.68, 0.32);
-const SILVER: (f32, f32, f32) = (0.82, 0.86, 0.92);
-const WARM_WHITE: (f32, f32, f32) = (0.96, 0.88, 0.74);
+/// v2 adds three baked per-particle channels (alpha, size, reveal-order)
+/// after the colors block; see `encode_binary` for the exact layout.
+const BINARY_FORMAT_VERSION: u16 = 2;
 
 /// Marks (or re-marks) a prayer's visualizer asset row as freshly queued for
 /// processing. Called synchronously from the HTTP handler, before the actual
@@ -126,9 +131,25 @@ struct ProcessedOutputs {
 struct Candidate {
     x: u32,
     y: u32,
-    luminance: f32,
-    edge: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    /// Combined sampling priority: how strongly this pixel should be kept
+    /// and how densely packed its neighborhood should be.
+    importance: f32,
+    /// 0..1 — when this particle should finish assembling, relative to the
+    /// others: silhouette/contours first, then the face-prior region, then
+    /// fine detail, then color fill, then bright/saturated highlights last.
+    /// Also identifies the highlight band (reveal > HIGHLIGHT_REVEAL_FLOOR
+    /// is only ever produced by the highlight branch below) — no other
+    /// branch reaches that range, so it doubles as a highlight flag without
+    /// needing a separate stored field.
+    reveal: f32,
 }
+
+/// Only the highlight reveal-order branch in `extract_candidates` produces
+/// values at or above this floor; every other branch caps below it.
+const HIGHLIGHT_REVEAL_FLOOR: f32 = 0.85;
 
 async fn process(
     r2: &R2Client,
@@ -219,7 +240,7 @@ async fn process_tier(
     prefix: &str,
     tier_name: &str,
 ) -> Result<(i32, String), String> {
-    let picked = pick_tier(candidates, target_count);
+    let picked = pick_tier(candidates, target_count, sample_w, sample_h);
     let map = build_particle_map(&picked, sample_w, sample_h, aspect, color_mode);
     let raw = encode_binary(&map);
     let compressed = gzip(&raw)?;
@@ -231,12 +252,12 @@ async fn process_tier(
     Ok((map.count as i32, url))
 }
 
-/// Samples luminance + Sobel edge magnitude per pixel and keeps only pixels
-/// that read as either a strong edge (contour) or a mid-tone, saturated
-/// "figure" pixel — the same two-part test the frontend sampler used, just
-/// computed once here with a proper gradient instead of a cheap 4-neighbour
-/// diff. Everything else (near-transparent, near-black, flat low-contrast
-/// background) is dropped — this is the "remove most background points" step.
+/// Samples real color + luminance + Sobel edge + local contrast per pixel,
+/// derives a compositional face-region prior and a highlight score from
+/// those, combines them into one `importance` sampling weight and a
+/// `reveal` order, and keeps only pixels that read as a contour, textured
+/// detail, or a mid-tone saturated "figure" pixel — everything else (near-
+/// transparent, near-black, flat low-contrast background) is dropped.
 fn extract_candidates(img: &image::RgbaImage, w: u32, h: u32) -> Vec<Candidate> {
     let mut luminance = vec![0f32; (w * h) as usize];
     for y in 0..h {
@@ -279,6 +300,23 @@ fn extract_candidates(img: &image::RgbaImage, w: u32, h: u32) -> Vec<Candidate> 
                 + 2.0 * lum_at(xi, yi + 1)
                 + 1.0 * lum_at(xi + 1, yi + 1);
             let edge = (gx * gx + gy * gy).sqrt();
+            let edge_norm = (edge / 2.5).min(1.0);
+
+            // Local contrast: stddev of luminance in the 3x3 neighborhood —
+            // catches fine texture (eyes, hands, decorative detail) that a
+            // pure gradient can miss when the transition is soft.
+            let mut sum = 0f32;
+            let mut sum_sq = 0f32;
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let l = lum_at(xi + dx, yi + dy);
+                    sum += l;
+                    sum_sq += l * l;
+                }
+            }
+            let mean = sum / 9.0;
+            let variance = (sum_sq / 9.0 - mean * mean).max(0.0);
+            let contrast_norm = (variance.sqrt() / 0.28).min(1.0);
 
             let max_c = r.max(g).max(b);
             let min_c = r.min(g).min(b);
@@ -290,48 +328,172 @@ fn extract_candidates(img: &image::RgbaImage, w: u32, h: u32) -> Vec<Candidate> 
                 continue;
             }
 
-            out.push(Candidate { x, y, luminance: lum, edge });
+            // Soft compositional prior: most icon portraits frame the face
+            // in the upper-middle third. This is a prior over *composition*,
+            // not a detected landmark — it nudges importance/reveal-order,
+            // it never gates inclusion.
+            let nx = x as f32 / w as f32;
+            let ny = y as f32 / h as f32;
+            let fdx = nx - 0.5;
+            let fdy = ny - 0.32;
+            let face_prior = (-(fdx * fdx + fdy * fdy) / (2.0 * 0.12 * 0.12)).exp();
+
+            // Bright + moderately-to-highly saturated pixels read as
+            // catchlights/gilding/jewelry — the "highlights" band.
+            let highlight_score = ((lum - 0.6).max(0.0) / 0.4) * (0.35 + saturation.min(0.65));
+
+            let importance = (0.42 * edge_norm
+                + 0.22 * contrast_norm
+                + 0.18 * face_prior.min(1.0)
+                + 0.18 * highlight_score.min(1.0))
+            .clamp(0.05, 1.0);
+
+            let reveal = if highlight_score > 0.35 {
+                0.86 + 0.14 * highlight_score.min(1.0)
+            } else if edge_norm > 0.45 {
+                0.04 + 0.16 * edge_norm
+            } else if face_prior > 0.5 {
+                0.26 + 0.14 * face_prior.min(1.0)
+            } else if contrast_norm > 0.35 {
+                0.46 + 0.14 * contrast_norm
+            } else {
+                0.66 + 0.14 * (1.0 - lum).clamp(0.0, 1.0)
+            };
+
+            out.push(Candidate {
+                x,
+                y,
+                r,
+                g,
+                b,
+                importance,
+                reveal: reveal.clamp(0.0, 1.0),
+            });
         }
     }
     out
 }
 
-/// Picks `target` points out of the full candidate pool for one device tier:
-/// ~55% are the highest-edge (contour) pixels — this is the "enhance
-/// face/eye/halo/clothing contours" step — and the rest are stride-sampled
-/// uniformly across the remaining pool so the silhouette stays filled in,
-/// not just its edges.
-fn pick_tier(candidates: &[Candidate], target: usize) -> Vec<Candidate> {
+/// Depth banding is computed against a specific *tier's already-picked*
+/// particles (not the full candidate pool) — the blue-noise selection in
+/// `pick_tier` inherently favors higher-importance points (they pack denser
+/// and so survive selection more often), which skews the survivors' own
+/// importance distribution well above the full pool's. Using this tier-local
+/// percentile is what actually gets ~20% of its non-highlight particles into
+/// the background band, rather than ~0%.
+fn depth_band_for(picked: &[Candidate]) -> Vec<i8> {
+    let mut non_highlight_importance: Vec<f32> = picked
+        .iter()
+        .filter(|c| c.reveal < HIGHLIGHT_REVEAL_FLOOR)
+        .map(|c| c.importance)
+        .collect();
+    non_highlight_importance.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    let bg_threshold = if non_highlight_importance.is_empty() {
+        0.0
+    } else {
+        let idx = (((non_highlight_importance.len() as f32) * 0.20) as usize).min(non_highlight_importance.len() - 1);
+        non_highlight_importance[idx]
+    };
+
+    picked
+        .iter()
+        .map(|c| {
+            if c.reveal >= HIGHLIGHT_REVEAL_FLOOR {
+                1
+            } else if c.importance < bg_threshold {
+                -1
+            } else {
+                0
+            }
+        })
+        .collect()
+}
+
+/// Importance-weighted blue-noise (dart-throwing) selection: candidates are
+/// processed in descending importance order and accepted only if they land
+/// farther than a minimum radius from every already-accepted neighbor, where
+/// that radius shrinks with importance (dense packing on contours/face/
+/// highlights) and grows on low-importance background fill. This avoids the
+/// row/grid artifacts a uniform stride or raster-order pick produces, and
+/// naturally thins background fill without a second, separate "background"
+/// pass. Falls back to returning the whole pool if it's already <= target.
+fn pick_tier(candidates: &[Candidate], target: usize, sample_w: u32, sample_h: u32) -> Vec<Candidate> {
     let total = candidates.len();
     if total <= target {
         return candidates.to_vec();
     }
 
-    let edge_quota = ((target as f64) * 0.55).round() as usize;
-    let mut by_edge: Vec<usize> = (0..total).collect();
-    by_edge.sort_unstable_by(|&a, &b| {
+    let mut order: Vec<usize> = (0..total).collect();
+    order.sort_unstable_by(|&a, &b| {
         candidates[b]
-            .edge
-            .partial_cmp(&candidates[a].edge)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .importance
+            .partial_cmp(&candidates[a].importance)
+            .unwrap_or(Ordering::Equal)
     });
 
-    let mut chosen: Vec<usize> = by_edge.into_iter().take(edge_quota).collect();
-    let chosen_set: HashSet<usize> = chosen.iter().copied().collect();
+    let area = (sample_w as f32) * (sample_h as f32);
+    // Average disk radius for `target` points at ~70% hex-packing efficiency.
+    let base_radius = (area / (target as f32) / 1.4).sqrt().max(0.6);
 
-    let remaining: Vec<usize> = (0..total).filter(|i| !chosen_set.contains(i)).collect();
-    let fill_quota = target.saturating_sub(chosen.len());
-    if fill_quota > 0 && !remaining.is_empty() {
-        let stride = (remaining.len() as f64 / fill_quota as f64).max(1.0);
-        let mut pos = 0f64;
-        while chosen.len() < target && (pos as usize) < remaining.len() {
-            chosen.push(remaining[pos as usize]);
-            pos += stride;
+    let mut best: Vec<usize> = Vec::new();
+    let mut scale = 1.0f32;
+    for _attempt in 0..5 {
+        // Narrower spread than an earlier version (was 1.85..0.55): a wide
+        // spread over-thinned merely-flat *subject* areas (a robe's mid-fold
+        // fill has little edge/contrast but is still the figure, not photo
+        // background) into a near-black void. Contours/face/highlights
+        // still pack visibly denser than flat fill, just not as extremely.
+        let radius_for = |importance: f32| -> f32 {
+            (base_radius * scale) * (1.4 - 0.85 * importance.clamp(0.0, 1.0))
+        };
+        let cell_size = (base_radius * scale * 0.6).max(1.0);
+        let grid_w = ((sample_w as f32 / cell_size).ceil() as i32 + 1).max(1);
+        let grid_h = ((sample_h as f32 / cell_size).ceil() as i32 + 1).max(1);
+        let mut grid: Vec<Vec<usize>> = vec![Vec::new(); (grid_w * grid_h) as usize];
+        let cell_of = |x: f32, y: f32| -> (i32, i32) { ((x / cell_size) as i32, (y / cell_size) as i32) };
+
+        let mut accepted: Vec<usize> = Vec::with_capacity(target.min(total));
+        for &idx in &order {
+            let c = &candidates[idx];
+            let r = radius_for(c.importance);
+            let (cxg, cyg) = cell_of(c.x as f32, c.y as f32);
+            let mut ok = true;
+            'search: for gy in (cyg - 1).max(0)..=(cyg + 1).min(grid_h - 1) {
+                for gx in (cxg - 1).max(0)..=(cxg + 1).min(grid_w - 1) {
+                    for &other_idx in &grid[(gy * grid_w + gx) as usize] {
+                        let o = &candidates[other_idx];
+                        let dx = o.x as f32 - c.x as f32;
+                        let dy = o.y as f32 - c.y as f32;
+                        let min_r = r.min(radius_for(o.importance));
+                        if dx * dx + dy * dy < min_r * min_r {
+                            ok = false;
+                            break 'search;
+                        }
+                    }
+                }
+            }
+            if ok {
+                grid[(cyg * grid_w + cxg) as usize].push(idx);
+                accepted.push(idx);
+                if accepted.len() >= target {
+                    break;
+                }
+            }
         }
+
+        if accepted.len() > best.len() {
+            best = accepted;
+        }
+        if best.len() >= target {
+            break;
+        }
+        // Too few accepted — shrink the radius (denser packing) and retry.
+        scale *= 0.7;
     }
 
-    chosen.sort_unstable();
-    chosen.into_iter().map(|i| candidates[i]).collect()
+    best.truncate(target);
+    best.sort_unstable();
+    best.into_iter().map(|i| candidates[i]).collect()
 }
 
 struct ParticleMapBuffers {
@@ -341,6 +503,9 @@ struct ParticleMapBuffers {
     targets: Vec<f32>,
     starts: Vec<f32>,
     colors: Vec<u8>,
+    alphas: Vec<u8>,
+    sizes: Vec<u8>,
+    reveal: Vec<u8>,
     randoms: Vec<u8>,
 }
 
@@ -358,83 +523,128 @@ fn build_particle_map(
     let mut targets = vec![0f32; count * 3];
     let mut starts = vec![0f32; count * 3];
     let mut colors = vec![0u8; count * 3];
+    let mut alphas = vec![0u8; count];
+    let mut sizes = vec![0u8; count];
+    let mut reveal = vec![0u8; count];
     let mut randoms = vec![0u8; count];
 
-    let grid_cols = ((count as f32 * aspect).sqrt().ceil() as usize).max(1);
-    let grid_rows = ((count as f32 / grid_cols as f32).ceil() as usize).max(1);
+    let depth_bands = depth_band_for(picked);
 
     for (i, c) in picked.iter().enumerate() {
         let nx = (c.x as f32 / sample_w as f32 - 0.5) * target_width;
         let ny = -(c.y as f32 / sample_h as f32 - 0.5) * target_height;
-        // Weak z-depth: edge (contour) points sit marginally more forward so
-        // the assembled face reads with a faint sense of relief instead of
-        // being perfectly flat.
-        let tz = (rand::random::<f32>() - 0.5) * 0.05 - c.edge.min(1.0) * 0.015;
+
+        // Structured, subtle z-depth: background sits slightly behind the
+        // main plane, the subject sits on it, highlights sit slightly in
+        // front. Kept small on purpose — with an orthographic camera this
+        // reads as gentle volumetric relief via depth-sorted blending and
+        // (below) depth-correlated size/alpha, not as perspective parallax.
+        let jitter = (rand::random::<f32>() - 0.5) * 0.02;
+        let tz = match depth_bands[i] {
+            1 => 0.05 + 0.05 * jitter.abs() * 4.0,
+            -1 => -0.11 - 0.05 * jitter.abs() * 4.0,
+            _ => jitter,
+        };
         targets[i * 3] = nx;
         targets[i * 3 + 1] = ny;
         targets[i * 3 + 2] = tz;
 
-        let rnd = rand::random::<f32>();
-        let gx = i % grid_cols;
-        let gy = i / grid_cols;
-        let square_x = ((gx as f32 + 0.5) / grid_cols as f32 - 0.5) * target_width * 1.08;
-        let square_y = -(((gy as f32 + 0.5) / grid_rows as f32 - 0.5) * target_height * 1.08);
-        starts[i * 3] = square_x + (rand::random::<f32>() - 0.5) * 0.012;
-        starts[i * 3 + 1] = square_y + (rand::random::<f32>() - 0.5) * 0.012;
-        starts[i * 3 + 2] = (rand::random::<f32>() - 0.5) * 0.18;
+        // Organic scattered dust cloud instead of a square grid: uniform
+        // over an ellipse matching the image's aspect, so the pre-assembly
+        // state never reads as rows/columns.
+        let theta = rand::random::<f32>() * std::f32::consts::TAU;
+        let radius_frac = rand::random::<f32>().sqrt();
+        let sx = radius_frac * target_width * 0.62 * theta.cos();
+        let sy = radius_frac * target_height * 0.62 * theta.sin();
+        starts[i * 3] = sx;
+        starts[i * 3 + 1] = sy;
+        starts[i * 3 + 2] = (rand::random::<f32>() - 0.5) * 0.22;
 
-        let (cr, cg, cb) = color_for(color_mode, c.luminance, rnd);
+        let (cr, cg, cb) = grade_color(color_mode, c.r, c.g, c.b);
         colors[i * 3] = (cr.clamp(0.0, 1.0) * 255.0).round() as u8;
         colors[i * 3 + 1] = (cg.clamp(0.0, 1.0) * 255.0).round() as u8;
         colors[i * 3 + 2] = (cb.clamp(0.0, 1.0) * 255.0).round() as u8;
-        randoms[i] = (rnd.clamp(0.0, 1.0) * 255.0).round() as u8;
+
+        // Baked per-particle alpha/size: higher importance (contours, face
+        // region, highlights) reads as more opaque and larger; flat-fill
+        // background dust stays smaller and dimmer. This is the "readable
+        // alpha" + "adaptive size" the client no longer computes itself.
+        let alpha_base = (0.70 + 0.30 * c.importance).clamp(0.0, 1.0);
+        let size_mult = (0.78 + 0.65 * c.importance).clamp(0.0, 1.5);
+        alphas[i] = (alpha_base * 255.0).round() as u8;
+        sizes[i] = ((size_mult / 1.5) * 255.0).round().clamp(0.0, 255.0) as u8;
+        reveal[i] = (c.reveal.clamp(0.0, 1.0) * 255.0).round() as u8;
+        randoms[i] = (rand::random::<f32>().clamp(0.0, 1.0) * 255.0).round() as u8;
     }
 
-    ParticleMapBuffers { count, width: target_width, height: target_height, targets, starts, colors, randoms }
+    ParticleMapBuffers {
+        count,
+        width: target_width,
+        height: target_height,
+        targets,
+        starts,
+        colors,
+        alphas,
+        sizes,
+        reveal,
+        randoms,
+    }
 }
 
-fn color_for(mode: &str, luminance: f32, rand: f32) -> (f32, f32, f32) {
-    let base = match mode {
-        "gold" => GOLD,
-        "silver" => SILVER,
-        "warm_white" => WARM_WHITE,
-        _ => {
-            if rand > 0.45 {
-                GOLD
-            } else {
-                SILVER
-            }
-        }
+/// Grades the *real* sampled pixel color for the chosen aesthetic mode —
+/// unlike the previous synthetic gold/silver palette, the source photo's
+/// actual hue/detail is preserved; the mode only applies a gentle tint and a
+/// small shadow lift (so real dark pixels — hair, deep robe folds — don't
+/// vanish once alpha-blended against the black canvas).
+fn grade_color(mode: &str, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let (tr, tg, tb): (f32, f32, f32) = match mode {
+        "gold" => (1.15, 1.0, 0.80),
+        "silver" => (0.98, 1.02, 1.08),
+        "warm_white" => (1.05, 1.02, 0.95),
+        _ => (1.06, 1.0, 0.88),
     };
-    // Floor raised from 0.28 to 0.55 and ceiling from 0.58 to ~1.0 — the old
-    // range read as a dim, barely-visible haze once spread across tens of
-    // thousands of additively-blended points. PROCESSING_VERSION bumped
-    // alongside this so existing `ready` assets baked with the old, too-dim
-    // colors can be told apart and reprocessed.
-    let boost = 0.55 + luminance.min(0.85) * 0.55;
-    (base.0 * boost, base.1 * boost, base.2 * boost)
+    // Lifted from 0.10 to 0.22 — shadowed real-color areas (robe folds in
+    // low light, dark hair) still read as recognizably dim next to the
+    // face/halo highlights, but were reading as near-black once additively
+    // blended against the black canvas at the old, lower lift.
+    let lift = 0.22;
+    let lr = r * (1.0 - lift) + lift;
+    let lg = g * (1.0 - lift) + lift;
+    let lb = b * (1.0 - lift) + lift;
+    (lr * tr, lg * tg, lb * tb)
 }
 
 /// Compact versioned binary layout — no JSON for tens of thousands of points.
 /// All multi-byte fields little-endian. f32 blocks come first so each one
 /// starts at a 4-byte-aligned offset (required to later hand the browser a
 /// zero-copy `Float32Array` view straight over the decompressed buffer); the
-/// two byte-per-element blocks (no alignment constraint) come last.
+/// byte-per-element blocks (no alignment constraint) come last.
 ///
 /// ```text
 /// offset  0: magic "PVM1"            (4 bytes)
-/// offset  4: format version (u16 LE) (2 bytes)
+/// offset  4: format version (u16 LE) (2 bytes) — 2
 /// offset  6: reserved                (2 bytes)
 /// offset  8: particle count (u32 LE) (4 bytes)
 /// offset 12: width  (f32 LE)         (4 bytes)
 /// offset 16: height (f32 LE)         (4 bytes)
-/// offset 20: targets  f32[count * 3] (count * 12 bytes)
+/// offset 20: targets  f32[count * 3] (count * 12 bytes) — xyz, z = baked depth
 /// offset  +: starts   f32[count * 3] (count * 12 bytes)
-/// offset  +: colors   u8[count * 3]  (count * 3 bytes,  0..255 per channel)
+/// offset  +: colors   u8[count * 3]  (count * 3 bytes,  0..255 per channel, real graded RGB)
+/// offset  +: alphas   u8[count]      (count bytes,      0..255, baked per-particle alpha)
+/// offset  +: sizes    u8[count]      (count bytes,      0..255, baked per-particle size)
+/// offset  +: reveal   u8[count]      (count bytes,      0..255, reveal-order 0=first..255=last)
 /// offset  +: randoms  u8[count]      (count bytes,      0..255)
 /// ```
 fn encode_binary(map: &ParticleMapBuffers) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(20 + map.targets.len() * 4 + map.starts.len() * 4 + map.colors.len() + map.randoms.len());
+    let mut buf = Vec::with_capacity(
+        20 + map.targets.len() * 4
+            + map.starts.len() * 4
+            + map.colors.len()
+            + map.alphas.len()
+            + map.sizes.len()
+            + map.reveal.len()
+            + map.randoms.len(),
+    );
     buf.extend_from_slice(BINARY_MAGIC);
     buf.extend_from_slice(&BINARY_FORMAT_VERSION.to_le_bytes());
     buf.extend_from_slice(&0u16.to_le_bytes());
@@ -448,6 +658,9 @@ fn encode_binary(map: &ParticleMapBuffers) -> Vec<u8> {
         buf.extend_from_slice(&v.to_le_bytes());
     }
     buf.extend_from_slice(&map.colors);
+    buf.extend_from_slice(&map.alphas);
+    buf.extend_from_slice(&map.sizes);
+    buf.extend_from_slice(&map.reveal);
     buf.extend_from_slice(&map.randoms);
     buf
 }
@@ -545,6 +758,18 @@ async fn save_failed(pool: &PgPool, prayer_id: Uuid, message: &str) -> Result<()
 mod tests {
     use super::*;
 
+    fn test_candidate(x: u32, y: u32, importance: f32, reveal: f32) -> Candidate {
+        Candidate {
+            x,
+            y,
+            r: 0.6,
+            g: 0.5,
+            b: 0.4,
+            importance,
+            reveal,
+        }
+    }
+
     fn synthetic_image(w: u32, h: u32) -> image::DynamicImage {
         // A bright disc (the "face") on a flat dark background, so both the
         // is_figure_tone and is_detail (edge) candidate paths get exercised
@@ -581,31 +806,78 @@ mod tests {
     }
 
     #[test]
+    fn extract_candidates_produces_reveal_bands_and_real_color() {
+        let img = synthetic_image(160, 160).to_rgba8();
+        let candidates = extract_candidates(&img, 160, 160);
+        // Real sampled color should be preserved (not replaced by a
+        // synthetic gold/silver constant) — the disc's fill color was
+        // (220, 190, 150), i.e. roughly r > g > b.
+        let inside = candidates
+            .iter()
+            .find(|c| c.r > 0.5)
+            .expect("at least one bright candidate from the disc");
+        assert!(inside.r > inside.b);
+        // Reveal order must stay within the documented 0..1 range.
+        assert!(candidates.iter().all(|c| c.reveal >= 0.0 && c.reveal <= 1.0));
+    }
+
+    #[test]
     fn pick_tier_respects_target_and_pool_size() {
         let candidates: Vec<Candidate> = (0..1000)
-            .map(|i| Candidate { x: i % 40, y: i / 40, luminance: 0.5, edge: (i % 10) as f32 / 10.0 })
+            .map(|i| test_candidate(i % 40, i / 40, (i % 10) as f32 / 10.0, (i % 5) as f32 / 5.0))
             .collect();
 
-        let picked = pick_tier(&candidates, 200);
+        let picked = pick_tier(&candidates, 200, 40, 25);
         assert_eq!(picked.len(), 200);
 
         // Requesting more than the pool has just returns the whole pool.
-        let picked_all = pick_tier(&candidates, 5000);
+        let picked_all = pick_tier(&candidates, 5000, 40, 25);
         assert_eq!(picked_all.len(), candidates.len());
+    }
+
+    #[test]
+    fn pick_tier_blue_noise_avoids_exact_duplicate_positions() {
+        // A dense grid of candidates all sharing the same importance: naive
+        // stride-picking would produce a very regular pattern; blue-noise
+        // dart-throwing should still enforce a minimum spacing rather than
+        // just taking every Nth raster-order point.
+        let mut candidates = Vec::new();
+        for y in 0..60u32 {
+            for x in 0..60u32 {
+                candidates.push(test_candidate(x, y, 0.5, 0.5));
+            }
+        }
+        let picked = pick_tier(&candidates, 400, 60, 60);
+        assert!(picked.len() <= 400 && !picked.is_empty());
+        // No two accepted points should sit at the exact same pixel (sanity
+        // check that the selection isn't just returning input order verbatim).
+        let mut seen = std::collections::HashSet::new();
+        for c in &picked {
+            assert!(seen.insert((c.x, c.y)), "duplicate position in blue-noise pick");
+        }
     }
 
     #[test]
     fn binary_roundtrip_header_and_payload_layout() {
         let picked = vec![
-            Candidate { x: 10, y: 20, luminance: 0.4, edge: 0.9 },
-            Candidate { x: 30, y: 5, luminance: 0.7, edge: 0.1 },
-            Candidate { x: 0, y: 0, luminance: 0.05, edge: 0.0 },
+            test_candidate(10, 20, 0.9, 0.1),
+            test_candidate(30, 5, 0.3, 0.7),
+            test_candidate(0, 0, 0.05, 0.9),
         ];
         let map = build_particle_map(&picked, 100, 100, 1.0, "gold");
         assert_eq!(map.count, 3);
         let raw = encode_binary(&map);
 
-        let expected_len = 20 + map.count * 3 * 4 + map.count * 3 * 4 + map.count * 3 + map.count;
+        let per_particle_u8_blocks = 4; // colors(3) counted separately below, + alphas + sizes + reveal + randoms
+        let _ = per_particle_u8_blocks;
+        let expected_len = 20
+            + map.count * 3 * 4 // targets
+            + map.count * 3 * 4 // starts
+            + map.count * 3 // colors
+            + map.count // alphas
+            + map.count // sizes
+            + map.count // reveal
+            + map.count; // randoms
         assert_eq!(raw.len(), expected_len);
 
         assert_eq!(&raw[0..4], b"PVM1");
@@ -627,8 +899,16 @@ mod tests {
         let colors_offset = 20 + map.count * 3 * 4 + map.count * 3 * 4;
         assert_eq!(raw[colors_offset], map.colors[0]);
 
-        // Randoms block is the final `count` bytes.
-        let randoms_offset = colors_offset + map.count * 3;
+        let alphas_offset = colors_offset + map.count * 3;
+        assert_eq!(raw[alphas_offset], map.alphas[0]);
+
+        let sizes_offset = alphas_offset + map.count;
+        assert_eq!(raw[sizes_offset], map.sizes[0]);
+
+        let reveal_offset = sizes_offset + map.count;
+        assert_eq!(raw[reveal_offset], map.reveal[0]);
+
+        let randoms_offset = reveal_offset + map.count;
         assert_eq!(raw.len() - randoms_offset, map.count);
         assert_eq!(raw[randoms_offset], map.randoms[0]);
 
@@ -646,10 +926,10 @@ mod tests {
     #[test]
     fn write_fixture_for_frontend_decoder_test() {
         let picked = vec![
-            Candidate { x: 10, y: 20, luminance: 0.4, edge: 0.9 },
-            Candidate { x: 30, y: 5, luminance: 0.7, edge: 0.1 },
-            Candidate { x: 50, y: 50, luminance: 0.6, edge: 0.3 },
-            Candidate { x: 90, y: 80, luminance: 0.2, edge: 0.05 },
+            test_candidate(10, 20, 0.9, 0.1),
+            test_candidate(30, 5, 0.3, 0.7),
+            test_candidate(50, 50, 0.5, 0.5),
+            test_candidate(90, 80, 0.1, 0.95),
         ];
         let map = build_particle_map(&picked, 100, 100, 1.4, "silver");
         let raw = encode_binary(&map);
