@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -119,9 +119,22 @@ pub struct ChurchIconPayload {
     pub consecration_available: Option<bool>,
 }
 
-const PRAYER_COLUMNS: &str = "id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id, \
+pub(crate) const PRAYER_COLUMNS: &str = "id, site_id, icon_id, calendar_day_id, slug, title, text, audio_url, qr_code_url, image_url, source, source_url, note, language, prayer_type, translation_group_id, \
     status, is_global, visualizer_enabled, visualizer_image_url, particle_count_desktop, particle_count_mobile, particle_size, particle_color_mode, background_color, audio_reactivity, \
     scene_timeline, subtitle_cues, created_at::text AS created_at, updated_at::text AS updated_at";
+
+/// Resolves which photo the prayer-mode visualizer should assemble from: the
+/// admin's dedicated override if set, otherwise the prayer's own image. This
+/// mirrors the frontend's existing fallback chain and is what the
+/// backend-preprocessing pipeline treats as its source image.
+pub(crate) fn effective_visualizer_image(prayer: &ChurchPrayerDto) -> String {
+    let trimmed = prayer.visualizer_image_url.trim();
+    if !trimmed.is_empty() {
+        trimmed.to_string()
+    } else {
+        prayer.image_url.clone()
+    }
+}
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -894,6 +907,7 @@ pub async fn get_prayer(
 pub async fn create_prayer(
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
+    Extension(r2): Extension<crate::infrastructure::R2Client>,
     Json(payload): Json<ChurchPrayerPayload>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let title = required(payload.title, "title")?;
@@ -941,6 +955,8 @@ pub async fn create_prayer(
     .await
     .map_err(db_error)?;
 
+    spawn_visualizer_processing_if_needed(&pool, &r2, &row, None);
+
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -948,6 +964,7 @@ pub async fn update_prayer(
     Path(id): Path<Uuid>,
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
+    Extension(r2): Extension<crate::infrastructure::R2Client>,
     Json(payload): Json<ChurchPrayerPayload>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let site_id = query.site_id();
@@ -960,6 +977,8 @@ pub async fn update_prayer(
     .await
     .map_err(db_error)?
     .ok_or(StatusCode::NOT_FOUND)?;
+
+    let previous_effective_image = effective_visualizer_image(&current);
 
     let row: ChurchPrayerDto = sqlx::query_as(&format!(
         r#"UPDATE church_prayers SET
@@ -1008,7 +1027,53 @@ pub async fn update_prayer(
     .await
     .map_err(db_error)?;
 
+    spawn_visualizer_processing_if_needed(&pool, &r2, &row, Some(&previous_effective_image));
+
     Ok(Json(row))
+}
+
+/// Fires off the backend particle-map preprocessing job whenever the prayer's
+/// effective visualizer source image is set for the first time or changes.
+/// Non-blocking: marks the asset row `pending` synchronously (so an admin
+/// refreshing the page immediately sees processing has started) and lets the
+/// actual image work run in the background via `tokio::spawn`, exactly like
+/// the existing blog-revalidation fire-and-forget pattern in this codebase.
+fn spawn_visualizer_processing_if_needed(
+    pool: &PgPool,
+    r2: &crate::infrastructure::R2Client,
+    prayer: &ChurchPrayerDto,
+    previous_effective_image: Option<&str>,
+) {
+    let effective_image = effective_visualizer_image(prayer);
+    if effective_image.is_empty() {
+        return;
+    }
+    if previous_effective_image == Some(effective_image.as_str()) {
+        return;
+    }
+
+    let pool = pool.clone();
+    let r2 = r2.clone();
+    let prayer_id = prayer.id;
+    let color_mode = prayer.particle_color_mode.clone();
+    let source_image = effective_image;
+
+    tokio::spawn(async move {
+        if let Err(err) =
+            crate::application::prayer_visualizer::mark_pending(&pool, prayer_id, &source_image).await
+        {
+            tracing::error!(%err, %prayer_id, "prayer visualizer: failed to mark pending");
+            return;
+        }
+        crate::application::prayer_visualizer::run_processing_job(
+            pool,
+            r2,
+            prayer_id,
+            source_image,
+            color_mode,
+        )
+        .await;
+    });
 }
 
 fn default_scene_timeline() -> serde_json::Value {

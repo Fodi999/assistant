@@ -45,6 +45,7 @@ use crate::interfaces::http::{
     chef_reference_public::{convert_units, fish_season, get_ingredient},
     church_content,
     church_orders,
+    church_prayer_visualizer,
     dish::{create_dish, list_dishes, recalculate_all_costs},
     icons_site,
     inventory::{
@@ -1570,6 +1571,14 @@ pub fn create_router(
                 .delete(church_content::delete_prayer),
         )
         .route(
+            "/prayers/:id/visualizer",
+            get(church_prayer_visualizer::get_prayer_visualizer_asset),
+        )
+        .route(
+            "/prayers/:id/visualizer/reprocess",
+            post(church_prayer_visualizer::reprocess_prayer_visualizer),
+        )
+        .route(
             "/saints",
             get(church_content::list_saints).post(church_content::create_saint),
         )
@@ -1627,6 +1636,9 @@ pub fn create_router(
                 }
             })
         })
+        // Needed by create_prayer/update_prayer/reprocess_prayer_visualizer to
+        // kick off the backend particle-map preprocessing job.
+        .layer(Extension(r2_client.clone()))
         .with_state(pool_for_public.clone());
 
     // ── Public CMS routes (no auth) ───────────────────────────────────────────
@@ -1681,6 +1693,10 @@ pub fn create_router(
         .route(
             "/api/church/prayers/:slug",
             get(church_content::public_prayer_by_slug),
+        )
+        .route(
+            "/api/church/prayers/:slug/visualizer",
+            get(church_prayer_visualizer::public_prayer_visualizer_asset),
         )
         .route("/api/church/saints", get(church_content::public_saint_list))
         .route(

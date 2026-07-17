@@ -74,6 +74,11 @@ home = "=0.5.9"  # Pin to avoid edition2024
 regex-lite = "0.1.9"
 deunicode = "1.6.2"
 
+# Prayer-mode visualizer preprocessing: decode source photos, encode fallback
+# WebP posters, gzip the binary particle maps before uploading to R2.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
 
 [dev-dependencies]
 http-body-util = "0.1"

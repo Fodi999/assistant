@@ -16,6 +16,7 @@ pub mod inventory;
 pub mod inventory_alert;
 pub mod laboratory; // 🆕 Food-tech Laboratory — analysis projects on top of catalog
 pub mod menu_engineering;
+pub mod prayer_visualizer; // 🆕 Prayer-mode particle map preprocessing (backend-side, R2-cached)
 pub mod preferences_service; // ChefOS user preferences
 pub mod public_nutrition;
 pub mod public_seo_content; // 🆕 AI SEO content for programmatic pages

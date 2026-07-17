@@ -95,22 +95,42 @@ impl R2Client {
         content: Bytes,
         content_type: &str,
     ) -> Result<String, AppError> {
+        self.upload_object(key, content, content_type, None).await
+    }
+
+    /// Upload an object to R2 with an optional `Content-Encoding` (e.g. "gzip")
+    /// for pre-compressed payloads such as the prayer-visualizer binary
+    /// particle maps. Browsers transparently decompress on fetch/XHR based on
+    /// this header regardless of the request's `Accept-Encoding`, so a
+    /// gzip-encoded object is safe to serve to any client.
+    /// Returns public URL.
+    pub async fn upload_object(
+        &self,
+        key: &str,
+        content: Bytes,
+        content_type: &str,
+        content_encoding: Option<&str>,
+    ) -> Result<String, AppError> {
         // Use ByteStream to ensure proper SHA256 calculation
         let byte_stream = ByteStream::from(content);
 
-        self.client
+        let mut request = self
+            .client
             .put_object()
             .bucket(&self.bucket_name)
             .key(key)
             .body(byte_stream)
             .content_type(content_type)
-            .cache_control("public, max-age=31536000, immutable")
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::error!("R2 upload failed: {}", e);
-                AppError::internal(format!("Failed to upload to R2: {}", e))
-            })?;
+            .cache_control("public, max-age=31536000, immutable");
+
+        if let Some(encoding) = content_encoding {
+            request = request.content_encoding(encoding);
+        }
+
+        request.send().await.map_err(|e| {
+            tracing::error!("R2 upload failed: {}", e);
+            AppError::internal(format!("Failed to upload to R2: {}", e))
+        })?;
 
         // Return public URL
         let public_url = format!("{}/{}", self.public_url_base, key);

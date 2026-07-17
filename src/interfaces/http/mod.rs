@@ -18,6 +18,7 @@ pub mod catalog;
 pub mod chef_reference_public;
 pub mod church_content;
 pub mod church_orders;
+pub mod church_prayer_visualizer;
 pub mod cook_suggestions; // 🆕 Smart recipe suggestions from inventory
 pub mod copilot; // 🆕 Copilot — главный LLM Brain (POST /api/copilot/message)
 pub mod dish;
