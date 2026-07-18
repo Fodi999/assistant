@@ -14,11 +14,17 @@
 //! as "detail and the subject region are preserved, flat background is
 //! culled" without needing real recognition.
 //!
-//! Every particle also carries baked alpha, size, a coarse z-depth band, and
-//! a reveal-order value (silhouette → face-region → fine detail → color
-//! fill → highlights) — all computed once here from the same per-pixel
-//! signals, so the frontend never re-derives brightness, position, or
-//! timing; it only renders exactly what this module produced.
+//! Every particle also carries baked alpha, size, a coarse z-depth band, a
+//! reveal-order value (silhouette → face-region → fine detail → color fill
+//! → highlights), and a hybrid render shape (`derive_shape_params`): bright/
+//! saturated pixels become small sharp "points" (fine detail, catchlights),
+//! strong directional edges become elongated "streaks" oriented along the
+//! edge tangent (hair, robe folds, contours), and everything else becomes a
+//! soft round "splat" that overlaps its neighbors into dense light mass
+//! instead of reading as uniform dust. All of it is computed once here from
+//! the same per-pixel signals, so the frontend never re-derives brightness,
+//! position, timing, or shape; it only renders exactly what this module
+//! produced.
 //!
 //! Nothing about the output is admin-configured anymore: particle count per
 //! tier, the color tint, exposure, and the shadow lift are all derived from
@@ -42,7 +48,7 @@ use crate::infrastructure::R2Client;
 /// Bump whenever the sampling/encoding algorithm changes materially — forces
 /// a distinct R2 key (via the filename) and lets us tell "never processed"
 /// apart from "processed with an older algorithm" in the DB.
-pub const PROCESSING_VERSION: i32 = 4;
+pub const PROCESSING_VERSION: i32 = 5;
 
 // Particle-count bounds per tier — the actual target within each range is
 // chosen automatically from the image's own detail score (see
@@ -55,9 +61,10 @@ const LOW_POWER_MIN_COUNT: usize = 5_000;
 const LOW_POWER_MAX_COUNT: usize = 8_000;
 
 const BINARY_MAGIC: &[u8; 4] = b"PVM1";
-/// v3 adds two baked-once-per-map header fields (auto base point size, auto
-/// exposure) after height; see `encode_binary` for the exact layout.
-const BINARY_FORMAT_VERSION: u16 = 3;
+/// v4 adds five baked per-particle channels (shape, aspect, rotation,
+/// softness, glow) for the hybrid splat/point/streak renderer; see
+/// `encode_binary` for the exact layout.
+const BINARY_FORMAT_VERSION: u16 = 4;
 
 /// Marks (or re-marks) a prayer's visualizer asset row as freshly queued for
 /// processing. Called synchronously from the HTTP handler, before the actual
@@ -157,6 +164,22 @@ struct Candidate {
     /// branch reaches that range, so it doubles as a highlight flag without
     /// needing a separate stored field.
     reveal: f32,
+    /// Normalized Sobel edge magnitude, 0..1 — carried through (not just a
+    /// local variable) so `derive_shape_params` can pick "streak" particles
+    /// for strong directional edges (hair, robe folds, contours).
+    edge_norm: f32,
+    /// Normalized local-contrast (3x3 luminance stddev), 0..1 — used
+    /// alongside `edge_norm` to confirm a streak candidate is a real,
+    /// well-defined line and not just diffuse noise.
+    contrast_norm: f32,
+    /// Direction *tangent* to the local edge, in radians (the Sobel gradient
+    /// direction rotated 90°) — the orientation a hair/fold/contour stroke
+    /// at this pixel should be drawn along, since a gradient points across
+    /// an edge, not along it.
+    angle: f32,
+    /// Bright + saturated score, 0..1+ — reused from `extract_candidates` to
+    /// pick "point" (small bright detail/highlight) particles.
+    highlight_score: f32,
 }
 
 /// Only the highlight reveal-order branch in `extract_candidates` produces
@@ -334,6 +357,10 @@ fn extract_candidates(img: &image::RgbaImage, w: u32, h: u32) -> Vec<Candidate> 
                 + 1.0 * lum_at(xi + 1, yi + 1);
             let edge = (gx * gx + gy * gy).sqrt();
             let edge_norm = (edge / 2.5).min(1.0);
+            // Gradient direction points *across* the edge; the tangent
+            // (rotated 90°) is the direction a hair/fold/contour stroke
+            // actually runs along.
+            let angle = gy.atan2(gx) + std::f32::consts::FRAC_PI_2;
 
             // Local contrast: stddev of luminance in the 3x3 neighborhood —
             // catches fine texture (eyes, hands, decorative detail) that a
@@ -401,6 +428,10 @@ fn extract_candidates(img: &image::RgbaImage, w: u32, h: u32) -> Vec<Candidate> 
                 b,
                 importance,
                 reveal: reveal.clamp(0.0, 1.0),
+                edge_norm,
+                contrast_norm,
+                angle,
+                highlight_score,
             });
         }
     }
@@ -546,7 +577,52 @@ struct ParticleMapBuffers {
     alphas: Vec<u8>,
     sizes: Vec<u8>,
     reveal: Vec<u8>,
+    /// 0 = splat (soft round volume fill), 1 = point (small bright detail/
+    /// highlight), 2 = streak (oriented line — hair/fold/contour). Chosen
+    /// per-particle by `derive_shape_params`; the frontend renders each
+    /// family with a different falloff instead of one uniform dot shape.
+    shapes: Vec<u8>,
+    /// Elongation for streak particles (1.0 = round, up to ~6:1 for strong
+    /// edges); 1.0 for splats/points. Quantized 0..255 over [1.0, 6.0].
+    aspects: Vec<u8>,
+    /// Orientation of the elongated axis, radians, quantized 0..255 over
+    /// [0, 2π) — the edge-tangent direction for streaks, unused (aspect=1)
+    /// for splats/points.
+    rotations: Vec<u8>,
+    /// Falloff softness, 0..255 over [0, 1] — higher reads as a softer,
+    /// wider glow (splats), lower as a crisp core (points).
+    softness: Vec<u8>,
+    /// Extra additive bloom strength layered on top of alpha, 0..255 over
+    /// [0, 1] — strongest on highlight points, weakest on flat-fill splats.
+    glow: Vec<u8>,
     randoms: Vec<u8>,
+}
+
+/// Derives the hybrid-rendering shape for one particle from signals already
+/// computed once in `extract_candidates` (no second image pass, nothing
+/// client-side): a bright/saturated pixel becomes a small sharp "point"
+/// (fine detail, catchlights, gilding); a strong, well-defined directional
+/// edge becomes an elongated "streak" oriented along the edge tangent (hair,
+/// robe folds, contours); everything else becomes a soft round "splat" that
+/// overlaps its neighbors into dense light mass instead of reading as
+/// isolated dust.
+fn derive_shape_params(c: &Candidate) -> (u8, f32, f32, f32, f32) {
+    if c.highlight_score > 0.32 {
+        let t = c.highlight_score.min(1.0);
+        let softness = (0.22 - 0.12 * t).max(0.06);
+        let glow = (0.55 + 0.45 * t).min(1.0);
+        (1, 1.0, 0.0, softness, glow)
+    } else if c.edge_norm > 0.40 && c.contrast_norm > 0.18 {
+        let t = c.edge_norm.min(1.0);
+        let aspect = 1.6 + 3.4 * t;
+        let softness = (0.45 - 0.18 * t).clamp(0.18, 0.45);
+        let glow = (0.18 + 0.30 * t).min(0.6);
+        (2, aspect, c.angle, softness, glow)
+    } else {
+        let softness = (0.55 + 0.35 * (1.0 - c.importance)).clamp(0.4, 0.9);
+        let glow = (0.10 + 0.22 * c.importance).min(0.4);
+        (0, 1.0, 0.0, softness, glow)
+    }
 }
 
 fn build_particle_map(
@@ -568,6 +644,11 @@ fn build_particle_map(
     let mut alphas = vec![0u8; count];
     let mut sizes = vec![0u8; count];
     let mut reveal = vec![0u8; count];
+    let mut shapes = vec![0u8; count];
+    let mut aspects = vec![0u8; count];
+    let mut rotations = vec![0u8; count];
+    let mut softness = vec![0u8; count];
+    let mut glow = vec![0u8; count];
     let mut randoms = vec![0u8; count];
 
     let depth_bands = depth_band_for(picked);
@@ -616,6 +697,18 @@ fn build_particle_map(
         alphas[i] = (alpha_base * 255.0).round() as u8;
         sizes[i] = ((size_mult / 1.5) * 255.0).round().clamp(0.0, 255.0) as u8;
         reveal[i] = (c.reveal.clamp(0.0, 1.0) * 255.0).round() as u8;
+
+        let (shape, aspect, rotation, soft, glow_amount) = derive_shape_params(c);
+        let mut rotation_wrapped = rotation % std::f32::consts::TAU;
+        if rotation_wrapped < 0.0 {
+            rotation_wrapped += std::f32::consts::TAU;
+        }
+        shapes[i] = shape;
+        aspects[i] = (((aspect - 1.0) / 5.0).clamp(0.0, 1.0) * 255.0).round() as u8;
+        rotations[i] = ((rotation_wrapped / std::f32::consts::TAU).clamp(0.0, 1.0) * 255.0).round() as u8;
+        softness[i] = (soft.clamp(0.0, 1.0) * 255.0).round() as u8;
+        glow[i] = (glow_amount.clamp(0.0, 1.0) * 255.0).round() as u8;
+
         randoms[i] = (rand::random::<f32>().clamp(0.0, 1.0) * 255.0).round() as u8;
     }
 
@@ -631,6 +724,11 @@ fn build_particle_map(
         alphas,
         sizes,
         reveal,
+        shapes,
+        aspects,
+        rotations,
+        softness,
+        glow,
         randoms,
     }
 }
@@ -772,6 +870,11 @@ fn auto_base_point_size(count: usize) -> f32 {
 /// offset  +: alphas   u8[count]      (count bytes,      0..255, baked per-particle alpha)
 /// offset  +: sizes    u8[count]      (count bytes,      0..255, baked per-particle size)
 /// offset  +: reveal   u8[count]      (count bytes,      0..255, reveal-order 0=first..255=last)
+/// offset  +: shapes   u8[count]      (count bytes,      0=splat, 1=point, 2=streak)
+/// offset  +: aspects  u8[count]      (count bytes,      0..255 over [1.0, 6.0] elongation)
+/// offset  +: rotations u8[count]     (count bytes,      0..255 over [0, 2π) radians)
+/// offset  +: softness u8[count]      (count bytes,      0..255 over [0, 1] falloff softness)
+/// offset  +: glow     u8[count]      (count bytes,      0..255 over [0, 1] additive bloom)
 /// offset  +: randoms  u8[count]      (count bytes,      0..255)
 /// ```
 fn encode_binary(map: &ParticleMapBuffers) -> Vec<u8> {
@@ -782,6 +885,11 @@ fn encode_binary(map: &ParticleMapBuffers) -> Vec<u8> {
             + map.alphas.len()
             + map.sizes.len()
             + map.reveal.len()
+            + map.shapes.len()
+            + map.aspects.len()
+            + map.rotations.len()
+            + map.softness.len()
+            + map.glow.len()
             + map.randoms.len(),
     );
     buf.extend_from_slice(BINARY_MAGIC);
@@ -802,6 +910,11 @@ fn encode_binary(map: &ParticleMapBuffers) -> Vec<u8> {
     buf.extend_from_slice(&map.alphas);
     buf.extend_from_slice(&map.sizes);
     buf.extend_from_slice(&map.reveal);
+    buf.extend_from_slice(&map.shapes);
+    buf.extend_from_slice(&map.aspects);
+    buf.extend_from_slice(&map.rotations);
+    buf.extend_from_slice(&map.softness);
+    buf.extend_from_slice(&map.glow);
     buf.extend_from_slice(&map.randoms);
     buf
 }
@@ -908,6 +1021,10 @@ mod tests {
             b: 0.4,
             importance,
             reveal,
+            edge_norm: 0.2,
+            contrast_norm: 0.2,
+            angle: 0.0,
+            highlight_score: 0.0,
         }
     }
 
@@ -963,7 +1080,19 @@ mod tests {
     }
 
     fn stats_candidate(r: f32, g: f32, b: f32, importance: f32) -> Candidate {
-        Candidate { x: 0, y: 0, r, g, b, importance, reveal: 0.5 }
+        Candidate {
+            x: 0,
+            y: 0,
+            r,
+            g,
+            b,
+            importance,
+            reveal: 0.5,
+            edge_norm: 0.2,
+            contrast_norm: 0.2,
+            angle: 0.0,
+            highlight_score: 0.0,
+        }
     }
 
     #[test]
@@ -1068,6 +1197,11 @@ mod tests {
             + map.count // alphas
             + map.count // sizes
             + map.count // reveal
+            + map.count // shapes
+            + map.count // aspects
+            + map.count // rotations
+            + map.count // softness
+            + map.count // glow
             + map.count; // randoms
         assert_eq!(raw.len(), expected_len);
 
@@ -1103,7 +1237,22 @@ mod tests {
         let reveal_offset = sizes_offset + map.count;
         assert_eq!(raw[reveal_offset], map.reveal[0]);
 
-        let randoms_offset = reveal_offset + map.count;
+        let shapes_offset = reveal_offset + map.count;
+        assert_eq!(raw[shapes_offset], map.shapes[0]);
+
+        let aspects_offset = shapes_offset + map.count;
+        assert_eq!(raw[aspects_offset], map.aspects[0]);
+
+        let rotations_offset = aspects_offset + map.count;
+        assert_eq!(raw[rotations_offset], map.rotations[0]);
+
+        let softness_offset = rotations_offset + map.count;
+        assert_eq!(raw[softness_offset], map.softness[0]);
+
+        let glow_offset = softness_offset + map.count;
+        assert_eq!(raw[glow_offset], map.glow[0]);
+
+        let randoms_offset = glow_offset + map.count;
         assert_eq!(raw.len() - randoms_offset, map.count);
         assert_eq!(raw[randoms_offset], map.randoms[0]);
 
@@ -1113,6 +1262,44 @@ mod tests {
         let mut decompressed = Vec::new();
         std::io::Read::read_to_end(&mut decoder, &mut decompressed).expect("gunzip should succeed");
         assert_eq!(decompressed, raw);
+    }
+
+    #[test]
+    fn derive_shape_params_picks_point_for_bright_saturated_highlights() {
+        let mut c = test_candidate(5, 5, 0.8, 0.9);
+        c.highlight_score = 0.7;
+        c.edge_norm = 0.05;
+        c.contrast_norm = 0.05;
+        let (shape, aspect, _rotation, softness, glow) = derive_shape_params(&c);
+        assert_eq!(shape, 1);
+        assert_eq!(aspect, 1.0);
+        assert!(softness < 0.2, "points should have a tight, sharp core");
+        assert!(glow > 0.5, "highlights should carry strong glow");
+    }
+
+    #[test]
+    fn derive_shape_params_picks_streak_for_strong_directional_edges() {
+        let mut c = test_candidate(5, 5, 0.8, 0.2);
+        c.highlight_score = 0.0;
+        c.edge_norm = 0.9;
+        c.contrast_norm = 0.5;
+        c.angle = 1.23;
+        let (shape, aspect, rotation, _softness, _glow) = derive_shape_params(&c);
+        assert_eq!(shape, 2);
+        assert!(aspect > 2.0, "strong edges should read as elongated streaks");
+        assert_eq!(rotation, c.angle, "streak orientation follows the edge tangent");
+    }
+
+    #[test]
+    fn derive_shape_params_picks_splat_for_flat_midtone_fill() {
+        let mut c = test_candidate(5, 5, 0.4, 0.6);
+        c.highlight_score = 0.0;
+        c.edge_norm = 0.1;
+        c.contrast_norm = 0.05;
+        let (shape, aspect, _rotation, softness, _glow) = derive_shape_params(&c);
+        assert_eq!(shape, 0);
+        assert_eq!(aspect, 1.0);
+        assert!(softness > 0.4, "splats should read as soft round volume fill");
     }
 
     /// Writes a small, known-good gzip-compressed map to disk so the
