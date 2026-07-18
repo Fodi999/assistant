@@ -79,9 +79,8 @@ pub async fn reprocess_prayer_visualizer(
         .map_err(db_error)?;
 
     let pool_bg = pool.clone();
-    let color_mode = prayer.particle_color_mode.clone();
     tokio::spawn(async move {
-        prayer_visualizer::run_processing_job(pool_bg, r2, prayer.id, source_image, color_mode).await;
+        prayer_visualizer::run_processing_job(pool_bg, r2, prayer.id, source_image).await;
     });
 
     let row = fetch_asset_by_prayer_id(&pool, prayer.id).await?;

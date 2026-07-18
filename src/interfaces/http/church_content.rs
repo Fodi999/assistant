@@ -1055,7 +1055,6 @@ fn spawn_visualizer_processing_if_needed(
     let pool = pool.clone();
     let r2 = r2.clone();
     let prayer_id = prayer.id;
-    let color_mode = prayer.particle_color_mode.clone();
     let source_image = effective_image;
 
     tokio::spawn(async move {
@@ -1065,14 +1064,7 @@ fn spawn_visualizer_processing_if_needed(
             tracing::error!(%err, %prayer_id, "prayer visualizer: failed to mark pending");
             return;
         }
-        crate::application::prayer_visualizer::run_processing_job(
-            pool,
-            r2,
-            prayer_id,
-            source_image,
-            color_mode,
-        )
-        .await;
+        crate::application::prayer_visualizer::run_processing_job(pool, r2, prayer_id, source_image).await;
     });
 }
 

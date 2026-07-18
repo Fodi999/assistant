@@ -19,6 +19,13 @@
 //! fill → highlights) — all computed once here from the same per-pixel
 //! signals, so the frontend never re-derives brightness, position, or
 //! timing; it only renders exactly what this module produced.
+//!
+//! Nothing about the output is admin-configured anymore: particle count per
+//! tier, the color tint, exposure, and the shadow lift are all derived from
+//! the source image itself (see `ImageStats`) — a flat, low-detail icon gets
+//! fewer, larger particles and a gentler grade than a highly detailed one,
+//! automatically. `particle_size`/`particle_color_mode`/`particle_count_*`
+//! on `church_prayers` are legacy columns the pipeline no longer reads.
 
 use std::cmp::Ordering;
 use std::io::Write;
@@ -35,16 +42,22 @@ use crate::infrastructure::R2Client;
 /// Bump whenever the sampling/encoding algorithm changes materially — forces
 /// a distinct R2 key (via the filename) and lets us tell "never processed"
 /// apart from "processed with an older algorithm" in the DB.
-pub const PROCESSING_VERSION: i32 = 3;
+pub const PROCESSING_VERSION: i32 = 4;
 
-const DESKTOP_TARGET_COUNT: usize = 64_000;
-const MOBILE_TARGET_COUNT: usize = 18_000;
-const LOW_POWER_TARGET_COUNT: usize = 8_000;
+// Particle-count bounds per tier — the actual target within each range is
+// chosen automatically from the image's own detail score (see
+// `ImageStats::detail_score`), not from an admin setting.
+const DESKTOP_MIN_COUNT: usize = 42_000;
+const DESKTOP_MAX_COUNT: usize = 64_000;
+const MOBILE_MIN_COUNT: usize = 11_000;
+const MOBILE_MAX_COUNT: usize = 18_000;
+const LOW_POWER_MIN_COUNT: usize = 5_000;
+const LOW_POWER_MAX_COUNT: usize = 8_000;
 
 const BINARY_MAGIC: &[u8; 4] = b"PVM1";
-/// v2 adds three baked per-particle channels (alpha, size, reveal-order)
-/// after the colors block; see `encode_binary` for the exact layout.
-const BINARY_FORMAT_VERSION: u16 = 2;
+/// v3 adds two baked-once-per-map header fields (auto base point size, auto
+/// exposure) after height; see `encode_binary` for the exact layout.
+const BINARY_FORMAT_VERSION: u16 = 3;
 
 /// Marks (or re-marks) a prayer's visualizer asset row as freshly queued for
 /// processing. Called synchronously from the HTTP handler, before the actual
@@ -81,7 +94,6 @@ pub async fn run_processing_job(
     r2: R2Client,
     prayer_id: Uuid,
     source_image_url: String,
-    color_mode: String,
 ) {
     if let Err(err) = sqlx::query(
         "UPDATE church_prayer_visualizer_assets SET processing_status = 'processing' WHERE prayer_id = $1",
@@ -93,7 +105,7 @@ pub async fn run_processing_job(
         tracing::error!(%err, %prayer_id, "prayer visualizer: failed to mark processing");
     }
 
-    match process(&r2, prayer_id, &source_image_url, &color_mode).await {
+    match process(&r2, prayer_id, &source_image_url).await {
         Ok(outputs) => {
             if let Err(err) = save_ready(&pool, prayer_id, &source_image_url, &outputs).await {
                 tracing::error!(%err, %prayer_id, "prayer visualizer: failed to persist ready state");
@@ -155,7 +167,6 @@ async fn process(
     r2: &R2Client,
     prayer_id: Uuid,
     source_image_url: &str,
-    color_mode: &str,
 ) -> Result<ProcessedOutputs, String> {
     let bytes = download(source_image_url).await?;
     let hash = content_hash(&bytes);
@@ -180,18 +191,38 @@ async fn process(
         return Err("no particle candidates found (image is fully flat or transparent)".to_string());
     }
 
+    // Everything below is derived from the image itself — no admin input.
+    let stats = ImageStats::compute(&candidates, sample_w, sample_h);
+    let color_mode = stats.auto_color_mode();
+    let shadow_lift = stats.auto_shadow_lift();
+    let auto_exposure = stats.auto_exposure();
+    let detail_score = stats.detail_score;
+    tracing::info!(
+        %prayer_id,
+        detail_score,
+        mean_luminance = stats.mean_luminance,
+        color_mode,
+        shadow_lift,
+        auto_exposure,
+        "prayer visualizer: auto-derived parameters"
+    );
+
+    let desktop_target = scale_count(DESKTOP_MIN_COUNT, DESKTOP_MAX_COUNT, detail_score);
+    let mobile_target = scale_count(MOBILE_MIN_COUNT, MOBILE_MAX_COUNT, detail_score);
+    let low_power_target = scale_count(LOW_POWER_MIN_COUNT, LOW_POWER_MAX_COUNT, detail_score);
+
     let prefix = format!("church/prayer-visualizer/{prayer_id}/v{PROCESSING_VERSION}-{hash}");
 
     let (desktop_particle_count, desktop_map_url) = process_tier(
-        r2, &candidates, sample_w, sample_h, aspect, color_mode, DESKTOP_TARGET_COUNT, &prefix, "desktop",
+        r2, &candidates, sample_w, sample_h, aspect, color_mode, shadow_lift, auto_exposure, desktop_target, &prefix, "desktop",
     )
     .await?;
     let (mobile_particle_count, mobile_map_url) = process_tier(
-        r2, &candidates, sample_w, sample_h, aspect, color_mode, MOBILE_TARGET_COUNT, &prefix, "mobile",
+        r2, &candidates, sample_w, sample_h, aspect, color_mode, shadow_lift, auto_exposure, mobile_target, &prefix, "mobile",
     )
     .await?;
     let (low_power_particle_count, low_power_map_url) = process_tier(
-        r2, &candidates, sample_w, sample_h, aspect, color_mode, LOW_POWER_TARGET_COUNT, &prefix, "low-power",
+        r2, &candidates, sample_w, sample_h, aspect, color_mode, shadow_lift, auto_exposure, low_power_target, &prefix, "low-power",
     )
     .await?;
 
@@ -236,12 +267,14 @@ async fn process_tier(
     sample_h: u32,
     aspect: f32,
     color_mode: &str,
+    shadow_lift: f32,
+    auto_exposure: f32,
     target_count: usize,
     prefix: &str,
     tier_name: &str,
 ) -> Result<(i32, String), String> {
     let picked = pick_tier(candidates, target_count, sample_w, sample_h);
-    let map = build_particle_map(&picked, sample_w, sample_h, aspect, color_mode);
+    let map = build_particle_map(&picked, sample_w, sample_h, aspect, color_mode, shadow_lift, auto_exposure);
     let raw = encode_binary(&map);
     let compressed = gzip(&raw)?;
     let key = format!("{prefix}-{tier_name}.bin");
@@ -500,6 +533,13 @@ struct ParticleMapBuffers {
     count: usize,
     width: f32,
     height: f32,
+    /// Auto-derived from this tier's own particle count (denser tiers get
+    /// smaller points, sparser tiers get larger ones) — replaces the old
+    /// admin `particle_size` field as the renderer's base point size.
+    base_point_size: f32,
+    /// Auto-derived from the image's overall luminance — replaces the old
+    /// hardcoded frontend exposure constant.
+    auto_exposure: f32,
     targets: Vec<f32>,
     starts: Vec<f32>,
     colors: Vec<u8>,
@@ -515,6 +555,8 @@ fn build_particle_map(
     sample_h: u32,
     aspect: f32,
     color_mode: &str,
+    shadow_lift: f32,
+    auto_exposure: f32,
 ) -> ParticleMapBuffers {
     let count = picked.len();
     let target_height = 1.7f32;
@@ -560,7 +602,7 @@ fn build_particle_map(
         starts[i * 3 + 1] = sy;
         starts[i * 3 + 2] = (rand::random::<f32>() - 0.5) * 0.22;
 
-        let (cr, cg, cb) = grade_color(color_mode, c.r, c.g, c.b);
+        let (cr, cg, cb) = grade_color(color_mode, shadow_lift, c.r, c.g, c.b);
         colors[i * 3] = (cr.clamp(0.0, 1.0) * 255.0).round() as u8;
         colors[i * 3 + 1] = (cg.clamp(0.0, 1.0) * 255.0).round() as u8;
         colors[i * 3 + 2] = (cb.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -581,6 +623,8 @@ fn build_particle_map(
         count,
         width: target_width,
         height: target_height,
+        base_point_size: auto_base_point_size(count),
+        auto_exposure,
         targets,
         starts,
         colors,
@@ -591,27 +635,120 @@ fn build_particle_map(
     }
 }
 
-/// Grades the *real* sampled pixel color for the chosen aesthetic mode —
-/// unlike the previous synthetic gold/silver palette, the source photo's
-/// actual hue/detail is preserved; the mode only applies a gentle tint and a
-/// small shadow lift (so real dark pixels — hair, deep robe folds — don't
-/// vanish once alpha-blended against the black canvas).
-fn grade_color(mode: &str, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+/// Grades the *real* sampled pixel color for the auto-detected aesthetic
+/// mode (see `ImageStats::auto_color_mode`) — the source photo's actual
+/// hue/detail is preserved; the mode only applies a gentle tint, and `lift`
+/// (also auto-derived, from `ImageStats::auto_shadow_lift`) brightens
+/// shadows so real dark pixels — hair, deep robe folds — don't vanish once
+/// alpha-blended against the black canvas.
+fn grade_color(mode: &str, lift: f32, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let (tr, tg, tb): (f32, f32, f32) = match mode {
         "gold" => (1.15, 1.0, 0.80),
         "silver" => (0.98, 1.02, 1.08),
         "warm_white" => (1.05, 1.02, 0.95),
         _ => (1.06, 1.0, 0.88),
     };
-    // Lifted from 0.10 to 0.22 — shadowed real-color areas (robe folds in
-    // low light, dark hair) still read as recognizably dim next to the
-    // face/halo highlights, but were reading as near-black once additively
-    // blended against the black canvas at the old, lower lift.
-    let lift = 0.22;
     let lr = r * (1.0 - lift) + lift;
     let lg = g * (1.0 - lift) + lift;
     let lb = b * (1.0 - lift) + lift;
     (lr * tr, lg * tg, lb * tb)
+}
+
+/// Aggregate signals over a candidate pool, used to auto-derive everything
+/// that used to be an admin setting: color tint, shadow lift, exposure, and
+/// (via `detail_score`) the particle-count target for each tier.
+struct ImageStats {
+    /// Mean luminance across candidates, 0..1.
+    mean_luminance: f32,
+    /// How "busy" the image is: blends candidate density (fraction of the
+    /// sample that qualified as a particle) with mean per-candidate
+    /// importance. Drives particle-count scaling — a flat, low-detail icon
+    /// gets fewer (larger, more opaque) particles automatically.
+    detail_score: f32,
+    /// Importance-weighted average color, used to pick the tint.
+    avg_r: f32,
+    avg_g: f32,
+    avg_b: f32,
+}
+
+impl ImageStats {
+    fn compute(candidates: &[Candidate], sample_w: u32, sample_h: u32) -> Self {
+        if candidates.is_empty() {
+            return Self { mean_luminance: 0.5, detail_score: 0.3, avg_r: 0.5, avg_g: 0.5, avg_b: 0.5 };
+        }
+
+        let mut lum_sum = 0f32;
+        let mut importance_sum = 0f32;
+        let (mut wr, mut wg, mut wb, mut wsum) = (0f32, 0f32, 0f32, 0f32);
+        for c in candidates {
+            let lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+            lum_sum += lum;
+            importance_sum += c.importance;
+            let w = c.importance.max(0.05);
+            wr += c.r * w;
+            wg += c.g * w;
+            wb += c.b * w;
+            wsum += w;
+        }
+        let n = candidates.len() as f32;
+        let mean_luminance = (lum_sum / n).clamp(0.0, 1.0);
+        let mean_importance = (importance_sum / n).clamp(0.0, 1.0);
+
+        let total_pixels = (sample_w as f32 * sample_h as f32).max(1.0);
+        let density = (n / total_pixels).clamp(0.0, 1.0);
+        // 60% very detailed/dense image already saturates the score — an
+        // icon with a large, busy figure rarely exceeds that in practice.
+        let density_norm = (density / 0.6).min(1.0);
+        let detail_score = (0.55 * density_norm + 0.45 * mean_importance).clamp(0.0, 1.0);
+
+        let (avg_r, avg_g, avg_b) = if wsum > 0.0 { (wr / wsum, wg / wsum, wb / wsum) } else { (0.5, 0.5, 0.5) };
+
+        Self { mean_luminance, detail_score, avg_r, avg_g, avg_b }
+    }
+
+    /// Warm/cool/neutral tint choice from the image's own importance-
+    /// weighted average color — no admin dropdown.
+    fn auto_color_mode(&self) -> &'static str {
+        let max_c = self.avg_r.max(self.avg_g).max(self.avg_b);
+        let min_c = self.avg_r.min(self.avg_g).min(self.avg_b);
+        let saturation = if max_c > 0.0 { (max_c - min_c) / max_c } else { 0.0 };
+        let warmth = self.avg_r - self.avg_b;
+
+        if saturation < 0.12 {
+            "silver"
+        } else if warmth > 0.08 {
+            "gold"
+        } else if warmth < -0.05 {
+            "silver"
+        } else {
+            "warm_white"
+        }
+    }
+
+    /// Darker source photos get a stronger shadow lift so real dark pixels
+    /// stay visible once additively blended against the black canvas.
+    fn auto_shadow_lift(&self) -> f32 {
+        (0.34 - self.mean_luminance * 0.32).clamp(0.14, 0.30)
+    }
+
+    /// Darker source photos get a higher exposure multiplier at render time.
+    fn auto_exposure(&self) -> f32 {
+        (2.05 - self.mean_luminance * 1.05).clamp(1.35, 2.1)
+    }
+}
+
+/// Linearly scales a 0..1 `score` into a `[min, max]` particle-count target.
+fn scale_count(min: usize, max: usize, score: f32) -> usize {
+    let s = score.clamp(0.0, 1.0);
+    (min as f32 + (max - min) as f32 * s).round() as usize
+}
+
+/// Smaller points for denser tiers (they don't need per-particle bulk to
+/// look filled in), larger points for sparser tiers (fewer particles need to
+/// cover the same area) — replaces the old admin `particle_size` field.
+fn auto_base_point_size(count: usize) -> f32 {
+    let c = (count.max(1) as f32).sqrt();
+    (2.65 - c / 300.0).clamp(1.5, 2.6)
 }
 
 /// Compact versioned binary layout — no JSON for tens of thousands of points.
@@ -622,12 +759,14 @@ fn grade_color(mode: &str, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
 ///
 /// ```text
 /// offset  0: magic "PVM1"            (4 bytes)
-/// offset  4: format version (u16 LE) (2 bytes) — 2
+/// offset  4: format version (u16 LE) (2 bytes) — 3
 /// offset  6: reserved                (2 bytes)
 /// offset  8: particle count (u32 LE) (4 bytes)
 /// offset 12: width  (f32 LE)         (4 bytes)
 /// offset 16: height (f32 LE)         (4 bytes)
-/// offset 20: targets  f32[count * 3] (count * 12 bytes) — xyz, z = baked depth
+/// offset 20: basePointSize (f32 LE)  (4 bytes) — auto-derived, replaces admin particle_size
+/// offset 24: autoExposure (f32 LE)   (4 bytes) — auto-derived, replaces the old fixed frontend constant
+/// offset 28: targets  f32[count * 3] (count * 12 bytes) — xyz, z = baked depth
 /// offset  +: starts   f32[count * 3] (count * 12 bytes)
 /// offset  +: colors   u8[count * 3]  (count * 3 bytes,  0..255 per channel, real graded RGB)
 /// offset  +: alphas   u8[count]      (count bytes,      0..255, baked per-particle alpha)
@@ -637,7 +776,7 @@ fn grade_color(mode: &str, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
 /// ```
 fn encode_binary(map: &ParticleMapBuffers) -> Vec<u8> {
     let mut buf = Vec::with_capacity(
-        20 + map.targets.len() * 4
+        28 + map.targets.len() * 4
             + map.starts.len() * 4
             + map.colors.len()
             + map.alphas.len()
@@ -651,6 +790,8 @@ fn encode_binary(map: &ParticleMapBuffers) -> Vec<u8> {
     buf.extend_from_slice(&(map.count as u32).to_le_bytes());
     buf.extend_from_slice(&map.width.to_le_bytes());
     buf.extend_from_slice(&map.height.to_le_bytes());
+    buf.extend_from_slice(&map.base_point_size.to_le_bytes());
+    buf.extend_from_slice(&map.auto_exposure.to_le_bytes());
     for v in &map.targets {
         buf.extend_from_slice(&v.to_le_bytes());
     }
@@ -821,6 +962,58 @@ mod tests {
         assert!(candidates.iter().all(|c| c.reveal >= 0.0 && c.reveal <= 1.0));
     }
 
+    fn stats_candidate(r: f32, g: f32, b: f32, importance: f32) -> Candidate {
+        Candidate { x: 0, y: 0, r, g, b, importance, reveal: 0.5 }
+    }
+
+    #[test]
+    fn image_stats_auto_color_mode_reads_the_image_not_a_setting() {
+        // A warm golden-toned image (r > g > b, dominant warmth) should pick
+        // "gold" with no admin input at all.
+        let warm = vec![stats_candidate(0.85, 0.65, 0.30, 0.7); 20];
+        assert_eq!(ImageStats::compute(&warm, 100, 100).auto_color_mode(), "gold");
+
+        // A desaturated (near-grayscale) image should pick "silver" instead.
+        let desaturated = vec![stats_candidate(0.55, 0.54, 0.53, 0.5); 20];
+        assert_eq!(ImageStats::compute(&desaturated, 100, 100).auto_color_mode(), "silver");
+    }
+
+    #[test]
+    fn image_stats_darker_image_gets_more_lift_and_more_exposure() {
+        let dark = ImageStats::compute(&vec![stats_candidate(0.15, 0.12, 0.10, 0.5); 20], 100, 100);
+        let bright = ImageStats::compute(&vec![stats_candidate(0.85, 0.82, 0.80, 0.5); 20], 100, 100);
+        assert!(dark.auto_shadow_lift() > bright.auto_shadow_lift());
+        assert!(dark.auto_exposure() > bright.auto_exposure());
+    }
+
+    #[test]
+    fn detail_score_scales_particle_count_within_bounds() {
+        // A sparse, low-importance candidate pool over a large sample area
+        // should land near the low end of the range; a dense, high-
+        // importance pool should land near the high end — with no manual
+        // particle-count setting involved anywhere in this computation.
+        let sparse: Vec<Candidate> = (0..50).map(|_| stats_candidate(0.5, 0.5, 0.5, 0.1)).collect();
+        let dense: Vec<Candidate> = (0..5000).map(|_| stats_candidate(0.5, 0.5, 0.5, 0.9)).collect();
+
+        let sparse_score = ImageStats::compute(&sparse, 1000, 1000).detail_score;
+        let dense_score = ImageStats::compute(&dense, 1000, 1000).detail_score;
+        assert!(dense_score > sparse_score);
+
+        let sparse_count = scale_count(DESKTOP_MIN_COUNT, DESKTOP_MAX_COUNT, sparse_score);
+        let dense_count = scale_count(DESKTOP_MIN_COUNT, DESKTOP_MAX_COUNT, dense_score);
+        assert!(sparse_count >= DESKTOP_MIN_COUNT && sparse_count <= DESKTOP_MAX_COUNT);
+        assert!(dense_count >= DESKTOP_MIN_COUNT && dense_count <= DESKTOP_MAX_COUNT);
+        assert!(dense_count > sparse_count);
+    }
+
+    #[test]
+    fn auto_base_point_size_shrinks_as_particle_count_grows() {
+        let sparse_size = auto_base_point_size(LOW_POWER_MIN_COUNT);
+        let dense_size = auto_base_point_size(DESKTOP_MAX_COUNT);
+        assert!(sparse_size > dense_size);
+        assert!(sparse_size <= 2.6 && dense_size >= 1.5);
+    }
+
     #[test]
     fn pick_tier_respects_target_and_pool_size() {
         let candidates: Vec<Candidate> = (0..1000)
@@ -864,13 +1057,11 @@ mod tests {
             test_candidate(30, 5, 0.3, 0.7),
             test_candidate(0, 0, 0.05, 0.9),
         ];
-        let map = build_particle_map(&picked, 100, 100, 1.0, "gold");
+        let map = build_particle_map(&picked, 100, 100, 1.0, "gold", 0.2, 1.6);
         assert_eq!(map.count, 3);
         let raw = encode_binary(&map);
 
-        let per_particle_u8_blocks = 4; // colors(3) counted separately below, + alphas + sizes + reveal + randoms
-        let _ = per_particle_u8_blocks;
-        let expected_len = 20
+        let expected_len = 28
             + map.count * 3 * 4 // targets
             + map.count * 3 * 4 // starts
             + map.count * 3 // colors
@@ -889,14 +1080,18 @@ mod tests {
         let height = f32::from_le_bytes([raw[16], raw[17], raw[18], raw[19]]);
         assert_eq!(width, map.width);
         assert_eq!(height, map.height);
+        let base_point_size = f32::from_le_bytes([raw[20], raw[21], raw[22], raw[23]]);
+        assert_eq!(base_point_size, map.base_point_size);
+        let auto_exposure = f32::from_le_bytes([raw[24], raw[25], raw[26], raw[27]]);
+        assert_eq!(auto_exposure, map.auto_exposure);
 
-        // First target.x (offset 20) matches what build_particle_map computed.
-        let first_target_x = f32::from_le_bytes([raw[20], raw[21], raw[22], raw[23]]);
+        // First target.x (offset 28) matches what build_particle_map computed.
+        let first_target_x = f32::from_le_bytes([raw[28], raw[29], raw[30], raw[31]]);
         assert_eq!(first_target_x, map.targets[0]);
 
         // Colors block starts right after both f32 blocks (4-byte aligned by
         // construction — count*12 is always a multiple of 4).
-        let colors_offset = 20 + map.count * 3 * 4 + map.count * 3 * 4;
+        let colors_offset = 28 + map.count * 3 * 4 + map.count * 3 * 4;
         assert_eq!(raw[colors_offset], map.colors[0]);
 
         let alphas_offset = colors_offset + map.count * 3;
@@ -931,7 +1126,7 @@ mod tests {
             test_candidate(50, 50, 0.5, 0.5),
             test_candidate(90, 80, 0.1, 0.95),
         ];
-        let map = build_particle_map(&picked, 100, 100, 1.4, "silver");
+        let map = build_particle_map(&picked, 100, 100, 1.4, "silver", 0.2, 1.6);
         let raw = encode_binary(&map);
         let compressed = gzip(&raw).expect("gzip should succeed");
 
