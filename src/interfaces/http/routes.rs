@@ -134,6 +134,7 @@ pub fn create_router(
     gemini_for_copilot: Arc<crate::infrastructure::gemini_service::GeminiService>, // 🆕 Copilot Brain
     allowed_origins: Vec<String>,
     rate_limit_per_second: u32,
+    telegram_config: Option<crate::infrastructure::config::TelegramConfig>, // 🆕 Telegram Bot ("Світло Ікони")
 ) -> Router {
     let heavy_admin_enabled = env_bool("ENABLE_HEAVY_ADMIN_ROUTES", true);
     if heavy_admin_enabled {
@@ -714,6 +715,7 @@ pub fn create_router(
     let pool_for_cms = pool.clone();
     let pool_for_prefs = pool.clone(); // User preferences
     let pool_for_billing = pool.clone(); // 🆕 Stripe billing
+    let pool_for_telegram = pool.clone(); // 🆕 Telegram Bot ("Світло Ікони")
     let cms_service = CmsService::new(pool_for_cms, r2_client.clone(), Arc::clone(&llm_adapter));
 
     // 🆕 Stripe service — optional. If env vars are missing the billing
@@ -1430,8 +1432,7 @@ pub fn create_router(
         )
         .route(
             "/articles/ai/audio-upload",
-            post(admin_cms::upload_prayer_audio)
-                .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+            post(admin_cms::upload_prayer_audio).layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
         )
         .route(
             "/articles/ai/audio-delete",
@@ -1504,7 +1505,8 @@ pub fn create_router(
         )
         .route(
             "/product-categories",
-            get(church_orders::list_icon_product_categories).post(church_orders::create_icon_product_category),
+            get(church_orders::list_icon_product_categories)
+                .post(church_orders::create_icon_product_category),
         )
         .route(
             "/product-categories/:id",
@@ -1515,7 +1517,8 @@ pub fn create_router(
         .route(
             // Back-compat alias for the pre-rework path; same handlers.
             "/icon-product-categories",
-            get(church_orders::list_icon_product_categories).post(church_orders::create_icon_product_category),
+            get(church_orders::list_icon_product_categories)
+                .post(church_orders::create_icon_product_category),
         )
         .route(
             "/icon-product-categories/:id",
@@ -1544,10 +1547,7 @@ pub fn create_router(
                 .put(church_orders::update_product)
                 .delete(church_orders::delete_product),
         )
-        .route(
-            "/icon-orders",
-            get(church_orders::list_icon_orders),
-        )
+        .route("/icon-orders", get(church_orders::list_icon_orders))
         .route(
             "/icon-orders/unread-count",
             get(church_orders::count_unread_icon_orders),
@@ -1689,7 +1689,10 @@ pub fn create_router(
             "/api/church/icons/:slug",
             get(church_content::public_icon_by_slug),
         )
-        .route("/api/church/prayers", get(church_content::public_prayer_list))
+        .route(
+            "/api/church/prayers",
+            get(church_content::public_prayer_list),
+        )
         .route(
             "/api/church/prayers/:slug",
             get(church_content::public_prayer_by_slug),
@@ -1715,7 +1718,10 @@ pub fn create_router(
             "/api/church/articles/:slug",
             get(church_content::public_article_by_slug),
         )
-        .route("/api/church/gospel", get(church_content::public_gospel_list))
+        .route(
+            "/api/church/gospel",
+            get(church_content::public_gospel_list),
+        )
         .route(
             "/api/church/gospel/:slug",
             get(church_content::public_gospel_by_slug),
@@ -1894,7 +1900,14 @@ pub fn create_router(
         .nest("/api", smart_parse_router) // 🆕 POST /api/smart/parse
         .nest("/api", smart_from_text_router) // 🆕 POST /api/smart/from-text
         .nest("/api", protected_chat_routes)
-        .nest("/api", protected_routes);
+        .nest("/api", protected_routes)
+        // 🆕 Telegram Bot ("Світло Ікони") — top-level, not under /api, since
+        // Telegram calls it directly and authenticates via its own webhook
+        // secret header rather than our JWT.
+        .nest(
+            "/telegram",
+            crate::interfaces::telegram::router(pool_for_telegram, telegram_config),
+        );
 
     router = router
         .merge(google_auth_routes)

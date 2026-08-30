@@ -1059,12 +1059,19 @@ fn spawn_visualizer_processing_if_needed(
 
     tokio::spawn(async move {
         if let Err(err) =
-            crate::application::prayer_visualizer::mark_pending(&pool, prayer_id, &source_image).await
+            crate::application::prayer_visualizer::mark_pending(&pool, prayer_id, &source_image)
+                .await
         {
             tracing::error!(%err, %prayer_id, "prayer visualizer: failed to mark pending");
             return;
         }
-        crate::application::prayer_visualizer::run_processing_job(pool, r2, prayer_id, source_image).await;
+        crate::application::prayer_visualizer::run_processing_job(
+            pool,
+            r2,
+            prayer_id,
+            source_image,
+        )
+        .await;
     });
 }
 
@@ -1172,9 +1179,8 @@ pub async fn update_saint(
     Json(payload): Json<ChurchSaintPayload>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let site_id = query.site_id();
-    let current_sql = format!(
-        r#"SELECT {SAINT_COLUMNS} FROM church_saints WHERE id = $1 AND site_id = $2"#
-    );
+    let current_sql =
+        format!(r#"SELECT {SAINT_COLUMNS} FROM church_saints WHERE id = $1 AND site_id = $2"#);
     let current: ChurchSaintDto = sqlx::query_as(&current_sql)
         .bind(id)
         .bind(site_id)
@@ -1201,7 +1207,11 @@ pub async fn update_saint(
         .bind(payload.calendar_day_id.or(current.calendar_day_id))
         .bind(optional_non_empty(payload.slug).unwrap_or(current.slug))
         .bind(optional_non_empty(payload.name).unwrap_or(current.name))
-        .bind(payload.short_description.unwrap_or(current.short_description))
+        .bind(
+            payload
+                .short_description
+                .unwrap_or(current.short_description),
+        )
         .bind(payload.biography.unwrap_or(current.biography))
         .bind(payload.feast_day.unwrap_or(current.feast_day))
         .bind(payload.image_url.unwrap_or(current.image_url))
@@ -1352,10 +1362,18 @@ pub async fn update_alphabet_letter(
         .bind(optional_non_empty(payload.letter).unwrap_or(current.letter))
         .bind(payload.sort_order.unwrap_or(current.sort_order))
         .bind(optional_non_empty(payload.name).unwrap_or(current.name))
-        .bind(payload.short_description.unwrap_or(current.short_description))
+        .bind(
+            payload
+                .short_description
+                .unwrap_or(current.short_description),
+        )
         .bind(payload.full_text.unwrap_or(current.full_text))
         .bind(payload.numeric_value.or(current.numeric_value))
-        .bind(payload.modern_equivalent.unwrap_or(current.modern_equivalent))
+        .bind(
+            payload
+                .modern_equivalent
+                .unwrap_or(current.modern_equivalent),
+        )
         .bind(payload.color.unwrap_or(current.color))
         .bind(payload.card_image_url.unwrap_or(current.card_image_url))
         .bind(payload.main_image_url.unwrap_or(current.main_image_url))
@@ -1482,7 +1500,10 @@ pub async fn public_alphabet_by_slug(
     let position = group.iter().position(|item| item.language == language);
     let letter = position.map(|index| group.into_iter().nth(index).expect("position within group"));
 
-    Ok(Json(PublicChurchAlphabetPage { letter, translations }))
+    Ok(Json(PublicChurchAlphabetPage {
+        letter,
+        translations,
+    }))
 }
 
 pub async fn list_articles(
@@ -1811,7 +1832,13 @@ pub async fn public_calendar_today(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let today = chrono::Utc::now().date_naive().to_string();
-    public_calendar_by_date(&pool, &today, query.language.as_deref(), preview_allowed(&query)).await
+    public_calendar_by_date(
+        &pool,
+        &today,
+        query.language.as_deref(),
+        preview_allowed(&query),
+    )
+    .await
 }
 
 pub async fn public_calendar_day(
@@ -1819,7 +1846,13 @@ pub async fn public_calendar_day(
     Query(query): Query<ChurchContentQuery>,
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    public_calendar_by_date(&pool, &date, query.language.as_deref(), preview_allowed(&query)).await
+    public_calendar_by_date(
+        &pool,
+        &date,
+        query.language.as_deref(),
+        preview_allowed(&query),
+    )
+    .await
 }
 
 pub async fn public_calendar_month(
@@ -1853,13 +1886,32 @@ pub async fn public_calendar_month(
 
     let mut pages = Vec::with_capacity(rows.len());
     for calendar_day in rows {
-        let icons = list_public_icons(&pool, calendar_day.id, language.as_deref(), include_drafts).await?;
-        let prayers =
-            list_public_prayers(&pool, Some(calendar_day.id), None, language.as_deref(), include_drafts).await?;
-        let articles =
-            list_public_articles(&pool, Some(calendar_day.id), None, language.as_deref(), include_drafts).await?;
-        let gospel =
-            list_public_gospel(&pool, Some(calendar_day.id), None, language.as_deref(), include_drafts).await?;
+        let icons =
+            list_public_icons(&pool, calendar_day.id, language.as_deref(), include_drafts).await?;
+        let prayers = list_public_prayers(
+            &pool,
+            Some(calendar_day.id),
+            None,
+            language.as_deref(),
+            include_drafts,
+        )
+        .await?;
+        let articles = list_public_articles(
+            &pool,
+            Some(calendar_day.id),
+            None,
+            language.as_deref(),
+            include_drafts,
+        )
+        .await?;
+        let gospel = list_public_gospel(
+            &pool,
+            Some(calendar_day.id),
+            None,
+            language.as_deref(),
+            include_drafts,
+        )
+        .await?;
         pages.push(PublicChurchContentPage {
             calendar_day,
             icons,
@@ -1933,12 +1985,30 @@ pub async fn public_icon_by_slug(
                 Some(day_id) => get_public_calendar_row(&pool, day_id, include_drafts).await?,
                 None => None,
             };
-            let prayers =
-                list_public_prayers(&pool, found.calendar_day_id, Some(found.id), Some(&found.language), include_drafts).await?;
-            let articles =
-                list_public_articles(&pool, found.calendar_day_id, Some(found.id), Some(&found.language), include_drafts).await?;
-            let gospel =
-                list_public_gospel(&pool, found.calendar_day_id, Some(found.id), Some(&found.language), include_drafts).await?;
+            let prayers = list_public_prayers(
+                &pool,
+                found.calendar_day_id,
+                Some(found.id),
+                Some(&found.language),
+                include_drafts,
+            )
+            .await?;
+            let articles = list_public_articles(
+                &pool,
+                found.calendar_day_id,
+                Some(found.id),
+                Some(&found.language),
+                include_drafts,
+            )
+            .await?;
+            let gospel = list_public_gospel(
+                &pool,
+                found.calendar_day_id,
+                Some(found.id),
+                Some(&found.language),
+                include_drafts,
+            )
+            .await?;
             (calendar_day, prayers, articles, gospel)
         }
         None => (None, Vec::new(), Vec::new(), Vec::new()),
@@ -2166,7 +2236,14 @@ pub async fn public_saint_by_slug(
                 None => None,
             };
             let prayers = if found.calendar_day_id.is_some() || found.icon_id.is_some() {
-                list_public_prayers(&pool, found.calendar_day_id, found.icon_id, Some(&found.language), include_drafts).await?
+                list_public_prayers(
+                    &pool,
+                    found.calendar_day_id,
+                    found.icon_id,
+                    Some(&found.language),
+                    include_drafts,
+                )
+                .await?
             } else {
                 Vec::new()
             };
@@ -2686,12 +2763,17 @@ async fn upsert_article_from_legacy_page(
     .map_err(db_error)
 }
 
-async fn public_calendar_by_date(
+/// Also used directly (in-process, no HTTP round-trip) by the Telegram bot's
+/// `/today` command — see `crate::interfaces::telegram`. Kept as a concrete
+/// `Json<...>` return type (rather than `impl IntoResponse`) specifically so
+/// non-HTTP callers can destructure the payload; `Json<T>: IntoResponse`
+/// still satisfies `public_calendar_today`/`public_calendar_day` below.
+pub(crate) async fn public_calendar_by_date(
     pool: &PgPool,
     date: &str,
     language: Option<&str>,
     include_drafts: bool,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<Json<PublicChurchContentPage>, StatusCode> {
     let calendar_day: ChurchCalendarDayDto = sqlx::query_as(
         r#"SELECT id, site_id, date_old_style::text AS date_old_style,
                   date_new_style::text AS date_new_style, calendar_type, title, day_type,
@@ -2713,9 +2795,12 @@ async fn public_calendar_by_date(
     .ok_or(StatusCode::NOT_FOUND)?;
 
     let icons = list_public_icons(pool, calendar_day.id, language, include_drafts).await?;
-    let prayers = list_public_prayers(pool, Some(calendar_day.id), None, language, include_drafts).await?;
-    let articles = list_public_articles(pool, Some(calendar_day.id), None, language, include_drafts).await?;
-    let gospel = list_public_gospel(pool, Some(calendar_day.id), None, language, include_drafts).await?;
+    let prayers =
+        list_public_prayers(pool, Some(calendar_day.id), None, language, include_drafts).await?;
+    let articles =
+        list_public_articles(pool, Some(calendar_day.id), None, language, include_drafts).await?;
+    let gospel =
+        list_public_gospel(pool, Some(calendar_day.id), None, language, include_drafts).await?;
 
     Ok(Json(PublicChurchContentPage {
         calendar_day,
@@ -2799,7 +2884,10 @@ async fn list_public_icons(
     .map_err(db_error)
 }
 
-async fn list_public_prayers(
+/// `pub(crate)`: also called directly by the Telegram bot (`/prayer`) so it
+/// can reuse this exact query instead of re-implementing it or calling the
+/// HTTP endpoint over the network.
+pub(crate) async fn list_public_prayers(
     pool: &PgPool,
     calendar_day_id: Option<Uuid>,
     icon_id: Option<Uuid>,
@@ -2854,7 +2942,8 @@ async fn list_public_articles(
     .map_err(db_error)
 }
 
-async fn list_public_gospel(
+/// `pub(crate)`: also called directly by the Telegram bot (`/gospel`).
+pub(crate) async fn list_public_gospel(
     pool: &PgPool,
     calendar_day_id: Option<Uuid>,
     icon_id: Option<Uuid>,
@@ -2880,6 +2969,62 @@ async fn list_public_gospel(
     .fetch_all(pool)
     .await
     .map_err(db_error)
+}
+
+/// `pub(crate)`: same query shape as `list_public_prayers`/`list_public_gospel`
+/// above, added for the Telegram bot's `/saint` and `/today` commands — there
+/// was previously no "saints for a given day, public/published only" accessor
+/// mirroring the ones that already exist for icons/prayers/articles/gospel.
+pub(crate) async fn list_public_saints(
+    pool: &PgPool,
+    calendar_day_id: Option<Uuid>,
+    icon_id: Option<Uuid>,
+    language: Option<&str>,
+    include_drafts: bool,
+) -> Result<Vec<ChurchSaintDto>, StatusCode> {
+    let sql = format!(
+        r#"SELECT {SAINT_COLUMNS}
+           FROM church_saints
+           WHERE ($1::uuid IS NULL OR calendar_day_id = $1)
+             AND ($2::uuid IS NULL OR icon_id = $2)
+             AND (site_id = $3 OR is_global = true)
+             AND ($4::bool OR status = 'published')
+             AND ($5::text IS NULL OR language = $5)
+           ORDER BY name ASC"#
+    );
+    sqlx::query_as(&sql)
+        .bind(calendar_day_id)
+        .bind(icon_id)
+        .bind(CHURCH_SITE_ID)
+        .bind(include_drafts)
+        .bind(language)
+        .fetch_all(pool)
+        .await
+        .map_err(db_error)
+}
+
+/// `pub(crate)`: lightweight lookup used by the Telegram bot to find "today's"
+/// calendar day id without pulling the full bundle (icons/prayers/articles/
+/// gospel) that `public_calendar_by_date` assembles for the `/today` command.
+pub(crate) async fn calendar_day_id_for_date(
+    pool: &PgPool,
+    date: &str,
+) -> Result<Option<Uuid>, StatusCode> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        r#"SELECT id FROM church_calendar_days
+           WHERE (site_id = $1 OR is_global = true)
+             AND (date_new_style = $2::date OR date_old_style = $2::date)
+             AND status = 'published'
+           ORDER BY rank DESC, title ASC
+           LIMIT 1"#,
+    )
+    .bind(CHURCH_SITE_ID)
+    .bind(date)
+    .fetch_optional(pool)
+    .await
+    .map_err(db_error)?;
+
+    Ok(row.map(|(id,)| id))
 }
 
 pub(crate) fn preview_allowed(query: &ChurchContentQuery) -> bool {

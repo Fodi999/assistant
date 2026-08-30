@@ -245,6 +245,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cors_origins = config.cors.allowed_origins.clone();
     let rate_limit_per_second = config.server.rate_limit_per_second;
 
+    // Telegram Bot ("Світло Ікони") — `None` when TELEGRAM_BOT_TOKEN isn't
+    // set; the router still mounts /telegram/status + /telegram/webhook in
+    // that case, both answering without touching Telegram or crashing boot.
+    if config.telegram.is_none() {
+        tracing::info!(
+            "Telegram bot disabled (TELEGRAM_BOT_TOKEN not set) — rest of the backend continues normally"
+        );
+    }
+    let telegram_config = config.telegram.clone();
+
     // Create router
     let app = create_router(
         auth_service,
@@ -270,6 +280,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         gemini_for_copilot,
         cors_origins,
         rate_limit_per_second,
+        telegram_config,
     );
 
     // Start server
