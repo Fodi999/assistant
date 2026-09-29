@@ -1,4 +1,4 @@
-use crate::interfaces::http::{auth, business, catalog, health, schedule, state::AppState};
+use crate::interfaces::http::{auth, business, catalog, health, schedule, state::AppState, team};
 use axum::{
     http::{header, HeaderName, HeaderValue, Method},
     routing::{delete, get, patch, post, put},
@@ -64,6 +64,7 @@ pub fn create_router(state: AppState) -> Router {
             "/v1/businesses/:business_id/staff",
             get(business::list_staff),
         )
+        .route("/v1/businesses/:business_id/members", post(team::add_member))
         .route(
             "/v1/businesses/:business_id/categories",
             get(catalog::list_categories).post(catalog::create_category),

@@ -36,6 +36,12 @@ Non-members get 404. Errors: `400` validation, `401` no/invalid token, `403` rol
 | GET, POST | `/staff/:staff_id/time-off` | GET filter: `?from=&to=` (RFC 3339, overlap) |
 | DELETE | `/time-off/:time_off_id` | |
 
+## Team (temporary, until invitations)
+
+`POST /members` `{ "email", "role": "manager|reception|employee", "display_name"? }` adds an **existing** account
+to the business with a staff card. Owner adds any role, manager only employee/reception; others get 403.
+Unknown e-mail -> 404, already a member -> 409.
+
 ## Examples
 
 ```bash

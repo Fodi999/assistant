@@ -112,6 +112,89 @@ req DELETE "$B/time-off/$TOFF" "$ACCESS";                   expect "delete time 
 req GET "$S/schedule" "$ACCESS";                            expect "schedule readback" 200
 [ "$(printf '%s' "$BODY" | get weekly.1.start)" = "14:00" ] || { echo "  FAIL  weekly readback"; FAILED=$((FAILED + 1)); }
 
+# --- roles and tenant isolation ---
+TS=$(date +%s)
+signup() { # signup email -> prints access token
+  req POST /v1/auth/register "" "{\"email\":\"$1\",\"password\":\"$PASS\",\"accepted_terms\":true,\"display_name\":\"$2\",\"device\":{\"platform\":\"ios\"}}"
+  printf '%s' "$BODY" | get tokens.access_token
+}
+MGR_MAIL="smoke-mgr-$TS@example.com"; EMP_MAIL="smoke-emp-$TS@example.com"
+REC_MAIL="smoke-rec-$TS@example.com"; EMP2_MAIL="smoke-emp2-$TS@example.com"; STR_MAIL="smoke-str-$TS@example.com"
+MGR=$(signup "$MGR_MAIL" Mgr); EMP=$(signup "$EMP_MAIL" Emp); REC=$(signup "$REC_MAIL" Rec)
+EMP2=$(signup "$EMP2_MAIL" Emp2); STR=$(signup "$STR_MAIL" Stranger)
+
+req POST "$B/members" "$ACCESS" "{\"email\":\"$MGR_MAIL\",\"role\":\"manager\"}"
+                                                            expect "owner adds manager" 201
+req POST "$B/members" "$ACCESS" "{\"email\":\"$EMP_MAIL\",\"role\":\"employee\"}"
+                                                            expect "owner adds employee" 201
+EMP_STAFF=$(printf '%s' "$BODY" | get staff_id)
+req POST "$B/members" "$ACCESS" "{\"email\":\"$EMP2_MAIL\",\"role\":\"employee\"}"
+                                                            expect "owner adds second employee" 201
+EMP2_STAFF=$(printf '%s' "$BODY" | get staff_id)
+req POST "$B/members" "$ACCESS" "{\"email\":\"$REC_MAIL\",\"role\":\"reception\"}"
+                                                            expect "owner adds reception" 201
+REC_STAFF=$(printf '%s' "$BODY" | get staff_id)
+req POST "$B/members" "$MGR" "{\"email\":\"$STR_MAIL\",\"role\":\"manager\"}"
+                                                            expect "manager cannot add manager -> 403" 403
+req POST "$B/members" "$EMP" "{\"email\":\"$STR_MAIL\",\"role\":\"employee\"}"
+                                                            expect "employee cannot add members -> 403" 403
+
+HOURS='{"intervals":[{"weekday":2,"start":"10:00","end":"16:00"}]}'
+req PUT "$B/staff/$EMP_STAFF/schedule/weekly" "$EMP" "$HOURS"
+                                                            expect "employee edits OWN schedule" 200
+req PUT "$B/staff/$STAFF/schedule/weekly" "$EMP" "$HOURS"
+                                                            expect "employee edits owner's schedule -> 403" 403
+req PUT "$B/staff/$EMP2_STAFF/schedule/weekly" "$EMP" "$HOURS"
+                                                            expect "employee edits colleague's schedule -> 403" 403
+req GET "$B/staff/$EMP2_STAFF/schedule" "$EMP";             expect "employee reads colleague's schedule -> 403" 403
+req POST "$B/staff/$EMP_STAFF/time-off" "$EMP" '{"start_at":"2020-07-01T00:00:00Z","end_at":"2020-07-02T00:00:00Z","kind":"sick"}'
+                                                            expect "employee cannot block the past -> 400" 400
+req POST "$B/categories" "$EMP" '{"name":{"pl":"X"}}';      expect "employee cannot write catalog -> 403" 403
+req GET "$B/services" "$EMP";                               expect "employee reads catalog" 200
+
+req PUT "$B/staff/$EMP2_STAFF/schedule/weekly" "$MGR" "$HOURS"
+                                                            expect "manager edits any schedule" 200
+req POST "$B/categories" "$MGR" '{"name":{"pl":"Brwi","en":"Brows"}}'
+                                                            expect "manager writes catalog" 201
+
+req GET "$B/staff/$REC_STAFF/schedule" "$REC";              expect "reception reads schedule -> 403" 403
+req GET "$B/staff/$STAFF/schedule" "$REC";                  expect "reception reads master schedule -> 403" 403
+req PUT "$B/staff/$STAFF/schedule/weekly" "$REC" "$HOURS";  expect "reception edits schedule -> 403" 403
+req GET "$B/services" "$REC";                               expect "reception reads catalog" 200
+req POST "$B/services" "$REC" '{"name":{"pl":"X"}}';        expect "reception cannot write catalog -> 403" 403
+
+# business B belongs to the stranger
+req POST /v1/businesses "$STR" '{"name":"Stranger Studio"}'; expect "stranger creates own business" 201
+SB=$(printf '%s' "$BODY" | get id)
+req GET "$B/services" "$STR";                               expect "B reads A catalog -> 404" 404
+req POST "$B/services" "$STR" '{"name":{"pl":"Evil"}}';     expect "B writes A catalog -> 404" 404
+req GET "$B/staff" "$STR";                                  expect "B reads A staff -> 404" 404
+req GET "$B/staff/$STAFF/schedule" "$STR";                  expect "B reads A schedule -> 404" 404
+req PUT "$B/staff/$STAFF/schedule/weekly" "$STR" "$HOURS";  expect "B edits A schedule -> 404" 404
+req POST "$B/members" "$STR" "{\"email\":\"$EMP_MAIL\",\"role\":\"employee\"}"
+                                                            expect "B adds members to A -> 404" 404
+
+# A's ids used inside B's URLs
+req POST "$B/staff/$STAFF/time-off" "$ACCESS" '{"start_at":"2030-09-01T00:00:00Z","end_at":"2030-09-02T00:00:00Z","kind":"blocked"}'
+                                                            expect "A creates time off" 201
+TOFF_A=$(printf '%s' "$BODY" | get id)
+req GET "/v1/businesses/$SB/services/$SVC" "$STR";          expect "A service id in B url -> 404" 404
+req PUT "/v1/businesses/$SB/staff/$STAFF/schedule/weekly" "$STR" "$HOURS"
+                                                            expect "A staff id in B url -> 404" 404
+req GET "/v1/businesses/$SB/staff/$STAFF/time-off" "$STR";  expect "A staff id time-off in B url -> 404" 404
+req DELETE "/v1/businesses/$SB/time-off/$TOFF_A" "$STR";    expect "A time-off id in B url -> 404" 404
+req POST "/v1/businesses/$SB/services" "$STR" "{\"name\":{\"pl\":\"Mine\"},\"category_id\":\"$CAT\"}"
+                                                            expect "A category on B service -> 400" 400
+req POST "/v1/businesses/$SB/services" "$STR" '{"name":{"pl":"Mine"}}'
+                                                            expect "B creates own service" 201
+MINE=$(printf '%s' "$BODY" | get id)
+req PUT "/v1/businesses/$SB/services/$MINE/staff" "$STR" "{\"staff_ids\":[\"$STAFF\"]}"
+                                                            expect "A staff on B service -> 400" 400
+req PATCH "/v1/businesses/$SB/services/$SVC" "$STR" '{"is_active":false}'
+                                                            expect "patch A service via B url -> 404" 404
+req DELETE "$B/time-off/$TOFF_A" "$EMP";                    expect "employee deletes owner's time off -> 403" 403
+req DELETE "$B/time-off/$TOFF_A" "$ACCESS";                 expect "owner deletes time off" 204
+
 req POST /v1/auth/refresh "" "{\"refresh_token\":\"$REFRESH\"}"
                                                             expect "refresh" 200
 NEWREFRESH=$(printf '%s' "$BODY" | get refresh_token)

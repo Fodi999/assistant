@@ -7,6 +7,7 @@ pub mod health;
 pub mod routes;
 pub mod schedule;
 pub mod state;
+pub mod team;
 
 pub use routes::create_router;
 pub use state::AppState;
