@@ -122,7 +122,7 @@ curl -X POST $B/staff/$STAFF/time-off -H "$H" -H 'content-type: application/json
 | GET | `/appointments/:id` | one appointment (also works for a hold id) |
 | POST | `/appointments/:id/cancel` | body optional `{ "reason" }`; repeating is harmless (200) |
 | POST | `/appointments/:id/reschedule` | `{ "start_at", "staff_id"?, "reason"? }`; same row, same id |
-| GET | `/appointments/:id/history` | append-only events: `held`, `booked` (direct), `confirmed` (hold confirmed), `hold_released`, `hold_expired`, `rescheduled`, `cancelled` |
+| GET | `/appointments/:id/history` | append-only events: `hold_created`, `booked` (direct), `confirmed` (hold confirmed), `hold_released`, `hold_expired`, `rescheduled`, `cancelled` |
 
 Two ways to book:
 1. Confirm a hold: `{ "hold_id", "client_name", "client_phone"?, "note"? }` (Idempotency-Key optional; `hold_id` cannot be combined with service/staff/start/source, 400).
