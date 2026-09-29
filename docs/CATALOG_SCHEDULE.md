@@ -42,6 +42,22 @@ Non-members get 404. Errors: `400` validation, `401` no/invalid token, `403` rol
 to the business with a staff card. Owner adds any role, manager only employee/reception; others get 403.
 Unknown e-mail -> 404, already a member -> 409.
 
+## Availability (server-side slots)
+
+`GET /availability?service_id=&variant_id=&from=YYYY-MM-DD[&to=YYYY-MM-DD][&staff_id=][&channel=online|manual]`
+(any member; at most 14 days; dates are local dates of the business time zone).
+
+```json
+{ "timezone": "Europe/Warsaw", "service_id": "...", "variant_id": "...", "duration_min": 120, "buffer_after_min": 10,
+  "slots": [ { "date": "2030-06-03", "staff_id": "...", "start_at": "2030-06-03T07:00:00Z", "end_at": "2030-06-03T09:00:00Z" } ] }
+```
+
+A start time is offered when the whole variant duration fits a working interval on the service slot grid
+(minutes from local midnight), and duration + `buffer_after_min` does not touch a break, time off or (from the
+booking stage) an appointment/hold, and it lies within `min_notice_min` .. `max_advance_days` from now.
+Exceptions: `day_off` gives nothing, `custom_hours` replaces the weekly pattern (weekly breaks do not apply to it).
+`channel=online` (default) requires `is_online_bookable`. Clients never compute slots themselves.
+
 ## Examples
 
 ```bash

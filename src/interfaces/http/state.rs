@@ -1,5 +1,9 @@
-use crate::application::{AuthService, BusinessService, CatalogService, ScheduleService, TeamService};
+use crate::application::{
+    AuthService, AvailabilityService, BusinessService, CatalogService, ScheduleService,
+    TeamService,
+};
 use crate::infrastructure::{AppCache, Config, JwtService};
+use crate::shared::Clock;
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -15,10 +19,16 @@ pub struct AppState {
     pub catalog: CatalogService,
     pub schedule: ScheduleService,
     pub team: TeamService,
+    pub availability: AvailabilityService,
 }
 
 impl AppState {
     pub fn new(config: Config, pool: PgPool) -> Self {
+        Self::with_clock(config, pool, Clock::system())
+    }
+
+    /// Same as [`AppState::new`] with an injected clock (tests).
+    pub fn with_clock(config: Config, pool: PgPool, clock: Clock) -> Self {
         let jwt = JwtService::new(
             &config.jwt.secret,
             config.jwt.issuer.clone(),
@@ -32,6 +42,7 @@ impl AppState {
             catalog: CatalogService::new(pool.clone()),
             schedule: ScheduleService::new(pool.clone()),
             team: TeamService::new(pool.clone()),
+            availability: AvailabilityService::new(pool.clone(), clock),
             jwt,
             config: Arc::new(config),
             pool,

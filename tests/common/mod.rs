@@ -15,6 +15,7 @@ use beauty_backend::infrastructure::{
     AppEnv, Config, CorsConfig, DatabaseConfig, JwtConfig, ServerConfig,
 };
 use beauty_backend::interfaces::http::{create_router, AppState};
+use beauty_backend::shared::Clock;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use sqlx::postgres::PgPoolOptions;
@@ -49,6 +50,15 @@ pub fn test_config() -> Config {
 
 /// A router whose database connections run as the limited application role.
 pub async fn app(superuser_pool: &PgPool) -> Router {
+    app_with_clock(superuser_pool, Clock::system()).await
+}
+
+/// Same, with the application clock fixed at `now`.
+pub async fn app_at(superuser_pool: &PgPool, now: time::OffsetDateTime) -> Router {
+    app_with_clock(superuser_pool, Clock::fixed(now)).await
+}
+
+async fn app_with_clock(superuser_pool: &PgPool, clock: Clock) -> Router {
     let limited = PgPoolOptions::new()
         .max_connections(4)
         .after_connect(|conn, _meta| {
@@ -62,7 +72,7 @@ pub async fn app(superuser_pool: &PgPool) -> Router {
         .connect_with((*superuser_pool.connect_options()).clone())
         .await
         .expect("limited pool");
-    create_router(AppState::new(test_config(), limited))
+    create_router(AppState::with_clock(test_config(), limited, clock))
 }
 
 pub async fn call(

@@ -701,7 +701,7 @@ fn parse_span(start: &str, end: &str) -> AppResult<(Time, Time)> {
     Ok((start, end))
 }
 
-fn parse_date(value: &str, field: &str) -> AppResult<Date> {
+pub(crate) fn parse_date(value: &str, field: &str) -> AppResult<Date> {
     Date::parse(value.trim(), DATE_FORMAT)
         .map_err(|_| AppError::validation(format!("{field} must be a date like 2026-10-05")))
 }
@@ -724,11 +724,11 @@ fn format_time(value: Time) -> String {
     value.format(TIME_FORMAT).unwrap_or_default()
 }
 
-fn format_date(value: Date) -> String {
+pub(crate) fn format_date(value: Date) -> String {
     value.format(DATE_FORMAT).unwrap_or_default()
 }
 
-fn format_utc(value: OffsetDateTime) -> String {
+pub(crate) fn format_utc(value: OffsetDateTime) -> String {
     value
         .to_offset(UtcOffset::UTC)
         .format(&Rfc3339)

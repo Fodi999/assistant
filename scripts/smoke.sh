@@ -81,6 +81,7 @@ CAT=$(printf '%s' "$BODY" | get id)
 req POST "$B/services" "$ACCESS" "{\"category_id\":\"$CAT\",\"name\":{\"pl\":\"Klasyczne 1:1\",\"en\":\"Classic 1:1\"},\"variants\":[{\"duration_min\":120,\"price_minor\":25000},{\"duration_min\":150,\"price_minor\":32000,\"price_type\":\"from\"}]}"
                                                             expect "create service with variants" 201
 SVC=$(printf '%s' "$BODY" | get id)
+VAR0=$(printf '%s' "$BODY" | get variants.0.id)
 [ "$(printf '%s' "$BODY" | get variants.0.price_minor)" = "25000" ] || { echo "  FAIL  price_minor"; FAILED=$((FAILED + 1)); }
 [ "$(printf '%s' "$BODY" | get variants.0.currency)" = "PLN" ] || { echo "  FAIL  currency"; FAILED=$((FAILED + 1)); }
 req POST "$B/services" "$ACCESS" '{"name":{"pl":"X"},"variants":[{"duration_min":0,"price_minor":100}]}'
@@ -111,6 +112,22 @@ req GET "$S/time-off" "$ACCESS";                            expect "list time of
 req DELETE "$B/time-off/$TOFF" "$ACCESS";                   expect "delete time off" 204
 req GET "$S/schedule" "$ACCESS";                            expect "schedule readback" 200
 [ "$(printf '%s' "$BODY" | get weekly.1.start)" = "14:00" ] || { echo "  FAIL  weekly readback"; FAILED=$((FAILED + 1)); }
+
+# --- availability (server-side slots) ---
+# Next Monday at least 3 days ahead (the smoke owner works Monday 09-13 and 14-18).
+MONDAY=$(python3 -c 'import datetime as d; t=d.date.today()+d.timedelta(days=3)
+while t.weekday()!=0: t+=d.timedelta(days=1)
+print(t)')
+AV="$B/availability?service_id=$SVC&variant_id=$VAR0&from=$MONDAY"
+req GET "$AV" "$ACCESS";                                    expect "availability for next Monday" 200
+[ "$(printf '%s' "$BODY" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["slots"]))')" = "18" ] || { echo "  FAIL  expected 18 slots (2h service, 15 min grid)"; FAILED=$((FAILED + 1)); }
+[ "$(printf '%s' "$BODY" | get slots.0.date)" = "$MONDAY" ] || { echo "  FAIL  slot date"; FAILED=$((FAILED + 1)); }
+printf '%s' "$BODY" | get slots.0.start_at | grep -q 'Z$' || { echo "  FAIL  slot start_at is not UTC"; FAILED=$((FAILED + 1)); }
+req GET "$AV&to=2099-01-01" "$ACCESS";                      expect "range over 14 days -> 400" 400
+req GET "$AV&staff_id=00000000-0000-0000-0000-000000000000" "$ACCESS"
+                                                            expect "availability unknown staff -> 404" 404
+req GET "$AV&staff_id=$STAFF" "$ACCESS";                    expect "availability for one master" 200
+req GET "$AV" "";                                           expect "availability without token -> 401" 401
 
 # --- roles and tenant isolation ---
 TS=$(date +%s)
@@ -161,6 +178,7 @@ req GET "$B/staff/$REC_STAFF/schedule" "$REC";              expect "reception re
 req GET "$B/staff/$STAFF/schedule" "$REC";                  expect "reception reads master schedule -> 403" 403
 req PUT "$B/staff/$STAFF/schedule/weekly" "$REC" "$HOURS";  expect "reception edits schedule -> 403" 403
 req GET "$B/services" "$REC";                               expect "reception reads catalog" 200
+req GET "$AV" "$REC";                                       expect "reception reads availability" 200
 req POST "$B/services" "$REC" '{"name":{"pl":"X"}}';        expect "reception cannot write catalog -> 403" 403
 
 # business B belongs to the stranger
@@ -169,6 +187,7 @@ SB=$(printf '%s' "$BODY" | get id)
 req GET "$B/services" "$STR";                               expect "B reads A catalog -> 404" 404
 req POST "$B/services" "$STR" '{"name":{"pl":"Evil"}}';     expect "B writes A catalog -> 404" 404
 req GET "$B/staff" "$STR";                                  expect "B reads A staff -> 404" 404
+req GET "$AV" "$STR";                                       expect "B reads A availability -> 404" 404
 req GET "$B/staff/$STAFF/schedule" "$STR";                  expect "B reads A schedule -> 404" 404
 req PUT "$B/staff/$STAFF/schedule/weekly" "$STR" "$HOURS";  expect "B edits A schedule -> 404" 404
 req POST "$B/members" "$STR" "{\"email\":\"$EMP_MAIL\",\"role\":\"employee\"}"

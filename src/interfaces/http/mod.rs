@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod availability;
 pub mod business;
 pub mod catalog;
 pub mod error;
