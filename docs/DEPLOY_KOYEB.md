@@ -40,14 +40,28 @@ database contents are new.
 
 ## 2. Getting the new code into the existing service
 
-Koyeb auto-deploys from the GitHub repo `Fodi999/assistant` (`main`, Dockerfile
-builder, port 8000, health check `/health`). Both already match the new code.
+The new code already lives in this repository: local `main` is the new clean
+history, the old code is kept as tag `legacy-final` and branch `legacy/main`.
+Koyeb auto-deploys `Fodi999/assistant` (`main`, Dockerfile builder, port 8000,
+health check `/health`), and all of that already matches the new code.
 
-**Recommended:** after step 0, replace `main` of that repo with the new clean
-history (the old code stays reachable as `legacy/main` and `legacy-final`).
-Koyeb then rebuilds with the new `Dockerfile` automatically. Rename the repo to
-`beauty-backend` afterwards (GitHub keeps redirects; re-check the Koyeb link).
-Replacing `main` is a force-push: do it only after step 0 is finished.
+Run in this order (the second command rewrites remote `main`, so the first
+must succeed before it):
+
+```bash
+cd ~/Desktop/assistant
+git push origin legacy-final legacy/main     # 1. safety net for the old code
+git push --force-with-lease origin main      # 2. replace main -> Koyeb rebuilds
+```
+
+Until step 3 below is done the new service can still start: it only needs
+`DATABASE_URL` and `JWT_SECRET`, which the service already has; `/health` answers,
+`/ready` shows the database state. If the build fails, Koyeb keeps the previous
+deployment running. Rename the repo to `beauty-backend` afterwards (GitHub keeps
+redirects; re-check the Koyeb link).
+
+The old local secrets file was renamed to `.env.legacy` (git-ignored). Do not
+point `make migrate` / tests at the old production database.
 
 ## 3. Service settings
 
