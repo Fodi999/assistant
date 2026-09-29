@@ -403,8 +403,10 @@ async fn only_approved_and_published_businesses_are_public(pool: PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+    // The business is approved by now, so the attempted change must differ
+    // from the current value or the guard has nothing to refuse.
     let refused =
-        sqlx::query("UPDATE business SET moderation_status = 'approved' WHERE id = $1::text::uuid")
+        sqlx::query("UPDATE business SET moderation_status = 'pending' WHERE id = $1::text::uuid")
             .bind(&s.biz)
             .execute(&mut *tx)
             .await

@@ -29,6 +29,9 @@ pub struct RegisterInput {
     pub email: String,
     pub password: String,
     pub display_name: Option<String>,
+    /// Optional, international format (`+48 600 100 200`); stored as `+48600100200`.
+    /// It is not verified yet (see `users.phone_verified_at`).
+    pub phone: Option<String>,
     pub locale: Option<String>,
     /// Must be true: terms of service and privacy policy (stored as consents).
     pub accepted_terms: bool,
@@ -81,6 +84,8 @@ pub struct UserView {
     pub display_name: Option<String>,
     pub locale: String,
     pub avatar_url: Option<String>,
+    /// E.164, when the person gave one.
+    pub phone: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -150,6 +155,7 @@ impl AuthService {
             ));
         }
         let display_name = clean_optional(input.display_name, 120, "display_name")?;
+        let phone = normalize_phone(input.phone.as_deref())?;
         let locale = normalize_locale(input.locale.as_deref())?;
         let terms_version = clean_optional(input.terms_version, 40, "terms_version")?
             .unwrap_or_else(|| DEFAULT_TERMS_VERSION.to_string());
@@ -158,14 +164,32 @@ impl AuthService {
         let user_id = UserId::new();
         let mut tx = begin_scoped(&self.pool, DbScope::user(user_id)).await?;
 
-        sqlx::query("INSERT INTO users (id, email, display_name, locale) VALUES ($1, $2, $3, $4)")
-            .bind(user_id.as_uuid())
-            .bind(&email)
-            .bind(&display_name)
-            .bind(&locale)
-            .execute(&mut *tx)
-            .await
-            .map_err(on_unique("An account with this email already exists"))?;
+        sqlx::query(
+            "INSERT INTO users (id, email, phone_e164, display_name, locale)
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(user_id.as_uuid())
+        .bind(&email)
+        .bind(&phone)
+        .bind(&display_name)
+        .bind(&locale)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| {
+            let constraint = error
+                .as_database_error()
+                .and_then(|db| db.constraint())
+                .map(str::to_owned);
+            match constraint.as_deref() {
+                Some("users_phone_key") => {
+                    AppError::conflict("An account with this phone number already exists")
+                }
+                Some("users_email_key") => {
+                    AppError::conflict("An account with this email already exists")
+                }
+                _ => on_unique("An account with this email already exists")(error),
+            }
+        })?;
 
         sqlx::query(
             "INSERT INTO auth_identity (user_id, provider, provider_subject) VALUES ($1, 'email', $2)",
@@ -484,7 +508,7 @@ async fn revoke_family(conn: &mut PgConnection, family_id: Uuid) -> AppResult<()
 
 async fn load_user(conn: &mut PgConnection, user_id: UserId) -> AppResult<UserView> {
     sqlx::query_as::<_, UserView>(
-        "SELECT id, email, display_name, locale, avatar_url FROM users WHERE id = $1 AND deleted_at IS NULL",
+        "SELECT id, email, display_name, locale, avatar_url, phone_e164 AS phone FROM users WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(user_id.as_uuid())
     .fetch_optional(&mut *conn)
@@ -575,6 +599,34 @@ pub(crate) fn normalize_email(raw: &str) -> AppResult<String> {
     }
 }
 
+/// International format only: `+`, then 7-15 digits, not starting with 0
+/// (the database enforces the same `^\+[1-9][0-9]{6,14}$`). Spaces, dots,
+/// dashes and brackets are dropped. Empty means "no phone".
+pub(crate) fn normalize_phone(raw: Option<&str>) -> AppResult<Option<String>> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let invalid = || {
+        AppError::validation("phone must be in international format, for example +48 600 100 200")
+    };
+    if !raw.starts_with('+') {
+        return Err(invalid());
+    }
+    let mut digits = String::new();
+    for c in raw.chars().skip(1) {
+        match c {
+            '0'..='9' => digits.push(c),
+            ' ' | '-' | '.' | '(' | ')' => {}
+            _ => return Err(invalid()),
+        }
+    }
+    if (7..=15).contains(&digits.len()) && !digits.starts_with('0') {
+        Ok(Some(format!("+{digits}")))
+    } else {
+        Err(invalid())
+    }
+}
+
 fn validate_password(password: &str) -> AppResult<()> {
     let length = password.chars().count();
     if !(MIN_PASSWORD_LEN..=MAX_PASSWORD_LEN).contains(&length) {
@@ -614,6 +666,34 @@ mod tests {
             "ann@.pl",
         ] {
             assert!(normalize_email(bad).is_err(), "{bad:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn phones_are_normalised_to_e164_or_rejected() {
+        assert_eq!(normalize_phone(None).unwrap(), None);
+        assert_eq!(normalize_phone(Some("  ")).unwrap(), None);
+        assert_eq!(
+            normalize_phone(Some("+48 600-100.200")).unwrap(),
+            Some("+48600100200".to_string())
+        );
+        assert_eq!(
+            normalize_phone(Some(" +48 (600) 100 200 ")).unwrap(),
+            Some("+48600100200".to_string())
+        );
+        for bad in [
+            "600100200",
+            "0048600100200",
+            "+0600100200",
+            "+48",
+            "+48 600 abc 200",
+            "++48600100200",
+            "+1234567890123456",
+        ] {
+            assert!(
+                normalize_phone(Some(bad)).is_err(),
+                "{bad:?} must be rejected"
+            );
         }
     }
 

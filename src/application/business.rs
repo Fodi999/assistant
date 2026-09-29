@@ -28,6 +28,13 @@ pub struct UpdateBusinessInput {
     pub description: Option<String>,
 }
 
+/// Absent fields stay as they are; an empty `bio` clears it.
+#[derive(Debug, Deserialize)]
+pub struct UpdateStaffInput {
+    pub name: Option<String>,
+    pub bio: Option<String>,
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct BusinessRow {
     pub id: Uuid,
@@ -231,6 +238,83 @@ impl BusinessService {
         .fetch_all(&mut *tx)
         .await?;
         Ok(staff)
+    }
+
+    /// Owners and managers may edit any card; other roles only their own.
+    pub async fn update_staff(
+        &self,
+        access: BusinessAccess,
+        staff_id: Uuid,
+        input: UpdateStaffInput,
+    ) -> AppResult<StaffView> {
+        let name = match input.name {
+            Some(value) => {
+                let value = value.trim().to_string();
+                if value.is_empty() || value.chars().count() > 120 {
+                    return Err(AppError::validation("name must be 1-120 characters"));
+                }
+                Some(value)
+            }
+            None => None,
+        };
+        let bio_set = input.bio.is_some();
+        let bio = clean_optional(input.bio, 1000, "bio")?;
+
+        let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+        let owner_user: Option<Option<Uuid>> = sqlx::query_scalar(
+            "SELECT m.user_id
+             FROM staff_member s
+             LEFT JOIN membership m ON m.id = s.membership_id
+             WHERE s.id = $1 AND s.business_id = $2",
+        )
+        .bind(staff_id)
+        .bind(access.business_id.as_uuid())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let card_user = owner_user.ok_or_else(|| AppError::not_found("Staff member not found"))?;
+        let is_manager = matches!(access.role, Role::Owner | Role::Manager);
+        if !is_manager && card_user != Some(*access.user_id.as_uuid()) {
+            return Err(AppError::authorization(
+                "You can only edit your own staff card",
+            ));
+        }
+
+        sqlx::query(
+            "UPDATE staff_member
+             SET display_name = COALESCE($3, display_name),
+                 bio = CASE WHEN $4 THEN $5 ELSE bio END
+             WHERE id = $1 AND business_id = $2",
+        )
+        .bind(staff_id)
+        .bind(access.business_id.as_uuid())
+        .bind(&name)
+        .bind(bio_set)
+        .bind(&bio)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO audit_log (business_id, actor_user_id, action, entity, entity_id)
+             VALUES ($1, $2, 'staff.update', 'staff_member', $3)",
+        )
+        .bind(access.business_id.as_uuid())
+        .bind(access.user_id.as_uuid())
+        .bind(staff_id)
+        .execute(&mut *tx)
+        .await?;
+        let view = sqlx::query_as::<_, StaffView>(
+            "SELECT s.id, s.display_name, s.photo_url, s.bio, s.color, s.is_bookable, s.sort_order,
+                    COALESCE(m.user_id = $3, false) AS is_mine
+             FROM staff_member s
+             LEFT JOIN membership m ON m.id = s.membership_id
+             WHERE s.id = $1 AND s.business_id = $2",
+        )
+        .bind(staff_id)
+        .bind(access.business_id.as_uuid())
+        .bind(access.user_id.as_uuid())
+        .fetch_one(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(view)
     }
 
     pub async fn update(

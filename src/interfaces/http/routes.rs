@@ -68,6 +68,10 @@ pub fn create_router(state: AppState) -> Router {
             get(business::list_staff),
         )
         .route(
+            "/v1/businesses/:business_id/staff/:staff_id",
+            patch(business::update_staff),
+        )
+        .route(
             "/v1/businesses/:business_id/members",
             post(team::add_member),
         )

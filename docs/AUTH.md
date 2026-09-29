@@ -7,7 +7,7 @@ Sign in with Apple / Google and one-time codes come next; they end in the same t
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/v1/auth/register` | none | `email`, `password` (10-128), `accepted_terms: true`, optional `display_name`, `locale`, `device` |
+| POST | `/v1/auth/register` | none | `email`, `password` (10-128), `accepted_terms: true`, optional `display_name`, `locale`, `phone` (E.164, see below), `device` |
 | POST | `/v1/auth/login` | none | 5 wrong passwords per email lock sign-in for 10 minutes (429) |
 | POST | `/v1/auth/refresh` | none | body `{refresh_token}`; the old token is used up |
 | POST | `/v1/auth/logout` | none | body `{refresh_token}`; always 204 |
@@ -15,8 +15,20 @@ Sign in with Apple / Google and one-time codes come next; they end in the same t
 | POST | `/v1/businesses` | Bearer | caller becomes owner; creates a bookable staff card |
 | GET | `/v1/businesses/:id` | member | non-members get 404 |
 | PATCH | `/v1/businesses/:id` | owner, manager | employee/reception get 403 |
+| PATCH | `/v1/businesses/:id/staff/:staff_id` | owner, manager (any card); others (own card only) | body `{name?, bio?}`; name 1-120, bio ≤1000, empty bio clears; other tenant's card is 404 |
 
 Auth responses: `{ user, tokens: { access_token, refresh_token, token_type, expires_in } }`.
+
+## Phone number
+
+- `phone` on register is optional, so existing clients keep working. It is stored on the **user**
+  (`users.phone_e164`), never on the business, and returned as `UserView.phone` (register, login, `/v1/me`).
+- Format: international with a leading `+`; spaces, dashes, dots and brackets are stripped; 7-15 digits,
+  the first not `0`. Stored as `+48600100200`. Bad format: 400. Already used by another account: 409.
+- Verification is not built. `users.phone_verified_at` (migration `20260930090000`) is reserved for a future
+  SMS/code step; it can only be set for a row that has a phone. Nothing reads it yet.
+- Admin sees the owner's phone in `GET /v1/admin/businesses/:id` (`owner.phone`), together with
+  `business_type` and `address_line`.
 
 ## Security decisions
 

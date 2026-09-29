@@ -95,6 +95,8 @@ pub struct AdminBusinessDetail {
     pub business: AdminBusinessView,
     pub about: Option<String>,
     pub instagram: Option<String>,
+    pub business_type: Option<String>,
+    pub address_line: Option<String>,
     pub owner: AdminOwner,
     pub staff: Vec<AdminStaff>,
     pub services: Vec<AdminServiceItem>,
@@ -196,11 +198,17 @@ impl AdminService {
         let business = BusinessId::from_uuid(business_id);
         let mut tx = begin_scoped(&self.pool, DbScope::business(admin, business)).await?;
         let base = load_one(&mut tx, business_id).await?;
-        let (about, instagram): (Option<String>, Option<String>) =
-            sqlx::query_as("SELECT about, instagram FROM business WHERE id = $1")
-                .bind(business_id)
-                .fetch_one(&mut *tx)
-                .await?;
+        let (about, instagram, business_type, address_line): (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = sqlx::query_as(
+            "SELECT about, instagram, business_type, address_line FROM business WHERE id = $1",
+        )
+        .bind(business_id)
+        .fetch_one(&mut *tx)
+        .await?;
         let phone: Option<String> = sqlx::query_scalar(
             "SELECT u.phone_e164 FROM membership m JOIN users u ON u.id = m.user_id
              WHERE m.business_id = $1 AND m.role = 'owner' AND m.status = 'active' LIMIT 1",
@@ -286,6 +294,8 @@ impl AdminService {
         Ok(AdminBusinessDetail {
             about,
             instagram,
+            business_type,
+            address_line,
             owner: AdminOwner {
                 email: base.owner_email.clone(),
                 name: base.owner_name.clone(),

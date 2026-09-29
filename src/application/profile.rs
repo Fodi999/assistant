@@ -19,7 +19,15 @@ pub struct UpdateProfileInput {
     /// Instagram handle, with or without `@`.
     pub instagram: Option<String>,
     pub is_published: Option<bool>,
+    /// One of `BUSINESS_TYPES`; an empty string clears it.
+    pub business_type: Option<String>,
+    /// Street address as a single line (no geocoding); empty clears it.
+    pub address_line: Option<String>,
 }
+
+/// Fixed set of business types offered at onboarding.
+pub const BUSINESS_TYPES: [&str; 6] =
+    ["lashes", "brows", "nails", "hair", "beauty_studio", "other"];
 
 #[derive(Debug, Serialize)]
 pub struct ProfileView {
@@ -27,6 +35,8 @@ pub struct ProfileView {
     pub headline: Option<String>,
     pub about: Option<String>,
     pub instagram: Option<String>,
+    pub business_type: Option<String>,
+    pub address_line: Option<String>,
     pub is_published: bool,
     /// `pending`, `approved`, `rejected` or `suspended` (set by the platform).
     pub moderation_status: String,
@@ -44,6 +54,8 @@ type ProfileRow = (
     bool,
     String,
     String,
+    Option<String>,
+    Option<String>,
 );
 
 /// `(changed, new value)` of an optional text field.
@@ -65,6 +77,18 @@ fn text_change(
         )));
     }
     Ok((true, Some(value)))
+}
+
+fn business_type_change(value: Option<String>) -> AppResult<(bool, Option<String>)> {
+    let (changed, value) = text_change(value, 30, "business_type")?;
+    match value {
+        None => Ok((changed, None)),
+        Some(v) if BUSINESS_TYPES.contains(&v.as_str()) => Ok((true, Some(v))),
+        Some(_) => Err(AppError::validation(format!(
+            "business_type must be one of: {}",
+            BUSINESS_TYPES.join(", ")
+        ))),
+    }
 }
 
 fn instagram_change(value: Option<String>) -> AppResult<(bool, Option<String>)> {
@@ -111,6 +135,8 @@ impl ProfileService {
         let (headline_set, headline) = text_change(input.headline, 140, "headline")?;
         let (about_set, about) = text_change(input.about, 2000, "about")?;
         let (instagram_set, instagram) = instagram_change(input.instagram)?;
+        let (type_set, business_type) = business_type_change(input.business_type)?;
+        let (address_set, address_line) = text_change(input.address_line, 200, "address_line")?;
 
         let mut tx = begin_scoped(&self.pool, access.scope()).await?;
         sqlx::query(
@@ -119,7 +145,9 @@ impl ProfileService {
                  headline = CASE WHEN $4 THEN $5 ELSE headline END,
                  about = CASE WHEN $6 THEN $7 ELSE about END,
                  instagram = CASE WHEN $8 THEN $9 ELSE instagram END,
-                 is_published = COALESCE($10, is_published)
+                 is_published = COALESCE($10, is_published),
+                 business_type = CASE WHEN $11 THEN $12 ELSE business_type END,
+                 address_line = CASE WHEN $13 THEN $14 ELSE address_line END
              WHERE id = $1 AND deleted_at IS NULL",
         )
         .bind(access.business_id.as_uuid())
@@ -132,6 +160,10 @@ impl ProfileService {
         .bind(instagram_set)
         .bind(instagram)
         .bind(input.is_published)
+        .bind(type_set)
+        .bind(business_type)
+        .bind(address_set)
+        .bind(address_line)
         .execute(&mut *tx)
         .await?;
         let view = load(&mut tx, access).await?;
@@ -142,7 +174,8 @@ impl ProfileService {
 
 async fn load(conn: &mut PgConnection, access: BusinessAccess) -> AppResult<ProfileView> {
     let row: ProfileRow = sqlx::query_as(
-        "SELECT city, headline, about, instagram, is_published, moderation_status, status
+        "SELECT city, headline, about, instagram, is_published, moderation_status, status,
+                business_type, address_line
          FROM business WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(access.business_id.as_uuid())
@@ -163,6 +196,8 @@ async fn load(conn: &mut PgConnection, access: BusinessAccess) -> AppResult<Prof
         headline: row.1,
         about: row.2,
         instagram: row.3,
+        business_type: row.7,
+        address_line: row.8,
         is_published: row.4,
         moderation_status: row.5,
         moderation_note: note,
@@ -186,6 +221,17 @@ mod tests {
             (true, Some("Wawa".into()))
         );
         assert!(text_change(Some("12345678901".into()), 10, "x").is_err());
+    }
+
+    #[test]
+    fn business_types_are_a_fixed_set() {
+        assert_eq!(
+            business_type_change(Some("lashes".into())).unwrap(),
+            (true, Some("lashes".into()))
+        );
+        assert_eq!(business_type_change(Some("".into())).unwrap(), (true, None));
+        assert_eq!(business_type_change(None).unwrap(), (false, None));
+        assert!(business_type_change(Some("barber".into())).is_err());
     }
 
     #[test]

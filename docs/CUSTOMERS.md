@@ -23,7 +23,7 @@ A business is public only when `moderation_status = 'approved'` AND `is_publishe
 ## Endpoints
 
 Owner / staff (`/v1/businesses/:id`):
-- `GET /profile` (any member), `PUT /profile` (owner, manager). Body fields are optional; an empty string clears a text field. `moderation_status` in the body is ignored.
+- `GET /profile` (any member), `PUT /profile` (owner, manager). Body fields are optional; an empty string clears a text field. Besides `city`, `headline`, `about`, `instagram` and `is_published`, the body takes `business_type` (one of `lashes`, `brows`, `nails`, `hair`, `beauty_studio`, `other`; else 400) and `address_line` (one line, ≤200, no geocoding). Both come back in the GET body. `moderation_status` in the body is ignored.
 - `GET /clients?q=&limit=&offset=`, `GET /clients/:client_id` (owner, manager, reception).
 
 Public, no sign-in (`/v1/public`):
