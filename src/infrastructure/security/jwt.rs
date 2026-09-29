@@ -92,6 +92,10 @@ impl JwtService {
     pub fn refresh_token_ttl(&self) -> Duration {
         self.refresh_token_ttl
     }
+
+    pub fn access_token_ttl_seconds(&self) -> i64 {
+        self.access_token_ttl.whole_seconds()
+    }
 }
 
 #[cfg(test)]

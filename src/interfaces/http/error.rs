@@ -47,6 +47,12 @@ impl IntoResponse for AppError {
                 "Conflict",
                 Some(msg.clone()),
             ),
+            AppError::RateLimited(msg) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "RATE_LIMITED",
+                "Too many requests",
+                Some(msg.clone()),
+            ),
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
                 (

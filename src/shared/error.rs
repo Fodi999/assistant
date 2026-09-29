@@ -17,6 +17,9 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    #[error("Rate limited: {0}")]
+    RateLimited(String),
+
     #[error("Internal server error")]
     Internal(String),
 

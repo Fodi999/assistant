@@ -1,7 +1,7 @@
-use crate::interfaces::http::{health, state::AppState};
+use crate::interfaces::http::{auth, business, health, state::AppState};
 use axum::{
     http::{header, HeaderName, HeaderValue, Method},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use std::time::Duration;
@@ -50,6 +50,16 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health::health_check))
         .route("/ready", get(health::ready_check))
+        .route("/v1/auth/register", post(auth::register))
+        .route("/v1/auth/login", post(auth::login))
+        .route("/v1/auth/refresh", post(auth::refresh))
+        .route("/v1/auth/logout", post(auth::logout))
+        .route("/v1/me", get(auth::me))
+        .route("/v1/businesses", post(business::create))
+        .route(
+            "/v1/businesses/:business_id",
+            get(business::get).patch(business::update),
+        )
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
