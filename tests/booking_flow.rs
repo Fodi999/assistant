@@ -626,18 +626,20 @@ async fn two_simultaneous_requests_for_one_slot_book_it_once(pool: PgPool) {
         "2027-03-22T11:00:00Z",
     ];
     for (n, slot) in slots.into_iter().enumerate() {
+        let owner_key = format!("owner-key-{n:04}");
+        let rita_key = format!("rita-key-{n:04}");
         let (a, b) = tokio::join!(
             shop.hold_as(
                 &shop.app,
                 &shop.token,
-                &format!("owner-key-{n:04}"),
+                &owner_key,
                 &shop.staff,
                 slot
             ),
             shop.hold_as(
                 &shop.app,
                 &rita,
-                &format!("rita-key-{n:04}"),
+                &rita_key,
                 &shop.staff,
                 slot
             ),

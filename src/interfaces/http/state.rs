@@ -1,5 +1,6 @@
 use crate::application::{
-    AuthService, AvailabilityService, BookingService, BusinessService, CatalogService, ScheduleService, TeamService,
+    AuthService, AvailabilityService, BookingService, BusinessService, CatalogService,
+    ScheduleService, TeamService,
 };
 use crate::infrastructure::{AppCache, Config, JwtService};
 use crate::shared::Clock;

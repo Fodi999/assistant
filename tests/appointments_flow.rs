@@ -1060,15 +1060,17 @@ async fn concurrent_bookings_and_moves_never_double_book(pool: PgPool) {
     let (_, x) = shop.book("move-key-x0001", "2027-03-23T08:00:00Z").await;
     let (_, y) = shop.book("move-key-y0001", "2027-03-23T09:30:00Z").await;
     let target = json!({ "start_at": "2027-03-23T11:00:00Z" });
+    let path_x = format!("/appointments/{}/reschedule", x["id"].as_str().unwrap());
+    let path_y = format!("/appointments/{}/reschedule", y["id"].as_str().unwrap());
     let (mx, my) = tokio::join!(
         shop.post(
             &shop.app,
-            &format!("/appointments/{}/reschedule", x["id"].as_str().unwrap()),
+            &path_x,
             target.clone()
         ),
         shop.post(
             &shop.app,
-            &format!("/appointments/{}/reschedule", y["id"].as_str().unwrap()),
+            &path_y,
             target.clone()
         ),
     );
