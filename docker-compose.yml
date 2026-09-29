@@ -9,7 +9,8 @@ services:
       POSTGRES_PASSWORD: beauty
       POSTGRES_DB: beauty
     ports:
-      - "5432:5432"
+      # 5433 on the host so a local Postgres on 5432 (Homebrew etc.) never collides.
+      - "${BEAUTY_DB_PORT:-5433}:5432"
     volumes:
       - beauty-pgdata:/var/lib/postgresql/data
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro

@@ -1,12 +1,16 @@
 .PHONY: help db-up db-down db-reset migrate run test lint fmt check
 
-SUPERUSER_URL ?= postgres://beauty:beauty@localhost:5432/beauty
+SUPERUSER_URL ?= postgres://beauty:beauty@localhost:5433/beauty
 
 help:
 	@echo "targets: db-up db-down db-reset migrate run test lint fmt check"
 
 db-up:
 	docker compose up -d db
+	@echo "waiting for Postgres (roles are created on first start)..."
+	@i=0; until docker compose exec -T db pg_isready -q -h 127.0.0.1 -U beauty -d beauty; do \
+		i=$$((i+1)); [ $$i -gt 60 ] && { echo "Postgres did not become ready"; exit 1; }; sleep 1; done
+	@echo "Postgres is ready on localhost:5433"
 
 db-down:
 	docker compose down
@@ -24,7 +28,7 @@ run:
 	cargo run
 
 # The RLS tests create throw-away databases, so they need the superuser URL.
-test:
+test: db-up
 	DATABASE_URL=$(SUPERUSER_URL) cargo test
 
 lint:
