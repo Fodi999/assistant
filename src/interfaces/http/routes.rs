@@ -80,7 +80,27 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route(
             "/v1/businesses/:business_id/holds/:hold_id",
-            get(booking::get_hold).delete(booking::release_hold),
+            get(booking::get_appointment).delete(booking::release_hold),
+        )
+        .route(
+            "/v1/businesses/:business_id/appointments",
+            post(booking::create_appointment).get(booking::list_appointments),
+        )
+        .route(
+            "/v1/businesses/:business_id/appointments/:appointment_id",
+            get(booking::get_appointment),
+        )
+        .route(
+            "/v1/businesses/:business_id/appointments/:appointment_id/cancel",
+            post(booking::cancel_appointment),
+        )
+        .route(
+            "/v1/businesses/:business_id/appointments/:appointment_id/reschedule",
+            post(booking::reschedule_appointment),
+        )
+        .route(
+            "/v1/businesses/:business_id/appointments/:appointment_id/history",
+            get(booking::appointment_history),
         )
         .route(
             "/v1/businesses/:business_id/categories",

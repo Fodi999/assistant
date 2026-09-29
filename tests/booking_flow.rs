@@ -350,9 +350,11 @@ async fn only_offered_times_can_be_held(pool: PgPool) {
 
     // Even around the API the database refuses an overlap.
     let overlap = sqlx::query(
-        "INSERT INTO appointment (business_id, staff_id, status, start_at, end_at, blocked_end)
+        "INSERT INTO appointment (business_id, staff_id, status, start_at, end_at, blocked_end,
+                                 client_name, confirmed_at)
          VALUES ($1::text::uuid, $2::text::uuid, 'confirmed',
-                 '2027-03-22T08:15:00Z', '2027-03-22T09:00:00Z', '2027-03-22T09:00:00Z')",
+                 '2027-03-22T08:15:00Z', '2027-03-22T09:00:00Z', '2027-03-22T09:00:00Z',
+                 'Direct SQL', now())",
     )
     .bind(&shop.biz)
     .bind(&shop.staff)

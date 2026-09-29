@@ -113,7 +113,36 @@ curl -X POST $B/staff/$STAFF/time-off -H "$H" -H 'content-type: application/json
 # {"code":"VALIDATION_ERROR","message":"Validation failed","details":"Working intervals of the same weekday must not overlap"}
 ```
 
+## Appointments (confirmed bookings, cancel, reschedule, history)
+
+| Method | Path | |
+|---|---|---|
+| POST | `/appointments` | 201 created, 200 replay of the same request |
+| GET | `/appointments?from&to&staff_id&status` | calendar by business-local dates, at most 31 days, default `status=confirmed`; an employee sees only their own calendar |
+| GET | `/appointments/:id` | one appointment (also works for a hold id) |
+| POST | `/appointments/:id/cancel` | body optional `{ "reason" }`; repeating is harmless (200) |
+| POST | `/appointments/:id/reschedule` | `{ "start_at", "staff_id"?, "reason"? }`; same row, same id |
+| GET | `/appointments/:id/history` | append-only events: `created`, `hold_expired`, `confirmed`, `rescheduled`, `cancelled` |
+
+Two ways to book:
+1. Confirm a hold: `{ "hold_id", "client_name", "client_phone"?, "note"?, "source"? }` (Idempotency-Key optional).
+   The hold must be alive; confirming twice with the same data returns 200, with other data 409, an expired hold 409 `SLOT_UNAVAILABLE`.
+2. Direct booking: `{ "service_id", "variant_id", "staff_id", "start_at", "client_name", ... }` with header `Idempotency-Key` (required).
+   The start time is validated by the same availability rules as slots.
+
+`client_phone` is stored in E.164 (`+48 600 100 200` becomes `+48600100200`). `note` is an internal note (up to 500 characters);
+do not put health information there. The appointment keeps a snapshot of service/variant names, duration and price.
+
+Cancellation policy (no payments yet): cancelling less than 24 hours before the start sets `late_cancellation=true`
+(the threshold is a code constant, `FREE_CANCELLATION_HOURS`); the slot is freed at once either way. Started appointments
+cannot be cancelled or moved (409). Rescheduling keeps the booked duration and re-checks the new time against availability,
+ignoring the appointment's own current time; the old slot is freed in the same statement.
+
+Errors: `409 SLOT_UNAVAILABLE` (taken / not offered / lost a race / hold expired), `409 CONFLICT` (key reused with other data,
+wrong state), `400 VALIDATION_ERROR` (name, phone, nothing to change), `403` employee for another master, `404` other business.
+Two simultaneous bookings or moves onto one slot: one succeeds, the other gets 409.
+
 ## Deferred (not in this stage)
 
 Per-variant staff overrides, deposit policy, `If-Match`/version enforcement, recurring time off (`rrule`),
-schedule-vs-future-appointments conflict check (needs bookings), `24:00` as end time.
+schedule-vs-future-appointments conflict check, client/CRM table, configurable cancellation policy, customer-facing booking API, `24:00` as end time.

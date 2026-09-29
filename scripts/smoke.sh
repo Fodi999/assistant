@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test of the auth, business, catalog and schedule API against a running server.
+# Smoke test of the auth, business, catalog, schedule, availability and booking API against a running server.
 # Usage: scripts/smoke.sh [base_url]
 # Creates one throw-away account and business (prints the email at the end).
 # Never prints tokens.
@@ -270,6 +270,133 @@ race "$SLOT_B" 1
 race "$SLOT_C" 2
 req GET "$AV" "$ACCESS";                                    expect "availability after the races" 200
 printf '%s' "$BODY" | grep -q "$SLOT_B" && { echo "  FAIL  raced slot is still offered"; FAILED=$((FAILED + 1)); }
+
+# --- C4/C5: confirmed appointments, cancel, reschedule, history ---
+# Two later Mondays, each with four disjoint 2h slots (09:00, 11:00, 14:00, 16:00 local).
+MON2=$(python3 -c "import datetime as d; print(d.date.fromisoformat('$MONDAY')+d.timedelta(days=7))")
+MON3=$(python3 -c "import datetime as d; print(d.date.fromisoformat('$MONDAY')+d.timedelta(days=14))")
+slots_of() { # slots_of DATE -> prints "s0 s8 s9 s17"
+  req GET "$B/availability?service_id=$SVC&variant_id=$VAR0&from=$1" "$ACCESS"
+  printf '%s' "$BODY" | python3 -c 'import sys,json;s=json.load(sys.stdin)["slots"];print(" ".join(s[i]["start_at"] for i in (0,8,9,17)))'
+}
+read -r M0 M1 M2 M3 <<< "$(slots_of "$MON2")"
+read -r N0 N1 N2 N3 <<< "$(slots_of "$MON3")"
+AP="$B/appointments"
+appt_body() { # appt_body START [NAME]
+  printf '{"service_id":"%s","variant_id":"%s","staff_id":"%s","start_at":"%s","client_name":"%s","client_phone":"+48 600 100 200","source":"app","note":"smoke"}' "$SVC" "$VAR0" "$STAFF" "$1" "${2-Anna Test}"
+}
+AK="smoke-appt-$TS"
+req POST "$AP" "$ACCESS" "$(appt_body "$M0")";              expect "book without Idempotency-Key -> 400" 400
+IDEM="$AK-1" req POST "$AP" "$ACCESS" "$(appt_body "$M0" "")"
+                                                            expect "empty client name -> 400" 400
+IDEM="$AK-1" req POST "$AP" "$ACCESS" "$(appt_body "$M0" | sed 's/+48 600 100 200/abc/')"
+                                                            expect "bad phone -> 400" 400
+IDEM="$AK-1" req POST "$AP" "$ACCESS" "$(appt_body "$M0")"; expect "book appointment (direct)" 201
+APPT1=$(printf '%s' "$BODY" | get id)
+[ "$(printf '%s' "$BODY" | get status)" = "confirmed" ] || { echo "  FAIL  status not confirmed"; FAILED=$((FAILED + 1)); }
+[ "$(printf '%s' "$BODY" | get client_phone)" = "+48600100200" ] || { echo "  FAIL  phone not normalised"; FAILED=$((FAILED + 1)); }
+[ "$(printf '%s' "$BODY" | get price_minor)" = "25000" ] || { echo "  FAIL  price snapshot"; FAILED=$((FAILED + 1)); }
+IDEM="$AK-1" req POST "$AP" "$ACCESS" "$(appt_body "$M0")"; expect "same key -> same appointment (200)" 200
+[ "$(printf '%s' "$BODY" | get id)" = "$APPT1" ] || { echo "  FAIL  replay returned another appointment"; FAILED=$((FAILED + 1)); }
+IDEM="$AK-1" req POST "$AP" "$ACCESS" "$(appt_body "$M0" "Other Person")"
+                                                            expect "same key, other data -> 409" 409
+IDEM="$AK-2" req POST "$AP" "$ACCESS" "$(appt_body "$M0")"; expect "book a taken slot -> 409" 409
+printf '%s' "$BODY" | grep -q SLOT_UNAVAILABLE || { echo "  FAIL  taken slot: wrong error code"; FAILED=$((FAILED + 1)); }
+req GET "$B/availability?service_id=$SVC&variant_id=$VAR0&from=$MON2" "$ACCESS"
+printf '%s' "$BODY" | grep -q "$M0" && { echo "  FAIL  booked slot is still offered"; FAILED=$((FAILED + 1)); }
+req GET "$AP/$APPT1" "$ACCESS";                             expect "read appointment" 200
+req GET "$AP/$APPT1/history" "$ACCESS";                     expect "appointment history" 200
+printf '%s' "$BODY" | grep -q '"confirmed"' || { echo "  FAIL  history has no confirmed event"; FAILED=$((FAILED + 1)); }
+req GET "$AP?from=$MON2&to=$MON2" "$ACCESS";                expect "calendar for the day" 200
+printf '%s' "$BODY" | grep -q "$APPT1" || { echo "  FAIL  appointment missing in calendar"; FAILED=$((FAILED + 1)); }
+req GET "$AP?from=$MON2&to=2099-01-01" "$ACCESS";           expect "calendar range over 31 days -> 400" 400
+
+# hold -> confirm
+IDEM="$AK-h" req POST "$B/holds" "$ACCESS" "$(hold_body "$M1")"
+                                                            expect "hold a slot for confirming" 201
+HOLD2=$(printf '%s' "$BODY" | get id)
+req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Maria Hold\",\"source\":\"app\"}"
+                                                            expect "confirm the hold" 201
+[ "$(printf '%s' "$BODY" | get status)" = "confirmed" ] || { echo "  FAIL  confirmed hold status"; FAILED=$((FAILED + 1)); }
+[ "$(printf '%s' "$BODY" | get id)" = "$HOLD2" ] || { echo "  FAIL  confirming created another row"; FAILED=$((FAILED + 1)); }
+req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Maria Hold\",\"source\":\"app\"}"
+                                                            expect "confirm again, same data (200)" 200
+req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Somebody Else\",\"source\":\"app\"}"
+                                                            expect "confirm again, other data -> 409" 409
+
+# reschedule
+RS() { printf '{"start_at":"%s","reason":"client asked"}' "$1"; }
+req POST "$AP/$APPT1/reschedule" "$ACCESS" "$(RS "$M1")";   expect "move onto a taken slot -> 409" 409
+printf '%s' "$BODY" | grep -q SLOT_UNAVAILABLE || { echo "  FAIL  move: wrong error code"; FAILED=$((FAILED + 1)); }
+req POST "$AP/$APPT1/reschedule" "$ACCESS" "$(RS "$M0")";   expect "move to the same time -> 400" 400
+req POST "$AP/$APPT1/reschedule" "$ACCESS" "$(RS "$M2")";   expect "reschedule" 200
+[ "$(printf '%s' "$BODY" | get id)" = "$APPT1" ] || { echo "  FAIL  reschedule changed the id"; FAILED=$((FAILED + 1)); }
+[ "$(printf '%s' "$BODY" | get start_at)" = "$M2" ] || { echo "  FAIL  reschedule start_at"; FAILED=$((FAILED + 1)); }
+req GET "$B/availability?service_id=$SVC&variant_id=$VAR0&from=$MON2" "$ACCESS"
+printf '%s' "$BODY" | grep -q "$M0" || { echo "  FAIL  old slot was not freed by reschedule"; FAILED=$((FAILED + 1)); }
+req GET "$AP/$APPT1/history" "$ACCESS"
+printf '%s' "$BODY" | grep -q '"rescheduled"' || { echo "  FAIL  history has no rescheduled event"; FAILED=$((FAILED + 1)); }
+
+# cancel
+req POST "$AP/$HOLD2/cancel" "$ACCESS" '{"reason":"client is ill"}'
+                                                            expect "cancel appointment" 200
+[ "$(printf '%s' "$BODY" | get status)" = "cancelled" ] || { echo "  FAIL  cancel status"; FAILED=$((FAILED + 1)); }
+[ "$(printf '%s' "$BODY" | get late_cancellation)" = "False" ] || { echo "  FAIL  a far-away cancel must not be late"; FAILED=$((FAILED + 1)); }
+req POST "$AP/$HOLD2/cancel" "$ACCESS";                     expect "cancel again (idempotent)" 200
+req POST "$AP/$HOLD2/reschedule" "$ACCESS" "$(RS "$M3")";   expect "reschedule a cancelled one -> 409" 409
+req GET "$B/availability?service_id=$SVC&variant_id=$VAR0&from=$MON2" "$ACCESS"
+printf '%s' "$BODY" | grep -q "$M1" || { echo "  FAIL  cancelled slot was not freed"; FAILED=$((FAILED + 1)); }
+IDEM="$AK-3" req POST "$AP" "$ACCESS" "$(appt_body "$M1" "Rebooked")"
+                                                            expect "the freed slot can be booked again" 201
+
+# roles and tenants for appointments
+req POST "$AP/$APPT1/cancel" "$EMP";                        expect "employee cancels owner's appointment -> 403" 403
+req GET "$AP?from=$MON2&to=$MON2" "$EMP";                   expect "employee lists own calendar" 200
+printf '%s' "$BODY" | grep -q "$APPT1" && { echo "  FAIL  employee sees another master's appointment"; FAILED=$((FAILED + 1)); }
+IDEM="$AK-r" req POST "$AP" "$REC" "$(appt_body "$N0" "By Reception")"
+                                                            expect "reception books any master" 201
+REC_APPT=$(printf '%s' "$BODY" | get id)
+IDEM="$AK-e" req POST "$AP" "$EMP" "$(appt_body "$N1" "By Employee")"
+                                                            expect "employee books another master -> 403" 403
+req POST "$AP/$REC_APPT/cancel" "$REC";                     expect "reception cancels" 200
+req GET "$AP/$APPT1" "$STR";                                expect "B reads A appointment -> 404" 404
+req POST "$AP/$APPT1/cancel" "$STR";                        expect "B cancels A appointment -> 404" 404
+req GET "$AP?from=$MON2" "$STR";                            expect "B lists A calendar -> 404" 404
+req GET "/v1/businesses/$SB/appointments/$APPT1" "$STR";    expect "A appointment id in B url -> 404" 404
+req POST "/v1/businesses/$SB/appointments/$APPT1/reschedule" "$STR" "$(RS "$M3")"
+                                                            expect "A appointment moved via B url -> 404" 404
+IDEM="$AK-x" req POST "/v1/businesses/$SB/appointments" "$STR" "$(appt_body "$N2")"
+case "$STATUS" in 400|404) printf '  ok    %-44s %s\n' "A staff/service booked in B -> 4xx" "$STATUS" ;;
+  *) printf '  FAIL  %-44s got %s\n' "A staff/service booked in B" "$STATUS"; FAILED=$((FAILED + 1)) ;; esac
+
+# races on confirmed bookings: one 201/200 wins, the other gets 409 SLOT_UNAVAILABLE
+race2() { # race2 LABEL WANT_OK PATH_OWNER BODY_OWNER PATH_MGR BODY_MGR
+  local dir; dir=$(mktemp -d)
+  ( curl -s -o "$dir/owner.body" -w '%{http_code}' -X POST "$BASE$3" \
+      -H "authorization: Bearer $ACCESS" -H "idempotency-key: smoke-r2-$1-owner-$TS" \
+      -H 'content-type: application/json' -d "$4" > "$dir/owner.code" ) &
+  ( curl -s -o "$dir/mgr.body" -w '%{http_code}' -X POST "$BASE$5" \
+      -H "authorization: Bearer $MGR" -H "idempotency-key: smoke-r2-$1-mgr-$TS" \
+      -H 'content-type: application/json' -d "$6" > "$dir/mgr.code" ) &
+  wait
+  local codes; codes=$(printf '%s\n%s\n' "$(cat "$dir/owner.code")" "$(cat "$dir/mgr.code")" | sort | tr '\n' ' ')
+  if [ "$codes" = "$2 409 " ]; then
+    printf '  ok    %-44s %s\n' "race $1: one wins, one loses (409)" "$codes"
+  else
+    printf '  FAIL  %-44s got %s\n        %s %s\n' "race $1: expected $2 + 409" "$codes" "$(cat "$dir/owner.body")" "$(cat "$dir/mgr.body")"
+    FAILED=$((FAILED + 1))
+  fi
+  cat "$dir/owner.body" "$dir/mgr.body" | grep -q SLOT_UNAVAILABLE || { echo "  FAIL  race $1: loser did not get SLOT_UNAVAILABLE"; FAILED=$((FAILED + 1)); }
+  rm -rf "$dir"
+}
+race2 book "201" "$AP" "$(appt_body "$N1" "Race Owner")" "$AP" "$(appt_body "$N1" "Race Manager")"
+# two different appointments moved onto one slot at the same moment
+IDEM="$AK-m1" req POST "$AP" "$ACCESS" "$(appt_body "$N2" "Mover One")"; expect "appointment to move (1)" 201
+MV1=$(printf '%s' "$BODY" | get id)
+IDEM="$AK-m2" req POST "$AP" "$ACCESS" "$(appt_body "$N0" "Mover Two")"; expect "appointment to move (2)" 201
+MV2=$(printf '%s' "$BODY" | get id)
+race2 reschedule "200" "$AP/$MV1/reschedule" "$(RS "$N3")" "$AP/$MV2/reschedule" "$(RS "$N3")"
+req GET "$AP?from=$MON3&to=$MON3" "$ACCESS";                expect "calendar after the races" 200
 
 req POST /v1/auth/refresh "" "{\"refresh_token\":\"$REFRESH\"}"
                                                             expect "refresh" 200
