@@ -17,6 +17,11 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// A client card with this phone number already exists in the business:
+    /// 409 with the id of the existing card.
+    #[error("Client phone already exists: {0}")]
+    DuplicateClient(uuid::Uuid),
+
     /// The requested time cannot be booked (taken or not offered): 409.
     #[error("Slot unavailable: {0}")]
     SlotUnavailable(String),

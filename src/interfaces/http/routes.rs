@@ -125,11 +125,15 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route(
             "/v1/businesses/:business_id/clients",
-            get(clients::list_clients),
+            get(clients::list_clients).post(clients::create_client),
         )
         .route(
             "/v1/businesses/:business_id/clients/:client_id",
-            get(clients::get_client),
+            get(clients::get_client).patch(clients::update_client),
+        )
+        .route(
+            "/v1/businesses/:business_id/clients/:client_id/appointments",
+            get(clients::client_appointments),
         )
         .route("/v1/public/guest", post(public::guest))
         .route("/v1/public/businesses", get(public::catalog))

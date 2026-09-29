@@ -19,6 +19,7 @@
 use crate::application::access::{BusinessAccess, Role};
 use crate::application::auth::clean_optional;
 use crate::application::availability::{eligible_staff, load_service_rules, offered_slots};
+use crate::application::clients;
 use crate::application::schedule::{format_utc, parse_date, parse_instant};
 use crate::infrastructure::begin_scoped;
 use crate::shared::{AppError, AppResult, Clock};
@@ -63,11 +64,21 @@ pub struct CreateAppointmentInput {
     pub staff_id: Option<Uuid>,
     pub start_at: Option<String>,
     pub source: Option<String>,
+    /// Book for a client card the caller may see: its name and phone are used
+    /// and the typed ones are ignored.
+    pub client_id: Option<Uuid>,
+    #[serde(default)]
     pub client_name: String,
     /// International format, e.g. `+48 600 100 200`; stored as `+48600100200`.
     pub client_phone: Option<String>,
     /// Internal note, up to 500 characters. Not for health information.
     pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,6 +128,8 @@ pub struct AppointmentView {
     pub end_at: String,
     pub hold_expires_at: Option<String>,
     pub source: String,
+    /// The client card of the visit, when it has one.
+    pub client_id: Option<Uuid>,
     pub client_name: Option<String>,
     pub client_phone: Option<String>,
     pub note: Option<String>,
@@ -162,6 +175,7 @@ struct AppointmentRow {
     hold_expires_at: Option<OffsetDateTime>,
     source: String,
     request_fingerprint: Option<String>,
+    client_id: Option<Uuid>,
     client_name: Option<String>,
     client_phone: Option<String>,
     note: Option<String>,
@@ -178,7 +192,7 @@ struct AppointmentRow {
 const COLUMNS: &str = "a.id, a.status, a.staff_id, i.service_id, i.variant_id,
      i.service_name::text AS service_name, i.variant_name::text AS variant_name,
      a.start_at, a.end_at,
-     a.hold_expires_at, a.source, a.request_fingerprint, a.client_name, a.client_phone, a.note,
+     a.hold_expires_at, a.source, a.request_fingerprint, a.client_id, a.client_name, a.client_phone, a.note,
      i.price_minor, i.currency::text AS currency, i.duration_min, a.confirmed_at, a.cancelled_at,
      a.cancel_reason, a.cancel_late, a.version";
 
@@ -216,6 +230,7 @@ impl AppointmentRow {
             end_at: format_utc(self.end_at),
             hold_expires_at: self.hold_expires_at.map(format_utc),
             source: self.source,
+            client_id: self.client_id,
             client_name: self.client_name,
             client_phone: self.client_phone,
             note: self.note,
@@ -333,9 +348,19 @@ impl BookingService {
         &self,
         access: BusinessAccess,
         idempotency_key: Option<&str>,
-        input: CreateAppointmentInput,
+        mut input: CreateAppointmentInput,
     ) -> AppResult<BookingOutcome> {
-        self.create_appointment_for(access, None, idempotency_key, input)
+        // A card picked by the member: its name and phone are the client's.
+        let mut client_id = None;
+        if let Some(id) = input.client_id.take() {
+            let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+            let (name, phone) = clients::visible_client(&mut tx, &access, id).await?;
+            tx.commit().await?;
+            input.client_name = name;
+            input.client_phone = phone;
+            client_id = Some(id);
+        }
+        self.create_appointment_for(access, client_id, idempotency_key, input)
             .await
     }
 
@@ -521,6 +546,39 @@ impl BookingService {
         let row = fetch(&mut tx, access, id, false).await?;
         tx.commit().await?;
         Ok(row.into_view(now))
+    }
+
+    /// A client's visits, newest first, holds left out. An employee gets the
+    /// visits with their own calendar only, and 404 for a client they never served.
+    pub async fn client_history(
+        &self,
+        access: BusinessAccess,
+        client_id: Uuid,
+        query: HistoryQuery,
+    ) -> AppResult<Vec<AppointmentView>> {
+        let limit = query.limit.unwrap_or(50).clamp(1, 100);
+        let offset = query.offset.unwrap_or(0).max(0);
+        let now = self.clock.now();
+        let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+        let vis = clients::visibility(&mut tx, &access).await?;
+        clients::visible_client(&mut tx, &access, client_id).await?;
+        let rows = sqlx::query_as::<_, AppointmentRow>(&format!(
+            "SELECT {COLUMNS} {FROM}
+             WHERE a.business_id = $1 AND a.client_id = $2
+               AND a.status IN ('confirmed', 'completed', 'no_show', 'cancelled')
+               AND (NOT $3::bool OR a.staff_id = $4::uuid)
+             ORDER BY a.start_at DESC, a.id
+             LIMIT $5 OFFSET $6"
+        ))
+        .bind(access.business_id.as_uuid())
+        .bind(client_id)
+        .bind(vis.restrict)
+        .bind(vis.staff)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&mut *tx)
+        .await?;
+        Ok(rows.into_iter().map(|row| row.into_view(now)).collect())
     }
 
     pub async fn history(&self, access: BusinessAccess, id: Uuid) -> AppResult<Vec<EventView>> {
@@ -891,6 +949,20 @@ impl BookingService {
             return Err(unavailable());
         }
 
+        // A visit typed in by hand with a phone belongs to the business's card for
+        // that number (made now if there is none). Without a phone: no card.
+        let mut client_id = placement.client_id;
+        if client_id.is_none() && placement.source == "manual" {
+            if let Some(client) = &placement.client {
+                if let Some(phone) = client.phone.as_deref() {
+                    client_id = Some(
+                        clients::find_or_create_staff_client(&mut tx, &access, &client.name, phone)
+                            .await?,
+                    );
+                }
+            }
+        }
+
         let (status, expires, confirmed_at, event) = match placement.client {
             None => (
                 "held",
@@ -924,7 +996,7 @@ impl BookingService {
         .bind(client.and_then(|c| c.phone.clone()))
         .bind(client.and_then(|c| c.note.clone()))
         .bind(confirmed_at)
-        .bind(placement.client_id)
+        .bind(client_id)
         .fetch_one(&mut *tx)
         .await;
         let appointment_id = match inserted {
@@ -989,6 +1061,15 @@ impl BookingService {
             }
             "held" => {}
             _ => return Err(hold_over()),
+        }
+        let mut client_id = client_id;
+        if client_id.is_none() && row.source == "manual" {
+            if let Some(phone) = client.phone.as_deref() {
+                client_id = Some(
+                    clients::find_or_create_staff_client(&mut tx, &access, &client.name, phone)
+                        .await?,
+                );
+            }
         }
         let confirmed = sqlx::query(
             "UPDATE appointment
@@ -1241,7 +1322,10 @@ async fn local_date(
     Ok(day)
 }
 
-async fn own_staff_id(conn: &mut PgConnection, access: &BusinessAccess) -> AppResult<Option<Uuid>> {
+pub(crate) async fn own_staff_id(
+    conn: &mut PgConnection,
+    access: &BusinessAccess,
+) -> AppResult<Option<Uuid>> {
     Ok(sqlx::query_scalar(
         "SELECT s.id FROM staff_member s
          JOIN membership m ON m.id = s.membership_id

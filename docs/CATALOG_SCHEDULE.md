@@ -174,3 +174,54 @@ schedule-vs-future-appointments conflict check, client/CRM table, configurable c
   - Role `owner` and statuses other than `active` / `suspended` are 400.
 - `PATCH /staff/:id` also takes `is_bookable` (owner, manager; 403 for a master editing their own card).
 - `POST /members` (existing): unknown e-mail 404, already a member (also a suspended one) 409.
+
+## Clients (CRM)
+
+A client card belongs to one business (RLS on `business_id`). `source` says who made it:
+`staff` (the business), `guest` or `account` (an app customer, made when they book).
+
+**Who sees what.** Owner, manager and reception read and edit every card. An employee
+reads only cards that have one of *their own* appointments, gets 404 for any other, and
+never sees the note; the visit numbers and the history they get are limited to their own
+appointments too. An employee cannot create or edit cards (403). The one thing that
+reaches them automatically is the card of a client they booked by hand (below).
+
+**Manual bookings and phones.** A visit typed in by hand (`source = manual`) with a phone:
+
+1. the phone is normalised to E.164;
+2. the business's `staff` card with that phone is used, or made on the spot;
+3. the visit gets its `client_id`. The card keeps its name; the visit keeps the name typed for it.
+
+Without a phone nothing is made and `client_id` stays NULL (`POST /clients` makes a card
+without a phone, on purpose). The phone is unique **per business and only among `staff`
+cards** (`client_staff_phone_key`): an app customer's phone is typed by them and not
+verified, so a manual visit never lands on a customer's own card (they would see it in
+"my appointments"). Two cards for the same person (a `staff` one and an `account` one) are
+possible until the merge step, which is a later stage.
+
+A booking can also name a card: `POST /appointments` with `client_id` (name and phone come
+from the card; an employee may use only cards they can see).
+
+**API** (`/v1/businesses/:id`)
+
+| | |
+|---|---|
+| `GET /clients?q=&sort=name\|recent&limit=&offset=` | search name/phone/e-mail |
+| `GET /clients/:client_id` | one card |
+| `POST /clients` | `{full_name, phone?, email?, note?}` → 201. A taken phone: 409 `CLIENT_PHONE_EXISTS`, `details` = id of the existing card |
+| `PATCH /clients/:client_id` | absent fields stay; `""` clears phone, e-mail, note. Name, phone, e-mail only on `staff` cards (409 otherwise); the note always |
+| `GET /clients/:client_id/appointments?limit=&offset=` | visits, newest first, holds left out; `AppointmentView` with the booking snapshot |
+
+`ClientView` numbers: `confirmed_appointments`, `completed_count`, `no_show_count`,
+`last_visit_at` (latest completed), `total_spent_minor` (sum of the **booked** prices of
+completed visits only) and `total_spent_currency` (the business currency).
+
+`note` is free text (1000 characters) for the business; the app tells people not to put
+health information in it. Every create and update writes `audit_log` (`client.create`,
+`client.update`) with the names of the changed fields only, never phones or notes.
+
+**Migration `20260930100000_crm`.** Adds `client.note`, makes one `staff` card per
+`(business, phone)` for old manual visits that carry a valid phone (name from the latest
+visit), links those visits, then creates the unique index. Visits without a phone stay
+without a card. It does not bump `appointment.version`. Dry run first:
+`scripts/crm_backfill_dry_run.sql`.

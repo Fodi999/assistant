@@ -436,6 +436,7 @@ impl PublicApi {
                     staff_id: input.staff_id,
                     start_at: input.start_at,
                     source,
+                    client_id: None,
                     client_name: contact.full_name,
                     client_phone: contact.phone,
                     note: input.note,

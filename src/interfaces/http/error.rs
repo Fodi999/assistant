@@ -47,6 +47,12 @@ impl IntoResponse for AppError {
                 "Conflict",
                 Some(msg.clone()),
             ),
+            AppError::DuplicateClient(id) => (
+                StatusCode::CONFLICT,
+                "CLIENT_PHONE_EXISTS",
+                "A client with this phone number already exists",
+                Some(id.to_string()),
+            ),
             AppError::SlotUnavailable(msg) => (
                 StatusCode::CONFLICT,
                 "SLOT_UNAVAILABLE",
