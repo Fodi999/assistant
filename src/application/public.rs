@@ -167,6 +167,33 @@ fn customer_source(source: Option<&str>) -> AppResult<String> {
 // Service
 // ---------------------------------------------------------------------------
 
+/// One line of the public business list.
+type BusinessListRow = (
+    Uuid,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+);
+
+/// The head of a public business page.
+type BusinessHeadRow = (
+    Uuid,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+);
+
 #[derive(Clone)]
 pub struct PublicApi {
     pool: PgPool,
@@ -201,16 +228,7 @@ impl PublicApi {
         }
 
         let mut tx = begin_scoped(&self.pool, DbScope::anonymous()).await?;
-        let rows: Vec<(
-            Uuid,
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-            String,
-            String,
-            String,
-        )> = sqlx::query_as(&format!(
+        let rows: Vec<BusinessListRow> = sqlx::query_as(&format!(
             "SELECT id, slug, name, headline, city, country::text, timezone, currency::text
                  FROM business
                  WHERE {PUBLIC_BUSINESS}
@@ -252,19 +270,7 @@ impl PublicApi {
         let mut tx = begin_scoped(&self.pool, scope).await?;
         let business = id.as_uuid();
 
-        let head: (
-            Uuid,
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            String,
-            String,
-            String,
-            String,
-            Option<String>,
-        ) = sqlx::query_as(&format!(
+        let head: BusinessHeadRow = sqlx::query_as(&format!(
             "SELECT id, slug, name, headline, about, city, country::text, timezone,
                     currency::text, default_locale, instagram
              FROM business WHERE id = $1 AND {PUBLIC_BUSINESS}"

@@ -1035,6 +1035,41 @@ fn check_price_type(value: &str) -> AppResult<String> {
     }
 }
 
+/// Refuses to delete a service or variant that a live booking still uses: a
+/// confirmed visit, or a hold that is still running, ending after `now`.
+/// Finished and cancelled visits do not block; they keep their own snapshot
+/// in `appointment_item`. `column` is `service_id` or `variant_id`.
+async fn ensure_no_upcoming(
+    conn: &mut PgConnection,
+    business_id: &Uuid,
+    column: &str,
+    id: Uuid,
+    now: OffsetDateTime,
+    what: &str,
+) -> AppResult<()> {
+    let sql = format!(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM appointment_item i
+             JOIN appointment a ON a.id = i.appointment_id AND a.business_id = i.business_id
+             WHERE i.business_id = $1 AND i.{column} = $2 AND a.end_at > $3
+               AND (a.status = 'confirmed'
+                    OR (a.status = 'held' AND a.hold_expires_at > $3)))"
+    );
+    let busy: bool = sqlx::query_scalar(&sql)
+        .bind(business_id)
+        .bind(id)
+        .bind(now)
+        .fetch_one(conn)
+        .await?;
+    if busy {
+        return Err(AppError::conflict(format!(
+            "This {what} has upcoming appointments. Hide it instead of deleting"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1093,39 +1128,4 @@ mod tests {
         let set: UpdateServiceInput = serde_json::from_value(json!({"category_id": id})).unwrap();
         assert_eq!(set.category_id, Some(Some(id)));
     }
-}
-
-/// Refuses to delete a service or variant that a live booking still uses: a
-/// confirmed visit, or a hold that is still running, ending after `now`.
-/// Finished and cancelled visits do not block; they keep their own snapshot
-/// in `appointment_item`. `column` is `service_id` or `variant_id`.
-async fn ensure_no_upcoming(
-    conn: &mut PgConnection,
-    business_id: &Uuid,
-    column: &str,
-    id: Uuid,
-    now: OffsetDateTime,
-    what: &str,
-) -> AppResult<()> {
-    let sql = format!(
-        "SELECT EXISTS (
-             SELECT 1
-             FROM appointment_item i
-             JOIN appointment a ON a.id = i.appointment_id AND a.business_id = i.business_id
-             WHERE i.business_id = $1 AND i.{column} = $2 AND a.end_at > $3
-               AND (a.status = 'confirmed'
-                    OR (a.status = 'held' AND a.hold_expires_at > $3)))"
-    );
-    let busy: bool = sqlx::query_scalar(&sql)
-        .bind(business_id)
-        .bind(id)
-        .bind(now)
-        .fetch_one(conn)
-        .await?;
-    if busy {
-        return Err(AppError::conflict(format!(
-            "This {what} has upcoming appointments. Hide it instead of deleting"
-        )));
-    }
-    Ok(())
 }
