@@ -114,6 +114,26 @@ pub async fn cancel_appointment(
     Ok(Json(state.booking.cancel(access, id, input).await?))
 }
 
+/// POST /appointments/:id/complete — a confirmed appointment that has started.
+pub async fn complete_appointment(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((business_id, id)): Path<(Uuid, Uuid)>,
+) -> AppResult<Json<AppointmentView>> {
+    let access = member_access(&state, user_id, business_id).await?;
+    Ok(Json(state.booking.complete(access, id).await?))
+}
+
+/// POST /appointments/:id/no-show — a confirmed appointment that has started.
+pub async fn no_show_appointment(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((business_id, id)): Path<(Uuid, Uuid)>,
+) -> AppResult<Json<AppointmentView>> {
+    let access = member_access(&state, user_id, business_id).await?;
+    Ok(Json(state.booking.no_show(access, id).await?))
+}
+
 pub async fn reschedule_appointment(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,

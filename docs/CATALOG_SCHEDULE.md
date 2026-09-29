@@ -118,11 +118,13 @@ curl -X POST $B/staff/$STAFF/time-off -H "$H" -H 'content-type: application/json
 | Method | Path | |
 |---|---|---|
 | POST | `/appointments` | 201 created, 200 replay of the same request |
-| GET | `/appointments?from&to&staff_id&status` | calendar by business-local dates, at most 31 days, default `status=confirmed`; an employee sees only their own calendar |
+| GET | `/appointments?from&to&staff_id&status` | calendar by business-local dates, at most 31 days, default `status=confirmed`, several allowed comma separated (`confirmed,completed,no_show`); an employee sees only their own calendar |
 | GET | `/appointments/:id` | one appointment (also works for a hold id) |
 | POST | `/appointments/:id/cancel` | body optional `{ "reason" }`; repeating is harmless (200) |
 | POST | `/appointments/:id/reschedule` | `{ "start_at", "staff_id"?, "reason"? }`; same row, same id |
-| GET | `/appointments/:id/history` | append-only events: `hold_created`, `booked` (direct), `confirmed` (hold confirmed), `hold_released`, `hold_expired`, `rescheduled`, `cancelled` |
+| POST | `/appointments/:id/complete` | mark a visit done: only from `confirmed`, and only after its start (409 otherwise); repeating is harmless (200); an employee only on their own calendar |
+| POST | `/appointments/:id/no-show` | same rules; marks the client as not having come |
+| GET | `/appointments/:id/history` | append-only events: `hold_created`, `booked` (direct), `confirmed` (hold confirmed), `hold_released`, `hold_expired`, `rescheduled`, `cancelled`, `completed`, `no_show` |
 
 Two ways to book:
 1. Confirm a hold: `{ "hold_id", "client_name", "client_phone"?, "note"? }` (Idempotency-Key optional; `hold_id` cannot be combined with service/staff/start/source, 400).
@@ -146,3 +148,29 @@ Two simultaneous bookings or moves onto one slot: one succeeds, the other gets 4
 
 Per-variant staff overrides, deposit policy, `If-Match`/version enforcement, recurring time off (`rrule`),
 schedule-vs-future-appointments conflict check, client/CRM table, configurable cancellation policy, customer-facing booking API, `24:00` as end time.
+
+## Deleting services and variants, and the booking snapshot
+
+- `DELETE /services/:id` and `DELETE /variants/:id` are soft deletes (`deleted_at`).
+  Hiding (`is_active = false`) is the normal way to retire a service; the apps do not offer delete.
+- **409** while a live booking uses the item: a `confirmed` appointment, or a `held` one whose
+  hold is still running, with `end_at` after now. Cancelled, completed, no-show and past visits
+  do not block.
+- **409** when deleting the last offered (active) variant of an active service. A hidden
+  service may lose all its variants.
+- An appointment is a record of what was booked, not a view of the catalog. `AppointmentView`
+  returns the snapshot stored in `appointment_item`: `service_name`, `variant_name` (nullable;
+  `{"pl": "...", ...}` objects), `duration_min`, `price_minor`, `currency`. They never change
+  when the catalog is edited or the service is deleted. `service_id` / `variant_id` remain as
+  references only.
+
+## Team management
+
+- `GET /members` (owner, manager): `[{membership_id, staff_id, role, status: active|suspended, display_name, is_bookable, is_me}]`, owner first. No e-mail addresses are returned.
+- `PATCH /members/:membership_id` `{ role?: manager|reception|employee, status?: active|suspended }`
+  - The owner manages everyone but owners; a manager only employees and reception and cannot make a manager (403).
+  - Nobody changes their own membership (409). An owner cannot be changed or removed while they are the last active owner (409).
+  - `suspended` revokes access to the business at once and sets the card `is_bookable = false`; `active` restores both. Existing appointments are untouched.
+  - Role `owner` and statuses other than `active` / `suspended` are 400.
+- `PATCH /staff/:id` also takes `is_bookable` (owner, manager; 403 for a master editing their own card).
+- `POST /members` (existing): unknown e-mail 404, already a member (also a suspended one) 409.

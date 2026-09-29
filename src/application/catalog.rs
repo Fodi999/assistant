@@ -7,11 +7,12 @@
 
 use crate::application::access::{BusinessAccess, Role};
 use crate::infrastructure::begin_scoped;
-use crate::shared::{AppError, AppResult, BusinessId};
+use crate::shared::{AppError, AppResult, BusinessId, Clock};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use sqlx::{PgConnection, PgPool};
 use std::collections::HashMap;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 const LOCALES: [&str; 4] = ["pl", "en", "ru", "uk"];
@@ -266,11 +267,12 @@ impl ServiceRow {
 #[derive(Clone)]
 pub struct CatalogService {
     pool: PgPool,
+    clock: Clock,
 }
 
 impl CatalogService {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, clock: Clock) -> Self {
+        Self { pool, clock }
     }
 
     // -- categories ---------------------------------------------------------
@@ -541,6 +543,15 @@ impl CatalogService {
     pub async fn delete_service(&self, access: BusinessAccess, service_id: Uuid) -> AppResult<()> {
         access.require(&WRITERS)?;
         let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+        ensure_no_upcoming(
+            &mut tx,
+            access.business_id.as_uuid(),
+            "service_id",
+            service_id,
+            self.clock.now(),
+            "service",
+        )
+        .await?;
         let deleted: Option<Uuid> = sqlx::query_scalar(
             "UPDATE service SET deleted_at = now(), is_active = false
              WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
@@ -642,21 +653,59 @@ impl CatalogService {
         row.into_view()
     }
 
+    /// Soft-deletes a variant. Refused while a live booking still uses it, and
+    /// for the last offered variant of an offered service (hide the service
+    /// instead). Past visits keep their own snapshot and are not affected.
     pub async fn delete_variant(&self, access: BusinessAccess, variant_id: Uuid) -> AppResult<()> {
         access.require(&WRITERS)?;
         let mut tx = begin_scoped(&self.pool, access.scope()).await?;
-        let deleted: Option<Uuid> = sqlx::query_scalar(
-            "UPDATE service_variant SET deleted_at = now(), is_active = false
-             WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
-             RETURNING id",
+        let found: Option<(Uuid, bool, bool)> = sqlx::query_as(
+            "SELECT v.service_id, s.is_active, v.is_active
+             FROM service_variant v
+             JOIN service s ON s.id = v.service_id AND s.business_id = v.business_id
+             WHERE v.id = $1 AND v.business_id = $2 AND v.deleted_at IS NULL",
         )
         .bind(variant_id)
         .bind(access.business_id.as_uuid())
         .fetch_optional(&mut *tx)
         .await?;
-        if deleted.is_none() {
+        let Some((service_id, service_active, variant_active)) = found else {
             return Err(AppError::not_found("Variant not found"));
+        };
+        ensure_no_upcoming(
+            &mut tx,
+            access.business_id.as_uuid(),
+            "variant_id",
+            variant_id,
+            self.clock.now(),
+            "variant",
+        )
+        .await?;
+        if service_active && variant_active {
+            let others: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM service_variant
+                 WHERE service_id = $1 AND business_id = $2 AND id <> $3
+                   AND is_active AND deleted_at IS NULL",
+            )
+            .bind(service_id)
+            .bind(access.business_id.as_uuid())
+            .bind(variant_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if others == 0 {
+                return Err(AppError::conflict(
+                    "This is the last offered variant of the service. Hide the service instead",
+                ));
+            }
         }
+        sqlx::query(
+            "UPDATE service_variant SET deleted_at = now(), is_active = false
+             WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL",
+        )
+        .bind(variant_id)
+        .bind(access.business_id.as_uuid())
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -1044,4 +1093,39 @@ mod tests {
         let set: UpdateServiceInput = serde_json::from_value(json!({"category_id": id})).unwrap();
         assert_eq!(set.category_id, Some(Some(id)));
     }
+}
+
+/// Refuses to delete a service or variant that a live booking still uses: a
+/// confirmed visit, or a hold that is still running, ending after `now`.
+/// Finished and cancelled visits do not block; they keep their own snapshot
+/// in `appointment_item`. `column` is `service_id` or `variant_id`.
+async fn ensure_no_upcoming(
+    conn: &mut PgConnection,
+    business_id: &Uuid,
+    column: &str,
+    id: Uuid,
+    now: OffsetDateTime,
+    what: &str,
+) -> AppResult<()> {
+    let sql = format!(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM appointment_item i
+             JOIN appointment a ON a.id = i.appointment_id AND a.business_id = i.business_id
+             WHERE i.business_id = $1 AND i.{column} = $2 AND a.end_at > $3
+               AND (a.status = 'confirmed'
+                    OR (a.status = 'held' AND a.hold_expires_at > $3)))"
+    );
+    let busy: bool = sqlx::query_scalar(&sql)
+        .bind(business_id)
+        .bind(id)
+        .bind(now)
+        .fetch_one(conn)
+        .await?;
+    if busy {
+        return Err(AppError::conflict(format!(
+            "This {what} has upcoming appointments. Hide it instead of deleting"
+        )));
+    }
+    Ok(())
 }

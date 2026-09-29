@@ -33,6 +33,8 @@ pub struct UpdateBusinessInput {
 pub struct UpdateStaffInput {
     pub name: Option<String>,
     pub bio: Option<String>,
+    /// Whether clients can book this person. Owner and manager only.
+    pub is_bookable: Option<bool>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -278,11 +280,17 @@ impl BusinessService {
                 "You can only edit your own staff card",
             ));
         }
+        if input.is_bookable.is_some() && !is_manager {
+            return Err(AppError::authorization(
+                "Only the owner or a manager can change who takes bookings",
+            ));
+        }
 
         sqlx::query(
             "UPDATE staff_member
              SET display_name = COALESCE($3, display_name),
-                 bio = CASE WHEN $4 THEN $5 ELSE bio END
+                 bio = CASE WHEN $4 THEN $5 ELSE bio END,
+                 is_bookable = COALESCE($6, is_bookable)
              WHERE id = $1 AND business_id = $2",
         )
         .bind(staff_id)
@@ -290,6 +298,7 @@ impl BusinessService {
         .bind(&name)
         .bind(bio_set)
         .bind(&bio)
+        .bind(input.is_bookable)
         .execute(&mut *tx)
         .await?;
         sqlx::query(

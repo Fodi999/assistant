@@ -1088,3 +1088,349 @@ async fn concurrent_bookings_and_moves_never_double_book(pool: PgPool) {
     .unwrap();
     assert_eq!(overlapping, 0);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_started_visit_is_marked_done_or_no_show(pool: PgPool) {
+    let shop = shop(&pool).await;
+    let (_, first) = shop.book("close-key-0001", "2027-03-22T08:00:00Z").await;
+    let first_id = first["id"].as_str().unwrap().to_string();
+    let (_, second) = shop.book("close-key-0002", "2027-03-22T10:00:00Z").await;
+    let second_id = second["id"].as_str().unwrap().to_string();
+
+    // Before the start (the clock is still Saturday 09:00): refused, still confirmed.
+    for action in ["complete", "no-show"] {
+        let (status, body) = shop
+            .post(
+                &shop.app,
+                &format!("/appointments/{first_id}/{action}"),
+                json!({}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    }
+    let (_, body) = shop
+        .get(&shop.app, &format!("/appointments/{first_id}"))
+        .await;
+    assert_eq!(body["status"], "confirmed");
+
+    // Monday 11:00Z: the first visit (08:00Z) has started, the second (10:00Z) too.
+    let later = app_at(&pool, datetime!(2027-03-22 11:00 UTC)).await;
+    let (status, done) = shop
+        .post(
+            &later,
+            &format!("/appointments/{first_id}/complete"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{done}");
+    assert_eq!(done["status"], "completed");
+    // Marking again is harmless.
+    let (status, again) = shop
+        .post(
+            &later,
+            &format!("/appointments/{first_id}/complete"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(again["status"], "completed");
+    // A finished visit cannot become a no-show, be cancelled or moved.
+    for path in [
+        format!("/appointments/{first_id}/no-show"),
+        format!("/appointments/{first_id}/cancel"),
+    ] {
+        let (status, _) = shop.post(&later, &path, json!({})).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{path}");
+    }
+
+    let (status, missed) = shop
+        .post(
+            &later,
+            &format!("/appointments/{second_id}/no-show"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{missed}");
+    assert_eq!(missed["status"], "no_show");
+    let (status, _) = shop
+        .post(
+            &later,
+            &format!("/appointments/{second_id}/complete"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(shop.events(&first_id).await, ["booked", "completed"]);
+    assert_eq!(shop.events(&second_id).await, ["booked", "no_show"]);
+
+    // The list takes several statuses at once; the default still hides closed visits.
+    let (_, only) = shop.get(&later, "/appointments?from=2027-03-22").await;
+    assert_eq!(only.as_array().unwrap().len(), 0);
+    let (status, all) = shop
+        .get(
+            &later,
+            "/appointments?from=2027-03-22&status=confirmed,completed,no_show",
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let statuses: Vec<&str> = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, ["completed", "no_show"]);
+    let (status, _) = shop
+        .get(
+            &later,
+            "/appointments?from=2027-03-22&status=confirmed,bogus",
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Unknown appointment.
+    let (status, _) = shop
+        .post(
+            &later,
+            "/appointments/00000000-0000-4000-8000-000000000001/complete",
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn closing_a_visit_follows_calendar_roles(pool: PgPool) {
+    let shop = shop(&pool).await;
+    let (olga, olga_id) = sign_up(&shop.app, "olga@example.pl").await;
+    add_member(&pool, &shop.biz, &olga_id, "employee").await;
+    let (stranger, _) = sign_up(&shop.app, "stranger@example.pl").await;
+    let (_, booking) = shop.book("close-key-0003", "2027-03-22T08:00:00Z").await;
+    let id = booking["id"].as_str().unwrap().to_string();
+    let later = app_at(&pool, datetime!(2027-03-22 11:00 UTC)).await;
+    let path = format!("{}/appointments/{id}/complete", shop.base);
+
+    // An employee cannot close someone else's visit; another business sees a 404.
+    let (status, _) = send(&later, Method::POST, &path, &olga, None, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = send(&later, Method::POST, &path, &stranger, None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // The owner can.
+    let (status, body) = send(&later, Method::POST, &path, &shop.token, None, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+// ---------------------------------------------------------------------------
+// Deleting catalog items and the booking snapshot
+// ---------------------------------------------------------------------------
+
+impl Shop {
+    async fn delete(&self, app: &axum::Router, path: &str) -> (StatusCode, Value) {
+        send(
+            app,
+            Method::DELETE,
+            &format!("{}{path}", self.base),
+            &self.token,
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Adds a second offered variant so the first one is no longer the last.
+    async fn add_variant(&self) -> String {
+        let (status, body) = self
+            .post(
+                &self.app,
+                &format!("/services/{}/variants", self.service),
+                json!({ "name": { "pl": "Volume" }, "duration_min": 90, "price_minor": 35000 }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        body["id"].as_str().unwrap().to_string()
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_service_or_variant_with_an_upcoming_visit_cannot_be_deleted(pool: PgPool) {
+    let shop = shop(&pool).await;
+    let (status, booked) = shop.book("del-key-0001", "2027-03-22T08:00:00Z").await;
+    assert_eq!(status, StatusCode::CREATED, "{booked}");
+    let second = shop.add_variant().await;
+
+    let (status, body) = shop
+        .delete(&shop.app, &format!("/services/{}", shop.service))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let (status, body) = shop
+        .delete(&shop.app, &format!("/variants/{}", shop.variant))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+
+    // Nothing was touched: the service is still listed and active.
+    let (_, service) = shop
+        .get(&shop.app, &format!("/services/{}", shop.service))
+        .await;
+    assert_eq!(service["is_active"], true);
+    assert_eq!(service["variants"].as_array().unwrap().len(), 2);
+
+    // A variant nobody booked can go, while another one stays offered.
+    let (status, _) = shop.delete(&shop.app, &format!("/variants/{second}")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Hiding is always possible and keeps the visit.
+    let (status, hidden) = send(
+        &shop.app,
+        Method::PATCH,
+        &format!("{}/services/{}", shop.base, shop.service),
+        &shop.token,
+        None,
+        Some(json!({ "is_active": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{hidden}");
+    let id = booked["id"].as_str().unwrap();
+    let (_, visit) = shop.get(&shop.app, &format!("/appointments/{id}")).await;
+    assert_eq!(visit["status"], "confirmed");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_running_hold_blocks_deleting_but_an_expired_one_does_not(pool: PgPool) {
+    let shop = shop(&pool).await;
+    let (status, held) = shop.hold("del-hold-0001", "2027-03-22T08:00:00Z").await;
+    assert_eq!(status, StatusCode::CREATED, "{held}");
+
+    let (status, _) = shop
+        .delete(&shop.app, &format!("/services/{}", shop.service))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // A day later the hold is long over.
+    let later = app_at(&pool, datetime!(2027-03-21 09:00 UTC)).await;
+    let (status, body) = shop
+        .delete(&later, &format!("/services/{}", shop.service))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn finished_and_cancelled_visits_do_not_block_and_keep_their_snapshot(pool: PgPool) {
+    let shop = shop(&pool).await;
+    let (_, cancelled) = shop.book("snap-key-0001", "2027-03-22T08:00:00Z").await;
+    let cancelled_id = cancelled["id"].as_str().unwrap().to_string();
+    let (_, done) = shop.book("snap-key-0002", "2027-03-22T10:00:00Z").await;
+    let done_id = done["id"].as_str().unwrap().to_string();
+    assert_eq!(done["service_name"]["pl"], "Classic");
+    assert!(done["variant_name"].is_null());
+
+    let (status, body) = shop
+        .post(
+            &shop.app,
+            &format!("/appointments/{cancelled_id}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The catalog moves on: new names and price. The visit keeps what was booked.
+    let (status, renamed) = send(
+        &shop.app,
+        Method::PATCH,
+        &format!("{}/services/{}", shop.base, shop.service),
+        &shop.token,
+        None,
+        Some(json!({ "name": { "pl": "Renamed" } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{renamed}");
+    let (status, repriced) = send(
+        &shop.app,
+        Method::PATCH,
+        &format!("{}/variants/{}", shop.base, shop.variant),
+        &shop.token,
+        None,
+        Some(json!({ "name": { "pl": "Pro" }, "price_minor": 99000, "duration_min": 120 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{repriced}");
+    let (_, visit) = shop
+        .get(&shop.app, &format!("/appointments/{done_id}"))
+        .await;
+    assert_eq!(visit["service_name"]["pl"], "Classic");
+    assert!(visit["variant_name"].is_null());
+    assert_eq!(visit["price_minor"], 25000);
+    assert_eq!(visit["duration_min"], 60);
+
+    // Monday 13:00Z: the second visit has ended and is marked done.
+    let later = app_at(&pool, datetime!(2027-03-22 13:00 UTC)).await;
+    let (status, body) = shop
+        .post(
+            &later,
+            &format!("/appointments/{done_id}/complete"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // With another variant offered, the used one and then the service can go.
+    let extra = shop.add_variant().await;
+    let (status, body) = shop
+        .delete(&later, &format!("/variants/{}", shop.variant))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let (status, body) = shop
+        .delete(&later, &format!("/services/{}", shop.service))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let _ = extra;
+
+    // Gone from the catalog, yet both visits still say what was booked and for how much.
+    let (_, services) = shop.get(&later, "/services").await;
+    assert!(services.as_array().unwrap().is_empty());
+    for id in [&cancelled_id, &done_id] {
+        let (status, visit) = shop.get(&later, &format!("/appointments/{id}")).await;
+        assert_eq!(status, StatusCode::OK, "{visit}");
+        assert_eq!(visit["service_name"]["pl"], "Classic", "{visit}");
+        assert!(visit["variant_name"].is_null());
+        assert_eq!(visit["price_minor"], 25000);
+        assert_eq!(visit["duration_min"], 60);
+        assert_eq!(visit["currency"], "PLN");
+    }
+    let (_, list) = shop
+        .get(
+            &later,
+            "/appointments?from=2027-03-22&status=confirmed,completed,cancelled",
+        )
+        .await;
+    assert_eq!(list.as_array().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_last_offered_variant_of_an_offered_service_cannot_be_deleted(pool: PgPool) {
+    let shop = shop(&pool).await;
+    let second = shop.add_variant().await;
+
+    let (status, _) = shop
+        .delete(&shop.app, &format!("/variants/{}", shop.variant))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Only the second one is left: refused while the service is offered.
+    let (status, body) = shop.delete(&shop.app, &format!("/variants/{second}")).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+
+    // A hidden service may lose all its variants.
+    let (status, _) = send(
+        &shop.app,
+        Method::PATCH,
+        &format!("{}/services/{}", shop.base, shop.service),
+        &shop.token,
+        None,
+        Some(json!({ "is_active": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = shop.delete(&shop.app, &format!("/variants/{second}")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+}

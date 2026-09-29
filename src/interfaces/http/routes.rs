@@ -73,7 +73,11 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route(
             "/v1/businesses/:business_id/members",
-            post(team::add_member),
+            get(team::list_members).post(team::add_member),
+        )
+        .route(
+            "/v1/businesses/:business_id/members/:membership_id",
+            patch(team::update_member),
         )
         .route(
             "/v1/businesses/:business_id/availability",
@@ -98,6 +102,14 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/v1/businesses/:business_id/appointments/:appointment_id/cancel",
             post(booking::cancel_appointment),
+        )
+        .route(
+            "/v1/businesses/:business_id/appointments/:appointment_id/complete",
+            post(booking::complete_appointment),
+        )
+        .route(
+            "/v1/businesses/:business_id/appointments/:appointment_id/no-show",
+            post(booking::no_show_appointment),
         )
         .route(
             "/v1/businesses/:business_id/appointments/:appointment_id/reschedule",

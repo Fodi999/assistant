@@ -42,11 +42,11 @@ impl AppState {
             config.jwt.refresh_token_ttl_days,
         );
         let availability = AvailabilityService::new(pool.clone(), clock.clone());
-        let booking = BookingService::new(pool.clone(), clock);
+        let booking = BookingService::new(pool.clone(), clock.clone());
         Self {
             auth: AuthService::new(pool.clone(), jwt.clone()),
             business: BusinessService::new(pool.clone()),
-            catalog: CatalogService::new(pool.clone()),
+            catalog: CatalogService::new(pool.clone(), clock),
             schedule: ScheduleService::new(pool.clone()),
             team: TeamService::new(pool.clone()),
             profile: ProfileService::new(pool.clone()),

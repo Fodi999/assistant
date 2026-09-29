@@ -92,6 +92,7 @@ pub struct AppointmentQuery {
     pub to: Option<String>,
     pub staff_id: Option<Uuid>,
     /// `confirmed` (default), `held`, `cancelled`, `completed` or `no_show`.
+    /// Several may be given, comma separated: `confirmed,completed,no_show`.
     pub status: Option<String>,
 }
 
@@ -108,6 +109,10 @@ pub struct AppointmentView {
     pub staff_id: Uuid,
     pub service_id: Uuid,
     pub variant_id: Uuid,
+    /// What was booked, as it was named at booking time (`{"pl": "..."}`).
+    /// A snapshot: the catalog may change or drop the service later.
+    pub service_name: Value,
+    pub variant_name: Option<Value>,
     pub start_at: String,
     pub end_at: String,
     pub hold_expires_at: Option<String>,
@@ -115,7 +120,7 @@ pub struct AppointmentView {
     pub client_name: Option<String>,
     pub client_phone: Option<String>,
     pub note: Option<String>,
-    /// Price at booking time, minor units.
+    /// Price at booking time, minor units (snapshot).
     pub price_minor: i64,
     pub currency: String,
     pub duration_min: i32,
@@ -150,6 +155,8 @@ struct AppointmentRow {
     staff_id: Uuid,
     service_id: Uuid,
     variant_id: Uuid,
+    service_name: String,
+    variant_name: Option<String>,
     start_at: OffsetDateTime,
     end_at: OffsetDateTime,
     hold_expires_at: Option<OffsetDateTime>,
@@ -168,8 +175,9 @@ struct AppointmentRow {
     version: i32,
 }
 
-const COLUMNS: &str =
-    "a.id, a.status, a.staff_id, i.service_id, i.variant_id, a.start_at, a.end_at,
+const COLUMNS: &str = "a.id, a.status, a.staff_id, i.service_id, i.variant_id,
+     i.service_name::text AS service_name, i.variant_name::text AS variant_name,
+     a.start_at, a.end_at,
      a.hold_expires_at, a.source, a.request_fingerprint, a.client_name, a.client_phone, a.note,
      i.price_minor, i.currency::text AS currency, i.duration_min, a.confirmed_at, a.cancelled_at,
      a.cancel_reason, a.cancel_late, a.version";
@@ -199,6 +207,11 @@ impl AppointmentRow {
             staff_id: self.staff_id,
             service_id: self.service_id,
             variant_id: self.variant_id,
+            service_name: serde_json::from_str(&self.service_name).unwrap_or(Value::Null),
+            variant_name: self
+                .variant_name
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .filter(|value: &Value| !value.is_null()),
             start_at: format_utc(self.start_at),
             end_at: format_utc(self.end_at),
             hold_expires_at: self.hold_expires_at.map(format_utc),
@@ -417,12 +430,7 @@ impl BookingService {
                 "At most {MAX_LIST_DAYS} days per request"
             )));
         }
-        let status = query.status.as_deref().unwrap_or("confirmed");
-        if !["confirmed", "held", "cancelled", "completed", "no_show"].contains(&status) {
-            return Err(AppError::validation(
-                "status must be confirmed, held, cancelled, completed or no_show",
-            ));
-        }
+        let statuses = parse_statuses(query.status.as_deref())?;
 
         let now = self.clock.now();
         let mut tx = begin_scoped(&self.pool, access.scope()).await?;
@@ -455,7 +463,7 @@ impl BookingService {
             "SELECT {COLUMNS} {FROM}
              WHERE a.business_id = $1 AND a.start_at >= $2 AND a.start_at < $3
                AND ($4::uuid IS NULL OR a.staff_id = $4)
-               AND a.status = $5
+               AND a.status = ANY($5::text[])
                AND (a.status <> 'held' OR a.hold_expires_at > $6)
              ORDER BY a.start_at, a.id"
         ))
@@ -463,11 +471,56 @@ impl BookingService {
         .bind(range_start)
         .bind(range_end)
         .bind(staff_filter)
-        .bind(status)
+        .bind(&statuses)
         .bind(now)
         .fetch_all(&mut *tx)
         .await?;
         Ok(rows.into_iter().map(|row| row.into_view(now)).collect())
+    }
+
+    /// Marks a confirmed appointment as done. Only after its start (the slot is
+    /// released for booking once the row stops being `confirmed`, so an early
+    /// mark would reopen a busy time). Marking twice returns the same row.
+    pub async fn complete(&self, access: BusinessAccess, id: Uuid) -> AppResult<AppointmentView> {
+        self.finish(access, id, "completed").await
+    }
+
+    /// Marks a confirmed appointment whose start has passed as a no-show.
+    pub async fn no_show(&self, access: BusinessAccess, id: Uuid) -> AppResult<AppointmentView> {
+        self.finish(access, id, "no_show").await
+    }
+
+    async fn finish(
+        &self,
+        access: BusinessAccess,
+        id: Uuid,
+        target: &'static str,
+    ) -> AppResult<AppointmentView> {
+        let now = self.clock.now();
+        let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+        let row = fetch(&mut tx, access, id, true).await?;
+        authorize_staff(&mut tx, &access, row.staff_id).await?;
+        if row.status == target {
+            return Ok(row.into_view(now));
+        }
+        if row.status != "confirmed" {
+            return Err(AppError::conflict(
+                "Only a confirmed appointment can be marked as completed or no-show",
+            ));
+        }
+        if row.start_at > now {
+            return Err(AppError::conflict("The appointment has not started yet"));
+        }
+        sqlx::query("UPDATE appointment SET status = $3 WHERE id = $1 AND business_id = $2")
+            .bind(id)
+            .bind(access.business_id.as_uuid())
+            .bind(target)
+            .execute(&mut *tx)
+            .await?;
+        add_event(&mut tx, access, id, target, json!({})).await?;
+        let row = fetch(&mut tx, access, id, false).await?;
+        tx.commit().await?;
+        Ok(row.into_view(now))
     }
 
     pub async fn history(&self, access: BusinessAccess, id: Uuid) -> AppResult<Vec<EventView>> {
@@ -970,6 +1023,25 @@ impl BookingService {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const LIST_STATUSES: [&str; 5] = ["confirmed", "held", "cancelled", "completed", "no_show"];
+
+/// `confirmed` when absent; otherwise a comma separated list of known statuses.
+fn parse_statuses(raw: Option<&str>) -> AppResult<Vec<String>> {
+    let raw = raw.unwrap_or("confirmed");
+    let mut out: Vec<String> = Vec::new();
+    for part in raw.split(',').map(str::trim) {
+        if !LIST_STATUSES.contains(&part) {
+            return Err(AppError::validation(
+                "status must be confirmed, held, cancelled, completed or no_show",
+            ));
+        }
+        if !out.iter().any(|seen| seen == part) {
+            out.push(part.to_string());
+        }
+    }
+    Ok(out)
+}
+
 fn unavailable() -> AppError {
     AppError::SlotUnavailable("This start time is not available".to_string())
 }
@@ -1213,6 +1285,17 @@ async fn authorize_staff(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn statuses_default_to_confirmed_and_accept_lists() {
+        assert_eq!(parse_statuses(None).unwrap(), ["confirmed"]);
+        assert_eq!(
+            parse_statuses(Some("confirmed, completed,no_show,completed")).unwrap(),
+            ["confirmed", "completed", "no_show"]
+        );
+        assert!(parse_statuses(Some("confirmed,bogus")).is_err());
+        assert!(parse_statuses(Some("")).is_err());
+    }
 
     #[test]
     fn phones_are_normalised_to_international_form() {
