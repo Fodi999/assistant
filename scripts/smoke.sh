@@ -306,7 +306,7 @@ req GET "$B/availability?service_id=$SVC&variant_id=$VAR0&from=$MON2" "$ACCESS"
 printf '%s' "$BODY" | grep -q "$M0" && { echo "  FAIL  booked slot is still offered"; FAILED=$((FAILED + 1)); }
 req GET "$AP/$APPT1" "$ACCESS";                             expect "read appointment" 200
 req GET "$AP/$APPT1/history" "$ACCESS";                     expect "appointment history" 200
-printf '%s' "$BODY" | grep -q '"confirmed"' || { echo "  FAIL  history has no confirmed event"; FAILED=$((FAILED + 1)); }
+printf '%s' "$BODY" | grep -q '"booked"' || { echo "  FAIL  history has no booked event"; FAILED=$((FAILED + 1)); }
 req GET "$AP?from=$MON2&to=$MON2" "$ACCESS";                expect "calendar for the day" 200
 printf '%s' "$BODY" | grep -q "$APPT1" || { echo "  FAIL  appointment missing in calendar"; FAILED=$((FAILED + 1)); }
 req GET "$AP?from=$MON2&to=2099-01-01" "$ACCESS";           expect "calendar range over 31 days -> 400" 400
@@ -315,13 +315,13 @@ req GET "$AP?from=$MON2&to=2099-01-01" "$ACCESS";           expect "calendar ran
 IDEM="$AK-h" req POST "$B/holds" "$ACCESS" "$(hold_body "$M1")"
                                                             expect "hold a slot for confirming" 201
 HOLD2=$(printf '%s' "$BODY" | get id)
-req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Maria Hold\",\"source\":\"app\"}"
+req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Maria Hold\"}"
                                                             expect "confirm the hold" 201
 [ "$(printf '%s' "$BODY" | get status)" = "confirmed" ] || { echo "  FAIL  confirmed hold status"; FAILED=$((FAILED + 1)); }
 [ "$(printf '%s' "$BODY" | get id)" = "$HOLD2" ] || { echo "  FAIL  confirming created another row"; FAILED=$((FAILED + 1)); }
-req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Maria Hold\",\"source\":\"app\"}"
+req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Maria Hold\"}"
                                                             expect "confirm again, same data (200)" 200
-req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Somebody Else\",\"source\":\"app\"}"
+req POST "$AP" "$ACCESS" "{\"hold_id\":\"$HOLD2\",\"client_name\":\"Somebody Else\"}"
                                                             expect "confirm again, other data -> 409" 409
 
 # reschedule

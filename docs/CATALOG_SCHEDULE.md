@@ -122,10 +122,10 @@ curl -X POST $B/staff/$STAFF/time-off -H "$H" -H 'content-type: application/json
 | GET | `/appointments/:id` | one appointment (also works for a hold id) |
 | POST | `/appointments/:id/cancel` | body optional `{ "reason" }`; repeating is harmless (200) |
 | POST | `/appointments/:id/reschedule` | `{ "start_at", "staff_id"?, "reason"? }`; same row, same id |
-| GET | `/appointments/:id/history` | append-only events: `created`, `hold_expired`, `confirmed`, `rescheduled`, `cancelled` |
+| GET | `/appointments/:id/history` | append-only events: `held`, `booked` (direct), `confirmed` (hold confirmed), `hold_released`, `hold_expired`, `rescheduled`, `cancelled` |
 
 Two ways to book:
-1. Confirm a hold: `{ "hold_id", "client_name", "client_phone"?, "note"?, "source"? }` (Idempotency-Key optional).
+1. Confirm a hold: `{ "hold_id", "client_name", "client_phone"?, "note"? }` (Idempotency-Key optional; `hold_id` cannot be combined with service/staff/start/source, 400).
    The hold must be alive; confirming twice with the same data returns 200, with other data 409, an expired hold 409 `SLOT_UNAVAILABLE`.
 2. Direct booking: `{ "service_id", "variant_id", "staff_id", "start_at", "client_name", ... }` with header `Idempotency-Key` (required).
    The start time is validated by the same availability rules as slots.
