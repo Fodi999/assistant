@@ -1,6 +1,8 @@
 //! /v1/businesses
 
-use crate::application::business::{BusinessView, CreateBusinessInput, UpdateBusinessInput};
+use crate::application::business::{
+    BusinessView, CreateBusinessInput, StaffView, UpdateBusinessInput,
+};
 use crate::interfaces::http::{extract::AuthUser, state::AppState};
 use crate::shared::{AppResult, BusinessId};
 use axum::{
@@ -45,4 +47,17 @@ pub async fn update(
         .access(user_id, BusinessId::from_uuid(business_id))
         .await?;
     Ok(Json(state.business.update(access, input).await?))
+}
+
+/// GET /v1/businesses/:business_id/staff — any active member.
+pub async fn list_staff(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(business_id): Path<Uuid>,
+) -> AppResult<Json<Vec<StaffView>>> {
+    let access = state
+        .business
+        .access(user_id, BusinessId::from_uuid(business_id))
+        .await?;
+    Ok(Json(state.business.list_staff(access).await?))
 }

@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod business;
+pub mod catalog;
 pub mod error;
 pub mod extract;
 pub mod health;

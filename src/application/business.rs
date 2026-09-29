@@ -40,6 +40,19 @@ pub struct BusinessRow {
     pub default_locale: String,
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct StaffView {
+    pub id: Uuid,
+    pub display_name: String,
+    pub photo_url: Option<String>,
+    pub bio: Option<String>,
+    pub color: Option<String>,
+    pub is_bookable: bool,
+    pub sort_order: i32,
+    /// True for the caller's own staff card.
+    pub is_mine: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct BusinessView {
     #[serde(flatten)]
@@ -200,6 +213,24 @@ impl BusinessService {
             business,
             role: access.role,
         })
+    }
+
+    /// People who can be booked in this business. Visible to every member.
+    pub async fn list_staff(&self, access: BusinessAccess) -> AppResult<Vec<StaffView>> {
+        let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+        let staff = sqlx::query_as::<_, StaffView>(
+            "SELECT s.id, s.display_name, s.photo_url, s.bio, s.color, s.is_bookable, s.sort_order,
+                    COALESCE(m.user_id = $2, false) AS is_mine
+             FROM staff_member s
+             LEFT JOIN membership m ON m.id = s.membership_id
+             WHERE s.business_id = $1
+             ORDER BY s.sort_order, s.display_name",
+        )
+        .bind(access.business_id.as_uuid())
+        .bind(access.user_id.as_uuid())
+        .fetch_all(&mut *tx)
+        .await?;
+        Ok(staff)
     }
 
     pub async fn update(

@@ -1,7 +1,7 @@
-use crate::interfaces::http::{auth, business, health, state::AppState};
+use crate::interfaces::http::{auth, business, catalog, health, state::AppState};
 use axum::{
     http::{header, HeaderName, HeaderValue, Method},
-    routing::{get, post},
+    routing::{get, patch, post, put},
     Router,
 };
 use std::time::Duration;
@@ -59,6 +59,37 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/v1/businesses/:business_id",
             get(business::get).patch(business::update),
+        )
+        .route("/v1/businesses/:business_id/staff", get(business::list_staff))
+        .route(
+            "/v1/businesses/:business_id/categories",
+            get(catalog::list_categories).post(catalog::create_category),
+        )
+        .route(
+            "/v1/businesses/:business_id/categories/:category_id",
+            patch(catalog::update_category).delete(catalog::delete_category),
+        )
+        .route(
+            "/v1/businesses/:business_id/services",
+            get(catalog::list_services).post(catalog::create_service),
+        )
+        .route(
+            "/v1/businesses/:business_id/services/:service_id",
+            get(catalog::get_service)
+                .patch(catalog::update_service)
+                .delete(catalog::delete_service),
+        )
+        .route(
+            "/v1/businesses/:business_id/services/:service_id/variants",
+            post(catalog::create_variant),
+        )
+        .route(
+            "/v1/businesses/:business_id/services/:service_id/staff",
+            put(catalog::set_service_staff),
+        )
+        .route(
+            "/v1/businesses/:business_id/variants/:variant_id",
+            patch(catalog::update_variant).delete(catalog::delete_variant),
         )
         .with_state(state)
         .layer(TraceLayer::new_for_http())

@@ -1,8 +1,10 @@
 //! Request extractors.
 
+use crate::application::BusinessAccess;
 use crate::interfaces::http::state::AppState;
-use crate::shared::{AppError, UserId};
+use crate::shared::{AppError, AppResult, BusinessId, UserId};
 use axum::{async_trait, extract::FromRequestParts, http::header, http::request::Parts};
+use uuid::Uuid;
 
 /// The signed-in user, taken from `Authorization: Bearer <access token>`.
 /// Business membership and role are resolved separately per business
@@ -32,4 +34,17 @@ impl FromRequestParts<AppState> for AuthUser {
         let claims = state.jwt.verify_access_token(token)?;
         Ok(AuthUser(claims.user_id()?))
     }
+}
+
+/// Resolves the caller's active membership in the business named by the URL.
+/// Non-members get 404 (the business is not revealed to them).
+pub async fn member_access(
+    state: &AppState,
+    user_id: UserId,
+    business_id: Uuid,
+) -> AppResult<BusinessAccess> {
+    state
+        .business
+        .access(user_id, BusinessId::from_uuid(business_id))
+        .await
 }
