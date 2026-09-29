@@ -548,9 +548,10 @@ mod tests {
         // 60 min, no buffer: 11:00 is the last start before the break.
         let got = slots_for_day(at(0, 0), &work, &busy, &rules(60, 0, 30));
         assert_eq!(hours(got), [(9, 0), (9, 30), (10, 0), (10, 30), (11, 0)]);
-        // 60 min + 30 min buffer: the buffer would run into the break at 10:30.
+        // 60 min + 30 min buffer: 10:30 still fits (the buffer ends exactly at 12:00,
+        // touching is fine); 11:00 would run its buffer into the busy time.
         let got = slots_for_day(at(0, 0), &work, &busy, &rules(60, 30, 30));
-        assert_eq!(hours(got), [(9, 0), (9, 30), (10, 0)]);
+        assert_eq!(hours(got), [(9, 0), (9, 30), (10, 0), (10, 30)]);
     }
 
     #[test]

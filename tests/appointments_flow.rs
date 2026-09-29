@@ -1063,16 +1063,8 @@ async fn concurrent_bookings_and_moves_never_double_book(pool: PgPool) {
     let path_x = format!("/appointments/{}/reschedule", x["id"].as_str().unwrap());
     let path_y = format!("/appointments/{}/reschedule", y["id"].as_str().unwrap());
     let (mx, my) = tokio::join!(
-        shop.post(
-            &shop.app,
-            &path_x,
-            target.clone()
-        ),
-        shop.post(
-            &shop.app,
-            &path_y,
-            target.clone()
-        ),
+        shop.post(&shop.app, &path_x, target.clone()),
+        shop.post(&shop.app, &path_y, target.clone()),
     );
     let mut statuses = [mx.0, my.0];
     statuses.sort();
