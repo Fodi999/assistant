@@ -58,6 +58,24 @@ booking stage) an appointment/hold, and it lies within `min_notice_min` .. `max_
 Exceptions: `day_off` gives nothing, `custom_hours` replaces the weekly pattern (weekly breaks do not apply to it).
 `channel=online` (default) requires `is_online_bookable`. Clients never compute slots themselves.
 
+## Holds (temporary slot reservation)
+
+| Method | Path | |
+|---|---|---|
+| POST | `/holds` | needs header `Idempotency-Key` (8-100 chars). 201 new hold, 200 same key + same request |
+| GET | `/holds/:id` | `status` is `held`, or `expired` when time is up / released |
+| DELETE | `/holds/:id` | release; repeating is harmless (204) |
+
+Body: `{ "service_id", "variant_id", "staff_id", "start_at" (UTC RFC 3339 from availability), "source": "manual|app|web" }`.
+A hold lives 10 minutes (`hold_expires_at`), blocks the calendar (service + buffer) exactly like a booking, and one user may keep
+at most 10 live holds (429). The start time is re-validated on the server against the very same availability rules.
+
+Errors: `409 SLOT_UNAVAILABLE` (taken, not offered, or lost a race), `409 CONFLICT` (Idempotency-Key reused for another request),
+`404` unknown service/variant/staff, `403` employee for another master's calendar, `400` bad key/date/source.
+
+Double booking is prevented by PostgreSQL itself: `EXCLUDE USING gist (staff_id WITH =, tstzrange(start_at, blocked_end) WITH &&)
+WHERE status IN ('held','confirmed')`. Two simultaneous requests for one slot: one gets 201, the other 409.
+
 ## Examples
 
 ```bash

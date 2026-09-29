@@ -710,7 +710,7 @@ fn parse_optional_date(value: Option<&str>, field: &str) -> AppResult<Option<Dat
     value.map(|text| parse_date(text, field)).transpose()
 }
 
-fn parse_instant(value: &str, field: &str) -> AppResult<OffsetDateTime> {
+pub(crate) fn parse_instant(value: &str, field: &str) -> AppResult<OffsetDateTime> {
     OffsetDateTime::parse(value.trim(), &Rfc3339)
         .map(|instant| instant.to_offset(UtcOffset::UTC))
         .map_err(|_| {

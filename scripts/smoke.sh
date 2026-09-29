@@ -28,6 +28,7 @@ req() {
   local args=(-s -w '\n%{http_code}' -X "$method" "$BASE$path")
   [ -n "$token" ] && args+=(-H "authorization: Bearer $token")
   [ -n "$data" ] && args+=(-H 'content-type: application/json' -d "$data")
+  [ -n "${IDEM:-}" ] && args+=(-H "idempotency-key: $IDEM")
   out=$(curl "${args[@]}")
   STATUS=$(printf '%s' "$out" | tail -n1)
   BODY=$(printf '%s' "$out" | sed '$d')
@@ -129,6 +130,36 @@ req GET "$AV&staff_id=00000000-0000-0000-0000-000000000000" "$ACCESS"
 req GET "$AV&staff_id=$STAFF" "$ACCESS";                    expect "availability for one master" 200
 req GET "$AV" "";                                           expect "availability without token -> 401" 401
 
+# --- holds (temporary slot reservation) ---
+req GET "$AV" "$ACCESS";                                    expect "availability before holds" 200
+SLOT_A=$(printf '%s' "$BODY" | get slots.0.start_at)
+SLOT_B=$(printf '%s' "$BODY" | get slots.9.start_at)
+SLOT_C=$(printf '%s' "$BODY" | get slots.17.start_at)
+hold_body() { printf '{"service_id":"%s","variant_id":"%s","staff_id":"%s","start_at":"%s"}' "$SVC" "$VAR0" "$STAFF" "$1"; }
+KEY="smoke-hold-$(date +%s)"
+IDEM="$KEY-1" req POST "$B/holds" "$ACCESS" "$(hold_body "$SLOT_A")"
+                                                            expect "hold a slot" 201
+HOLD1=$(printf '%s' "$BODY" | get id)
+[ "$(printf '%s' "$BODY" | get status)" = "held" ] || { echo "  FAIL  hold status"; FAILED=$((FAILED + 1)); }
+IDEM="$KEY-1" req POST "$B/holds" "$ACCESS" "$(hold_body "$SLOT_A")"
+                                                            expect "same Idempotency-Key -> same hold (200)" 200
+[ "$(printf '%s' "$BODY" | get id)" = "$HOLD1" ] || { echo "  FAIL  replay returned another hold"; FAILED=$((FAILED + 1)); }
+IDEM="$KEY-1" req POST "$B/holds" "$ACCESS" "$(hold_body "$SLOT_B")"
+                                                            expect "same key, other request -> 409" 409
+req POST "$B/holds" "$ACCESS" "$(hold_body "$SLOT_B")";     expect "hold without Idempotency-Key -> 400" 400
+IDEM="$KEY-2" req POST "$B/holds" "$ACCESS" "$(hold_body "$SLOT_A")"
+                                                            expect "held slot again -> 409" 409
+printf '%s' "$BODY" | grep -q SLOT_UNAVAILABLE || { echo "  FAIL  error code is not SLOT_UNAVAILABLE"; FAILED=$((FAILED + 1)); }
+req GET "$B/holds/$HOLD1" "$ACCESS";                        expect "read hold" 200
+req GET "$AV" "$ACCESS";                                    expect "availability with a hold" 200
+printf '%s' "$BODY" | grep -q "$SLOT_A" && { echo "  FAIL  held slot is still offered"; FAILED=$((FAILED + 1)); }
+req DELETE "$B/holds/$HOLD1" "$ACCESS";                     expect "release hold" 204
+req GET "$AV" "$ACCESS";                                    expect "availability after release" 200
+printf '%s' "$BODY" | grep -q "$SLOT_A" || { echo "  FAIL  released slot is not offered again"; FAILED=$((FAILED + 1)); }
+IDEM="$KEY-3" req POST "$B/holds" "$ACCESS" "$(hold_body "$SLOT_A")"
+                                                            expect "hold the freed slot again" 201
+HOLD_KEEP=$(printf '%s' "$BODY" | get id)
+
 # --- roles and tenant isolation ---
 TS=$(date +%s)
 signup() { # signup email -> prints access token
@@ -213,6 +244,32 @@ req PATCH "/v1/businesses/$SB/services/$SVC" "$STR" '{"is_active":false}'
                                                             expect "patch A service via B url -> 404" 404
 req DELETE "$B/time-off/$TOFF_A" "$EMP";                    expect "employee deletes owner's time off -> 403" 403
 req DELETE "$B/time-off/$TOFF_A" "$ACCESS";                 expect "owner deletes time off" 204
+
+# --- double booking race: two members take the same slot at the same moment ---
+race() { # race SLOT LABEL
+  local dir; dir=$(mktemp -d)
+  local body; body=$(hold_body "$1")
+  for who in owner manager; do
+    local tok="$ACCESS"; [ "$who" = manager ] && tok="$MGR"
+    ( curl -s -o "$dir/$who.body" -w '%{http_code}' -X POST "$BASE$B/holds" \
+        -H "authorization: Bearer $tok" -H "idempotency-key: smoke-race-$2-$who-$TS" \
+        -H 'content-type: application/json' -d "$body" > "$dir/$who.code" ) &
+  done
+  wait
+  local codes; codes=$(printf '%s\n%s\n' "$(cat "$dir/owner.code")" "$(cat "$dir/manager.code")" | sort | tr '\n' ' ')
+  if [ "$codes" = "201 409 " ]; then
+    printf '  ok    %-44s %s\n' "race $2: one wins (201), one loses (409)" "$codes"
+  else
+    printf '  FAIL  %-44s got %s\n        %s %s\n' "race $2: expected 201 + 409" "$codes" "$(cat "$dir/owner.body")" "$(cat "$dir/manager.body")"
+    FAILED=$((FAILED + 1))
+  fi
+  cat "$dir/owner.body" "$dir/manager.body" | grep -q SLOT_UNAVAILABLE || { echo "  FAIL  race $2: loser did not get SLOT_UNAVAILABLE"; FAILED=$((FAILED + 1)); }
+  rm -rf "$dir"
+}
+race "$SLOT_B" 1
+race "$SLOT_C" 2
+req GET "$AV" "$ACCESS";                                    expect "availability after the races" 200
+printf '%s' "$BODY" | grep -q "$SLOT_B" && { echo "  FAIL  raced slot is still offered"; FAILED=$((FAILED + 1)); }
 
 req POST /v1/auth/refresh "" "{\"refresh_token\":\"$REFRESH\"}"
                                                             expect "refresh" 200

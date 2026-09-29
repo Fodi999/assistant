@@ -17,6 +17,10 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// The requested time cannot be booked (taken or not offered): 409.
+    #[error("Slot unavailable: {0}")]
+    SlotUnavailable(String),
+
     #[error("Rate limited: {0}")]
     RateLimited(String),
 

@@ -47,6 +47,12 @@ impl IntoResponse for AppError {
                 "Conflict",
                 Some(msg.clone()),
             ),
+            AppError::SlotUnavailable(msg) => (
+                StatusCode::CONFLICT,
+                "SLOT_UNAVAILABLE",
+                "Slot unavailable",
+                Some(msg.clone()),
+            ),
             AppError::RateLimited(msg) => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "RATE_LIMITED",

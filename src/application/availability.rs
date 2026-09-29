@@ -140,14 +140,24 @@ pub struct AvailabilityService {
     clock: Clock,
 }
 
-#[derive(sqlx::FromRow)]
-struct ServiceRules {
-    is_online_bookable: bool,
-    booking_step_minutes: i32,
-    buffer_after_min: i32,
-    min_notice_min: i32,
-    max_advance_days: i32,
-    duration_min: i32,
+/// The booking rules of one service variant.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub(crate) struct ServiceRules {
+    pub is_online_bookable: bool,
+    pub booking_step_minutes: i32,
+    pub buffer_after_min: i32,
+    pub min_notice_min: i32,
+    pub max_advance_days: i32,
+    pub duration_min: i32,
+}
+
+/// A start time the server offers.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OfferedSlot {
+    pub staff_id: Uuid,
+    /// Local date in the business time zone.
+    pub day: Date,
+    pub start: OffsetDateTime,
 }
 
 #[derive(sqlx::FromRow)]
@@ -199,36 +209,9 @@ impl AvailabilityService {
         };
 
         let mut tx = begin_scoped(&self.pool, access.scope()).await?;
-        let rules = sqlx::query_as::<_, ServiceRules>(
-            "SELECT s.is_online_bookable, s.booking_step_minutes, s.buffer_after_min,
-                    s.min_notice_min, s.max_advance_days, v.duration_min
-             FROM service s
-             JOIN service_variant v ON v.service_id = s.id AND v.business_id = s.business_id
-             WHERE s.id = $1 AND v.id = $2 AND s.business_id = $3
-               AND s.is_active AND s.deleted_at IS NULL
-               AND v.is_active AND v.deleted_at IS NULL",
-        )
-        .bind(query.service_id)
-        .bind(query.variant_id)
-        .bind(access.business_id.as_uuid())
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| AppError::not_found("Service or variant not found"))?;
-        if online && !rules.is_online_bookable {
-            return Err(AppError::validation("This service cannot be booked online"));
-        }
-
-        let mut staff_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT st.id
-             FROM staff_service ss
-             JOIN staff_member st ON st.id = ss.staff_id AND st.business_id = ss.business_id
-             WHERE ss.service_id = $1 AND ss.business_id = $2 AND st.is_bookable
-             ORDER BY st.sort_order, st.display_name, st.id",
-        )
-        .bind(query.service_id)
-        .bind(access.business_id.as_uuid())
-        .fetch_all(&mut *tx)
-        .await?;
+        let rules =
+            load_service_rules(&mut tx, access, query.service_id, query.variant_id, online).await?;
+        let mut staff_ids = eligible_staff(&mut tx, access, query.service_id).await?;
         if let Some(wanted) = query.staff_id {
             if !staff_ids.contains(&wanted) {
                 return Err(AppError::not_found(
@@ -238,20 +221,11 @@ impl AvailabilityService {
             staff_ids = vec![wanted];
         }
 
-        let (timezone, range_start, range_end): (String, OffsetDateTime, OffsetDateTime) =
-            sqlx::query_as(
-                "SELECT timezone,
-                        ($2::date)::timestamp AT TIME ZONE timezone,
-                        (($3::date) + 1)::timestamp AT TIME ZONE timezone
-                 FROM business WHERE id = $1",
-            )
+        let (timezone,): (String,) = sqlx::query_as("SELECT timezone FROM business WHERE id = $1")
             .bind(access.business_id.as_uuid())
-            .bind(from)
-            .bind(to)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or_else(|| AppError::not_found("Business not found"))?;
-
         let mut view = AvailabilityView {
             timezone,
             service_id: query.service_id,
@@ -260,69 +234,167 @@ impl AvailabilityService {
             buffer_after_min: rules.buffer_after_min,
             slots: Vec::new(),
         };
-        if staff_ids.is_empty() {
-            return Ok(view);
-        }
-
-        let windows = load_windows(&mut tx, access, &staff_ids, from, to).await?;
-        let busy = load_busy(
+        let duration = Duration::minutes(rules.duration_min.into());
+        for slot in offered_slots(
             &mut tx,
             access,
+            &rules,
             &staff_ids,
-            range_start - Duration::days(1),
-            range_end + Duration::days(1),
+            from,
+            to,
+            self.clock.now(),
+            None,
         )
-        .await?;
-
-        let now = self.clock.now();
-        let slot_rules = SlotRules {
-            duration: Duration::minutes(rules.duration_min.into()),
-            buffer: Duration::minutes(rules.buffer_after_min.into()),
-            step: Duration::minutes(rules.booking_step_minutes.into()),
-            earliest: now + Duration::minutes(rules.min_notice_min.into()),
-            latest: now + Duration::days(rules.max_advance_days.into()),
-        };
-
-        let mut plans: BTreeMap<(Uuid, Date), DayPlan> = BTreeMap::new();
-        for row in windows {
-            let plan = plans.entry((row.staff_id, row.day)).or_default();
-            plan.day_start = Some(row.day_start);
-            let interval = Interval {
-                start: row.start_at,
-                end: row.end_at,
-            };
-            match row.kind.as_str() {
-                "work" => plan.work.push(interval),
-                _ => plan.breaks.push(interval),
-            }
+        .await?
+        {
+            view.slots.push(SlotView {
+                date: format_date(slot.day),
+                staff_id: slot.staff_id,
+                start_at: format_utc(slot.start),
+                end_at: format_utc(slot.start + duration),
+            });
         }
-        for ((staff_id, day), mut plan) in plans {
-            let Some(day_start) = plan.day_start else {
-                continue;
-            };
-            plan.work.sort_by_key(|interval| interval.start);
-            let mut blockers: Vec<Interval> = plan.breaks;
-            blockers.extend(
-                busy.iter()
-                    .filter(|(id, _)| *id == staff_id)
-                    .map(|(_, interval)| *interval),
-            );
-            for start in slots_for_day(day_start, &plan.work, &blockers, &slot_rules) {
-                view.slots.push(SlotView {
-                    date: format_date(day),
-                    staff_id,
-                    start_at: format_utc(start),
-                    end_at: format_utc(start + slot_rules.duration),
-                });
-            }
-        }
-        view.slots.sort_by(|a, b| {
-            a.start_at
-                .cmp(&b.start_at)
-                .then_with(|| a.staff_id.cmp(&b.staff_id))
-        });
         Ok(view)
     }
+}
+
+/// The active service variant with its booking rules. `online` also requires
+/// the service to be bookable online.
+pub(crate) async fn load_service_rules(
+    conn: &mut PgConnection,
+    access: BusinessAccess,
+    service_id: Uuid,
+    variant_id: Uuid,
+    online: bool,
+) -> AppResult<ServiceRules> {
+    let rules = sqlx::query_as::<_, ServiceRules>(
+        "SELECT s.is_online_bookable, s.booking_step_minutes, s.buffer_after_min,
+                s.min_notice_min, s.max_advance_days, v.duration_min
+         FROM service s
+         JOIN service_variant v ON v.service_id = s.id AND v.business_id = s.business_id
+         WHERE s.id = $1 AND v.id = $2 AND s.business_id = $3
+           AND s.is_active AND s.deleted_at IS NULL
+           AND v.is_active AND v.deleted_at IS NULL",
+    )
+    .bind(service_id)
+    .bind(variant_id)
+    .bind(access.business_id.as_uuid())
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or_else(|| AppError::not_found("Service or variant not found"))?;
+    if online && !rules.is_online_bookable {
+        return Err(AppError::validation("This service cannot be booked online"));
+    }
+    Ok(rules)
+}
+
+/// Bookable staff who perform the service, in display order.
+pub(crate) async fn eligible_staff(
+    conn: &mut PgConnection,
+    access: BusinessAccess,
+    service_id: Uuid,
+) -> AppResult<Vec<Uuid>> {
+    Ok(sqlx::query_scalar(
+        "SELECT st.id
+         FROM staff_service ss
+         JOIN staff_member st ON st.id = ss.staff_id AND st.business_id = ss.business_id
+         WHERE ss.service_id = $1 AND ss.business_id = $2 AND st.is_bookable
+         ORDER BY st.sort_order, st.display_name, st.id",
+    )
+    .bind(service_id)
+    .bind(access.business_id.as_uuid())
+    .fetch_all(&mut *conn)
+    .await?)
+}
+
+/// Every start time offered to the given masters on the local dates
+/// `from..=to`, sorted by time. `ignore_appointment` leaves one appointment out
+/// of the busy time (used when moving it).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn offered_slots(
+    conn: &mut PgConnection,
+    access: BusinessAccess,
+    rules: &ServiceRules,
+    staff_ids: &[Uuid],
+    from: Date,
+    to: Date,
+    now: OffsetDateTime,
+    ignore_appointment: Option<Uuid>,
+) -> AppResult<Vec<OfferedSlot>> {
+    if staff_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (range_start, range_end): (OffsetDateTime, OffsetDateTime) = sqlx::query_as(
+        "SELECT ($2::date)::timestamp AT TIME ZONE timezone,
+                (($3::date) + 1)::timestamp AT TIME ZONE timezone
+         FROM business WHERE id = $1",
+    )
+    .bind(access.business_id.as_uuid())
+    .bind(from)
+    .bind(to)
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or_else(|| AppError::not_found("Business not found"))?;
+
+    let windows = load_windows(conn, access, staff_ids, from, to).await?;
+    let busy = load_busy(
+        conn,
+        access,
+        staff_ids,
+        range_start - Duration::days(1),
+        range_end + Duration::days(1),
+        now,
+        ignore_appointment,
+    )
+    .await?;
+
+    let slot_rules = SlotRules {
+        duration: Duration::minutes(rules.duration_min.into()),
+        buffer: Duration::minutes(rules.buffer_after_min.into()),
+        step: Duration::minutes(rules.booking_step_minutes.into()),
+        earliest: now + Duration::minutes(rules.min_notice_min.into()),
+        latest: now + Duration::days(rules.max_advance_days.into()),
+    };
+
+    let mut plans: BTreeMap<(Uuid, Date), DayPlan> = BTreeMap::new();
+    for row in windows {
+        let plan = plans.entry((row.staff_id, row.day)).or_default();
+        plan.day_start = Some(row.day_start);
+        let interval = Interval {
+            start: row.start_at,
+            end: row.end_at,
+        };
+        match row.kind.as_str() {
+            "work" => plan.work.push(interval),
+            _ => plan.breaks.push(interval),
+        }
+    }
+    let mut slots = Vec::new();
+    for ((staff_id, day), mut plan) in plans {
+        let Some(day_start) = plan.day_start else {
+            continue;
+        };
+        plan.work.sort_by_key(|interval| interval.start);
+        let mut blockers: Vec<Interval> = plan.breaks;
+        blockers.extend(
+            busy.iter()
+                .filter(|(id, _)| *id == staff_id)
+                .map(|(_, interval)| *interval),
+        );
+        for start in slots_for_day(day_start, &plan.work, &blockers, &slot_rules) {
+            slots.push(OfferedSlot {
+                staff_id,
+                day,
+                start,
+            });
+        }
+    }
+    slots.sort_by(|a, b| {
+        a.start
+            .cmp(&b.start)
+            .then_with(|| a.staff_id.cmp(&b.staff_id))
+    });
+    Ok(slots)
 }
 
 /// Working and break intervals per staff and local day, already in UTC.
@@ -382,24 +454,35 @@ async fn load_windows(
     Ok(rows)
 }
 
-/// Everything that blocks a master's calendar in `[from, to)`, as UTC intervals.
-/// Time off today; appointments and holds are added by the booking stage.
+/// Everything that blocks a master's calendar in `[from, to)`, as UTC intervals:
+/// time off, confirmed appointments and holds that have not expired at `now`
+/// (an appointment blocks its service plus the buffer after it).
 async fn load_busy(
     conn: &mut PgConnection,
     access: BusinessAccess,
     staff_ids: &[Uuid],
     from: OffsetDateTime,
     to: OffsetDateTime,
+    now: OffsetDateTime,
+    ignore_appointment: Option<Uuid>,
 ) -> AppResult<Vec<(Uuid, Interval)>> {
     let rows: Vec<(Uuid, OffsetDateTime, OffsetDateTime)> = sqlx::query_as(
         "SELECT staff_id, start_at, end_at
          FROM time_off
-         WHERE business_id = $1 AND staff_id = ANY($2) AND end_at > $3 AND start_at < $4",
+         WHERE business_id = $1 AND staff_id = ANY($2) AND end_at > $3 AND start_at < $4
+         UNION ALL
+         SELECT staff_id, start_at, blocked_end
+         FROM appointment
+         WHERE business_id = $1 AND staff_id = ANY($2) AND blocked_end > $3 AND start_at < $4
+           AND (status = 'confirmed' OR (status = 'held' AND hold_expires_at > $5))
+           AND ($6::uuid IS NULL OR id <> $6)",
     )
     .bind(access.business_id.as_uuid())
     .bind(staff_ids)
     .bind(from)
     .bind(to)
+    .bind(now)
+    .bind(ignore_appointment)
     .fetch_all(&mut *conn)
     .await?;
     Ok(rows

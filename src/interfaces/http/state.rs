@@ -1,6 +1,5 @@
 use crate::application::{
-    AuthService, AvailabilityService, BusinessService, CatalogService, ScheduleService,
-    TeamService,
+    AuthService, AvailabilityService, BookingService, BusinessService, CatalogService, ScheduleService, TeamService,
 };
 use crate::infrastructure::{AppCache, Config, JwtService};
 use crate::shared::Clock;
@@ -20,6 +19,7 @@ pub struct AppState {
     pub schedule: ScheduleService,
     pub team: TeamService,
     pub availability: AvailabilityService,
+    pub booking: BookingService,
 }
 
 impl AppState {
@@ -42,7 +42,8 @@ impl AppState {
             catalog: CatalogService::new(pool.clone()),
             schedule: ScheduleService::new(pool.clone()),
             team: TeamService::new(pool.clone()),
-            availability: AvailabilityService::new(pool.clone(), clock),
+            availability: AvailabilityService::new(pool.clone(), clock.clone()),
+            booking: BookingService::new(pool.clone(), clock),
             jwt,
             config: Arc::new(config),
             pool,

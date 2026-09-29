@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod availability;
+pub mod booking;
 pub mod business;
 pub mod catalog;
 pub mod error;
