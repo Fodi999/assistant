@@ -1,6 +1,8 @@
 //! /v1/admin/*: platform moderation (platform admins only).
 
-use crate::application::admin::{AdminBusinessView, AdminListQuery, DecisionInput};
+use crate::application::admin::{
+    AdminBusinessDetail, AdminBusinessView, AdminListQuery, DecisionInput,
+};
 use crate::interfaces::http::{extract::AuthUser, state::AppState};
 use crate::shared::AppResult;
 use axum::{
@@ -16,6 +18,15 @@ pub async fn list(
     Query(query): Query<AdminListQuery>,
 ) -> AppResult<Json<Vec<AdminBusinessView>>> {
     Ok(Json(state.admin.list(user_id, query).await?))
+}
+
+/// GET /v1/admin/businesses/:id — read-only moderation card.
+pub async fn detail(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(business_id): Path<Uuid>,
+) -> AppResult<Json<AdminBusinessDetail>> {
+    Ok(Json(state.admin.detail(user_id, business_id).await?))
 }
 
 async fn decide(

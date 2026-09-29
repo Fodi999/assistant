@@ -147,6 +147,7 @@ pub fn create_router(state: AppState) -> Router {
             post(public::reschedule),
         )
         .route("/v1/admin/businesses", get(admin::list))
+        .route("/v1/admin/businesses/:business_id", get(admin::detail))
         .route(
             "/v1/admin/businesses/:business_id/approve",
             post(admin::approve),

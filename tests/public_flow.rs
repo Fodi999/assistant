@@ -953,3 +953,46 @@ async fn two_customers_racing_for_one_slot_get_one_winner(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(calendar.as_array().unwrap().len(), 2);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn admin_detail_shows_a_pending_business_to_admins_only(pool: PgPool) {
+    let app = app_at(&pool, NOW).await;
+    let admin = admin(&app, &pool).await;
+    let s = studio(&app, "anna@example.pl", "Anna Lashes").await;
+    let uri = format!("/v1/admin/businesses/{}", s.biz);
+
+    // Not public yet, but the operator can review everything needed to decide.
+    let (status, card) = call(&app, Method::GET, &uri, Some(&admin), None).await;
+    assert_eq!(status, StatusCode::OK, "{card}");
+    assert_eq!(card["moderation_status"], "pending");
+    assert_eq!(card["owner"]["email"], "anna@example.pl");
+    assert_eq!(card["staff"].as_array().unwrap().len(), 1);
+    assert_eq!(card["services"].as_array().unwrap().len(), 1);
+    assert_eq!(card["services"][0]["variants"].as_array().unwrap().len(), 1);
+    assert_eq!(card["moderation_history"], json!([]));
+
+    // Decisions show up in the history with their notes.
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &format!("{uri}/reject"),
+        Some(&admin),
+        Some(json!({"note": "no photos"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, card) = call(&app, Method::GET, &uri, Some(&admin), None).await;
+    assert_eq!(card["moderation_status"], "rejected");
+    assert_eq!(card["moderation_history"][0]["note"], "no photos");
+
+    // The owner and anonymous callers cannot use it.
+    let (status, _) = call(&app, Method::GET, &uri, Some(&s.owner), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = call(&app, Method::GET, &uri, None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Unknown business.
+    let missing = "/v1/admin/businesses/00000000-0000-0000-0000-000000000000";
+    let (status, _) = call(&app, Method::GET, missing, Some(&admin), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

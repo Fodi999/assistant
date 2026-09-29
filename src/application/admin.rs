@@ -9,6 +9,7 @@ use crate::application::schedule::format_utc;
 use crate::infrastructure::{begin_scoped, DbScope};
 use crate::shared::{AppError, AppResult, BusinessId, UserId};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::{PgConnection, PgPool};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -42,6 +43,62 @@ pub struct AdminBusinessView {
     pub created_at: String,
     pub owner_email: Option<String>,
     pub owner_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminOwner {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub phone: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminStaff {
+    pub id: Uuid,
+    pub display_name: String,
+    pub bio: Option<String>,
+    pub is_bookable: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminVariant {
+    pub id: Uuid,
+    pub name: Option<Value>,
+    pub duration_min: i32,
+    pub price_minor: i64,
+    pub price_type: String,
+    pub currency: String,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminServiceItem {
+    pub id: Uuid,
+    pub name: Value,
+    pub description: Option<Value>,
+    pub is_active: bool,
+    pub variants: Vec<AdminVariant>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminModerationEntry {
+    pub status: String,
+    pub note: Option<String>,
+    pub decided_by: Option<String>,
+    pub created_at: String,
+}
+
+/// Everything an operator needs to decide on one business. Read-only.
+#[derive(Debug, Serialize)]
+pub struct AdminBusinessDetail {
+    #[serde(flatten)]
+    pub business: AdminBusinessView,
+    pub about: Option<String>,
+    pub instagram: Option<String>,
+    pub owner: AdminOwner,
+    pub staff: Vec<AdminStaff>,
+    pub services: Vec<AdminServiceItem>,
+    pub moderation_history: Vec<AdminModerationEntry>,
 }
 
 type Row = (
@@ -132,6 +189,115 @@ impl AdminService {
         Ok(rows.into_iter().map(view).collect())
     }
 
+    /// Read-only moderation card. Runs in the business scope so the tenant
+    /// policies on services and staff apply; the admin check comes first.
+    pub async fn detail(&self, admin: UserId, business_id: Uuid) -> AppResult<AdminBusinessDetail> {
+        self.ensure_admin(admin).await?;
+        let business = BusinessId::from_uuid(business_id);
+        let mut tx = begin_scoped(&self.pool, DbScope::business(admin, business)).await?;
+        let base = load_one(&mut tx, business_id).await?;
+        let (about, instagram): (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT about, instagram FROM business WHERE id = $1")
+                .bind(business_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let phone: Option<String> = sqlx::query_scalar(
+            "SELECT u.phone_e164 FROM membership m JOIN users u ON u.id = m.user_id
+             WHERE m.business_id = $1 AND m.role = 'owner' AND m.status = 'active' LIMIT 1",
+        )
+        .bind(business_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .flatten();
+        let staff = sqlx::query_as::<_, (Uuid, String, Option<String>, bool)>(
+            "SELECT id, display_name, bio, is_bookable FROM staff_member
+             WHERE business_id = $1 ORDER BY sort_order, created_at",
+        )
+        .bind(business_id)
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .map(|r| AdminStaff {
+            id: r.0,
+            display_name: r.1,
+            bio: r.2,
+            is_bookable: r.3,
+        })
+        .collect();
+
+        let service_rows = sqlx::query_as::<_, (Uuid, String, Option<String>, bool)>(
+            "SELECT id, name::text, description::text, is_active FROM service
+             WHERE business_id = $1 AND deleted_at IS NULL ORDER BY sort_order, created_at",
+        )
+        .bind(business_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        let variant_rows =
+            sqlx::query_as::<_, (Uuid, Uuid, Option<String>, i32, i64, String, String, bool)>(
+                "SELECT id, service_id, name::text, duration_min, price_minor, price_type,
+                    currency::text, is_active
+             FROM service_variant
+             WHERE business_id = $1 AND deleted_at IS NULL ORDER BY sort_order, created_at",
+            )
+            .bind(business_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        let mut services = Vec::with_capacity(service_rows.len());
+        for (id, name, description, is_active) in service_rows {
+            let mut variants = Vec::new();
+            for v in variant_rows.iter().filter(|v| v.1 == id) {
+                variants.push(AdminVariant {
+                    id: v.0,
+                    name: parse_json_opt(v.2.as_deref())?,
+                    duration_min: v.3,
+                    price_minor: v.4,
+                    price_type: v.5.clone(),
+                    currency: v.6.clone(),
+                    is_active: v.7,
+                });
+            }
+            services.push(AdminServiceItem {
+                id,
+                name: parse_json(&name)?,
+                description: parse_json_opt(description.as_deref())?,
+                is_active,
+                variants,
+            });
+        }
+
+        let moderation_history =
+            sqlx::query_as::<_, (String, Option<String>, Option<String>, OffsetDateTime)>(
+                "SELECT bm.status, bm.note, u.email, bm.created_at
+             FROM business_moderation bm LEFT JOIN users u ON u.id = bm.decided_by
+             WHERE bm.business_id = $1 ORDER BY bm.created_at DESC",
+            )
+            .bind(business_id)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .map(|r| AdminModerationEntry {
+                status: r.0,
+                note: r.1,
+                decided_by: r.2,
+                created_at: format_utc(r.3),
+            })
+            .collect();
+
+        Ok(AdminBusinessDetail {
+            about,
+            instagram,
+            owner: AdminOwner {
+                email: base.owner_email.clone(),
+                name: base.owner_name.clone(),
+                phone,
+            },
+            business: base,
+            staff,
+            services,
+            moderation_history,
+        })
+    }
+
     /// `approved`, `rejected` or `suspended`. Repeating the current decision
     /// changes nothing.
     pub async fn decide(
@@ -207,6 +373,14 @@ impl AdminService {
         tx.commit().await?;
         Ok(view)
     }
+}
+
+fn parse_json(text: &str) -> AppResult<Value> {
+    serde_json::from_str(text).map_err(|_| AppError::internal("stored JSON is invalid"))
+}
+
+fn parse_json_opt(text: Option<&str>) -> AppResult<Option<Value>> {
+    text.map(parse_json).transpose()
 }
 
 async fn load_one(conn: &mut PgConnection, business_id: Uuid) -> AppResult<AdminBusinessView> {

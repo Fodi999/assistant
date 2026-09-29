@@ -83,7 +83,7 @@ DATABASE_URL=<secret>         # pooled URL, role beauty_api
 JWT_SECRET=<secret>           # NEW value: openssl rand -base64 64
 JWT_ISSUER=beauty-backend
 JWT_AUDIENCE=beauty-app
-CORS_ALLOWED_ORIGINS=https://<booking-page-domain>
+CORS_ALLOWED_ORIGINS=https://<booking-page-domain>,https://<admin-panel-domain>   # no localhost in prod
 ```
 
 Use a staging copy (a second Koyeb service + a Neon branch) before production
