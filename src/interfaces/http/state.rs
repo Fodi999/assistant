@@ -1,6 +1,6 @@
 use crate::application::{
-    AuthService, AvailabilityService, BookingService, BusinessService, CatalogService,
-    ScheduleService, TeamService,
+    AdminService, AuthService, AvailabilityService, BookingService, BusinessService,
+    CatalogService, ClientService, ProfileService, PublicApi, ScheduleService, TeamService,
 };
 use crate::infrastructure::{AppCache, Config, JwtService};
 use crate::shared::Clock;
@@ -21,6 +21,10 @@ pub struct AppState {
     pub team: TeamService,
     pub availability: AvailabilityService,
     pub booking: BookingService,
+    pub profile: ProfileService,
+    pub clients: ClientService,
+    pub public: PublicApi,
+    pub admin: AdminService,
 }
 
 impl AppState {
@@ -37,14 +41,20 @@ impl AppState {
             config.jwt.access_token_ttl_minutes,
             config.jwt.refresh_token_ttl_days,
         );
+        let availability = AvailabilityService::new(pool.clone(), clock.clone());
+        let booking = BookingService::new(pool.clone(), clock);
         Self {
             auth: AuthService::new(pool.clone(), jwt.clone()),
             business: BusinessService::new(pool.clone()),
             catalog: CatalogService::new(pool.clone()),
             schedule: ScheduleService::new(pool.clone()),
             team: TeamService::new(pool.clone()),
-            availability: AvailabilityService::new(pool.clone(), clock.clone()),
-            booking: BookingService::new(pool.clone(), clock),
+            profile: ProfileService::new(pool.clone()),
+            clients: ClientService::new(pool.clone()),
+            admin: AdminService::new(pool.clone()),
+            public: PublicApi::new(pool.clone(), booking.clone(), availability.clone()),
+            availability,
+            booking,
             jwt,
             config: Arc::new(config),
             pool,

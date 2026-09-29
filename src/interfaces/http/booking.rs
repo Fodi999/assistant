@@ -16,13 +16,13 @@ use axum::{
 };
 use uuid::Uuid;
 
-fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("idempotency-key")
         .and_then(|value| value.to_str().ok())
 }
 
-fn created_or_replayed(created: bool) -> StatusCode {
+pub(crate) fn created_or_replayed(created: bool) -> StatusCode {
     if created {
         StatusCode::CREATED
     } else {

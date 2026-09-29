@@ -245,6 +245,8 @@ struct Placement {
     start: OffsetDateTime,
     source: String,
     client: Option<Client>,
+    /// The customer this booking belongs to (None: staff booked it by hand).
+    client_id: Option<Uuid>,
     fingerprint: String,
 }
 
@@ -282,6 +284,7 @@ impl BookingService {
                 start,
                 source,
                 client: None,
+                client_id: None,
                 fingerprint,
             },
         )
@@ -319,6 +322,18 @@ impl BookingService {
         idempotency_key: Option<&str>,
         input: CreateAppointmentInput,
     ) -> AppResult<BookingOutcome> {
+        self.create_appointment_for(access, None, idempotency_key, input)
+            .await
+    }
+
+    /// Same, for a known client (a customer booking through the public API).
+    pub async fn create_appointment_for(
+        &self,
+        access: BusinessAccess,
+        client_id: Option<Uuid>,
+        idempotency_key: Option<&str>,
+        input: CreateAppointmentInput,
+    ) -> AppResult<BookingOutcome> {
         let client = parse_client(&input.client_name, input.client_phone, input.note)?;
         if let Some(hold_id) = input.hold_id {
             if input.service_id.is_some()
@@ -331,7 +346,7 @@ impl BookingService {
                     "hold_id cannot be combined with service, staff, start or source",
                 ));
             }
-            return self.confirm_hold(access, hold_id, client).await;
+            return self.confirm_hold(access, hold_id, client, client_id).await;
         }
 
         let (Some(service_id), Some(variant_id), Some(staff_id), Some(start_at)) = (
@@ -364,6 +379,7 @@ impl BookingService {
                 start,
                 source,
                 client: Some(client),
+                client_id,
                 fingerprint,
             },
         )
@@ -545,6 +561,26 @@ impl BookingService {
         id: Uuid,
         input: RescheduleInput,
     ) -> AppResult<AppointmentView> {
+        self.reschedule_with(access, id, input, false).await
+    }
+
+    /// Same, under the online booking rules (a customer moving their own visit).
+    pub async fn reschedule_online(
+        &self,
+        access: BusinessAccess,
+        id: Uuid,
+        input: RescheduleInput,
+    ) -> AppResult<AppointmentView> {
+        self.reschedule_with(access, id, input, true).await
+    }
+
+    async fn reschedule_with(
+        &self,
+        access: BusinessAccess,
+        id: Uuid,
+        input: RescheduleInput,
+        online: bool,
+    ) -> AppResult<AppointmentView> {
         let start = parse_instant(&input.start_at, "start_at")?;
         let reason = clean_optional(input.reason, 500, "reason")?;
         let now = self.clock.now();
@@ -569,7 +605,7 @@ impl BookingService {
 
         // Same service and length as booked; the buffer follows the service now.
         let mut rules =
-            load_service_rules(&mut tx, access, row.service_id, row.variant_id, false).await?;
+            load_service_rules(&mut tx, access, row.service_id, row.variant_id, online).await?;
         rules.duration_min = row.duration_min;
         let staff = eligible_staff(&mut tx, access, row.service_id).await?;
         if !staff.contains(&staff_id) {
@@ -639,6 +675,76 @@ impl BookingService {
         let row = fetch(&mut tx, access, id, false).await?;
         tx.commit().await?;
         Ok(row.into_view(now))
+    }
+
+    // -- a customer's own appointments ---------------------------------------
+
+    /// 404 unless the appointment was booked by this user or belongs to this
+    /// client. Foreign appointments are indistinguishable from missing ones.
+    pub async fn ensure_owned(
+        &self,
+        access: BusinessAccess,
+        id: Uuid,
+        client_id: Option<Uuid>,
+    ) -> AppResult<()> {
+        let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+        let owned: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1 FROM appointment
+                 WHERE id = $1 AND business_id = $2
+                   AND (booked_by_user_id = $3 OR ($4::uuid IS NOT NULL AND client_id = $4)))",
+        )
+        .bind(id)
+        .bind(access.business_id.as_uuid())
+        .bind(access.user_id.as_uuid())
+        .bind(client_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if owned {
+            Ok(())
+        } else {
+            Err(AppError::not_found("Appointment not found"))
+        }
+    }
+
+    /// The customer's appointments in this business, newest first. Without a
+    /// `status`: live holds, confirmed, cancelled, completed and no-show.
+    pub async fn list_for_client(
+        &self,
+        access: BusinessAccess,
+        client_id: Option<Uuid>,
+        status: Option<&str>,
+    ) -> AppResult<Vec<AppointmentView>> {
+        if let Some(status) = status {
+            if !["confirmed", "held", "cancelled", "completed", "no_show"].contains(&status) {
+                return Err(AppError::validation(
+                    "status must be confirmed, held, cancelled, completed or no_show",
+                ));
+            }
+        }
+        let now = self.clock.now();
+        let mut tx = begin_scoped(&self.pool, access.scope()).await?;
+        let rows = sqlx::query_as::<_, AppointmentRow>(&format!(
+            "SELECT {COLUMNS} {FROM}
+             WHERE a.business_id = $1
+               AND (a.booked_by_user_id = $2 OR ($3::uuid IS NOT NULL AND a.client_id = $3))
+               AND (
+                   ($4::text IS NULL AND (a.status IN ('confirmed', 'cancelled', 'completed', 'no_show')
+                                          OR (a.status = 'held' AND a.hold_expires_at > $5)))
+                OR ($4::text IS NOT NULL AND a.status = $4
+                    AND (a.status <> 'held' OR a.hold_expires_at > $5))
+               )
+             ORDER BY a.start_at DESC, a.id
+             LIMIT 100"
+        ))
+        .bind(access.business_id.as_uuid())
+        .bind(access.user_id.as_uuid())
+        .bind(client_id)
+        .bind(status)
+        .bind(now)
+        .fetch_all(&mut *tx)
+        .await?;
+        Ok(rows.into_iter().map(|row| row.into_view(now)).collect())
     }
 
     // -- internals ----------------------------------------------------------
@@ -746,8 +852,8 @@ impl BookingService {
             "INSERT INTO appointment
                  (business_id, staff_id, status, start_at, end_at, blocked_end, hold_expires_at,
                   source, booked_by_user_id, idempotency_key, request_fingerprint,
-                  client_name, client_phone, note, confirmed_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                  client_name, client_phone, note, confirmed_at, client_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
              RETURNING id",
         )
         .bind(access.business_id.as_uuid())
@@ -765,6 +871,7 @@ impl BookingService {
         .bind(client.and_then(|c| c.phone.clone()))
         .bind(client.and_then(|c| c.note.clone()))
         .bind(confirmed_at)
+        .bind(placement.client_id)
         .fetch_one(&mut *tx)
         .await;
         let appointment_id = match inserted {
@@ -806,6 +913,7 @@ impl BookingService {
         access: BusinessAccess,
         hold_id: Uuid,
         client: Client,
+        client_id: Option<Uuid>,
     ) -> AppResult<BookingOutcome> {
         let now = self.clock.now();
         let mut tx = begin_scoped(&self.pool, access.scope()).await?;
@@ -832,7 +940,8 @@ impl BookingService {
         let confirmed = sqlx::query(
             "UPDATE appointment
              SET status = 'confirmed', hold_expires_at = NULL, confirmed_at = $3,
-                 client_name = $4, client_phone = $5, note = $6
+                 client_name = $4, client_phone = $5, note = $6,
+                 client_id = COALESCE($7, client_id)
              WHERE id = $1 AND business_id = $2 AND status = 'held' AND hold_expires_at > $3",
         )
         .bind(hold_id)
@@ -841,6 +950,7 @@ impl BookingService {
         .bind(&client.name)
         .bind(&client.phone)
         .bind(&client.note)
+        .bind(client_id)
         .execute(&mut *tx)
         .await?;
         if confirmed.rows_affected() != 1 {
@@ -902,7 +1012,7 @@ fn parse_client(name: &str, phone: Option<String>, note: Option<String>) -> AppR
 }
 
 /// `+48 600-100-200` -> `+48600100200`; only international numbers.
-fn normalize_phone(value: &str) -> AppResult<String> {
+pub(crate) fn normalize_phone(value: &str) -> AppResult<String> {
     let compact: String = value
         .chars()
         .filter(|c| !matches!(c, ' ' | '-' | '(' | ')'))

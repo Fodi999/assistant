@@ -36,6 +36,19 @@ pub struct RegisterInput {
     pub device: Option<DeviceInput>,
 }
 
+/// An anonymous customer session ("book without an account"). It is an
+/// ordinary user without e-mail or password, so tokens, refresh and the
+/// booking rules work unchanged; the person can register later.
+#[derive(Debug, Deserialize)]
+pub struct GuestInput {
+    /// Must be true: terms of service and privacy policy (stored as consents).
+    pub accepted_terms: bool,
+    pub terms_version: Option<String>,
+    pub display_name: Option<String>,
+    pub locale: Option<String>,
+    pub device: Option<DeviceInput>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct LoginInput {
     pub email: String,
@@ -189,6 +202,49 @@ impl AuthService {
         let user = load_user(&mut tx, user_id).await?;
         tx.commit().await?;
 
+        Ok(AuthResponse { user, tokens })
+    }
+
+    /// Starts an anonymous customer session (no e-mail, no password).
+    pub async fn guest(&self, input: GuestInput) -> AppResult<AuthResponse> {
+        if !input.accepted_terms {
+            return Err(AppError::validation(
+                "The terms of service and privacy policy must be accepted",
+            ));
+        }
+        let display_name = clean_optional(input.display_name, 120, "display_name")?;
+        let locale = normalize_locale(input.locale.as_deref())?;
+        let terms_version = clean_optional(input.terms_version, 40, "terms_version")?
+            .unwrap_or_else(|| DEFAULT_TERMS_VERSION.to_string());
+
+        let user_id = UserId::new();
+        let mut tx = begin_scoped(&self.pool, DbScope::user(user_id)).await?;
+        sqlx::query("INSERT INTO users (id, display_name, locale) VALUES ($1, $2, $3)")
+            .bind(user_id.as_uuid())
+            .bind(&display_name)
+            .bind(&locale)
+            .execute(&mut *tx)
+            .await?;
+        for consent in ["terms", "privacy"] {
+            sqlx::query(
+                "INSERT INTO consent (user_id, type, granted, text_version, source)
+                 VALUES ($1, $2, true, $3, 'guest')",
+            )
+            .bind(user_id.as_uuid())
+            .bind(consent)
+            .bind(&terms_version)
+            .execute(&mut *tx)
+            .await?;
+        }
+        let device_id = match &input.device {
+            Some(device) => Some(insert_device(&mut tx, user_id, device).await?),
+            None => None,
+        };
+        let (tokens, _) = self
+            .issue_tokens(&mut tx, user_id, device_id, Uuid::now_v7())
+            .await?;
+        let user = load_user(&mut tx, user_id).await?;
+        tx.commit().await?;
         Ok(AuthResponse { user, tokens })
     }
 
@@ -498,7 +554,7 @@ pub(crate) fn clean_optional(
     Ok(Some(value))
 }
 
-fn normalize_email(raw: &str) -> AppResult<String> {
+pub(crate) fn normalize_email(raw: &str) -> AppResult<String> {
     let email = raw.trim().to_lowercase();
     let valid = email.len() <= 254
         && !email.chars().any(|c| c.is_whitespace() || c.is_control())

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test of the auth, business, catalog, schedule, availability and booking API against a running server.
-# Usage: scripts/smoke.sh [base_url]
+# Usage: [ADMIN_EMAIL=... ADMIN_PASSWORD=...] scripts/smoke.sh [base_url]
+# The customer flow (C6) needs a platform admin account: docs/CUSTOMERS.md.
 # Creates one throw-away account and business (prints the email at the end).
 # Never prints tokens.
 set -u
@@ -397,6 +398,170 @@ IDEM="$AK-m2" req POST "$AP" "$ACCESS" "$(appt_body "$N0" "Mover Two")"; expect 
 MV2=$(printf '%s' "$BODY" | get id)
 race2 reschedule "200" "$AP/$MV1/reschedule" "$(RS "$N3")" "$AP/$MV2/reschedule" "$(RS "$N3")"
 req GET "$AP?from=$MON3&to=$MON3" "$ACCESS";                expect "calendar after the races" 200
+
+# --- C6: master approval, public catalog, guest customers ---
+if [ -z "${ADMIN_EMAIL:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
+  echo "  SKIP  C6 customer flow: set ADMIN_EMAIL and ADMIN_PASSWORD of a platform admin (docs/CUSTOMERS.md)"
+else
+  CITY="Smoke-$TS"
+  PB="/v1/public/businesses/$BIZ"
+  MON4=$(python3 -c "import datetime as d; print(d.date.fromisoformat('$MONDAY')+d.timedelta(days=21))")
+  req PUT "$B/profile" "$ACCESS" "{\"city\":\"$CITY\",\"headline\":\"Smoke lashes\",\"is_published\":true,\"moderation_status\":\"approved\"}"
+                                                            expect "master fills the public profile" 200
+  [ "$(printf '%s' "$BODY" | get moderation_status)" = "pending" ] || { echo "  FAIL  owner must not be able to approve"; FAILED=$((FAILED + 1)); }
+  req GET "$B/profile" "$EMP";                              expect "employee reads profile" 200
+  req PUT "$B/profile" "$EMP" '{"headline":"x"}';           expect "employee cannot edit profile -> 403" 403
+  req GET "$B/profile" "$STR";                              expect "B reads A profile -> 404" 404
+
+  req GET "/v1/public/businesses?city=$CITY" "";            expect "catalog (pending master is hidden)" 200
+  [ "$(printf '%s' "$BODY" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')" = "0" ] || { echo "  FAIL  pending master is in the catalog"; FAILED=$((FAILED + 1)); }
+  req GET "$PB" "";                                         expect "pending master profile -> 404" 404
+
+  req POST /v1/auth/login "" "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
+                                                            expect "admin login" 200
+  ADM=$(printf '%s' "$BODY" | get tokens.access_token)
+  req GET /v1/admin/businesses "$ACCESS";                   expect "owner cannot use admin API -> 403" 403
+  req GET /v1/admin/businesses "";                          expect "admin API without token -> 401" 401
+  req GET "/v1/admin/businesses?status=pending&limit=100" "$ADM"
+                                                            expect "admin sees the pending queue" 200
+  printf '%s' "$BODY" | grep -q "$BIZ" || { echo "  FAIL  pending master missing in the queue"; FAILED=$((FAILED + 1)); }
+  req POST "/v1/admin/businesses/$BIZ/approve" "$ACCESS";   expect "owner approves himself -> 403" 403
+  req POST "/v1/admin/businesses/$BIZ/reject" "$ADM";       expect "reject needs a note -> 400" 400
+  req POST "/v1/admin/businesses/$BIZ/approve" "$ADM";      expect "admin approves the master" 200
+
+  req GET "/v1/public/businesses?city=$CITY" "";            expect "catalog by city" 200
+  [ "$(printf '%s' "$BODY" | get 0.id)" = "$BIZ" ] || { echo "  FAIL  approved master not in the catalog"; FAILED=$((FAILED + 1)); }
+  req GET "$B" "$ACCESS"
+  SLUG=$(printf '%s' "$BODY" | get slug)
+  req GET "/v1/public/businesses/$SLUG" "";                 expect "public profile by slug" 200
+  printf '%s' "$BODY" | grep -Eq 'buffer_after_min|intake_questions|min_notice' && { echo "  FAIL  public profile leaks private fields"; FAILED=$((FAILED + 1)); }
+  [ "$(printf '%s' "$BODY" | get services.0.variants.0.price_minor)" = "25000" ] || { echo "  FAIL  public price"; FAILED=$((FAILED + 1)); }
+  req GET "$PB" "";                                         expect "public profile by id" 200
+
+  # customers: two anonymous sessions
+  req POST /v1/public/guest "" '{"accepted_terms":true,"display_name":"Smoke Guest"}'
+                                                            expect "guest session 1" 201
+  G1=$(printf '%s' "$BODY" | get tokens.access_token)
+  req POST /v1/public/guest "" '{"display_name":"x"}';      expect "guest without accepted terms -> 4xx" "$STATUS"
+  case "$STATUS" in 400|422) ;; *) echo "  FAIL  guest without terms: got $STATUS"; FAILED=$((FAILED + 1)) ;; esac
+  req POST /v1/public/guest "" '{"accepted_terms":true}';   expect "guest session 2" 201
+  G2=$(printf '%s' "$BODY" | get tokens.access_token)
+
+  PAV="$PB/availability?service_id=$SVC&variant_id=$VAR0&from=$MON4"
+  req GET "$PAV" "";                                        expect "public availability (no sign-in)" 200
+  [ "$(printf '%s' "$BODY" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["slots"]))')" = "18" ] || { echo "  FAIL  expected 18 public slots"; FAILED=$((FAILED + 1)); }
+  read -r P0 P8 P9 P17 <<< "$(printf '%s' "$BODY" | python3 -c 'import sys,json;s=json.load(sys.stdin)["slots"];print(" ".join(s[i]["start_at"] for i in (0,8,9,17)))')"
+  req GET "$PAV&staff_id=00000000-0000-0000-0000-000000000000" ""
+                                                            expect "public availability unknown master -> 404" 404
+
+  PA="$PB/appointments"
+  pbook() { printf '{"service_id":"%s","variant_id":"%s","staff_id":"%s","start_at":"%s","client_name":"%s","client_phone":"+48 600 100 200"}' "$SVC" "$VAR0" "$STAFF" "$1" "${2-Smoke Customer}"; }
+  req POST "$PB/holds" "$G1" "$(hold_body "$P0")";          expect "hold without sign-in data -> 400 (no key)" 400
+  IDEM="$AK-c1" req POST "$PB/holds" "" "$(hold_body "$P0")"
+                                                            expect "hold without token -> 401" 401
+  IDEM="$AK-c1" req POST "$PB/holds" "$G1" "$(hold_body "$P0")"
+                                                            expect "customer holds a slot" 201
+  CH1=$(printf '%s' "$BODY" | get id)
+  IDEM="$AK-c1" req POST "$PB/holds" "$G1" "$(hold_body "$P0")"
+                                                            expect "customer hold replay (200)" 200
+  IDEM="$AK-c2" req POST "$PB/holds" "$G2" "$(hold_body "$P0")"
+                                                            expect "other customer, same slot -> 409" 409
+  req POST "$PA" "$G2" "{\"hold_id\":\"$CH1\",\"client_name\":\"Thief\"}"
+                                                            expect "customer confirms someone else's hold -> 404" 404
+  req DELETE "$PB/holds/$CH1" "$G2";                        expect "customer releases someone else's hold -> 404" 404
+  req POST "$PA" "$G1" "{\"hold_id\":\"$CH1\",\"client_name\":\"Smoke Customer\",\"client_phone\":\"+48 600 100 200\",\"client_email\":\"Smoke@Example.com\"}"
+                                                            expect "customer confirms the hold" 201
+  [ "$(printf '%s' "$BODY" | get status)" = "confirmed" ] || { echo "  FAIL  customer appointment not confirmed"; FAILED=$((FAILED + 1)); }
+  [ "$(printf '%s' "$BODY" | get source)" = "app" ] || { echo "  FAIL  customer source is not app"; FAILED=$((FAILED + 1)); }
+  IDEM="$AK-c3" req POST "$PA" "$G1" "$(pbook "$P8")";      expect "customer books directly" 201
+  CA2=$(printf '%s' "$BODY" | get id)
+  IDEM="$AK-c3" req POST "$PA" "$G1" "$(pbook "$P8")";      expect "customer booking replay (200)" 200
+  req POST "$PA" "$G1" "$(pbook "$P9")";                    expect "direct booking without key -> 400" 400
+  IDEM="$AK-c4" req POST "$PA" "$G1" "$(pbook "$P9" | sed 's/"client_name"/"source":"manual","client_name"/')"
+                                                            expect "customer cannot book as manual -> 400" 400
+  IDEM="$AK-c5" req POST "$PA" "" "$(pbook "$P9")";         expect "booking without token -> 401" 401
+
+  # the master's calendar shows the customer's bookings
+  req GET "$AP?from=$MON4&to=$MON4" "$ACCESS";              expect "master calendar has customer bookings" 200
+  printf '%s' "$BODY" | grep -q "Smoke Customer" || { echo "  FAIL  customer booking missing in master calendar"; FAILED=$((FAILED + 1)); }
+  req GET "$B/clients?q=Smoke%20Customer" "$ACCESS";        expect "master lists clients" 200
+  [ "$(printf '%s' "$BODY" | get 0.confirmed_appointments)" = "2" ] || { echo "  FAIL  client should have 2 visits"; FAILED=$((FAILED + 1)); }
+  [ "$(printf '%s' "$BODY" | get 0.source)" = "guest" ] || { echo "  FAIL  client source"; FAILED=$((FAILED + 1)); }
+  CLIENT=$(printf '%s' "$BODY" | get 0.id)
+  req GET "$B/clients/$CLIENT" "$MGR";                      expect "manager reads a client" 200
+  req GET "$B/clients/$CLIENT" "$REC";                      expect "reception reads a client" 200
+  req GET "$B/clients" "$EMP";                              expect "employee cannot list clients -> 403" 403
+  req GET "/v1/businesses/$SB/clients/$CLIENT" "$STR";      expect "B reads A client -> 404" 404
+  req GET "/v1/businesses/$SB/clients" "$STR";              expect "B client list has no A clients" 200
+  printf '%s' "$BODY" | grep -q "$CLIENT" && { echo "  FAIL  A client visible in business B"; FAILED=$((FAILED + 1)); }
+  req GET "$B/clients" "$G1";                               expect "customer cannot use the staff API -> 404" 404
+  req GET "$AP?from=$MON4" "$G1";                           expect "customer cannot read the master calendar -> 404" 404
+
+  # a customer sees only their own appointments
+  req GET "$PA" "$G1";                                      expect "customer lists own appointments" 200
+  [ "$(printf '%s' "$BODY" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')" = "2" ] || { echo "  FAIL  customer should see 2 appointments"; FAILED=$((FAILED + 1)); }
+  req GET "$PA" "$G2";                                      expect "other customer lists own appointments" 200
+  [ "$BODY" = "[]" ] || { echo "  FAIL  other customer sees foreign appointments: $BODY"; FAILED=$((FAILED + 1)); }
+  req GET "$PA/$CA2" "$G1";                                 expect "customer reads own appointment" 200
+  req GET "$PA/$CA2" "$G2";                                 expect "customer reads foreign appointment -> 404" 404
+  req POST "$PA/$CA2/cancel" "$G2";                         expect "customer cancels foreign appointment -> 404" 404
+  req POST "$PA/$CA2/reschedule" "$G2" "{\"start_at\":\"$P17\"}"
+                                                            expect "customer moves foreign appointment -> 404" 404
+  req GET "$AP/$CA2" "$G1";                                 expect "customer via staff URL -> 404" 404
+
+  # own appointments: move and cancel
+  req POST "$PA/$CA2/reschedule" "$G1" "{\"start_at\":\"$P9\",\"reason\":\"work\"}"
+                                                            expect "customer reschedules own appointment" 200
+  [ "$(printf '%s' "$BODY" | get start_at)" = "$P9" ] || { echo "  FAIL  customer reschedule start_at"; FAILED=$((FAILED + 1)); }
+  req POST "$PA/$CA2/reschedule" "$G1" "{\"start_at\":\"$P0\"}"
+                                                            expect "customer moves onto a taken slot -> 409" 409
+  req POST "$PA/$CA2/cancel" "$G1" '{"reason":"ill"}';      expect "customer cancels own appointment" 200
+  [ "$(printf '%s' "$BODY" | get status)" = "cancelled" ] || { echo "  FAIL  customer cancel status"; FAILED=$((FAILED + 1)); }
+  req POST "$PA/$CA2/cancel" "$G1";                         expect "customer cancel again (idempotent)" 200
+
+  # two customers, one slot
+  race_tokens() { # race_tokens LABEL PATH TOKEN_A BODY_A TOKEN_B BODY_B
+    local dir; dir=$(mktemp -d)
+    ( curl -s -o "$dir/a.body" -w '%{http_code}' -X POST "$BASE$2" \
+        -H "authorization: Bearer $3" -H "idempotency-key: smoke-c6-$1-a-$TS" \
+        -H 'content-type: application/json' -d "$4" > "$dir/a.code" ) &
+    ( curl -s -o "$dir/b.body" -w '%{http_code}' -X POST "$BASE$2" \
+        -H "authorization: Bearer $5" -H "idempotency-key: smoke-c6-$1-b-$TS" \
+        -H 'content-type: application/json' -d "$6" > "$dir/b.code" ) &
+    wait
+    local codes; codes=$(printf '%s\n%s\n' "$(cat "$dir/a.code")" "$(cat "$dir/b.code")" | sort | tr '\n' ' ')
+    if [ "$codes" = "201 409 " ]; then
+      printf '  ok    %-44s %s\n' "race $1: one wins (201), one loses (409)" "$codes"
+    else
+      printf '  FAIL  %-44s got %s\n        %s %s\n' "race $1: expected 201 + 409" "$codes" "$(cat "$dir/a.body")" "$(cat "$dir/b.body")"
+      FAILED=$((FAILED + 1))
+    fi
+    cat "$dir/a.body" "$dir/b.body" | grep -q SLOT_UNAVAILABLE || { echo "  FAIL  race $1: loser did not get SLOT_UNAVAILABLE"; FAILED=$((FAILED + 1)); }
+    rm -rf "$dir"
+  }
+  race_tokens customers "$PA" "$G1" "$(pbook "$P17" "Race One")" "$G2" "$(pbook "$P17" "Race Two")"
+
+  # a customer's booking and the master's own booking compete for one slot too
+  IDEM="$AK-c6" req POST "$AP" "$ACCESS" "$(appt_body "$P17" "Master Booking")"
+                                                            expect "master books a customer-taken slot -> 409" 409
+
+  # suspension hides the master and stops new bookings
+  req POST "/v1/admin/businesses/$BIZ/suspend" "$ADM" '{}'; expect "suspend needs a note -> 400" 400
+  req POST "/v1/admin/businesses/$BIZ/suspend" "$ADM" '{"note":"smoke test"}'
+                                                            expect "admin suspends the master" 200
+  req GET "/v1/public/businesses?city=$CITY" ""
+  [ "$BODY" = "[]" ] || { echo "  FAIL  suspended master still in the catalog"; FAILED=$((FAILED + 1)); }
+  req GET "$PB" "";                                         expect "suspended master profile -> 404" 404
+  IDEM="$AK-c7" req POST "$PB/holds" "$G2" "$(hold_body "$P8")"
+                                                            expect "suspended master cannot be booked -> 404" 404
+  req GET "$B/profile" "$ACCESS"
+  [ "$(printf '%s' "$BODY" | get moderation_note)" = "smoke test" ] || { echo "  FAIL  owner does not see the moderation note"; FAILED=$((FAILED + 1)); }
+  req POST "$PA/$CA2/cancel" "$G1";                         expect "customer can still cancel after suspension" 200
+  req POST "/v1/admin/businesses/$BIZ/approve" "$ADM";      expect "admin reinstates the master" 200
+  req PUT "$B/profile" "$ACCESS" '{"is_published":false}';  expect "master unpublishes (smoke cleanup)" 200
+  req GET "/v1/public/businesses?city=$CITY" ""
+  [ "$BODY" = "[]" ] || { echo "  FAIL  unpublished master still in the catalog"; FAILED=$((FAILED + 1)); }
+fi
 
 req POST /v1/auth/refresh "" "{\"refresh_token\":\"$REFRESH\"}"
                                                             expect "refresh" 200

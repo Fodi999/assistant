@@ -1,5 +1,6 @@
 use crate::interfaces::http::{
-    auth, availability, booking, business, catalog, health, schedule, state::AppState, team,
+    admin, auth, availability, booking, business, catalog, clients, health, profile, public,
+    schedule, state::AppState, team,
 };
 use axum::{
     http::{header, HeaderName, HeaderValue, Method},
@@ -101,6 +102,62 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/v1/businesses/:business_id/appointments/:appointment_id/history",
             get(booking::appointment_history),
+        )
+        .route(
+            "/v1/businesses/:business_id/profile",
+            get(profile::get_profile).put(profile::update_profile),
+        )
+        .route(
+            "/v1/businesses/:business_id/clients",
+            get(clients::list_clients),
+        )
+        .route(
+            "/v1/businesses/:business_id/clients/:client_id",
+            get(clients::get_client),
+        )
+        .route("/v1/public/guest", post(public::guest))
+        .route("/v1/public/businesses", get(public::catalog))
+        .route("/v1/public/businesses/:key", get(public::profile))
+        .route(
+            "/v1/public/businesses/:key/availability",
+            get(public::availability),
+        )
+        .route(
+            "/v1/public/businesses/:key/holds",
+            post(public::create_hold),
+        )
+        .route(
+            "/v1/public/businesses/:key/holds/:hold_id",
+            delete(public::release_hold),
+        )
+        .route(
+            "/v1/public/businesses/:key/appointments",
+            post(public::book).get(public::my_appointments),
+        )
+        .route(
+            "/v1/public/businesses/:key/appointments/:appointment_id",
+            get(public::my_appointment),
+        )
+        .route(
+            "/v1/public/businesses/:key/appointments/:appointment_id/cancel",
+            post(public::cancel),
+        )
+        .route(
+            "/v1/public/businesses/:key/appointments/:appointment_id/reschedule",
+            post(public::reschedule),
+        )
+        .route("/v1/admin/businesses", get(admin::list))
+        .route(
+            "/v1/admin/businesses/:business_id/approve",
+            post(admin::approve),
+        )
+        .route(
+            "/v1/admin/businesses/:business_id/reject",
+            post(admin::reject),
+        )
+        .route(
+            "/v1/admin/businesses/:business_id/suspend",
+            post(admin::suspend),
         )
         .route(
             "/v1/businesses/:business_id/categories",

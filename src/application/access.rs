@@ -53,6 +53,28 @@ pub struct BusinessAccess {
 }
 
 impl BusinessAccess {
+    /// A signed-in customer acting inside a business they are NOT a member of.
+    /// It carries the least-privileged member role only so that the shared
+    /// booking code can run; the public service must have checked that the
+    /// business is public and that every appointment touched is the caller's
+    /// own (`BookingService::ensure_owned`) before using it.
+    pub(crate) fn for_customer(user_id: UserId, business_id: BusinessId) -> Self {
+        Self {
+            user_id,
+            business_id,
+            role: Role::Reception,
+        }
+    }
+
+    /// No signed-in user: only for computing public availability.
+    pub(crate) fn for_public(business_id: BusinessId) -> Self {
+        Self {
+            user_id: UserId::from_uuid(uuid::Uuid::nil()),
+            business_id,
+            role: Role::Reception,
+        }
+    }
+
     pub fn scope(&self) -> DbScope {
         DbScope::business(self.user_id, self.business_id)
     }
