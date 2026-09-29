@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test of the auth and business API against a running server.
+# Smoke test of the auth, business, catalog and schedule API against a running server.
 # Usage: scripts/smoke.sh [base_url]
 # Creates one throw-away account and business (prints the email at the end).
 # Never prints tokens.
@@ -70,6 +70,47 @@ req PATCH "/v1/businesses/$BIZ" "$ACCESS" '{"description":"Lash extensions"}'
                                                             expect "update business (owner)" 200
 req GET "/v1/businesses/00000000-0000-0000-0000-000000000000" "$ACCESS"
                                                             expect "unknown business -> 404" 404
+
+# --- catalog ---
+B="/v1/businesses/$BIZ"
+req GET "$B/staff" "$ACCESS";                               expect "list staff" 200
+STAFF=$(printf '%s' "$BODY" | get 0.id)
+req POST "$B/categories" "$ACCESS" '{"name":{"pl":"Rzęsy","en":"Lashes"},"sort_order":1}'
+                                                            expect "create category" 201
+CAT=$(printf '%s' "$BODY" | get id)
+req POST "$B/services" "$ACCESS" "{\"category_id\":\"$CAT\",\"name\":{\"pl\":\"Klasyczne 1:1\",\"en\":\"Classic 1:1\"},\"variants\":[{\"duration_min\":120,\"price_minor\":25000},{\"duration_min\":150,\"price_minor\":32000,\"price_type\":\"from\"}]}"
+                                                            expect "create service with variants" 201
+SVC=$(printf '%s' "$BODY" | get id)
+[ "$(printf '%s' "$BODY" | get variants.0.price_minor)" = "25000" ] || { echo "  FAIL  price_minor"; FAILED=$((FAILED + 1)); }
+[ "$(printf '%s' "$BODY" | get variants.0.currency)" = "PLN" ] || { echo "  FAIL  currency"; FAILED=$((FAILED + 1)); }
+req POST "$B/services" "$ACCESS" '{"name":{"pl":"X"},"variants":[{"duration_min":0,"price_minor":100}]}'
+                                                            expect "invalid variant -> 400" 400
+req PUT "$B/services/$SVC/staff" "$ACCESS" "{\"staff_ids\":[\"$STAFF\"]}"
+                                                            expect "assign staff to service" 200
+req GET "$B/services" "$ACCESS";                            expect "list services" 200
+req GET /v1/businesses/00000000-0000-0000-0000-000000000000/services "$ACCESS"
+                                                            expect "catalog of foreign business -> 404" 404
+
+# --- schedule ---
+S="$B/staff/$STAFF"
+req GET "$S/schedule" "$ACCESS";                            expect "empty schedule" 200
+[ "$(printf '%s' "$BODY" | get timezone)" = "Europe/Warsaw" ] || { echo "  FAIL  timezone"; FAILED=$((FAILED + 1)); }
+req PUT "$S/schedule/weekly" "$ACCESS" '{"intervals":[{"weekday":0,"start":"09:00","end":"13:00"},{"weekday":0,"start":"14:00","end":"18:00"}]}'
+                                                            expect "set weekly (split shift)" 200
+req PUT "$S/schedule/weekly" "$ACCESS" '{"intervals":[{"weekday":1,"start":"09:00","end":"13:00"},{"weekday":1,"start":"12:00","end":"16:00"}]}'
+                                                            expect "overlapping intervals -> 400" 400
+req PUT "$S/schedule/breaks" "$ACCESS" '{"breaks":[{"weekday":0,"start":"13:00","end":"14:00"}]}'
+                                                            expect "set breaks" 200
+req PUT "$S/schedule/exceptions/2030-12-24" "$ACCESS" '{"kind":"day_off"}'
+                                                            expect "day off exception" 200
+req POST "$S/time-off" "$ACCESS" '{"start_at":"2030-07-01T09:00:00+02:00","end_at":"2030-07-15T00:00:00Z","kind":"vacation"}'
+                                                            expect "create time off" 201
+[ "$(printf '%s' "$BODY" | get start_at)" = "2030-07-01T07:00:00Z" ] || { echo "  FAIL  time off not normalised to UTC"; FAILED=$((FAILED + 1)); }
+TOFF=$(printf '%s' "$BODY" | get id)
+req GET "$S/time-off" "$ACCESS";                            expect "list time off" 200
+req DELETE "$B/time-off/$TOFF" "$ACCESS";                   expect "delete time off" 204
+req GET "$S/schedule" "$ACCESS";                            expect "schedule readback" 200
+[ "$(printf '%s' "$BODY" | get weekly.1.start)" = "14:00" ] || { echo "  FAIL  weekly readback"; FAILED=$((FAILED + 1)); }
 
 req POST /v1/auth/refresh "" "{\"refresh_token\":\"$REFRESH\"}"
                                                             expect "refresh" 200

@@ -60,7 +60,10 @@ pub fn create_router(state: AppState) -> Router {
             "/v1/businesses/:business_id",
             get(business::get).patch(business::update),
         )
-        .route("/v1/businesses/:business_id/staff", get(business::list_staff))
+        .route(
+            "/v1/businesses/:business_id/staff",
+            get(business::list_staff),
+        )
         .route(
             "/v1/businesses/:business_id/categories",
             get(catalog::list_categories).post(catalog::create_category),
