@@ -1,4 +1,6 @@
-# Local PostgreSQL for development: `docker compose up -d db`
+# Local PostgreSQL for development: `make db-up`
+#   beauty     superuser: migrations + RLS tests (MIGRATION_DATABASE_URL, tests)
+#   beauty_api limited app login created by docker/initdb (DATABASE_URL)
 services:
   db:
     image: postgres:16
@@ -10,5 +12,6 @@ services:
       - "5432:5432"
     volumes:
       - beauty-pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
 volumes:
   beauty-pgdata:
