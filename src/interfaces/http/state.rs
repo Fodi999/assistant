@@ -1,4 +1,4 @@
-use crate::application::{AuthService, BusinessService, CatalogService};
+use crate::application::{AuthService, BusinessService, CatalogService, ScheduleService};
 use crate::infrastructure::{AppCache, Config, JwtService};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ pub struct AppState {
     pub auth: AuthService,
     pub business: BusinessService,
     pub catalog: CatalogService,
+    pub schedule: ScheduleService,
 }
 
 impl AppState {
@@ -28,6 +29,7 @@ impl AppState {
             auth: AuthService::new(pool.clone(), jwt.clone()),
             business: BusinessService::new(pool.clone()),
             catalog: CatalogService::new(pool.clone()),
+            schedule: ScheduleService::new(pool.clone()),
             jwt,
             config: Arc::new(config),
             pool,

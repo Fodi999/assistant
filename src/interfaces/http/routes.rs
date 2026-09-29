@@ -1,7 +1,7 @@
-use crate::interfaces::http::{auth, business, catalog, health, state::AppState};
+use crate::interfaces::http::{auth, business, catalog, health, schedule, state::AppState};
 use axum::{
     http::{header, HeaderName, HeaderValue, Method},
-    routing::{get, patch, post, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use std::time::Duration;
@@ -90,6 +90,30 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/v1/businesses/:business_id/variants/:variant_id",
             patch(catalog::update_variant).delete(catalog::delete_variant),
+        )
+        .route(
+            "/v1/businesses/:business_id/staff/:staff_id/schedule",
+            get(schedule::get_schedule),
+        )
+        .route(
+            "/v1/businesses/:business_id/staff/:staff_id/schedule/weekly",
+            put(schedule::set_weekly),
+        )
+        .route(
+            "/v1/businesses/:business_id/staff/:staff_id/schedule/breaks",
+            put(schedule::set_breaks),
+        )
+        .route(
+            "/v1/businesses/:business_id/staff/:staff_id/schedule/exceptions/:date",
+            put(schedule::put_exception).delete(schedule::delete_exception),
+        )
+        .route(
+            "/v1/businesses/:business_id/staff/:staff_id/time-off",
+            get(schedule::list_time_off).post(schedule::create_time_off),
+        )
+        .route(
+            "/v1/businesses/:business_id/time-off/:time_off_id",
+            delete(schedule::delete_time_off),
         )
         .with_state(state)
         .layer(TraceLayer::new_for_http())
