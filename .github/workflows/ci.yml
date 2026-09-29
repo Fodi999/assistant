@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: beauty
+          POSTGRES_PASSWORD: beauty
+          POSTGRES_DB: beauty
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U beauty"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://beauty:beauty@localhost:5432/beauty
+      RUST_BACKTRACE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      # Reads rust-toolchain.toml (pinned version + rustfmt + clippy).
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets

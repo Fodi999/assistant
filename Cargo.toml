@@ -1,0 +1,47 @@
+[package]
+name = "beauty-backend"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+description = "Backend of the BeautyApp platform (booking for beauty professionals)"
+
+[dependencies]
+# Web
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "postgres", "uuid", "time", "migrate"] }
+
+# Types
+uuid = { version = "1.6", features = ["v4", "v7", "serde"] }
+time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
+
+# Security
+argon2 = "0.5"
+jsonwebtoken = "9.2"
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Environment
+dotenvy = "0.15"
+
+# In-memory cache
+mini-moka = "0.10"
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.4", features = ["util"] }
